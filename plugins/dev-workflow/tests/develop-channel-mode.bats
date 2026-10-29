@@ -3,6 +3,7 @@
 # develop の 3 つ目の実行モード channel（issue #1126）
 #
 #   skills/develop/SKILL.md                     実行モードの節・引き継ぎ・再開・エピックの回し方・G の起動指示
+#   skills/develop/references/channel.md        channel の聞き方・読み替えの規則・リスク許容・主への発言（#1221 で移設）
 #   commands/develop.md                         モードの決め方・引数の分岐 ②⑤ と issueify フォールバックの聞き方
 #   skills/pr-review-gate/stages/hold.md        手順 6-3 の依頼文を実行モードで分ける
 #
@@ -15,14 +16,22 @@ setup() {
   export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
+  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
+  # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
+  HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
+  # channel だけで使う 3 小節（聞き方・リスク許容・主への発言）は SKILL.md から references/ へ移した（#1221）
+  CHANNEL="${PLUGIN_DIR}/skills/develop/references/channel.md"
   CMD="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
 }
 
 # 「## <見出し>」から次の「## 」までを切り出す
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
+# 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
+section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 # 「### <見出し>」から次の「## 」か「### 」までを切り出す
-subsection() { awk -v h="### $1" 'index($0, h)==1{f=1; print; next} /^##+ /{f=0} f' "$SKILL"; }
+subsection() { awk -v h="### $1" 'index($0, h)==1{f=1; print; next} /^##+ /{f=0} f' "${2:-$SKILL}"; }
 # 1 ループの (4) を切り出す（列 0 の "(4) " から次の列 0 の工程ラベルか ``` まで）
 step4() { awk '/^\(4\)[[:space:]]/{f=1; print; next} f && (/^\([0-9]+\)[[:space:]]/ || /^```/){f=0} f' "$SKILL"; }
 # hold.md 手順 6 の 3 番目の項目
@@ -67,7 +76,7 @@ refute() {
 # --- 聞き方と読み替え ---
 
 @test "channel asking: reply tool to the chat_id, end the turn, URL of the recorded question" {
-  local s; s="$(subsection 'channel の聞き方')"
+  local s; s="$(section 'channel の聞き方' "$CHANNEL")"
   [ -n "$s" ]
   printf '%s\n' "$s" | grep -qF 'chat_id'
   printf '%s\n' "$s" | grep -qF 'ターンを終える'
@@ -77,12 +86,13 @@ refute() {
 }
 
 @test "reading rule: every file mentioning AskUserQuestion is listed by its plugin-relative path" {
-  local s; s="$(subsection 'channel の聞き方')"
+  local s; s="$(section 'channel の聞き方' "$CHANNEL")"
   local files f rel n=0
   files="$(cd "$PLUGIN_DIR" && grep -rl --exclude-dir=tests --exclude-dir=changes 'AskUserQuestion' . | sed 's|^\./||' | sort)"
   [ -n "$files" ]
   while IFS= read -r rel; do
     [ "$rel" = "skills/develop/SKILL.md" ] && continue
+    [ "$rel" = "skills/develop/references/channel.md" ] && continue
     n=$((n + 1))
     if ! printf '%s\n' "$s" | grep -qF "\`$rel\`"; then
       echo "読み替えの列挙に無い: $rel" >&2
@@ -94,10 +104,10 @@ refute() {
 
 @test "AskUserQuestion lines in SKILL.md are interactive-only or in the Orca child section" {
   local line
-  # 実行モードの節の読み替えの規則があること
-  section '実行モード' | grep -qF 'channel ではこの聞き方に読む'
+  # 読み替えの規則があること（#1221 で references/channel.md へ移した）
+  grep -qF 'channel ではこの聞き方に読む' "$CHANNEL"
   # 各行が interactive の文脈か、channel を明示して除いているか、Orca 経路の子の節の行であること
-  local child; child="$(section 'エピックの子が主の返事を待って止まるとき')"
+  local child; child="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   while IFS= read -r line; do
     if printf '%s\n' "$line" | grep -qE 'interactive は|\*\*interactive\*\*|AskUserQuestion (は使わない|を呼ばない|を呼ばず|を使わず)'; then continue; fi
     if printf '%s\n' "$child" | grep -qF -- "$line"; then continue; fi
@@ -118,15 +128,16 @@ refute() {
 # --- リスク許容と主への発言 ---
 
 @test "channel risk acceptance: check OWNER_REPLY_CHANNEL_SENDERS without printing, PR comment when not possible" {
-  local s; s="$(section '実行モード')"
+  local s; s="$(section 'channel のリスク許容' "$CHANNEL")"
+  [ -n "$s" ]
   printf '%s\n' "$s" | grep -qF 'チャンネルの返事の確認: 可'
   printf '%s\n' "$s" | grep -qF 'チャンネルの返事の確認: 不可（OWNER_REPLY_CHANNEL_SENDERS が無い）'
   printf '%s\n' "$s" | grep -qF '値を出さず'
-  printf '%s\n' "$s" | grep -qF 'PR #<N> にコメントで `許容する`'
+  printf '%s\n' "$s" | grep -qF '末尾の PR にコメントで `許容する`'
 }
 
 @test "channel statements: all go to the channel, follow the canonical first-line rule, no screen or tab" {
-  local s; s="$(subsection 'channel の主への発言')"
+  local s; s="$(section 'channel の主への発言' "$CHANNEL")"
   [ -n "$s" ]
   printf '%s\n' "$s" | grep -qF '主へのすべての発言'
   printf '%s\n' "$s" | grep -qF '端末に出すだけで済ませない'
@@ -134,7 +145,8 @@ refute() {
   printf '%s\n' "$s" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
   printf '%s\n' "$s" | grep -qF '答え方の行'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで何を返すか'
-  printf '%s\n' "$s" | grep -F 'PR #<N>' | grep -qF 'フル URL'
+  printf '%s\n' "$s" | grep -F '末尾の PR に何を書くか' | grep -qF 'フル URL'
+  ! printf '%s\n' "$s" | grep -qF 'PR #<N>' || return 1
   printf '%s\n' "$s" | grep -qF '画面・タブ・入力欄'
   ! printf '%s\n' "$s" | grep -qF '`主がすること: このチャンネルで' || return 1
 }
@@ -153,7 +165,7 @@ refute() {
 # --- 保留・再開 ---
 
 @test "handover: mode values include channel and the channel guidance has no new session" {
-  local s; s="$(section '保留で止まるときの引き継ぎ')"
+  local s; s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   printf '%s\n' "$s" | grep -qF '| 実行モード | interactive / channel / unmanned |'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで記録先の番号を添えて返事'
   printf '%s\n' "$s" | grep -qF '番号の無い返事'
@@ -163,7 +175,7 @@ refute() {
 }
 
 @test "resume: channel reply launches develop and passes the log line's text and timestamp" {
-  local s; s="$(subsection '新しいセッションでの再開')"
+  local s; s="$(subsection '新しいセッションでの再開' "$HANDOVER")"
   printf '%s\n' "$s" | grep -qF 'develop を記録先 `<番号>` で起動'
   printf '%s\n' "$s" | grep -qF '`<channel source=` で始まる'
   printf '%s\n' "$s" | grep -qF '開きタグと閉じタグを外した中身'
@@ -173,21 +185,21 @@ refute() {
 # --- エピック ---
 
 @test "epic: channel does not call route and does not start another session" {
-  local s; s="$(subsection '回し方')"
+  local s; s="$(subsection '回し方' "$EPIC")"
   printf '%s\n' "$s" | grep -qF '`回し方: サブエージェント（channel モード）`'
   printf '%s\n' "$s" | grep -qF '別の Claude Code セッション'
   printf '%s\n' "$s" | grep -qF 'channel も `route` を呼ばず'
 }
 
 @test "epic: channel resuming an epic whose latest route note is Orca reports in the channel and stops" {
-  local s; s="$(subsection '回し方')"
+  local s; s="$(subsection '回し方' "$EPIC")"
   printf '%s\n' "$s" | grep -qF 'channel で再開したエピックの最新の `回し方:` が Orca なら'
   printf '%s\n' "$s" | grep -qF 'または tmux なら'
   printf '%s\n' "$s" | grep -qF 'channel は別セッション方式を引き継がない'
 }
 
 @test "epic: excluding epic children names channel next to unmanned (route is not called)" {
-  local line; line="$(grep -F '**エピックである子を外す**' "$SKILL")"
+  local line; line="$(grep -F '**エピックである子を外す**' "$EPIC")"
   [ -n "$line" ]
   printf '%s\n' "$line" | grep -qF '`route` を呼ばない unmanned と channel と'
   printf '%s\n' "$line" | grep -qF '（unmanned と channel を除く）'
@@ -211,6 +223,6 @@ refute() {
   printf '%s\n' "$s" | grep -qF '/develop <記録先>'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで記録先の番号を添えて返事'
   printf '%s\n' "$s" | grep -qF '`チャンネルの返事の確認:`'
-  printf '%s\n' "$s" | grep -qF 'PR #<N> にコメントで `許容する`'
+  printf '%s\n' "$s" | grep -qF '末尾の PR にコメントで `許容する`'
   refute "$s" -F '前任 W'
 }

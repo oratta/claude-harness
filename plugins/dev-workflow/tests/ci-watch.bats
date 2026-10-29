@@ -419,9 +419,95 @@ pr_view_calls() {
   grep -qF '実装者に直しを頼まない' <<<"$row"
 }
 
+@test "reference: escalate points an epic child to the stop record without copying the HEAD rule" {  # エピックの子は停止の記録の正本を指すだけ
+  local row
+  row="$(grep -F '| `escalate` |' "$REF")"
+  [ -n "$row" ]
+  grep -qF 'エピックの子' <<<"$row"
+  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり記録を残して `mark stopped` で止まる' <<<"$row"
+  ! grep -qF '先頭 7 文字' <<<"$row" || return 1
+  ! grep -qF 'obs.head' <<<"$row" || return 1
+  ! grep -qF 'headRefOid' <<<"$row" || return 1
+}
+
+@test "reference: a non-wait none points an epic child to the stop record without copying the HEAD rule" {  # 同じ HEAD で再び落ちた none でも停止の記録を残す
+  local row
+  row="$(grep -F '| `none` |' "$REF")"
+  [ -n "$row" ]
+  grep -qF 'エピックの子' <<<"$row"
+  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり記録を残して `mark stopped` で止まる' <<<"$row"
+  ! grep -qF '先頭 7 文字' <<<"$row" || return 1
+  ! grep -qF 'obs.head' <<<"$row" || return 1
+  ! grep -qF 'headRefOid' <<<"$row" || return 1
+}
+
 @test "reference: job-timeout is outside the --unrelated judgement and differs from the wait timeout" {  # --unrelated の対象外・見張りの timeout とは別
   grep -qF '`job-timeout`（ジョブが上限時間で打ち切られた）のチェックはこの判断の対象でない' "$REF"
   grep -qF '`job-timeout` は CI のジョブが自分の上限時間で打ち切られたことで、4 の表の `timeout`（見張りの上限時間内に決着を見られなかった）とは別の出来事' "$REF"
+}
+
+# 節の外に同じ語があっても再開の契約の証拠にはしない。
+resume_section() {
+  sed -n '/^## 9\./,/^## 10\./p' "$REF" | sed '/^## 10\./d'
+}
+
+@test "reference: resume section identifies its own wait notification and excludes TaskStop" {
+  local section word
+  section="$(resume_section)"
+  [ -n "$section" ]
+  for word in stopped killed run_in_background 'ci-watch.sh wait' '--until-merged' \
+              'task id' 'tool-use id' '自分の会話' 'TaskStop' '対象外'; do
+    grep -qF -- "$word" <<<"$section" || { echo "missing: $word"; return 1; }
+  done
+}
+
+@test "reference: resume runs next without asking on the first turn from any input" {
+  local section word
+  section="$(resume_section)"
+  for word in '主やオーナーに' '聞き返さず' '最初のターン' '通知そのもの' '親の返事' '主の入力' \
+              'ci-watch.sh next <owner/repo> <PR番号>' '`--unrelated` なし' '6 の表' '#1084'; do
+    grep -qF -- "$word" <<<"$section" || { echo "missing: $word"; return 1; }
+  done
+}
+
+@test "reference: resume checks all comment pages and ends settled watches" {
+  local section word
+  section="$(resume_section)"
+  for word in 'gh pr view' 'gh api --paginate' '全ページ' '1 行目' '最新の' \
+              'CI 見張り開始:' 'CI 見張り終了:' 'open' '無いときだけ再開' \
+              '終了のコメントがあれば何もしない' 'merged' 'closed' '投稿' '終えた理由' 'マージを報告'; do
+    grep -qF -- "$word" <<<"$section" || { echo "missing: $word"; return 1; }
+  done
+}
+
+@test "reference: resume states the inputs errors and accepted gaps of its decision" {
+  local scope word
+  scope="$(resume_section | sed -n '/^守備範囲:/p')"
+  [ -n "$scope" ]
+  for word in '通知' 'PR の状態' '全ページ' '3 つ' '二重の修正' '数え落とし' '放置' \
+              '別のセッション' '重なる' '消したり書き換えたり' '通知が届かない' '/clear' \
+              '通ることを許す' '完了条件にしない'; do
+    grep -qF -- "$word" <<<"$scope" || { echo "missing: $word"; return 1; }
+  done
+}
+
+@test "reference: resume continues the same watch and section 2 points to section 9" {
+  local section start
+  section="$(resume_section)"
+  grep -qF '2 の開始の判定も開始のコメントもしない' <<<"$section"
+  grep -qF '同じ見張りの続き' <<<"$section"
+  start="$(sed -n '/^## 2\./,/^## 3\./p' "$REF")"
+  grep -q '通知を受けていない別のセッション' <<<"$start"
+  grep -q 'stopped.*killed.*9 に従う.*オーナーの指示を待たない' <<<"$start"
+}
+
+@test "develop skill: resume notification points to section 9 without copying the decision" {
+  local row
+  row="$(grep 'stopped.*killed' "$DEVELOP")"
+  [ "$(printf '%s\n' "$row" | wc -l | tr -d ' ')" -eq 1 ]
+  grep -qF 'references/ci-watch.md' <<<"$row"
+  grep -qF '9 に従う' <<<"$row"
+  ! grep -qE 'CI 見張り終了:|gh pr view|--paginate|ci-watch.sh next' "$DEVELOP" || return 1
 }
 
 # ── pr-review-gate / develop / gate-runner ────────────────

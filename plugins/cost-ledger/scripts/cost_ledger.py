@@ -352,7 +352,8 @@ def resolve_number(where: str, number: str):
         return "pr", head, 0
     found = _gh(where, "api", "repos/{owner}/{repo}/issues/%s" % number, "--jq", ISSUE_JQ)
     parts = (found or "").split()
-    if parts:
+    # 応答の番号が数字でなければ issue として返さない（呼ぶ側は「見つからない」として扱う）
+    if parts and re.fullmatch(r"[0-9]+", parts[0]):
         children = 0
         if len(parts) == 2 and re.fullmatch(r"[0-9]+", parts[1]):
             children = int(parts[1])
@@ -835,20 +836,30 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
         if '"Bash"' not in line and '"stop_reason":"' not in line and '"stop_reason": "' not in line:
             continue
         key = "%s#%s" % (request_id, uuid)
-        if key in seen:
-            continue
+        recorded = key in seen
         try:
             message = record.get("message") or {}
-            issues, marker = scan_tool_calls(message)
+            if recorded:
+                # 変更前の版が出力 0 の補足の行を書いた確定行。issue と印は書き済みなので、
+                # 出力の差分だけを別の鍵の補足の事実にする。
+                issues, marker = [], None
+            else:
+                issues, marker = scan_tool_calls(message)
             final = final_output(message)
             delta = max(0, final - _counted_output(seen, request_id)) if final is not None else 0
             if not issues and marker is None and not delta:
                 continue
+            if recorded:
+                key += OUT_SUFFIX
+                if key in seen:
+                    continue
             fact = build_fact(record, resolver, path)
         except (AttributeError, TypeError, ValueError):
             SCAN_STATS["unreadable_lines"] += 1
             continue
         fact["request_id"] = key
+        if recorded:
+            fact["issues"], fact["post_marker"] = [], None
         for field in TOKEN_KEYS:
             fact[field] = 0
         fact["output_tokens"] = delta
@@ -863,6 +874,26 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
 def is_continuation(fact: dict) -> bool:
     """同じ応答の後続行から出した補足の事実か（入力・キャッシュは 0、出力は確定値との差分。メッセージ数に数えない）。"""
     return bool(fact.get("continuation"))
+
+
+OUT_SUFFIX = "#out"
+
+
+def continuation_origin(request_id: str, uuid=None) -> str:
+    """補足の事実の ``request_id`` から元の requestId を返す。
+
+    補足の事実の鍵は ``<requestId>#<uuid>``、変更前の版が出力 0 で書いた補足の行に足す出力の
+    差分の行は ``<requestId>#<uuid>#out``。末尾のその部分だけを除く（requestId 自体が ``#`` を
+    含んでも元に戻せるように、最初の ``#`` では切らない）。``uuid`` は補足の事実の ``uuid`` の欄
+    （その後続行の uuid）。欄が無い古い行は、末尾の ``#out`` と最後の ``#`` 以降を除く。
+    """
+    if uuid:
+        for suffix in ("#%s%s" % (uuid, OUT_SUFFIX), "#%s" % uuid):
+            if len(request_id) > len(suffix) and request_id.endswith(suffix):
+                return request_id[:-len(suffix)]
+    if request_id.endswith(OUT_SUFFIX):
+        request_id = request_id[:-len(OUT_SUFFIX)]
+    return request_id.rsplit("#", 1)[0]
 
 
 def iter_facts(root: str, resolver: RepoResolver, branch: str | None = None):
@@ -923,9 +954,11 @@ def _ledger_id_uuid(line: str):
 
 
 OUTPUT_KEY = '"output_tokens": '
+# 補足の事実の行の印。文字列の値の中の引用符はエスケープされるので、この並びは欄そのものにしか当たらない
+LEDGER_CONTINUATION = '"continuation": true'
 
 
-def _ledger_output(line: str, request_id: str) -> int:
+def _ledger_output(line: str) -> int:
     """台帳の 1 行の出力トークン。値の前の欄は文字列のエスケープ済みの値だけなので、最初の一致が欄そのもの。"""
     at = line.find(OUTPUT_KEY)
     if at >= 0:
@@ -1015,15 +1048,18 @@ class LedgerIndex:
         db = sqlite3.connect(self.path)
         db.execute("CREATE TABLE IF NOT EXISTS ids (id TEXT PRIMARY KEY)")
         db.execute("CREATE TABLE IF NOT EXISTS heads (id TEXT PRIMARY KEY, uuid TEXT)")
-        old_form = db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counted'").fetchone() is None
+        if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='counted'").fetchone() is None:
+            # counted を今作る。読み終え位置が残っていても、中身は空なので無効にする。
+            db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
+            db.execute("DELETE FROM meta WHERE key = 'counted_covered'")
         db.execute("CREATE TABLE IF NOT EXISTS counted (id TEXT PRIMARY KEY, out INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS files (path TEXT PRIMARY KEY, offset INTEGER, ino INTEGER)")
         db.execute("CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER)")
         db.execute("SELECT count(*) FROM meta").fetchone()
-        if old_form:
-            # 応答ごとの出力を持たない古い形の控え。台帳を先頭から読み直して作り直す。
+        if db.execute("SELECT 1 FROM meta WHERE key = 'counted_covered'").fetchone() is None:
+            # 出力の読み終え位置を持たない控え（古い形、または counted を作った直後で落ちたもの）。
+            # counted が中途半端かもしれないので捨て、台帳を先頭から読み直して作り直す。
             db.execute("DELETE FROM counted")
-            db.execute("DELETE FROM meta WHERE key = 'covered'")
             db.commit()
         return db
 
@@ -1034,6 +1070,18 @@ class LedgerIndex:
     def set_covered(self, size: int) -> None:
         self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('covered', ?)", (size,))
 
+    def counted_covered(self) -> int:
+        """``counted`` に反映済みの台帳のバイト位置（``covered`` とは別に持つ）。
+
+        変更前の版の hook が先頭の行を追記して ``covered`` だけを進めても、``counted`` に
+        入っていない分をここから読み直して足し込める。
+        """
+        row = self.db.execute("SELECT value FROM meta WHERE key = 'counted_covered'").fetchone()
+        return int(row[0]) if row else 0
+
+    def set_counted_covered(self, size: int) -> None:
+        self.db.execute("INSERT OR REPLACE INTO meta (key, value) VALUES ('counted_covered', ?)", (size,))
+
     def catch_up(self, ledger: str) -> None:
         """台帳の伸びた分を索引に取り込む（台帳が縮んでいれば作り直す）。"""
         try:
@@ -1041,20 +1089,28 @@ class LedgerIndex:
         except OSError:
             size = 0
         start = self.covered()
+        counted_start = self.counted_covered()
         if start > size:
             self.db.execute("DELETE FROM ids")
             self.db.execute("DELETE FROM heads")
-            self.db.execute("DELETE FROM counted")
             self.db.execute("DELETE FROM files")
             start = 0
-        if start < size:
+            counted_start = size + 1  # 下で counted を捨てて 0 から読む
+        if counted_start != start or counted_start > size:
+            # 2 つの読み終え位置が食い違うのは、counted_covered を知らない版が covered を進めたとき。
+            # その版が counted も足したか（直前の配布版）足していないか（それより前の版）は控えから
+            # 分からないので、counted を捨てて台帳の先頭から数え直す（足し直しで二重に数えない）。
+            self.db.execute("DELETE FROM counted")
+            counted_start = 0
+        low = min(start, counted_start)
+        if low < size:
             with open(ledger, "rb") as fh:
-                fh.seek(start)
-                data = fh.read(size - start)
+                fh.seek(low)
+                data = fh.read(size - low)
             ids = []
             heads = []
             counts: dict[str, int] = {}
-            for raw in data.split(b"\n"):
+            for raw in data[start - low:].split(b"\n") if start < size else []:
                 if not raw.strip():
                     continue
                 text = raw.decode("utf-8", errors="replace")
@@ -1063,14 +1119,24 @@ class LedgerIndex:
                     ids.append((request_id,))
                     if uuid is not None:
                         heads.append((request_id, uuid))
-                    base = request_id.split("#", 1)[0]
-                    counts[base] = counts.get(base, 0) + _ledger_output(text, request_id)
+            for raw in data[counted_start - low:].split(b"\n") if counted_start < size else []:
+                if not raw.strip():
+                    continue
+                text = raw.decode("utf-8", errors="replace")
+                request_id, uuid = _ledger_id_uuid(text)
+                if request_id is not None:
+                    if LEDGER_CONTINUATION in text:
+                        base = continuation_origin(request_id, uuid)
+                    else:
+                        base = request_id
+                    counts[base] = counts.get(base, 0) + _ledger_output(text)
             self.db.executemany(
                 "INSERT INTO counted (id, out) VALUES (?, ?) "
                 "ON CONFLICT(id) DO UPDATE SET out = out + excluded.out", list(counts.items()))
             self.db.executemany("INSERT OR IGNORE INTO ids (id) VALUES (?)", ids)
             self.db.executemany("INSERT OR IGNORE INTO heads (id, uuid) VALUES (?, ?)", heads)
         self.set_covered(size)
+        self.set_counted_covered(size)
         self.db.commit()
 
     def __contains__(self, request_id) -> bool:
@@ -1814,15 +1880,17 @@ def price_drift(session_ids, pricing: Pricing, facts=None):
 # --------------------------------------------------------------------------
 
 def _origin_request_id(fact: dict) -> str:
-    """補足の事実の ``<requestId>#<uuid>`` から元の requestId を返す（通常の事実はそのまま）。"""
+    """補足の事実の ``<requestId>#<uuid>``（``#out`` 付きも）から元の requestId を返す（通常の事実はそのまま）。"""
     request_id = fact["request_id"]
-    return request_id.rsplit("#", 1)[0] if is_continuation(fact) else request_id
+    return continuation_origin(request_id, fact.get("uuid")) if is_continuation(fact) else request_id
 
 
 def _ordered(rows: list) -> list:
     """同じセッションの事実を、timestamp → 元の requestId → 通常の事実が先 → 補足は元ログの位置順に並べる。
 
     補足の事実は ``source_offset``（元ログの行頭バイト位置）の数値順、同値なら ``request_id`` 順。
+    ただし ``<鍵>#out`` の行（変更前の版が出力 0 で書いた補足の行に足す出力の差分）は、``<鍵>`` の
+    行の直前に置く。``<鍵>`` の行が投稿の印を持つとき、差分がその投稿で閉じる区間に入るように。
     ``source_offset`` を持たない補足（位置を保存する前の版が書いたもの）が混ざる同時刻・同一
     requestId のグループは、順序を復元できないので従来の ``request_id`` 順に戻す。
     """
@@ -1834,7 +1902,10 @@ def _ordered(rows: list) -> list:
         if not is_continuation(fact):
             return group + (0, 0, fact["request_id"])
         offset = 0 if group in legacy else fact["source_offset"]
-        return group + (1, offset, fact["request_id"])
+        request_id = fact["request_id"]
+        amends = request_id.endswith(OUT_SUFFIX)
+        base = request_id[:-len(OUT_SUFFIX)] if amends else request_id
+        return group + (1, offset, base, 0 if amends else 1)
 
     return sorted(rows, key=key)
 
@@ -2341,6 +2412,11 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
     """
     where = os.path.abspath(args.repo) if args.repo else os.getcwd()
 
+    # 台帳を使ったかどうかは、モデルがプラグイン設定を見られないのでスクリプトが言う。
+    # cost.md の案内はこの行の有無で判定する。標準出力と終了コードは変えない。
+    if ledger_path() is None:
+        sys.stderr.write("台帳: 未設定（会話ログを直接読みました）\n")
+
     if args.number is None:
         branch = current_branch(where)
         if not branch:
@@ -2827,7 +2903,9 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "usd_jpy_rate": pricing.jpy_rate,
         "closing_prs": combined["prs"],
         "outside_pr_usd": combined["outside_usd"],
-        "combined_total_usd": combined["total_usd"],
+        # 閉じた PR を読めなかったときの合計は「PR の分を欠いた額」なので、区間の額と見分けがつく null にする
+        "combined_total_usd": (None if getattr(args, "closing_prs_error", False)
+                               else combined["total_usd"]),
         "closing_prs_error": bool(getattr(args, "closing_prs_error", False)),
     }
     drift = None

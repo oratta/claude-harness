@@ -56,14 +56,14 @@ hook は全 Bash 呼び出しで起動するので、スクリプトは stdin �
 
 #### Scenario: `{owner}/{repo}` の endpoint での付与
 - **WHEN** `gh api repos/{owner}/{repo}/issues/300/labels -f 'labels[]=agent-review:passed'` の hook JSON を流す
-- **THEN** `cwd` のリポジトリの #300 が投稿の対象になる。同じ呼び出しに前置きの `GH_REPO=oratta/other` があれば oratta/other の #300 が対象になり、前置きの値が解決できなければ投稿せずに飛ばす
+- **THEN** `cwd` のリポジトリの #300 が投稿の対象になる。同じ呼び出しに前置きの `GH_REPO=acme/other` があれば acme/other の #300 が対象になり、前置きの値が解決できなければ投稿せずに飛ばす
 
 #### Scenario: 同じコマンドで代入した変数の付与コマンド
 - **WHEN** `R=oratta/claude-harness; N=300` のあとに `gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'` が続くコマンドの hook JSON を流す
 - **THEN** oratta/claude-harness の #300 が投稿の対象になる
 
 #### Scenario: for で複数 PR に付与する
-- **WHEN** `R=oratta/kg-recruit` のあと `for N in 96 97; do` の中で `repos/$R/issues/$N/labels` に付与するコマンドの hook JSON を流す
+- **WHEN** `R=acme/repo-k` のあと `for N in 96 97; do` の中で `repos/$R/issues/$N/labels` に付与するコマンドの hook JSON を流す
 - **THEN** #96 と #97 の両方が投稿の対象になる
 
 #### Scenario: gh pr edit で付与する
@@ -71,8 +71,8 @@ hook は全 Bash 呼び出しで起動するので、スクリプトは stdin �
 - **THEN** `cwd` のリポジトリの #313 が投稿の対象になる
 
 #### Scenario: 前置きの GH_REPO で付与する
-- **WHEN** `GH_REPO=oratta/other gh pr edit 300 --add-label agent-review:passed` の hook JSON を流す
-- **THEN** oratta/other の #300 が投稿の対象になり、`cwd` のリポジトリは問い合わせない。前置きの値が解決できなければ投稿せずに飛ばす
+- **WHEN** `GH_REPO=acme/other gh pr edit 300 --add-label agent-review:passed` の hook JSON を流す
+- **THEN** acme/other の #300 が投稿の対象になり、`cwd` のリポジトリは問い合わせない。前置きの値が解決できなければ投稿せずに飛ばす
 
 #### Scenario: サブシェルの中の代入は外に効かない
 - **WHEN** `N=300; (N=5; echo x); gh api -X POST repos/oratta/claude-harness/issues/$N/labels -f 'labels[]=agent-review:passed'` の hook JSON を流す

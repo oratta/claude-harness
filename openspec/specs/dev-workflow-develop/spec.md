@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change dev-workflow-develop-orchestrator. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: develop スキルは入口を問わず発火する
 `plugins/dev-workflow/skills/develop/SKILL.md` は、ソースコード・スキル・コマンド・規範文書（openspec / docs / CLAUDE.md 等）を変える作業を、依頼の入口（GitHub issue・会話・cron・エピックの子）を問わずこのスキルを通すことを「いつ使うか」として規定しなければならない（MUST）。例外は「読むだけ・回答だけ・生成物を出すだけ」の作業に限る（SHALL）。frontmatter の `description` は、旧 `github-issue` の発火語（issue 番号・issue URL・「この issue 対応して」等の自然文）を含まなければならない（MUST）。`skills/github-issue/` は存在してはならない（MUST NOT）。
 
@@ -92,7 +94,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 - **THEN** `/opsx:ff`・`/opsx:apply`・`/opsx:verify`・`/opsx:archive` の文字列が無い
 
 #### Scenario: (3b) は PR を Draft のまま G に渡す
-- **WHEN** SKILL.md の 1 ループの (3b) と `references/roles/worker.md` の (3b) を読む
+- **WHEN** SKILL.md の 1 ループの (3b) と `references/roles/worker/finish.md` の (3b) を読む
 - **THEN** PR を Draft のまま用意する（issue が記録先なら `gh pr create --draft`）と書かれ、W が PR を Ready に切り替える記述が無く、Ready 化は G が pr-review-gate 手順 5 で行うと書かれている
 
 #### Scenario: W / G は remote 隔離で起こさない
@@ -112,16 +114,16 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 - **THEN** 本体は fresh reviewer を起動せず、`agent-review:pending` のまま残差を報告して工程を止める
 
 ### Requirement: 役割の指示書は references/roles/ に分かれている
-`skills/develop/references/roles/` に `worker.md`（W）・`spec-reviewer.md`（R1）・`gate-runner.md`（G）が存在しなければならない（MUST）。`worker.md` は仕様化判断の記録書式（1 行目 `^仕様化判断: (する|しない)$`）・仕様レビュー結果の記録書式・「重要実装の事前分類」表（聖域パス・マージ権限・層間契約・課金/法務）を含み（MUST）、この表がモデル事前分類の正本である（SHALL）。事前分類表の「1 周目」列は**実行役（W）の上限を `opus` とし、`fable` 行を持ってはならない**（MUST NOT。4 分類のいずれに当たっても W は `opus` 止まりで、聖域パスの `opus` は据え置き）。表には、読んで判断する役（R1・G が要求するレビュアー）が `fable` 相当の分類に当たるときは `subagent_type: dev-workflow:decider` で spawn し、`general-purpose` に `model: fable` を付けないことを明記しなければならない（MUST）。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担うことを書く（SHALL）。`worker.md` の return には「指示のどこまでやって、どこで何が起きたか」を含める義務を書かなければならない（MUST。決める役の入力契約になるため）。
+`skills/develop/references/roles/` に `worker/`（W の指示書。`common.md`・`spec.md`・`implement.md`・`finish.md` の 4 本）・`spec-reviewer.md`（R1）・`gate-runner.md`（G）が存在しなければならない（MUST）。`worker/spec.md` は仕様化判断の記録書式（1 行目 `^仕様化判断: (する|しない)$`）を、`worker/common.md` は仕様レビュー結果の記録書式を、`references/pre-classification.md` は「重要実装の事前分類」表（聖域パス・マージ権限・層間契約・課金/法務）を含み（MUST）、この表がモデル事前分類の正本である（SHALL）。事前分類表の「1 周目」列は**実行役（W）の上限を `opus` とし、`fable` 行を持ってはならない**（MUST NOT。4 分類のいずれに当たっても W は `opus` 止まりで、聖域パスの `opus` は据え置き）。表には、読んで判断する役（R1・G が要求するレビュアー）が `fable` 相当の分類に当たるときは `subagent_type: dev-workflow:decider` で spawn し、`general-purpose` に `model: fable` を付けないことを明記しなければならない（MUST）。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担うことを書く（SHALL）。`worker/common.md` の return には「指示のどこまでやって、どこで何が起きたか」を含める義務を書かなければならない（MUST。決める役の入力契約になるため）。
 
-`spec-reviewer.md` は 6 観点（受け入れ条件の一意性・既存 spec との整合・固有値の直書き・前提の明記・相互整合・守備範囲の明記）と、既定 2 周と 2 周目以降の周の終わりに直し方の判定を通して続ける規則を含む（MUST。判定役・入力・書式の正本は SKILL.md で、`spec-reviewer.md` は規則を書いて正本を指す）。観点の中身の正本は `dev-workflow-spec-review` とする（SHALL）。`gate-runner.md` は pr-review-gate スキルを読んで手順 1〜5 を実行する指示と、G が孫を持てないための別コンテキストレビューの扱いを含む（MUST）: Codex は Bash から `codex exec -c approval_policy=never -c model_reasoning_effort=medium` または `codex-companion.mjs` を直接呼ぶ（slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは G からは使えない）。Codex が使えない／light 判定のときは G が `needs-reviewer` を return し、本体が別のレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れれば `dev-workflow:decider`。聖域パスだけでは上げない）を spawn してその要約を G に SendMessage で渡す。このため G も名前付きで spawn する（MUST）。`needs-reviewer` の return には light/full の判定と根拠・対象 PR 番号と HEAD SHA・レビュアーの推奨モデル（または `dev-workflow:decider` 指定）と根拠・受け入れ条件の所在を含め（MUST）、レビュー要約を受け取った G が「レビュー実行者:」の PR コメントを投稿して手順 3 以降を続ける（SHALL）。G の failed の return には pr-review-gate 手順 2-2 の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）を含めなければならない（MUST。本体が決める役 / 実行役のどちらを上げるかを決めるため）。
+`spec-reviewer.md` は 6 観点（受け入れ条件の一意性・既存 spec との整合・固有値の直書き・前提の明記・相互整合・守備範囲の明記）と、既定 2 周と 2 周目以降の周の終わりに直し方の判定を通して続ける規則を含む（MUST。判定役・入力・書式の正本は `references/fix-check.md` で、`spec-reviewer.md` は規則を書いて正本を指す）。観点の中身の正本は `dev-workflow-spec-review` とする（SHALL）。`gate-runner.md` は pr-review-gate スキルを読んで手順 1〜5 を実行する指示と、G が孫を持てないための別コンテキストレビューの扱いを含む（MUST）: Codex は Bash から `codex exec -c approval_policy=never -c model_reasoning_effort=medium` または `codex-companion.mjs` を直接呼ぶ（slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは G からは使えない）。Codex が使えない／light 判定のときは G が `needs-reviewer` を return し、本体が別のレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れれば `dev-workflow:decider`。聖域パスだけでは上げない）を spawn してその要約を G に SendMessage で渡す。このため G も名前付きで spawn する（MUST）。`needs-reviewer` の return には light/full の判定と根拠・対象 PR 番号と HEAD SHA・レビュアーの推奨モデル（または `dev-workflow:decider` 指定）と根拠・受け入れ条件の所在を含め（MUST）、レビュー要約を受け取った G が「レビュー実行者:」の PR コメントを投稿して手順 3 以降を続ける（SHALL）。G の failed の return には pr-review-gate 手順 2-2 の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出）を含めなければならない（MUST。本体が決める役 / 実行役のどちらを上げるかを決めるため）。
 
-`worker.md`・`spec-reviewer.md`・`gate-runner.md` の 3 つはいずれも、長時間処理の完了通知を待つためにターンを終えてはならない旨を明記しなければならない（MUST）。待ち方の詳細の正本は `plugins/dev-workflow/references/subagent-waiting.md` とし、各指示書はそこを参照する（SHALL）。`spec-reviewer.md` の 1 行は、decider 経路で spawn される R1 が `Bash` を持たず待ちループ自体を実行できないため、「長い処理の完了を待つ目的でターンを終えない（decider 経路の R1 は待ちを伴う作業を持たない）」の形で書く（SHALL。読んだ R1 が実行できない手順を探しに行かないようにするため）。
+`worker/implement.md`・`spec-reviewer.md`・`gate-runner.md` の 3 つはいずれも、長時間処理の完了通知を待つためにターンを終えてはならない旨を明記しなければならない（MUST）。待ち方の詳細の正本は `plugins/dev-workflow/references/subagent-waiting.md` とし、各指示書はそこを参照する（SHALL）。`spec-reviewer.md` の 1 行は、decider 経路で spawn される R1 が `Bash` を持たず待ちループ自体を実行できないため、「長い処理の完了を待つ目的でターンを終えない（decider 経路の R1 は待ちを伴う作業を持たない）」の形で書く（SHALL。読んだ R1 が実行できない手順を探しに行かないようにするため）。
 
 `gate-runner.md` は Codex の**起動**の事実（(a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium` を `run_in_background` で起動する経路と、(b) `codex-companion.mjs` に `task … --effort medium` を投げる経路。companion の path-discovery を含む）を持ち、**完了の確認方法は正本 `plugins/dev-workflow/references/subagent-waiting.md` に委ねなければならない（MUST）**。完了マーカーの雛形・具体の待ち値・総待ちの上限を `gate-runner.md` に再掲してはならない（MUST NOT。2026-09-09 のレビューで、再掲した companion の判定方法が事実と食い違ったまま残っていたため）。「出力ファイルを読め」だけで待ち方を書かない記述を残してはならない（MUST NOT）。`gate-runner.md` に残す待ち関連の記述は、完了通知に頼ってターンを終えない禁止・正本への参照・上限到達時の G 固有の分岐（待ちをやめて `needs-reviewer` を return し、根拠に「Codex タイムアウト」と実際に待った時間を書く）に限る（SHALL）。
 
-#### Scenario: worker.md に記録書式と事前分類表がある
-- **WHEN** `references/roles/worker.md` を読む
+#### Scenario: worker/ の 4 本と pre-classification.md に記録書式と事前分類表がある
+- **WHEN** `references/roles/worker/` の 4 本と `references/pre-classification.md` を読む
 - **THEN** `^仕様化判断: (する|しない)$` の書式、`gh` で記録先にコメントする手順、4 分類の事前分類表（「1 周目」列がすべて `opus` で `fable` 行が無い）、レビュアーの fable は `dev-workflow:decider` 経由であること、return に「指示のどこまでやって、どこで何が起きたか」を書く義務が書かれている
 
 #### Scenario: spec-reviewer.md に 6 観点と周回の規則がある
@@ -133,7 +135,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 - **THEN** pr-review-gate スキルを読んで手順 1〜5 を実行すること、Codex は `codex exec` / `codex-companion.mjs` を Bash で呼ぶこと、Codex が使えないときは `needs-reviewer`（判定・HEAD SHA・推奨モデル・受け入れ条件の所在を含む）を return して本体にレビュアーの spawn を委ねること、failed の return に原因分類を含めることが書かれている、Codex の完了確認を同一ターン内の前景ポーリングで行うこと・その手順の正本が `references/subagent-waiting.md` であること・総待ちの上限に達したら `needs-reviewer` を return することが書かれており、待ちの雛形と具体の待ち値は再掲されていない
 
 #### Scenario: 3 つの指示書に待ちでターンを終えない禁止がある
-- **WHEN** `references/roles/` 配下の `worker.md` / `spec-reviewer.md` / `gate-runner.md` をそれぞれ読む
+- **WHEN** `references/roles/` 配下の `worker/implement.md` / `spec-reviewer.md` / `gate-runner.md` をそれぞれ読む
 - **THEN** どのファイルにも「完了通知を待つためにターンを終えない」旨の記述があり、待ち方の正本として `references/subagent-waiting.md` が参照されている
 
 #### Scenario: spec-reviewer.md の 1 行は decider 経路を踏まえている
@@ -141,13 +143,14 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 - **THEN** 禁止が書かれたうえで、decider 経路の R1 は待ちを伴う作業を持たない旨が添えられており、実行できない待ちループの手順を探しに行かずに済む
 
 ### Requirement: 役割のモデルは事前分類と残量モードで決める
-SKILL.md は役割ごとのモデルを次のとおり規定しなければならない（MUST）: W は既定 `sonnet`、記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含むか、実行側が原因の失敗ループでの昇格か、事前分類（聖域パス・マージ権限・層間契約・課金/法務）に当たれば `opus`。**W を `fable` で spawn してはならない**（MUST NOT。実行役の上限は `opus` で、強制層は `scripts/agent-model-guard.sh`）。R1 は既定 `opus`、仕様がマージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する（聖域パスだけでは上げない）。G は既定 `sonnet` で上げない（G の仕事は照合・ラベル操作で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う）。G が要求するレビュアーは既定 `opus`、対象がマージ条件・層間契約・課金/法務に触れれば `dev-workflow:decider`。従来経路では G の `needs-reviewer` が示す推奨 model に従い、adapter 経路では phase `review` の adapter が返した model に残量上限を適用した値を使い、G の推奨 model は参考値として扱わなければならない（MUST）。残量モード（`FABLE_BUDGET_MODE`）は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の表に従い、`abundant` はどの役割の既定も上げず、`reserve` は自動実行のみ、`exhausted` は全経路で `opus` 上限とする（MUST）。共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が役割の既定モデルの下限を決め、`throttled` は W / R1 / G の既定を `sonnet` に落として昇格上限 `opus`、`depleted` は全役割 `sonnet` 固定とし、Fable 残量モードと食い違えば共有枠モードが勝つ（MUST）。実行戦略の 3 分岐（solo / delegate+verify / workflow 型）の記述と決定論的シグナルの収集コマンドは develop に存在してはならない（MUST NOT）。昇格トリップワイヤー（同じテストが 2 連続で落ちた・同じ箇所を 2 回書き直した）は、失敗の原因が判断側か実行側かで決める役と実行役のどちらか一方だけを上げるラダー（正本は `templates/escalation-tripwires.md`）として残す（SHALL）。本体は W / G を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測らなければならない（MUST）。上限超過（exit 2）を検知したあとの扱い（送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目にどちらの宣言を置くか・前任が動作中のまま交代させるときの手順）について、SKILL.md は本文を書かず、`plugins/dev-workflow/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」への参照だけを置かなければならない（MUST。正本の位置・参照だけにする面の一覧・テストの形は `dev-workflow-execution-strategy` が規定する）。
+SKILL.md は役割ごとのモデルを次のとおり規定しなければならない（MUST）: W は既定 `sonnet`、記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含むか、実行側が原因の失敗ループでの昇格か、事前分類（聖域パス・マージ権限・層間契約・課金/法務）に当たれば `opus`。**W を `fable` で spawn してはならない**（MUST NOT。実行役の上限は `opus` で、強制層は `scripts/agent-model-guard.sh`）。R1 は既定 `opus`、仕様がマージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する（聖域パスだけでは上げない）。G は既定 `sonnet` で上げない（G の仕事は照合・ラベル操作で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う）。G が要求するレビュアーは既定 `opus`、対象がマージ条件・層間契約・課金/法務に触れれば `dev-workflow:decider`。従来経路では G の `needs-reviewer` が示す推奨 model に従い、adapter 経路では phase `review` の adapter が返した model に残量上限を適用した値を使い、G の推奨 model は参考値として扱わなければならない（MUST）。役割のモデルは残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）の上限に従わなければならない（MUST）。2 つのモードの値ごとの効果は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の残量モードと共有枠モードの表 1 か所で定める（その表では、`abundant` はどの役割の既定も上げず、`reserve` は自動実行のみ、`exhausted` は全経路で `opus` 上限、`throttled` は W / R1 / G の既定を `sonnet` に落として昇格上限 `opus`、`depleted` は全役割 `sonnet` 固定で、Fable 残量モードと食い違えば共有枠モードが勝つ。これは SKILL.md が書く中身ではない）。SKILL.md の「モデル」節は 2 つのモードの名前（`FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`）と、効果がその表にあることだけを書かなければならない（MUST。値ごとの効果を再掲してはならない。同じ規則を 2 か所に書くと、直すときに片方が漏れて食い違うため）。実行戦略の 3 分岐（solo / delegate+verify / workflow 型）の記述と決定論的シグナルの収集コマンドは develop に存在してはならない（MUST NOT）。昇格トリップワイヤー（同じテストが 2 連続で落ちた・同じ箇所を 2 回書き直した）は、失敗の原因が判断側か実行側かで決める役と実行役のどちらか一方だけを上げるラダー（正本は `templates/escalation-tripwires.md`）として残す（SHALL）。本体は W / G を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測らなければならない（MUST）。上限超過（exit 2）を検知したあとの扱い（送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目にどちらの宣言を置くか・前任が動作中のまま交代させるときの手順）について、SKILL.md は本文を書かず、`plugins/dev-workflow/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」への参照だけを置かなければならない（MUST。正本の位置・参照だけにする面の一覧・テストの形は `dev-workflow-execution-strategy` が規定する）。
 
 この要件の守備範囲で入力として扱うのは、G の起動・再開指示にある `レビュー経路:`、G の `needs-reviewer` が示す推奨 model、phase `review` の adapter が返す model、および `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` から決まる残量上限である。防ぐ誤りは、経路ごとの決定元を取り違えること、adapter が選んだ model を G の推奨 model で上書きすること、残量上限を適用せずに model を採用することである。一方、adapter が `sonnet` を返して G が `opus` を推奨していても、残量上限を適用した adapter の値を採用することは許容する。任意の不正な経路・model・残量モード入力を検出して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 役割別の既定モデルと昇格条件が書かれている
 - **WHEN** SKILL.md の「モデル」節を読む
-- **THEN** W の既定が `sonnet` で上限が `opus`、R1 の既定が `opus`、G の既定が `sonnet`、事前分類（聖域パス・マージ権限・層間契約・課金/法務）で W は `opus` 止まり、R1 とレビュアーの fable は `dev-workflow:decider` 経由、`abundant` はどの役割も上げない、`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限、`SHARED_BUDGET_MODE` の `throttled` / `depleted` で `sonnet` 起点、と書かれている
+- **THEN** W の既定が `sonnet` で上限が `opus`、R1 の既定が `opus`、G の既定が `sonnet`、事前分類（聖域パス・マージ権限・層間契約・課金/法務）で W は `opus` 止まり、R1 とレビュアーの fable は `dev-workflow:decider` 経由と書かれている
+- **AND** `FABLE_BUDGET_MODE` と `SHARED_BUDGET_MODE` の効果は `references/decision-criteria.md` の表を見るよう書かれており、`abundant`・`reserve`・`exhausted`・`throttled`・`depleted` の値ごとの効果を述べた文は無い
 
 #### Scenario: レビュアーの model 決定元を経路で分ける
 - **WHEN** SKILL.md の「G が要求するレビュアー」の行を読む
@@ -163,18 +166,20 @@ SKILL.md は役割ごとのモデルを次のとおり規定しなければな�
 - **AND** そこに手渡しの条件・宣言の選び方・停止確認の手順を言い換えた文は無い
 
 ### Requirement: エピックの条件・作り方・回し方・完了条件を規定する
-SKILL.md は次を規定しなければならない（MUST）。**条件**（いずれか）: 1 つのユーザーストーリーの原因が複数あり独立してマージできる PR が 2 本以上に割れる／複数の capability（openspec の spec）にまたがる／子の間に順序依存があり 1 サイクルで終わらない。**作り方**: エピック issue にユーザーストーリー・完了条件・子 issue の一覧と依存順を書き、エピック自身にコードを紐づけない（PR の `Closes` は子に向ける）。子 issue はそれ単体で実装可能な記述と測定可能な受け入れ条件を持ち、依存は `gh api .../dependencies/blocked_by` で張る。洗い出しと解決はセッションを分け、解決セッションの入口は `/develop <エピック番号>`。
+`skills/develop/references/epic.md` は次を規定しなければならない（MUST）。**条件**（いずれか）: 1 つのユーザーストーリーの原因が複数あり独立してマージできる PR が 2 本以上に割れる／複数の capability（openspec の spec）にまたがる／子の間に順序依存があり 1 サイクルで終わらない。**作り方**: エピック issue にユーザーストーリー・完了条件・子 issue の一覧と依存順を書き、エピック自身にコードを紐づけない（PR の `Closes` は子に向ける）。子 issue はそれ単体で実装可能な記述と測定可能な受け入れ条件を持ち、依存は `gh api .../dependencies/blocked_by` で張る。洗い出しと解決はセッションを分け、解決セッションの入口は `/develop <エピック番号>`。
 
 **回し方（経路の決め方）**: interactive の本体は子の依存グラフを読み、blocked されていない子の番号を `plugins/dev-workflow/scripts/epic-dispatch.sh route` に渡して経路を決める（MUST）。`route` が `orca` か `tmux` を返したとき（Orca 管理のワークツリーにいる、または tmux の中にいる）は、その起動部品で子を別のセッションとして起こす **別セッション方式**、`subagent` を返したときは **サブエージェント方式**で進める（MUST）。別セッション方式とサブエージェント方式は二本立てではなく、子を起こす手段を起動部品として差し替える一本の手順で書く（MUST。共通の手順に、部品ごとに違う点だけを部品ごとの欄に書く）。経路は `/develop <エピック番号>` の最初の開始時に 1 回決め、途中で変えてはならず（MUST NOT）、決めた経路をエピックに `回し方:` で始まる 1 行コメントで残す（MUST）。別セッションで同じエピックを再開したときは、`回し方:` で始まる最新のコメントを読んで経路を引き継ぎ、`route` をやり直してはならない（MUST NOT）。最新の `回し方:` が `Orca` か `tmux` のときは、本体が `epic-dispatch.sh launch` と `adopt` に環境変数 `EPIC_DISPATCH_LAUNCHER=<そのコメントの部品名（小文字の orca か tmux）>` を付けて呼ばなければならない（MUST。付けないと部品を今の環境から選び直し、前のセッションの記録の子と別の部品で新しい子が起動しうる）。その部品が今の環境で使えず `launch`・`adopt` が exit 1 で終わったら、別の部品にもサブエージェント方式にも振り替えず、stderr を添えて主に報告して止まる（MUST。部品の違う子の混在を作らない）。`reply`・`notify-closed`・`reap`・`wait --resolve` は記録の `launcher` で部品が決まるので、再開で環境が変わっても部品名を渡さない。unmanned（`--unmanned`）では `route` を呼ばず、サブエージェント方式で進める（MUST。背景で待って起こされる動きが 1 サイクル 1 仕事と合わないため）。channel でも `route` を呼ばず、サブエージェント方式で進め、エピックに `回し方: サブエージェント（channel モード）` を残す（MUST）。channel で再開したエピックの最新の `回し方:` が別セッション方式（Orca・tmux）なら、`launch` もサブエージェント方式も使わず、その旨をチャンネルで主に報告して止まる（MUST。channel は別セッション方式を引き継がない）。channel の本体は、develop の手順のために別の Claude Code セッション（Orca・tmux など）を起こしてはならない（MUST NOT。別に起こしたセッションには印 `DEV_WORKFLOW_UNATTENDED` が届かず、その画面を誰も見ていないので、子が主の返事待ちで止まっても誰も気づかない）。develop の外で住人が別のセッションを起こすときの印の渡し方は、この要件の範囲に入れない（#1123）。
 
-**回し方（別セッション方式）**: 本体は `epic-dispatch.sh launch` で子ごとに起動部品（Orca か tmux）の子ワークツリーを作り、子は独立した Claude Code セッションとして `/develop #<N>` の 1 ループを丸ごと回す（本体は子の W / R1 / G を起こさない）。再開時も、依存が解けた open の子を、最新の `回し方:` の部品名を付けた `launch` に渡し（上の段落のとおり）、起動済みの子は `launch` の `skipped` で見分ける（同じ子を二重に起動しない）。本体は `launch` が `launched` / `skipped` を出した子を動いている子とし、`epic-dispatch.sh wait` を Bash の `run_in_background: true` で起動して待ち、終わって起こされたら出力の 1 行で次を決める。`closed` なら閉じた子ごとに `state_reason` を読み、`completed` ならエピックへ `子 #N マージ → 残り k 件` とコメントして依存グラフを読み直し、解けた子を件数にかかわらず `launch` する。`completed` 以外ならエピックへ `子 #N 見送り（<state_reason>）→ 残り k 件` とコメントし、その子を前提にしていた子を起動してはならず（MUST NOT）、ユーザーに報告する。そのあと残りの動いている子で再び `wait` する。`timeout` なら待っている子に `needs-approval` などの停止の兆候が無いかを見て、あればユーザーに報告し、報告したかどうかにかかわらず残りの動いている子で再び `wait` する。子が自分のタブでユーザーに質問して止まっている場合はこの確認では気づけないことを書く（SHALL）。`wait` の `error` と `launch` の `failed` はユーザーに報告して止まる。`launch` に失敗した子をサブエージェント方式に自動で振り替えてはならない（MUST NOT）。子セッションのモデルは `epic-dispatch.sh launch` が起動時に `cld --model` で指定し、既定は `opus` で環境変数 `EPIC_DISPATCH_MODEL` で変えられること（Claude Code の既定モデルは子に効かないこと）、コマンド部分（既定 `cld`）は環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ、Orca に設定したコマンドはハーネスから読めないので（tmux の部品はこの環境変数のコマンドをそのまま打ち込む）Orca 側のコマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変えることを書く（SHALL）。子セッションは `cld` が付ける `--dangerously-skip-permissions` で動き許可の確認画面が出ないこと（`epic-dispatch.sh` が足すのは `--model` だけであること）、マージを止めているのは develop と pr-review-gate の規則と hooks であることを書く（SHALL）。本体は子の PR を `gh pr merge` や merge API で直接マージしてはならない（MUST NOT）。子の PR のマージは、子セッションの中の人の承認か自動マージの処理（`.github/workflows/auto-merge.yml`）が行い、`human-merge` の付いた子の PR は、本体が要件「Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける」の手順で判断の印を付けたときに限って自動マージの処理がマージすることを書く（SHALL）。
+**回し方（別セッション方式）**: 本体は `epic-dispatch.sh launch` で子ごとに起動部品（Orca か tmux）の子ワークツリーを作り、子は独立した Claude Code セッションとして `/develop #<N>` の 1 ループを丸ごと回す（本体は子の W / R1 / G を起こさない）。再開時も、依存が解けた open の子を、最新の `回し方:` の部品名を付けた `launch` に渡し（上の段落のとおり）、起動済みの子は `launch` の `skipped` で見分ける（同じ子を二重に起動しない）。本体は `launch` が `launched` / `skipped` を出した子を動いている子とし、`epic-dispatch.sh wait` を Bash の `run_in_background: true` で起動して待ち、終わって起こされたら出力の 1 行で次を決める。`closed` なら閉じた子ごとに `state_reason` を読み、`completed` ならエピックへ `子 #N マージ → 残り k 件` とコメントして依存グラフを読み直し、解けた子を件数にかかわらず `launch` する。`completed` 以外ならエピックへ `子 #N 見送り（<state_reason>）→ 残り k 件` とコメントし、その子を前提にしていた子を起動してはならず（MUST NOT）、ユーザーに報告する。そのあと残りの動いている子で再び `wait` する。`timeout` なら、子 issue もエピックも読まず、主に報告もせず、直前と同じ引数の `wait` を 1 回掛け直してターンを終える（要件「親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す」）。子が記録と印を残さずに自分のタブでユーザーに質問して止まっている場合は、親が気づけないことを書く（SHALL）。`wait` の `error` と `launch` の `failed` はユーザーに報告して止まる。`launch` に失敗した子をサブエージェント方式に自動で振り替えてはならない（MUST NOT）。子セッションのモデルは `epic-dispatch.sh launch` が起動時に `cld --model` で指定し、既定は `opus` で環境変数 `EPIC_DISPATCH_MODEL` で変えられること（Claude Code の既定モデルは子に効かないこと）、コマンド部分（既定 `cld`）は環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で差し替えられ、Orca に設定したコマンドはハーネスから読めないので（tmux の部品はこの環境変数のコマンドをそのまま打ち込む）Orca 側のコマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変えることを書く（SHALL）。子セッションは `cld` が付ける `--dangerously-skip-permissions` で動き許可の確認画面が出ないこと（`epic-dispatch.sh` が足すのは `--model` だけであること）、マージを止めているのは develop と pr-review-gate の規則と hooks であることを書く（SHALL）。本体は子の PR を `gh pr merge` や merge API で直接マージしてはならない（MUST NOT）。子の PR のマージは、子セッションの中の人の承認か自動マージの処理（`.github/workflows/auto-merge.yml`）が行い、`human-merge` の付いた子の PR は、本体が要件「Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける」の手順で判断の印を付けたときに限って自動マージの処理がマージすることを書く（SHALL）。
 
 **回し方（サブエージェント方式）**: 今までどおり blocked されていない子から 1 ループを子ごとに並列で起こす（worktree は子ごと。本体が W を `isolation: "worktree"` で spawn して用意し、W は自分で worktree を切らない）。子の PR がマージされたらエピックに 1 行コメントし、依存が解けた子を次に起こす。
 
 どちらの経路でも、スタック PR は避け、やむを得ない場合は先行マージ後に base を本体が張り替える。子の実装中に見つかった新しい問題は新しい子 issue として追加する。**完了条件**: 全子 PR がマージされ、かつ本体（または G）がエピックの完了条件を実機で確認して証拠をエピックにコメントしたとき。子が全部マージされただけでは閉じない（MUST NOT）。
 
+この要件の入力は、`/develop <エピック番号>` で渡される記録先の issue、`scripts/epic-dispatch.sh route` の出力（`orca`・`tmux`・`subagent`・`nested`）、エピックの `回し方:` で始まるコメント、`wait` の出力の 1 行（`closed`・`done`・`timeout`・`stopped`・`unrecorded`・`error`）、`launch` の出力（`launched`・`skipped`・`failed`・`deferred`）である。拾いたい誤りは、`route` や最新の `回し方:` を読まずに経路を選び直すこと、`nested` を受けたのにエピックを展開すること、出力の 1 行を取り違えて待ちを終えたり子を起こしたりすること、子が全部マージされただけでエピックを閉じることである。次は通してよく、この要件では止めない: `回し方:` のコメントが無い新しいエピックで `route` から経路を決めること／`timeout` で起こされたとき何もせず再び待つこと／子が記録を残さずに自分のタブで質問して止まったとき、親が検知できないこと（手順書にその旨が書かれている）。手順書の読み方の揺れ（すり抜ける入力）が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
+
 #### Scenario: エピックの 4 節が存在する
-- **WHEN** SKILL.md の「エピックの扱い」節を読む
+- **WHEN** `references/epic.md` の「エピックの扱い」節を読む
 - **THEN** 条件・作り方・回し方・完了条件の 4 つが揃い、完了条件に「子が全部マージされただけでは閉じない」が書かれている
 
 #### Scenario: 子は並列に worktree 分離で起こす
@@ -187,7 +192,7 @@ SKILL.md は次を規定しなければならない（MUST）。**条件**（い
 
 #### Scenario: 別セッション方式の本体は wait の出力で次を決める
 - **WHEN** 別セッション方式の本体の手順を読む
-- **THEN** `launch` で子を起動し、`wait` を `run_in_background: true` で起動して待つこと、`closed` で `state_reason` を読み `completed` なら `子 #N マージ → 残り k 件` をコメントして解けた子を `launch` し、それ以外なら `見送り` とコメントして後続を起動せず報告すること、`timeout` で停止の兆候を確かめて報告したうえで再び待つこと、子のタブでの質問は検知できないこと、本体が子の PR を直接マージせず、`human-merge` の付いた子の PR は本体が判断の印を付けたときに限って自動マージの処理がマージすることが書かれている
+- **THEN** `launch` で子を起動し、`wait` を `run_in_background: true` で起動して待つこと、`closed` で `state_reason` を読み `completed` なら `子 #N マージ → 残り k 件` をコメントして解けた子を `launch` し、それ以外なら `見送り` とコメントして後続を起動せず報告すること、`timeout` で子を調べ直さず報告もせずに同じ `wait` を掛け直すこと、子のタブでの質問は検知できないこと、本体が子の PR を直接マージせず、`human-merge` の付いた子の PR は本体が判断の印を付けたときに限って自動マージの処理がマージすることが書かれている
 
 #### Scenario: 別セッション方式に子セッションのモデルの決め方が書かれている
 - **WHEN** 別セッション方式の説明を読む
@@ -209,8 +214,8 @@ SKILL.md は次を規定しなければならない（MUST）。**条件**（い
 - **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる channel の本体が `/develop <エピック番号>` を始める
 - **THEN** 本体は `route` を呼ばず、エピックに `回し方: サブエージェント（channel モード）` とコメントしてサブエージェント方式で回し、別の Claude Code セッションを起こさない
 
-#### Scenario: SKILL.md の回し方が起動部品の差し替えとして書かれている
-- **WHEN** develop の SKILL.md「エピックの扱い」→「回し方」を読む
+#### Scenario: epic.md の回し方が起動部品の差し替えとして書かれている
+- **WHEN** develop の `references/epic.md`「エピックの扱い」→「回し方」を読む
 - **THEN** 起動・待ち・閉じた子・止まった子・片付け・完了の手順は 1 本で書かれ、Orca の部品・tmux の部品・サブエージェント方式のどれで起こすかによって違う点だけが部品ごとの欄に書かれており、「Orca 経路」と「サブエージェント方式」を別々の手順として二重に書いていない。サブエージェント方式は状態の記録を書かない、と書かれている
 
 ### Requirement: 実行モードと unmanned の責務分割
@@ -256,7 +261,7 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 コンテキスト計測の規則の本文——2 経路（本体が再開前に測る／起動の途中で hook が測る）・閾値の環境変数（`DEV_WORKFLOW_CONTEXT_CAP`＝通知、`DEV_WORKFLOW_CONTEXT_HARD_CAP`＝強制停止、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off`＝全解除）・通知を受けたときの振る舞い・強制停止中にできること・return の 1 行目の書き分け——は、`references/decision-criteria.md`「コンテキスト上限」の節に置かなければならない（MUST）。
 
-`skills/develop/SKILL.md`、`references/roles/worker.md`、`references/roles/gate-runner.md`、`templates/escalation-tripwires.md`、`plugins/dev-workflow/README.md` は、その節への**ポインタと、その役割固有の動作だけ**を書かなければならない（MUST）。閾値の数値・環境変数名・通知や強制停止の振る舞いを言い換えて再掲してはならない（MUST NOT）。同じ規則を複数のファイルに言い換えて置くと、次に閾値や振る舞いが変わったときにどれかが取り残されるためである（`README.md` を対象に含めるのは、プラグインの概観であっても閾値の数値を書けば取り残される対象になるため。実際に着手時点の `README.md` には `150K tokens` の再掲があった）。
+`references/roles/worker/common.md`・`skills/develop/SKILL.md`・`references/roles/gate-runner.md`・`templates/escalation-tripwires.md`・`plugins/dev-workflow/README.md` は、その節への**ポインタと、その役割固有の動作だけ**を書かなければならない（MUST）。ポインタを書くのは `worker/common.md` であり、索引 `references/roles/worker.md`・`references/roles/worker/` の他 3 本（`spec.md`・`implement.md`・`finish.md`）・`references/pre-classification.md` はポインタを持たなくてよい（この 5 本には再掲の禁止だけを掛ける）。上のどのファイルも、閾値の数値・環境変数名・通知や強制停止の振る舞いを言い換えて再掲してはならない（MUST NOT）。同じ規則を複数のファイルに言い換えて置くと、次に閾値や振る舞いが変わったときにどれかが取り残されるためである（`README.md` を対象に含めるのは、プラグインの概観であっても閾値の数値を書けば取り残される対象になるため。実際に着手時点の `README.md` には `150K tokens` の再掲があった）。
 
 #### Scenario: 規則の本文が decision-criteria.md にある
 
@@ -265,8 +270,13 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 #### Scenario: 他の面はポインタだけ
 
-- **WHEN** `SKILL.md` / `references/roles/worker.md` / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` / `README.md` を読む
+- **WHEN** `SKILL.md` / `references/roles/worker/common.md` / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` / `README.md` を読む
 - **THEN** `references/decision-criteria.md`「コンテキスト上限」への参照があり、閾値の数値や環境変数名の再掲が無い
+
+#### Scenario: ポインタを持たない面は再掲だけを禁じる
+
+- **WHEN** 索引 `references/roles/worker.md` / `references/roles/worker/` の `spec.md`・`implement.md`・`finish.md` / `references/pre-classification.md` を読む
+- **THEN** 閾値の数値や環境変数名の再掲が無い（`decision-criteria.md`「コンテキスト上限」への参照は求めない）
 
 ### Requirement: 途中停止したときの return の 1 行目
 
@@ -291,16 +301,16 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 ### Requirement: 手渡し先は未コミット差分を先に確認する
 
-手渡しで起こされた W / G の指示書は、前任が途中停止で return した可能性があるため、再出発の前に作業ツリーの未コミット差分（`git status` / `git diff`）を確認しなければならない（MUST）と書かなければならない。これは `references/roles/worker.md` の手渡しの節に置く役割固有の動作であり、閾値や振る舞いの再掲ではない。
+手渡しで起こされた W / G の指示書は、前任が途中停止で return した可能性があるため、再出発の前に作業ツリーの未コミット差分（`git status` / `git diff`）を確認しなければならない（MUST）と書かなければならない。これは `references/roles/worker/common.md` の手渡しの節に置く役割固有の動作であり、閾値や振る舞いの再掲ではない。
 
 #### Scenario: 手渡し先が未コミット差分を先に見る
 
-- **WHEN** `references/roles/worker.md` の手渡しの節を読む
+- **WHEN** `references/roles/worker/common.md` の手渡しの節を読む
 - **THEN** 前任が途中停止した可能性があるので `git status` / `git diff` で未コミット差分を先に確認する、と書かれている
 
 ### Requirement: 強制停止で止まった作業ツリーは本体が引き取る
 
-強制停止中は `Bash` がコマンド内容によらず全件拒否されるため、止まったサブエージェント自身は commit できない（`dev-workflow-execution-strategy`「強制停止の閾値を超えたら PreToolUse が編集を拒否する」）。手渡し先（`worker.md` の手渡しの節）が拾うのは**次に起こされた**サブエージェントの `git status` / `git diff` だけなので、①手渡しが発生しない経路（そのサイクルを終える・別の子 issue に移る・工程が G で終わる）、②後継が G の場合（`gate-runner.md` には同じ規則が無い）は未コミット差分の確認が誰にも渡らない。SKILL.md は、`工程中断:` の return を受け取ったとき、および次の手渡し・次の spawn・そのサイクルの終了・worktree の撤去のいずれよりも先に、**本体**が return に書かれた作業ツリーのパス（強制停止による中断なら hook の `permissionDecisionReason` に含まれる `cwd`。それ以外の `工程中断:` なら return に書かれたパス）に対して `git -C <path> status --porcelain` を実行して未コミット差分を確認し、残っていれば本体が commit しなければならない（MUST）ことを明記しなければならない（MUST）。
+強制停止中は `Bash` がコマンド内容によらず全件拒否されるため、止まったサブエージェント自身は commit できない（`dev-workflow-execution-strategy`「強制停止の閾値を超えたら PreToolUse が編集を拒否する」）。手渡し先（`worker/common.md` の手渡しの節）が拾うのは**次に起こされた**サブエージェントの `git status` / `git diff` だけなので、①手渡しが発生しない経路（そのサイクルを終える・別の子 issue に移る・工程が G で終わる）、②後継が G の場合（`gate-runner.md` には同じ規則が無い）は未コミット差分の確認が誰にも渡らない。SKILL.md は、`工程中断:` の return を受け取ったとき、および次の手渡し・次の spawn・そのサイクルの終了・worktree の撤去のいずれよりも先に、**本体**が return に書かれた作業ツリーのパス（強制停止による中断なら hook の `permissionDecisionReason` に含まれる `cwd`。それ以外の `工程中断:` なら return に書かれたパス）に対して `git -C <path> status --porcelain` を実行して未コミット差分を確認し、残っていれば本体が commit しなければならない（MUST）ことを明記しなければならない（MUST）。
 
 #### Scenario: 本体が未コミット差分を引き取る
 
@@ -333,32 +343,41 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 **(3) をこれより細かく（`tasks.md` の項目単位・「実装／verify／archive／PR／仕様宣言」の 5 段など）分割してはならない（MUST NOT）。** 手渡しが 1 回起きるたびに、後任は指示書と正本の節を読み直し、記録先を取り直し、`git status` / `git diff` でファイルの現状を確認する固定分を払う。この固定分は工程の大きさに依存しないため、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。また区切りが実装の途中に落ちると、後任は Red のまま止まったテストから再出発することになり、前任の設計意図を再発明する危険が最も高い地点で交代する。
 
-`references/roles/worker.md` は (3a) と (3b) それぞれの return に何を書くかを列挙しなければならない（MUST）。(3a) は openspec CLI 経路（`tasks.md` を TDD で実装＋`openspec validate --strict`）・コード直行（TDD）のどちらの入口でも実装後に検査を実行するため、**worker.md は「全経路共通の大原則」に、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップを読み、検査コマンド（lint・test・ビルド等）と環境セットアップ（依存インストール等）を判別し、検査コマンドをすべて実行しなければならない（MUST）という指示を置かなければならない（MUST。経路それぞれに重複して書かない）**。例: `auto-merge.yml` や `revert-pr.yml` のように `pull_request` / `push` 以外のイベントで起動する運用系ワークフローは対象に含めない（MUST NOT）。コマンド名をこのリポジトリ固有の値（`scripts/test.sh` など）に固定してはならない（MUST NOT。develop は複数リポジトリで使われ、CI の構成はリポジトリごとに異なるため）。workflow ファイルが存在しない、または `run:` から検査コマンドを判別できないときは、慣例コマンド（`scripts/test.sh` 等）へのフォールバックを許容する（MAY）。手元にツールが無く実行できない検査（apt でプリインストールされた `shellcheck` 等）は「未導入」として実行結果と区別しなければならず、未導入を合格として扱ってはならない（MUST NOT）。**(3a) の return には、収集した検査コマンドの一覧・実行したテストコマンドと exit code（未導入の検査があれば未導入と明記）、および `openspec validate --strict` の exit code（仕様化した場合。直行した場合は「仕様化しないため verify なし」）と、画面確認の要否の行（「W の (3a) の return は画面確認の要否を 1 行で書く」Requirement）を含めなければならない（MUST）**。(3b) の担い手は pr-review-gate 手順 5 が照合する動作確認の証拠を書く必要があり、手渡しが起きた場合その証拠は前任の return からしか得られない（後任は前任の履歴を読めない）ためである。`openspec validate --strict` の exit code が無いと、(3b) の担い手は verify を通ったことを確認できないまま archive に進むことになる。CI 由来の検査コマンドをすべて return に含めることで、G がゲートを合格にしたあとに CI の一部（このリポジトリでは shellcheck）が落ち、W・レビュー・G をもう 1 周回す再発を防ぐ。
+`references/roles/worker/implement.md` と `references/roles/worker/finish.md` は (3a) と (3b) それぞれの return に何を書くかを列挙しなければならない（MUST）。(3a) は openspec CLI 経路（`tasks.md` を TDD で実装＋`openspec validate --strict`）・コード直行（TDD）のどちらの入口でも実装後に検査を実行するため、**`worker/implement.md` は「全経路共通の大原則」に、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップを読み、検査コマンド（lint・test・ビルド等）と環境セットアップ（依存インストール等）を判別し、拾った検査コマンドを種類ごとに次のとおり扱わなければならない（MUST）という指示を置かなければならない（MUST。経路それぞれに重複して書かない）**: lint・型検査などの静的検査は手元で実行する（ツールがファイルを引数に取れるなら変えたファイルに当て、取れないなら CI と同じ形で実行する）。テストの全体実行（テストランナーをファイルで絞らずに起動するもの）は手元で実行してはならず（MUST NOT）、変えたファイルに関係するテストだけを実行し、全体は CI に任せる。ビルドは手元で実行せず CI に任せる。関係するテストは、この変更で足した・変えたテストのファイル、テストのファイルのうち変えたファイルのパスかファイル名を含むもの（`git grep -l` 等で探す）、テストランナーが変えたファイルから関係するテストを選ぶ機能を持つならその結果、CI の見張りの `fix`（`references/ci-watch.md` 7）で直すときは落ちた run のログ（`gh run view <run> --log-failed`）に出たテストのファイル、の和集合とし、テストランナーにファイルを渡して実行する。例: `auto-merge.yml` や `revert-pr.yml` のように `pull_request` / `push` 以外のイベントで起動する運用系ワークフローは対象に含めない（MUST NOT）。コマンド名をこのリポジトリ固有の値（`scripts/test.sh` など）に固定してはならない（MUST NOT。develop は複数リポジトリで使われ、CI の構成はリポジトリごとに異なるため）。PR・push で起動してテストの全体実行をするジョブが無い（workflow ファイルが存在しない、テストのジョブが無い、または `run:` から検査コマンドを判別できない）ときは、全体のテストを CI に任せられないので、手元で全体を実行しなければならず（MUST）、慣例コマンド（`scripts/test.sh` 等）へのフォールバックを許容する（MAY）。Draft では CI を走らせないリポジトリは、Ready にした時点で CI が走るので CI に任せられる側に数える。手元にツールが無く実行できない検査（apt でプリインストールされた `shellcheck` 等）は「未導入」として実行結果と区別しなければならず、未導入を合格として扱ってはならない（MUST NOT）。**(3a) の return には、収集した検査コマンドの一覧・手元で実行した検査コマンド（関係するテスト・静的検査）と exit code（未導入の検査があれば未導入と明記）・関係するテストを探したコマンド・手元で実行せず CI に任せた検査とその CI のジョブ名、および `openspec validate --strict` の exit code（仕様化した場合。直行した場合は「仕様化しないため verify なし」）と、画面確認の要否の行（「W の (3a) の return は画面確認の要否を 1 行で書く」Requirement）を含めなければならない（MUST）**。(3b) の担い手は pr-review-gate 手順 5 が照合する動作確認の証拠を書く必要があり、手渡しが起きた場合その証拠は前任の return からしか得られない（後任は前任の履歴を読めない）ためである。`openspec validate --strict` の exit code が無いと、(3b) の担い手は verify を通ったことを確認できないまま archive に進むことになる。CI 由来の検査コマンドをすべて return に含め、静的検査を手元で実行することで、G がゲートを合格にしたあとに CI の一部（このリポジトリでは shellcheck）が落ち、W・レビュー・G をもう 1 周回す再発を防ぐ。テストの全体実行を手元で行わないのは、CI が同じ中身を分けて短時間で回し、ゲート合格後の CI の見張り（`references/ci-watch.md`）が落ちた CI を直しに回すためで、手元で全体を回すと実装・仕上げ・指摘の修正のたびに全体の所要（claude-harness では約 40 分）を待つことになる（#1211）。
 
-この要件の守備範囲で入力として扱うのは、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップである。拾いたい誤りは、CI が流す検査ジョブを W が取りこぼすこと（PR #489 の shellcheck）である。次は通ってよく、この要件では止めない: `matrix` / `services` / `env` / `if:` 条件により CI の実行環境と手元の実行結果が食い違うこと、CI ランナー固有の環境に依存する検査、環境セットアップの `run:` ステップを検査コマンドと誤って実行すること。取りこぼしが見つかるたびに塞ぎ切ることは、この要件の完了条件としない。CI が実際に落ちるかどうかの最終確認は G が pr-review-gate の手順で CI の結論を見る（別の防波堤。メモリ「G は passed の前に CI を確認」）。
+この要件の守備範囲で入力として扱うのは、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップと、変えたファイルの一覧である。拾いたい誤りは、CI が流す静的検査を W が取りこぼすこと（PR #489 の shellcheck）と、変えたファイルを名前で参照するテストの失敗をゲートより後まで持ち越すことである。変えたファイルを別のスクリプト経由で間接的に読むテストを関係するテストとして拾えないことは、この要件では止めない（CI とゲート合格後の CI の見張りが拾う）。次は通ってよく、この要件では止めない: `matrix` / `services` / `env` / `if:` 条件により CI の実行環境と手元の実行結果が食い違うこと、CI ランナー固有の環境に依存する検査、環境セットアップの `run:` ステップを検査コマンドと誤って実行すること。取りこぼしが見つかるたびに塞ぎ切ることは、この要件の完了条件としない。CI が実際に落ちるかどうかは、G が pr-review-gate 手順 4 で対象 HEAD の CI の結果を証拠として見ることに加え、ゲート合格後の CI の見張り（`references/ci-watch.md`）が拾う。auto-merge を配備したリポジトリでは必須チェックが緑になるまでマージされない。
 
 `skills/develop/SKILL.md` は、(3a) の return を受けてから (3b) を指示する SendMessage を送るまでのあいだに、本体が `scripts/subagent-context.sh <W の名前>` を実行してコンテキスト量を測ることを書かなければならない（MUST）。上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本である（再掲の禁止は既存の Requirement「コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く」が規定しており、ここでは重ねて規定しない）。
 
-本体は次に指示する工程を、**自分が (3a) を指示したか (3b) を指示したかで決めなければならない**（MUST）。工程名の文字列照合で決めてはならない（MUST NOT）。(3a) の return に PR 番号と仕様宣言のコメント URL が既に揃っていれば、(3b) を指示せず (4) へ進まなければならない（MUST）。古いキャッシュの `worker.md` を読んだ W は (3a) の指示を受けても (3) を通しで終えて返してくるため、文字列照合で routing すると PR の作成と仕様宣言の投稿が二重に走るためである。
+本体は次に指示する工程を、**自分が (3a) を指示したか (3b) を指示したかで決めなければならない**（MUST）。工程名の文字列照合で決めてはならない（MUST NOT）。
 
-#### Scenario: worker.md が (3a) / (3b) の return 内容を列挙している
-- **WHEN** `references/roles/worker.md` の実装以降の節を読む
-- **THEN** (3a) と (3b) がそれぞれ別の見出し（または別の箇条）として立っており、(3a) に `openspec validate` があり `/opsx:` が無く、(3a) が CI workflow 定義から検査コマンドを収集してすべて実行する義務と、return に収集した検査コマンド一覧・実行したテストコマンドと exit code（未導入の検査は未導入と明記）・`openspec validate --strict` の exit code・`画面確認:` の行を含める義務が書かれ、(3b) に `openspec archive` があり `/opsx:` が無く、(3b) の return に PR 番号と仕様宣言のコメント URL を含める義務が書かれている
+#### Scenario: worker/implement.md と worker/finish.md が (3a) / (3b) の return 内容を列挙している
+- **WHEN** `references/roles/worker/implement.md` と `references/roles/worker/finish.md` を読む
+- **THEN** (3a) と (3b) がそれぞれ別の見出し（または別の箇条）として立っており、(3a) に `openspec validate` があり `/opsx:` が無く、(3a) が CI workflow 定義から検査コマンドを収集して種類ごとに扱う義務と、return に収集した検査コマンド一覧・手元で実行した検査コマンドと exit code（未導入の検査は未導入と明記）・関係するテストを探したコマンド・CI に任せた検査とその CI のジョブ名・`openspec validate --strict` の exit code・`画面確認:` の行を含める義務が書かれ、(3b) に `openspec archive` があり `/opsx:` が無く、(3b) の return に PR 番号と仕様宣言のコメント URL を含める義務が書かれている
 
 #### Scenario: CI の定義から検査コマンドを収集する指示が全経路共通の節にある
-- **WHEN** `references/roles/worker.md` の「全経路共通の大原則」の節を読む
-- **THEN** PR・push で起動する `.github/workflows/*.yml` / `*.yaml` の `run:` から検査コマンドを拾うこと（`auto-merge.yml` 等の運用系ワークフローは対象外）、コマンド名をリポジトリ固有の値に固定しないこと、拾った検査コマンドをすべて実行すること、workflow が無い場合の慣例コマンドへのフォールバックが許容されること、ツール未導入は「未導入」として合格と区別することが書かれており、この指示が (3a)「コード直行する場合」手順 5 だけでなく openspec CLI 経路にも及ぶ 1 箇所にまとまっている
+- **WHEN** `references/roles/worker/implement.md` の「全経路共通の大原則」の節を読む
+- **THEN** PR・push で起動する `.github/workflows/*.yml` / `*.yaml` の `run:` から検査コマンドを拾うこと（`auto-merge.yml` 等の運用系ワークフローは対象外）、コマンド名をリポジトリ固有の値に固定しないこと、静的検査は手元で実行しテストの全体実行とビルドは手元で実行せず CI に任せること、関係するテストの選び方（足した・変えたテスト、変えたファイルのパスかファイル名を含むテスト、テストランナーの選ぶ機能）、PR・push で全体のテストを回すジョブが無いときは手元で全体を実行し慣例コマンドへのフォールバックが許容されること、ツール未導入は「未導入」として合格と区別することが書かれており、この指示が (3a)「コード直行する場合」手順 5 だけでなく openspec CLI 経路にも及ぶ 1 箇所にまとまっている
+
+#### Scenario: CI が全体のテストを回すリポジトリでは手元で全体を回さない
+- **WHEN** PR・push で起動する workflow にテストの全体実行をするジョブがあるリポジトリで、W が (3a) の検査を行う
+- **THEN** W はテストランナーをファイルで絞らずに起動せず、関係するテストのファイルをテストランナーに渡して実行し、return にテストの全体実行を CI に任せたこととその CI のジョブ名を書く
+
+#### Scenario: CI が全体のテストを回さないリポジトリでは手元で全体を回す
+- **WHEN** PR・push で起動する workflow が無い、またはテストのジョブが無いリポジトリで、W が (3a) の検査を行う
+- **THEN** W は手元でテストの全体を実行し（慣例コマンドへのフォールバックを含む）、その exit code を return に書く
 
 #### Scenario: 守備範囲が明記されている
-- **WHEN** `references/roles/worker.md` の全経路共通の大原則の節、CI 検査コマンドの収集を指示する段落を読む
-- **THEN** 入力の出どころ（PR・push で起動する workflow の `run:` ステップ）、拾いたい誤り（CI の検査ジョブの取りこぼし。PR #489 の shellcheck）、通ってよい入力（`matrix` / `services` / `env` / `if:` 条件による CI と手元の再現差、ランナー依存の検査、環境セットアップの `run:` ステップの誤実行）、取りこぼしを塞ぎ切ることを完了条件にしない旨（最後の防波堤は G の CI 結果確認）が書かれている
+- **WHEN** `references/roles/worker/implement.md` の全経路共通の大原則の節、CI 検査コマンドの収集を指示する段落を読む
+- **THEN** 入力の出どころ（PR・push で起動する workflow の `run:` ステップと変えたファイルの一覧）、拾いたい誤り（CI の静的検査の取りこぼし。PR #489 の shellcheck）、間接的に読むテストを拾えないことは CI と CI の見張りが拾う旨、通ってよい入力（`matrix` / `services` / `env` / `if:` 条件による CI と手元の再現差、ランナー依存の検査、環境セットアップの `run:` ステップの誤実行）、取りこぼしを塞ぎ切ることを完了条件にしない旨（最後の防波堤は合格後の CI の見張り）が書かれている
 
 #### Scenario: 旧世代の W が (3) を通しで返してきても (3b) を再指示しない
 - **WHEN** `skills/develop/SKILL.md` の 1 ループの (3) を読む
-- **THEN** 本体は次に指示する工程を自分が指示した工程で決めると書かれており、工程名の文字列照合では決めないことと、(3a) の return に PR 番号と仕様宣言のコメント URL が揃っていれば (3b) を指示せず次へ進むことが書かれている
+- **THEN** 本体は次に指示する工程を自分が指示した工程で決めると書かれており、工程名の文字列照合では決めないことが書かれている
+- **AND** (3a) の return に PR 番号と仕様宣言のコメント URL が揃っているかどうかで (3b) を飛ばす分岐は書かれていない
 
-#### Scenario: worker.md の工程名が 3 つになっている
-- **WHEN** `references/roles/worker.md` のコンテキスト上限と手渡しの節を読む
+#### Scenario: worker/common.md の工程名が 3 つになっている
+- **WHEN** `references/roles/worker/common.md` のコンテキスト上限と手渡しの節を読む
 - **THEN** W が return する工程の単位が「(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言」の 3 つとして列挙されている
 
 #### Scenario: SKILL.md が (3a) と (3b) のあいだの計測を指示している
@@ -366,7 +385,7 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 - **THEN** (3a) の return のあと (3b) を指示する前に `scripts/subagent-context.sh` で測ると書かれており、上限超のときの扱いは `decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」を正本として参照している
 
 #### Scenario: タスク単位のさらなる分割は禁止されている
-- **WHEN** `references/roles/worker.md` のコンテキスト上限と手渡しの節を読む
+- **WHEN** `skills/develop/SKILL.md` の (3) を読む
 - **THEN** (3) を (3a)/(3b) より細かく切らないことと、その理由（手渡しごとに払う固定分と、実装の途中で切ると後任が Red のまま止まったテストから再出発すること）が書かれている
 
 ### Requirement: 本体は role profile から executor を選ぶ
@@ -519,9 +538,9 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 
 `launch [--note <text>] [--base <branch>] <epic> <child>...` は、起動部品が Orca のとき、次の順で呼び出さなければならない（MUST。tmux の部品のときの呼び出しは capability `dev-workflow-epic-state` の要件「tmux の部品は…」が決める。部品の選び方は要件「記録の launcher ごとに起動部品を選ぶ」）: `orca worktree current --json`（今の repo の `repoId` を得る）→ `git rev-parse --show-toplevel` → `git fetch origin <base>` → `orca worktree set --worktree path:<親> --issue <epic>` → `orca worktree list --json` → 子ごとに `orca worktree create --name issue-<N> --issue <N> --base-branch origin/<base> --parent-worktree path:<親> --json` → 子の端末を用意する（`orca terminal list --worktree path:<子> --json` で端末を数え、0 個のときだけ `orca terminal create --worktree path:<子> --command <cmd> --json` で作る。ちょうど 1 つのときは作らずにその端末を使う。詳細は要件「launch は worktree create が作った空のシェルの端末を子のセッションの端末に使い、子のワークツリーの端末を 1 つに保つ」）→ `orca terminal wait --terminal <handle> --for tui-idle --timeout-ms <ready> --json` → `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json`。worktree create に `--agent` と `--prompt` を渡してはならない（MUST NOT。`--agent` で起動すると子セッションのモデルを指定できず Claude Code の既定モデルで動くため。`--prompt` は Orca 1.4.209 では指示が子の入力欄に届かず、送信と併用すると指示が 2 回届くおそれがあるため）。`<子>` は worktree create の JSON 出力の `result.worktree.path` とする（MUST）。`<cmd>` は `<claude-cmd> --model <model>` で（`--dangerously-skip-permissions` などの許可に関わる引数は付けてはならない（MUST NOT）。付けるのは `<claude-cmd>` 側に任せる）、`<claude-cmd>` の既定は `cld` で環境変数 `EPIC_DISPATCH_CLAUDE_CMD` で変えられ、クォートせずそのまま置く（MUST。`--command` の文字列は Orca が開いたログインシェルに打ち込まれるのでシェル関数も解決され、`cld-account b` のような引数付きも書けるため）。`<model>` はシェルに打ち込まれても 1 語のまま渡るよう単一引用符で囲む（MUST。`opus[1m]` のような値がグロブとして解釈されないため）。`<model>` の既定は `opus` で、環境変数 `EPIC_DISPATCH_MODEL` で変えられる（MUST）。`<handle>` は、端末を作ったときは terminal create の JSON 出力の `result.terminal.handle`、使い回したときはその端末のハンドルとする（MUST）。`<ready>` の既定は 60000（ミリ秒）で環境変数 `EPIC_DISPATCH_READY_TIMEOUT_MS` で、`<submit>` の既定は 30（秒）で環境変数 `EPIC_DISPATCH_SUBMIT_WAIT` で変えられる（SHALL）。`<親>` は `git rev-parse --show-toplevel` で求めた親ワークツリーの絶対パスで、親の指定は create と set の両方で `path:` を使わなければならない（MUST。`worktree:<id>` は set で `selector_not_found` になるため）。`<base>` の既定は `main` で、環境変数 `EPIC_DISPATCH_BASE` で既定を変えられ、`--base` が環境変数より優先する（MUST）。`<prompt>` は `/develop #<N>` で始まり、エピック番号を含み、`--note` があればその文を含む（SHALL）。子を `launched <N>` とするのは、worktree create が exit 0 で終わり、子のワークツリーのパスが取れ、端末を用意でき（terminal create が exit 0 で終わりハンドルが取れた、または使い回した端末が Claude Code になった）、`terminal wait` が exit 0 で終わり、`terminal send` が exit 0 で終わってその JSON 出力のどこかの `stages` 配列に `turn_started` が含まれるときだけでなければならない（MUST）。どれか 1 つでも満たさなければ `failed <N>` とし（MUST）、子のワークツリーのパスが取れていて、端末を作る経路でハンドルが取れていなければ（terminal create の失敗を含む）、端末を手で起動し直すための `orca terminal create --worktree path:<子> --command <cmd> --json` を stderr に出すに続けて、最初の指示を送るための `orca terminal send --terminal <作り直した端末のハンドル> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出す（SHALL。ワークツリーは残るので、再実行ではその子は `skipped <N>` になり端末が作られないため）。端末を用意できたあと（`terminal wait` か `terminal send` の段）で失敗し、ハンドルが取れていれば、指示を手で送り直すための `orca terminal send --terminal <handle> --text <prompt> --enter --wait-submit <submit> --json` を stderr に出し、あわせて「送る前に `orca terminal read --terminal <handle>` で入力欄とターンの状態を確かめる」旨の案内を出す（SHALL。送信が非 0 やターン未観測で終わっても指示が届いていることがあり、確かめずに送ると 2 回届くため）。`terminal send` の JSON 出力に送り直し用の ID（キー `retryRequestId` または `retryRequest` の文字列値）があれば、送り直しのコマンドに `--retry-request <id>` を付ける（SHALL）。ワークツリーは残すので、再実行ではその子は `skipped <N>` になり、指示を送り直さない（SHALL）。一覧に、同じ `repoId` で `linkedIssue` が `<N>` の archive されていないワークツリーがある子には create を呼ばず `skipped <N>` を出さなければならない（MUST。再開時や取り違えで同じ子を二重に起動しないため）。`orca` が PATH に無いときは何も呼ばずに exit 1 で終わり、`orca worktree current`・`git fetch`・`orca worktree set`・`orca worktree list` のどれかが失敗したとき（`jq` が無くて一覧を読めないときを含む）は子を 1 件も作らずに exit 1 で終わらなければならない（MUST）。stdout には子ごとに `launched <N>`・`skipped <N>`・`failed <N>` のどれか 1 行だけを出し、`orca` 自身の出力は stderr に流す（SHALL）。1 件の失敗で残りの子の起動を止めず、`failed` が 0 件なら exit 0、1 件でもあれば exit 1 で終わる（MUST）。
 
-`wait [--interval <sec>] [--timeout <sec>] <child>...` は、子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` で state を確かめるポーリングを繰り返し、stdout にちょうど 1 行を出して終わらなければならない（MUST）。子ごとの結果は、出力が `closed` なら閉じている、`open` なら開いている、`gh` が非 0 で終わったか出力がそれ以外（空文字を含む）なら失敗とする（MUST）。1 件以上の子が閉じていれば `closed <N>...`（閉じていた子の番号）で exit 0、上限時間に達したら `timeout <N>...`（閉じていない子の番号）で exit 2、失敗したポーリングが 3 回続いたら `error gh <N>...`（3 回目で失敗した子の番号）で exit 1 で終わる（MUST）。失敗したポーリングとは、1 件以上の子が失敗し、かつ閉じた子が 1 件も無いポーリングを言い、一部の子だけが失敗してほかの子が `open` の場合も含む（MUST）。失敗の無いポーリングがあれば数え直す（SHALL）。閉じた子がいるポーリングでは、ほかの子の失敗より `closed` を優先する（SHALL）。間隔と上限は秒で、既定は間隔 300・上限 21600、環境変数 `EPIC_DISPATCH_INTERVAL` / `EPIC_DISPATCH_TIMEOUT` で既定を変えられ、フラグが環境変数より優先する（MUST）。ポーリングのあとで経過時間が上限に達しているか、経過時間と間隔の和が上限を超えるなら、眠らずに `timeout` で終わる（MUST。`--timeout 0` は間隔によらず 1 回だけ確かめて終わる）。子が 0 件、番号が数字でない、間隔・上限が非負整数でないときは stderr に使い方を出して exit 1 で終わる（SHALL）。
+`wait [--interval <sec>] [--timeout <sec>] <child>...` は、子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` で state を確かめるポーリングを繰り返し、stdout にちょうど 1 行を出して終わらなければならない（MUST）。子ごとの結果は、出力が `closed` なら閉じている、`open` なら開いている、`gh` が非 0 で終わったか出力がそれ以外（空文字を含む）なら失敗とする（MUST）。1 件以上の子が閉じていれば `closed <N>...`（閉じていた子の番号）で exit 0、上限時間に達したら `timeout <N>...`（閉じていない子の番号）で exit 2、失敗したポーリングが 3 回続いたら `error gh <N>...`（3 回目で失敗した子の番号）で exit 1 で終わる（MUST）。失敗したポーリングとは、1 件以上の子が失敗し、かつ閉じた子が 1 件も無いポーリングを言い、一部の子だけが失敗してほかの子が `open` の場合も含む（MUST）。失敗の無いポーリングがあれば数え直す（SHALL）。閉じた子がいるポーリングでは、ほかの子の失敗より `closed` を優先する（SHALL）。間隔と上限は秒で、間隔の既定は 300、上限の既定は要件「上限を明示しない wait は親の会話キャッシュの有効期限で上限を決める」が決める（3000 か 21600）。環境変数 `EPIC_DISPATCH_INTERVAL` / `EPIC_DISPATCH_TIMEOUT` で既定を変えられ、フラグが環境変数より優先する（MUST）。ポーリングのあとで経過時間が上限に達しているか、経過時間と間隔の和が上限を超えるなら、眠らずに `timeout` で終わる（MUST。`--timeout 0` は間隔によらず 1 回だけ確かめて終わる）。子が 0 件、番号が数字でない、間隔・上限が非負整数でないときは stderr に使い方を出して exit 1 で終わる（SHALL）。
 
-この要件の守備範囲で入力として扱うのは、本体（LLM）が依存グラフから求めた子の番号と、SKILL.md の手順どおりに付けるフラグである。人が手で打つことは想定しない。引数の検査で拾う誤りは、番号の取り違えで引数が空になること、`#12` のように番号に記号が付くこと、フラグ値の打ち間違いである。数字でさえあれば、存在しない issue 番号・重複した番号・blocked されている子の番号は通してよく（`route` は依存を検証しない。存在しない番号は `wait` の失敗したポーリングとして数えられ `error` で表に出る）、非常に大きい `--timeout` も通してよい。検査をすり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。`EPIC_DISPATCH_READY_TIMEOUT_MS` と `EPIC_DISPATCH_SUBMIT_WAIT` は非負の整数でなければ stderr に使い方を出し、子を 1 件も作らずに exit 1 で終わる（SHALL。`--interval` と同じ扱いで、上限は設けない）。`EPIC_DISPATCH_MODEL` か `EPIC_DISPATCH_CLAUDE_CMD` が設定されていて空文字のときも stderr に使い方を出し、子を 1 件も作らずに exit 1 で終わる（SHALL。空でない値はそのまま使い、モデル名やコマンドとしての正しさは検査しない）。worktree create の JSON 出力の `result.worktree.path` と terminal create の JSON 出力の `result.terminal.handle` は 2026-09-25 の実機での出力の形のとおりと信じ、`terminal send` の JSON 出力の `stages` 配列と `turn_started` の語は、2026-09-24 の実機での出力の形のとおりと信じ、読めないときは `failed` として表に出すだけで、形の変化そのものの検知は範囲外とする。`orca worktree list --json` の出力は確かめた形（`.result.worktrees[]` の `repoId`・`linkedIssue`・`isArchived`）のとおりと信じ、形が変わったときの検知は範囲外とする。
+この要件の守備範囲で入力として扱うのは、本体（LLM）が依存グラフから求めた子の番号と、`references/epic.md` の手順どおりに付けるフラグである。人が手で打つことは想定しない。引数の検査で拾う誤りは、番号の取り違えで引数が空になること、`#12` のように番号に記号が付くこと、フラグ値の打ち間違いである。数字でさえあれば、存在しない issue 番号・重複した番号・blocked されている子の番号は通してよく（`route` は依存を検証しない。存在しない番号は `wait` の失敗したポーリングとして数えられ `error` で表に出る）、非常に大きい `--timeout` も通してよい。検査をすり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。`EPIC_DISPATCH_READY_TIMEOUT_MS` と `EPIC_DISPATCH_SUBMIT_WAIT` は非負の整数でなければ stderr に使い方を出し、子を 1 件も作らずに exit 1 で終わる（SHALL。`--interval` と同じ扱いで、上限は設けない）。`EPIC_DISPATCH_MODEL` か `EPIC_DISPATCH_CLAUDE_CMD` が設定されていて空文字のときも stderr に使い方を出し、子を 1 件も作らずに exit 1 で終わる（SHALL。空でない値はそのまま使い、モデル名やコマンドとしての正しさは検査しない）。worktree create の JSON 出力の `result.worktree.path` と terminal create の JSON 出力の `result.terminal.handle` は 2026-09-25 の実機での出力の形のとおりと信じ、`terminal send` の JSON 出力の `stages` 配列と `turn_started` の語は、2026-09-24 の実機での出力の形のとおりと信じ、読めないときは `failed` として表に出すだけで、形の変化そのものの検知は範囲外とする。`orca worktree list --json` の出力は確かめた形（`.result.worktrees[]` の `repoId`・`linkedIssue`・`isArchived`）のとおりと信じ、形が変わったときの検知は範囲外とする。
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` は、`orca`・`gh`・`git`・`sleep` を PATH 上のスタブにして、呼び出しの引数と順序、stdout の 1 行と exit code を確かめなければならない（MUST）。テストの途中に素の `[[ ]]` を置いてはならない（MUST NOT。bash 3.2 では偽でも素通りする）。
 
@@ -630,7 +649,7 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 - **THEN** 3 回のポーリングのあと stdout は `error gh 11` の 1 行で exit 1
 
 ### Requirement: エピックの並列起動は 1 段で止める
-`plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、子セッションを起動する端末のコマンドの先頭に `EPIC_DISPATCH_PARENT_EPIC=<epic>` を置かなければならない（MUST。`<epic>` は `launch` に渡したエピック番号）。そのうしろ、`<cmd>` の前には `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<値>` を置く（MUST。`<値>` の既定と上書きは要件「時間がたった子・親への返事は待っている間の自動コンパクトの閾値と分ける条件で決める」が定める）。コマンド全体は `EPIC_DISPATCH_PARENT_EPIC=<epic> CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<値> <cmd> --model <model>` の形になり、端末を作れなかった子について stderr に出す `orca terminal create --command ...` の作り直しのコマンドにも同じ前置きが入る（SHALL）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の出力の規定、`<cmd>` の形の規定、および Scenario「EPIC_DISPATCH_MODEL…」「EPIC_DISPATCH_CLAUDE_CMD…」の `--command` の値に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
+`plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、子セッションを起動する端末のコマンドの先頭に `EPIC_DISPATCH_PARENT_EPIC=<epic>` を置かなければならない（MUST。`<epic>` は `launch` に渡したエピック番号）。そのうしろに `<cmd>` を置き、`<cmd>` と `--model` のあいだに `--settings '{"idleCompaction":false}'` を置く（MUST。子のセッションのアイドル時のコンパクトを切る。`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を付けないことを含め、要件「子のセッションはアイドル時のコンパクトを切って起動する」が定める）。コマンド全体は `EPIC_DISPATCH_PARENT_EPIC=<epic> <cmd> --settings '{"idleCompaction":false}' --model <model>` の形になり、端末を作れなかった子について stderr に出す `orca terminal create --command ...` の作り直しのコマンドにも同じ前置きが入る（SHALL）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の出力の規定、`<cmd>` の形の規定、および Scenario「EPIC_DISPATCH_MODEL…」「EPIC_DISPATCH_CLAUDE_CMD…」の `--command` の値と、Scenario「端末を作れなければ送らずに failed で端末の作り直しのコマンドを出す」の作り直しのコマンドが `cld --model` を含むという値（新しい形では `cld --settings '{"idleCompaction":false}' --model` を含む）に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
 
 環境変数 `EPIC_DISPATCH_PARENT_EPIC` が空でない環境では:
 
@@ -638,20 +657,20 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 - `launch` は、引数の検査（既存の使い方の誤り）のあと、`orca` と `git` を 1 つも呼ばず、stderr に親エピックの番号と展開しない旨を出して exit 1 で終わらなければならない（MUST。子ワークツリーを作らない）。stdout には何も出さない（SHALL）
 - `wait` の振る舞いは変えない（SHALL）
 
-develop の SKILL.md「エピックの扱い」は次を規定しなければならない（MUST）。
+develop の `references/epic.md`「エピックの扱い」は次を規定しなければならない（MUST）。
 
 - **エピックの子を外す**: 本体は依存グラフから求めた blocked されていない子のうち、sub-issue を持つ子（`gh api repos/{owner}/{repo}/issues/<N> --jq .sub_issues_summary.total` が 1 以上。`null` や空は 0 とみなす）をエピックとして外し、`route`・`launch`・サブエージェント方式のどれにも渡してはならない（MUST NOT）。経路が `nested` でないと確定したら（`route` が `nested` 以外を返したとき。`route` を呼ばない unmanned と、`回し方:` のコメントから経路を引き継いだ再開を含む）、外した子ごとにエピックへ `後で別に起動するエピック: #N` と 1 行コメントする（MUST）。再開時に `回し方:` のコメントから経路を引き継いだ場合も、`launch` に渡す前に同じ確認で外す（MUST）
 - **`nested` を受けたセッション**: `route` が `nested` を返したら、そのセッションはエピックを展開してはならない（MUST NOT。Orca 経路もサブエージェント方式も使わない）。親エピック（`EPIC_DISPATCH_PARENT_EPIC` の番号）と自分の issue に `後で別に起動するエピック: #<自分の issue>` とコメントし、ユーザーに後で `/develop #<自分の issue>` を別に起動して回すと伝えて止まる（MUST）。自分の issue を閉じてはならない（MUST NOT）。`launch` が stderr に展開しない旨を出して exit 1 で終わったときも同じに扱い、「親ワークツリーで開き直す」とは報告しない（MUST NOT）
-- **親の待ち受け**: Orca 経路の本体は、`timeout` と `closed` で起こされたときの確認で、エピックに `後で別に起動するエピック: #N` の行がある子を動いている子から外す（MUST）
+- **親の待ち受け**: Orca 経路の本体は、`closed` で起こされたときの確認で、エピックに `後で別に起動するエピック: #N` の行がある子を動いている子から外す（MUST）。`timeout` で起こされたときはこの確認をしない（SHALL。手順 5 は同じ `wait` を掛け直すだけで、子エピックは手順 2 の前に `launch` に渡す前に外している。要件「親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す」）
 - **親の完了報告**: 動いている子が無くなったときの本体の報告（エピックへのコメントとユーザーへの報告）に、エピックに記録した `後で別に起動するエピック:` の番号をすべて載せる（MUST）。子エピックが閉じるまで親エピックの完了条件は満たされないので、親エピックを閉じてはならない（MUST NOT）
 
 この要件の守備範囲で入力として扱うのは、`launch` が子の端末のコマンドに前置きした `EPIC_DISPATCH_PARENT_EPIC`（子セッションの Claude Code とその Bash・サブエージェントに引き継がれる）、本体が依存グラフから求めた子の番号ごとの `sub_issues_summary.total`、エピックのコメントの `後で別に起動するエピック:` で始まる行である。拾いたい誤りは、並列起動された子のセッションが自分の issue をエピックとして孫のワークツリーとセッションを作ることである。次は通してよく、この要件では止めない: `EPIC_DISPATCH_PARENT_EPIC` の値は空でなければ数字かどうかを検査しない／人が手で `EPIC_DISPATCH_PARENT_EPIC` を付けて起動したセッションも `nested` になる／sub-issue を持たず本文で子を列挙しているだけのエピックは事前確認を通り、Orca 経路で起動された子なら子のセッションの `route` で止まり、サブエージェント方式で起こされた子（変数が無い）は止まらない／`回し方:` のコメントからサブエージェント方式を引き継いだ子エピックのセッションはスクリプトでは止まらない／この変更の前に起動された子セッションには変数が無く従来どおり展開しうる／`EPIC_DISPATCH_CLAUDE_CMD` が前置きの代入を受け付けない形（`exec` で始まる文字列など）のときは値が渡らない。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats` は、`EPIC_DISPATCH_PARENT_EPIC` の前置き、`route` の `nested`、`launch` の拒否、SKILL.md の上の記述を確かめなければならない（MUST）。
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、`EPIC_DISPATCH_PARENT_EPIC` の前置き、`route` の `nested`、`launch` の拒否、`references/epic.md` の上の記述を確かめなければならない（MUST）。
 
 #### Scenario: launch は子の端末のコマンドに親エピックの番号を前置きする
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC` の無い環境で `epic-dispatch.sh launch 420 11` を実行する
-- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=420 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'` である
+- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=420 cld --settings '{"idleCompaction":false}' --model 'opus'` である
 
 #### Scenario: 端末の作り直しのコマンドにも前置きが入る
 - **WHEN** `orca terminal create` が失敗する環境で `epic-dispatch.sh launch 420 11` を実行する
@@ -669,9 +688,9 @@ develop の SKILL.md「エピックの扱い」は次を規定しなければな
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC=420` の環境で `epic-dispatch.sh route '#11'` を実行する
 - **THEN** stderr に使い方が出て exit 1
 
-#### Scenario: SKILL.md に子エピックの扱いと完了報告が書かれている
-- **WHEN** SKILL.md の「エピックの扱い」を読む
-- **THEN** sub-issue を持つ子を外して `後で別に起動するエピック: #N` とコメントすること、`route` の `nested` を受けたら展開せず親エピックと自分の issue にコメントして止まること、`nested` と同じく `launch` の拒否でも止まり「親ワークツリーで開き直す」と報告しないこと、`timeout` と `closed` の確認でその行がある子を待つ対象から外すこと、完了報告に `後で別に起動するエピック:` の番号を載せることが書かれている
+#### Scenario: epic.md に子エピックの扱いと完了報告が書かれている
+- **WHEN** `references/epic.md` の「エピックの扱い」を読む
+- **THEN** sub-issue を持つ子を外して `後で別に起動するエピック: #N` とコメントすること、`route` の `nested` を受けたら展開せず親エピックと自分の issue にコメントして止まること、`nested` と同じく `launch` の拒否でも止まり「親ワークツリーで開き直す」と報告しないこと、`closed` で起こされたときの確認でその行がある子を待つ対象から外すこと（`timeout` で起こされたときの確認とは書かれていない）、完了報告に `後で別に起動するエピック:` の番号を載せることが書かれている
 
 ### Requirement: launch は同じ呼び出し内で渡された重複した子番号も skipped にする
 `plugins/dev-workflow/scripts/epic-dispatch.sh launch` は、引数に渡された子番号を先頭から処理する際、同じ呼び出しの中で既に `launched`・`skipped`・`failed` のいずれかとして処理済みの番号が再び現れたら、`orca worktree create` を呼ばずに `skipped <N>` を出さなければならない（MUST）。これは要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち「一覧に同じ `repoId` で `linkedIssue` が `<N>` の archive されていないワークツリーがある子には create を呼ばず `skipped <N>` を出す」規定（`spec.md:462`）を書き換えず、同じ `skipped <N>` の出力形のまま、判定基準に「同じ呼び出し内で既に処理済みの番号」を追加するものである。
@@ -761,11 +780,11 @@ gate-runner.md に残すのは、役割と入力、レビュー経路の判別�
 
 ### Requirement: W の (3b) は宣言の書式ファイルを指す
 
-`plugins/dev-workflow/skills/develop/references/roles/worker.md` の (3b) の仕様宣言は、書式と `対象 HEAD:` 規約の正本として `skills/pr-review-gate/declarations.md` を指さなければならない（MUST）。`skills/develop/SKILL.md` の「仕様宣言は記録先ではなく常に PR コメントに置く」の書式の正本の参照も同じファイルを指す（MUST）。
+`plugins/dev-workflow/skills/develop/references/roles/worker/finish.md` の (3b) の仕様宣言は、書式と `対象 HEAD:` 規約の正本として `skills/pr-review-gate/declarations.md` を指さなければならない（MUST）。`skills/develop/SKILL.md` の「仕様宣言は記録先ではなく常に PR コメントに置く」の書式の正本の参照も同じファイルを指す（MUST）。
 
 #### Scenario: W の参照先
 
-- **WHEN** worker.md の (3b) を読む
+- **WHEN** `worker/finish.md` の (3b) を読む
 - **THEN** 仕様宣言の書式の正本として `skills/pr-review-gate/declarations.md` が書かれている
 
 ### Requirement: レビュー担当に渡す指示は reviewer-brief.md を指す
@@ -799,7 +818,7 @@ gate-runner.md の needs-reviewer の payload（`stages/prepare.md` に移った
 |---|---|---|---|
 | 前提確認と重さ判定 | ゲートの開始、W の修正後の再レビュー（failed の `次の段: 前提確認と重さ判定`）、保留の解除が `次の段: 前提確認と重さ判定` を返したとき、CI の見張りで `ready` になったあとの取り直し | `stages/prepare.md`（W の修正後の再レビューのときは加えて `stages/triage.md` の収束ルールの節と「W の修正後の再レビュー」の入力） | `needs-reviewer` / 保留 |
 | 照合と振り分け | レビュー要約・補足レビューの結果・決める役の裁定・直し方の判定を受け取ったとき、戻した指摘が順 3 だけの修正のあと（failed の `次の段: 照合と振り分け`） | `stages/triage.md` | `次の段へ` / failed / 保留 / `needs-reviewer`（補足） / `needs-decider` / `needs-fix-check` / `review-incomplete` |
-| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すときは加えて `stages/hold.md`） | passed / 保留 |
+| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すとき・`needs-carryover-judge` を返すときは加えて `stages/hold.md`） | passed / 保留 / `needs-carryover-judge` |
 | 保留の解除 | 主の回答が届いたとき | `stages/hold.md` | 復帰手順の表どおりに `次の段へ`（`次の段:` は合格処理か前提確認と重さ判定） / failed / needs-decider / 保留 |
 
 本体は G の起動指示に `段: <段の名前>` の 1 行を書かなければならない（MUST）。`skills/develop/SKILL.md` の (4)（`(4) G を` で始まる行から、その行を含むコードブロックの閉じ ``` の行まで）と `skills/develop/references/roles/gate-runner.md` は、`SendMessage` の語と `G を再開` の文字列を持ってはならない（MUST NOT）。SKILL.md の (4) の「G の起動・再開・手渡しの指示」「G を再開か手渡しで起こして」も段ごとの起動の言い方に書き換える（MUST）。G への SendMessage は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の停止の指示だけに残し、その規則は decision-criteria.md にだけ書く（MUST）。`gate-runner.md` の「時点ごとに読むファイル」の表は、上の段の表に揃えなければならない（MUST）。
@@ -808,7 +827,7 @@ gate-runner.md の needs-reviewer の payload（`stages/prepare.md` に移った
 
 W の修正後の再レビューで起こされた前提確認と重さ判定の G は、前の周の指摘を仕分けコメントから読み、`stages/triage.md` の収束ルールどおり差分限定か全体レビューかを自分で判定し、全体レビューにしたときは 2 つの行数を PR コメントに記録しなければならない（MUST）。
 
-保留の解除のあとで起こされた合格処理の G（前の Gate Result が `段: 保留の解除`）は、今の HEAD の `対象 HEAD:` を持つ `## リスク宣言` コメントがあれば、宣言を出し直してはならず（MUST NOT）、手順 5 の真正性確認から入らなければならない（MUST）。そのコメントが無ければ（切り出しの確認を解除した場合）、`declarations.md` の手順 3 から入らなければならない（MUST）。照合と振り分けのあとの合格処理は、前の Gate Result の `段: 照合と振り分け` で見分ける（MUST。`次の段: 合格処理` は保留の解除の Gate Result にもあるため入口の判別に使わない）。許容済みの PR で HEAD が動いていたときの許容の引き継ぎ（手順 3-c）は、合格処理の G が宣言の前に `stages/hold.md` を読んで試す（MUST）。
+保留の解除のあとで起こされた合格処理の G（前の Gate Result が `段: 保留の解除`）は、今の HEAD の `対象 HEAD:` を持つ `## リスク宣言` コメントがあれば、宣言を出し直してはならず（MUST NOT）、手順 5 の真正性確認から入らなければならない（MUST）。そのコメントが無ければ（切り出しの確認を解除した場合）、`declarations.md` の手順 3 から入らなければならない（MUST）。照合と振り分けのあとの合格処理は、前の Gate Result の `段: 照合と振り分け` で見分ける（MUST。`次の段: 合格処理` は保留の解除の Gate Result にもあるため入口の判別に使わない）。許容済みの PR で HEAD が動いていたときの許容の引き継ぎ（手順 3-c）は、合格処理の G が宣言の前に `stages/hold.md` を読んで試す（MUST）。引き継ぎの判定を受けて起こされた合格処理の G（前の Gate Result が `段: 合格処理`・Status `needs-carryover-judge`）は、`declarations.md` の手順 3 から入り直し、3-c で PR の判定の記録を読まなければならない（MUST）。
 
 この要件は、develop の本体がレビュアーを起こす adapter 経路（起動指示が `レビュー経路: adapter`）に掛かる。従来経路の G はレビューを自分の起動の中で起こすので、手順 1〜5 と保留までを 1 体で続けてよい（MAY）。そのときの Gate Result は `段: 一括（従来経路）`、`次の段: なし` と書く（MUST）。
 
@@ -842,15 +861,26 @@ W の修正後の再レビューで起こされた前提確認と重さ判定の
 - **WHEN** SKILL.md の (4) と `gate-runner.md` の段ごとの表を読む
 - **THEN** 照合と振り分けの行の起こす時点に「直し方の判定を受け取ったとき」があり、返しうる Status に `needs-fix-check` がある
 
+#### Scenario: 段の表に needs-carryover-judge がある
+
+- **WHEN** SKILL.md の (4) と `gate-runner.md` の段ごとの表を読む
+- **THEN** 合格処理の行の起こす時点に「引き継ぎの判定を受け取ったとき」があり、返しうる Status に `needs-carryover-judge` がある
+
+#### Scenario: 引き継ぎの判定のあとの合格処理
+
+- **WHEN** 合格処理の G が `needs-carryover-judge` で返し、本体が判定の記録を投稿して合格処理の G を新しく起こす
+- **THEN** 新しい合格処理の G は前の Gate Result の `段: 合格処理`・Status `needs-carryover-judge` を見て `declarations.md` の手順 3 から入り直し、3-c で判定の記録を読む
+
 ### Requirement: Gate Result は段と次の段を持つ
 
-`gate-runner.md` の Gate Result の共通欄は、`段: <前提確認と重さ判定|照合と振り分け|合格処理|保留の解除|一括（従来経路）>` と `次の段: <段の名前|なし>` を持たなければならない（MUST）。Status には `次の段へ` と `needs-fix-check`（直し方の判定の依頼）を足す（MUST）。`次の段:` の値は G が次の表どおりに決めて書く（MUST）。
+`gate-runner.md` の Gate Result の共通欄は、`段: <前提確認と重さ判定|照合と振り分け|合格処理|保留の解除|一括（従来経路）>` と `次の段: <段の名前|なし>` を持たなければならない（MUST）。Status には `次の段へ` と `needs-fix-check`（直し方の判定の依頼）と `needs-carryover-judge`（許容の引き継ぎの判定の依頼）を足す（MUST）。`次の段:` の値は G が次の表どおりに決めて書く（MUST）。
 
 | Status | `次の段:` |
 |---|---|
 | `次の段へ` | 照合と振り分けの G は `合格処理`。保留の解除の G は `合格処理` か `前提確認と重さ判定` |
 | failed | 戻した指摘が順 3 だけなら `照合と振り分け`、それ以外は `前提確認と重さ判定` |
 | needs-reviewer / needs-decider / needs-fix-check | `照合と振り分け` |
+| needs-carryover-judge | `合格処理` |
 | 保留 | `保留の解除` |
 | passed / review-incomplete | `なし` |
 
@@ -870,6 +900,11 @@ W の修正後の再レビューで起こされた前提確認と重さ判定の
 
 - **WHEN** 照合と振り分けの G が Status `needs-fix-check` で返す
 - **THEN** Gate Result は `次の段: 照合と振り分け` を持ち、本体は直し方の判定のあと照合と振り分けの G を新しく起こす
+
+#### Scenario: needs-carryover-judge の次の段
+
+- **WHEN** 合格処理の G が Status `needs-carryover-judge` で返す
+- **THEN** Gate Result は `次の段: 合格処理` を持ち、本体は判定役の判定のあと合格処理の G を新しく起こす
 
 ### Requirement: 段と段の間の受け渡しは PR コメントを正とする
 
@@ -934,7 +969,7 @@ G が `工程中断:` で返したとき、本体は同じ段の新しい G を�
 
 ### Requirement: G の再開を前提にした既存要件の読み替え
 
-既存要件のうち G の「再開」「SendMessage で G に渡す」「G を再開して再レビュー」と書いた箇所は、上の要件「G は段ごとに新しく起こし、SendMessage で再開しない」の表で、その時点に当たる段の G を新しく起こし、その起動指示に渡すものとして読まなければならない（MUST）。`レビュー経路: adapter` で起動済みの同一 G が行の無い再開指示でも adapter 経路を保つ規則は、再開が無いので `gate-runner.md`・SKILL.md・`plugins/dev-workflow/references/codex-develop.md` から消さなければならない（MUST）。本体がすべての G の起動指示に `レビュー経路: adapter` の 1 行を書く規則は変えない。
+既存要件のうち G の「再開」「SendMessage で G に渡す」「G を再開して再レビュー」と書いた箇所は、上の要件「G は段ごとに新しく起こし、SendMessage で再開しない」の表で、その時点に当たる段の G を新しく起こし、その起動指示に渡すものとして読まなければならない（MUST）。`レビュー経路: adapter` で起動済みの同一 G が行の無い再開指示でも adapter 経路を保つ規則は、再開が無いので `gate-runner.md`・SKILL.md・`plugins/dev-workflow/references/codex-develop.md` から消さなければならない（MUST）。本体がすべての G の起動指示に `レビュー経路: adapter` の 1 行を書く規則は変えない（本文は SKILL.md の「Role profile の選択」節に置き、`references/codex-develop.md` はそこを指す）。
 
 `stages/prepare.md` に置くとした「レビュー実行者:」PR コメントの段落は、上の要件「『レビュー実行者:』コメントの段落は照合と振り分けの段に置く」どおり `stages/triage.md` を指すものとして読む（MUST）。
 
@@ -948,7 +983,7 @@ G が `工程中断:` で返したとき、本体は同じ段の新しい G を�
 #### Scenario: adapter 経路の保持規則が無い
 
 - **WHEN** `gate-runner.md`・SKILL.md・`references/codex-develop.md` を読む
-- **THEN** 行の無い再開指示で adapter 経路を保つ規則が無く、G の起動指示に常に `レビュー経路: adapter` を書く規則は残っている
+- **THEN** 行の無い再開指示で adapter 経路を保つ規則が無い。G の起動指示に常に `レビュー経路: adapter` を書く規則は、SKILL.md が本文を持ち、`references/codex-develop.md` はその本文を持たず SKILL.md の「Role profile の選択」節と `gate-runner.md`「レビュー経路の判別」を指している
 
 ### Requirement: 段ごとの G で上限を超えないことを PR 本文に記録する
 
@@ -968,14 +1003,14 @@ G が要求するレビュアー（決める役でないとき）は、本体が
 
 仕様レビュー R1（決める役でないとき）の種別は変えない（SHALL。`general-purpose`。決める役に当たるときは従来どおり `dev-workflow:decider`）。
 
-`develop/SKILL.md` の役割表と Agent ツールの行、(1)・(3)・(4) の spawn の記述とモデル表、`references/roles/worker.md`・`references/roles/gate-runner.md` の冒頭、`skills/pr-review-gate/stages/prepare.md` の needs-reviewer の payload、`skills/pr-review-gate/stages/review-run.md` 2-1 の優先順の表、`plugins/dev-workflow/README.md` の役割とモデルの説明は、それぞれの種別を書かなければならない（MUST）。
+`develop/SKILL.md` の役割表と Agent ツールの行、(1)・(3)・(4) の spawn の記述とモデル表、`references/roles/worker/common.md`・`references/roles/gate-runner.md` の冒頭、`skills/pr-review-gate/stages/prepare.md` の needs-reviewer の payload、`skills/pr-review-gate/stages/review-run.md` 2-1 の優先順の表、`plugins/dev-workflow/README.md` の役割とモデルの説明は、それぞれの種別を書かなければならない（MUST）。
 
 #### Scenario: 役割表が種別を書く
 - **WHEN** `plugins/dev-workflow/skills/develop/SKILL.md` の役割表を読む
 - **THEN** W の行に `dev-workflow:worker`、G の行に `dev-workflow:gate-runner` があり、R1 の行には `dev-workflow:worker` も `dev-workflow:gate-runner` も `dev-workflow:reviewer` も無い
 
 #### Scenario: spawn の記述が種別を書く
-- **WHEN** `develop/SKILL.md` の (1) と (4) の spawn の行、`worker.md` と `gate-runner.md` の冒頭、`references/codex-develop.md` の Claude role の起動、`plugins/dev-workflow/README.md` の役割とモデルの説明を読む
+- **WHEN** `develop/SKILL.md` の (1) と (4) の spawn の行、`worker/common.md` と `gate-runner.md` の冒頭、`references/codex-develop.md` の Claude role の起動、`plugins/dev-workflow/README.md` の役割とモデルの説明を読む
 - **THEN** W には `dev-workflow:worker`、G には `dev-workflow:gate-runner` が書かれ、W / G を `general-purpose` で起こす記述が無い
 
 #### Scenario: レビュアーの spawn の記述が種別を書く
@@ -985,14 +1020,14 @@ G が要求するレビュアー（決める役でないとき）は、本体が
 ### Requirement: W の仕様化経路は openspec CLI だけで進める
 `dev-workflow:worker` は `Skill` を持たないので、W は仕様化・実装の検証・archive を openspec CLI で行わなければならない（MUST）。仕様化は `openspec new change` と artifact の直書き（雛形と書き方の指示は `openspec instructions <artifact> --change <name>`、依存順は `openspec status --change <name>` で得る）、実装の検証は `openspec validate <change> --strict` と `tasks.md` のチェックボックスの確認、archive は `openspec archive <change>` で行う（SHALL）。工程の区切り（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）は変えない（SHALL）。R1 の仕様レビューも、文言合わせの通し方（次の段落）を除いて変えない（SHALL）。
 
-文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）では、change に proposal.md が無いので、W は実装の検証を `openspec validate <change> --type change --strict` で行わなければならない（MUST。`--type change` を付けない形は change を見つけられず `Unknown item` で終了コード 1 になり、`openspec validate --changes --strict` はこの change を検査せずに終了コード 0 を返す）。`tasks.md` が無いのでチェックボックスの確認は行わない（SHALL）。`openspec archive <change>` は見出しが既存の要件名と一致しないとき、何も変えずに終了コード 0 で終わるので、W は archive のあと `openspec/changes/archive/` に change のディレクトリがあることを確かめる（MUST）。`references/roles/worker/implement.md` と `references/roles/worker/finish.md` はこの 2 点を書かなければならない（MUST）。
+文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）では、change に proposal.md が無いので、W は実装の検証を `openspec validate <change> --type change --strict` で行わなければならない（MUST。`--type change` を付けない形の結果は openspec の版で変わる。change を見つけられず `Unknown item` で終了コード 1 になる版も、change として検証して終了コード 0 になる版もある。付けておけば版によらず change として検証され、spec と同名のときの曖昧さも避けられる。`openspec validate --changes --strict` もこの change を検査しない版があるので使わない）。`tasks.md` が無いのでチェックボックスの確認は行わない（SHALL）。`openspec archive <change>` は見出しが既存の要件名と一致しないとき、何も変えずに終了コード 0 で終わるので、W は archive のあと `openspec/changes/archive/` に change のディレクトリがあることを確かめる（MUST）。`references/roles/worker/implement.md` と `references/roles/worker/finish.md` はこの 2 点を書かなければならない（MUST）。
 
 W の仕様化経路があるかどうかは `openspec --version` が成功するかだけで決めなければならない（MUST）。`.claude/commands/opsx/` の有無で決めてはならない（MUST NOT）。opsx コマンドがあっても openspec CLI が無ければ、W は `仕様化判断: しない` の理由に「openspec 不在」と書いてコード直行する（SHALL）。
 
-`references/roles/worker.md` で `/opsx:` のスラッシュコマンドが出てよいのは、本体や主が対話で `/opsx:*` を使う場面（例: W が来る前に本体や主が `/opsx:ff` で change を作っていた場合）を述べる行だけで、その行は `本体` か `主` の語を含まなければならない（MUST）。W が `/opsx:*` を実行する指示を書いてはならない（MUST NOT）。
+索引 `references/roles/worker.md`・`references/roles/worker/` の 4 本・`references/pre-classification.md` で `/opsx:` のスラッシュコマンドが出てよいのは、本体や主が対話で `/opsx:*` を使う場面（例: W が来る前に本体や主が `/opsx:ff` で change を作っていた場合）を述べる行だけで、その行は `本体` か `主` の語を含まなければならない（MUST）。W が `/opsx:*` を実行する指示を書いてはならない（MUST NOT）。
 
-#### Scenario: worker.md が CLI の経路で書かれている
-- **WHEN** `plugins/dev-workflow/skills/develop/references/roles/worker.md` を読む
+#### Scenario: worker/ の 4 本が CLI の経路で書かれている
+- **WHEN** `plugins/dev-workflow/skills/develop/references/roles/` の索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` を読む
 - **THEN** `openspec new change`・`openspec validate`・`openspec archive` を使う手順があり、(3a) の節と (3b) の節に `/opsx:` の文字列が無く、`/opsx:` を含む行はどれも `本体` か `主` の語を含む
 
 #### Scenario: 文言合わせの通し方の検証コマンドが書かれている
@@ -1000,19 +1035,19 @@ W の仕様化経路があるかどうかは `openspec --version` が成功す�
 - **THEN** `implement.md` に文言合わせの通し方では `openspec validate <change-name> --type change --strict` を使うことが書かれ、`finish.md` に archive のあと `openspec/changes/archive/` に change のディレクトリがあることを確かめることが書かれている
 
 #### Scenario: proposal.md の無い change を名前だけで検証する
-- **WHEN** `specs/<capability>/spec.md` だけを持つ change に `openspec validate <change> --strict` を実行する
-- **THEN** `Unknown item` と出て終了コード 1 で終わり、`--type change` を付けると差分が検査されて正しい差分なら終了コード 0 で終わる
+- **WHEN** `specs/<capability>/spec.md` だけを持つ change（どの spec とも名前が違うもの）に `openspec validate <change> --type change --strict` を実行する
+- **THEN** 差分が検査され、正しい差分なら版によらず終了コード 0 で終わる。`--type change` を付けない形は、終了コード 0 で終わるか、`Unknown item` と出て終了コード 1 で終わるかのどちらかで、どちらになるかは openspec の版で決まる。change と同名の spec があると名前が曖昧になり、`Ambiguous item` と出て終了コード 1 で終わる版がある。`--type change` を付ければこの曖昧さは起きない
 
 #### Scenario: 経路の有無を CLI だけで決める
-- **WHEN** `worker.md` の仕様化判断の節と、`develop/SKILL.md` の前提の表の openspec の行を読む
-- **THEN** W の経路の有無を `openspec --version` で決めることが書かれ、`worker.md` に `ls .claude/commands/opsx/` による検出が無い
+- **WHEN** `worker/spec.md` の仕様化判断の節と、`develop/SKILL.md` の前提の表の openspec の行を読む
+- **THEN** W の経路の有無を `openspec --version` で決めることが書かれ、索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` に `ls .claude/commands/opsx/` による検出が無い
 
 ### Requirement: .worktreeinclude が無いときの /wt-setup は本体が行う
-worktree に `.worktreeinclude` が無いときに `/wt-setup` を呼ぶのは本体でなければならない（MUST）。W は `/wt-setup` を呼んではならない（MUST NOT。`dev-workflow:worker` は `Skill` を持たない）。`worker.md` の「W がしないこと」から W が `/wt-setup` を呼ぶ例外を消し、`develop/SKILL.md` の worktree を用意する節に本体の仕事として書かなければならない（MUST）。
+worktree に `.worktreeinclude` が無いときに `/wt-setup` を呼ぶのは本体でなければならない（MUST）。W は `/wt-setup` を呼んではならない（MUST NOT。`dev-workflow:worker` は `Skill` を持たない）。`worker/common.md` の「W がしないこと」から W が `/wt-setup` を呼ぶ例外を消し、`develop/SKILL.md` の worktree を用意する節に本体の仕事として書かなければならない（MUST）。
 
 #### Scenario: 例外が本体の仕事に移っている
-- **WHEN** `worker.md` と `develop/SKILL.md` を読む
-- **THEN** `worker.md` に W が `/wt-setup` を呼ぶ記述が無く、`develop/SKILL.md` の worktree を用意する節に、`.worktreeinclude` が無いとき本体が `/wt-setup` を呼ぶことが書かれている
+- **WHEN** 索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` と `develop/SKILL.md` を読む
+- **THEN** 索引 `worker.md`・`worker/` の 4 本・`pre-classification.md` に W が `/wt-setup` を呼ぶ記述が無く、`develop/SKILL.md` の worktree を用意する節に、`.worktreeinclude` が無いとき本体が `/wt-setup` を呼ぶことが書かれている
 
 ### Requirement: W の (3a) の return は画面確認の要否を 1 行で書く
 W の (3a) の return（1 行目 `工程完了: 実装＋verify`）は、`画面確認:` で始まる行を 1 行持たなければならない（MUST）。値は `不要` か、`要る — <開く URL か起動手順> / <見る点>` のどちらかとする（SHALL）。`要る` のときは開く URL か起動手順と、見る点の両方を書かなければならない（MUST。画面確認役 V は実装の経緯を知らないため）。要否は、受け入れ条件または記録先の「動作確認ポイント」が画面での観測を求めているかで W が決める（SHALL）。W 自身は画面で確認しない（MUST NOT）。
@@ -1117,7 +1152,7 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 
 ### Requirement: 新しいセッションの本体は引き継ぎのコメントとラベルから続ける
 
-`skills/develop/SKILL.md` は、記録先に `引き継ぎ: 主の返事待ち` のコメントがある記録先で新しいセッションの本体が起動したときの再開手順を規定しなければならない（MUST）。手順は次のとおり。
+`skills/develop/references/handover.md` は、記録先に `引き継ぎ: 主の返事待ち` のコメントがある記録先で新しいセッションの本体が起動したときの再開手順を規定しなければならない（MUST）。手順は次のとおり。
 
 1. 記録先の最新の引き継ぎのコメントを読む。
 2. そのコメントより後の主の回答（記録先または対象 PR のコメント、または `/develop` の引数の残り。引き継ぎの `実行モード` が `channel` のときは、このセッションが受けた `#<記録先>` を添えたチャンネルの返事も含む）を探し、あれば使う。無ければ、引き継ぎの「主への依頼」を主に見せ直して返事を聞き、返事が来るまで役割を起こさない。
@@ -1172,7 +1207,7 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 
 ### Requirement: /develop の入口は引き継ぎのある記録先を再開手順へ進める
 
-`commands/develop.md` は、引数で特定した記録先（数字または URL）に `引き継ぎ: 主の返事待ち` のコメントがあるとき、`needs-approval` の有無によらず、通常の入口 0 に進まず、`skills/develop/SKILL.md` の新しいセッションでの再開手順に進めなければならない（MUST）。ラベルの確認は再開手順 3 が行い（記録先ではなく引き継ぎの「ラベルの付け先」で見る。issue が記録先で保留の PR にラベルがある場合があるため）、ラベルが無ければ再開手順が状態を組み立て直して主に報告する（入口の条件と再開手順の条件を揃える）。引数の記録先より後ろの文字列は主の返事として本体に渡す（MUST）。①③の分岐で記録先を特定する挙動は変えない。この分岐の守備範囲（入力の出どころ・拾う誤り・通してよい入力・完了条件にしないこと）は、前の要件の「守備範囲」の段落に従う（MUST）。
+`commands/develop.md` は、引数で特定した記録先（数字または URL）に `引き継ぎ: 主の返事待ち` のコメントがあるとき、`needs-approval` の有無によらず、通常の入口 0 に進まず、`skills/develop/references/handover.md` の新しいセッションでの再開手順に進めなければならない（MUST）。ラベルの確認は再開手順 3 が行い（記録先ではなく引き継ぎの「ラベルの付け先」で見る。issue が記録先で保留の PR にラベルがある場合があるため）、ラベルが無ければ再開手順が状態を組み立て直して主に報告する（入口の条件と再開手順の条件を揃える）。引数の記録先より後ろの文字列は主の返事として本体に渡す（MUST）。①③の分岐で記録先を特定する挙動は変えない。この分岐の守備範囲（入力の出どころ・拾う誤り・通してよい入力・完了条件にしないこと）は、前の要件の「守備範囲」の段落に従う（MUST）。
 
 #### Scenario: 引き継ぎのある issue 番号で起動する
 
@@ -1186,40 +1221,40 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 
 ### Requirement: W の return は読んだコードの要点を持つ
 
-`references/roles/worker.md` は、W の return の成果一覧（この欄は W の場合のみ必須で、G の return の契約は変えない。工程の終わりの return、途中で締めた return、昇格トリップワイヤーで止まったときの return のいずれも）に「読んだコードの要点」欄を含めることを書かなければならない（MUST）。欄の書式は 1 行 1 件の `<リポジトリ相対パス>:<開始行>-<終了行> — <そこから分かったこと>` とし、上限を 20 行とし、超えるときは次の工程で読む必要が高いものを残すと書かなければならない（MUST）。
+`references/roles/worker/common.md` は、W の return の成果一覧（この欄は W の場合のみ必須で、G の return の契約は変えない。工程の終わりの return、途中で締めた return、昇格トリップワイヤーで止まったときの return のいずれも）に「読んだコードの要点」欄を含めることを書かなければならない（MUST）。欄の書式は 1 行 1 件の `<リポジトリ相対パス>:<開始行>-<終了行> — <そこから分かったこと>` とし、上限を 20 行とし、超えるときは次の工程で読む必要が高いものを残すと書かなければならない（MUST）。
 
-`worker.md` の「コンテキスト上限と手渡し」の節は、手渡しで起こされた W に向けて、前任の要点は読む場所の案内であり、編集する前には該当範囲を自分で読んで確かめることを書かなければならない（MUST）。要点を判断の根拠として読み替えてよいと書いてはならない（MUST NOT）。
+`worker/common.md` の「コンテキスト上限と手渡し」の節は、手渡しで起こされた W に向けて、前任の要点は読む場所の案内であり、編集する前には該当範囲を自分で読んで確かめることを書かなければならない（MUST）。要点を判断の根拠として読み替えてよいと書いてはならない（MUST NOT）。
 
-`references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の節が成果一覧を列挙する箇所（`工程完了:` の説明と、通知を受けたときの振る舞い）は W / G 共通の定義なので、「読んだコードの要点」を「W の場合のみ必須」という条件付きで含まなければならない（MUST）。G に必須と読める無条件の追記をしてはならない（MUST NOT。G は段ごとに新しく起こされ、`工程中断:` の return を同じ段の新しい G に渡す既存の経路はこの欄を前提にしないため）。書式（1 行の形・上限行数）は `worker.md` を正本とし、`decision-criteria.md` に再掲してはならない（MUST NOT。上限を変えたときに片方が取り残されるため）。
+`references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の節が成果一覧を列挙する箇所（`工程完了:` の説明と、通知を受けたときの振る舞い）は W / G 共通の定義なので、「読んだコードの要点」を「W の場合のみ必須」という条件付きで含まなければならない（MUST）。G に必須と読める無条件の追記をしてはならない（MUST NOT。G は段ごとに新しく起こされ、`工程中断:` の return を同じ段の新しい G に渡す既存の経路はこの欄を前提にしないため）。書式（1 行の形・上限行数）は `worker/common.md` を正本とし、`decision-criteria.md` に再掲してはならない（MUST NOT。上限を変えたときに片方が取り残されるため）。
 
-#### Scenario: worker.md の手渡しの節に欄と書式がある
-- **WHEN** `references/roles/worker.md` の「コンテキスト上限と手渡し」の節を読む
+#### Scenario: worker/common.md の手渡しの節に欄と書式がある
+- **WHEN** `references/roles/worker/common.md` の「コンテキスト上限と手渡し」の節を読む
 - **THEN** 成果一覧に「読んだコードの要点」があり、W の場合のみ必須であること、1 行 1 件の `ファイル:行の範囲 — 分かったこと` の形と上限 20 行が書かれている
 
 #### Scenario: 後任は要点を案内として扱う
-- **WHEN** `references/roles/worker.md` の「コンテキスト上限と手渡し」の節の、手渡しで起こされたときの箇条を読む
+- **WHEN** `references/roles/worker/common.md` の「コンテキスト上限と手渡し」の節の、手渡しで起こされたときの箇条を読む
 - **THEN** 前任の要点は読む場所の案内であり、編集前に該当範囲を自分で読んで確かめると書かれている
 
 #### Scenario: (3a) とトリップワイヤーの return にも欄がある
-- **WHEN** `references/roles/worker.md` の「(3a) の return に書くこと」と「昇格トリップワイヤー」の節を読む
+- **WHEN** `references/roles/worker/implement.md` の「(3a) の return に書くこと」と `references/roles/worker/common.md` の「昇格トリップワイヤー」の節を読む
 - **THEN** どちらにも「読んだコードの要点」を書くことが含まれている
 
 #### Scenario: 手渡しの入力の定義に欄の名前がある
 - **WHEN** `references/decision-criteria.md` の「コンテキスト上限（サブエージェントの手渡し）」の節を読む
-- **THEN** 成果一覧を列挙する 2 箇所がどちらも「読んだコードの要点」を「W の場合のみ必須」の条件付きで含み、書式は `worker.md` を参照していて、上限行数の数値は書かれていない
+- **THEN** 成果一覧を列挙する 2 箇所がどちらも「読んだコードの要点」を「W の場合のみ必須」の条件付きで含み、書式は `worker/common.md` を参照していて、上限行数の数値は書かれていない
 
 ### Requirement: (1) で作業項目ごとに触る範囲を書く
 
-`references/roles/worker.md` は、仕様化する場合、W が `tasks.md` の各タスクに `触る範囲: <パス>:<開始行>-<終了行>`（複数は並べる。新しく作るファイルは `<パス>（新規）`）を書くことを書かなければならない（MUST）。行番号は仕様づくりの時点の値で前のタスクの編集でずれうること、実装の担い手は編集前に該当範囲を読むことを添えなければならない（MUST）。
+`references/roles/worker/spec.md` は、仕様化する場合、W が `tasks.md` の各タスクに `触る範囲: <パス>:<開始行>-<終了行>`（複数は並べる。新しく作るファイルは `<パス>（新規）`）を書くことを書かなければならない（MUST）。行番号は仕様づくりの時点の値で前のタスクの編集でずれうること、実装の担い手は編集前に該当範囲を読むことを添えなければならない（MUST）。
 
 仕様化しない（コード直行）と判定した場合は、同じ内容を作業項目ごとに (1) の return に書くことを書かなければならない（MUST）。
 
 #### Scenario: 仕様化する場合の tasks.md に触る範囲を書く
-- **WHEN** `references/roles/worker.md` の「仕様化する場合（(1) の終わり）」の節を読む
+- **WHEN** `references/roles/worker/spec.md` の「仕様化する場合（(1) の終わり）」の節を読む
 - **THEN** `tasks.md` の各タスクに `触る範囲:` を `ファイル:行` の形で書くこと、行番号は着手時点の値でずれうること、編集前に該当範囲を読むことが書かれている
 
 #### Scenario: 仕様化しない場合は return に書く
-- **WHEN** `references/roles/worker.md` の仕様化判断の節の、仕様化しないと判定した場合の段落を読む
+- **WHEN** `references/roles/worker/spec.md` の仕様化判断の節の、仕様化しないと判定した場合の段落を読む
 - **THEN** 作業項目ごとの `触る範囲:` を (1) の return に書くことが書かれている
 
 ### Requirement: W の 1 周目モデルの変更は過去 PR の再実行による比較記録に基づく
@@ -1252,7 +1287,7 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 
 ### Requirement: W の指示書は索引・共通・段のファイルに分かれている
 
-`plugins/dev-workflow/skills/develop/references/roles/worker.md` は索引でなければならない（MUST）。索引は、段の表（段の名前 `spec` / `implement` / `finish`・日本語名・担う工程・読むファイル）と、旧 worker.md の節から移し先への対応表だけを持ち、手順の本文とコードブロック（```）を持ってはならない（MUST NOT）。
+`plugins/dev-workflow/skills/develop/references/roles/worker.md` は索引でなければならない（MUST）。索引は、段の表（段の名前 `spec` / `implement` / `finish`・日本語名・担う工程・読むファイル）だけを持ち、手順の本文・コードブロック（```）・旧 worker.md の節から移し先への対応表を持ってはならない（MUST NOT）。
 
 W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 本に置かなければならない（MUST）:
 
@@ -1263,9 +1298,9 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 どの段でも要る規則（W がしないこと・実装に入る前の確認・昇格トリップワイヤー・コンテキスト上限と手渡し）は `common.md` に置き、それを使う全部の段から読める位置になければならない（MUST。1 つの段のファイルにだけ置いて、他の段で効かなくしてはならない）。1 回の起動で読む字数に上限は置かない。字数を減らすことを配置の理由にしてはならず（MUST NOT）、節の置き場所は、その節を使う段と読み手（W か本体か）で決める。`worker/` の 4 本・索引・`references/pre-classification.md` の `## ` 見出しは、このうち 1 ファイルにだけなければならない（MUST。同じ節を 2 か所に書かない）。移すときに手順の中身（規則・書式・コマンド・閾値）を変えてはならない（MUST NOT）。段をまたぐ参照はファイル名と節名で書き、中身を言い換えて再掲してはならない（MUST NOT）。
 
-「(3) をこれより細かく切らない」の箇条（手渡しの固定分と、実装の途中で交代させたときに後任が Red のテストから再出発する理由）は、develop の `SKILL.md` の (3) に置かなければならない（MUST）。SKILL.md はこれを理由の正本として持ち、worker.md を理由の正本として指してはならない（MUST NOT）。
+「(3) をこれより細かく切らない」の箇条（手渡しの固定分と、実装の途中で交代させたときに後任が Red のテストから再出発する理由）は、develop の `SKILL.md` の (3) に置かなければならない（MUST）。SKILL.md はこれを理由の正本として持ち、索引 `references/roles/worker.md` や `references/roles/worker/` の指示書を理由の正本として指してはならない（MUST NOT）。
 
-この要件の回帰テスト（`plugins/dev-workflow/tests/develop-worker-stages.bats`）の守備範囲は次のとおりとする。入力は索引 `references/roles/worker.md`・`worker/` の 4 本・`references/pre-classification.md` のファイルの中身で、拾うのは、索引の中のコードブロック・段の表が指すファイルの不在・昇格トリップワイヤーの節が `common.md` に無いこと・同じ `## ` 見出し行が 2 ファイル以上にあること、である。次はテストを通ってしまい、この要件の回帰テストでは止めない: 見出しを変えて同じ節を別のファイルに書いたもの、見出し以外の本文で規則を言い換えて再掲したもの、移すときに規則・書式・コマンド・閾値の文言を変えたもの、W が段のファイル以外（`decision-criteria.md` の節など）を読む分。これらは PR レビューで見る。この穴をテストで塞ぎ切ることは完了条件にしない。
+この要件の回帰テスト（`plugins/dev-workflow/tests/develop-worker-stages.bats`）の守備範囲は次のとおりとする。入力は索引 `references/roles/worker.md`・`worker/` の 4 本・`references/pre-classification.md` のファイルの中身で、拾うのは、索引の中のコードブロック・段の表が指すファイルの不在・昇格トリップワイヤーの節が `common.md` に無いこと・同じ `## ` 見出し行が 2 ファイル以上にあること、である。次はテストを通ってしまい、この要件の回帰テストでは止めない: 見出しを変えて同じ節を別のファイルに書いたもの、見出し以外の本文で規則を言い換えて再掲したもの、移すときに規則・書式・コマンド・閾値の文言を変えたもの、索引がコードブロックを使わずに旧 worker.md の節から移し先への対応表を持つもの、W が段のファイル以外（`decision-criteria.md` の節など）を読む分。これらは PR レビューで見る。この穴をテストで塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 索引が中身を持たない
 
@@ -1312,7 +1347,7 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 重要実装の事前分類（聖域パス・マージ権限・層間契約・課金/法務の表と、W の上限・読んで判断する役の種別・残量モードの優先の説明）は、`plugins/dev-workflow/skills/develop/references/pre-classification.md` に置かなければならない（MUST）。このファイルが事前分類の正本であり、`worker/` の 4 本と索引に表を再掲してはならない（MUST NOT）。
 
-事前分類を参照する次の箇所は `references/pre-classification.md` を指さなければならず（MUST）、事前分類について `references/roles/worker.md` を指してはならない（MUST NOT）: develop の `SKILL.md` の (1) の spawn の行と「モデル」の役割表・`references/roles/spec-reviewer.md`・`references/decision-criteria.md` の残量モード表・pr-review-gate の `stages/triage.md`・`plugins/dev-workflow/references/model-tiers.md`・`plugins/dev-workflow/README.md`。
+事前分類を参照する次の箇所は `references/pre-classification.md` を指さなければならず（MUST）、事前分類について索引 `references/roles/worker.md` や `references/roles/worker/` の指示書を指してはならない（MUST NOT）: develop の `SKILL.md` の (1) の spawn の行と「モデル」の役割表・`references/roles/spec-reviewer.md`・`references/decision-criteria.md` の残量モード表・pr-review-gate の `stages/triage.md`・`plugins/dev-workflow/references/model-tiers.md`・`plugins/dev-workflow/README.md`。
 
 #### Scenario: 表が 1 か所にある
 
@@ -1322,11 +1357,11 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 #### Scenario: 参照元が新しい置き場所を指す
 
 - **WHEN** 上に挙げた参照元の、事前分類に触れる行を読む
-- **THEN** どれも `pre-classification.md` を指し、事前分類について `roles/worker.md` を指す行が無い
+- **THEN** どれも `pre-classification.md` を指し、事前分類について `roles/worker.md` や `roles/worker/` の指示書を指す行が無い
 
 ### Requirement: 本体は W の起動指示と再開指示に段を書く
 
-本体は W の起動指示・SendMessage による再開指示・手渡しの起動指示に、`段: spec` / `段: implement` / `段: finish` のいずれか 1 行を書かなければならない（MUST）。`段:` の値は、その起動・再開で本体が W に指示する工程で決めなければならない（MUST）: (1) の spawn と R1 の REQUEST_CHANGES を受けた再開は `spec`、(3a) の再開と G の failed や CI の見張りの `fix` を受けて直させる再開は `implement`、(3b) の再開は `finish` とする。手渡しの起動指示も同じ規則で決める: 前任が工程の途中で止まり（前任の return の 1 行目が `工程完了:` でない）、後任に同じ工程を続けさせるときは前任が担っていた段、前任が工程を終えて（1 行目が `工程完了:`）return したあとに交代させるときは、本体が後任に次に指示する工程の段とする（MUST。例: (3a) を終えた前任の後任に (3b) を指示するなら `finish`、(1) を終えた前任の後任に R1 の REQUEST_CHANGES の修正を指示するなら `spec`）。次に指示する工程は、既存要件「W の (3) は 2 回の return に分かれる」のとおり本体が自分の指示した工程から決め、前任の return の工程名の文字列から決めてはならない（MUST NOT）。保留で止まる本体は、引き継ぎのコメント（既存要件「保留で止まるときは記録先に引き継ぎのコメントを 1 種類の書式で残す」）の「次に起こす役割」が W のとき、その W の起動指示に書く `段:` の値を同じ項目に書かなければならない（MUST）。新しいセッションで引き継ぎから再開する本体は自分の指示した工程を持たないので、W の起動指示の `段:` を引き継ぎの「次に起こす役割」に書かれた値で決めなければならない（MUST）。develop の `SKILL.md` はこの対応を書かなければならない（MUST）。
+本体は W の起動指示・SendMessage による再開指示・手渡しの起動指示に、`段: spec` / `段: implement` / `段: finish` のいずれか 1 行を書かなければならない（MUST）。`段:` の値は、その起動・再開で本体が W に指示する工程で決めなければならない（MUST）: (1) の spawn と R1 の REQUEST_CHANGES を受けた再開は `spec`、(3a) の再開と G の failed や CI の見張りの `fix` を受けて直させる再開は `implement`、(3b) の再開は `finish` とする。手渡しの起動指示も同じ規則で決める: 前任が工程の途中で止まり（前任の return の 1 行目が `工程完了:` でない）、後任に同じ工程を続けさせるときは前任が担っていた段、前任が工程を終えて（1 行目が `工程完了:`）return したあとに交代させるときは、本体が後任に次に指示する工程の段とする（MUST。例: (3a) を終えた前任の後任に (3b) を指示するなら `finish`、(1) を終えた前任の後任に R1 の REQUEST_CHANGES の修正を指示するなら `spec`）。次に指示する工程は、既存要件「W の (3) は 2 回の return に分かれる」のとおり本体が自分の指示した工程から決め、前任の return の工程名の文字列から決めてはならない（MUST NOT）。保留で止まる本体は、引き継ぎのコメント（既存要件「保留で止まるときは記録先に引き継ぎのコメントを 1 種類の書式で残す」）の「次に起こす役割」が W のとき、その W の起動指示に書く `段:` の値を同じ項目に書かなければならない（MUST）。新しいセッションで引き継ぎから再開する本体は自分の指示した工程を持たないので、W の起動指示の `段:` を引き継ぎの「次に起こす役割」に書かれた値で決めなければならない（MUST）。develop の `SKILL.md`（1 ループの各工程）と `references/handover.md`（引き継ぎの「次に起こす役割」と再開手順）はこの対応を書かなければならない（MUST）。
 
 仕様化しないと判定した W に、本体が同じコンテキストのまま (3a) へ進むよう指示したときは、W は `worker/implement.md` を読んでから進まなければならない（MUST）。`worker/spec.md` はこれを書かなければならない（MUST）。
 
@@ -1363,38 +1398,6 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 - **WHEN** `codex-develop.py request` で `spec` / `implement` / `finish` / `explore` / `summarize` の依頼を作り、prompt の `CANONICAL SOURCE` 行を読む
 - **THEN** 上の組み合わせのファイルが付き、`skills/develop/references/roles/worker.md` は付いていない
-
-### Requirement: 既存要件が worker.md に置いた内容は移し先のファイルを指す
-
-既存要件（この capability と他の capability のもの）が `skills/develop/references/roles/worker.md`（「W の指示書」「worker.md」と書いたものを含む）に置く・含む・書く・明記すると定めた内容、およびその節を読むと定めた WHEN は、次の対応表の移し先を指すものとして読まなければならない（MUST）。
-
-| 旧 worker.md の節 | 移し先 |
-|---|---|
-| 冒頭（本体が渡すもの） | `references/roles/worker/common.md` |
-| W がしないこと | `references/roles/worker/common.md` |
-| 記録先の用意（Draft PR を記録先にする場合） | `references/roles/worker/spec.md` |
-| 仕様化判断と記録 | `references/roles/worker/spec.md` |
-| 分割判定 | `references/roles/worker/spec.md` |
-| 仕様化する場合（(1) の終わり）（R1 の APPROVE を確認してから実装に入る規則と仕様レビュー結果の書式を除く） | `references/roles/worker/spec.md` |
-| 仕様化判断の「記録する前に実装へ進まない」と、R1 の APPROVE を確認してから実装に入る規則・仕様レビュー結果の書式 | `references/roles/worker/common.md`「実装に入る前の確認」 |
-| (3a) 実装＋verify（全経路共通の大原則・順 3 の一覧の段落・(3a) の return を含む） | `references/roles/worker/implement.md` |
-| 昇格トリップワイヤー | `references/roles/worker/common.md` |
-| (3b) archive＋PR＋仕様宣言 | `references/roles/worker/finish.md` |
-| 重要実装の事前分類 | `references/pre-classification.md` |
-| コンテキスト上限と手渡し（「(3) をこれより細かく切らない」を除く） | `references/roles/worker/common.md` |
-| 「(3) をこれより細かく切らない」の箇条 | develop の `SKILL.md` の (3) |
-
-既存要件のうち否定の形のもの（worker.md に特定の記述が無いこと・特定の行にしか出てはならないこと）は、索引・`worker/` の 4 本・`references/pre-classification.md` の全部に掛けなければならない（MUST）。「`worker.md`・`spec-reviewer.md`・`gate-runner.md` の 3 つ」のように役割の指示書を列挙する要件の worker.md は、`worker/` の 4 本の集まりを指し、要件が求める記述は上の対応表でその内容が移った 1 本にあればよい（MUST。4 本すべてに同じ記述を置いてはならない）。
-
-#### Scenario: 節を読む WHEN の読み替え
-
-- **WHEN** 既存要件の Scenario が「`references/roles/worker.md` の『コンテキスト上限と手渡し』の節を読む」と書いている
-- **THEN** `worker/common.md` の同じ節を読んで判定する
-
-#### Scenario: 否定の要件の読み替え
-
-- **WHEN** 既存要件が「`worker.md` に W が `/wt-setup` を呼ぶ記述が無い」と定めている
-- **THEN** 索引・`worker/` の 4 本・`pre-classification.md` のどれにもその記述が無いことで判定する
 
 ### Requirement: W の指示書の読み込み量は個体ごとに測り、分割前と並べて記録する
 
@@ -1470,7 +1473,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 ### Requirement: レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける
 
-`skills/develop/SKILL.md` は、節「レビューの周を主に聞かずに続ける（直し方の判定）」を 1 か所だけ持ち、仕様レビュー（R1）と PR のレビュー（G）の両方について、2 周目以降の周の終わりに止める指摘が残ったときの本体の手順の正本としなければならない（MUST）。`references/roles/spec-reviewer.md` と `skills/pr-review-gate/stages/triage.md` は規則を短く書いてこの節を指し、判定の記録と事後報告の書式を再掲してはならない（MUST NOT）。
+`skills/develop/references/fix-check.md` は、節「レビューの周を主に聞かずに続ける（直し方の判定）」を 1 か所だけ持ち、仕様レビュー（R1）と PR のレビュー（G）の両方について、2 周目以降の周の終わりに止める指摘が残ったときの本体の手順の正本としなければならない（MUST）。`references/roles/spec-reviewer.md` と `skills/pr-review-gate/stages/triage.md` は規則を短く書いてこの節を指し、判定の記録と事後報告の書式を再掲してはならない（MUST NOT）。
 
 **規則**: 2 周目以降の周の終わりに残った止める指摘（仕様レビューは R1 の `REQUEST_CHANGES` の BLOCKER、PR のレビューは G が `needs-fix-check` で渡した指摘）がすべて直し方の決まったもので、PR トークン上限の計測が exit 2 でなければ、本体は主に聞かず次の周を回し、記録先に事後報告を残す（MUST）。主に聞くのは、直し方の判定が「選び直しが要る」とき（入力不足で判定が出なかったときを含む）と、PR トークン上限の計測が exit 2 のときの 2 つだけとする（MUST）。interactive と unmanned で同じに扱う（MUST）。主に聞かずに回す周の回数に上限を置かない（MUST NOT。止めるのは PR トークン上限、直し方の判定、PR 側の順 6 の「PR ごとに 1 回まで」）。
 
@@ -1493,19 +1496,19 @@ executor ごとの起こし方は次のとおりとしなければならない�
 この判定の守備範囲は、レビューの 2 周目以降の周の終わりに残った指摘（仕様レビューの R1 の BLOCKER、PR のレビューで G が `needs-fix-check` で渡した指摘）について、主の判断が要る指摘を主に聞かずに進めてしまうことを防ぐことである。拾いたいのは、選ぶのに主の側にしか無い情報が要る、または選択肢によって受け入れ条件や利用者に見える振る舞いが変わる設計の選択肢から選ぶ必要がある指摘・記録先の範囲を変える指摘・前の周で決まっているとした直し方で閉じなかった指摘で、これらは主に上げる。直し方が 1 つに決まる指摘（例: 受け入れ条件の文と artifact の 1 文が食い違い、artifact 側を受け入れ条件に合わせれば閉じる BLOCKER。同じ文言が別の場所に残っている指摘）と、選択肢の違いが受け入れ条件と利用者に見える振る舞いを変えない指摘（例: BLOCKER を閉じるテストを、外から親を一時停止して書くか、本体にテスト用の待ちを入れて書くか。どちらでも実装の振る舞いは同じ）は主に聞かずに通す。判定が「決まっている」とした直し方が外れることは防がない（次の周の終わりの判定の ③ で拾う）ので、判定の誤りが 1 件も無いことをこの手順の完了条件にしない。
 
 #### Scenario: 正本の節が 1 か所にある
-- **WHEN** `skills/develop/SKILL.md`・`references/roles/spec-reviewer.md`・`skills/pr-review-gate/stages/triage.md` を読む
-- **THEN** 判定役・定義・入力・返答の 1 行目・判定の記録と事後報告の書式は SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」にだけあり、ほかの 2 つはその節を指している
+- **WHEN** `skills/develop/references/fix-check.md`・`references/roles/spec-reviewer.md`・`skills/pr-review-gate/stages/triage.md` を読む
+- **THEN** 判定役・定義・入力・返答の 1 行目・判定の記録と事後報告の書式は `references/fix-check.md` の節「レビューの周を主に聞かずに続ける（直し方の判定）」にだけあり、ほかの 2 つはその節を指している
 
 #### Scenario: 主に聞く条件が 2 つだけ書かれている
-- **WHEN** SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読む
+- **WHEN** `references/fix-check.md` の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読む
 - **THEN** 主に聞くのは「方針の選び直しが要る」と「PR トークン上限を超える（`pr-token-budget.sh` が exit 2）」の 2 つだけと書かれている
 
 #### Scenario: 判定は可否と根拠の契約で依頼する
-- **WHEN** SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読み、この change の前後で `plugins/dev-workflow/agents/decider.md` を比べる
+- **WHEN** `references/fix-check.md` の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読み、この change の前後で `plugins/dev-workflow/agents/decider.md` を比べる
 - **THEN** 節には依頼を `agents/decider.md` の「可否と根拠」の契約で出し、3 点ではなく可否と根拠で返すよう依頼文に書くことが書かれ、`agents/decider.md` には差分が無い
 
 #### Scenario: 判定の入力が固定されている
-- **WHEN** SKILL.md の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読む
+- **WHEN** `references/fix-check.md` の節「レビューの周を主に聞かずに続ける（直し方の判定）」を読む
 - **THEN** 入力として、記録先の本文と関連コメント・残った指摘の原文・前の周の指摘の原文・対象ファイルのパス・W の直近の return の 5 つが書かれている
 
 #### Scenario: 1 回目の入力不足は補って依頼し直す
@@ -1542,11 +1545,13 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 ### Requirement: 保留の許容は会話の返事で受け、PR へのコメントを求めない
 
-この要件の案内と、会話で受けた許容に PR へのコメントを求めない決まりは、interactive の本体のものである。channel の本体は、要件「channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける」と「channel モードの保留はチャンネルの返事で再開する」に従う（MUST。チャンネルの返事を確かめられるセッションでは、チャンネルの返事を会話で受けた回答として同じく PR へのコメントを求めない）。interactive の本体では、`skills/develop/SKILL.md` の「保留で止まるときの引き継ぎ」の主への案内は、リスク許容の返事について「このセッションの会話で返すか、新しいセッションで `/develop <記録先> 許容する` と打てばよく、PR へのコメントは要らない」と書かなければならない（MUST）。本体は会話で許容の返事を受けたら、主に PR へのコメントを求めてはならず（MUST NOT）、保留の解除の G に、自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）・その発言の日時（会話ログの timestamp）・原文を渡さなければならない（MUST）。新しいセッションでの再開手順は、`/develop` の引数の残り（`許容する` など）を会話で受けた回答として扱い、その新しいセッションのセッション ID・日時・原文を同じく G に渡さなければならない（MUST）。ただし Orca 経路のエピックの子が親経由でリスク許容を受けたとき（会話に届いた入力が `主の返事（親エピック #<E> 経由）:` で始まるとき、または起動し直されたセッションの最初の指示の引数の残りのうち、起動し直しの括弧 `（エピック #<E> の子。返事を受けて起動し直し）` のうしろが `主の返事（親エピック #<E> 経由）:` で始まるとき）は、自分のセッション ID・日時・原文を渡さず、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の手順（`owner-reply-check.sh --relayed`）で確かめてから G に渡さなければならない（MUST）。この手順は SKILL.md の「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」に書き、再開手順の手順 2 より先に当てる。再開手順の本文は変えない（MUST）。記録の書式と真正性確認は pr-review-gate の手順 5 が正本で、SKILL.md には書式を再掲しない（MUST NOT）。（起動し直しで届いた親経由の許容の Scenario は、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の「起動し直しの指示に付いて届いた親経由の許容を確かめる」が正本）
+この要件の案内と、会話で受けた許容に PR へのコメントを求めない決まりは、interactive の本体のものである。channel の本体は、要件「channel モードのリスク許容はチャンネルの返事を確かめられるときだけチャンネルで受ける」と「channel モードの保留はチャンネルの返事で再開する」に従う（MUST。チャンネルの返事を確かめられるセッションでは、チャンネルの返事を会話で受けた回答として同じく PR へのコメントを求めない）。interactive の本体では、`skills/develop/references/handover.md` の「保留で止まるときの引き継ぎ」の主への案内は、リスク許容の返事について「このセッションの会話で返すか、新しいセッションで `/develop <記録先> 許容する` と打てばよく、PR へのコメントは要らない」と書かなければならない（MUST）。本体は会話で許容の返事を受けたら、主に PR へのコメントを求めてはならず（MUST NOT）、保留の解除の G に、自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）・その発言の日時（会話ログの timestamp）・原文を渡さなければならない（MUST）。新しいセッションでの再開手順は、`/develop` の引数の残り（`許容する` など）を会話で受けた回答として扱い、その新しいセッションのセッション ID・日時・原文を同じく G に渡さなければならない（MUST）。ただし Orca 経路のエピックの子が親経由でリスク許容を受けたとき（会話に届いた入力が `主の返事（親エピック #<E> 経由）:` で始まるとき、または起動し直されたセッションの最初の指示の引数の残りのうち、起動し直しの括弧 `（エピック #<E> の子。返事を受けて起動し直し）` のうしろが `主の返事（親エピック #<E> 経由）:` で始まるとき）は、自分のセッション ID・日時・原文を渡さず、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の手順（`owner-reply-check.sh --relayed`）で確かめてから G に渡さなければならない（MUST）。この手順は `references/epic-child-stop.md` の節「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」に書き、再開手順の手順 2 より先に当てる。再開手順の本文は変えない（MUST）。記録の書式と真正性確認は pr-review-gate の手順 5 が正本で、develop の手順書（SKILL.md と `references/epic-child-stop.md`）には書式を再掲しない（MUST NOT）。（起動し直しで届いた親経由の許容の Scenario は、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の「起動し直しの指示に付いて届いた親経由の許容を確かめる」が正本）
+
+この要件の入力は、主が保留の許容を返す場所（このセッションの会話・新しいセッションの `/develop` の引数・Orca 経路のエピックの子に親経由で届く返事・channel のチャンネル）である。拾いたい誤りは、会話で受けた許容に PR へのコメントを求めること、親経由の返事を確かめずに自分の発言として G に渡すことである。次は通してよく、この要件では止めない: チャンネルの返事を確かめられないセッションで PR へのコメントを案内すること。許容の受け方の揺れが見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 案内に会話の返事と /develop の引数がある
 
-- **WHEN** `skills/develop/SKILL.md` の「保留で止まるときの引き継ぎ」の主への案内を読む
+- **WHEN** `skills/develop/references/handover.md` の「保留で止まるときの引き継ぎ」の主への案内を読む
 - **THEN** 会話で返すか `/develop <記録先> 許容する` と打てばよく、PR へのコメントは要らないことが書かれている
 
 #### Scenario: 新しいセッションで引数に許容を添えて再開する
@@ -1596,7 +1601,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 1〜7 をすべて通った子に限り、`orca terminal close --worktree path:<子のパス> --all`、`orca worktree rm --worktree path:<子のパス>` をこの順に呼ばなければならない（MUST。rm は子ごとに 1 回、close は成功すれば 1 回）。`orca worktree rm` に `--force` を付けてはならない（MUST NOT）。close が非 0 で終わったとき（Orca が `terminal_close_incomplete` を返す場合。子のセッションが印を付けた直後でターンをまだ終えておらず、端末を閉じきれないことがある）は、次の順で 1 回だけ閉じ直さなければならない（MUST）。(a) 原因の手がかりとして `orca terminal list --worktree path:<子のパス> --json` を 1 回呼び、その出力を stderr に流す（読めなくても先へ進む）。(b) `EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT` 秒（既定 10。数字でなければ既定）待つ。(c) `orca terminal close` を同じ引数でもう 1 回呼ぶ。閉じ直しで exit 0 になれば、そのまま rm へ進む。閉じ直しも非 0 なら、rm を呼ばずに `kept <N> close-failed` を出し、stderr に主がする操作（どの画面で何をするか。Orca で子のワークスペース `<子のパス>` を開き、動いているターンの終了を待つか端末を手で閉じてから、親で `epic-dispatch.sh reap <N>` をやり直す）を 1〜2 行で出す（MUST）。閉じ直しは 1 回までで、3 回目は呼ばない（MUST NOT）。rm が非 0 なら `kept <N> rm-failed` を出す（MUST）。ただし rm が非 0 で、その stderr に `terminal sweep failed` を含むとき（Orca が端末の片付けを確かめられずに削除を止めたとき）は、理由を `rm-failed-terminal-sweep` にして `kept <N> rm-failed-terminal-sweep` を出す（MUST）。どちらの rm の失敗でも `--force` を付けた再試行をしてはならず、rm は子ごとに 1 回しか呼ばない（MUST NOT。`--force` は端末の片付けの確認だけでなく git の未コミット変更の保護も外すため。Orca を再起動してから `reap` をやり直せば通る見込みで、やり直しは親の判断に残す）。rm の stderr は従来どおり親の stderr にも流す（SHALL）。rm が exit 0 のあと、`git rev-parse --verify --quiet refs/heads/<ブランチ>` が exit 0 で、その出力が 7 で一致した HEAD と同じときだけ、`git worktree list --porcelain` にその子のパスが無くなるまで待ち（`EPIC_DISPATCH_REAP_DETACH_TIMEOUT` 秒を上限、既定 30。確認の回数（上限秒数 ÷ 間隔 + 1 回）か経過秒数のどちらか早い方で止める。`EPIC_DISPATCH_REAP_DETACH_INTERVAL` 秒間隔、既定 1。`git worktree list` が非 0 のときは残っているものとして待つ）、無くなったら、ブランチの先端を読み直して HEAD と同じときだけ `git branch -D <ブランチ>` を呼ぶ（MUST。違えば呼ばずに `reaped <N> branch-kept`）。上限を超えても残っているときは `git branch -D` を呼ばずに `reaped <N> branch-kept` を出す（MUST）。ブランチが無いか、`git branch -D` が exit 0 なら `reaped <N>`、先端が違うか `git branch -D` が非 0 なら `reaped <N> branch-kept` を出す（MUST）。1〜7 のどれかで外れた子、close か rm が失敗した子について、`git branch -D` を呼んではならない（MUST NOT）。stdout には子ごとに 1 行だけを出し、`orca`・`git`・`gh` 自身の出力は stderr に流す（SHALL）。子ごとの行を出し終えたら、`kept` があっても exit 0 で終わる（MUST）。
 
-この要件の守備範囲で入力として扱うのは、develop の本体が SKILL.md の手順どおりに渡す番号と、`orca worktree current --json`・`orca worktree list --json` の出力（2026-10-08、Orca 1.4.222 で確かめた `id`・`repoId`・`path`・`branch`・`linkedIssue`・`isArchived`・`isMainWorktree`・`workspaceStatus`・`parentWorktreeId`）に加え、7 の 2 段目で判定する `gh pr list --state merged --search <HEAD>` の出力（`headRefOid` の行。検索が返す PR の絞り込みは信用せず、完全一致だけで判定する）と、`orca terminal close` の終了コード（非 0 なら失敗として閉じ直す。失敗の種類は区別しない）と、閉じ直しの前に呼ぶ診断用の `orca terminal list --worktree path:<子のパス> --json` の出力（stderr に流すだけで、中身は読まず判定に使わない。非 0 でも先へ進む）と、`orca worktree rm` の stderr（`terminal sweep failed` を含むかだけを見る。文言が変わると `rm-failed` に戻り、消す側には倒れない）と、`orca worktree rm` が exit 0 のあとに `git worktree list --porcelain` が返す出力と終了コード（`worktree <パス>` の行だけを見て、対象の子のパスと完全一致する行があるかだけで判定する。非 0 のときは残っているものとして扱う）である。拾いたい誤りは、対象のワークツリーが git に残っている間にそのブランチを消そうとして失敗すること（残っている間は消さずに待つ。上限を超えたら消さずに `branch-kept`）、印が付いていない子・親の `launch` が作っていないワークツリー・push していないコミットや未コミットの変更や `LLM/` を持つワークツリーを消すことである。次は通してよく、この要件では止めない: 一覧に対象以外のパスだけがある（対象のパスは無い。パスの前方一致・部分一致は残っている扱いにしない）ときは待たずにブランチ削除へ進む／Orca の出力の形が変わったときの検知（読めなければ `gone` か `kept` になり、消す側には倒れない）／フォークの同名ブランチのマージ済み PR（HEAD の一致で落ちる）／オーナーがボードで手で `completed` に動かした子（子が付けた印と同じに扱う）／確認から削除までの間に子が積んだコミット（`--force` を付けない rm と、ブランチの先端の比較で残る）。`mark` は `<issue>` の PR がマージ済みかを検査しない（手順書の条件に頼る。誤って付いた印は `reap` の `no-merged-pr`・`head-mismatch` で止まる）。`.gitignore` の対象のうち `LLM/` 以外は守らない（`git status --porcelain` に出ないので、ワークツリーと一緒に消える）。すり抜ける入力が見つかるたびに確認を足すことは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、develop の本体が `references/epic.md` の手順どおりに渡す番号と、`orca worktree current --json`・`orca worktree list --json` の出力（2026-10-08、Orca 1.4.222 で確かめた `id`・`repoId`・`path`・`branch`・`linkedIssue`・`isArchived`・`isMainWorktree`・`workspaceStatus`・`parentWorktreeId`）に加え、7 の 2 段目で判定する `gh pr list --state merged --search <HEAD>` の出力（`headRefOid` の行。検索が返す PR の絞り込みは信用せず、完全一致だけで判定する）と、`orca terminal close` の終了コード（非 0 なら失敗として閉じ直す。失敗の種類は区別しない）と、閉じ直しの前に呼ぶ診断用の `orca terminal list --worktree path:<子のパス> --json` の出力（stderr に流すだけで、中身は読まず判定に使わない。非 0 でも先へ進む）と、`orca worktree rm` の stderr（`terminal sweep failed` を含むかだけを見る。文言が変わると `rm-failed` に戻り、消す側には倒れない）と、`orca worktree rm` が exit 0 のあとに `git worktree list --porcelain` が返す出力と終了コード（`worktree <パス>` の行だけを見て、対象の子のパスと完全一致する行があるかだけで判定する。非 0 のときは残っているものとして扱う）である。拾いたい誤りは、対象のワークツリーが git に残っている間にそのブランチを消そうとして失敗すること（残っている間は消さずに待つ。上限を超えたら消さずに `branch-kept`）、印が付いていない子・親の `launch` が作っていないワークツリー・push していないコミットや未コミットの変更や `LLM/` を持つワークツリーを消すことである。次は通してよく、この要件では止めない: 一覧に対象以外のパスだけがある（対象のパスは無い。パスの前方一致・部分一致は残っている扱いにしない）ときは待たずにブランチ削除へ進む／Orca の出力の形が変わったときの検知（読めなければ `gone` か `kept` になり、消す側には倒れない）／フォークの同名ブランチのマージ済み PR（HEAD の一致で落ちる）／オーナーがボードで手で `completed` に動かした子（子が付けた印と同じに扱う）／確認から削除までの間に子が積んだコミット（`--force` を付けない rm と、ブランチの先端の比較で残る）。`mark` は `<issue>` の PR がマージ済みかを検査しない（手順書の条件に頼る。誤って付いた印は `reap` の `no-merged-pr`・`head-mismatch` で止まる）。`.gitignore` の対象のうち `LLM/` 以外は守らない（`git status --porcelain` に出ないので、ワークツリーと一緒に消える）。すり抜ける入力が見つかるたびに確認を足すことは、この要件の完了条件としない。
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` は、`orca`・`gh`・`git`・`sleep` を PATH 上のスタブにして、下の Scenario を確かめなければならない（MUST）。
 
@@ -1756,7 +1761,7 @@ develop の SKILL.md は「ループの終わり」の節を持ち、次を規�
 - **THEN** 本体は結果を記録先にコメントし、`gh issue close <N> --reason completed` で閉じてから `epic-dispatch.sh mark` を呼び、主に閉じる操作も推奨の採否も渡さない
 
 ### Requirement: Orca 経路の本体は印が付いた子のワークスペースを片付ける
-develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の Orca 経路の規定に加わる。
+develop の `references/epic.md`「エピックの扱い」の Orca 経路は、次を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の Orca 経路の規定に加わる。
 
 - 本体は `epic-dispatch.sh wait` に、片付け待ちの子を `--watch-done <N>` で渡す（MUST）。片付け待ちの子は、`launch` に渡して `deferred` 以外を返したことのある子（閉じた子を含む）から、エピックに `子 #N のワークツリーを残した` で始まる行がある子と、このセッションで `reap` が `reaped <N>`（`branch-kept` を含む）か `gone <N>` を返した子と、本体が確かめて消した子（下の `kept` の扱い）を除いたものとする（MUST）。除いたあとにこのセッションの `launch` が `launched <N>` を返した子は片付け待ちに戻す（MUST。前のセッションで起動に失敗した子やワークツリーを手で消した子は `gone` になるが、起動し直すとワークツリーができるため）。除いた子は渡さない（MUST NOT。ワークツリーが無い子は印が付かず、`wait` が最長 6 時間待つため）
 - `done <N>...` で起こされたら、本体は `epic-dispatch.sh reap <N>...` を Bash で 1 回呼ぶ（MUST）。wt-clean を呼んではならない（MUST NOT）。子ごとの確認をオーナーに取ってはならない（MUST NOT。子が印を付けたことを承認として扱う）
@@ -1764,37 +1769,37 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 
 この規定の守備範囲で入力として扱うのは、`reap` の `kept` の行、対象ワークツリーの `git status` と `LLM/` の有無と HEAD、起点ブランチのリモートの先端、マージ済み PR の `headRefOid` である。拾いたい誤りは、消してはいけないもの（未コミットの変更、起点ブランチに入っていない commit、ログ）を含むワークツリーを消すことと、特定できないワークツリーを消すことである。次は通ってよく、この規定では止めない: PR が複数ありどれかの `headRefOid` と一致すれば取り込み済みとみなすこと、HEAD より後の commit が PR に無くても tree が一致すれば消すこと、`gh` や `git` の一時的な失敗で消さずに残すこと。穴を塞ぎ切ることは完了条件にしない（`--force` なしの `rm` が未コミットの変更で止まる安全網があり、取りこぼしは残す側に倒れる）
 - `closed` と `done` の 2 行で起こされたら、両方を処理する（MUST）
-- 開いている子が無くなったら、片付け待ちの子で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す。残った片付け待ちの子（`kept <N> not-done` の子）が 1 件以上あれば、その子だけを `--watch-done` に渡して（位置引数の子なしで）待つ。0 件なら `wait` を呼ばずに待ちを終える（MUST）。完了条件の確認と報告がまだなら行う。待ちの途中で `done <N>...` で起こされたときも、`reap` の結果で `reaped`・`gone` の子を外して同じに扱う（MUST。このとき読まれるのは `done` で起こされたときの手順なので、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことを、その手順にも書く）。エピックの完了条件の確認と報告を、この待ちを理由に遅らせない（SHALL）。この待ちが `timeout` で終わったら、残っている子の番号をユーザーに報告して待ちをやめる（SHALL）
+- 開いている子が無くなったら、片付け待ちの子で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す。残った片付け待ちの子（`kept <N> not-done` の子）が 1 件以上あれば、その子だけを `--watch-done` に渡して（位置引数の子なしで）待つ。0 件なら `wait` を呼ばずに待ちを終える（MUST）。完了条件の確認と報告がまだなら行う。待ちの途中で `done <N>...` で起こされたときも、`reap` の結果で `reaped`・`gone` の子を外して同じに扱う（MUST。このとき読まれるのは `done` で起こされたときの手順なので、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことを、その手順にも書く）。エピックの完了条件の確認と報告を、この待ちを理由に遅らせない（SHALL）。この待ちが `timeout` で終わっても、下のやめる直前の確認を通すまでは待ちをやめてはならない（MUST NOT）。親が `wait` を呼ばずにターンを終えてよいのは、`references/epic.md` の **待ちをやめてよい条件** のどれかを満たすときだけである（MUST）。その条件は、(a) 動いている子も片付け待ちの子も 0 件になり `clear` まで済ませたとき（下の確認は `clear` の前に行う）、(b) 動いている子も片付け待ちの子も 0 件で後回しの子だけが残り主に報告して止まるとき、(c) 手順 6 と 7 の `error`・`failed`、`launch` が子を 1 件も作らず exit 1 で終わったこと、`adopt` の失敗、`wait`・`reap`・`pending-owner` が stdout に何も出さず exit 1 で終わったことを主に報告して止まるとき、(d) 片付け待ちの子だけを待つ `wait` が `timeout` で終わったとき、(e) 主がやめるよう言ったとき、の 5 つとする。動いている子が残るあいだに `timeout` が続く・変化が無い・待ちが長い・主に上げた・主の返事待ちの子が残っている・親の側の予算や時間は、やめる理由にしない（MUST NOT）。(a)〜(d) でやめる直前には、`launch` に渡したことのある子のうち issue が開いている子（開いた子）について、主の返事待ちで止まった子が無いことを、`epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped <開いた子>...`、`epic-dispatch.sh pending-owner <開いた子>...`、開いた子の issue の `needs-approval` ラベルの有無で確かめる（MUST。開いた子が 0 件なら呼ばずに、報告に確かめる子が無かったと書く）。(1) が `stopped`・`closed` の行を返した、(2) が手順 7 の照合で外さなかった `pending <N>` を返した、または `needs-approval` の子がいたときは、(a)(b)(d) ではやめずに返った行を `references/epic.md` の手順 4・8 で処理して待ちに戻り、(c) では見つかった子を止まる報告に書く（MUST）。(1) か (2) が exit 1 で終わったか、stderr に何か出たときは、報告に確かめられなかった子の番号と stderr を書く（MUST）。やめるときの報告には、確かめたことと残っている子の番号を書く（MUST）
 - `回し方: Orca` を引き継いで再開したら、`launch` の前に、`launch` に渡したことのある子（閉じた子を含む。`子 #N のワークツリーを残した` の行がある子も除かない）で `reap` を 1 回呼び、`reaped`・`gone` の子を片付け待ちから外す（SHALL。再開したセッションは前のセッションの `reap` の結果を持たないので、この 1 回で作り直す）。そのあとの `launch` を終えて、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行う（MUST）
 - `wait` の `error workspaces` は `error gh ...` と同じく、ユーザーに報告して止まる（MUST）
 - `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わったら（stderr に `not in an Orca-managed worktree` などが出て、今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）。stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる（MUST）
 
 #### Scenario: Orca 経路に片付けの手順が書かれている
-- **WHEN** SKILL.md の「エピックの扱い」の「回し方」を読む
-- **THEN** `wait` に `--watch-done` を付けること、`done` で起こされたら `reap` を 1 回呼ぶこと、`kept` の子は本体が未コミットの変更の有無と HEAD の取り込み済みを確かめ、満たせば消してエピックに `子 #N のワークツリーを確かめて消した（<理由>）`、満たさなければ残して `子 #N のワークツリーを残した（<理由>） — <満たさなかったこと>` とコメントし、どちらも主に聞かないこと、`not-done` は待ちを続けること、`reaped`・`gone` の子を片付け待ちから外すこと、開いている子が無くなったあとは確認待ちの子だけを待ち `timeout` で待ちをやめること、再開時に `reap` を 1 回呼ぶことが書かれている
+- **WHEN** `references/epic.md` の「回し方」を読む
+- **THEN** `wait` に `--watch-done` を付けること、`done` で起こされたら `reap` を 1 回呼ぶこと、`kept` の子は本体が未コミットの変更の有無と HEAD の取り込み済みを確かめ、満たせば消してエピックに `子 #N のワークツリーを確かめて消した（<理由>）`、満たさなければ残して `子 #N のワークツリーを残した（<理由>） — <満たさなかったこと>` とコメントし、どちらも主に聞かないこと、`not-done` は待ちを続けること、`reaped`・`gone` の子を片付け待ちから外すこと、開いている子が無くなったあとは確認待ちの子だけを待つこと、待ちをやめてよいのは `references/epic.md` の待ちをやめてよい条件を満たしたときだけで、`timeout` で終わっても確認を通すまではやめないこと、やめる前に開いた子に主の返事待ちで止まった子が無いことを `wait --watch-stopped`・`pending-owner`・`needs-approval` ラベルで確かめること、再開時に `reap` を 1 回呼ぶことが書かれている
 
 #### Scenario: 片付けた子と消えた子は片付け待ちから外れる
-- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 2〜4 を読む
+- **WHEN** `references/epic.md` の「エピックの扱い」の「回し方」の手順 2〜4 を読む
 - **THEN** 片付け待ちの子から `reaped`（`branch-kept` を含む）と `gone` の子を除くことが、手順 2 の集合の定義と手順 3 に書かれ、除いたあとに `launched <N>` を返した子は戻すことが手順 2 に書かれている
 
 #### Scenario: 全 issue が閉じたあと最後の done を片付けたら待たずに終える
-- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 3（`done <N>...` で起こされたときの手順）を読む
+- **WHEN** `references/epic.md` の「エピックの扱い」の「回し方」の手順 3（`done <N>...` で起こされたときの手順）を読む
 - **THEN** `reap` のあと、動いている子か片付け待ちの子があれば手順 2 に戻ることと、どちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことが、手順 3 の中に書かれている（手順 4 の記述だけでは満たさない。全 issue が閉じたあとの最後の `done` では手順 4 が読まれないため）
 
 #### Scenario: 開いている子が無くなったとき確認待ちの子が無ければ待たずに終える
-- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 4（`closed <N>...` で起こされたときの手順）を読む
+- **WHEN** `references/epic.md` の「エピックの扱い」の「回し方」の手順 4（`closed <N>...` で起こされたときの手順）を読む
 - **THEN** 開いている子が無くなったあと、`reaped`・`gone` を外した片付け待ちの子が 0 件なら `wait` を呼ばずに待ちを終えること、`kept <N> not-done` の子が残っているときだけその子を `--watch-done` に渡して待つことが手順 4 に書かれている
 
 #### Scenario: 再開して動かす子も片付け待ちの子も無ければ待たずに終える
-- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 7（`回し方: Orca` を引き継いで再開したときの手順）を読む
+- **WHEN** `references/epic.md` の「エピックの扱い」の「回し方」の手順 7（`回し方: Orca` を引き継いで再開したときの手順）を読む
 - **THEN** `reap` と `launch` のあと、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことが手順 7 に書かれている
 
 #### Scenario: --watch-stopped 付きの wait が Orca から読めずに終わったら親ワークツリーで開き直す
-- **WHEN** SKILL.md の「エピックの扱い」の「回し方」の手順 6 を読む
+- **WHEN** `references/epic.md` の「エピックの扱い」の「回し方」の手順 6 を読む
 - **THEN** `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わった場合に、報告に「親ワークツリーで開き直す」と書くことが書かれている
 
 #### Scenario: 残された子のワークツリーを本体が確かめて決める
-- **WHEN** `reap` が `kept <N> unmerged-commits` や `kept <N> rm-failed` を返し、本体が SKILL.md の手順 3 に従う
+- **WHEN** `reap` が `kept <N> unmerged-commits` や `kept <N> rm-failed` を返し、本体が `references/epic.md` の手順 3 に従う
 - **THEN** 本体は残された理由の解消と未コミットの変更・`LLM/` の有無と HEAD の取り込み済み（設定された起点ブランチ（`EPIC_DISPATCH_BASE` / `--base`、既定 main）のリモートの先端への包含、またはマージ済み PR の HEAD との一致・tree の一致）を確かめ、満たせば `orca worktree rm` で消して `子 #N のワークツリーを確かめて消した（<理由>）` を、満たさなければ残して `子 #N のワークツリーを残した（<理由>） — <満たさなかったこと>` をエピックにコメントし、主に消すかを聞かない
 
 #### Scenario: 特定できないワークツリーは消さずに残す
@@ -1810,7 +1815,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - **THEN** 本体は `<path>/LLM` があるので確認 (a) を満たさず、消さずに残して `子 #N のワークツリーを残した（llm-logs） — LLM/ が残っている` をコメントする
 
 ### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
-`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。例外は 1 つだけで、要件「Orca 経路の本体は印が付いた子のワークスペースを片付ける」で本体が確かめて消すときの `orca worktree rm --worktree path:<path>` を、SKILL.md の「エピックの扱い」の回し方の手順 3 に 1 回だけ書いてよい（MAY。`reap` が残したワークツリーを消す判断は本体がその場で行うもので、`epic-dispatch.sh` のサブコマンドにすると `reap` の処理を変えることになるため）。この 1 件と同じ行に別の `orca` のコマンドを書くことと、この書き方を 2 回以上書くことは、例外に含めない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
+`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。例外は 1 つだけで、要件「Orca 経路の本体は印が付いた子のワークスペースを片付ける」で本体が確かめて消すときの `orca worktree rm --worktree path:<path>` を、`references/epic.md` の「エピックの扱い」の回し方の手順 3 に 1 回だけ書いてよい（MAY。`reap` が残したワークツリーを消す判断は本体がその場で行うもので、`epic-dispatch.sh` のサブコマンドにすると `reap` の処理を変えることになるため）。この 1 件と同じ行に別の `orca` のコマンドを書くことと、この書き方を 2 回以上書くことは、例外に含めない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
 
 `plugins/dev-workflow/` 配下のシェルスクリプト（`*.sh`）のうち、`orca` をコマンドとして書いた行（`orca` が行頭・`;`・`&`・`|`・`(`・`!`・`$(`・`if`/`then`/`do`/`else`/`while`/`until` のあとにあり、半角英小文字のサブコマンドが続く行。文字列とコメントの中の `orca` は数えない）を含むのは、Orca の起動部品 `scripts/epic-launch-orca.sh` だけでなければならない（MUST）。`epic-dispatch.sh` は `orca` のコマンドを直接呼ばず、Orca の起動部品のサブコマンドを呼ぶ（MUST。`launcher` の値・`route` の出力・stderr の文言としての `orca` の語は、コマンドとして書いた行ではないので含んでよい）。`epic-launch-orca.sh` の中では `orca` のコマンドをそのまま呼び、Orca の機能を自前で作り直してはならない（MUST NOT）。Orca が無い環境のための代わりの実装を持ってはならない（MUST NOT。`route` の `subagent` と `mark` の `skipped` のように、何もしないで終わる分岐は代わりの実装に数えない）。
 
@@ -1818,7 +1823,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 
 #### Scenario: 手順書に orca を実行する書き方は許可した 1 件しか無い
 - **WHEN** `grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` の各行から `orca worktree rm --worktree path:<path>` を 1 回取り除き、残りを `grep -E 'orca [a-z]+'` で探す
-- **THEN** 出力は 0 行であり、`grep -rhoF 'orca worktree rm --worktree path:<path>' plugins/dev-workflow/skills/develop` の出力は SKILL.md の手順 3 にある 1 行だけである
+- **THEN** 出力は 0 行であり、`grep -rhoF 'orca worktree rm --worktree path:<path>' plugins/dev-workflow/skills/develop` の出力は `references/epic.md` の手順 3 にある 1 行だけである
 
 #### Scenario: 許可した 1 件と同じ行に別の orca のコマンドがあると落ちる
 - **WHEN** 手順書の 1 行に `orca worktree rm --worktree path:<path>` と `orca terminal close --all` を並べて書く
@@ -1833,7 +1838,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - **THEN** 検索はその写しを出し、照合は失敗する
 
 ### Requirement: エピックの子への注意書きと子であることを、起動し直したセッションにも引き継ぐ
-`plugins/dev-workflow/scripts/epic-dispatch.sh` は、子のセッションを閉じて同じワークツリーで `/develop #<N>` だけを打ち直しても、親が `launch --note` で渡した注意書きと「エピックの子である」ことが失われないようにしなければならない（MUST）。この要件は、要件「エピックの並列起動は 1 段で止める」のうち `route` が `nested` を返す条件と `launch` の拒否の条件、SKILL.md に書かせている親エピックの番号の出どころ（「親エピック（`EPIC_DISPATCH_PARENT_EPIC` の番号）」。この要件では `route` の stderr の `parent epic: #<N>`）、同要件の守備範囲のうち変数の無いセッションに関する 2 項（「この変更の前に起動された子セッションには変数が無く従来どおり展開しうる」は、Orca 経路で作られた子ワークツリーなら親子関係で `nested` になる。「サブエージェント方式で起こされた子（変数が無い）は止まらない」は、そのセッションのワークツリーが親ワークツリーを持てば `nested` になり、持たなければ今までどおり止まらない）、および要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の判定と `launch` の呼び出し順に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
+`plugins/dev-workflow/scripts/epic-dispatch.sh` は、子のセッションを閉じて同じワークツリーで `/develop #<N>` だけを打ち直しても、親が `launch --note` で渡した注意書きと「エピックの子である」ことが失われないようにしなければならない（MUST）。この要件は、要件「エピックの並列起動は 1 段で止める」のうち `route` が `nested` を返す条件と `launch` の拒否の条件、`references/epic.md` に書かせている親エピックの番号の出どころ（「親エピック（`EPIC_DISPATCH_PARENT_EPIC` の番号）」。この要件では `route` の stderr の `parent epic: #<N>`）、同要件の守備範囲のうち変数の無いセッションに関する 2 項（「この変更の前に起動された子セッションには変数が無く従来どおり展開しうる」は、Orca 経路で作られた子ワークツリーなら親子関係で `nested` になる。「サブエージェント方式で起こされた子（変数が無い）は止まらない」は、そのセッションのワークツリーが親ワークツリーを持てば `nested` になり、持たなければ今までどおり止まらない）、および要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」のうち `route` の判定と `launch` の呼び出し順に優先する。並行する子の archive が終わったあとに元の要件へ畳み込む。
 
 **注意書きのコメント**: `launch --note <text>` は、`orca worktree create` が exit 0 で終わった子ごとに 1 回、端末を作る前に、`gh issue comment <N> --body <本文>` で子 issue にコメントしなければならない（MUST）。本文の 1 行目は `親エピックからの注意書き: #<epic>`、2 行目は空行、3 行目以降は `<text>` そのものとする（MUST）。`--note` が無いとき、`skipped <N>` の子、worktree create が非 0 で終わった子には投稿してはならない（MUST NOT）。worktree create が exit 0 で終わり、その JSON に `path` が無くて `failed <N>` になる子には投稿する（SHALL。ワークツリーが作られていれば次の `launch` で `skipped` になり、投稿の機会が無くなるため）。投稿が非 0 で終わっても、その子の stdout の 1 行と `launch` の exit code を変えてはならず（MUST NOT）、stderr に `note not posted to #<N>` を含む行と、同じ本文を単一引用符で囲んだ `gh issue comment <N> --body '<本文>'` を出す（SHALL）。最初の指示の文面に `<text>` を含める既存の規定は変えない（SHALL）。
 
@@ -1848,7 +1853,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 
 **`launch`**: 引数の検査のあと、1 が成り立てば今までどおり `orca` も `git` も呼ばずに stderr に理由を出して exit 1 で終わる（MUST）。1 が成り立たなければ、`orca worktree current --json` の直後、`git rev-parse --show-toplevel` より前に 2 を判定し、成り立てば `git`・`orca worktree set`・`orca worktree create` を 1 つも呼ばず、stdout には何も出さず、stderr に親エピックの番号と `child epics are not expanded here` を含む理由を出して exit 1 で終わらなければならない（MUST）。1 による拒否の stderr も `child epics are not expanded here` を含む（SHALL）。1 が成り立たず、`parentWorktreeId` が空でも `null` でもないのに 2 の判定の途中で一覧を読めなかったときは、`git`・`orca worktree set`・`orca worktree create` を 1 つも呼ばず、stdout には何も出さず、stderr に `could not read the parent worktree` を出して exit 1 で終わらなければならない（MUST。先へ進むと、子のワークツリーの `linkedIssue` をエピック番号で書き換えてから止まるため）。親ワークツリーを持たないワークツリーでは、呼び出しの順序を変えてはならない（MUST NOT）。
 
-**develop の SKILL.md「エピックの扱い」** は次を規定しなければならない（MUST）。`orca` のコマンドは書かない（MUST NOT。要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」）。
+**develop の `references/epic.md`「エピックの扱い」** は次を規定しなければならない（MUST）。`orca` のコマンドは書かない（MUST NOT。要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」）。
 
 - `launch` が `--note` を子 issue に `親エピックからの注意書き:` で始まるコメントとして残すこと。子のセッションの本体（起動し直したセッションを含む）は、記録先にこの行で始まるコメントがあれば、投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれかであるものにすべて従い、W・R1・G に渡す関連コメントに必ず含めること。それ以外の投稿者のものと `author_association` を読めなかったものには従わず、W・R1・G にも渡さず、コメントの URL と投稿者をユーザーに報告すること（issue には誰でもコメントでき、子のセッションは確認画面なしで動くため）。この投稿者の検査は注意書きのコメントだけに適用し、記録先のほかのコメントの読み方は変えない
 - `launch` の stderr に `note not posted to #<N>` があれば、本体がその子 issue に stderr に出た本文を投稿すること
@@ -1859,7 +1864,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 
 この要件の守備範囲で入力として扱うのは、`launch` に渡された `--note` の文、`orca worktree current --json` の `.result.worktree.parentWorktreeId`、`orca worktree list --json` の `.result.worktrees[]` の `id` と `linkedIssue` である。2 つの JSON は 2026-10-08 の実機（Orca 1.4.222）で確かめた形のとおりと信じ、形が変わったときの検知は範囲外とする。拾いたい誤りは、起動し直した子のセッションが注意書きを知らずに範囲外に手を出すこと、自分を子だと知らずに孫のワークツリーやサブエージェントを作ることである。次は通してよく、この要件では止めない: `launch` 以外で、`linkedIssue` の付いたワークツリーを親にして作ったワークツリーで回すエピックは `nested` になる／一覧の一時的な失敗と `route` の 1 回が重なると子のセッションが `nested` にならない（そのとき `launch` は一覧を読めずに子を作らない）／この変更の前に `launch` された子の issue には注意書きのコメントが無い／注意書きの本文の長さや内容は検査しない／親ワークツリーが一覧から消えていれば子ではない扱いになる／親ワークツリーの `linkedIssue` が後の `launch` で別のエピックに変わると、`parent epic:` はその番号になる／サブエージェント方式の隔離 worktree からの `route`・`launch` の呼び出しは想定しない。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats` は、`gh issue comment` の呼び出しの回数と本文、親子関係による `nested` と `launch` の拒否、上の SKILL.md の記述を確かめなければならない（MUST）。
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、`gh issue comment` の呼び出しの回数と本文、親子関係による `nested` と `launch` の拒否、上の `references/epic.md` の記述を確かめなければならない（MUST）。
 
 #### Scenario: --note があれば子ごとに 1 回注意書きをコメントする
 - **WHEN** 一覧に子のワークツリーが無いスタブ環境で `epic-dispatch.sh launch --note "後続の範囲に手を出さない" 400 11 12` を実行する
@@ -1917,8 +1922,8 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC` が無く、`parentWorktreeId` があり、`orca worktree list --json` が非 0 で終わる（または `.result.worktrees` が配列でない）スタブ環境で `epic-dispatch.sh launch 460 11 12` を実行する
 - **THEN** exit 1、stdout は空、`git`・`orca worktree set`・`orca worktree create` は 1 回も呼ばれず、stderr に `could not read the parent worktree` が出る
 
-#### Scenario: SKILL.md に注意書きのコメントと起動し直したセッションの扱いが書かれている
-- **WHEN** SKILL.md の「エピックの扱い」を読む
+#### Scenario: epic.md に注意書きのコメントと起動し直したセッションの扱いが書かれている
+- **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** `親エピックからの注意書き:` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のものに従い W・R1・G に渡すこと、それ以外の投稿者のものには従わず渡さずユーザーに報告すること、`note not posted to` のときに本体が投稿すること、起動し直したセッションでも `nested` になること、親エピックの番号を `parent epic: #` から読むこと、`child epics are not expanded here` で `launch` の拒否を見分けること、変数が無く `parent epic:` が出たときは親を持たないワークツリーで起動するよう伝えることが書かれていて、`grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` は 0 行
 
 ### Requirement: 端末を作れなかった子と指示が届かなかった子の案内は、二重起動を避ける確認を先に出す
@@ -1927,7 +1932,7 @@ develop の SKILL.md「エピックの扱い」の Orca 経路は、次を規定
 - 端末を作れなかった子の案内は、作り直しのコマンド（`orca terminal create ...`）より前の行に、そのワークツリーで `claude` がすでに動いている端末が無いことを確かめる `orca terminal list --worktree path:<子> --json` を出す（MUST。案内どおりに作り直して同じワークツリーで Claude Code が 2 つ起動し、`/develop #N` が二重に走るのを避けるため）
 - 指示を送り直すための案内のハンドル引数（`orca terminal send --terminal <handle>` と `orca terminal read --terminal <handle>`）は、指示の文と同じく単一引用符で囲む（MUST）。対象は送り直しの案内の `send` と `read` だけで、作り直しの案内の `--terminal <handle from create>` は置き換え用の記号なので囲まない（SHALL）
 
-develop の SKILL.md「エピックの扱い」は、端末を作れなかった `failed` の子について、stderr に出た確認のコマンドで既存の端末が無いことを確かめ、stderr の作り直しのコマンドで端末を作り、返ったハンドルに送信のコマンドを送って動き出したのを確かめてから再開する手順を書かなければならない（MUST。作り直さずに再開するとその子は `skipped` になり、`wait` が端末の無い子を最長 6 時間待つため）。`orca` のコマンドは書かない（MUST NOT）。
+develop の `references/epic.md`「エピックの扱い」は、端末を作れなかった `failed` の子について、stderr に出た確認のコマンドで既存の端末が無いことを確かめ、stderr の作り直しのコマンドで端末を作り、返ったハンドルに送信のコマンドを送って動き出したのを確かめてから再開する手順を書かなければならない（MUST。作り直さずに再開するとその子は `skipped` になり、`wait` が端末の無い子を親が気づかないまま待ち続けるため）。`orca` のコマンドは書かない（MUST NOT）。
 
 この要件の守備範囲で入力として扱うのは、`launch` が端末の作成や送信に失敗した子の、子のワークツリーのパスとハンドルである。ハンドルは Orca が払い出す単純な識別子（`term-11` など）で、引用符で囲むのは表示の揃えのためであり、ハンドルに記号が入る場合の検知は範囲外とする。
 
@@ -1939,8 +1944,8 @@ develop の SKILL.md「エピックの扱い」は、端末を作れなかった
 - **WHEN** 子 11 の `orca terminal send` が非 0 で終わるスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
 - **THEN** stderr の送り直しのコマンドは `--terminal 'term-11'` を含み、確認のコマンドも `orca terminal read --terminal 'term-11'` を含む
 
-#### Scenario: SKILL.md に端末を作れなかった子の再開手順が書かれている
-- **WHEN** SKILL.md の「エピックの扱い」を読む
+#### Scenario: epic.md に端末を作れなかった子の再開手順が書かれている
+- **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** 端末を作れなかった `failed` の子について、既存の端末が無いことを確かめ、作り直して送り、動き出したのを確かめてから再開することが書かれている
 
 ### Requirement: Codex がオフのとき自動選択は Claude だけの構成を返し、明示指定は拒否する
@@ -2111,7 +2116,7 @@ develop の SKILL.md「エピックの扱い」は、端末を作れなかった
 - **THEN** stderr に使い方が出て exit 1 で、`orca` も `gh` も呼ばれない
 
 ### Requirement: エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する
-develop の SKILL.md は、エピックの子のセッションが主の返事を待って止まるときの手順と、Orca 経路の親が `stopped` を受けたときの手順を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」のうち、子が自分のタブでユーザーに質問して止まっている場合は `timeout` の確認では気づけないと書く規定に優先する（記録を残さずに止まった子に限って気づけないと書く）。
+develop の `references/epic-child-stop.md` は、エピックの子のセッションが主の返事を待って止まるときの手順を、`references/epic.md` は、Orca 経路の親が `stopped` を受けたときの手順を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」のうち、子が自分のタブでユーザーに質問して止まっている場合は親が気づけないと書く規定に優先する（記録を残さずに止まった子に限って気づけないと書く）。
 
 **子の側**:
 
@@ -2122,81 +2127,35 @@ develop の SKILL.md は、エピックの子のセッションが主の返事�
 - 背景のタスクの終わりを待ってターンを終えるときは記録も印も付けない（MUST NOT）
 - 記録は、1 行目を識別用の `^子の停止: 主の返事待ち$` に完全一致させ、2 行目以降は要件「エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く」の項目名と並びで書く（MUST）。止まるたびに新しいコメントを投稿し、最新の 1 件を正とする（SHALL）
 - 「保留で止まるときの引き継ぎ」を書く場面では、引き継ぎを先に投稿し、そのあとに記録を投稿して、再開に要る途中経過として引き継ぎのコメントの URL を書く（MUST）。引き継ぎの書式（1 行目 `引き継ぎ: 主の返事待ち`）は変えない
-- `mark stopped` の出力が `marked` / `skipped` なら何もせず、`failed` なら主への質問に「親に止まったことが伝わっていない」と 1 行添える（SHALL）。`mark resumed` は出力によらず止まらない（SHALL）
+- `mark stopped` の出力が `marked` なら何もせず、`skipped` で始まる（`skipped <N> no-workspace`・`skipped <N> not-linked`）か `failed` なら、親が見張る記録に印が付いていないので主への質問に「親に止まったことが伝わっていない」と 1 行添える（SHALL）。`skipped` を何もしない側に置いてはならない（MUST NOT。子の状態の記録が無い・別の子の記録のときも親の `wait --watch-stopped` は止まりを読めず、主が子のタブを見るまで気づかないため）。`mark resumed` は出力によらず止まらない（SHALL）
 
 **親の側（Orca 経路）**:
 
 - 動いている子を待つ `wait` には `--watch-stopped` を付ける（MUST）
 - `stopped <N>...` で起こされたら、止まった子ごとに子 issue の最新の `子の停止: 主の返事待ち` のコメントを読み、子の番号・止まった理由・推奨・コメントの URL をユーザーに報告し、残りの動いている子（止まった子を含む）で再び `wait` する（MUST）。止まった子を動いている子から外してはならない（MUST NOT。閉じたことを検知できなくなるため）。止まった子への返事の仕方は #1034 で決める
 - `wait` の出力の説明を、`closed`・`done`・`stopped` の 1〜3 行とする（MUST）
-- 記録を残さずに子のタブで質問して止まった子は、`timeout` の確認でも検知できないので、ユーザーに子のタブも見るよう伝えることを残す（SHALL）
+- 記録を残さずに子のタブで質問して止まった子は、手順 5（`timeout` で起こされたとき）でも検知できないことを手順 5 に注記として残す（SHALL）。ユーザーに子のタブも見るよう伝えるのは、手順 1 の `launch` のあと最初に手順 2 で待ちに入る通知で一度だけとし、手順 5 の掛け直しのたびには伝えない（SHALL。手順 5 は主に発言を書かないため。要件「親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す」）
 - 端末の入力待ちが続いたことで子の止まりを推定する手順を書いてはならない（MUST NOT。誤検知が多いため。根拠は change `epic-child-stop-signal` の design.md）
 
 develop の手順書（`skills/develop` 配下）に `orca` のサブコマンドを書いてはならない（MUST NOT。既存の規定どおり、`orca` を呼ぶのは Orca の起動部品 `epic-launch-orca.sh` だけ）。
 
-この要件の守備範囲で入力として扱うのは、子のセッションでは `epic-dispatch.sh route`（子の番号なし）の出力と `mark` の出力、主の返事を待つかどうかの子自身の判断（本文で質問するか、質問ツールを使うか、背景のタスクを待つだけか）、記録先の issue 番号で、親のセッションでは `wait` の出力と子 issue のコメント（1 行目が `子の停止: 主の返事待ち` の最新の 1 件）である。拾いたい誤りは、エピックの子が主の返事を待っているのに記録も印も残さずに止まること、印が記録より先に付いて親が記録の無い止まりを読むこと、質問ツールで待つ子が回答を受けたあとも止まった印を残すこと、エピックの子でないセッションが読む者のいない記録を残すこと、親が止まった子を動いている子から外して閉じたことを検知できなくなることの 5 つである。次は通ってよく、この要件では止めない: 記録の項目の値の長さと改行の違い（値が複数行に続くこと）／止まるたびに記録が増えること（最新の 1 件を正とする）／保留の場面で引き継ぎと記録の 2 件のコメントが並ぶこと／主が子のタブで先に答えて、親が既に再開した子の `stopped` を受けること（親は記録を読んで報告するだけで、返事の仕方は #1034 で決める）／子が記録を書かずに止まり、親が `timeout` まで気づかないこと（入力待ちからの推定は入れない）。記録の中身（理由・推奨・リスクの正しさ）を確かめることと、手順を守らない子を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、子のセッションでは `epic-dispatch.sh route`（子の番号なし）の出力と `mark` の出力、主の返事を待つかどうかの子自身の判断（本文で質問するか、質問ツールを使うか、背景のタスクを待つだけか）、記録先の issue 番号で、親のセッションでは `wait` の出力と子 issue のコメント（1 行目が `子の停止: 主の返事待ち` の最新の 1 件）である。拾いたい誤りは、エピックの子が主の返事を待っているのに記録も印も残さずに止まること、印が記録より先に付いて親が記録の無い止まりを読むこと、質問ツールで待つ子が回答を受けたあとも止まった印を残すこと、エピックの子でないセッションが読む者のいない記録を残すこと、親が止まった子を動いている子から外して閉じたことを検知できなくなること、`mark stopped` が印を付けられなかった（`skipped` か `failed`）のに子が主に伝えずに止まることの 6 つである。次は通ってよく、この要件では止めない: 記録の項目の値の長さと改行の違い（値が複数行に続くこと）／止まるたびに記録が増えること（最新の 1 件を正とする）／保留の場面で引き継ぎと記録の 2 件のコメントが並ぶこと／主が子のタブで先に答えて、親が既に再開した子の `stopped` を受けること（親は記録を読んで報告するだけで、返事の仕方は #1034 で決める）／子が記録を書かずに止まり、親が気づかないこと（入力待ちからの推定は入れない。`timeout` で起こされても気づかない）。記録の中身（理由・推奨・リスクの正しさ）を確かめることと、手順を守らない子を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 子が止まるときの記録と印の手順が書かれている
-- **WHEN** SKILL.md のエピックの子が止まるときの手順を読む
+- **WHEN** `references/epic-child-stop.md` のエピックの子が止まるときの手順を読む
 - **THEN** `route` が `nested` を返すセッションに限ること、1 行目 `子の停止: 主の返事待ち` の記録を投稿してから `mark stopped` を呼ぶこと、本文で質問してターンを終えるときは `mark stopped` をそのターンの最後のツール呼び出しにすること、質問ツールで待つときは記録・`mark stopped`・質問ツールの順に呼んで回答のあとに `mark resumed` を呼ぶこと、本文で質問したときは返事を受けたターンの最初に `mark resumed` を呼ぶこと、引き継ぎを書く場面では引き継ぎを先に投稿することが書かれている。記録の 2 行目以降の項目名と並びは要件「エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く」のシナリオで確かめる
 
+#### Scenario: 印が付かなかった出力では主に 1 行添えることが書かれている
+- **WHEN** SKILL.md が指すエピックの子の停止の手順（`references/epic-child-stop.md`）で `mark stopped` の出力の扱いを読む
+- **THEN** `marked` なら何もしないこと、`skipped` で始まる出力（`skipped <N> no-workspace`・`skipped <N> not-linked`）と `failed` では主への質問に「親に止まったことが伝わっていない」と 1 行添えることが書かれ、`skipped` を何もしない側に置く文が無い
+
 #### Scenario: 親が stopped を受けたときの手順が書かれている
-- **WHEN** SKILL.md の Orca 経路の手順を読む
+- **WHEN** `references/epic.md` の Orca 経路の手順を読む
 - **THEN** `wait` に `--watch-stopped` を付けること、出力が `closed`・`done`・`stopped` の 1〜3 行であること、`stopped` で起こされたら最新の `子の停止:` の記録を読んでユーザーに報告し、止まった子を外さずに再び `wait` することが書かれている
 
 #### Scenario: 記録を残さずに止まった子は検知できないことが書かれている
-- **WHEN** SKILL.md の Orca 経路の `timeout` の手順を読む
-- **THEN** 記録を残さずに子のタブで質問して止まった子は検知できず、ユーザーに子のタブも見るよう伝えることが書かれている
-
-### Requirement: 時間がたった子・親への返事は待っている間の自動コンパクトの閾値と分ける条件で決める
-`plugins/dev-workflow/scripts/epic-dispatch.sh launch` が子の起動コマンドに前置きする `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<値>` の `<値>` は、既定で `120000` でなければならない（MUST）。環境変数 `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` が設定されていればその値を使う（SHALL）。設定された値が空文字か、数字だけでない文字列なら、`launch` は stderr に変数名と使い方を出して exit 1 で終わり、`orca` と `git` を 1 つも呼んではならない（MUST）。100,000 未満の値は拒まない（SHALL。下限の扱いは Claude Code が持つ）。
-
-時間がたった子・親への返事の規則は `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` に置き、次を書かなければならない（MUST）。
-
-- **閾値**: 子は 120,000（`launch` が付ける。`EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` で変えられる）、親も同じ 120,000。親は主が起動するセッションなので `launch` は付けられず、主が起動するセッションは主の起動コマンド（例: `cld`）が、値が未設定のときだけ 120000 を入れる（外から渡された値は上書きしない）。個人の設定ファイルのパスは書かない。どちらの値も `~/.claude/settings.json` の `env` に置かない（主の手元の全セッションに効くため）
-- **分ける条件**: 子に返事を送る前に、子の端末が無ければ起動し直す。子の最後のリクエストから 60 分未満ならそのまま送る。60 分以上で、その間に待っている間の自動コンパクトが走っていればそのまま送る。60 分以上でコンパクトが走っていなければ、会話量 N が 150,000 トークン以上なら起動し直し、150,000 未満ならそのまま送る
-- **判定に使う事実**: 子の端末の有無（子のワークスペースに端末が残っているか。`orca` のコマンドは書かず、要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」に従う。端末の有無は `epic-dispatch.sh reply` が確かめ、端末が無ければ起動し直す。要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」）、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）の最後のリクエストの時刻と、そのあとの `compact_boundary` の有無、会話量 N（`plugins/dev-workflow/scripts/subagent-context.sh --file <トランスクリプト>`）
-- **親への適用**: 親自身が長く待ったあとも同じ条件で、そのまま続けるか起動し直すかを決める。親の状態のうち、回し方（`回し方:`）・終わった子（`子 #N マージ → 残り k 件` / `子 #N 見送り`）・外した子エピック（`後で別に起動するエピック:`）・残したワークツリー（`子 #N のワークツリーを残した`）・親が通した判断（`親の判断: 子 #N 通した`）はエピックのコメントから、残りの子は依存グラフと子 issue の状態から復元できる
-- **根拠と限り**: 値と条件の根拠として #1039 の集計コメントの URL と要点（返事の直前の会話の中央値、起動し直しの費用、閾値ごとの費用の増減）、実績の少なさと PC が寝ているとコンパクトが走らないこと
-- **再集計**: 1〜2 週間回したあとに同じ集計をやり直して #1039 にコメントし、値を見直す。件数・金額は合否に使わず記録する
-
-送り方と起動し直し方の手順本体はこのファイルに書かない（SHALL NOT。止まった子を親が解決する手順（develop の SKILL.md の Orca 経路と `epic-dispatch.sh reply`）が書き、このファイルを参照する）。
-
-develop の SKILL.md「エピックの扱い」の「回し方」は、子セッションの起動コマンドに `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` が付くことと、時間がたった子・親に返事を送る前に `references/reply-after-idle.md` の規則で「そのまま送る」か「起動し直す」かを決めることを書かなければならない（MUST）。
-
-`plugins/dev-workflow/tests/epic-dispatch.bats` は、既定の前置き、`EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` での上書き、空文字と数字でない値の拒否、規則のファイルの上の記述（値・分ける条件・`settings.json` に置かないこと）、SKILL.md の上の記述を確かめなければならない（MUST）。
-
-この要件の守備範囲は、閾値の上書き値の検査と、返事の前の分類の 2 つである。
-
-閾値の上書き値の検査について、入力として扱うのは `launch` を実行したシェルの環境変数 `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS`（主か親のセッションが `launch` の呼び出しに付けたもの）だけである。拾いたい誤りは、空文字や `120k`・`1.2e5`・`120,000` のような数字だけでない値がそのまま子の起動コマンドに入り、子の Claude Code が閾値を読めずに既定の 200,000 で動くことと、値の空白や記号でコマンドが壊れることである。次は通してよく、この検査では止めない: `0` や `99999` のような 100,000 未満の数字（下限の扱いは Claude Code が持つ）／`200000` や `1000000` のような大きな数字／`0120000` のような先頭に 0 の付いた数字／変数が設定されていない環境（既定の 120000 を使う）。
-
-返事の前の分類について、入力として扱うのは、子の端末の有無（子のワークスペースに端末が残っているか）、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）に記録された最後のリクエストの時刻とそのあとの `compact_boundary` の有無、同じトランスクリプトから `plugins/dev-workflow/scripts/subagent-context.sh --file` で測った会話量 N である。この分類は、`epic-dispatch.sh wait --resolve` が親の代わりに通す返事を除き、スクリプトではなく本体が規則のファイルを読んで行う。`wait --resolve` が通す返事は、要件「wait --resolve は通す返事を送る前に起動し直すかを表で決める」のとおり `resolve_stopped` が同じ表で分類する（例外）。拾いたい誤りは、PC が寝ていてコンパクトが走らなかった 150,000 トークン以上の会話に、そのまま返事を送って会話全体を書き込み直すことと、コンパクトが走った子や 60 分未満の子を起動し直して、子が積んだ判断と起動し直しの費用（平均約 258k）を無駄にすることである。次は通してよく、この分類では止めない: 経過時間がちょうど 60 分前後で、時刻の読み方によって扱いが分かれる子／N が 150,000 前後で、測り方の誤差で扱いが分かれる子／トランスクリプトが複数あってどれが子のセッションか分からず、そのまま送った子／この変更より前に起動され、前置きが無く既定の 200,000 で動いている子／主の起動コマンドが値を入れず、既定のまま動く親／`EPIC_DISPATCH_CLAUDE_CMD` が前置きの代入を受け付けない形（`exec` で始まる文字列など）で値が渡らなかった子。
-
-どちらについても、すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
-
-#### Scenario: launch は子の起動コマンドに既定の閾値を前置きする
-- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` の無い環境で `epic-dispatch.sh launch 400 11` を実行する
-- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'` である
-
-#### Scenario: 閾値は環境変数で変えられる
-- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=150000` の環境で `epic-dispatch.sh launch 400 11` を実行する
-- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=150000 cld --model 'opus'` である
-
-#### Scenario: 閾値の上書きが空なら起動しない
-- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=` の環境で `epic-dispatch.sh launch 400 11` を実行する
-- **THEN** stderr に `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` と使い方が出て exit 1、`orca` と `git` は呼ばれない
-
-#### Scenario: 閾値の上書きが数字でなければ起動しない
-- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=120k` の環境で `epic-dispatch.sh launch 400 11` を実行する
-- **THEN** stderr に `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` と使い方が出て exit 1、`orca` と `git` は呼ばれない
-
-#### Scenario: 規則のファイルに値と分ける条件が書かれている
-- **WHEN** `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` を読む
-- **THEN** 子・親とも 120,000 の値、親の値を主の起動コマンドが未設定のときだけ入れる形で付けて `settings.json` の `env` に置かないこと、端末が無い・60 分未満・コンパクトが走った・N が 150,000 以上か未満で「そのまま送る」か「起動し直す」かを分ける条件、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること）、親の状態の復元（親が通した判断を含む）、1〜2 週間後の再集計が書かれている
-
-#### Scenario: SKILL.md の回し方が規則のファイルを指す
-- **WHEN** SKILL.md の「エピックの扱い」を読む
-- **THEN** 子の起動コマンドに `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` が付くことと、時間がたった子・親に返事を送る前に `references/reply-after-idle.md` の規則で決めることが書かれている
+- **WHEN** `references/epic.md` の Orca 経路の手順 5（`timeout` の手順）と手順 2 を読む
+- **THEN** 手順 5 に、記録を残さずに子のタブで質問して止まった子は検知できないことが書かれ、手順 2 に、`launch` のあと最初に待ちに入る通知でユーザーに子のタブも見るよう一度伝えることが書かれている
 
 ### Requirement: epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける
 `plugins/dev-workflow/scripts/epic-dispatch.sh wait` は `--resolve <epic>` を受け付けなければならない（MUST）。`<epic>` が数字でなければ使い方を出して exit 1 で終わる（MUST）。`--resolve` は `--watch-stopped` と位置引数の子が 1 件以上あるときだけ働き（SHALL）、それ以外では何もしない。`--resolve` が無い `wait` の振る舞いは変えない（MUST）。
@@ -2210,7 +2169,7 @@ develop の SKILL.md「エピックの扱い」の「回し方」は、子セッ
 
 `--resolve` が働く `wait` の出力は、`closed <N>...`・`done <N>...`・`stopped <N>...`・`unrecorded <N>...` を該当するものだけこの順に（1〜4 行）出して exit 0 とする（MUST）。`unrecorded` は「返事は子に届いたが、エピックへの 1 行を残せなかった」子で、親を起こして記録させるために出す。この出力の規定は、`--resolve` が働く場合に限り、既存の要件「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」と「エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する」が定める `closed`・`done`・`stopped` の 1〜3 行の規定に優先する。`--resolve` が働かない `wait` は、`unrecorded` を出さず、従来どおり 1〜3 行を出さなければならない（MUST）。ポーリングで `stopped` にも `unrecorded` にも含める子が 1 件も無く、閉じた子も完了の印の子もいなければ、`wait` は待ちを続けなければならない（MUST）。
 
-子 issue への `親の判断:` のコメントの投稿に失敗しても、その子は `stopped` に含める（MUST）。stderr に投稿し直すコマンドを出す（SHALL）。親は子 issue の `親の判断:` のうち、2 行目の `停止の記録:` が最新の `子の停止: 主の返事待ち` のコメントの URL と一致するものだけを今回の判断として読む（要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」）ので、投稿に失敗して前回の判断が残っていても、親はそれを今回の判断と取り違えず、判断が無いものとして主に上げる。
+子 issue への `親の判断:` のコメントの投稿に失敗しても、その子は `stopped` に含める（MUST）。stderr に投稿し直すコマンドを出す（SHALL）。親は子 issue の `親の判断:` のうち、2 行目の `停止の記録:` が最新の `子の停止: 主の返事待ち` のコメントの URL と一致するものだけを今回の判断として読む（要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」）ので、投稿に失敗して前回の判断が残っていても、親はそれを今回の判断と取り違えず、判断が無いものとして扱う（要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」の手順 8 で親が照らす）。
 
 `plugins/dev-workflow/scripts/stop-judge.sh <epic> <child>` は、次の入力だけを集めてモデルを 1 回呼び、stdout に 4 行を出さなければならない（MUST）。
 
@@ -2313,80 +2272,121 @@ develop の手順書には `orca` のコマンドを書かず、端末の有無�
 - **THEN** stderr に使い方が出て exit 1、`orca` は呼ばれない
 
 ### Requirement: 親が通してよい範囲の基準を 1 つのファイルに置く
-`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` は、止まった子を親の側で通してよい範囲の基準と、判断の出力の形を書かなければならない（MUST）。判断（`stop-judge.sh` が呼ぶモデル）はこのファイルを読んで決める。
+`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` は、止まった子を親の側で通してよい範囲の基準と、判断の出力の形を書かなければならない（MUST）。判断（`stop-judge.sh` が呼ぶモデル）と、Orca 経路の手順 8 で主に上げる前の親のセッションは、このファイルを読んで決める。
 
-- **通す条件**: 次をすべて満たすときだけ通す。既存の規則が主に聞くと定めている止まり（PR トークン上限の計測が exit 2 のときの続けるか止めるか、レビューの周の終わりの直し方の判定が「選び直しが要る」とき、PR のマージ）でない／推奨がある／推奨がエピックの目的と子 issue の受け入れ条件の範囲を広げず逆向きにしない／聖域（`CLAUDE.md`・hooks・権限設定・`rules/`・常時注入の予算ファイル、`rules/destructive-git-guard.md` の破壊的な git 操作、秘密情報の値、外部への公開・送信・課金、PR のマージ）に触れない／そのブランチの中の取り消しや設定の戻しで戻せる／主の側の情報（好み・事業判断・主しか知らない事実・リスクの許容）が要らない／実機操作（MFA・OAuth・ログイン・ダッシュボードの操作）でない／配役表が渡されたとき、要る観点の担い手が主でない／同じ子の同じ件を既に一度通していない
-- **迷ったとき**: 1 つでも満たすか判断できなければ主に上げる
-- **例**: 通る例（リポジトリの中のソースでファイル名が理由で hook が止めたファイルの読み取り、手順外の判断を推奨どおり受け入れること、自分の実行の配下で暴走したプロセスの停止）と、通らない例（PR トークン上限の引き上げ、レビューの周の終わりで選び直しが要るときの続行、マージの承認、聖域のファイルの変更、実機操作、主しか知らない設計意図）。PR トークン上限の引き上げを通さないのは、既存の規則が exit 2 で主に聞くことを求め、新しい上限の算出と `PR トークン上限:` の記録を主の「続ける」の返事を受けた本体が行う作りになっているため（親の返事だけでは記録が作られない）
+- **原則**: 主に聞く理由の 3 つ（主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作。正本は `~/.claude/output-styles/readable.md` の節 3）のどれにも当たらない止まりは、親が通す（MUST）。下の通す条件は、その止まりが 3 つのどれにも当たらないことを確かめる手順として書き、条件ごとにどの理由に当たらないことを確かめるものかを示す（MUST。「繰り返していない」は理由ではなく、親の判断が同じ止まりを回し続けないための歯止めと書く）
+- **通す条件**: 次をすべて満たすときだけ通す。既存の規則が主に聞くと定めている止まり（PR トークン上限の計測が exit 2 のときの続けるか止めるか、レビューの周の終わりの直し方の判定が「選び直しが要る」とき、PR のマージ）でない（PR トークン上限の止まりは判断のモデルでは通さず、起こされた親が `epic.md` 手順 8 で親の権限に照らすと添える）／推奨がある／推奨がエピックの目的と子 issue の受け入れ条件の範囲を広げず逆向きにしない／聖域（`CLAUDE.md`・hooks・権限設定・`rules/`・常時注入の予算ファイル、`rules/destructive-git-guard.md` の破壊的な git 操作、秘密情報の値、外部への公開・送信・課金、PR のマージ）に触れない／そのブランチの中の取り消しや設定の戻しで戻せる（同じ操作をやり直しても何も残らない操作、CI の再実行・ジョブの打ち直しも戻せるに含める）／主の側の情報（好み・事業判断・主しか知らない事実・リスクの許容）が要らない／実機操作（MFA・OAuth・ログイン・ダッシュボードの操作）でない／配役表が渡されたとき、要る観点の担い手が主でない／同じ子の同じ件を既に一度通していない。作業中のリポジトリの中に試しの issue を作って閉じることは「外部への公開・送信」に当たらないと添える（MUST）
+- **子の `主に聞く理由:` の読み方**: 子の停止の記録の `主に聞く理由:` は、書かれた理由が 3 つのどれかに当たるかを確かめて読み、書かれたことをそのまま通さない理由・主に上げる理由にしない（MUST）。`主に聞く理由: なし（…）` や、3 つのどれにも当たらない理由は、通す側で読む。項目の無い記録（以前の形）は、ほかの項目から判断する
+- **迷ったとき**: 1 つでも満たすか判断できなければ主に上げる。主に聞く理由が成り立つか迷うときは、成り立つ側に倒す
+- **例**: 通る例（リポジトリの中のソースでファイル名が理由で hook が止めたファイルの読み取り、手順外の判断を推奨どおり受け入れること、自分の実行の配下で暴走したプロセスの停止、実機テストのための試しの issue 作成、止まった子の起動し直し、CI の再実行（無関係なテストの時間切れ・ランナーの混雑・待って打ち直すだけで済むもの。失敗が PR と無関係と言い切れなくても、原因の切り分けを通す条件にしない）、CI の見張りのやり直しの上限で止まった子への追加のやり直し 1 回）と、通らない例（PR トークン上限の引き上げ、レビューの周の終わりで選び直しが要るときの続行、マージの承認、聖域のファイルの変更、実機操作、主しか知らない設計意図）。PR トークン上限の引き上げを判断のモデルが通さないのは、引き上げが親の権限（エピックの `子の PR トークン権限:` のコメント）に照らす止まりで、判断のモデルにはその権限が渡らないため。起こされた親が `references/epic.md` の手順 8 の専用の手順で権限に照らし、権限の内なら親が続けさせる（要件「親は PR トークン上限の止まりを権限に照らして続けさせる」）
 - **出力の形**: 1 行目 `判断: 通す` か `判断: 主に上げる`、2 行目 `理由: <1 行>`、3 行目 `返事: <1 行>`
 - **位置づけ**: この基準は案で主が PR で決めること、#1030 の「合理性があり危険が低い」はこの基準を参照すること
 
 PR のマージの可否はこの基準で通してはならない（MUST NOT。#1030 の手順に任せる）。既存の規則が主に聞くと定めている止まりを、この基準で通してはならない（MUST NOT。既存の規則を変えるのはこの変更の範囲外）。
 
-この要件の守備範囲で入力として扱うのは、`stop-judge.sh` が集めて判断に渡すものだけである（エピックの本文、子 issue の本文と OWNER・MEMBER・COLLABORATOR の注意書き、子の最新の停止の記録、同じ子への過去の `親の判断:`、このファイル、あれば配役表）。出どころは GitHub の issue とリポジトリのファイルで、親や子の会話は入らない。拾いたい誤りは、主の承認が要る止まり（聖域・破壊的操作・既存の規則が主に聞くと定めたもの・マージ）を親が通すこと、推奨の無い止まりや主の側の情報が要る止まりを通すこと、戻せない操作を通すこと、同じ件を通し続けることの 4 つである。次は通ってよく、この要件では止めない: 子の記録の 2 行目以降の項目名や並びの違い（4 つの情報が読めればよい。形は #1036）／通してよい止まりを判断が主に上げること（主の手間は増えるが危険は無い）／通した判断があとで主に止められること（エピックの 1 行から事後に止める作り）。基準の文の解釈の揺れや、基準をすり抜ける止まりが見つかるたびに条件を足して塞ぎ切ることは、この要件の完了条件としない（基準は案で、主が PR と 2 週間後の再集計で見直す）。
+この要件の守備範囲で入力として扱うのは、`stop-judge.sh` が集めて判断に渡すものだけである（エピックの本文、子 issue の本文と OWNER・MEMBER・COLLABORATOR の注意書き、子の最新の停止の記録、同じ子への過去の `親の判断:`、このファイル、あれば配役表）と、手順 8 で親のセッションが読む同じ記録である。出どころは GitHub の issue とリポジトリのファイルで、親や子の会話は入らない。拾いたい誤りは、主の承認が要る止まり（聖域・破壊的操作・既存の規則が主に聞くと定めたもの・マージ）を親が通すこと、推奨の無い止まりや主の側の情報が要る止まりを通すこと、戻せない操作を通すこと、同じ件を通し続けること、主に聞く理由の 3 つのどれにも当たらない止まりを主に上げることの 5 つである。次は通ってよく、この要件では止めない: 子の記録の 2 行目以降の項目名や並びの違い（`主に聞く理由:` の無い以前の形を含む。形は要件「エピックの子の停止の記録は…」）／通してよい止まりを判断のモデルが主に上げること（手順 8 の親がもう一度照らす。主の手間は増えるが危険は無い）／通した判断があとで主に止められること（エピックの 1 行から事後に止める作り）。基準の文の解釈の揺れや、基準をすり抜ける止まりが見つかるたびに条件を足して塞ぎ切ることは、この要件の完了条件としない（基準は案で、主が PR と 2 週間後の再集計で見直す）。
 
 #### Scenario: 基準のファイルに通す条件と出力の形が書かれている
 - **WHEN** `parent-pass-criteria.md` を読む
-- **THEN** 上の 9 つの通す条件、判断できなければ主に上げること、通る例と通らない例（PR トークン上限の引き上げを通らない例に置き、その理由を添える）、3 行の出力の形が書かれ、マージと既存の規則が主に聞くと定めた止まりを通さないことが書かれている
+- **THEN** 上の 9 つの通す条件（1 行目に、PR トークン上限の止まりは判断のモデルでは通さず、起こされた親が `epic.md` 手順 8 で親の権限に照らすことが添えてある）、判断できなければ主に上げること、通る例と通らない例（PR トークン上限の引き上げを通らない例に置き、判断のモデルには親の権限が渡らないことと、起こされた親が `epic.md` の手順 8 の専用の手順で権限に照らすことを添える。「親の返事だけでは記録が作られない」の文は無い）、3 行の出力の形が書かれ、マージと既存の規則が主に聞くと定めた止まりを通さないことが書かれている
+
+#### Scenario: 基準のファイルが主に聞く理由の 3 つを原則に置いている
+- **WHEN** `parent-pass-criteria.md` を読む
+- **THEN** 「主に聞く理由の 3 つ（主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作）に当たらない止まりは親が通す」が書かれ、9 つの条件の行ごとに確かめる理由（3 つのどれか、または「繰り返していない」の歯止め）が書かれ、通る例に実機テストのための試しの issue 作成・止まった子の起動し直し・CI の再実行（無関係なテストの時間切れ・ランナーの混雑・待って打ち直すだけで済むもの）があり、CI の再実行は原因の切り分けを通す条件にしないこと、CI の見張りのやり直しの上限で止まった子への追加のやり直し 1 回が書かれている。「戻せる」の行に、同じ操作をやり直しても何も残らない操作（CI の再実行・ジョブの打ち直し）を含めることが書かれている
+
+#### Scenario: 基準のファイルが子の主に聞く理由を鵜呑みにしない
+- **WHEN** `parent-pass-criteria.md` の `主に聞く理由:` の読み方を読む
+- **THEN** 書かれた理由が 3 つに当たるかを確かめること、`なし（…）` や 3 つに当たらない理由は通す側で読むこと、項目の無い記録はほかの項目から判断することが書かれている
 
 ### Requirement: Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる
-develop の SKILL.md「エピックの扱い」→「回し方」の Orca 経路の手順は、次を規定しなければならない（MUST）。この要件は、要件「エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する」の親の側のうち、`stopped` で起こされたら記録を読んでユーザーに報告する規定と、止まった子への返事の仕方を #1034 で決めるとする規定に優先する。
+develop の `references/epic.md`「エピックの扱い」→「回し方」の Orca 経路の手順は、次を規定しなければならない（MUST）。この要件は、要件「エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する」の親の側のうち、`stopped` で起こされたら記録を読んでユーザーに報告する規定と、止まった子への返事の仕方を #1034 で決めるとする規定に優先する。
 
 - 動いている子を待つ `wait` には、`--watch-stopped` に加えて `--resolve <エピック番号>` を付ける（MUST）。通すと判断された止まりは `wait` の中で返事が送られ、親は起こされない
 - `wait` の出力が `closed`・`done`・`stopped`・`unrecorded` の 1〜4 行であることを書く（MUST）。この 1〜4 行は `--resolve` を付けたときだけで、要件「エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する」の `closed`・`done`・`stopped` の 1〜3 行とする規定に優先する。`--resolve` を付けない `wait` の出力は従来どおり 1〜3 行であることも書く（MUST）
 - `unrecorded <N>...` で起こされたら、子には返事が届いているので主に上げず、`wait` が stderr に出した投稿し直しのコマンドでエピックに `親の判断: 子 #N 通した` の 1 行を残す（MUST）。stderr を読めなければ、`親の判断: 子 #N 通した — 理由は記録できなかった <最新の子の停止の記録の URL>` を投稿する（MUST）
-- `stopped <N>...` で起こされたら、止まった子ごとに子 issue の最新の `子の停止: 主の返事待ち` のコメントと、2 行目の `停止の記録:` がその URL と一致する最新の `親の判断:` のコメントを読む（MUST）。一致する `親の判断:` が無ければ、判断が無いものとして主に上げる（MUST。前回の止まりへの判断を今回の判断と取り違えないため）
-  - `親の判断: 通すが送れなかった` の件（以前の形の `親の判断: 判断できなかった` で、送るはずだった返事があり、送信だけが失敗した件も同じ）は、主に上げずに `epic-dispatch.sh reply --as parent` で送り直してよい（MAY）。送れたらエピックに `親の判断: 子 #N 通した` の 1 行を残す（MUST）
-  - それ以外は主に上げる（MUST）。主に上げる説明は本文で書き、質問ツールで聞かない（MUST。子の `--relayed` は親の発言の本文に停止の記録の URL があることで結び付けを見る）。説明は `~/.claude/output-styles/readable.md` の節 3（主に問いを返す文章の書き方の正本）の型で書く（MUST。手順 8 に順を写さない）。説明には、エピックの目的と他の子との関係を含め、子の停止の記録の URL を添える。実機操作は、どの子の・どの画面で・何をするかを書く
+- `stopped <N>...` で起こされたら、止まった子ごとに子 issue の最新の `子の停止: 主の返事待ち` のコメントと、2 行目の `停止の記録:` がその URL と一致する最新の `親の判断:` のコメントを読む（MUST）。一致する `親の判断:` が無ければ、判断が無いものとして扱う（MUST。前回の止まりへの判断を今回の判断と取り違えないため）
+  - `親の判断: 通すが送れなかった` の件（以前の形の `親の判断: 判断できなかった` で、送るはずだった返事があり、送信だけが失敗した件も同じ）は（`止まった理由:` が `PR トークン上限（` で始まる止まりは送り直さず、下の **PR トークン上限の子** で照らし直す）、主に上げずに `epic-dispatch.sh reply --as parent` で送り直してよい（MAY）。送れたらエピックに `親の判断: 子 #N 通した` の 1 行を残す（MUST）
+  - 最新の記録の `止まった理由:` が `PR トークン上限（` で始まる止まりは、下の照らし直しを行わず、要件「親は PR トークン上限の止まりを権限に照らして続けさせる」の手順で親の権限に照らす（MUST。権限の内でなければ、下の主に上げる手順で上げる。主の答えの扱いは要件「権限の内でない止まりは主に上げ、主が権限を広げたら照らし直す」に従い、下の「主の答えを受けたら…`reply --as owner`」の規定より優先する）
+  - 最新の記録の `止まった理由:` が `PR のマージ待ち（` で始まる止まりは、下の照らし直しを行わず、要件「Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける」（Orca 経路の **マージ待ちの子** の段落）の手順に進む（MUST。マージは決まりで主の承認が要るので、照らし直しでは通らない）
+  - それ以外（判断が「主に上げる」・判断できなかった・一致する判断が無い）は、主に上げる前に、親が自分で記録を `references/parent-pass-criteria.md` に照らす（MUST）。照らす前に、エピックのコメントの同じ子の `親の判断: 子 #N 通した`（手順 7 と同じ author_association の条件）と、あれば配役表（`.claude/casting/project.md`・`.claude/casting/local.md`）を読み、同じ件を既に一度通していれば覆さずに主に上げる（MUST）。主に聞く理由の 3 つ（主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作）のどれにも当たらず、基準のほかの条件も満たす止まりは、主に上げずに `epic-dispatch.sh reply --as parent` で通し、送れたらエピックに `親の判断: 子 #N 通した — <理由> <停止の記録の URL>` の 1 行を残す（MUST）。判断が「主に上げる」としたものを覆して通すときの `<理由>` には、主に聞く理由の 3 つの理由のどれにも当たらない根拠を 1 文で書く（MUST）。主に聞く理由が成り立つか迷うときは主に上げる（MUST）
+  - 主に上げるときは、説明を本文で書き、質問ツールで聞かない（MUST。子の `--relayed` は親の発言の本文に停止の記録の URL があることで結び付けを見る）。説明は `~/.claude/output-styles/readable.md` の節 3（主に問いを返す文章の書き方の正本）の型で書く（MUST。手順 8 に順を写さない）。子の停止の記録の項目は正本の段に置き直す（MUST）: `止まった理由:` を質問に、`主に聞く理由:` を主に聞く理由に、`前提:` をいま困っていることに、`推奨:` と `推奨の根拠:` を推奨と根拠に、`受け入れるリスク:` を受け入れるリスクにする。記録の項目名を見出しや語としてそのまま主に渡してはならない（MUST NOT）。子が作業中に使った言葉は主の言葉に直す（MUST）。説明には、エピックの目的と他の子との関係を含め、子の停止の記録の URL を添える。実機操作は、どの子の・どの画面で・何をするかを書く
+  - 主に上げる止まりが複数あっても、1 通で上げるのは 1 件にする（MUST。正本の「1 通で聞くのは 1 件」）。残りは主の答えを受けてから次の報告で上げる。待ちに入る通知の本文に、まだ上げていない止まった子の番号を 1 行書く（MUST）
 - 主の答えを受けたら、`references/reply-after-idle.md` の表でそのまま送るか起動し直すかを決め、`epic-dispatch.sh reply --as owner`（起動し直すなら `--relaunch` も）に主の答えを書き換えずに渡して子に届ける（MUST）。主の答えの末尾には、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」の発言の場所の添え書き（` [主の発言: セッション <親のセッション ID> / uuid <uuid>]`）を付けて渡す（MUST。主の答えそのものは書き換えず、末尾に足すだけ。場所を引けないときの扱いも同じ要件に従う）。`reply` の出力が `failed` なら主に報告する（MUST）
 - 止まった子を動いている子から外さず、2 に戻る（MUST。既存の規定のまま）
 - 親が通してよい範囲の基準は `references/parent-pass-criteria.md` を指す（MUST）
 
 develop の手順書（`skills/develop` 配下）に `orca` のサブコマンドを書いてはならない（MUST NOT）。
 
-この要件の守備範囲で入力として扱うのは、`wait` の出力と、子 issue の `子の停止:` と `親の判断:` のコメント、主の答え（親のセッションの会話）、`reply` の出力である。拾いたい誤りは、通せなかった止まりを主に上げずに待ち続けること、主に上げる説明が子の会話を前提にして主が読めないこと、主の答えを子に届けないこと、時間がたった子に表を見ずに送ることの 4 つである。次は通ってよく、この要件では止めない: 説明の文の良し悪し（順序と含めるものが書かれていればよい）／主が子のタブで先に答えていて、親の届けた答えが 2 度目になること（子は受け取って続ける）。説明が主に読めない書き方を見つけるたびに手順を足して塞ぎ切ることは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、`wait` の出力と、子 issue の `子の停止:` と `親の判断:` のコメント、主の答え（親のセッションの会話）、`reply` の出力である。拾いたい誤りは、通せなかった止まりを主に上げずに待ち続けること、主に上げる説明が子の会話や子の項目名を前提にして主が読めないこと、主に聞く理由の無い止まりを主に上げること、主の答えを子に届けないこと、時間がたった子に表を見ずに送ることの 5 つである。次は通ってよく、この要件では止めない: 説明の文の良し悪し（順序と含めるものが書かれていればよい）／主が子のタブで先に答えていて、親の届けた答えが 2 度目になること（子は受け取って続ける）／判断のモデルが主に上げた止まりを親が通し、あとで主に止められること（エピックの 1 行から事後に止める作り）。説明が主に読めない書き方を見つけるたびに手順を足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 親の手順に resolve と主に上げる説明の順が書かれている
-- **WHEN** SKILL.md の Orca 経路の手順を読む
-- **THEN** `wait` に `--watch-stopped` と `--resolve <エピック番号>` を付けること、`--resolve` を付けたときの出力が `unrecorded` を含む 1〜4 行で、付けないときは従来どおり 1〜3 行であること、`unrecorded` で起こされたらエピックに 1 行を残して主に上げないこと、`stopped` で起こされたら `子の停止:` と、`停止の記録:` がその URL と一致する `親の判断:` を読み、一致するものが無ければ主に上げること、主に上げる説明を `~/.claude/output-styles/readable.md` の節 3 の型で書き（旧い 5 段の順を写していない）、エピックの目的と他の子との関係と記録の URL を含めること、実機操作はどの子の・どの画面で・何をするかを書くこと、主に上げる説明を本文で書き質問ツールで聞かないこと、主の答えを `reply-after-idle.md` の表で決めてから、書き換えずに末尾に発言の場所の添え書きを付けて `reply --as owner` で届けること、`parent-pass-criteria.md` を指すことが書かれている
+- **WHEN** `references/epic.md` の Orca 経路の手順を読む
+- **THEN** `wait` に `--watch-stopped` と `--resolve <エピック番号>` を付けること、`--resolve` を付けたときの出力が `unrecorded` を含む 1〜4 行で、付けないときは従来どおり 1〜3 行であること、`unrecorded` で起こされたらエピックに 1 行を残して主に上げないこと、`stopped` で起こされたら `子の停止:` と、`停止の記録:` がその URL と一致する `親の判断:` を読むこと、主に上げる説明を `~/.claude/output-styles/readable.md` の節 3 の型で書き（旧い 5 段の順を写していない）、エピックの目的と他の子との関係と記録の URL を含めること、実機操作はどの子の・どの画面で・何をするかを書くこと、主に上げる説明を本文で書き質問ツールで聞かないこと、主の答えを `reply-after-idle.md` の表で決めてから、書き換えずに末尾に発言の場所の添え書きを付けて `reply --as owner` で届けること、`parent-pass-criteria.md` を指すことが書かれている
+
+#### Scenario: 手順 8 が記録の項目を正本の段に置き直す
+- **WHEN** `references/epic.md` の Orca 経路の手順 8 を読む
+- **THEN** 「同じ項目名のまま」の文言が無く、`止まった理由:`・`主に聞く理由:`・`前提:`・`推奨:`・`推奨の根拠:`・`受け入れるリスク:` をそれぞれ正本の質問・主に聞く理由・いま困っていること・推奨と根拠・受け入れるリスクに置き直すこと、項目名をそのまま主に渡さないこと、1 通で上げるのは 1 件であることが書かれている
+
+#### Scenario: 主に聞く理由の無い止まりは親が通す
+- **WHEN** `references/epic.md` の Orca 経路の手順 8 を読む
+- **THEN** 判断が「主に上げる」・判断できなかった・一致する判断が無い止まりも、主に上げる前に親が `parent-pass-criteria.md` に照らすこと、主に聞く理由の 3 つのどれにも当たらない止まりは `reply --as parent` で通してエピックに `親の判断: 子 #N 通した — <理由> <停止の記録の URL>` を残すこと、判断が「主に上げる」としたものを覆すときの理由は 3 つの理由のどれにも当たらない根拠を 1 文で書くこと、`止まった理由:` が `PR のマージ待ち（` で始まる止まりは照らし直さずマージ待ちの子の手順に進むこと、迷うときは主に上げることが書かれている
+
+#### Scenario: PR トークン上限の止まりは基準に照らし直さず権限に照らす
+- **WHEN** `references/epic.md` の Orca 経路の手順 8 を読む
+- **THEN** `止まった理由:` が `PR トークン上限（` で始まる止まりは `parent-pass-criteria.md` に照らし直さず、親の権限に照らす専用の手順に進むこと、権限の内でなければ主に上げることが書かれている
+
+#### Scenario: 実機で親の報告が正本の型になり、理由の無い止まりは上がらない
+- **WHEN** `claude -p --plugin-dir` で、親の手順 8 の立場に、ログの 3 場面（rm の許可・CI が落ちた 2 件・初版の記録を配布の前提から外す件）を 7 項目の形で書き起こした子の停止の記録を渡し、主への報告か通す判断を書かせる
+- **THEN** 主に上げた報告は質問で始まり、主に聞く理由・いま困っていること・推奨と根拠・頻度と根拠を含む受け入れるリスク・答え方の順で、記録の項目名を見出しにせず、記録の URL を添えている。主に聞く理由が書けない件（Mac が空いてからの CI の再実行で足りる件）は主に上げず、`reply --as parent` の返事とエピックへの `親の判断: 子 #N 通した` の 1 行を出す
 
 ### Requirement: エピックの子は親から届いた返事を止まった件への返事として受け取る
-develop の SKILL.md「エピックの子が主の返事を待って止まるとき」は、端末に `親エピック #<E> の判断（主の承認ではない）:` か `主の返事（親エピック #<E> 経由）:` で始まる入力が届いたら、止まった件への返事として受け取り、既存の手順どおり `mark resumed` を呼んで続きから進むことを規定しなければならない（MUST）。親の判断で進めた件は完了報告に書く（MUST）。`親エピック #<E> の判断（主の承認ではない）:` の入力を、聖域の変更や破壊的な操作の承認として扱ってはならない（MUST NOT）。記録の形と完了報告の書式は変えない（要件「エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する」と #1036 の範囲）。
+develop の `references/epic-child-stop.md` の節「エピックの子が主の返事を待って止まるとき」は、端末に `親エピック #<E> の判断（主の承認ではない）:` か `主の返事（親エピック #<E> 経由）:` で始まる入力が届いたら、止まった件への返事として受け取り、既存の手順どおり `mark resumed` を呼んで続きから進むことを規定しなければならない（MUST）。親の判断で進めた件は完了報告に書く（MUST）。`親エピック #<E> の判断（主の承認ではない）:` の入力を、聖域の変更や破壊的な操作の承認として扱ってはならない（MUST NOT）。記録の形と完了報告の書式は変えない（要件「エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する」と #1036 の範囲）。
 
 この要件の守備範囲で入力として扱うのは、子のセッションに届いた入力の頭の文字列だけである。拾いたい誤りは、親の判断を主の承認として聖域や破壊的操作を進めること、親の返事を受けても止まったままか再び同じ件で止まることの 2 つである（確かめられなかった親経由のリスク許容で、主に子のタブでの返事を頼むために新しい記録と印を残して止まることは除く）。入力の末尾の添え書き（`[主の発言: セッション <ID> / uuid <uuid>]`）は、要件「親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る」で読む。次は通ってよく、この要件では止めない: 頭の無い入力（主が子のタブで直接答えたもの。今までどおり主の返事として扱う）。頭の文字列を真似た入力など、すり抜ける形が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 子の手順に親から届いた返事の扱いが書かれている
-- **WHEN** SKILL.md のエピックの子が止まるときの手順を読む
+- **WHEN** `references/epic-child-stop.md` のエピックの子が止まるときの手順を読む
 - **THEN** 2 つの頭の文字列、止まった件への返事として受け取り `mark resumed` を呼ぶこと、親の判断で進めた件を完了報告に書くこと、親の判断を聖域や破壊的操作の承認として扱わないことが書かれている
 
 ### Requirement: エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く
-develop の SKILL.md の節「エピックの子が主の返事を待って止まるとき」は、1 行目 `子の停止: 主の返事待ち` の記録の 2 行目以降の形を次のとおり規定しなければならない（MUST）。読み手は親のセッション・親の決める役・主で、どれも子の会話を読んでいない前提で書く。
+develop の `references/epic-child-stop.md` の節「エピックの子が主の返事を待って止まるとき」は、1 行目 `子の停止: 主の返事待ち` の記録の 2 行目以降の形を次のとおり規定しなければならない（MUST）。読み手は親のセッション・親の決める役・主で、どれも子の会話を読んでいない前提で書く。
 
-- 2 行目以降は次の 6 つの項目をこの並びで書く（MUST）。どの項目も省いてはならない（MUST NOT）
-  1. `止まった理由:` — 主にしてほしいこと（決めること 1 つ、または操作）と、それを子の側でできない理由
-  2. `前提:` — 子が作業中に分かった事実のうち、判断に要るもの
-  3. `推奨:` — 子が勧める答え
-  4. `推奨の根拠:` — その推奨を選ぶ理由
-  5. `受け入れるリスク:` — 推奨を選ぶと受け入れることになるリスク
-  6. `再開に要る途中経過:` — 返事を受けて再開するのに要る途中経過（作業の状態・コミット・PR など）。「保留で止まるときの引き継ぎ」を書く場面では引き継ぎのコメントの URL を含める
+- 2 行目以降は次の 7 つの項目をこの並びで書く（MUST）。どの項目も省いてはならない（MUST NOT）
+  1. `止まった理由:` — 主にしてほしいこと（決めること 1 つ、または操作）
+  2. `主に聞く理由:` — 主に聞く理由の 3 つ（主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作。正本は `~/.claude/output-styles/readable.md` の節 3）のどれに当たるかを、その語で始めて 1 文で書く。「決まりで主の承認が要る」ときは、その決まりが何を守るためかまで書く。続けて論点（主が持っていて子が持っていない観点を足すと結論がよくなる点）の有無を書き、決まりで聞いているだけなら `論点なし（決まりで聞いている）` と書く。どれにも当たらないのに子の側で進められないときは `主に聞く理由: なし（<子の側で進められない理由>）` と書く
+  3. `前提:` — 子が作業中に分かった事実のうち、判断に要るもの
+  4. `推奨:` — 子が勧める答え
+  5. `推奨の根拠:` — その推奨を選ぶ理由
+  6. `受け入れるリスク:` — 推奨を選ぶことで新たに生じるリスク（他の案や何もしない場合には無いもの）だけ。無ければ `なし`。何が起きるか（被害の大きさ・戻せるか）、どれくらい起きるか（起きる条件と頻度）、その根拠（確かめたのか見込みか）を含める。分からないときは「分からない」と書き、何を調べれば分かるかを添える
+  7. `再開に要る途中経過:` — 返事を受けて再開するのに要る途中経過（作業の状態・コミット・PR など）。「保留で止まるときの引き継ぎ」を書く場面では引き継ぎのコメントの URL を含める
+- 主に聞く理由の 3 つのどれにも当たらない止まりは、子がそもそも止まらずに自分で進めて事後報告するのが正本の決まりであることを書く（MUST）。`主に聞く理由: なし（…）` は、子の側で進められないときだけに使う
 - 各項目は行頭の `<項目名>:` で始め、値を同じ行に書く（MUST）。値は次の項目の行まで複数行に続けてよい（MAY）
 - 該当が無い項目は値を `なし` と書く（MUST）。推奨を出せない（主の側にしか無い情報が要る）ときは `推奨: なし（<足りない情報>）` と書き、`推奨の根拠:` と `受け入れるリスク:` は `なし` と書く（MUST）
-- 書き方として、子が作業中に振ったラベル・番号・略称や「上記」「前回」で指さず中身を書くこと、PR・issue・コメントにはフル URL を添えること、専門用語は初出で一言の言い換えを添えることを規定する（MUST）。文章全般の書き方は `rules/communication-style.md` を正本とし、SKILL.md に写さない（MUST NOT）
-- 項目名 `止まった理由` と `推奨` は、Orca 経路の手順 8（親が `stopped` を受けて報告する手順）の語と同じにする（MUST）。この要件のために手順 8 の文を変えてはならない（MUST NOT。手順 8 の動きは #1034 の範囲）
+- 書き方として、子が作業中に振ったラベル・番号・略称や「上記」「前回」で指さず中身を書くこと、PR・issue・コメントにはフル URL を添えること、専門用語は初出で一言の言い換えを添えることを規定する（MUST）。文章全般の書き方は `rules/communication-style.md` を正本とし、`references/epic-child-stop.md` に写さない（MUST NOT）
+- 親は記録の項目を正本の段に置き直して主に報告し、項目名をそのまま主に渡さないことを書く（MUST。親の側の規定は要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」）。項目名 `止まった理由` は、`references/epic.md` の「回し方」の別セッション方式の「マージ待ちの子」の段落と `references/parent-merge-criteria.md` が値の頭（`PR のマージ待ち（`）で読むので変えない（MUST）
+- CI の見張り（`references/ci-watch.md`）で止まったとき（6 の表の `escalate`、`obs.state` が `wait` でない `none`（前回と同じ状態・同じ HEAD の決着。親が追加のやり直しを許したあと同じ HEAD でまた落ちたときはこれになる）、7 の直し方の手順 7 で直せずに上げたときのどれか）は、`再開に要る途中経過:` に PR の URL・落ちたチェック名・止まった時点の PR の HEAD の短い SHA を書く（MUST）。短い SHA は PR の HEAD のコミット SHA の先頭 7 文字とし（MUST）、`ci-watch.sh next` の出力の `obs.head` か `gh pr view` の `headRefOid` から取る。取れなかったときは値を作らずに `HEAD 不明` と書く（MUST）。項目の数は 7 つのままとし、HEAD のための項目を足してはならない（MUST NOT）。`references/ci-watch.md` の `escalate` と `none` の行がこの記録を指す規定は、要件「CI の見張りの手順は共有 reference に 1 本置く」（dev-workflow-ci-watch）の 6 が持ち、この要件には写さない
 
-この要件の守備範囲で入力として扱うのは、SKILL.md の記録の項の文と、子が投稿する記録のコメントの本文である。拾いたい誤りは、項目が欠けて読み手が書き忘れと該当なしを区別できないこと、子の会話の中でしか通じない呼び名で書かれて読み手が聞き返すこと、親の手順 8 が読む語と記録の項目名が食い違うことの 3 つである。次は通ってよく、この要件では止めない: 値の長さや改行の違い／`なし` の後ろに短い補足が付くこと／同じ止まりで記録を投稿し直すこと（最新の 1 件を正とする）。記録の中身（理由・推奨・リスク）の正しさを確かめることと、書き方の穴が見つかるたびに検査や決まりを足して塞ぎ切ることは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、`references/epic-child-stop.md` の記録の項の文と、子が投稿する記録のコメントの本文である。拾いたい誤りは、項目が欠けて読み手が書き忘れと該当なしを区別できないこと、子の会話の中でしか通じない呼び名で書かれて読み手が聞き返すこと、主に聞く理由とリスクの頻度・根拠が無くて親が正本の型で書けないこと、`止まった理由:` の値の頭を読む箇所と項目名が食い違うこと、CI の見張りのやり直しの上限で止まった子の記録に HEAD が無くて親が過去の `親の判断:` と同じ件かを見分けられないこと、の 5 つである。次は通ってよく、この要件では止めない: 値の長さや改行の違い／`なし` の後ろに短い補足が付くこと／同じ止まりで記録を投稿し直すこと（最新の 1 件を正とする）／この変更の前に起動された子が以前の 6 項目の形で書くこと（判断と親はほかの項目から読む）／CI の見張りで止まった子が HEAD の短い SHA を書き忘れること、HEAD を書く規定の前に起動された子が書かないこと（親は `parent-pass-criteria.md` のとおり `不明` と扱い、同じ件かを見分けられないものとして主に上げる側に倒れる）。記録の中身（理由・推奨・リスク）の正しさを確かめることと、書き方の穴が見つかるたびに検査や決まりを足して塞ぎ切ることは、この要件の完了条件としない。
 
-#### Scenario: SKILL.md に記録の 6 つの項目名がこの並びで書かれている
-- **WHEN** SKILL.md の節「エピックの子が主の返事を待って止まるとき」を読む
-- **THEN** `止まった理由:`・`前提:`・`推奨:`・`推奨の根拠:`・`受け入れるリスク:`・`再開に要る途中経過:` がこの順で書かれ、どの項目も省かないこと、該当が無いときは `なし`、推奨を出せないときは `推奨: なし（<足りない情報>）` と書くことが書かれている
+#### Scenario: `references/epic-child-stop.md` に記録の 7 つの項目名がこの並びで書かれている
+- **WHEN** `references/epic-child-stop.md` の節「エピックの子が主の返事を待って止まるとき」を読む
+- **THEN** `止まった理由:`・`主に聞く理由:`・`前提:`・`推奨:`・`推奨の根拠:`・`受け入れるリスク:`・`再開に要る途中経過:` がこの順で書かれ、どの項目も省かないこと、該当が無いときは `なし`、推奨を出せないときは `推奨: なし（<足りない情報>）` と書くことが書かれている
+
+#### Scenario: 主に聞く理由とリスクの中身が書かれている
+- **WHEN** `references/epic-child-stop.md` の同じ節の記録の形を読む
+- **THEN** `主に聞く理由:` に 3 つの理由のどれかを書くこと、どれにも当たらないときは止まらずに進めるのが決まりで、子の側で進められないときだけ `主に聞く理由: なし（<子の側で進められない理由>）` と書くことが書かれ、`主に聞く理由:` に論点の有無を書くこと、`受け入れるリスク:` は推奨を選ぶことで新たに生じるものだけで、頻度と根拠（確かめたのか見込みか）を含めることが書かれている
 
 #### Scenario: 記録の書き方の決まりが書かれている
-- **WHEN** SKILL.md の同じ節を読む
+- **WHEN** `references/epic-child-stop.md` の同じ節を読む
 - **THEN** 子の会話を読んでいない読み手に向けて書くこと、子が振ったラベル・番号や「上記」「前回」で指さないこと、フル URL を添えること、専門用語に言い換えを添えることが書かれ、`rules/communication-style.md` を指している
 
-#### Scenario: 親の手順 8 の語と記録の項目名がそろっている
-- **WHEN** SKILL.md の Orca 経路の手順 8 と記録の項目名を読み比べる
-- **THEN** 手順 8 が報告する「止まった理由」「推奨」が、記録の項目名 `止まった理由:`・`推奨:` と同じ語である
+#### Scenario: 項目名をそろえる規定が置き直しの規定に替わっている
+- **WHEN** `references/epic-child-stop.md` の同じ節を読む
+- **THEN** 項目名を親の手順 8 の語と同じにしてあるという文が無く、親が記録を正本の段に置き直して主に報告することが書かれている
+
+#### Scenario: CI の見張りで止まったときの書き方が記録の形の節に書かれている
+- **WHEN** `epic-child-stop.md` の「記録の形」を読む
+- **THEN** CI の見張りの `escalate`、`obs.state` が `wait` でない `none`（前回と同じ状態・同じ HEAD の決着）、直し方の手順 7 のどれかで止まったときは、`再開に要る途中経過:` に PR の URL・落ちたチェック名・止まった時点の PR の HEAD の短い SHA を書くこと、短い SHA は PR の HEAD のコミット SHA の先頭 7 文字で `obs.head` か `headRefOid` から取ること、取れなければ `HEAD 不明` と書くことが書かれ、項目の数は 7 つのままである
 
 ### Requirement: エピックの子の完了報告は、主がこのセッションで次にすることを 1 行目に書く
 develop の SKILL.md の節「ループの終わり」は、`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返すセッション（エピックの子）の完了報告について、次を規定しなければならない（MUST）。
@@ -2403,24 +2403,24 @@ develop の SKILL.md の節「ループの終わり」は、`scripts/epic-dispat
 
 ### Requirement: 親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る
 
-develop の SKILL.md は、Orca 経路のエピックで主が親のセッションに書いたリスク許容を、子のゲートが主本人の返事として受け取れるよう、次の 3 か所を規定しなければならない（MUST）。
+develop の手順書（SKILL.md と `references/epic.md`・`references/epic-child-stop.md`）は、Orca 経路のエピックで主が親のセッションに書いたリスク許容を、子のゲートが主本人の返事として受け取れるよう、次の 3 か所を規定しなければならない（MUST）。
 
-**Orca 経路の手順 8（親の送り方）**: 親は主の答えを `scripts/epic-dispatch.sh reply --as owner` で送る前に、`owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <主の答え>` を回し、`MATCH:` のうち全文が主の答えと同じ（どちらも連続する空白を 1 個にまとめて比べる）で timestamp がいちばん新しい行の uuid を取り、主の答えの末尾に ` [主の発言: セッション <親のセッション ID> / uuid <uuid>]` を添えて渡さなければならない（MUST）。主の答えそのものは書き換えてはならない（MUST NOT。添え書きは末尾に足すだけ）。`--relayed` の結び付けは親の発言の本文に停止の記録の URL があることで見るので、親は止まった子の報告を本文で書き（質問ツールで聞かない）、その本文に停止の記録の URL を書かなければならない（MUST）。URL を書いた最後の報告と主の答えのあいだに主の別の発言が挟まると子の `--relayed` は `not-direct` で落ちるので、そのときは報告を本文で出し直してから主の答えを受け直さなければならない（MUST）。終了コードが 0 でない、または該当する行が無いときは添え書きを付けずに送り、主に「子のゲートは親経由の許容を確かめられないので、リスク許容なら子のタブで打ってほしい」と伝えなければならない（MUST）。
+**Orca 経路の手順 8（親の送り方）**: 親は主の答えを `scripts/epic-dispatch.sh reply --as owner` で送る前に、`owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <主の答え>` を回し、`MATCH:` のうち全文が主の答えと同じ（どちらも連続する空白を 1 個にまとめて比べる）で timestamp がいちばん新しい行の uuid を取り、主の答えの末尾に ` [主の発言: セッション <親のセッション ID> / uuid <uuid>]` を添えて渡さなければならない（MUST）。主の答えそのものは書き換えてはならない（MUST NOT。添え書きは末尾に足すだけ）。`--relayed` の結び付けは親の発言の本文に停止の記録の URL があることで見るので、親は止まった子の報告を本文で書き（質問ツールで聞かない）、その本文に停止の記録の URL を書かなければならない（MUST）。URL を書いた最後の報告と主の答えのあいだに主の別の発言が挟まると子の `--relayed` は `not-direct` で落ちるので、そのときは報告を本文で出し直してから主の答えを受け直さなければならない（MUST）。終了コードが 0 でない、または該当する行が無いときは添え書きを付けずに送り、主に「<OK すると起きること>でよければ、子のタブで『許容する』と打ってほしい（親のタブの返事を子が確かめられなかったため）」と伝えなければならない（MUST）。
 
-**「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」（子の受け取り方）**: 子は、`主の返事（親エピック #<E> 経由）:` で始まる入力（起動し直されたセッションの最初の指示 `/develop #<N> （エピック #<E> の子。返事を受けて起動し直し） 主の返事（親エピック #<E> 経由）: …` の、括弧のうしろに付いて届いたものを含む）が止まった件のリスク許容への返事で、末尾に `[主の発言: セッション <ID> / uuid <uuid>]` があるとき、記録先の最新の `子の停止: 主の返事待ち` のコメント（投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のもの）の作成日時と URL で `owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>` を回さなければならない（MUST）。exit 0 で、`MATCH:` の全文から許容の意思が読め、全文がこの子・この PR への許容と読め、別の子・別の PR・別のリスクだけを名指しした答えでないときだけ、保留の解除の G に、親のセッション ID・uuid・`MATCH:` の timestamp・停止の記録の URL・`MATCH:` の全文を渡さなければならない（MUST。記録の書式と真正性確認は pr-review-gate 手順 5 の「親経由で受領」が正本で、SKILL.md に書式を再掲しない）。exit 0 で、`MATCH:` の全文から不許容の意思が読め、全文がこの子・この PR への答えと読め、別の子・別の PR・別のリスクだけを名指しした答えでないときは、主本人の不許容として受け取り、保留の解除の G に同じ値を渡して pr-review-gate の手順 6 の復帰手順の不許容の行で扱わせなければならない（MUST。主に子のタブで打ち直してもらわない）。添え書きが無い・`--relayed` が exit 0 でない・全文から許容とも不許容とも読めないときは、主本人の返事として扱ってはならず（MUST NOT）、G を起こさずに、主に子のタブで直接返事を打ってもらうよう頼み（止まる前の記録と印は同じ節の手順どおり）、頼む文に確かめられなかった理由（`REASON=` の値か「添え書きが無い」）を添えなければならない（MUST）。起動し直されたセッションでは、この受け取り方を「新しいセッションでの再開」の手順 2（`/develop` の引数の残りを自分のセッションの会話で受けた回答として扱う）より先に当て、引数の残りのうち `主の返事（親エピック #<E> 経由）:` で始まる部分を自分のセッション ID で `owner-reply-check.sh` に掛けてはならない（MUST NOT。子の会話ログのその行は⑨で主の発言として数えないので、掛けると主に受け直しを頼むことに落ちる）。この順序は「親から届いた返事」の箇条に書き、再開手順の本文は変えない（MUST）。リスク許容以外の返事（動作確認の結果・切り出しの確認への回答など）の受け取り方は変えない。
+**「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」（子の受け取り方）**: 子は、`主の返事（親エピック #<E> 経由）:` で始まる入力（起動し直されたセッションの最初の指示 `/develop #<N> （エピック #<E> の子。返事を受けて起動し直し） 主の返事（親エピック #<E> 経由）: …` の、括弧のうしろに付いて届いたものを含む）が止まった件のリスク許容への返事で、末尾に `[主の発言: セッション <ID> / uuid <uuid>]` があるとき、記録先の最新の `子の停止: 主の返事待ち` のコメント（投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のもの）の作成日時と URL で `owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>` を回さなければならない（MUST）。exit 0 で、`MATCH:` の全文から許容の意思が読め、全文がこの子・この PR への許容と読め、別の子・別の PR・別のリスクだけを名指しした答えでないときだけ、保留の解除の G に、親のセッション ID・uuid・`MATCH:` の timestamp・停止の記録の URL・`MATCH:` の全文を渡さなければならない（MUST。記録の書式と真正性確認は pr-review-gate 手順 5 の「親経由で受領」が正本で、develop の手順書（SKILL.md と `references/epic-child-stop.md`）に書式を再掲しない）。exit 0 で、`MATCH:` の全文から不許容の意思が読め、全文がこの子・この PR への答えと読め、別の子・別の PR・別のリスクだけを名指しした答えでないときは、主本人の不許容として受け取り、保留の解除の G に同じ値を渡して pr-review-gate の手順 6 の復帰手順の不許容の行で扱わせなければならない（MUST。主に子のタブで打ち直してもらわない）。添え書き（`[主の発言: …]` も `[主の委任: …]` も）が無い・`--relayed` が exit 0 でない・全文から許容とも不許容とも読めないときは、主本人の返事として扱ってはならず（MUST NOT）、G を起こさずに、主に子のタブで直接返事を打ってもらうよう頼み（止まる前の記録と印は同じ節の手順どおり）、頼む文に確かめられなかった理由（`REASON=` の値か「添え書きが無い」）を添えなければならない（MUST）。起動し直されたセッションでは、この受け取り方を「新しいセッションでの再開」の手順 2（`/develop` の引数の残りを自分のセッションの会話で受けた回答として扱う）より先に当て、引数の残りのうち `主の返事（親エピック #<E> 経由）:` で始まる部分を自分のセッション ID で `owner-reply-check.sh` に掛けてはならない（MUST NOT。子の会話ログのその行は⑨で主の発言として数えないので、掛けると主に受け直しを頼むことに落ちる）。この順序は「親から届いた返事」の箇条に書き、再開手順の本文は変えない（MUST）。リスク許容以外の返事（動作確認の結果・切り出しの確認への回答など）の受け取り方は変えない。末尾が `[主の委任: セッション <ID> / uuid <uuid> / 記録 <URL>]` の返事は、要件「子は委任の返事を確かめてから G に渡す」の手順で確かめ、この段落の `--relayed` に掛けてはならない（MUST NOT）。
 
 **保留の行の「リスク許容を会話で受けたら」の文**: エピックの子が親経由で許容を受けたときは、自分のセッション ID ではなく、上の「親から届いた返事」の手順で確かめてから G に渡すことを、参照で書かなければならない（MUST）。
 
-この要件の守備範囲で入力として扱うのは、親の会話の主の答え、子に届いた入力の頭と末尾の添え書き、子の記録先の停止の記録のコメント、同じ PC の親の会話ログである。拾いたい誤りは、親の打ち込みや確かめられない親経由の返事を主のリスク許容として G に渡すこと、別の止まり・別の子への主の答えを流用すること、親が場所を添えずに送ったときに主に子のタブでの返事を頼まないこと、の 3 つである。次は通ってよく、この要件では止めない: 親が報告した 2 件の止まりにまとめて答えた名指しの無い「許容」と、両方の子を名指しした「1034 も 1030 も許容」（どちらも両方の子で受け取る）、親の報告と主の答えのあいだに親の会話の圧縮が挟まったもの。会話ログの改変と、頭の無い自由な文での親の打ち込みを見破ること、偽造の経路を見つけるたびに塞ぎ切ることは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、親の会話の主の答え、子に届いた入力の頭と末尾の添え書き、子の記録先の停止の記録のコメント、同じ PC の親の会話ログである。拾いたい誤りは、親の打ち込みや確かめられない親経由の返事を主のリスク許容として G に渡すこと、別の止まり・別の子への主の答えを流用すること、親が場所を添えずに送ったときに主に子のタブでの返事を頼まないこと、の 3 つである。次は通ってよく、この要件では止めない: 親が報告した 2 件の止まりにまとめて答えた名指しの無い「許容」と、両方の子を名指しした「1034 も 1030 も許容」（どちらも両方の子で受け取る）、親の報告と主の答えのあいだに親の会話の圧縮が挟まったもの。委任の添え書きの返事の守備範囲は要件「子が委任の返事を受ける経路の守備範囲」に従う。会話ログの改変と、頭の無い自由な文での親の打ち込みを見破ること、偽造の経路を見つけるたびに塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 親の送り方が手順 8 に書かれている
 
-- **WHEN** SKILL.md の Orca 経路の手順 8 を読む
+- **WHEN** `references/epic.md` の Orca 経路の手順 8 を読む
 - **THEN** 止まった子の報告を本文で書き（質問ツールで聞かない）停止の記録の URL を添えること、主の答えを書き換えないこと、`owner-reply-check.sh --locate` で主の発言の uuid を引くこと、`[主の発言: セッション <親のセッション ID> / uuid <uuid>]` を主の答えの末尾に添えて `reply --as owner` に渡すこと、引けないときは添え書きを付けずに送り主に子のタブでの返事を頼むことが書かれている
 
 #### Scenario: 子の受け取り方が「親から届いた返事」に書かれている
 
-- **WHEN** SKILL.md の「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」を読む
+- **WHEN** `references/epic-child-stop.md` の節「エピックの子が主の返事を待って止まるとき」の「親から届いた返事」を読む
 - **THEN** 添え書きのある親経由のリスク許容を、最新の停止の記録の作成日時と URL で `owner-reply-check.sh --relayed` に掛け、exit 0 で全文から許容と読めるときだけ G に許容として渡すこと、exit 0 で全文から不許容と読めるときは主本人の不許容として G に渡すこと、どちらとも読めないか確かめられなければ主に子のタブでの返事を理由付きで頼むこと、起動し直しの最初の指示に付いて届いたときも同じに扱い再開手順 2 より先に当てること、書式の正本が pr-review-gate 手順 5 の「親経由で受領」であることが書かれている
 
 #### Scenario: 確かめられない親経由の許容では G を起こさない
@@ -2442,6 +2442,11 @@ develop の SKILL.md は、Orca 経路のエピックで主が親のセッショ
 
 - **WHEN** SKILL.md の保留の行の「リスク許容を会話で受けたら」の文を読む
 - **THEN** エピックの子が親経由で受けたときは「親から届いた返事」の手順に従うことが書かれている
+
+#### Scenario: 委任の添え書きの返事は --relayed に掛けない
+
+- **WHEN** 子に `主の返事（親エピック #1038 経由）: 許容する（主の委任による。停止の記録: <URL>） [主の委任: セッション <ID> / uuid <uuid> / 記録 <委任の記録の URL>]` が届く
+- **THEN** 子は `--relayed` を回さず、要件「子は委任の返事を確かめてから G に渡す」の手順で確かめる（添え書きが無い返事としても扱わない）
 
 ### Requirement: epic-dispatch.sh reap は PR が無く issue を閉じた子を、main に入っていない commit が無いときに片付ける
 この要件は、要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」の確認 7（マージ済み PR の先端と HEAD の一致）で一致する行が無かったときの扱いに優先しなければならない（MUST）。7 の 1 段・2 段の出力の取り方、一致したときの扱い、1〜6 の確認、片付け（`orca terminal close` → `--force` なしの `orca worktree rm` → ローカルブランチの削除）の手順は変えない。
@@ -2520,7 +2525,7 @@ develop の SKILL.md の節「ループの終わり」の、PR を伴わない�
 
 #### Scenario: worktree create が作ったシェルの端末で子のセッションが起動し、端末は 1 つのまま
 - **WHEN** 子 11 のワークツリーに空のシェルの端末（`term-11`、`agentIdentity` なし）が 1 つあり、起動コマンドが届いたあとは同じ端末が `agentIdentity: claude` になるスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
-- **THEN** `orca terminal create` は呼ばれず、`orca terminal send --terminal term-11` が 2 回（1 回目は `EPIC_DISPATCH_PARENT_EPIC=400 CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=120000 cld --model 'opus'` を含む `--enter --json`、2 回目は `/develop #11` を含む指示）、`orca terminal wait --terminal term-11 --for tui-idle` が 1 回呼ばれ、stdout は `launched 11`、exit 0
+- **THEN** `orca terminal create` は呼ばれず、`orca terminal send --terminal term-11` が 2 回（1 回目は `EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{"idleCompaction":false}' --model 'opus'` を含む `--enter --json`、2 回目は `/develop #11` を含む指示）、`orca terminal wait --terminal term-11 --for tui-idle` が 1 回呼ばれ、stdout は `launched 11`、exit 0
 
 #### Scenario: 端末が 0 個なら従来どおり terminal create で作る
 - **WHEN** 子 11 のワークツリーの端末が 0 個のスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
@@ -2537,7 +2542,7 @@ develop の SKILL.md の節「ループの終わり」の、PR を伴わない�
 この要件の守備範囲で入力として扱うのは、`orca terminal list --worktree path:<子> --json` の出力である。出どころは、launch が直前に worktree create で作った子のワークツリーに対する Orca 自身の出力で、人が手で打つ入力ではない。拾いたい誤りは、端末の数を取り違えて端末を増やすこと（一覧が読めないのを 0 個として作る、2 個以上なのに作る）と、シェルが idle のうちに最初の指示を送ってしまうことである。通してよい入力は、`result.terminals` が配列で、要素の `handle` が空でない文字列のもの（`agentIdentity` や `title` が無い要素を含む。使い回す端末の識別には起動後の `agentIdentity`・タイトルだけを使う）、および `Terminal 1` 以外のタイトルの端末である。一覧の形が変わったときの検知は範囲外とし、読めなければ `failed` として表に出すだけにする。入力の穴を塞ぎ切ることをこの要件の完了条件としない。
 
 ### Requirement: Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける
-develop の SKILL.md「エピックの扱い」→「回し方」は、Orca 経路の手順のあとに、マージ待ちで止まった子の扱いを規定しなければならない（MUST）。この要件は、要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」の `stopped` で主に上げるどちらの経路（一致する `親の判断:` が無ければ主に上げる、と、それ以外は主に上げる）にも、子の最新の停止の記録の `止まった理由:` が `PR のマージ待ち（` で始まる子について優先する（主に上げる前にこの手順を行い、ここで主に上げると決まったものは同じ要件の報告の形で上げる）。手順 2・手順 8 の文は変えない。
+develop の `references/epic.md`「エピックの扱い」→「回し方」は、Orca 経路の手順のあとに、マージ待ちで止まった子の扱いを規定しなければならない（MUST）。この要件は、要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」の `stopped` で主に上げるどちらの経路（一致する `親の判断:` が無いとき、と、判断が「主に上げる」・判断できなかったとき）にも、子の最新の停止の記録の `止まった理由:` が `PR のマージ待ち（` で始まる子について優先する（主に上げる前にこの手順を行い、ここで主に上げると決まったものは同じ要件の報告の形で上げる）。手順 2 の文は変えない。手順 8 は、`止まった理由:` が `PR のマージ待ち（` で始まる止まりを照らし直さずこの手順に回す分岐を持つ。
 
 - **気づく経路**: 子が「エピックの子が主の返事を待って止まるとき」の記録を `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` で残し、`wait --resolve` の判断がマージを通さないので親が `stopped` で起こされる経路に乗る。epic-dispatch.sh にマージ待ちを返す出力を足さない
 - **前提の確認**（`gh` で機械的に見る。どれかを満たさなければ決める役を起こさずに主に上げる。MUST）: 対象リポの PR の base ブランチの `.github/workflows/auto-merge.yml`（`gh api "repos/<owner>/<repo>/contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>" --jq .content | base64 -d`） に `parent-merge-approved` の語がある／PR が open で、見送りラベル（`human-merge`・`needs-human-merge`・`human-only`・`needs-approval`）のうち付いているのが `human-merge` だけ／記録の PR の本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` が子 issue の番号である／PR に、今の HEAD を `親が見た HEAD:` に持つ `親のマージ判断: 可` のコメントがまだ無い（あれば自動マージの処理の側が止めているので、`docs/auto-merge.md` の「親の判断の印を付けたのにマージされないとき」の調べ方を添えて上げる）
@@ -2549,7 +2554,7 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、Orca 経�
 この要件の守備範囲で入力として扱うのは、子の停止の記録、`gh` で読める PR と PR の base ブランチの `auto-merge.yml`、決める役の出力である。拾いたい誤りは、印が効かないリポや `human-merge` 以外の見送りラベルが付いた PR に印を付けること、決める役の判断を経ずに印を付けること、判断したあとに変わった HEAD に印を付けること、ラベルをコメントより先に付けて最初の判定を空振りさせること、マージされない印を付け直し続けること、古い HEAD のラベルを残したまま新しい HEAD を承認して判定を走らせないことの 6 つである。次は通ってよく、この要件では止めない: 決める役が通してよい PR を否とすること（主の手間は増えるが危険は無い）／マージ待ちの止まりのたびに `stop-judge.sh` のモデル呼び出しが 1 回空振りすること／子が技術的には印を付けられること（受け取り側の判定と手順書の規則に任せる。#1030 で主が受け入れた）。基準をすり抜ける PR が見つかるたびに手順を足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 親の手順にマージ待ちの判断と印の付け方が書かれている
-- **WHEN** SKILL.md の Orca 経路の手順のあとの段落を読む
+- **WHEN** `references/epic.md` の Orca 経路の手順のあとの段落を読む
 - **THEN** `止まった理由:` が `PR のマージ待ち（` で始まる子について、手順 8 で主に上げるどちらの経路でも報告の前に行うこと、決める役に `auto-merge.yml` の聖域とマージ条件の行と `human-merge` を付けたロボットの投稿を貼ること、4 つの前提（PR の base ブランチの `auto-merge.yml` の `parent-merge-approved`、見送りラベルが `human-merge` だけ、PR 本文の最初の `Closes`・`Fixes`・`Refs` が子 issue の番号、今の HEAD の判断のコメントがまだ無い）、`dev-workflow:decider` に `parent-merge-criteria.md` で判断させること、可のとき残っている `parent-merge-approved` を外し、HEAD を確かめてから `親のマージ判断: 可`・`親が見た HEAD:` のコメント → `parent-merge-approved` ラベルの順に付け、`reply --as parent` で子に伝え、エピックに `マージに回した` の 1 行を残すこと、否・不足・迷ったときは主に上げること、印を付けるのは親だけで直接マージしないことが書かれている
 
 #### Scenario: マージ待ち以外の止まりは今までどおり
@@ -2584,7 +2589,7 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、Orca 経�
 
 `skipped`・`notified`・`unrecorded` はどれも exit 0 で、stdout はちょうど 1 行とする（MUST）。`skipped` のときは子に何も送らず、エピックにも子 issue にも投稿してはならない（MUST NOT）。
 
-develop の `SKILL.md`「エピックの扱い」→「回し方」の Orca 経路の手順 4 は、`closed <N>...` で起こされて `state_reason` が `completed` の子ごとに、`references/reply-after-idle.md` の表で起動し直すかを決めてから `scripts/epic-dispatch.sh notify-closed`（起動し直すなら `--relaunch`）を呼ぶと書かなければならない（MUST）。`notify-closed` は、依存が解けた子の `launch` より先に呼ぶと書く（MUST。`launch` が `failed` を返すと親は手順 6 で止まり、再開の手順 7 は `notify-closed` を呼ばないので、後ろに置くと閉じた子に送られないまま残る）。出力の扱いとして、`notified` と `skipped` は何もしない、`unrecorded` は stderr に出た投稿し直しのコマンドでエピックに 1 行を残す、`failed` は主に報告する（主に出す発言の 1 行目と最後の行は、要件「エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う」に従う）と書く（MUST）。`state_reason` が `completed` でない子には `notify-closed` を呼ばない（SHALL。作業されていない件に完了を促さない）。
+develop の `references/epic.md`「エピックの扱い」→「回し方」の Orca 経路の手順 4 は、`closed <N>...` で起こされて `state_reason` が `completed` の子ごとに、`references/reply-after-idle.md` の表で起動し直すかを決めてから `scripts/epic-dispatch.sh notify-closed`（起動し直すなら `--relaunch`）を呼ぶと書かなければならない（MUST）。`notify-closed` は、依存が解けた子の `launch` より先に呼ぶと書く（MUST。`launch` が `failed` を返すと親は手順 6 で止まり、再開の手順 7 は `notify-closed` を呼ばないので、後ろに置くと閉じた子に送られないまま残る）。出力の扱いとして、`notified` と `skipped` は何もしない、`unrecorded` は stderr に出た投稿し直しのコマンドでエピックに 1 行を残す、`failed` は主に報告する（主に出す発言の 1 行目と最後の行は、要件「エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う」に従う）と書く（MUST）。`state_reason` が `completed` でない子には `notify-closed` を呼ばない（SHALL。作業されていない件に完了を促さない）。
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `orca` と `gh` で、上の振る舞い（止まった印のまま completed で閉じた子には返事が送られ、エピックに `親の判断: 子 #<child> 通した` で始まる 1 行が残ること、止まっていない子・既に完了の印の子・completed でない子・閉じていない子には何も送らずどこにも投稿しないこと、送れたがエピックへの投稿に失敗すると `unrecorded` を出すこと、送信の失敗で `failed` を出しエピックに投稿しないこと、引数の誤りで `orca` を呼ばないこと）と、手順 4 の文面が `notify-closed` を呼ぶこと、手順 4 の中で `notify-closed` が `launch` より先に現れることを確かめなければならない（MUST）。
 
@@ -2619,17 +2624,17 @@ develop の `SKILL.md`「エピックの扱い」→「回し方」の Orca 経�
 - **THEN** stderr に使い方が出て exit 1 で終わり、`orca` は呼ばれない
 
 #### Scenario: 手順 4 は completed の子に notify-closed を呼ぶ
-- **WHEN** develop の `SKILL.md`「回し方」の Orca 経路の手順 4 を読む
+- **WHEN** develop の `references/epic.md`「回し方」の Orca 経路の手順 4 を読む
 - **THEN** `state_reason` が `completed` の子ごとに `scripts/epic-dispatch.sh notify-closed` を呼ぶことと、`unrecorded`・`failed` の扱いが書かれている
 - **AND** `notify-closed` は、依存が解けた子を `launch` するより前に書かれている
 
 ### Requirement: 起動し直した親は主の返事待ちの子を主に出し直す
-`epic-dispatch.sh` は読み取り専用のサブコマンド `pending-owner <子>...` を持たなければならない（MUST）。各子について、同じ repoId・linkedIssue が一致・archive されていないワークツリーのコメント欄が `epic-stopped-seen` のものがあれば、`pending <N>` を 1 行ずつ出して exit 0 で終わる。`orca worktree set` を呼んではならない（MUST NOT）。SKILL.md の Orca 経路の手順 7（`回し方: Orca` を引き継いだ再開）は、`launch` の前に、`launch` に渡したことのある開いた子で `pending-owner` を呼び、`pending` の子ごとに、最新の `子の停止: 主の返事待ち` に一致する最新の `親の判断:`（手順 8 と同じ照合）が「通した」以外のものを、手順 8 と同じ報告で本文に出し直してから待ちに入ると書かなければならない（MUST）。再開済みかどうかは子のワークツリーのコメント欄（子が `mark resumed` で付ける `epic-resumed`）で決め、子 issue のコメントの新旧では決めない（MUST。停止後に親が投稿する `親の判断:` で除外されないため）。エピックのコメントの `親の判断: 子 #N 通した`（手順 8 と同じ author_association の条件）で、その行の停止の記録の URL が子の最新の `子の停止: 主の返事待ち` の URL と一致するものがある子は、通して送った解決済みの件なので再報告から外す（MUST。通した直後に子が `mark resumed` を付ける前に親が起動し直されても再報告しない）。`親の判断: 通すが送れなかった` の件は手順 8 と同じく送り直す。`references/reply-after-idle.md` の「親への適用」の復元元の表は、主の返事待ちの子の行（復元元は子のワークツリーの印 `epic-stopped-seen` と、子 issue の `子の停止: 主の返事待ち` および対応する `親の判断:`）を持たなければならない（MUST）。`tests/develop-skill.bats` は手順 7 と表の行を、`tests/epic-dispatch.bats` は `pending-owner` を確かめなければならない（MUST）。
+`epic-dispatch.sh` は読み取り専用のサブコマンド `pending-owner <子>...` を持たなければならない（MUST）。各子について、同じ repoId・linkedIssue が一致・archive されていないワークツリーのコメント欄が `epic-stopped-seen` のものがあれば、`pending <N>` を 1 行ずつ出して exit 0 で終わる。`orca worktree set` を呼んではならない（MUST NOT）。`references/epic.md` の Orca 経路の手順 7（`回し方: Orca` を引き継いだ再開）は、`launch` の前に、`launch` に渡したことのある開いた子で `pending-owner` を呼び、`pending` の子ごとに、最新の `子の停止: 主の返事待ち` に一致する最新の `親の判断:`（手順 8 と同じ照合）が「通した」以外のものを、手順 8 と同じ報告で本文に出し直してから待ちに入ると書かなければならない（MUST）。再開済みかどうかは子のワークツリーのコメント欄（子が `mark resumed` で付ける `epic-resumed`）で決め、子 issue のコメントの新旧では決めない（MUST。停止後に親が投稿する `親の判断:` で除外されないため）。エピックのコメントの `親の判断: 子 #N 通した`（手順 8 と同じ author_association の条件）で、その行の停止の記録の URL が子の最新の `子の停止: 主の返事待ち` の URL と一致するものがある子は、通して送った解決済みの件なので再報告から外す（MUST。通した直後に子が `mark resumed` を付ける前に親が起動し直されても再報告しない）。`親の判断: 通すが送れなかった` の件は手順 8 と同じく送り直す。`references/reply-after-idle.md` の「親への適用」の復元元の表は、主の返事待ちの子の行（復元元は子のワークツリーの印 `epic-stopped-seen` と、子 issue の `子の停止: 主の返事待ち` および対応する `親の判断:`）を持たなければならない（MUST）。`tests/develop-skill.bats` は手順 7 と表の行を、`tests/epic-dispatch.bats` は `pending-owner` を確かめなければならない（MUST）。
 
 この要件の入力は、`orca worktree list --json` が返す `repoId`・`linkedIssue`・`isArchived`・`comment`、`gh` が返す子 issue のコメント（投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のもの）である。拾いたい誤りは、起動し直した親が `epic-stopped-seen` の子を動いている子として 6 時間待ち、主に何も出さないことと、すでに再開した子や親が通した件を主に出し直すことの 2 つである。次は通してよく、この要件では止めない: 子が `mark resumed` を付け忘れ、`epic-stopped-seen` が残ったまま動いていること（主に出し直された主が子のタブで答えれば済む。次の `mark stopped` で上書きされる）／同じ linkedIssue のワークツリーが 2 つ以上あること（1 つでも `epic-stopped-seen` なら `pending`）／子 issue の `子の停止:` コメントの投稿者が権限の無いユーザーで、照合に使えず「判断が無い」として主に出されること。印の付け方の揺れを見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 手順 7 が主の返事待ちの子の出し直しを書いている
-- **WHEN** SKILL.md の手順 7 を読む
+- **WHEN** `references/epic.md` の手順 7 を読む
 - **THEN** `pending-owner` で `epic-stopped-seen` の子を集め、`launch` の前に手順 8 と同じ報告で出し直すと書いてある
 
 #### Scenario: 復元元の表に主の返事待ちの子の行がある
@@ -2641,16 +2646,24 @@ develop の `SKILL.md`「エピックの扱い」→「回し方」の Orca 経�
 - **THEN** stdout は `pending 11` だけで、`orca worktree set` は呼ばれない
 
 ### Requirement: wait --resolve は通す返事を送る前に起動し直すかを表で決める
-`epic-dispatch.sh wait --resolve` の `resolve_stopped` は、判断が `通す` のとき、`reply-after-idle.md` の表に従って `deliver_reply` の `relaunch` を決めなければならない（MUST）。子の最後のリクエストから 60 分以上で、その間にコンパクトが走っておらず（最後の assistant の行より後に `compact_boundary` の行が無い）、会話量 N（`subagent-context.sh --file` の `context_tokens`）が 150,000 以上なら起動し直し（`relaunched`）、それ以外は今までどおり送る（`sent`）。トランスクリプトは、子のワークツリーのパスの英数字以外を `-` に置換した名前（Claude Code のプロジェクト名の付け方）の `${CLAUDE_PROJECTS_DIR:-~/.claude/projects}` 直下のディレクトリの `*.jsonl` で、ちょうど 1 本のときだけ使う。0 本または 2 本以上、時刻や会話量を読めない、`subagent-context.sh` が失敗した、のいずれかのときは送る（MUST）。60 分と 150,000 は、環境変数 `EPIC_DISPATCH_RELAUNCH_IDLE_SEC`（既定 3600）と `EPIC_DISPATCH_RELAUNCH_MIN_TOKENS`（既定 150000）で変えられ、設定された値が空か数字だけでなければ、`wait` は使い方を出して exit 1 で終わる（MUST）。`tests/epic-dispatch.bats` は偽の `orca`・`gh`・トランスクリプトで次の Scenario を確かめなければならない（MUST）。
+`epic-dispatch.sh wait --resolve` の `resolve_stopped` は、判断が `通す` のとき、`reply-after-idle.md` の子の表に従って `deliver_reply` の `relaunch` を決めなければならない（MUST）。子の会話量 `context_tokens` が `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS`（既定 150000）以上なら、経過時間と `compact_boundary` の有無によらず起動し直す（`relaunched`）。子の最後のリクエスト（トランスクリプトの最後の assistant の行の `timestamp`）から `EPIC_DISPATCH_RELAUNCH_IDLE_SEC`（既定 3600）秒以上の場合も、会話量と `compact_boundary` の有無によらず起動し直す。2 条件は OR とし、どちらも真と確認できなければ今までどおり送る（`sent`）。トランスクリプトは、状態の記録の `worktree` のパスの英数字以外を `-` に置換した名前の `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}` 直下のディレクトリの `*.jsonl` で、ちょうど 1 本のときだけ使う（MUST）。0 本・2 本以上・ファイルを読めないときはそのまま送る（端末が無いときの起動し直しは既存の送信処理に従う）。会話量は同じトランスクリプトを `plugins/dev-workflow/scripts/subagent-context.sh --file <file>` で測った `context_tokens` を使う（MUST）。exit 0 と 2 の JSON の値を比較し、`over_cap` やサブエージェント用の閾値で代用してはならない（MUST NOT）。会話量を読めなくても時間条件が真なら起動し直し、時刻を読めなくても会話量条件が真なら起動し直す（MUST）。新しい閾値と既存の時間閾値は未設定のときだけ既定を使い、数字だけの非負整数を受け付け、空か数字だけでない値なら、有効な `--resolve` の待ち受けに入る前に変数名と使い方を出して exit 1 で終わる（MUST）。`EPIC_DISPATCH_RELAUNCH_MIN_TOKENS` は読まない（SHALL。設定されていても値を検査しない）。`tests/epic-dispatch.bats` は偽の `orca`・`gh`・トランスクリプトで次の Scenario を確かめなければならない（MUST）。
 
-この要件の入力は、子のワークツリーの `path`（`orca worktree list --json`）、そのトランスクリプトの `timestamp`・`type`・`subtype`、`subagent-context.sh --file` の出力、上の 2 つの環境変数である。拾いたい誤りは、長く止まった大きな会話へそのまま送って会話全体を書き込み直すことと、キャッシュが生きている子やコンパクト済みの子を起動し直して費用を無駄にすることである。次は通してよく、この要件では止めない: 経過時間が 60 分前後、N が 150,000 前後で扱いが分かれる子／トランスクリプトが複数あり、そのまま送った子／PC が寝ていてコンパクトが走らず、60 分未満と読めた子。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
+この要件の入力は、状態の記録の `worktree`、一意に選ばれたトランスクリプトの `timestamp`・`type` と会話量の計測値、上の環境変数である。拾いたい誤りは、大きい会話の子へ 60 分未満だからとそのまま送り続けること、60 分以上止まった子（コンパクトされて `SKILL.md` の中身を持たない子を含む）へそのまま送ること、会話量が閾値未満かつ 60 分未満の子を不要に起動し直すことである。次は通してよく、この要件では止めない: 経過時間が 60 分前後で時刻の読み方により扱いが分かれる子／トランスクリプトが複数あり、そのまま送った子／PC が寝ていて、60 分未満と読め、会話量条件も真と確認できなかった子／計測に必要な情報が欠けて両方の条件を真と確認できなかった子。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。送れたあとのエピックの記録と、成功した子を待ち受けの出力から外す契約は維持する（MUST）。以下の `sent` / `relaunched` は送信処理の結果であり、`wait` の stdout にその行を追加する要件ではない。
 
 #### Scenario: 60 分以上・コンパクトなし・150,000 以上なら起動し直す
 - **WHEN** 通す判断の子のトランスクリプトの最後のリクエストが 60 分以上前で、`compact_boundary` が無く、会話量が 150,000 以上で `wait --resolve` を実行する
 - **THEN** 返事は `relaunched` で届き、エピックに通した記録が残る
 
+#### Scenario: 60 分以上なら会話量によらず起動し直す
+- **WHEN** 通す判断の子のトランスクリプトの最後のリクエストが 60 分以上前で、`compact_boundary` が無く会話量が 150,000 未満で `wait --resolve` を実行する
+- **THEN** 返事は `relaunched` で届く
+
+#### Scenario: 60 分以上ならコンパクトが走っていても起動し直す
+- **WHEN** 通す判断の子のトランスクリプトの最後のリクエストが 60 分以上前で、そのあとに `compact_boundary` がある状態で `wait --resolve` を実行する
+- **THEN** 返事は `relaunched` で届く
+
 #### Scenario: 60 分未満ならそのまま送る
-- **WHEN** 最後のリクエストが 60 分未満前で同じ実行をする
+- **WHEN** 最後のリクエストが 60 分未満前で会話量が 149999 の子に、既定値で同じ実行をする
 - **THEN** 返事は `sent` で届く
 
 #### Scenario: 事実を読めなければそのまま送る
@@ -2658,8 +2671,52 @@ develop の `SKILL.md`「エピックの扱い」→「回し方」の Orca 経�
 - **THEN** 返事は `sent` で届く
 
 #### Scenario: 閾値の環境変数が数字でなければ起動しない
-- **WHEN** `EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=150k` で `wait --resolve` を実行する
+- **WHEN** `EPIC_DISPATCH_RELAUNCH_IDLE_SEC=1h` で `wait --resolve` を実行する
 - **THEN** stderr に変数名と使い方が出て exit 1 である
+
+#### Scenario: 会話量の環境変数は読まない
+- **WHEN** `EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=150k` で、最後のリクエストが 60 分以上前の子に `wait --resolve` を実行する
+- **THEN** exit 1 にならず、返事は `relaunched` で届く
+
+#### Scenario: 60 分未満でも会話量が閾値ちょうどかそれ以上なら起動し直す
+- **WHEN** 最後の assistant が 5 分前で `context_tokens` が 150000 または 150001 の子に、既定値で `wait --resolve` を実行する
+- **THEN** 返事は `relaunched` で届き、端末を起動し直して `/develop #<child>` と返事を送り、送れたあとにエピックに通した記録が残る
+
+#### Scenario: 会話量条件は compact の有無によらない
+- **WHEN** 最後の assistant が 5 分前で、`compact_boundary` がある子の最新の有効な usage による会話量が 150000 の状態で、既定値で実行する
+- **THEN** 返事は `relaunched` で届く
+
+#### Scenario: compact 後の最新の会話量が小さければそのまま送る
+- **WHEN** 150000 以上の usage のあとに `compact_boundary`、そのあとに 5 分前で会話量が 100000 の有効な usage がある状態で、既定値で実行する
+- **THEN** 返事は `sent` で届き、compact 前の最大値では起動し直さない
+
+#### Scenario: キャッシュの量も含む最後の有効な usage で決める
+- **WHEN** 5 分前の有効な assistant usage が input 10000・cache_creation 40000・cache_read 100000 で、そのあとに usage が全部 0 の API エラーの assistant があり、既定値で実行する
+- **THEN** `subagent-context.sh --file` の会話量 150000 を使い、返事は `relaunched` で届く
+
+#### Scenario: 会話量を読めなくても時間条件で起動し直す
+- **WHEN** 一意で読めるトランスクリプトに有効な usage が無い、または会話量の計測が失敗したが、最後の assistant が 60 分以上前の状態で実行する
+- **THEN** 返事は `relaunched` で届く
+
+#### Scenario: 時刻を読めなくても会話量条件で起動し直す
+- **WHEN** 一意で読めるトランスクリプトから時刻を読めないが、会話量が 150000 の状態で既定値で実行する
+- **THEN** 返事は `relaunched` で届く
+
+#### Scenario: 両条件とも真と確認できなければそのまま送る
+- **WHEN** 時刻と有効な usage の両方が無い、または最後の assistant が 5 分前で会話量だけを計測できない状態で実行する
+- **THEN** 返事は `sent` で届く
+
+#### Scenario: 会話量閾値は既定値と独立して上書きできる
+- **WHEN** 最後の assistant が 5 分前で会話量 160000 の子に `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=200000` で実行する
+- **THEN** 返事は `sent` で届く
+
+#### Scenario: 会話量閾値を 0 にできる
+- **WHEN** 最後の assistant が 5 分前で会話量 100000 の子に `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=0` で実行する
+- **THEN** 返事は `relaunched` で届く
+
+#### Scenario: 会話量閾値の不正値は待つ前に拒否する
+- **WHEN** `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS` を空文字・`150k`・`-1` のいずれかにして有効な `wait --resolve` を実行する
+- **THEN** 変数名と使い方を stderr に出して exit 1 となり、子の端末を作成・送信・終了しない
 
 ### Requirement: 空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない
 
@@ -2695,11 +2752,11 @@ develop の `SKILL.md`「エピックの扱い」→「回し方」の Orca 経�
 - **THEN** 報告に求める項目として「コマンドの全文」「対象のパス」「自分で作った」「なぜ」が書かれている
 
 ### Requirement: epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める
-`plugins/dev-workflow/scripts/epic-dispatch.sh` は、エピックの子を同時に動かす数の上限を次のとおり決めなければならない（MUST）。環境変数 `EPIC_DISPATCH_MAX_PARALLEL` が設定されていればその値を使う。値は 1 以上の整数でなければならず、空文字・0・数字以外のときは stderr に変数名と使い方を出して exit 1 で終わる（MUST）。設定されていなければ既定値を使う。既定値は物理メモリの GiB（バイト数を 1073741824 で割った値）を 4 で割って切り捨てた値で、1 未満なら 1 とする（MUST）。物理メモリは `sysctl -n hw.memsize`（バイト）で読み、読めなければ `/proc/meminfo` の `MemTotal`（kB）で読む。どちらも読めない・数字でないときは既定値を 2 とし、stderr に物理メモリを読めなかったことを出す（MUST）。`/proc/meminfo` の代わりに読むファイルはテスト用の環境変数 `EPIC_DISPATCH_MEMINFO_FILE`（既定 `/proc/meminfo`）で差し替えられる（スクリプトの冒頭の説明にだけ書き、SKILL.md には書かない）。
+`plugins/dev-workflow/scripts/epic-dispatch.sh` は、エピックの子を同時に動かす数の上限を次のとおり決めなければならない（MUST）。環境変数 `EPIC_DISPATCH_MAX_PARALLEL` が設定されていればその値を使う。値は 1 以上の整数でなければならず、空文字・0・数字以外のときは stderr に変数名と使い方を出して exit 1 で終わる（MUST）。設定されていなければ既定値を使う。既定値は物理メモリの GiB（バイト数を 1073741824 で割った値）を 4 で割って切り捨てた値で、1 未満なら 1 とする（MUST）。物理メモリは `sysctl -n hw.memsize`（バイト）で読み、読めなければ `/proc/meminfo` の `MemTotal`（kB）で読む。どちらも読めない・数字でないときは既定値を 2 とし、stderr に物理メモリを読めなかったことを出す（MUST）。`/proc/meminfo` の代わりに読むファイルはテスト用の環境変数 `EPIC_DISPATCH_MEMINFO_FILE`（既定 `/proc/meminfo`）で差し替えられる（スクリプトの冒頭の説明にだけ書き、`references/epic.md` には書かない）。
 
 `epic-dispatch.sh` はサブコマンド `max-parallel` を持ち、上の規則で決めた上限を stdout に数字 1 行で出して exit 0 で終わらなければならない（MUST）。`max-parallel` は `orca` も `gh` も `git` も呼んではならない（MUST NOT）。`EPIC_DISPATCH_MAX_PARALLEL` の値が誤っているときは上と同じく exit 1 で終わる。
 
-既定値の式と、その根拠にした実測値（2026-10-20 にオーナーの Mac（物理メモリ 32 GiB）で、同時に動いていた Claude Code のセッション 36 個の RSS が本体のプロセスのみで 146〜404 MB、子プロセスを含めて最大 564 MB だったこと）、子 1 件に 2 GiB を見込み物理メモリの半分を子に充てるという見込み（うちテスト・ビルドの山の 1.5 GiB は実測でないこと）は、develop の SKILL.md「エピックの扱い」→「回し方」に書かなければならない（MUST）。
+既定値の式と、その根拠にした実測値（2026-10-20 にオーナーの Mac（物理メモリ 32 GiB）で、同時に動いていた Claude Code のセッション 36 個の RSS が本体のプロセスのみで 146〜404 MB、子プロセスを含めて最大 564 MB だったこと）、子 1 件に 2 GiB を見込み物理メモリの半分を子に充てるという見込み（うちテスト・ビルドの山の 1.5 GiB は実測でないこと）は、develop の `references/epic.md`「エピックの扱い」→「回し方」に書かなければならない（MUST）。
 
 この要件の入力は、`EPIC_DISPATCH_MAX_PARALLEL` の値と、`EPIC_DISPATCH_MEMINFO_FILE` の値と、`sysctl` と `/proc/meminfo` が返す物理メモリ量である。拾いたい誤りは、設定が無いときに上限が無くなること、値の打ち間違い（`two`・`0`・空文字）で上限が無くなるか 0 になって何も起動しなくなることである。次は通してよく、この要件では止めない: 非常に大きい値（上限なしと同じに動く）／物理メモリが実際より大きく報告される環境／コンテナで物理メモリと使えるメモリが違う環境。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
@@ -2725,8 +2782,8 @@ develop の `SKILL.md`「エピックの扱い」→「回し方」の Orca 経�
 - **WHEN** `EPIC_DISPATCH_MAX_PARALLEL=0` または `EPIC_DISPATCH_MAX_PARALLEL=two` で `epic-dispatch.sh max-parallel` を実行する
 - **THEN** stderr に `EPIC_DISPATCH_MAX_PARALLEL` と使い方が出て exit 1
 
-#### Scenario: SKILL.md に既定値と根拠の実測値が書かれている
-- **WHEN** develop の SKILL.md「回し方」を読む
+#### Scenario: epic.md に既定値と根拠の実測値が書かれている
+- **WHEN** develop の `references/epic.md`「回し方」を読む
 - **THEN** `EPIC_DISPATCH_MAX_PARALLEL`、既定値の式（物理メモリの GiB を 4 で割って切り捨て・最小 1・読めなければ 2）、根拠の実測値（1 セッションの RSS の範囲）が書かれている
 
 ### Requirement: epic-dispatch.sh launch は空いた枠の分だけ子を起動し、残りを deferred で出す
@@ -2781,7 +2838,7 @@ develop の `SKILL.md`「エピックの扱い」→「回し方」の Orca 経�
 - **THEN** `orca` も `git` も呼ばれず、stderr に使い方が出て exit 1
 
 ### Requirement: 親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる
-develop の SKILL.md「エピックの扱い」→「回し方」は、次を書かなければならない（MUST）。これは要件「エピックの条件・作り方・回し方・完了条件を規定する」の回し方を書き換えず、上限と後回しの子の扱いを足すものである（「解けた子を件数にかかわらず `launch` する」は、`launch` に渡す子の選び方として今までどおりで、件数を抑えるのは `launch` である）。
+develop の `references/epic.md`「エピックの扱い」→「回し方」は、次を書かなければならない（MUST）。これは要件「エピックの条件・作り方・回し方・完了条件を規定する」の回し方を書き換えず、上限と後回しの子の扱いを足すものである（「解けた子を件数にかかわらず `launch` する」は、`launch` に渡す子の選び方として今までどおりで、件数を抑えるのは `launch` である）。
 
 **Orca 経路**: 手順 1 に、`launch` の出力に `deferred <N>`（上限に達したので起動しなかった子。後回しの子）があること、上限は `EPIC_DISPATCH_MAX_PARALLEL`（無ければ物理メモリから決める既定値）であることを書く。手順 2 に、後回しの子は `wait` の位置引数（動いている子）にも `--watch-done`（片付け待ちの子）にも入れないことを書く。手順 3（`done` を処理したあと）と手順 8（`stopped` を処理したあと）に、後回しの子が残っていれば、2 に戻る前に依存の解けた開いた子を `launch` に渡し直す（起動済みの子は `skipped`、枠がまだ無ければまた `deferred`）ことを書く。手順 4 の依存グラフを読み直して解けた子を `launch` する処理が後回しの子も含むことを書く。`completed` 以外で閉じたときも枠は空くので、見送りの子を前提にしていた子を除いて、後回しの子が残っていれば 2 に戻る前に依存の解けた開いた子を `launch` に渡し直すことを書く。後回しの子を `launch` に渡し直すときは、最初に渡したときと同じ `--note` を付けること（後回しの子には注意書きが投稿されていない）を書く。`launch` のあと動いている子も片付け待ちの子も 0 件なのに後回しの子が残るときは、`wait` を呼ばずに主に報告し、報告に `launch` の stderr の枠を使っている子の行を添えることを書く。後回しの子の一覧はどこにも保存せず、起動し直した親（手順 7）は依存の解けた開いた子を `launch` に渡した出力で後回しの子を知ることを書く。
 
@@ -2789,36 +2846,36 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、次を書
 
 **Orca 経路と両経路に共通の数え方**: 「枠を使っている子」に、完了の印の子・閉じた子・主の返事待ちで止まった子を数えないこと、その理由（止まった子はアイドルで、数えると主の返事が遅れるあいだ全体が止まる）を書く。Orca 経路では止まった子が戻るのは子のセッションの中なので親が止められず、戻った子の分だけ一時的に上限を超えうることを書く。サブエージェント方式では再開を本体が行うので、上の手順で再開前に空きを確かめ、上限を超えないことを書く。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats`（または `tests/develop-skill.bats`）は、SKILL.md のこれらの記述があることを確かめなければならない（MUST）。
+`plugins/dev-workflow/tests/epic-dispatch.bats`（または `tests/develop-skill.bats`）は、`references/epic.md` のこれらの記述があることを確かめなければならない（MUST）。
 
-この要件の入力は SKILL.md の本文である。拾いたい誤りは、親が `deferred` の子を動いている子として `wait` に渡して最長 6 時間待つこと、枠が空いても後回しの子を起動しないこと、サブエージェント方式で上限を超えて W を起こすことである。次は通してよく、この要件では止めない: `timeout` で起こされたときに後回しの子を `launch` に渡し直さないこと（枠は変わっていない）／サブエージェント方式で R1・G・決める役など W 以外の役割を枠に数えないこと（上限が抑えるのは W の数）／W が R1 や G の結果を待って動いていないあいだも 1 枠を使い続けること。手順書の読み方の揺れ（すり抜ける入力）が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
+この要件の入力は `references/epic.md` の本文である。拾いたい誤りは、親が `deferred` の子を動いている子として `wait` に渡して親が気づかないまま待ち続けること、枠が空いても後回しの子を起動しないこと、サブエージェント方式で上限を超えて W を起こすことである。次は通してよく、この要件では止めない: `timeout` で起こされたときに後回しの子を `launch` に渡し直さないこと（枠は変わっていない）／サブエージェント方式で R1・G・決める役など W 以外の役割を枠に数えないこと（上限が抑えるのは W の数）／W が R1 や G の結果を待って動いていないあいだも 1 枠を使い続けること。手順書の読み方の揺れ（すり抜ける入力）が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: Orca 経路の手順に後回しの子の扱いが書かれている
-- **WHEN** SKILL.md の Orca 経路の手順 1〜4・8 を読む
+- **WHEN** `references/epic.md` の Orca 経路の手順 1〜4・8 を読む
 - **THEN** `deferred <N>` の意味、後回しの子を `wait` に渡さないこと、手順 3 と手順 8 のあとで後回しの子があれば `launch` に渡し直すこと、手順 4 の `launch` が後回しの子を含むことが書かれている
 
 #### Scenario: 後回しの子だけが残ったら主に報告する
-- **WHEN** SKILL.md の Orca 経路の手順を読む
+- **WHEN** `references/epic.md` の Orca 経路の手順を読む
 - **THEN** 動いている子も片付け待ちの子も 0 件で後回しの子が残るとき、`wait` を呼ばずに `launch` の stderr を添えて主に報告することが書かれている
 
 #### Scenario: サブエージェント方式に同じ上限が書かれている
-- **WHEN** SKILL.md のサブエージェント方式の段落を読む
+- **WHEN** `references/epic.md` の「回し方」のサブエージェント方式の段落を読む
 - **THEN** `epic-dispatch.sh max-parallel` の値を上限に、子をまたいだ W の総数を抑えること、W 1 体が枠を使う期間、新しい子の W・同じ子の別の change の W・保留から戻る W のどれも起こす前に空き枠を確かめること、待ちに回したものを起こす順（再開 → 同じ子の別の change → 新しい子）が書かれている
 
 #### Scenario: 保留から戻る W は枠が空くまで再開しない
-- **WHEN** 上限 2 のサブエージェント方式で、子 A と子 B の W を起こし、A が主の返事待ちで保留に入ったので子 C の W を起こしたあと、主が A に返事をした（B・C の W はまだ動いている）場面を、SKILL.md の手順に当てはめる
+- **WHEN** 上限 2 のサブエージェント方式で、子 A と子 B の W を起こし、A が主の返事待ちで保留に入ったので子 C の W を起こしたあと、主が A に返事をした（B・C の W はまだ動いている）場面を、`references/epic.md` の手順に当てはめる
 - **THEN** 手順からは、A の W を再開せずに待ちに回し、B か C の W が枠を返したら（ループが終わるか保留に入ったら）A を新しい子より先に再開する、と読める。同時に枠を使う W は 2 体を超えない
 
 #### Scenario: 子の中で change ごとに W を起こすときも枠を使う
-- **WHEN** 上限 2 のサブエージェント方式で、子 A の W と子 B の W が動いているあいだに、子 A が 2 つの change に割れて 2 つめの change の W を起こそうとする場面を、SKILL.md の手順に当てはめる
+- **WHEN** 上限 2 のサブエージェント方式で、子 A の W と子 B の W が動いているあいだに、子 A が 2 つの change に割れて 2 つめの change の W を起こそうとする場面を、`references/epic.md` の手順に当てはめる
 - **THEN** 手順からは、空き枠が 0 なので 2 つめの change の W を起こさずに待ちに回し、枠が空いたら新しい子より先に起こす、と読める
 
 #### Scenario: Orca 経路で戻った子の扱いが書かれている
-- **WHEN** SKILL.md の枠の数え方を読む
+- **WHEN** `references/epic.md` の「回し方」の枠の数え方を読む
 - **THEN** Orca 経路では戻った子の分だけ一時的に上限を超えうること、サブエージェント方式では再開前に空きを確かめるので超えないことが書かれている
 
 #### Scenario: 枠を使っている子の数え方が書かれている
-- **WHEN** SKILL.md の回し方を読む
+- **WHEN** `references/epic.md` の回し方を読む
 - **THEN** 完了の印の子・閉じた子・主の返事待ちで止まった子を数えないことと、戻った子の分だけ一時的に上限を超えうることが書かれている
 
 ### Requirement: 破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる
@@ -2910,9 +2967,9 @@ develop の SKILL.md「エピックの扱い」→「回し方」は、次を書
 - **WHEN** 子 11 の記録の `stop` が `stopped-seen`、子 12 が `resumed`、子 13 が `stopped` の状態で `epic-dispatch.sh pending-owner 11 12 13` を実行する
 - **THEN** stdout は `pending 11` の 1 行で、`orca worktree list` も `orca worktree set` も呼ばれない
 
-### Requirement: SKILL.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ
+### Requirement: epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ
 
-develop の SKILL.md「エピックの扱い」→「回し方」の Orca 経路は、次を書かなければならない（MUST）。
+develop の `references/epic.md`「エピックの扱い」→「回し方」の Orca 経路は、次を書かなければならない（MUST）。
 
 - 手順 7（`回し方: Orca` を引き継いだ再開）は、`reap` より前に、`launch` に渡したことのある子（エピックの状態ディレクトリにある記録の子と、エピックのコメントから分かる子を合わせたもの）で `scripts/epic-dispatch.sh adopt <エピック番号> <子>...` を 1 回呼び、そのあと `reap` → `pending-owner` → `launch` の順に進むと書く。`adopted` / `skipped` / `none` は何もせず、`failed <N> ambiguous` は主に聞かずにその子を残して進み、エピックに `子 #N の記録を取り込めなかった（ambiguous）` と 1 行コメントすると書く。`failed <N> state-unreadable`（その子の記録が読めない）も同じに、止まらずにその子を残して進み、`子 #N の記録を取り込めなかった（state-unreadable）` と 1 行コメントすると書く。理由の無い `failed <N>`（記録を書けなかった）は、stderr を添えて主に報告して止まると書く。`adopt` が stdout に何も出さず exit 1 で終わったら（`orca` が無い・一覧を読めない・origin を読めない）、stderr を添えて主に報告して止まると書く（`failed <N> ambiguous` の行を出して exit 1 で終わったときは止まらない）
 - 手順 3・4・7 の「動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終える」箇所は、待ちを終える前に `scripts/epic-dispatch.sh clear <エピック番号>` を 1 回呼ぶと書く。`cleared` / `none` は何もせず、exit 1 は主に報告すると書く。`clear` は待ちを終えるときに 1 回だけ呼び、エピックを閉じるのを待たない
@@ -2920,23 +2977,25 @@ develop の SKILL.md「エピックの扱い」→「回し方」の Orca 経路
 - 手順 6 の「`--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わった（今のワークツリーを Orca から読めない）ときは親ワークツリーで開き直す」は、`wait` が Orca を読まなくなるので消し、`launch` が exit 1 で子を 1 件も作らなかったときと `adopt` が stdout に何も出さず exit 1 で終わったときの報告として書き直す
 - 完了条件の節は、エピックの完了時に状態のディレクトリが `clear` で消えていることを、動いている子が無くなったときの報告の前に確かめると書く
 - 子の状態の正本は状態の記録で、Orca のボードの列とコメント欄は記録の写しであること、オーナーが Orca の画面で印を手で変えても親の見張りには効かないことを書く
-- 「エピックの子が主の返事を待って止まるとき」の印の説明は、`mark stopped` / `mark resumed` が自分の記録に印を付け、Orca の画面には写しが出ると書く（子の手順・呼ぶ順序・出力の扱いは変えない）
+- `references/epic-child-stop.md` の節「エピックの子が主の返事を待って止まるとき」の印の説明は、`mark stopped` / `mark resumed` が自分の記録に印を付け、Orca の画面には写しが出ると書く（子の手順・呼ぶ順序・出力の扱いは変えない）
 
 `references/reply-after-idle.md` のうち、主の返事待ちの子を Orca のコメント欄の `epic-stopped-seen` で見分けると書いた箇所は、記録の `stop` が `stopped-seen` で見分けると書き直さなければならない（MUST）。
 
+この要件の入力は、`adopt`・`clear`・`reap` の出力（`adopted`・`skipped`・`none`・`cleared`・`failed <N> <理由>`・`kept <N> <理由>`、stdout が空の exit 1）である。拾いたい誤りは、`failed <N> ambiguous` や `state-unreadable` で主に聞いて止まること、理由の無い `failed <N>` や stdout が空の exit 1 を無視して進むこと、待ちを終えるときに `clear` を呼ばずに状態のディレクトリを残すことである。次は通してよく、この要件では止めない: `adopted`・`skipped`・`none`・`cleared` で何もせず進むこと／エピックを閉じるのを待たずに `clear` を呼ぶこと／`kept <N> state-unreadable` を確かめずに残すこと。出力の分類の穴が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
+
 #### Scenario: 手順 7 が adopt から始まる
 
-- **WHEN** SKILL.md の回し方の手順 7 を読む
+- **WHEN** `references/epic.md` の回し方の手順 7 を読む
 - **THEN** `adopt` を `reap`・`pending-owner`・`launch` より前に呼ぶと書いてあり、`failed <N> ambiguous` と、stdout に何も出さない exit 1 の扱いが書き分けてある
 
 #### Scenario: 待ちを終えるときに clear を呼ぶ
 
-- **WHEN** SKILL.md の回し方の手順 3・4・7 のうち、`wait` を呼ばずに待ちを終える箇所を読む
+- **WHEN** `references/epic.md` の回し方の手順 3・4・7 のうち、`wait` を呼ばずに待ちを終える箇所を読む
 - **THEN** どの箇所も待ちを終える前に `clear <エピック番号>` を 1 回呼ぶと書いてある
 
 #### Scenario: Orca の画面の印は写しだと書いてある
 
-- **WHEN** SKILL.md「エピックの扱い」を読む
+- **WHEN** `references/epic.md`「エピックの扱い」を読む
 - **THEN** 子の状態の正本が状態の記録で、Orca の画面の印を手で変えても親の見張りに効かないと書いてある
 
 ### Requirement: 実行モードは引数・印・依頼の届き方で開始時に決める
@@ -2975,7 +3034,7 @@ develop の SKILL.md「エピックの扱い」→「回し方」の Orca 経路
 
 channel の本体は AskUserQuestion を呼んではならない（MUST NOT）。主に聞くときは、依頼の届いたチャンネル（依頼の発言の開きタグの `chat_id`）にチャンネルの返信ツールで質問を送り、そのターンを終えなければならない（MUST）。依頼がチャンネルから届いていないときは、そのセッションの運用が決める主への連絡先に送り、連絡先が分からなければ記録先に質問をコメントして `needs-approval` を付けて止まる（MUST）。記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は先に PR か記録先のコメントに書き、チャンネルの質問にそのコメントのフル URL を添える（MUST）。
 
-SKILL.md の実行モードの節は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/decision-criteria.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md 自身を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。本体は SKILL.md より先にこの分岐を処理するため）。
+`skills/develop/references/channel.md` の「channel の聞き方」は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/decision-criteria.md`・`skills/develop/references/epic-child-stop.md`・`skills/develop/references/fix-check.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md と `skills/develop/references/channel.md` を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。入口の分岐で主に聞く場面なので、channel.md の読み替えの規則の例外としてその場にも書く）。
 
 この要件の守備範囲は、channel で本体が AskUserQuestion に流れる経路を develop の文面から無くすことである。拾いたい誤りは、develop の手順のどこかが channel の本体に AskUserQuestion を呼ばせること。develop 以外のスキル（wt-clean など）が AskUserQuestion を呼ぶことと、本体が文面に反して呼ぶことを機械的に止めることは、この要件の範囲に入れない。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
 
@@ -2992,12 +3051,12 @@ SKILL.md の実行モードの節は、develop と develop から読む文書の
 #### Scenario: AskUserQuestion の経路が残っていない
 
 - **WHEN** SKILL.md と `commands/develop.md` で `AskUserQuestion` を含む行を読む
-- **THEN** その行か、実行モードの節の読み替えの規則によって、channel では AskUserQuestion を呼ばないことが読み取れる
+- **THEN** その行か、`references/channel.md` の読み替えの規則によって、channel では AskUserQuestion を呼ばないことが読み取れる
 
 #### Scenario: AskUserQuestion に触れるファイルが列挙から漏れていない
 
 - **WHEN** bats が `plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で `AskUserQuestion` を含むファイルを集める
-- **THEN** SKILL.md 以外のすべてのファイルの `plugins/dev-workflow/` からの相対パスが、バッククォートで囲んだ形で実行モードの節の読み替えの対象の列挙に載っている
+- **THEN** SKILL.md と `skills/develop/references/channel.md` 以外のすべてのファイルの `plugins/dev-workflow/` からの相対パスが、バッククォートで囲んだ形で `references/channel.md` の読み替えの対象の列挙に載っている
 
 ### Requirement: channel モードの保留はチャンネルの返事で再開する
 
@@ -3023,27 +3082,27 @@ channel の本体は、保留の主への案内を「このチャンネルで記
 
 channel の本体は、モードを決めた時点でセッションの環境に `OWNER_REPLY_CHANNEL_SENDERS` があるか（空でないか）を確かめ、値を出さずに、develop 開始コメントに `チャンネルの返事の確認: 可` か `チャンネルの返事の確認: 不可（OWNER_REPLY_CHANNEL_SENDERS が無い）` を残さなければならない（MUST）。channel の本体は、G の起動指示に、`実行モード: channel` の行と、開始コメントと同じ値の `チャンネルの返事の確認: 可` / `チャンネルの返事の確認: 不可` の行を書かなければならない（MUST。G の依頼文の書き分けは `dev-workflow-pr-review-gate` の要件「保留処理の依頼文は新しいセッションでの再開を案内する」が正本）。
 
-可のセッションでは、リスク許容のチャンネルの返事を pr-review-gate 手順 5 の「会話で受領」として扱い、`owner-reply-check.sh` で確かめてから保留の解除の G に渡す（MUST。書式と確かめ方は pr-review-gate 手順 5 が正本）。不可のセッションでは、リスク許容の依頼に限り「PR #<N> にコメントで `許容する` と書く」と案内し、PR のフル URL を添える（MUST）。確かめられなかったときの受け直しの案内はチャンネルに送り、「ゲートと同じ PC での `/develop <記録先> 許容する`」の代わりに PR のコメントを案内する（MUST）。リスク許容以外の返事（動作確認の結果・切り出しの確認・方針の選び直し）はチャンネルの返事で進める（MAY）。
+可のセッションでは、リスク許容のチャンネルの返事を pr-review-gate 手順 5 の「会話で受領」として扱い、`owner-reply-check.sh` で確かめてから保留の解除の G に渡す（MUST。書式と確かめ方は pr-review-gate 手順 5 が正本）。不可のセッションでは、リスク許容の依頼に限り「末尾の PR にコメントで `許容する` と書く」と案内し、PR のフル URL を添える（MUST）。確かめられなかったときの受け直しの案内はチャンネルに送り、「ゲートと同じ PC での `/develop <記録先> 許容する`」の代わりに PR のコメントを案内する（MUST）。リスク許容以外の返事（動作確認の結果・切り出しの確認・方針の選び直し）はチャンネルの返事で進める（MAY）。
 
 この要件の守備範囲は、チャンネルの返事で確かめられないリスク許容を主に頼み、受け直しを重ねることを防ぐことである。拾いたい誤りは、`OWNER_REPLY_CHANNEL_SENDERS` の無い住人にチャンネルで許容を求めること。設定の値が正しいか（主の ID か）は確かめない（`owner-reply-check.sh` が一致しない行を数えないので、合格しない側に倒れる）。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
 
 #### Scenario: 設定が無い住人
 
 - **WHEN** `OWNER_REPLY_CHANNEL_SENDERS` の無い channel の本体がリスク許容の保留で止まる
-- **THEN** チャンネルに送る依頼の最後の答え方の行は、PR #<N> にコメントで `許容する` と書くことを案内し、PR のフル URL が添えられている
+- **THEN** チャンネルに送る依頼の最後の答え方の行は、末尾の PR にコメントで `許容する` と書くことを案内し、PR のフル URL が添えられている
 
 #### Scenario: 設定がある住人
 
 - **WHEN** `OWNER_REPLY_CHANNEL_SENDERS` のある channel の本体がリスク許容の保留で止まる
 - **THEN** チャンネルに送る依頼の最後の答え方の行は、このチャンネルで返すことを案内し、返事を受けたら `owner-reply-check.sh` で確かめてから保留の解除の G に渡す
 
-### Requirement: 別のリポジトリの子を含むエピックの回し方を SKILL.md に書く
+### Requirement: 別のリポジトリの子を含むエピックの回し方を epic.md に書く
 
-develop の SKILL.md「エピックの扱い」は、エピックの子がエピックと別のリポジトリにあるときの挙動を、既存の要件（子エピックの外し方・マージ待ちの子・子の側の手順・コメントの書式）の読み替えとして書かなければならない（MUST）。読み替えは次の表のとおりで、同じリポジトリの子の呼び出しの形・書式・判定は表の外では変えない（MUST）。既存の要件の本文は書き直さず、この要件が読み替えを持つ。
+develop の `references/epic.md`「エピックの扱い」は、エピックの子がエピックと別のリポジトリにあるときの挙動を、既存の要件（子エピックの外し方・マージ待ちの子・子の側の手順・コメントの書式）の読み替えとして書かなければならない（MUST）。読み替えは次の表のとおりで、同じリポジトリの子の呼び出しの形・書式・判定は表の外では変えない（MUST）。既存の要件の本文は書き直さず、この要件が読み替えを持つ。
 
 | 既存の書き方 | 別のリポジトリの子での読み替え |
 |---|---|
-| 子の依存を `gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by` で読む | 子のリポジトリ（`repos/<子の owner>/<子の repo>/issues/<N>/dependencies/blocked_by`）で読む。前提の issue のリポジトリは応答の `repository_url` から取り、前提の state もそのリポジトリで読む。前提が別リポジトリにあっても閉じていれば解けている。前提の issue を `gh` が読めないときは、解けていないものとして待つ（この change で新しく決めた扱い。今の SKILL.md にこの記述は無い） |
+| 子の依存を `gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by` で読む | 子のリポジトリ（`repos/<子の owner>/<子の repo>/issues/<N>/dependencies/blocked_by`）で読む。前提の issue のリポジトリは応答の `repository_url` から取り、前提の state もそのリポジトリで読む。前提が別リポジトリにあっても閉じていれば解けている。前提の issue を `gh` が読めないときは、解けていないものとして待つ（この change で新しく決めた扱い） |
 | 子エピックの判定 `gh api repos/{owner}/{repo}/issues/<N> --jq .sub_issues_summary.total` | 子のリポジトリで読む（`repos/<子の owner>/<子の repo>/issues/<N>`）。別リポジトリというだけでは外さず、sub-issue を持つ子だけを外す |
 | エピックの子の一覧 | エピックのリポジトリの sub-issue（`gh api repos/{owner}/{repo}/issues/<E>/sub_issues`。各要素の `repository_url` から子のリポジトリを取る）と、エピック本文の子の表（`<owner>/<repo>#<N>` か `#<N>`）を合わせて組み立てる。同じ子は小文字にそろえた `<owner>/<repo>#<N>` で 1 件に数える |
 | エピックへのコメント `後で別に起動するエピック: #N` | 別のリポジトリの子は `後で別に起動するエピック: <owner>/<repo>#N` |
@@ -3054,55 +3113,55 @@ develop の SKILL.md「エピックの扱い」は、エピックの子がエピ
 | 手順 4 の `gh api repos/{owner}/{repo}/issues/<N> --jq .state_reason` | 別のリポジトリの子は `gh api repos/<子の owner>/<子の repo>/issues/<N> --jq .state_reason`（親のリポジトリの同じ番号を読んで `completed` と `not_planned` を取り違えない） |
 | 手順 8 とマージ待ちの子の、子 issue の `子の停止: 主の返事待ち` と `親の判断:` のコメントの読み先（`author_association` を含む） | 別のリポジトリの子は子のリポジトリ（`repos/<子の owner>/<子の repo>/issues/<N>/comments`）から読む |
 | 手順 3 (b) の起点ブランチ | その子の記録の `base`（別のリポジトリの子は子のリポジトリの既定ブランチか `--base` の値）。親のリポジトリの `main` ではない |
-| `後で別に起動するエピック:` の行で子を外す照合（手順 2・`timeout` と `closed` の確認） | 別のリポジトリの子は `<owner>/<repo>#N` の形の行で照合する（同じリポジトリの子は `#N`） |
-| 子を `route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt` に渡す | 別のリポジトリの子は `<owner>/<repo>#N` の形で渡す（同じリポジトリの子は番号だけ） |
-| SKILL.md:487 の注意書き `親エピックからの注意書き: #<エピック番号>`、手順 1 の「起点は `origin/main`」 | 別のリポジトリの子は注意書きが `親エピックからの注意書き: <エピックの owner>/<repo>#<E>`（子のリポジトリの issue に残る）。起点は `--base` / `EPIC_DISPATCH_BASE`、無ければ子のリポジトリの既定ブランチ |
+| `後で別に起動するエピック:` の行で子を外す照合（手順 2・`closed` の確認） | 別のリポジトリの子は `<owner>/<repo>#N` の形の行で照合する（同じリポジトリの子は `#N`） |
+| 子を `route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log` に渡す | 別のリポジトリの子は `<owner>/<repo>#N` の形で渡す（同じリポジトリの子は番号だけ） |
+| `references/epic.md` の注意書き `親エピックからの注意書き: #<エピック番号>`、手順 1 の「起点は `origin/main`」 | 別のリポジトリの子は注意書きが `親エピックからの注意書き: <エピックの owner>/<repo>#<E>`（子のリポジトリの issue に残る）。起点は `--base` / `EPIC_DISPATCH_BASE`、無ければ子のリポジトリの既定ブランチ |
 | `stop-judge.sh <epic> <child>` の `<child>` は番号 | 番号か `<owner>/<repo>#<N>`。後者は子の本文・コメントを `repos/<o>/<r>/issues/<N>` から読み、エピックのコメントの過去の判断を `親の判断: 子 <o>/<r>#<N> ` で始まる行から探す。同じリポジトリの子は今までどおり。入力文の見出しも同じ呼び方にする |
 
-サブエージェント方式（unmanned・channel・Orca 管理外で選ばれる）では、別のリポジトリの子を W に渡してはならない（MUST。W は親のリポジトリに worktree を作るので、別のリポジトリの issue を親のリポジトリの PR として実装してしまう）。本体はエピックに `子 <owner>/<repo>#N は別のリポジトリなので Orca 経路でだけ起動する` と 1 行コメントし、その子と、その子を前提にする子を起こさずに、主に報告する（1 行目と最後の行は、`~/.claude/output-styles/readable.md` の節 3 の書き分けに従う）。
+サブエージェント方式（unmanned・channel、または Orca 管理下でも tmux の中でもないときに選ばれる）では、別のリポジトリの子を W に渡してはならない（MUST。W は親のリポジトリに worktree を作るので、別のリポジトリの issue を親のリポジトリの PR として実装してしまう）。本体はエピックに `子 <owner>/<repo>#N は別のリポジトリなので別セッション方式でだけ起動する` と 1 行コメントし、その子と、その子を前提にする子を起こさずに、主に報告する（1 行目と最後の行は、`~/.claude/output-styles/readable.md` の節 3 の書き分けに従う）。
 
-SKILL.md の手順 1 には、`--base` と `EPIC_DISPATCH_BASE` が 1 回の `launch` の全部の子に掛かること、リポジトリごとに既定ブランチが違う子を混ぜるときは `--base` を付けないか `launch` をリポジトリごとに分けることを書かなければならない（MUST）。手順 6 の `failed` の報告には、`failed <child> no-clone`（`EPIC_DISPATCH_CLONES` の設定か clone を主に頼む）・`ambiguous-clone`（候補のパス）・`not-in-orca`（`orca repo add` を主に頼む）・`no-push`・`permission-lookup-failed`・`base-lookup-failed`（stderr の `gh` の認証アカウントと子のリポジトリを添える）を足し、どれも主に報告して止まると書かなければならない（MUST。サブエージェント方式に自動で振り替えない）。
+`references/epic.md` の手順 1 には、`--base` と `EPIC_DISPATCH_BASE` が 1 回の `launch` の全部の子に掛かること、リポジトリごとに既定ブランチが違う子を混ぜるときは `--base` を付けないか `launch` をリポジトリごとに分けることを書かなければならない（MUST）。手順 6 の `failed` の報告には、`failed <child> no-clone`（`EPIC_DISPATCH_CLONES` の設定か clone を主に頼む）・`ambiguous-clone`（候補のパス）・`not-in-orca`（`orca repo add` を主に頼む）・`no-push`・`permission-lookup-failed`・`base-lookup-failed`（stderr の `gh` の認証アカウントと子のリポジトリを添える）を足し、どれも主に報告して止まると書かなければならない（MUST。サブエージェント方式に自動で振り替えない）。
 
-この要件の守備範囲で入力として扱うのは、SKILL.md の手順書の文面と `stop-judge.sh` の引数である。拾いたい誤りは、別のリポジトリの子の依存や子エピックの判定を親のリポジトリに対して読み、解けていない子を起動したり、子エピックを展開したりすることである。次は通してよく、この要件では止めない: 前提の issue を `gh` が読めないとき（読めない前提は解けていないとして待つ。この change で決めた扱い）／エピック本文の子の表の書式の揺れ。表を手で直した結果の細かい食い違いを見つけるたびに検査を足すことは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、`references/epic.md` の手順書の文面と `stop-judge.sh` の引数である。拾いたい誤りは、別のリポジトリの子の依存や子エピックの判定を親のリポジトリに対して読み、解けていない子を起動したり、子エピックを展開したりすることである。次は通してよく、この要件では止めない: 前提の issue を `gh` が読めないとき（読めない前提は解けていないとして待つ。この change で決めた扱い）／エピック本文の子の表の書式の揺れ。表を手で直した結果の細かい食い違いを見つけるたびに検査を足すことは、この要件の完了条件としない。
 
 #### Scenario: 依存と子エピックの判定を子のリポジトリで読むと書いてある
-- **WHEN** SKILL.md の「回し方」の経路の決め方と「エピックである子を外す」を読む
+- **WHEN** `references/epic.md` の「回し方」の経路の決め方と「エピックである子を外す」を読む
 - **THEN** 別のリポジトリの子の `blocked_by` と `sub_issues_summary.total` を子のリポジトリで読むこと、前提の issue のリポジトリを `repository_url` から取ることが書いてある
 
 #### Scenario: 子の一覧の組み立てが書いてある
-- **WHEN** SKILL.md の「エピックの扱い」を読む
+- **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** sub-issue の `repository_url` とエピック本文の子の表から子の一覧を組み立て、同じ子を 1 件に数えることが書いてある
 
 #### Scenario: 読み先が子のリポジトリだと書いてある
-- **WHEN** SKILL.md の手順 3 (b)・手順 4・手順 8・マージ待ちの子・`後で別に起動するエピック:` の照合を読む
+- **WHEN** `references/epic.md` の手順 3 (b)・手順 4・手順 8・マージ待ちの子・`後で別に起動するエピック:` の照合を読む
 - **THEN** 手順 4 は別のリポジトリの子の `state_reason` を `repos/<子の owner>/<子の repo>/issues/<N>` で読むと書いてあり、手順 8 とマージ待ちの子は子 issue のコメントを子のリポジトリから読むと書いてあり、手順 3 (b) は起点を記録の `base` と書いてあり、`後で別に起動するエピック:` の照合は `<owner>/<repo>#N` の形と書いてある
 
 #### Scenario: 各サブコマンドへの渡し方が書いてある
-- **WHEN** SKILL.md の「エピックの扱い」を読む
-- **THEN** 別のリポジトリの子を `route`・`launch`・`wait`・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt` に `<owner>/<repo>#N` で渡すと書いてある
+- **WHEN** `references/epic.md` の「エピックの扱い」を読む
+- **THEN** 別のリポジトリの子を `route`・`launch`・`wait`・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log` に `<owner>/<repo>#N` で渡すと書いてある
 
 #### Scenario: サブエージェント方式では別のリポジトリの子を起こさない
-- **WHEN** SKILL.md の「サブエージェント方式」を読む
+- **WHEN** `references/epic.md` の「回し方」の「サブエージェント方式」を読む
 - **THEN** 別のリポジトリの子を W に渡さず、エピックに 1 行残して、その子とそれを前提にする子を起こさずに主に報告すると書いてある
 
 #### Scenario: コメントの書式が書いてある
-- **WHEN** SKILL.md の「エピックの扱い」を読む
+- **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** 別のリポジトリの子は `子 <owner>/<repo>#N`・`後で別に起動するエピック: <owner>/<repo>#N`・`親の判断: 子 <owner>/<repo>#N 通した` と書くことが書いてあり、同じリポジトリの子は今のままの書式で残っている
 
 #### Scenario: マージ待ちの子を子のリポジトリで扱うと書いてある
-- **WHEN** SKILL.md の「マージ待ちの子」を読む
+- **WHEN** `references/epic.md` の「回し方」の「マージ待ちの子」を読む
 - **THEN** `auto-merge.yml` の取得・`親のマージ判断:` のコメント・`parent-merge-approved` のラベルを子のリポジトリの PR に付けること、認証アカウントが子のリポジトリで権限を持たないときは主に上げることが書いてある
 
 #### Scenario: 子の側が親エピックのリポジトリにコメントする
-- **WHEN** SKILL.md の「`nested` を受けたセッション」を読む
+- **WHEN** `references/epic.md` の「回し方」の「`nested` を受けたセッション」を読む
 - **THEN** エピックが別のリポジトリにあるときは `gh issue comment <E> -R <エピックのリポジトリ>` で `後で別に起動するエピック: <owner>/<repo>#<自分>` を残すと書いてあり、`<E>` とリポジトリを `route` の stderr の `parent epic: <owner>/<repo>#<E>` から取ると書いてある
 
 #### Scenario: 親から届く返事の頭の新しい形を受ける
-- **WHEN** SKILL.md の「エピックの子が主の返事を待って止まるとき」と `references/ci-watch.md` の親から届く返事の頭の照合を読む
+- **WHEN** `references/epic-child-stop.md` の節「エピックの子が主の返事を待って止まるとき」と `references/ci-watch.md` の親から届く返事の頭の照合を読む
 - **THEN** どちらも `親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）: ` と `主の返事（親エピック #<E>（<owner>/<repo>）経由）: ` を受けると書いてある
 
 #### Scenario: failed の新しい理由の報告が書いてある
-- **WHEN** SKILL.md の手順 6 を読む
+- **WHEN** `references/epic.md` の手順 6 を読む
 - **THEN** `no-clone`・`ambiguous-clone`・`not-in-orca`・`no-push`・`permission-lookup-failed`・`base-lookup-failed` を主に報告して止まると書いてある
 
 #### Scenario: stop-judge.sh は owner/repo#番号 の子を受ける
@@ -3114,35 +3173,35 @@ SKILL.md の手順 1 には、`--base` と `EPIC_DISPATCH_BASE` が 1 回の `la
 - **THEN** 子の本文は今までと同じ `repos/{owner}/{repo}/issues/11` から読まれ、過去の判断は `親の判断: 子 #11 ` で探される
 
 ### Requirement: エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う
-develop の SKILL.md「エピックの扱い」→「回し方」の Orca 経路は、親が主に出す発言について、次を規定しなければならない（MUST）。対象は、Orca 経路で親がターンを終えるときに主に出す発言すべてで、次を含む。手順 2 で `wait` を背景で起動して待ちに入るときの通知、手順 3・4・8 を処理して手順 2 に戻るたびの発言、手順 4 の見送りの報告、手順 5 の `timeout` の報告、手順 6 の `error`・`failed` の報告、手順 7 と完了条件で待ちを終えるときの報告、**マージ待ちの子** の `reply` の `failed` の報告、手順 8 の止まった子の報告。
+develop の `references/epic.md`「エピックの扱い」→「回し方」の別セッション方式（Orca・tmux。以下 Orca 経路）は、親が主に出す発言について、次を規定しなければならない（MUST）。対象は、Orca 経路で親がターンを終えるときに主に出す発言すべてで、次を含む。手順 2 で `wait` を背景で起動して待ちに入るときの通知、手順 3・4・8 を処理して手順 2 に戻るたびの発言、手順 4 の見送りの報告、手順 6 の `error`・`failed` の報告、手順 7 と完了条件で待ちを終えるときの報告、**マージ待ちの子** の `reply` の `failed` の報告、手順 8 の止まった子の報告。手順 5 の `timeout` で起こされたときは主に発言を書かない（要件「親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す」）。書くなら `主がすること: なし` の 1 行だけで、この書き分けに従う。主への問いが未回答のあいだは、その 1 行も書かない。
 
-- 1 行目と最後の行は、`~/.claude/output-styles/readable.md` の節 3 が定める書き分けに従う（MUST）。判断・確認・操作を求める発言は 1 行目を質問にし、区切りより上の本文の最後の行を答え方にする。主の操作も判断も要らない報告は 1 行目を `主がすること: なし` にする（主の質問への答えは正本のとおり 1 行目に答えを書く）（手順 2 で待ちに入るときは普通こちら）。SKILL.md は書き分けを写さず、正本を参照する（MUST）
+- 1 行目と最後の行は、`~/.claude/output-styles/readable.md` の節 3 が定める書き分けに従う（MUST）。判断・確認・操作を求める発言は 1 行目を質問にし、区切りより上の本文の最後の行を答え方にする。主の操作も判断も要らない報告は 1 行目を `主がすること: なし` にする（主の質問への答えは正本のとおり 1 行目に答えを書く）（手順 2 で待ちに入るときは普通こちら）。`references/epic.md` は書き分けを写さず、正本を参照する（MUST）
 - 同じターンで主に問いを出したあとに手順 2 で待ちに入るときは、待ちに入る通知を `主がすること: なし` で始めない（MUST）。通知の 1 行目に問いの質問を、最後の行に答え方を繰り返す（直前の問いを `なし` で上書きしない）
 - 規定は Orca 経路の導入部に 1 か所で書き、各手順は参照する（MUST。手順ごとに書式を複写しない）
-- 親経由のリスク許容の依頼（手順 8 で、止まった子の停止の記録の URL を添えて主の答えを求めるもの）の答え方の行には、打つ場所が親のタブであることと、報告の直後に別の発言を挟まないことを書く（MUST）
-- 手順 8 の中でも返事の場所が親のタブでない発言は、答え方の行にその場所を書く（MUST）。`owner-reply-check.sh --locate` で主の発言を引けなかったときの「リスク許容なら子のタブで打ってほしい」の連絡は、答え方の行に子のタブを出す。`reply` の出力が `failed <N> <段>` のときの報告は、主の操作が要れば問いの形にし、要らなければ 1 行目を `主がすること: なし` にする
+- 子の記録の推奨を主に OK してもらう報告（手順 8 で、止まった子の停止の記録の URL を添えて主の答えを求めるもの。正本の型で書き、1 行目は OK すると何が起きるかを中身で書いた質問にし、論点の有無を書く）の答え方の行には、打つ場所が親のタブであることと、報告の直後に別の発言を挟まないことを書く（MUST）
+- 手順 8 の中でも返事の場所が親のタブでない発言は、答え方の行にその場所を書く（MUST）。`owner-reply-check.sh --locate` で主の発言を引けなかったときの「子のタブで『許容する』と打ってほしい」の連絡は、答え方の行に子のタブを出す。`reply` の出力が `failed <N> <段>` のときの報告は、主の操作が要れば問いの形にし、要らなければ 1 行目を `主がすること: なし` にする
 - 子の完了報告の 1 行目（`主がこのセッションで次にすること:`）は変えない（MUST。要件「エピックの子の完了報告は、主がこのセッションで次にすることを 1 行目に書く」に従う）
 - `主がすること: <どこで> <何を>` の形を使わない（MUST NOT）
 
-この要件の守備範囲で入力として扱うのは、SKILL.md の Orca 経路の文面である。拾いたい誤りは 2 つある。主が親の発言から、答えが要るかどうかと、どこで何を打つかを読み取れないこと。親経由のリスク許容の返事の場所と条件が、発言から読めないこと。次は通ってよく、この要件では止めない: 2 行目以降の説明の文の良し悪し／答え方の中身の正しさ。穴が見つかるたびに決まりを足して塞ぎ切ることは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、`references/epic.md` の Orca 経路の文面である。拾いたい誤りは 2 つある。主が親の発言から、答えが要るかどうかと、どこで何を打つかを読み取れないこと。子の記録の推奨を主に OK してもらう報告で、返事の場所と条件が発言から読めないこと。次は通ってよく、この要件では止めない: 2 行目以降の説明の文の良し悪し／答え方の中身の正しさ。穴が見つかるたびに決まりを足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: Orca 経路が正本の書き分けを参照する
-- **WHEN** SKILL.md の「回し方」の Orca 経路の導入部を読む
+- **WHEN** `references/epic.md` の「回し方」の Orca 経路の導入部を読む
 - **THEN** 親が主に出す発言の 1 行目と最後の行を `~/.claude/output-styles/readable.md` の節 3 の書き分けに従わせると書かれ、`主がすること: なし` の場合が書かれ、`主がすること: <どの画面・入力欄で>` の形が無い
 
 #### Scenario: 待ちに入る通知が直前の問いを上書きしない
-- **WHEN** SKILL.md の Orca 経路の導入部と手順 2 を読む
+- **WHEN** `references/epic.md` の Orca 経路の導入部と手順 2 を読む
 - **THEN** 同じターンで主に問いを出したときは、待ちに入る通知を `主がすること: なし` で始めず、問いの質問と答え方を繰り返すと書かれている
 
-#### Scenario: 親経由のリスク許容の答え方に場所と条件が入る
-- **WHEN** SKILL.md の手順 8 を読む
-- **THEN** 親経由のリスク許容の依頼の答え方の行に、親のタブで打つことと、報告の直後に別の発言を挟まないことを書くと書かれ、主の発言を引けなかったときの連絡の答え方の行には子のタブを出すと書かれている
+#### Scenario: 子の記録の推奨を主に OK してもらう報告の答え方に場所と条件が入る
+- **WHEN** `references/epic.md` の手順 8 を読む
+- **THEN** 子の記録の推奨を主に OK してもらう報告の答え方の行に、親のタブで打つことと、報告の直後に別の発言を挟まないことを書くと書かれ、主の発言を引けなかったときの連絡の答え方の行には子のタブを出すと書かれている
 
 ### Requirement: channel モードの主への発言はすべてチャンネルに送り、チャンネルでする操作を答え方の行に書く
 
 channel の本体は、主へのすべての発言を、要件「channel モードでは主に聞くときチャンネルに送り、AskUserQuestion を呼ばない」と同じ宛先のチャンネルに送らなければならない（MUST）。質問だけでなく、質問ではない報告（再開で HEAD が動いていた・前任 W の手渡し不可・`epic-dispatch.sh` などのスクリプトの失敗・レビューの周の打ち切り・完了報告・エピックの親の報告）も含む。端末に出すだけで済ませてはならない（MUST NOT。住人の画面は誰も見ていないので、端末に出しただけの報告は誰にも読まれず、主の指示を待ったまま止まる）。
 
-それらの発言の 1 行目と最後の行は、`~/.claude/output-styles/readable.md` の節 3 が定める書き分けに従わなければならない（MUST）。主の操作も判断も要らない報告は 1 行目を `主がすること: なし` にする（主の質問への答えは正本のとおり 1 行目に答えを書く）。判断・確認・操作を求める発言は 1 行目を質問にし、最後の答え方の行に、このチャンネルで何を返すか、または PR #<N> に何を書くかを書く（MUST）。PR に書く形のときは、PR のフル URL を添える（MUST）。答え方の行に、チャンネル以外の画面・タブ・入力欄（`子のタブで`・`入力欄で` など）を書いてはならない（MUST NOT）。
+それらの発言の 1 行目と最後の行は、`~/.claude/output-styles/readable.md` の節 3 が定める書き分けに従わなければならない（MUST）。主の操作も判断も要らない報告は 1 行目を `主がすること: なし` にする（主の質問への答えは正本のとおり 1 行目に答えを書く）。判断・確認・操作を求める発言は 1 行目を質問にし、最後の答え方の行に、このチャンネルで何を返すか、または末尾の PR に何を書くかを書く（MUST）。PR に書く形のときは、PR のフル URL を添える（MUST）。答え方の行に、チャンネル以外の画面・タブ・入力欄（`子のタブで`・`入力欄で` など）を書いてはならない（MUST NOT）。
 
 この要件の守備範囲は、チャンネルだけを見ている主が、発言から自分の操作を読み取れないことを防ぐことである。拾いたい誤りは 3 つある。主への報告が端末に出るだけでチャンネルに届かないこと。答え方の行が主の見ていない画面を指すこと。主の操作が要るのに答え方の行が無いこと。2 行目以降の説明の良し悪しと、答え方の中身の正しさは、この要件では止めない。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
 
@@ -3162,7 +3221,7 @@ channel の本体は、主へのすべての発言を、要件「channel モー�
 - **THEN** 本体は差分の報告と続けるかの問いを、1 行目が質問で、最後の答え方の行がこのチャンネルで返すことを案内する発言としてチャンネルに送り、端末に出すだけで済ませない
 
 ### Requirement: 着手できる子が 1 件でも別セッション方式で回す
-`plugins/dev-workflow/scripts/epic-dispatch.sh` の `route` は、エピックの子のセッションでなく（`nested` でなく）、子の番号が 1 件以上あるときは、子の件数が何件でも、起動部品が使えれば `orca` か `tmux` を出さなければならない（MUST。順は要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の `route` の段落のとおり）。子が 0 件のとき、起動部品が使えないときは `subagent` を出す。`nested` の判定が先に行われること、`orca worktree current` を 1 回の `route` で 1 回だけ呼ぶこと、子の番号が数字でなければ exit 1 で終わることは変えない。develop の SKILL.md「エピックの扱い」の「経路の決め方」は、`orca` になる条件として子の件数の下限（2 件以上など）を書いてはならない（MUST NOT）。着手できる子が 0 件のとき `subagent` になることと、エピックの子のセッションでは件数によらず `nested` になることは、`route` の実際の結果の説明として書いてよい。
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の `route` は、エピックの子のセッションでなく（`nested` でなく）、子の番号が 1 件以上あるときは、子の件数が何件でも、起動部品が使えれば `orca` か `tmux` を出さなければならない（MUST。順は要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の `route` の段落のとおり）。子が 0 件のとき、起動部品が使えないときは `subagent` を出す。`nested` の判定が先に行われること、`orca worktree current` を 1 回の `route` で 1 回だけ呼ぶこと、子の番号が数字でなければ exit 1 で終わることは変えない。develop の `references/epic.md`「エピックの扱い」の「経路の決め方」は、`orca` になる条件として子の件数の下限（2 件以上など）を書いてはならない（MUST NOT）。着手できる子が 0 件のとき `subagent` になることと、エピックの子のセッションでは件数によらず `nested` になることは、`route` の実際の結果の説明として書いてよい。
 
 経路は `/develop <エピック番号>` の最初の開始時に 1 回決めて途中で変えず、再開時は `回し方:` で始まる最新のコメントから引き継ぎ、すでに `回し方: サブエージェント` と記録したエピックを途中で 別セッション方式に切り替える規則は置かない（SHALL。進行中のサブエージェント方式の子と 起動部品の子ワークツリーの子が混在する状態を扱う規則が無く、別セッション方式の手順の規定は別の変更が扱うため）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の `route` が `orca` を返す条件の規定、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の `route` の判定の規定、要件「エピックの子への注意書きと…引き継ぐ」の `route` の段落のうち、子の件数の条件に関わる部分に優先する。
 
@@ -3188,8 +3247,8 @@ channel の本体は、主へのすべての発言を、要件「channel モー�
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC=420` の環境で `orca` が PATH にあり Orca 管理のワークツリーにいるとき、`epic-dispatch.sh route 11` を実行する
 - **THEN** stdout は `nested` の 1 行で exit 0、`orca` は呼ばれない
 
-#### Scenario: SKILL.md の経路の決め方に orca になる条件としての件数の下限が書かれていない
-- **WHEN** `skills/develop/SKILL.md` の「エピックの扱い」の「経路の決め方」を読む
+#### Scenario: epic.md の経路の決め方に orca になる条件としての件数の下限が書かれていない
+- **WHEN** `skills/develop/references/epic.md` の「エピックの扱い」の「経路の決め方」を読む
 - **THEN** `orca` になる条件が「`orca` が PATH にあり、本体が Orca 管理のワークツリーにいる」だけで書かれ（`tmux` になる条件は別に「`TMUX` が空でなく `tmux` が PATH にある」と書かれ）、`orca` になる条件として blocked されていない子の件数の下限（2 件以上など）が無く（着手できる子が 0 件のとき `subagent` になる旨の文はあってよい）、経路は最初の開始時に 1 回だけ決めて途中で変えないこと、再開時は `回し方:` のコメントから引き継ぐことは残っている
 
 #### Scenario: Orca 管理外でも tmux の中なら tmux を返す
@@ -3233,3 +3292,1092 @@ develop の既存要件のうち見出しや本文が「Orca 経路」「`回し
 - **WHEN** `回し方: tmux` のエピックで `wait --watch-stopped` が stdout に何も出さず exit 1 で終わる（stderr に `usage:` は無い）
 - **THEN** 本体は Orca の親ワークツリーで開き直すよう案内せず、stderr を添えて主に報告して止まる
 
+### Requirement: epic-dispatch.sh wait は完了の印の無いまま記録先が閉じて動きの止まった子を完了と推定する
+
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の `wait` は、`--watch-done <N>` で渡された子ごとに、ポーリングごとに次の 6 つをこの順に確かめ、すべて満たした子の完了を推定しなければならない（MUST）。LLM を呼んではならない（MUST NOT）。
+
+1. 親の見張りの照合で子の記録がちょうど 1 件読め、`status` が `running` である（`waiting`・`done` は推定しない）
+2. 記録の `stop` が `stopped` でも `stopped-seen` でもない
+3. 記録の `worktree` が空でなく、子のトランスクリプト（`${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<worktree の英数字以外を - にした名前>/*.jsonl`。置き場のディレクトリは `wait --resolve` の起動し直しの判定と同じ求め方で、置き場を求める処理は 1 つの関数を共有する（既定の置き場の変更は起動し直しの判定にも掛かる）。起動し直しの判定の「ちょうど 1 本」はその判定の側に残す）が 1 本以上ある
+4. 置き場の全部の `.jsonl` と、そのセッションのサブエージェントのトランスクリプト（`<置き場>/<セッション>/subagents/*.jsonl`）を通して、`timestamp` を持つ行（種類を問わない）の最大値を最後の活動とし、今の時刻との差が `EPIC_DISPATCH_DONE_IDLE_SEC`（秒・既定 1800）以上である。`timestamp` を持つ行が 1 つも無い・読めない・`python3` が無いときは満たさない
+5. 子 issue を、位置引数の子と同じ `gh` の呼び出しの形（記録の `repo` で決まる `issue_api`）で 1 回読み、`state` が `closed` で `state_reason` が `completed` である
+6. 5 と同じ 1 回の `gh` で読んだ `closed_at` と今の時刻との差が `EPIC_DISPATCH_DONE_IDLE_SEC` 以上である。`closed_at` が無いときは満たさない（記録先が閉じた直後に、閉じる前から長く動いている背景のコマンドだけを走らせている子を完了としないため）
+
+1〜4 のどれかを満たさない子について `gh` を呼んではならない（MUST NOT）。5・6 の `gh`（1 回）が失敗したときは、そのポーリングではその子を推定せず、失敗したポーリングにも数えない（MUST）。すべて満たした子は、要件「wait --watch-done は推定した完了を記録に書き、Orca の印へ写す」（dev-workflow-epic-state）のとおり記録に書き、書けたら stderr に `inferred done <N>: issue closed as completed, no transcript activity since <最後の活動>` を出し、印が付いた子として `done <N>...` の行に入れなければならない（MUST）。stdout の行の形・順・exit code は今の `--watch-done` の規定のまま変えてはならない（MUST NOT。推定の `done` を別の行にしない）。
+
+`--watch-done` が 1 つ以上ある `wait` は、ポーリングを始める前に `EPIC_DISPATCH_DONE_IDLE_SEC` を確かめ、空か数字でなければ stderr に理由と使い方を出して exit 1 で終わり、`gh` を呼んではならない（MUST）。
+
+この要件は、要件「epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける」と要件「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」の「ポーリング 1 回あたりの `gh` の呼び出しは位置引数の子の数と同じ」の規定に優先し、推定の候補（1〜4 を満たした `--watch-done` の子）1 件ごとに `gh` の呼び出しが 1 回増えることを許す。
+
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の冒頭のコメントの `wait` の説明に、推定の 6 つの条件・`EPIC_DISPATCH_DONE_IDLE_SEC` とその既定・推定の `done` が同じ `done <N>` の行に出ることを書かなければならない（MUST）。
+
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `gh` とテスト用の `CLAUDE_PROJECTS_DIR` で、次を確かめなければならない（MUST）: 6 つを満たすと stdout が `done <N>` で記録の `status` が `done` になり推定の項目が付くこと／最後の活動が閾値より新しい・トランスクリプトが 0 本・2 本のうち片方だけ新しい・`status` が `waiting`・`stop` が `stopped` / `stopped-seen` のときは `gh` を呼ばずに推定しないこと／2 本とも古ければ推定すること／issue が `open`・`state_reason` が `completed` でない・閉じてから閾値より短い・`closed_at` が無いときは推定しないこと／サブエージェントのトランスクリプトにだけ閾値より新しい行があるときは推定しないこと／排他の中の確かめ直しで外れたとき（推定の `gh` の間に子が `waiting` を付けた）は推定せず Orca の印へ写さないこと／`EPIC_DISPATCH_DONE_IDLE_SEC` で閾値を変えられ、数字でない値は exit 1 で `gh` を呼ばないこと／同じ子を位置引数と `--watch-done` の両方に渡したとき、閉じたポーリングで `closed <N>` と `done <N>` の 2 行がこの順に出ること。
+
+この要件の守備範囲で入力として扱うのは、記録の `status`・`stop`・`worktree`、子のトランスクリプト（サブエージェントのものを含む）の `timestamp`、子 issue の `state` と `state_reason` と `closed_at` である。拾いたい誤りは、主がマージして記録先が閉じたのに子が印を付けず親が待ち続けることと、まだ動いている子・主の確認待ちの印（`waiting`）を付けた子・止まった印の経路にいる子を完了とすることである。次は通ってよく、この要件では止めない: 主が閾値より長く子のタブを離れてから同じタブで追加の作業を頼もうとしたときにワークツリーが片付いていること（`reap` の確認が未コミットの変更とマージに入っていない commit を残す）／時計のずれで最後の活動が未来になり推定されないこと／記録先が閉じたあと、子が 1 回のツール呼び出しを閾値より長く動かしている（その間トランスクリプトに行が増えない）ときに推定されること（`reap` の確認は変えないので、失うのは後片付けの途中だけ）／マージ後の依頼（動作確認など）を完了報告に書いてマージを主に頼んだ子も、PR が未マージのうちは `waiting` を付けられないので推定され、主の返事の前にタブが閉じること（依頼は完了報告と記録先に残る）。この要件は、ここに挙げていない穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+
+#### Scenario: 閉じて動きの止まった子は完了と推定される
+- **WHEN** 子 11 の記録が `status` `running`・`stop` 空、トランスクリプトが 1 本で最後の活動が 40 分前、子 issue が `closed`・`completed` の状態で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-done 11` を実行する
+- **THEN** stdout は `done 11`、exit 0 で、記録の `status` は `done`、`done_inferred_at` と `done_inferred_last_activity` があり、stderr に `inferred done 11` で始まる行が出る
+
+#### Scenario: 最後の活動が新しい子は推定しない
+- **WHEN** 最後の活動が 10 分前で、ほかは直前の Scenario と同じ状態で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、exit 2 で、記録の `status` は `running` のまま、`gh` は呼ばれない
+
+#### Scenario: トランスクリプトが 0 本なら推定しない
+- **WHEN** 子 11 のトランスクリプトの置き場に `.jsonl` が無い状態で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `running` のまま、`gh` は呼ばれない
+
+#### Scenario: トランスクリプトが 2 本なら全部を通した最後の活動で決める
+- **WHEN** 子 11 のトランスクリプトの置き場に `.jsonl` が 2 本あり、片方の最後の活動が 40 分前でもう片方が 10 分前の状態で `wait --interval 0 --timeout 0 --watch-done 11` を実行し、別に 2 本とも最後の活動が 40 分前より古い状態で `wait --interval 0 --timeout 60 --watch-done 11` を実行する
+- **THEN** 前者は stdout が `timeout`、記録の `status` は `running` のまま、`gh` は呼ばれない。後者は stdout が `done 11` で、`done_inferred_last_activity` は 2 本を通した最大の `timestamp` である
+
+#### Scenario: 閉じてから閾値より短い子は推定しない
+- **WHEN** 子 11 の issue が `completed` で閉じてから 60 秒、または `closed_at` が無い状態で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `running` のまま
+
+#### Scenario: サブエージェントのトランスクリプトの新しい行も活動に数える
+- **WHEN** 子 11 の本体のトランスクリプトの最後の活動は 40 分前で、`<置き場>/<セッション>/subagents/` の `.jsonl` に 10 分前の行がある状態で `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `running` のまま、`gh` は呼ばれない
+
+#### Scenario: 同じ子が位置引数と --watch-done の両方にあれば closed と done の 2 行を出す
+- **WHEN** 子 11 を位置引数と `--watch-done` の両方に渡し、推定される条件のまま `wait --interval 0 --timeout 60 --watch-done 11 11` を実行する
+- **THEN** stdout は `closed 11` と `done 11` の 2 行をこの順に出して exit 0 で、記録の `status` は `done` である
+
+#### Scenario: waiting の子と止まった印の子は推定しない
+- **WHEN** 子 11 の記録の `status` が `waiting`、または `stop` が `stopped` か `stopped-seen` で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録は変わらず、`gh` は呼ばれない
+
+#### Scenario: 開いている子・completed 以外で閉じた子は推定しない
+- **WHEN** 子 11 の issue が `open`、または `closed` で `state_reason` が `not_planned` で、ほかは推定される条件のまま `wait --interval 0 --timeout 0 --watch-done 11` を実行する
+- **THEN** stdout は `timeout`、記録の `status` は `running` のまま
+
+#### Scenario: 閾値を変えられ、誤った値は使い方を出す
+- **WHEN** 最後の活動が 10 分前の子 11 で `EPIC_DISPATCH_DONE_IDLE_SEC=300` を付けて `wait --interval 0 --timeout 60 --watch-done 11` を実行し、別に `EPIC_DISPATCH_DONE_IDLE_SEC=abc` を付けて同じコマンドを実行する
+- **THEN** 前者は stdout が `done 11` で、後者は exit 1 で stdout は空、stderr に使い方が出て `gh` は呼ばれない
+
+### Requirement: 回し方の手順は推定した done も子の付けた done と同じに片付ける
+
+develop の `references/epic.md`「エピックの扱い」→「回し方」の別セッション方式の手順は、次を書かなければならない（MUST）。
+
+- 手順 2 の `--watch-done` の説明に、`wait` は片付け待ちの子のうち、完了の印の無いまま記録先が `completed` で閉じてから `EPIC_DISPATCH_DONE_IDLE_SEC`（既定 1800 秒）以上たち、子のトランスクリプト（サブエージェントのものを含む）の最後の活動もそれ以上前の子を、LLM なしで完了と推定して `done <N>` を返すこと（`status` が `waiting` の子・止まった印の子・トランスクリプトが無い子は推定しない）
+- 手順 3 に、推定の `done` も子が付けた `done` と同じに `reap` を 1 回呼んで扱い、区別しないこと（片付けの安全確認は `reap` が行う）。同じ子が `closed` と `done` の両方の行に出たら、手順 4 を処理してから手順 3 の `reap` を呼ぶこと
+- 手順 4 に、`notify-closed` が `skipped <N> not-stopped` を返した子（止まった印を付けずに見張りを終えた子。主に直接マージを頼んだ子など）は、片付け待ちとして `--watch-done` に渡しておけば、子のセッションが止まって閾値を過ぎたあとの `wait` が完了と推定すること。主に子のステータスを変えるよう頼まない（MUST NOT）
+
+`plugins/dev-workflow/tests/epic-dispatch.bats`（または `tests/develop-skill.bats`）は、手順 2〜4 の文面に `EPIC_DISPATCH_DONE_IDLE_SEC` と推定の扱いがあることを確かめなければならない（MUST）。
+
+この要件の入力は、`wait` が返す `done <N>` と `closed <N>` の行、`notify-closed` が返す `skipped <N> not-stopped` である。拾いたい誤りは、推定の `done` を子の付けた `done` と区別して片付けを飛ばすこと、`skipped <N> not-stopped` の子について主にステータスを変えるよう頼むことである。次は通してよく、この要件では止めない: 推定の `done` を渡した `reap` が `kept` を返し、本体が確かめて残すこと（安全確認は `reap` が行う）／`status` が `waiting` の子やトランスクリプトの無い子が推定されないこと。推定の条件の細部の食い違いを見つけるたびに塞ぎ切ることは、この要件の完了条件としない。
+
+#### Scenario: 回し方に推定の扱いが書かれている
+- **WHEN** `references/epic.md` の「エピックの扱い」の「回し方」の手順 2〜4 を読む
+- **THEN** 手順 2 に `wait` が完了を推定する条件と `EPIC_DISPATCH_DONE_IDLE_SEC` が、手順 3 に推定の `done` も同じに `reap` することと、同じ子が `closed` と `done` の両方に出たら手順 4 を処理してから `reap` を呼ぶことが、手順 4 に `skipped <N> not-stopped` の子は `--watch-done` の推定で片付くことが書かれている
+
+### Requirement: エピックの子は主にマージを頼むとき、マージ後の連絡を頼まない
+
+develop の `SKILL.md`「ループの終わり」は、エピックの子（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested`）が PR のマージを主に頼んで（PR がマージされていないので `mark` を呼ばずに）ループを終えるとき、完了報告で「マージしたら教えてください」「ステータスを変えます」のような、マージ後に子のタブへ戻る連絡を主に頼んではならない（MUST NOT）と書き、代わりに「マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける」と書くことを規定しなければならない（MUST）。親の `wait --watch-done` が完了を推定することを理由として添える（SHALL）。エピックの子でないセッションの完了報告には、この規定を当てない。
+
+#### Scenario: ループの終わりにマージ後の連絡を頼まない規定がある
+- **WHEN** SKILL.md の「ループの終わり」を読む
+- **THEN** エピックの子が主にマージを頼んで終えるとき、マージ後の連絡を頼まず「マージしたらこのタブは放っておいてよい。記録先が閉じれば親が完了にしてワークツリーを片付ける」と書くことと、その理由（親の `wait` が完了を推定する）が書かれている
+
+### Requirement: エピックの親は子 1 件あたりの PR トークンの権限をエピックのコメントに置く
+エピックの親は、子 1 件あたりの PR トークンの権限を、エピックの issue の 1 行目が `子の PR トークン権限: <値>`（数字だけ。既定 60000000）のコメントに置かなければならない（MUST）。投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` の最新の 1 件を正とする（MUST）。主が広げたら、親が新しい値で投稿し直し、2 行目に `主の発言: <要旨>` を書く（MUST）。親の判断で広げてはならない（MUST NOT）。止まる上限（既定 30000000）は変えない（MUST NOT）。手順は `references/epic.md` に書く。
+
+#### Scenario: 主が広げた権限を記録する
+- **WHEN** 主が「1 億まで増やしていい」と言う
+- **THEN** 親はエピックに 1 行目 `子の PR トークン権限: 100000000`、2 行目 `主の発言:` で始まる行のコメントを投稿し、以後この値を正とする
+
+### Requirement: 親は権限のコメントが無ければ既定値で投稿して主に伝える
+エピックの親は、次の 4 つの機会に、権限のコメントが無ければ既定値で投稿しなければならない（MUST）。最初の開始時（`回し方:` を残すとき）、エピックを再開したとき（手順 7）、手順 8 で PR トークン上限の止まりを扱うとき（照らす前）、サブエージェント方式の本体が子の記録先の exit 2 で照らすとき（照らす前）。投稿したら、interactive と channel では主に「子 1 件 6,000 万トークンで回す。広げたければ声をかけて」と伝える（MUST）。unmanned ではコメントだけを残す。
+
+#### Scenario: 起動時に権限を置いて主に伝える
+- **WHEN** interactive で `/develop <エピック番号>` を最初に始め、経路を決める
+- **THEN** 親はエピックに 1 行目 `子の PR トークン権限: 60000000` のコメントを投稿し、主に「子 1 件 6,000 万トークンで回す。広げたければ声をかけて」と伝える
+
+#### Scenario: 変更の前に起動したエピックの止まりを扱う
+- **WHEN** 権限のコメントの無いエピックで、手順 8 の親が PR トークン上限の止まりを扱う
+- **THEN** 親は既定値で `子の PR トークン権限: 60000000` を投稿して主に伝えてから、その値で照らす
+
+### Requirement: エピックの子は PR トークン上限で止まるとき見込みを記録に書く
+別セッション方式のエピックの子が PR トークン上限の exit 2 で止まるときは、停止の記録の `止まった理由:` を `PR トークン上限（合計 <合計> / 上限 <上限>）` で始めなければならない（MUST）。`前提:` の値の中に `終わるまでの見込み: あと約 <残り>（合計の見込み <見込み>）`・`続けるべきか: <理由つき>`・`次に絞る範囲: <残工程のうち何に絞るか>` の 3 行を書く（MUST）。記録の 7 項目の形と項目名は変えない。手順は `references/epic-child-stop.md` に書く。
+
+#### Scenario: 記録に見込みの 3 行がある
+- **WHEN** エピックの子が合計 31000000・上限 30000000 で止まる
+- **THEN** 記録の `止まった理由:` は `PR トークン上限（合計 31000000 / 上限 30000000）` で始まり、`前提:` に `終わるまでの見込み:`・`続けるべきか:`・`次に絞る範囲:` の行がある
+
+### Requirement: 親は PR トークン上限の止まりを権限に照らして続けさせる
+起こされた親（`references/epic.md` 手順 8）は、`止まった理由:` が `PR トークン上限（` で始まる止まりを、`parent-pass-criteria.md` に照らし直さず権限に照らさなければならない（MUST）。通すのは、(a) 合計の見込みが権限以下、かつ (b) 記録の上限が権限より小さい、の両方を満たすときだけとする（MUST）。見込みが読めない、または投稿者の条件を満たす権限のコメントの値が数字として読めないときは主に上げる（MUST）。通すときは新しい上限を権限にして `reply --as parent` で送り、エピックに `親の判断: 子 #N 通した` を残す（MUST）。
+
+守備範囲: 入力は権限のコメントと子の停止の記録（投稿者が OWNER・MEMBER・COLLABORATOR のもの）。拾いたい誤りは、権限を超える見込みと、権限に達して再び止まった子を通すこと。見込みが外れることと、判断のモデルがこの止まりを主に上げることは止めない。見込みの正しさの検査は完了条件としない。
+
+#### Scenario: 見込みが権限の内なら親が続けさせる
+- **WHEN** 記録が `PR トークン上限（合計 31000000 / 上限 30000000）` で、合計の見込みが 45000000、最新の権限が 60000000
+- **THEN** 親は基準に照らし直さず `reply --as parent` で `続ける。新しい上限 60000000（親の権限。<権限のコメントの URL>）` を送り、エピックに `親の判断: 子 #N 通した — PR トークン上限を親の権限 60000000 まで上げた（合計の見込み 45000000） <URL>` を残す
+
+#### Scenario: 権限に達して再び止まった子は主に上がる
+- **WHEN** 上限 60000000 に上げた子が合計 60200000 で再び止まり、権限が 60000000
+- **THEN** (b) を満たさないので、親は通さず主に上げる
+
+### Requirement: 権限の内でない止まりは主に上げ、主が権限を広げたら照らし直す
+親は、権限に照らして通さなかった PR トークン上限の止まりを、権限の値と権限を広げる選び方を添えて主に上げなければならない（MUST）。主が権限を広げて答えたら、親は新しい値で権限のコメントを投稿し直し、同じ止まりを (a)・(b) に照らし直して、満たせば `reply --as parent` で新しい上限 ＝ 新しい権限を送る（MUST）。主が権限を広げずに「続ける」とだけ答えたら、今までどおり `reply --as owner` で届け、子の本体は既存の式（合計 ＋ 直前の上限）で新しい上限を書く（MUST）。
+
+#### Scenario: 権限を超える見込みは主に上がる
+- **WHEN** 記録の合計の見込みが 75000000、権限が 60000000
+- **THEN** 親は通さず、権限の値と権限を広げる選び方を添えて主に上げる
+
+#### Scenario: 主が権限を広げて答える
+- **WHEN** その止まりに主が「1 億まで広げていい」と答える
+- **THEN** 親は `子の PR トークン権限: 100000000` と `主の発言:` の行を投稿し、見込み 75000000 ≤ 100000000 かつ上限 30000000 < 100000000 なので `reply --as parent` で新しい上限 100000000 を送る
+
+#### Scenario: 主が広げずに続けると答える
+- **WHEN** その止まりに主が「続ける」とだけ答える
+- **THEN** 親は `reply --as owner` で届け、子の本体は合計 ＋ 直前の上限で `PR トークン上限:` を書く
+
+### Requirement: 親の権限で続けた上限は子の本体が記録先に書く
+親の権限で続けることになったら、子の本体は次の計測より前に記録先へコメントを投稿しなければならない（MUST）。書式は、1 行目 `PR トークン上限: <権限>`、2 行目 `決めた人: <親エピック #<E> の判断（親の権限の内。主の承認ではない）か、エピック #<E> の本体（親の権限の内）>`、3 行目 `権限: <権限のコメントの URL>`、4 行目 `停止の記録: <停止の記録の URL か なし>`。親の返事 `続ける。新しい上限 <権限>（親の権限。<URL>）` は、主が権限のコメントで先に承認した範囲の執行である。要件「エピックの子は親から届いた返事を止まった件への返事として受け取る」の「聖域の承認として扱わない」と、基準の聖域の「課金」には当たらない。子の本体は主に聞き直さず、権限の URL を `権限:` の行に残す（MUST）。
+
+#### Scenario: 別セッション方式の子の本体が書く
+- **WHEN** 子の本体が `親エピック #<E> の判断（主の承認ではない）: 続ける。新しい上限 60000000（親の権限。<URL>）` を受け取る
+- **THEN** 子の本体は主に聞き直さず、記録先に `PR トークン上限: 60000000` と `決めた人:`・`権限: <URL>`・`停止の記録:` の行を投稿し、次の計測に `--cap 60000000` を付けて再開する
+
+### Requirement: サブエージェント方式では親を兼ねる本体が権限に照らす
+サブエージェント方式（unmanned・channel を含む）のエピックでは、親を兼ねる本体が、子の記録先の計測の exit 2 で主に聞く前に、見込みを子の記録先にコメントしなければならない（MUST）。そのうえで要件「親は PR トークン上限の止まりを権限に照らして続けさせる」の条件 (a)・(b) で照らし、満たせば要件「親の権限で続けた上限は子の本体が記録先に書く」の書式で投稿して続ける（MUST）。満たさなければ、exit 2 の手順で主に問う。手順は SKILL.md「PR トークン上限」に書く。
+
+#### Scenario: サブエージェント方式では本体が照らして書く
+- **WHEN** サブエージェント方式のエピックで、子の記録先の計測が exit 2（合計 31000000 / 上限 30000000）になり、本体の見込みが合計 40000000、権限が 60000000
+- **THEN** 本体は見込みを子の記録先にコメントし、主に聞かずに `PR トークン上限: 60000000`（`決めた人: エピック #<E> の本体（親の権限の内）`・`停止の記録: なし`）を投稿して続ける
+
+### Requirement: 親が通してよい範囲の基準は、CI の見張りのやり直しの上限で止まった子の扱いを決める
+`parent-pass-criteria.md` は、表でなく文章の節で、CI の見張りのやり直しの上限で止まった子を親が通すか主に上げるかを一通りに決めなければならない（MUST。条件表の 9 条件は増やさない。対象・通す場合・主に上げる場合・返事・同じ件の定義は下の場面で定める）。
+
+この要件の守備範囲で入力として扱うのは、`stop-judge.sh` が集める子の最新の停止の記録と過去の `親の判断:`、および手順 8 で親のセッションが読む同じ記録である。拾いたい誤りは、差分に起因する失敗のやり直しを通し続けること、`job-timeout`・ランナーの確認を含む止まりを通すこと、やり直しの回数を使い切っただけの止まりを主に上げることの 3 つである。次は通ってよい: 子が差分に起因する失敗を「因果を持たない」と書き誤った記録を通すこと（損失は CI 1 周分で、再び止まれば次は主に上がる）／通してよい止まりを判断のモデルが主に上げること。すり抜けを塞ぎ切ることは完了条件としない。
+
+#### Scenario: 基準のファイルが対象の止まりを子の停止の記録から見分けられる形で定めている
+- **WHEN** `parent-pass-criteria.md` の CI の見張りのやり直しの上限の節を読む
+- **THEN** 対象は、同じ HEAD のやり直しを使い切って見張りがやり直せないことが、記録のどの項目に書かれていても（`止まった理由:` は主にしてほしいことを書く欄なので、`前提:` などに書かれやすい）挙げている止まりで、`job-timeout` の `escalate`（落ちたチェックに `real` が混ざらず `job-timeout` を含むときの `escalate`）は記録にそう書かれていなくても常に対象とする（`pr-state.sh` の `decide` は、その場合に同じ HEAD のやり直しを使い切ったあとで返すため）。経路は `job-timeout` を含む失敗の `escalate` と `ci-watch.md` 7 の手順 7 で上げたものの 2 つ、修正回数の上限（3 回目の失敗）の `escalate` は対象外と書かれている
+
+#### Scenario: 基準のファイルが通す場合と主に上げる場合を決めている
+- **WHEN** 同じ節を読む
+- **THEN** 手順 7 で上げた止まりは、9 条件に加えて失敗が差分と因果を持たない・推奨が再実行だけ・`cause` が `job-timeout` でない、のすべてを満たすとき通し、`job-timeout` の `escalate`・判断できないとき・確認してからの再実行は主に上げると書かれている
+
+#### Scenario: 基準のファイルが返事の中身を決めている
+- **WHEN** 同じ節を読む
+- **THEN** 返事は、まず `ci-watch.md` 2 の重複の確認をし（別のセッションが見張り中なら何もせずに主に伝える）、落ちたチェックを同じ HEAD で 1 回だけ手でやり直し、次に、止まるときに付けた `needs-approval` を外すこと（手順 7 の経路で止まった子。付けたままだとやり直しが通ったあと見張りが待たずにオーナーへマージを頼んで終わるため。ただし外す前に PR の events で、最後の `needs-approval` の labeled が止まる前の最新の `CI 見張り開始:` のコメントより前なら、子が付けたものではないので外さず主に上げる）と、`CI 見張り開始:` の投稿をすること（開始の記録なしに始めると別のセッションが見張りを重ねうるため）を済ませ、そのうえで `ci-watch.md` 2 の `escalate` のあとの再開手順で見張りに戻ってよい、という内容で、`ci-watch.md` は変えないと書かれている。通すときの `理由:`（`親の判断: 子 #N 通した — <理由> <記録の URL>` の `<理由>` になる）には、PR 番号・落ちたチェック名・HEAD の短い SHA を、子の停止の記録から取って書くと定められている。記録に無い値は作らず `不明` と書き、HEAD が `不明` の過去の判断とは同じ件かを見分けられないものとして扱う（次の判断が、過去の `親の判断:` と同じ件かを見分けるため）
+
+#### Scenario: 基準のファイルが「繰り返していない」との関係を決めている
+- **WHEN** 同じ節を読む
+- **THEN** 見張りの上限と「繰り返していない」が別の歯止めであること、同じ件は同じ PR の同じチェックで HEAD が変われば別の件であること、同じ HEAD で許したあとにまた止まった同じ件は主に上げること、条件表が 9 条件のままであることが書かれている
+
+### Requirement: コンパクト直後に develop を呼んでいた会話へ SKILL.md の読み直しを差し込む hook を登録する
+`plugins/dev-workflow/hooks/hooks.json` は、SessionStart に matcher `compact` のエントリを置き、`${CLAUDE_PLUGIN_ROOT}/scripts/develop-compact-reread.sh` を呼ぶ command を登録しなければならない（MUST）。スクリプトは stdin の JSON の `source` が `compact` のときだけ働き、それ以外（`startup`・`clear`・`resume`・空・`source` が無い）では、会話で develop を呼んでいても何も出さずに exit 0 で終わらなければならない（MUST）。
+
+#### Scenario: hooks.json が compact の SessionStart に登録している
+- **WHEN** `plugins/dev-workflow/hooks/hooks.json` の `hooks.SessionStart` を読む
+- **THEN** matcher を `|` で区切った値に `compact` を含み、`develop-compact-reread.sh` を呼ぶ command を持つエントリがある
+
+#### Scenario: compact 以外の起動では何も出さない
+- **WHEN** 会話記録に `dev-workflow:develop` の Skill 呼び出しがあり、`source` が `startup`・`clear`・`resume`・空文字のいずれかの入力でスクリプトを実行する
+- **THEN** stdout は空で exit 0
+
+### Requirement: develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する
+スクリプトは stdin の `transcript_path` が指す会話記録（jsonl）を 1 行ずつ読み、次のどれかが 1 つあれば「develop を呼んでいた」とみなさなければならない（MUST）。(a) `type` が `assistant` の行の `message.content` にある `type: tool_use`・`name: Skill` のブロックで、`input.skill` が `dev-workflow:develop`。(b) `type` が `user` の行の `message.content` が文字列か、一覧の `type: text` のブロックの `text` で、`<command-name>/dev-workflow:develop</command-name>` を含む。(c) `type` が `attachment` の行の `attachment.type` が `invoked_skills` で、`skills` の要素の `name` が `dev-workflow:develop`。
+
+#### Scenario: Skill 呼び出しで数える
+- **WHEN** 会話記録に `input.skill` が `dev-workflow:develop` の Skill の tool_use があり、`source: compact` で実行する
+- **THEN** 読み直しの文を差し込む
+
+#### Scenario: 文字列の user の発言のコマンドで数える
+- **WHEN** 会話記録の user の行の `message.content` が `<command-name>/dev-workflow:develop</command-name>` を含む文字列で、`source: compact` で実行する
+- **THEN** 読み直しの文を差し込む
+
+#### Scenario: 一覧の user の発言の text のブロックのコマンドで数える
+- **WHEN** user の行の `message.content` が一覧で、画像のブロックのあとの text のブロックが `<command-name>/dev-workflow:develop</command-name>` を含み、`source: compact` で実行する
+- **THEN** 読み直しの文を差し込む
+
+#### Scenario: 前のコンパクトのあとの invoked_skills で数える
+- **WHEN** 会話記録に `compact_boundary` の行と、`skills` に `name: dev-workflow:develop` を持つ `invoked_skills` の attachment の行があり、`source: compact` で実行する
+- **THEN** 読み直しの文を差し込む
+
+### Requirement: 名前空間の無い develop・別のスキル・文中の言及は数えない
+スクリプトは、上の 3 種類の記録の形と名前 `dev-workflow:develop` に完全に一致するものだけを数えなければならない（MUST）。次は数えてはならない（MUST NOT）: 名前空間の無い `develop`（Skill の `input.skill`・`<command-name>/develop</command-name>`・`invoked_skills` の `name`）、名前に develop を含む別のスキルやコマンド（`dev-workflow:codex-develop`・`/dev-workflow:develop-epic` など）、assistant の text のブロックや tool_result の中身で名前に触れただけのもの。develop を呼んでいない会話では何も出さない（MUST）。
+
+#### Scenario: 名前空間の無い develop は数えない
+- **WHEN** 会話記録に `input.skill` が `develop` の Skill 呼び出し、`<command-name>/develop</command-name>` の user の発言、`name: develop` の `invoked_skills` だけがあり、`source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: 名前に develop を含む別のスキルは数えない
+- **WHEN** 会話記録に `dev-workflow:codex-develop` の Skill 呼び出しと `<command-name>/dev-workflow:develop-epic</command-name>` の user の発言だけがあり、`source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: 文中や tool_result で触れただけなら数えない
+- **WHEN** 会話記録に、assistant の text のブロックと user の tool_result の中身に `dev-workflow:develop` や `<command-name>/dev-workflow:develop</command-name>` が書かれた行だけがあり、`source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: develop を呼んでいない会話では何も出さない
+- **WHEN** 会話記録に普通の user の発言と `probe:hello` の Skill 呼び出しだけがあり、`source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+### Requirement: develop を呼んでいたかの判定の守備範囲
+要件「develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する」と「名前空間の無い develop・別のスキル・文中の言及は数えない」の判定は、次の範囲を超える保証をしてはならない（MUST NOT）。入力として扱うのは、Claude Code が SessionStart(compact) の hook に渡す stdin の JSON と、その `transcript_path` が指す会話記録（Claude Code が書く jsonl。この時点ではコンパクト前の記録だけ）である。拾いたい誤りは、develop を呼んでいた会話でコンパクトのあと SKILL.md を読み直さず要約の上で進むこと（差し込み漏れ）と、名前空間の無い `develop`・別のスキル・文中の言及で、呼んでいない会話に差し込むことである。通してよく、この判定では止めない入力は下の Scenario に挙げる。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
+
+#### Scenario: 呼び終えたあと別の作業をしていても毎回差し込む
+- **WHEN** develop を呼び終えたあと、同じ会話で develop と関係のない作業を続け、コンパクトが 2 回走る
+- **THEN** どちらのコンパクトのあとも読み直しの文を差し込む。この判定では止めない
+
+#### Scenario: 手で打ったコマンドの文字列は呼び出しとして数える
+- **WHEN** user が `<command-name>/dev-workflow:develop</command-name>` の文字列を手で打った発言だけがある会話で、`source: compact` で実行する
+- **THEN** 呼び出しとして数え、読み直しの文を差し込む。この判定では止めない
+
+#### Scenario: SKILL.md を Read で読んだだけの会話は数えない
+- **WHEN** Skill もコマンドも使わず、SKILL.md を Read ツールで読んだだけの会話で、`source: compact` で実行する
+- **THEN** 数えず、何も出さない。この判定では止めない
+
+#### Scenario: 会話記録の形が変わって判定が外れても止めない
+- **WHEN** Claude Code の更新で会話記録の形が変わり、3 種類の記録のどれにも当たらなくなった会話で、`source: compact` で実行する
+- **THEN** 何も出さずに exit 0 で終わる（fail-open）。この判定では止めない
+
+### Requirement: 差し込む文は SKILL.md の読み直しと親か子かの確かめ直しを求める
+develop を呼んでいたと判定したとき、スクリプトは stdout に `{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "<文>"}}` の形の JSON を 1 つ出さなければならない（MUST）。`<文>` は次の 2 つの要素を含まなければならない（MUST）。(1) `${CLAUDE_PLUGIN_ROOT}/skills/develop/SKILL.md` の絶対パスを示し、それを Read ツールで offset と limit を使って分けて読み直すこと。(2) 自分がエピックの親か子かを記録先の issue から確かめ直してから続けること。
+
+#### Scenario: 差し込む文が 2 つの要素を含む
+- **WHEN** develop を呼んでいた会話記録で `source: compact` で実行する
+- **THEN** exit 0 で、stdout の JSON の `hookSpecificOutput.hookEventName` が `SessionStart`、`additionalContext` が `<CLAUDE_PLUGIN_ROOT>/skills/develop/SKILL.md`・`offset`・`limit`・`親`・`子`・`記録先` を含む
+
+### Requirement: 判定できないときは何も出さず、セッションの開始を止めない
+スクリプトは常に exit 0 で終わらなければならない（MUST）。次のときは何も出してはならない（MUST NOT。fail-open）: stdin が空か JSON でない、`transcript_path` が無いかファイルが無い、`CLAUDE_PLUGIN_ROOT` が空、`python3` が PATH に無い。会話記録のうち JSON として読めない行と、JSON として読めるが値の型が想定と違う行は 1 行ずつ飛ばし、走査を続けなければならない（MUST。そのあとの行に呼び出しがあれば差し込む）。
+
+#### Scenario: stdin が JSON でなければ何も出さない
+- **WHEN** stdin に `not json` を渡すか、stdin を空にして実行する
+- **THEN** どちらも stdout は空で exit 0
+
+#### Scenario: 会話記録が無ければ何も出さない
+- **WHEN** `transcript_path` が存在しないファイルを指す `source: compact` の入力で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: CLAUDE_PLUGIN_ROOT が空なら何も出さない
+- **WHEN** develop を呼んでいた会話記録で、`CLAUDE_PLUGIN_ROOT` を空にして `source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: python3 が無ければ何も出さない
+- **WHEN** develop を呼んでいた会話記録で、`python3` の無い PATH で `source: compact` で実行する
+- **THEN** stdout は空で exit 0
+
+#### Scenario: 壊れた行を飛ばして走査を続ける
+- **WHEN** 会話記録に JSON として読めない行だけがあるときに実行し、続けてそのあとに `dev-workflow:develop` の Skill 呼び出しを足して実行する
+- **THEN** 1 回目は stdout が空で exit 0、2 回目は読み直しの文を差し込む
+
+#### Scenario: 形の違う行を飛ばして走査を続ける
+- **WHEN** 会話記録に `skills` が数値の `invoked_skills`、`name` が一覧の要素、`input.skill` が一覧の Skill 呼び出し、`text` が一覧の text のブロック、最上位が一覧の行だけがあるときに実行し、続けてそのあとに `dev-workflow:develop` の Skill 呼び出しを足して実行する
+- **THEN** 1 回目は stdout が空で exit 0、2 回目は読み直しの文を差し込む
+
+### Requirement: hook の振る舞いを bats で確かめる
+`plugins/dev-workflow/tests/develop-compact-reread.bats` は、要件「コンパクト直後に develop を呼んでいた会話へ SKILL.md の読み直しを差し込む hook を登録する」「develop を呼んでいたかはコンパクト前の 3 種類の記録で判定する」「名前空間の無い develop・別のスキル・文中の言及は数えない」「差し込む文は SKILL.md の読み直しと親か子かの確かめ直しを求める」「判定できないときは何も出さず、セッションの開始を止めない」の各 Scenario を確かめなければならない（MUST）。会話記録を使う Scenario は、偽の会話記録（fixture は SessionStart(compact) の時点の実機の形。今回のコンパクトの `compact_boundary` と `invoked_skills` はまだ無い）で確かめる。
+
+#### Scenario: bats が通る
+- **WHEN** `bats plugins/dev-workflow/tests/develop-compact-reread.bats` を実行する
+- **THEN** 全件が通る
+
+### Requirement: G の needs-carryover-judge を受けた本体の動き
+
+`skills/develop/SKILL.md` の 1 ループの (4) は、G の Status `needs-carryover-judge` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、pr-review-gate の `stages/hold.md` 手順 3-c の依頼の書き方で `subagent_type: dev-workflow:decider`・`model: opus` の判定役を起こし、判定の記録を PR に代理投稿し、判定と記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、3-c の書式の `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。本体は判定を受けて自分で宣言を投稿したり、ラベルを付けたり、主に聞いたりしてはならない（MUST NOT。引き継ぐか主に聞くかは合格処理の G が決める）。ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び `needs-carryover-judge` を返したときは、判定役を起こし直してはならず（MUST NOT）、投稿した記録の URL を添えて主に聞かなければならない（MUST）。
+
+#### Scenario: needs-carryover-judge で返った
+
+- **WHEN** G が Status `needs-carryover-judge`・`次の段: 合格処理` で return する
+- **THEN** 本体は PR トークン上限を測ってから `dev-workflow:decider`・`model: opus` の判定役を起こし、判定の記録を PR に投稿し、判定とその URL を渡して合格処理の G を新しく起こす
+
+#### Scenario: 共有枠が depleted のとき
+
+- **WHEN** G が `needs-carryover-judge` で返し、`SHARED_BUDGET_MODE=depleted` である
+- **THEN** 本体は判定役を起こさず `引き継ぎ判定: 判断できない` の記録を投稿して合格処理の G を新しく起こし、G が手順 6 で主に聞く
+
+#### Scenario: 判定のあとの G が同じ組で再び返した
+
+- **WHEN** 本体が判定の記録を投稿して起こした合格処理の G が、同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び `needs-carryover-judge` を返す
+- **THEN** 本体は判定役を起こし直さず、投稿した記録の URL を添えて主に聞く
+
+### Requirement: モデルの表に引き継ぎの判定役の行がある
+
+`skills/develop/SKILL.md` の「モデル」節の表は、引き継ぎの判定役の行を持たなければならない（MUST）。行は、種別が `dev-workflow:decider`、モデルが `opus` で残量モードによって上げも下げもしないこと、`SHARED_BUDGET_MODE=depleted` のときは起こさず主に聞く側に倒すことを書かなければならない（MUST）。
+
+#### Scenario: モデルの表を読む
+
+- **WHEN** SKILL.md の「モデル」節の表を読む
+- **THEN** 引き継ぎの判定役の行に `dev-workflow:decider`・`opus`・depleted のときは起こさないことが書かれている
+
+### Requirement: 親が通してよい範囲の基準は、ランナーの状態の確認を含む推奨の読み方を決める
+`parent-pass-criteria.md` は、表でなく文章で、子の推奨がランナーの状態の確認を含むときの読み方を一通りに決めなければならない（MUST。条件表の 9 条件は増やさない。節「CI の見張りのやり直しの上限で止まった子」の対象の止まりには当てない）。`gh api` などで読むだけで済む確認は実機操作に当たらない（条件「実機操作でない」を満たす）。ランナーの機械での操作（ログイン・再起動・プロセスやディスクの確認と操作・設定変更）が要る確認は実機操作に当たる（満たさない）。判断できなければ実機操作に当たる側に倒す。確認が `gh api` だけで済むなら、推奨をそのまま（確認を含めて）通し、返事にその確認を書いてよい。機械での確認が要る推奨は、再実行が確認の結果に依らず推奨の中に独立した再実行が書かれているときだけ再実行だけを切り出して通し、返事は機械での確認を求めない。再実行が機械での確認や操作の結果に依るときは主に上げる。
+
+#### Scenario: 基準のファイルが確認の種類で実機操作かを分けている
+- **WHEN** `parent-pass-criteria.md` のランナーの状態の確認を含む推奨の読み方を読む
+- **THEN** `gh api` で見られる確認は実機操作に当たらず、ランナーの機械での操作が要る確認は実機操作に当たり、判断できなければ実機操作に当たる側に倒すと書かれている
+
+#### Scenario: gh api で確かめて結果に応じて再実行する推奨はそのまま通す
+- **WHEN** 同じ箇所を読む
+- **THEN** 確認が `gh api` だけで済む推奨（例: ランナーがオンラインか `gh api` で確かめ、結果に応じて再実行）は、確認を含めて通し、返事にその確認を書いてよいと書かれている
+
+#### Scenario: 機械での確認が要る推奨は再実行だけを切り出せる条件が決まっている
+- **WHEN** 同じ箇所を読む
+- **THEN** 再実行が確認の結果に依らず独立した再実行が推奨に書かれているときは再実行だけを切り出して通し、返事は機械での確認を求めないこと、再実行が機械での確認や操作の結果に依るときは主に上げることが書かれている
+
+### Requirement: 親が通してよい範囲の基準は、見張りのやり直しの上限の節を通る例の CI の再実行と新しい段落より先に効かせる
+`parent-pass-criteria.md` の節「CI の見張りのやり直しの上限で止まった子」は、`job-timeout` に限らず、対象の止まり全体で、通る例の「CI の再実行（…原因の切り分けを通す条件にしない）」と、ランナーの状態の確認を含む推奨の読み方の段落のどちらよりも先に効くと書かなければならない（MUST）。子の記録が原因は断定できないと書いて再実行だけを勧めた場合は、節の「通す場合」の因果の説明が無いので主に上げる。確認が先の推奨は、確認が `gh api` だけで済む場合も主に上げる。節の `job-timeout` の `escalate` を主に上げる理由は、実機操作かの分け方に依らず「ランナーの側に原因があり、PR の差分でもやり直しでも直らないため」と書く（MUST）。通る例の CI の再実行の行にも、上限で止まった子は節が先に効くと行末に添える（SHALL。行の先頭の括弧の中は変えない）。
+
+#### Scenario: 基準のファイルが節の優先を対象の止まり全体に定めている
+- **WHEN** `parent-pass-criteria.md` の CI の見張りのやり直しの上限の節を読む
+- **THEN** 推奨が Mac が空いてから CI を再実行するものでも、`job-timeout` に限らず対象の止まり全体で、節が通る例の CI の再実行とランナーの状態の確認を含む推奨の読み方のどちらよりも先に効き、通る例の原因の切り分けを通す条件にしない読み方と `gh api` の確認をそのまま通す読みは対象の止まりに当てないと書かれている
+
+#### Scenario: 原因は断定できないと書いた再実行だけの推奨の扱いが決まっている
+- **WHEN** 同じ節を読む
+- **THEN** 子の記録が原因は断定できないと書いて再実行だけを勧めた場合も節の対象で、因果の説明が無いので主に上げると書かれ、通る例の CI の再実行の行の行末にも節が先に効くことが添えられている
+
+#### Scenario: 確認が先の推奨は gh api だけで済む確認でも主に上げる
+- **WHEN** 同じ節を読む
+- **THEN** 手順 7 で上げた止まり（`cause` が `job-timeout` でない）の推奨が `gh api` でランナーの状態を見てから再実行するものでも、確認が先なので主に上げると書かれている
+
+#### Scenario: job-timeout の理由が実機操作の分け方に依らない
+- **WHEN** 同じ節の「主に上げる場合」を読む
+- **THEN** `job-timeout` で `escalate` した止まりを主に上げる理由が「ランナーの側に原因があり、PR の差分でもやり直しでも直らないため」と書かれ、「ランナーの状態確認を求めるので実機操作に当たる」は書かれていない
+
+### Requirement: 親が通してよい範囲の基準は、ランナーの状態の確認と見張りの上限の優先順位の守備範囲を限る
+上の 2 つの要件の守備範囲を、次のとおりに限らなければならない（MUST）。入力として扱うのは、`stop-judge.sh` が集める子の最新の停止の記録と過去の `親の判断:`、および手順 8 で親のセッションが読む同じ記録である。拾いたい誤りは、ランナーの機械での操作が要る確認を含む推奨を通すこと、`gh api` だけで済む確認の止まりを主に上げること、見張りのやり直しの上限で止まった子の再実行を通る例の CI の再実行で通すことの 3 つである。次は通ってよい: 子が機械での確認を `gh api` の確認と書き誤った記録を通すこと（損失は CI 1 周分で、再び止まれば次は主に上がる）／通してよい止まりを判断のモデルが主に上げること。すり抜けを塞ぎ切ることは完了条件としない。
+
+#### Scenario: 守備範囲が拾う誤りと通ってよい入力を分けている
+- **WHEN** 上の 2 つの要件の守備範囲を読む
+- **THEN** 入力は子の最新の停止の記録と過去の `親の判断:`、拾いたい誤りは 3 つ、通ってよい入力は機械での確認を `gh api` の確認と書き誤った記録を通すことと通してよい止まりを主に上げることで、すり抜けを塞ぎ切ることは完了条件でないと読める
+
+### Requirement: 親は主の委任を、定型の委任の記録への主の直接の確認で受ける
+
+`references/epic.md` は、別セッション方式の親が、主が親のタブで子のリスク許容を任せる旨を述べたとき、その発言だけを委任として扱わず（MUST NOT）、エピックの issue に定型の委任の記録を投稿し、本文に記録の URL と範囲・期間の文を書いて主に問うことを書かなければならない（MUST）。問いの答え方の行には、親のタブで `任せる` を、この問いの直後に別の発言を挟まずに打つことを書く（MUST）。主の直後の発言を委任の確認とし、全文から任せる意思が読めなければ委任を使わず問い直す（MUST）。
+
+#### Scenario: 委任の記録の書式
+
+- **WHEN** 親が委任の記録を投稿する
+- **THEN** 本文は次の形で、1〜4 行目はこの文字列ちょうど（`<E>` はエピックの番号）になる
+
+  ```
+  主の委任: リスク許容
+  エピック: #<E>
+  範囲: このエピックの子が pr-review-gate で求めるリスク許容のうち、子の停止の記録の推奨が「許容する」のもの。聖域の変更・破壊的な操作・マージの承認・不許容は含まない
+  期間: この記録への主の確認の発言から、このエピックに `主の委任:` で始まる次のコメントが付くか、エピックが閉じるまで
+  きっかけ: <主が任せる旨を述べた発言の全文。無ければ なし>
+  ```
+
+#### Scenario: 主の自由な委任の発言を受けたとき
+
+- **WHEN** 主が親のタブで「このエピックの子の許容は全部答えて」と述べる
+- **THEN** 親は委任の記録をエピックに投稿し、本文に記録の URL と範囲・期間の文と答え方の行を書いて問い、主の直後の確認を受けるまで委任で返事を送らない
+
+#### Scenario: 確認の前に別の発言が挟まったとき
+
+- **WHEN** 親の問いのあとに主が別の件を話してから `任せる` と答える
+- **THEN** 親は問いを本文で出し直してから確認を受け直す（子の `--delegated` は `not-direct` で落ちるため）
+
+#### Scenario: 確認から任せる意思が読めないとき
+
+- **WHEN** 親の問いの直後の主の発言が「ちょっと待って」のように任せる意思を読めない
+- **THEN** 親は委任を使わず、問いを本文で出し直す
+
+### Requirement: 親は委任の確認の場所をエピックに残す
+
+`references/epic.md` は、親が委任の確認を受けたら、`owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <確認の全文>` で確認の uuid を引き、エピックに `委任の確認の場所: セッション <親のセッション ID> / uuid <uuid> / 記録 <委任の記録の URL>` の 1 行を投稿することを書かなければならない（MUST）。親は起動し直したあとも、最新の `主の委任:` で始まるコメントの URL を `記録` に持つ最新のこの行から値を取る（MUST）。引けないときは委任を使わない（MUST）。
+
+#### Scenario: 起動し直した親が委任を使う
+
+- **WHEN** 親のセッションが起動し直され、エピックに有効な委任の記録と、その URL を持つ `委任の確認の場所:` の行がある
+- **THEN** 親はその行のセッション ID と uuid を添え書きに使う
+
+### Requirement: 主の委任は取り消しと新しい記録とエピックの終わりで切れる
+
+`references/epic.md` は、主が委任の取り消しを述べたら、親がその発言を受けた次のターンの最初のツール呼び出しでエピックに 1 行目 `主の委任: 取り消し` のコメントを投稿し、以後は委任で返事を送らないことを書かなければならない（MUST）。取り消しは主本人の確認を求めず、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれかなら効く（MUST。範囲を狭める向きにしか働かないため）。それ以外の投稿者の `主の委任:` で始まるコメントは数えない（MUST）。
+
+#### Scenario: 取り消しのあとは委任で送らない
+
+- **WHEN** エピックの、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` の `主の委任:` で始まる最新のコメントが `主の委任: 取り消し`
+- **THEN** 親は止まった子を今どおり主に上げ、委任で返事を送らない
+
+### Requirement: 委任が有効かを決まった条件で確かめる
+
+親・子・G は、委任が有効かを次の同じ文で確かめなければならない（MUST）: 委任の記録が、①エピック #<E> の issue のコメントで、1〜4 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）。<E> は子では返事の頭 `主の返事（親エピック #<E> 経由）` の番号で、記録の URL の issue 番号と同じでなければならない（MUST）。
+
+#### Scenario: 別のエピックの記録では効かない
+
+- **WHEN** 返事の頭が `親エピック #1038` で、添え書きの記録の URL が別の issue のコメント、または記録の 2 行目が `エピック: #1100`
+- **THEN** 委任は有効でないとして扱う
+
+#### Scenario: 編集された記録では効かない
+
+- **WHEN** 委任の記録の `lastEditedAt` が null でない
+- **THEN** 委任は有効でないとして扱う
+
+### Requirement: 委任が効く止まりを決まった条件で確かめる
+
+親・子・G は、止まりに委任が効くかを次の同じ文で確かめなければならない（MUST）: ①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる。
+
+#### Scenario: 推奨が許容しないの止まりには効かない
+
+- **WHEN** 停止の記録の `推奨:` の値が `許容しない。代替案で`
+- **THEN** 委任は効かず、親は今どおり主に上げ、子は委任の返事を受け取らない
+
+#### Scenario: リスク許容待ちでない止まりには効かない
+
+- **WHEN** 止まった理由がマージ待ち・実機操作・方針の選び直しで、PR に `needs-approval` が無いか、最新の `## リスク宣言` のコメントに `主のリスク許容が必要。` の行が無い
+- **THEN** 委任は効かない
+
+#### Scenario: 委任の確認より前の止まりには効かない
+
+- **WHEN** 停止の記録の作成日時が委任の確認の timestamp より前
+- **THEN** 委任は効かず、親は今どおり報告して主の直接の答えを受ける
+
+### Requirement: 親は有効な委任が効く止まりにだけ、委任で許容を送る
+
+`references/epic.md` の手順 8 は、委任が有効で止まりに委任が効くときだけ、主に上げずに `epic-dispatch.sh reply --as owner` で `許容する（主の委任による。停止の記録: <URL>） [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]` を送ることを書かなければならない（MUST）。送れたらエピックに `委任で送った: 子 #<N> <停止の記録の URL>` の 1 行を残す（MUST。`親の判断:` で始めない）。同じ子のこの行の URL が最新の停止の記録の URL と同じなら送り直さない（MUST）。
+
+#### Scenario: 委任で送った件をエピックに残す
+
+- **WHEN** 親が委任で `reply --as owner` を送り、出力が `sent` か `relaunched`
+- **THEN** エピックに `委任で送った: 子 #<N> <停止の記録の URL>` の 1 行を投稿する
+
+#### Scenario: 同じ止まりに二度送らない
+
+- **WHEN** 手順 7 か 8 で同じ子が再び挙がり、エピックにその子の `委任で送った:` の行があって URL が最新の停止の記録と同じ
+- **THEN** 親は委任で送り直さず、子の再開を待つ
+
+### Requirement: 親が委任で送る経路の守備範囲
+
+親が委任で送る経路は、次の守備範囲で読まなければならない（MUST）。①入力の出どころは、親の会話の主の発言、エピックと子 issue と PR のコメント・ラベル（`gh` で読む）、同じ PC の親の会話ログ。親は協力的だが、主の雑談を委任と読み違える・別の子の止まりと取り違える前提で扱う ②拾いたい誤りは、確認の無い発言での委任、範囲外の止まり（推奨が許容でない・リスク許容待ちでない・確認より前）への送信、取り消し後の送信、二重送信 ③確認に「任せる」以外の語で任せる意思が読める答えは通してよい ④穴を塞ぎ切ることは完了条件にしない（MUST NOT）。
+
+#### Scenario: 範囲外の止まりでは送らない
+
+- **WHEN** 有効な委任があるが、止まりに委任が効かない
+- **THEN** 親は委任で送らず、手順 8 の形で主に上げる
+
+### Requirement: 子は委任の返事を確かめてから G に渡す
+
+`references/epic-child-stop.md` の「親から届いた返事」は、末尾が `[主の委任: セッション <ID> / uuid <uuid> / 記録 <URL>]` の返事を、止まった件がリスク許容への返事待ち（pr-review-gate 手順 3 の宣言で止まった件）のときだけ受け、子が `--delegated <ID> <uuid> <委任の記録の作成日時> <URL> <最新の停止の記録の作成日時>` を回し、exit 0 で全文から任せる意思が読め、委任が有効で止まりに委任が効くときだけ、保留の解除の G に値を渡すことを書かなければならない（MUST。記録の書式と真正性確認は pr-review-gate 手順 5 が正本）。止まった件がリスク許容への返事待ちでない（聖域の変更・破壊的な操作・マージ・実機操作などで止まった）ときと、通らないときは G を起こさず、主に子のタブでの返事を理由付きで頼む（MUST）。
+
+#### Scenario: 確かめられない委任の返事では G を起こさない
+
+- **WHEN** `--delegated` が exit 0 でない（`REASON=not-after` などで exit 1、または exit 2）か、委任が有効でないか、止まりに委任が効かない
+- **THEN** 子は G を起こさず、止まる前の記録と印を残してから、主に子のタブでの返事を、確かめられなかった理由（`REASON=` の値か満たさなかった条件）を添えて頼む
+
+#### Scenario: リスク許容待ちでない止まりでは委任の返事を受けない
+
+- **WHEN** 子が聖域の変更・破壊的な操作・マージ・実機操作などで止まっていて（リスク許容への返事待ちでない）、末尾が `[主の委任: …]` の返事が届く
+- **THEN** 子は委任の返事として受けず、G を起こさずに、止まる前の記録と印を残してから、主に子のタブでの返事を理由付きで頼む
+
+#### Scenario: 確かめられた委任の返事を G に渡す
+
+- **WHEN** `--delegated` が exit 0 で、全文から任せる意思が読め、委任が有効で止まりに委任が効く
+- **THEN** 子は保留の解除の G に、親のセッション ID・確認の uuid・`MATCH:` の timestamp・委任の記録の URL・停止の記録の URL・`MATCH:` の全文を渡す
+
+### Requirement: 子が委任の返事を受ける経路の守備範囲
+
+子が委任の返事を受ける経路は、次の守備範囲で読まなければならない（MUST）。①入力の出どころは、子に届いた返事の頭と末尾の添え書き（親が書く）、エピック・子 issue・PR のコメントとラベル、同じ PC の親の会話ログ。親は写し間違い・別のエピックや別の記録との取り違えをする前提で扱う ②拾いたい誤りは、確認でない発言・別のエピックの記録・取り消し済みや編集済みの記録・範囲外の止まりでの委任を主の許容として G に渡すこと ③親と子が同じ PC で動き、委任の確認のあとに親が起動し直したものは通してよい ④会話ログの改変の検知と、穴を塞ぎ切ることは完了条件にしない（MUST NOT）。
+
+#### Scenario: 別のエピックの記録を添えた返事は受けない
+
+- **WHEN** 添え書きの記録の URL がこの子の属さないエピックのコメント
+- **THEN** 子は G を起こさず、主に子のタブでの返事を頼む
+
+### Requirement: エピックの親は報告に付ける状態表を区切りより下に置く
+
+`references/epic.md` は、エピックの親が主に出す報告すべて（別セッション方式の「親が別セッション方式でターンを終えるときに主に出す発言すべて」と、サブエージェント方式の主への報告）に、次段落の例外を除いて状態表を付け、表・答えが要る子の URL・「前回の報告から片付いたもの」を報告の区切りより下に置くと規定しなければならない（MUST）。区切りより上の本文の最後の行は、既存の要件「エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う」のとおり答え方のままにし、1 行目も変えない。
+
+例外は、待機前の最後のリクエストから 60 分以上経過した旧親の引き継ぎ・再開案内（エピックへの記録失敗時の停止報告を含む）に限る。この案内では状態表と、そのための `child-log` 確認を省略しなければならない（MUST）。新親は状態を復元後、別セッション方式では要件「別セッション方式の親は表を書く前に子の会話ログの末尾を読む」に従ってログを確認し、その結果を反映した状態表を区切りより下に置いて報告しなければならない（MUST）。サブエージェント方式では従来どおり本体の会話から状態表を書く。通常の報告や 60 分未満の通知・返事の処理後の報告へ例外を広げてはならない（MUST NOT）。
+
+#### Scenario: 区切りより上の最後の行と 1 行目は変わらない
+- **WHEN** `references/epic.md` の状態表の規定を読む
+- **THEN** 表・URL・片付いたものは区切りより下に置くと書かれ、区切りより上の最後の行は答え方のまま、1 行目は今回いちばん先に答えてほしい 1 件の質問（なければ `主がすること: なし`）のままと書かれている
+
+#### Scenario: 長時間後の旧親の引き継ぎ案内は状態表を省略する
+- **WHEN** 待機前の最後のリクエストから 60 分以上経過した旧親が、既知の状態と未処理の受信内容をエピックに記録して新セッションでの再開を案内する
+- **THEN** 旧親は状態表と `child-log` 確認を省略し、子を再調査せず案内して終える
+- **AND** 主への再開案内自体は発言の一覧から除外せず、1 行目と答え方は既存の書き分けに従う
+
+#### Scenario: 長時間後の記録失敗時も状態表を作るために再調査しない
+- **WHEN** 60 分以上経過した旧親が引き継ぎ内容の記録に失敗する
+- **THEN** 状態表と `child-log` 確認を省略したまま、エラーと未保存内容を主に示して止める
+- **AND** 再開可能とは報告しない
+
+#### Scenario: 通常の報告では状態表を省略しない
+- **WHEN** 親が通常の報告、または 60 分未満の通知・主の返事を処理したあとの報告を出す
+- **THEN** 別セッション方式・サブエージェント方式とも状態表を区切りより下に付け、長時間後の旧親の案内に限る例外を適用しない
+
+### Requirement: 状態表は全部の子と親自身を決まった列で並べる
+
+状態表は、表の上に確かめた時刻（JST）を書き、行を、まだ閉じていない全部の子 issue と親自身（エピックの番号）の 1 行ずつにし、列を `issue 番号・内容・ステータス・確認内容・推奨・答え方` にしなければならない（MUST）。確認内容は主に聞いていることの中身、答え方はどの画面で何を打つかを書き、答えが要らない行は `なし` と書く。
+
+#### Scenario: epic.md が表の列を規定する
+- **WHEN** `references/epic.md` の状態表の規定を読む
+- **THEN** 確かめた時刻（JST）・親自身の行・列 `issue 番号・内容・ステータス・確認内容・推奨・答え方` が書かれ、答えが要らない行は `なし` と書くと書かれている
+
+### Requirement: 状態表の下に答えが要る子の URL と片付いたものを書く
+
+状態表の下に、答えが要る子の issue の URL を 1 行 1 本で置き、子の停止の記録の URL は 1 行目で聞く 1 件にだけ書き（聞いていない子の分は並べない。MUST NOT）、その下に「前回の報告から片付いたもの」を書かなければならない（MUST）。子のタブで答え済みの件も片付いたものに含める。
+
+#### Scenario: 表の下の 2 つ
+- **WHEN** `references/epic.md` の状態表の規定を読む
+- **THEN** 表の下に URL を 1 行 1 本で置き、その下に前回の報告から片付いたもの（子のタブで答え済みの件を含む）を書くと書かれている
+
+### Requirement: channel モードの状態表は答え方の列をチャンネルで返す内容にする
+
+channel モードでは、状態表の答え方の列を、チャンネルで返す内容にしなければならない（MUST）。チャンネル以外の画面・タブを書いてはならない（MUST NOT。既存の要件「channel モードの主への発言はすべてチャンネルに送り…」に従う）。
+
+#### Scenario: channel モードの答え方の列
+- **WHEN** `references/epic.md` の表の規定を channel モードについて読む
+- **THEN** 答え方の列はチャンネルで返す内容にし、チャンネル以外の画面・タブを書かないと書かれている
+
+### Requirement: 状態表の規定の守備範囲を限る
+
+状態表の規定が入力として扱うのは `references/epic.md` の文面でなければならない（MUST）。拾いたい誤りは、主が最新の 1 通だけで、閉じていない子の状態と自分がすることを読み取れないことである。次は通ってよい: 内容・確認内容の文の良し悪し／子が 1 件も残らない報告で表が空になること。書き方の穴を見つけるたびに決まりを足して塞ぎ切ることは、この規定の完了条件としない。
+
+#### Scenario: 表の文の良し悪しは止めない
+- **WHEN** 表の内容の列の文が分かりにくいという指摘が出る
+- **THEN** この規定の範囲外として扱い、読み取れない誤り（状態と自分がすることが分からない）だけを直す
+
+### Requirement: 別セッション方式の親は表を書く前に子の会話ログの末尾を読む
+
+`references/epic.md` は、別セッション方式（Orca・tmux）の親が状態表を書く前に、`launch` に渡した子ごとに `scripts/epic-dispatch.sh child-log` で会話ログの末尾を読み（別のリポジトリの子は `<owner>/<repo>#N` で渡す。まだ起動していない子は渡さず、ステータスを `未起動（<理由>）` と書く）、子のタブで進んだ分を表に反映すると規定しなければならない（MUST）。子のタブで主が直接答えても子は issue の停止の記録を書き直さないので、記録だけを見て書くと表が子の実際の状態とずれる。会話ログの末尾と issue の記録が食い違うときは会話ログを優先する。
+
+待機前の最後のリクエストから 60 分以上経過した旧親の引き継ぎ・再開案内（エピックへの記録失敗時の停止報告を含む）に限り、要件「エピックの親は報告に付ける状態表を区切りより下に置く」の例外に従い、旧親は状態表と `child-log` 確認を省略しなければならない（MUST）。この義務は新親へ移し、新親は状態を復元後、上記のログ確認を行ってから状態表を書かなければならない（MUST）。通常の報告や 60 分未満の通知・返事の処理後の報告では、ログ確認を省略してはならない（MUST NOT）。
+
+#### Scenario: epic.md が会話ログの確認を表より前に置く
+- **WHEN** `references/epic.md` の状態表の規定を読む
+- **THEN** 別セッション方式では表を書く前に `child-log` で子の会話ログの末尾を読むこと、食い違えば会話ログを優先することが書かれている
+
+#### Scenario: 長時間後の旧親は案内と記録失敗時の停止報告のためにログを読まない
+- **WHEN** 60 分以上経過した旧親が引き継ぎ・再開案内、またはその記録失敗時の停止報告を出す
+- **THEN** `child-log` 確認も状態表も省略し、既知の状態と受信内容だけで記録・案内または停止報告を行う
+
+#### Scenario: 新親は復元後にログを確認してから状態表を書く
+- **WHEN** 別セッション方式の新親が同じ worktree で develop の手順書とエピックの記録から状態を復元する
+- **THEN** `launch` に渡した子の会話ログの末尾を `child-log` で確認してから、その結果を反映した状態表を区切りより下に置いて報告する
+- **AND** ログと issue の記録が食い違うときはログを優先し、未起動の子は渡さず、読めない子は既存要件どおり `確かめられなかった` と書く
+
+### Requirement: 読めない子のステータスは確かめられなかったと書く
+
+`child-log` が `unreadable` を返した子のステータスは `確かめられなかった` と書き、記録から推測して書いてはならない（MUST NOT）。サブエージェント方式の子には独立した会話ログが無いので、`child-log` を使わず、本体が自分の会話から子の状態を書く。
+
+#### Scenario: 読めない子とサブエージェント方式
+- **WHEN** `references/epic.md` の状態表の規定を読む
+- **THEN** `unreadable` の子は `確かめられなかった` と書き、サブエージェント方式は本体の会話から書くと書かれている
+
+### Requirement: child-log は子ごとの最後の主の発言と子の発言を 1 行で出す
+
+`epic-dispatch.sh child-log <child>...` は、子ごとに、その子の状態の記録の `worktree` から会話ログの置き場を引き、最新の会話ログの最後の「主の発言」と最後の「子の発言」の時刻と冒頭を 1 行（タブ区切り）で出さなければならない（MUST）。列は `<child>`・主の最後の発言の時刻（JST、`YYYY-MM-DD HH:MM`）・その冒頭（改行を空白にして先頭 80 文字）・子の最後の発言の時刻・その冒頭。該当が無い列は `-`。
+
+#### Scenario: 最後のやり取りを出す
+- **WHEN** 記録のある子の会話ログに、主の発言 → 子の発言 → ツールの結果、の順の行がある
+- **THEN** 主の最後の発言と子の最後の発言の時刻と冒頭が 1 行で出て、ツールの結果は主の発言に数えられない
+
+### Requirement: child-log は最新の会話ログと子の発言を決まった規則で選ぶ
+
+判定の守備範囲は要件「子への声かけ文と返事の形は一か所の定義を共有する」の「判定要件に共通の守備範囲」に従う。
+
+最新の会話ログは、置き場の直下の `*.jsonl`（サブエージェントのものを除く）のうち、最後の timestamp が最も新しい 1 本でなければならない（MUST）。子の発言は、type が assistant のテキスト（`isSidechain` でないもの）である。ただし共通定義の固定文に対応し、定義の返事の型に一致する一行の声かけの返事は除く（MUST NOT）。本当の user の割込みや型に合わない assistant で対応を終了し、一般の「了解」や対応しない返事は除外しない（SHALL）。
+
+#### Scenario: 新しい会話ログを選ぶ
+- **WHEN** 置き場に最後の timestamp が違う 2 本の `*.jsonl` がある
+- **THEN** 最後の timestamp が新しい 1 本のやり取りが出る
+
+#### Scenario: 質問を声かけの返事で上書きしない
+- **WHEN** 子の質問と固定文・正しい一行の返事があり、その往復が繰り返される
+- **THEN** 最後の子の発言と timestamp は声かけ前の質問のままである
+
+#### Scenario: 複数行の返事は表示する
+- **WHEN** 固定文のあと、型どおりの一行に追加の行を付けた返事が届く
+- **THEN** 返事全体を除外せず、従来どおり最後の子の発言に選ぶ。追加の行が新しい質問でも隠さず、正常な往復の質問保持を適用しない
+
+#### Scenario: 本当の発言は隠さない
+- **WHEN** 固定文なしの「了解」、固定文と型に合わない新しい質問、固定文のあと主の本当の返事が割り込んだあとの子の発言、がそれぞれ存在する
+- **THEN** いずれも従来どおり子の発言として扱い、声かけを理由に隠さない
+
+### Requirement: child-log は主の発言を決まった規則で判定する
+
+判定の守備範囲は要件「子への声かけ文と返事の形は一か所の定義を共有する」の「判定要件に共通の守備範囲」に従う。
+
+主の発言は、type が user で、`isMeta` でも `isSidechain` でもなく、内容が文字列かテキストだけ（`tool_result` を含まない）のものでなければならない（MUST）。次は数えない（MUST NOT）: 頭が `親エピック #` で始まる親の判断の返事（`親エピック #E の判断（主の承認ではない）: `）、`/develop` の最初の指示（内容に `<command-name>` のタグがある、または頭が `/develop` のもの）、共通定義から生成したキャッシュ維持の固定文と本文が完全一致する声かけ。頭が `主の返事（親エピック #E 経由）:` の親が中継した主の返事は数える。
+
+#### Scenario: 親の判断の返事は主の発言に数えない
+- **WHEN** 会話ログの最後の user 行が `親エピック #33 の判断（主の承認ではない）: ...` で、その前に主の発言がある
+- **THEN** 主の最後の発言はその前の発言で、親の判断の返事ではない
+
+#### Scenario: 中継された主の返事は数える
+- **WHEN** 会話ログの最後の user 行が `主の返事（親エピック #33 経由）: ...` である
+- **THEN** その行が主の最後の発言として出る
+
+#### Scenario: 固定文を主の回答として数えない
+- **WHEN** 主の発言のあとに共通定義の固定文が user として入る
+- **THEN** 主の発言と timestamp は元のままであり、似た内容でも固定文に完全一致しない主の入力は除外しない
+
+#### Scenario: 主が予約文と全く同じ文を打つ
+- **WHEN** 主が生成した固定文と完全一致する本文を直接入力し、子が型どおりの一行を返す
+- **THEN** user と対応する assistant は声かけとして除外され、主と子の最後の発言および timestamp はその前のままである。送信元を識別して通常の回答へ戻す仕組みは追加しない
+
+### Requirement: child-log は読めない子を unreadable で出して続ける
+
+記録が無い・読めない（要件「子 1 ファイルの記録は決まった項目を持つ」の読めない記録を含む）・記録が 2 件以上で一意に決まらない、会話ログの置き場が無い・読めない、`python3` が無い、のどれかの子について、`child-log` は `unreadable <child>` を出し、他の子を続けなければならない（MUST）。記録に由来するときは stderr にその記録のパスを出す。
+
+#### Scenario: 読めない子は unreadable で続ける
+- **WHEN** 会話ログの置き場が無い子と読める子を一緒に渡す
+- **THEN** 置き場が無い子は `unreadable <child>`、読める子は通常の行が出て、exit 0 である
+
+#### Scenario: 読めない記録の子は unreadable と記録のパス
+- **WHEN** 記録が JSON として読めない子を渡す
+- **THEN** `unreadable <child>` が stdout に、その記録のパスが stderr に出て、記録は書き換えられない
+
+### Requirement: child-log は何も書き換えず LLM を呼ばない
+
+`child-log` は記録も会話ログも書き換えてはならず（MUST NOT）、LLM を呼んではならない（MUST NOT）。`jq` が無い・今のワークツリーを読めないときは stdout 空で exit 1、それ以外は exit 0 で終わる。
+
+#### Scenario: jq が無い
+- **WHEN** `jq` の無い PATH で `child-log` を実行する
+- **THEN** stdout は空で exit 1 である
+
+### Requirement: child-log の主の発言の判定の守備範囲を限る
+
+`child-log` の判定が入力として扱うのは、Claude Code が書く会話ログ（`*.jsonl`）の user 行と assistant 行、および `epic-state.sh` が書いた状態の記録でなければならない（MUST）。拾いたい誤りは、主が子のタブで答えた最後のやり取りを取り逃がすことと、ツールの結果や親からの機械的な送信を主の発言に数えて、主が答え済みと取り違えることである。次は通ってよい: compact の要約や hook が足した user 行を主の発言に数えること／親が中継した主の返事の真偽／冒頭 80 文字で意味が取り違えられること（親が必要なら会話ログを自分で読む）／会話ログの形式が将来変わって `unreadable` になること。判定の穴を見つけるたびに除外を足して塞ぎ切ることは、この規定の完了条件としない。
+
+#### Scenario: hook が足した user 行は止めない
+- **WHEN** hook が足した user 行が主の発言に数えられているという指摘が出る
+- **THEN** この規定の範囲外として扱い、除外を足さない
+
+### Requirement: 子のセッションはアイドル時のコンパクトを切って起動する
+`plugins/dev-workflow/scripts/epic-dispatch.sh` が作る子の起動コマンド（`launch` と、端末が無い子・`--relaunch` の子を起動し直す `reply`）は、子のアイドル時のコンパクト（待っている間の自動コンパクト）を切る `--settings '{"idleCompaction":false}'` を含み、`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を含んではならない（MUST。置く場所は要件「エピックの並列起動は 1 段で止める」）。通常の自動コンパクトを止める指定（`DISABLE_AUTO_COMPACT` など）を付けてはならない（MUST NOT）。環境変数 `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` は読まない（SHALL。設定されていても値を検査せず、起動コマンドを変えない）。
+
+#### Scenario: launch は子の起動コマンドでアイドル時のコンパクトを切る
+- **WHEN** `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** `orca terminal create` の `--command` は `EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{"idleCompaction":false}' --model 'opus'` で、`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を含まない
+
+#### Scenario: 閾値の上書きの変数は読まない
+- **WHEN** `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=150000`、`EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=`、`EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS=120k` のそれぞれの環境で `epic-dispatch.sh launch 400 11` を実行する
+- **THEN** どれも stdout は `launched 11`、exit 0 で、`--command` は `EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{"idleCompaction":false}' --model 'opus'` である
+
+#### Scenario: 端末が無い子を起動し直すコマンドもアイドル時のコンパクトを切る
+- **WHEN** 端末が無い子 11 に `epic-dispatch.sh reply --as owner 400 11 <返事>` を実行する
+- **THEN** `orca terminal create` の `--command` は `--settings '{"idleCompaction":false}'` を含み、`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を含まない
+
+この要件は、要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」の表の `relaunched` の行の起動コマンドの説明（待っている間の自動コンパクトの閾値を前置きしたもの）に優先する。
+
+この要件の守備範囲で入力として扱うのは、`launch`・`reply` を実行したシェルの環境変数（`EPIC_DISPATCH_CLAUDE_CMD`・`EPIC_DISPATCH_MODEL`）だけである。拾いたい誤りは、子の起動コマンドにアイドル時のコンパクトを切る指定が入らず、子がコンパクトされて `SKILL.md` の中身を持たないまま進むことと、通常の自動コンパクトまで止めて子の会話が上限を越えることである。次は通してよく、この要件では止めない: 主の起動コマンド（`cld`）が子のプロセスの環境に入れる `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS`（アイドル時のコンパクトを切った子では効かない）／`EPIC_DISPATCH_CLAUDE_CMD` が `--settings` を `claude` に渡さない形で、指定が効かなかった子／Claude Code が v2.1.290 より古く、指定が効かなかった子／この変更より前に起動され、従来の閾値で動いている子／`EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` が設定された環境（値を見ずに無視する）。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
+
+### Requirement: 時間がたった子への返事は 60 分を境にそのまま送るか起動し直すかを決める
+時間がたった子・親への返事の規則は `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` に置き、子について次を書かなければならない（MUST）: すべての develop セッションは開始時の worktree-local 設定でアイドル時のコンパクトを切り、子は補助として `launch` が `--settings '{"idleCompaction":false}'` を付けてアイドル時のコンパクトを切ること（そのプロセスだけに効き通常の自動コンパクトは止めない・v2.1.290 以降が要る・ホームの `~/.claude/settings.json` に置かない（worktree の `.claude/settings.local.json` だけを使う））。子の表は上から、端末が無ければ起動し直す、会話量 N が `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS`（既定 150000）以上なら経過時間と compact の有無によらず起動し直す、最後のリクエストから 60 分未満ならそのまま送る、60 分以上なら compact の有無と会話量によらず起動し直す、と書く。会話量条件が時間条件に優先するよう並べる。根拠は、コンパクトされた子は `SKILL.md` の中身を持たずに進むことと、費用の差の小ささ。
+
+#### Scenario: 規則のファイルに子の切り方と分ける条件と根拠が書かれている
+- **WHEN** `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` を読む
+- **THEN** 子は `launch` が `--settings '{"idleCompaction":false}'` を付けてアイドル時のコンパクトを切ること、ホームの `~/.claude/settings.json` に置かず、worktree の `.claude/settings.local.json` だけを使うこと、子は端末が無い・会話量が新閾値以上・60 分以上のいずれかなら起動し直し、会話量が閾値未満か不明で 60 分未満ならそのまま送ること、新閾値の変数名と既定値 150000、子を起動し直す根拠（コンパクトされた子は `SKILL.md` の中身を持たない）と #1039 の決定を #1323 で覆したこと、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること・最後のリクエストの時刻はトランスクリプトから読むこと・会話量は同じファイルを `subagent-context.sh --file` で測ること）が書かれている
+
+根拠には、2026-10-23 の子のログで、コンパクトのあとに残ったのが `SKILL.md` のファイル名と `/develop` の入口だけで、再開したあとも読み直さずにゲートの実行まで進んでいたことと、起動し直しとの費用の差（1 回あたり Opus 5.5 で約 $0.5）、1 時間以上たってから返事が来る子の割合（3.2%）を書く（SHALL）。判定に使う事実は、子の端末の有無（`orca` のコマンドは書かず、要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」に従う。端末の有無は `epic-dispatch.sh reply` が確かめ、端末が無ければ起動し直す。要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」）と、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）の最後のリクエストの時刻、および同じファイルを `plugins/dev-workflow/scripts/subagent-context.sh --file <トランスクリプト>` で測った会話量 N である。事実を読めない場合は、上の自動判定の要件と同じく確認できた条件だけで決め、どちらも真と確認できなければそのまま送ると書く（MUST）。送り方と起動し直し方の手順本体はこのファイルに書かない（SHALL NOT。止まった子を親が解決する手順（develop の `references/epic.md` の Orca 経路と `epic-dispatch.sh reply`）が書き、このファイルを参照する）。
+
+この分類は、`epic-dispatch.sh wait --resolve` が親の代わりに通す返事を除き、スクリプトではなく本体が規則のファイルを読んで行う。`wait --resolve` が通す返事は、要件「wait --resolve は通す返事を送る前に起動し直すかを表で決める」のとおり `resolve_stopped` が同じ子の表で分類する（例外）。拾いたい誤りは、60 分以上止まった子（コンパクトされて `SKILL.md` の中身を持たない子と、この変更より前に起動されてコンパクトされうる子を含む）にそのまま返事を送り、子が手順を外れて進むこと、大きい会話の子に時間だけを見て返事を送り続けること、会話量が閾値未満か不明で 60 分未満の子を不要に起動し直して、子が積んだ判断と起動し直しの費用を無駄にすることである。次は通してよく、この分類では止めない: 経過時間がちょうど 60 分前後で、時刻の読み方によって扱いが分かれる子／トランスクリプトが複数あってどれが子のセッションか分からず、そのまま送った子。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
+
+#### Scenario: 子の会話量の行が短時間の行に優先する
+- **WHEN** 子の表を上から読む
+- **THEN** 端末が無い行の次で、`EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS` と既定値 150000 が明記された会話量の行により、60 分未満でも閾値以上なら起動し直すと分かる
+
+#### Scenario: 閾値を選んだ根拠と限りが分かる
+- **WHEN** 規則のファイルの子の説明を読む
+- **THEN** #1046 の再集計の結論に合わせて 150000 を採用したことと、その集計はキャッシュ有効中の新条件の最適値を実証したものではないこと、時間条件は #1323 のまま残ることが書かれている
+
+### Requirement: 親が長く待ったあとは親の表で続けるか起動し直すかを決める
+`plugins/dev-workflow/skills/develop/references/reply-after-idle.md` は、親も子・単発と同じくアイドル時のコンパクトを切ること、親が最後のリクエストから 60 分以上待ったら compact の有無や会話量によらずエピックの記録から起動し直すこと、60 分未満なら続けることを規定しなければならない（MUST）。親だけの 120,000 の設定・compact 後なら続ける分岐・監視が続くから残す説明は現行の規則に残さない（MUST NOT）。
+
+時間分類は timeout・子の通知・主の返事を処理する前に適用する（MUST）。最後のリクエストは起床の API リクエストを除いた待機前のものを使い、キャッシュを書いた行の時刻と混同しない。60 分以上なら旧親は未処理イベントをエピックに記録し、同じ worktree の新セッションで `/develop <エピック番号>` から手順書と記録を読み直して再開するよう主に案内して終える（MUST）。再開手順は要件「親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す」に定め、親の表と epic.md の手順 5 のどちらから読んでも時間分類が優先すると分かるようにする（MUST）。
+
+#### Scenario: 規則のファイルに親の値と表と復元元が書かれている
+- **WHEN** 規則のファイルを読む
+- **THEN** 親にも idleCompaction false を適用し、60 分未満は続け、60 分以上は起動し直すと分かり、compact や N による継続の例外・親だけの閾値が無い
+- **AND** 回し方、終わった子、外した子エピック、残した worktree、親が通した判断、主の返事待ち、残りの子の復元元が記録されている
+
+親の状態はエピックと子 issue のコメント・依存グラフ・子の状態記録から復元できると書く（SHALL）。`回し方:`、`子 #N マージ → 残り k 件` / `子 #N 見送り`、`後で別に起動するエピック:`、`子 #N のワークツリーを残した`、`親の判断: 子 #N 通した` と停止記録 URL の対応、`pending-owner` の確認を残す。比較する相手は手順書と引き継ぎを読む新セッションであり、要約と手順書再読み込みを二重に払う親の方針を #1385 で覆したと書く（SHALL）。監視停止が compact のせいだったとは断定しない。古い集計のリンクは履歴として残せるが、親の idle 閾値の再集計を現行の宿題にしない。
+
+この規則の入力は、親のトランスクリプトの最後のリクエスト時刻と、エピックの復元記録である。拾う誤りは、compact 済み・会話量が小さいことを理由に 60 分以上止まった親を続けること。境界の時刻が曖昧で 60 分前後の扱いが揺れる場合は続けてよく、時刻不明から長時間経過を捏造しない。復元元の記録自体の誤りや欠落はこの時間分類だけでは防がない。穴の追加封鎖を完了条件にしない。
+
+#### Scenario: 親が compact 済みでも長く待ったら起動し直す
+- **WHEN** 親の最後のリクエストから 60 分以上たち、compact_boundary がある場合と無い場合を比較する
+- **THEN** どちらも会話量によらず起動し直し、エピックのコメントから親が通した判断を含め復元する
+
+#### Scenario: 短時間の親は続ける
+- **WHEN** 親の最後のリクエストから 60 分未満である
+- **THEN** 親はそのまま続け、この規則を理由に短い wait のやり直しを止めない
+
+### Requirement: epic.md の回し方は子の起動コマンドの指定と返事の規則のファイルを指す
+`references/epic.md` の回し方は、すべての develop セッションが開始時に worktree-local の idleCompaction を false にすること、子は既存の起動オプションでも切ること、時間がたった子・親は `references/reply-after-idle.md` に従うことを書かなければならない（MUST）。親だけの閾値の付け方を案内してはならない（MUST NOT）。子の起動コマンドの `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` や `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` も案内しない。対応する Bats はこの記述を確かめる（MUST）。
+
+#### Scenario: epic.md の回し方が起動コマンドの指定と規則のファイルを指す
+- **WHEN** references/epic.md の回し方を読む
+- **THEN** 親・子を分けない開始時の設定と、子の --settings '{"idleCompaction":false}'、長時間待機後の共通方針が分かり、親だけの閾値の付け方を参照していない
+
+この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の回し方の段落のうち、epic-dispatch.sh が足すのは --model だけとする部分に優先する（足すのは --settings '{"idleCompaction":false}' と --model）。既存の子の起動・返事の動作は変えない。
+
+### Requirement: 上限を明示しない wait は親の会話キャッシュの有効期限で上限を決める
+
+`plugins/dev-workflow/scripts/epic-dispatch.sh wait` は、`--timeout` が無く `EPIC_DISPATCH_TIMEOUT` も無いか空のとき、最初のポーリングの前に `cache_ttl_of "$(git rev-parse --show-toplevel)"` を 1 回呼び、`5m` なら上限を 21600 秒、`1h` か exit 1 なら 3000 秒にしなければならない（MUST）。このとき最初のポーリングの前に stderr へ `wait limit <秒> (parent cache <5m|1h|unknown>)` の 1 行を出す（SHALL。`unknown` は exit 1 のとき）。
+
+守備範囲: ①入力は親のワークツリーのトランスクリプト。②拾いたいのは、1 時間で書いている親が 6 時間眠ってキャッシュを切らすことと、5 分で書いている親が 45 分ごとに起きて書き直しを払い続けること。③判定できないときに短い上限になることは通してよい。
+
+#### Scenario: 1 時間で書いている親は短い上限で待つ
+- **WHEN** 親のワークツリーの置き場に、最後にキャッシュを書いた assistant の行が `ephemeral_1h_input_tokens` 正・`ephemeral_5m_input_tokens` 0 のトランスクリプトを置き、子 11 が `closed` を返すスタブ環境で、`--timeout` も `EPIC_DISPATCH_TIMEOUT` も無しに `epic-dispatch.sh wait 11` を実行する
+- **THEN** stderr に `wait limit 3000 (parent cache 1h)` の 1 行が出て、stdout は `closed 11` の 1 行で exit 0
+
+#### Scenario: 5 分だけで書いている親は長い上限で待つ
+- **WHEN** 最後にキャッシュを書いた assistant の行が `ephemeral_5m_input_tokens` 正・`ephemeral_1h_input_tokens` 0 のトランスクリプトを置いて、同じく `epic-dispatch.sh wait 11` を実行する
+- **THEN** stderr に `wait limit 21600 (parent cache 5m)` の 1 行が出る
+
+#### Scenario: 判定できなければ短い上限で待つ
+- **WHEN** 親のワークツリーの置き場が無い環境で `epic-dispatch.sh wait 11` を実行する
+- **THEN** stderr に `wait limit 3000 (parent cache unknown)` の 1 行が出る
+
+### Requirement: 上限を明示した wait は有効期限を読まない
+
+`epic-dispatch.sh wait` は、`--timeout` か空でない `EPIC_DISPATCH_TIMEOUT` があるときはその値（`--timeout` が優先）を上限にし、`cache_ttl_of` を呼んではならず、`wait limit` の行を出してはならない（MUST NOT）。上限の決め方にかかわらず、stdout の 1 行と exit code の契約は変えない（MUST）。
+
+守備範囲: 拾いたいのは、待ちをやめる直前の `--timeout 0` の確認で stderr に行が出て「stderr が空」の条件を壊すこと。
+
+#### Scenario: 上限を明示したら有効期限を読まない
+- **WHEN** 5 分だけで書いたトランスクリプトを置いて、`epic-dispatch.sh wait --interval 0 --timeout 0 11` と、`EPIC_DISPATCH_TIMEOUT=0 epic-dispatch.sh wait --interval 0 11` を、子 11 が `open` を返すスタブ環境で実行する
+- **THEN** どちらも stdout は `timeout 11` の 1 行、stderr は空で exit 2
+
+### Requirement: cache_ttl_of はワークツリーの会話で最後にキャッシュを書いた行を読む
+
+`epic-dispatch.sh` の関数 `cache_ttl_of <ワークツリーの絶対パス>` が使う行は、`type` が `assistant`・`entrypoint` が `cli`・`isSidechain` が true でない・`timestamp` が ISO 8601 として読める文字列（読めない文字列の行は使わない。新しさは時刻として比べ、タイムゾーンの無い値は UTC とみなす）・`message.usage.cache_creation` の `ephemeral_5m_input_tokens` と `ephemeral_1h_input_tokens` の和が正（数でない値は 0）の行のうち、`timestamp` が最も新しい 1 行とする（MUST）。
+
+守備範囲: ①入力は置き場の直下の jsonl（親か、順番 2 では子のもの）。②拾う誤りは、サブエージェント・`isSidechain`・書き込み 0・古い行を最新と読むことと、数でない値や壊れた行で落ちること。③`entrypoint` の扱いと通してよい入力は要件「cache_ttl_of は会話を持つ CLI のセッションの行だけを読む」に書く。④形の変化の検知とすり抜けを塞ぎ切ることは完了条件にしない。
+
+#### Scenario: 書き込みの無い行と古い行とサブエージェントの行では決めない
+- **WHEN** 置き場の 2 つの jsonl に、古い `timestamp` の 5 分だけの行、新しい `timestamp` の 1 時間の行、それより新しい書き込みが 0 の行を置き、`<セッション>/subagents/` の下にさらに新しい 5 分だけの行を置いて `epic-dispatch.sh wait 11` を実行する
+- **THEN** stderr に `wait limit 3000 (parent cache 1h)` が出る
+
+### Requirement: cache_ttl_of は会話を持つ CLI のセッションの行だけを読む
+
+`cache_ttl_of` は、`entrypoint` が `cli` ちょうどの行だけを使わなければならない（MUST）。`entrypoint` が無い行と、`sdk-py`・`sdk-cli` など `cli` 以外の行は使わない（MUST NOT）。
+
+守備範囲: ①入力は、置き場に混ざる対話のセッションの行と、会話を持たないセッション（hook が SDK で起こしたもの・`claude -p`）の行。②拾いたいのは、後者が 5 分で書いた行を最新と読み、1 時間で書く親を 6 時間眠らせること。③通してよいのは、同じワークツリーの別の `cli` のセッションの行が最新になること（同じアカウント・同じ設定なら有効期限も同じ）と、`cli` の行が無く判定できないこと（`entrypoint` の無い古い版を含む）。両方の有効期限が正の行の扱いは要件「cache_ttl_of は有効期限と時刻を 1 行で返し、判定できなければ何も出さない」に書く。④`cli` 以外の値で対話するセッションは完了条件にしない。
+
+#### Scenario: 会話を持たないセッションの行では決めない
+- **WHEN** 置き場の jsonl に `entrypoint` が `cli` で 1 時間だけの行を置き、別の jsonl にそれより新しい 5 分だけの行を、`entrypoint` が `sdk-py`・`sdk-cli`・無しの 3 行置いて `epic-dispatch.sh wait 11` を実行する
+- **THEN** stderr に `wait limit 3000 (parent cache 1h)` が出る
+
+### Requirement: cache_ttl_of は置き場の直下だけを読み、引数が空なら置き場を読まない
+
+`cache_ttl_of` は、`transcript_dir <引数>` の置き場の直下の `*.jsonl` だけを読まなければならない（MUST。`<セッション>/subagents/*.jsonl` は読まない）。引数が空なら置き場を求めずに、stdout に何も出さず exit 1 で終わらなければならない（MUST）。
+
+守備範囲: 入力・誤り・完了条件にしないものは要件「cache_ttl_of はワークツリーの会話で最後にキャッシュを書いた行を読む」のとおり。加えて拾いたいのは、`toplevel` が失敗して空を返したときに `transcript_dir ""` が置き場の親（projects の直下）を指し、どのワークツリーのものでもない jsonl から有効期限を読むこと。
+
+#### Scenario: ワークツリーのパスが取れなければ置き場の親を読まない
+- **WHEN** `git rev-parse --show-toplevel` が空を返すスタブ環境で、`$CLAUDE_PROJECTS_DIR` の直下に 5 分だけで書いた行の jsonl を置き、`epic-dispatch.sh wait 11` を実行する
+- **THEN** stderr に `wait limit 3000 (parent cache unknown)` が出る
+
+### Requirement: cache_ttl_of は有効期限と時刻を 1 行で返し、判定できなければ何も出さない
+
+`cache_ttl_of` は、使う行の `ephemeral_1h_input_tokens` が正なら `1h`、0 なら `5m` とし、stdout に `<1h|5m> <その行の timestamp の epoch 秒>` の 1 行を出して exit 0 で終わらなければならない（MUST。epoch 秒は最後にキャッシュを書いた行の時刻で、最後のリクエストの時刻ではない）。置き場に `*.jsonl` が無い・python3 が無い・使う行が無いときは、stdout に何も出さず exit 1 で終わる（MUST）。gh も LLM も呼ばず、stderr にも出さない（MUST NOT）。
+
+守備範囲（通してよい入力）: どのセッションの行を使うかは要件「cache_ttl_of は会話を持つ CLI のセッションの行だけを読む」のとおり／両方の有効期限が正の行を `1h` と読むこと（事実でなく判定の限り。外れると 1 回分の書き直しを払うが、次の行は `5m` と読めて戻る）／該当する行が無く判定できないこと。
+
+#### Scenario: 両方の有効期限で書いた行は 1 時間とみなす
+- **WHEN** 最後にキャッシュを書いた行の `ephemeral_5m_input_tokens` と `ephemeral_1h_input_tokens` がどちらも正のトランスクリプトで `epic-dispatch.sh wait 11` を実行する
+- **THEN** stderr に `wait limit 3000 (parent cache 1h)` が出る
+
+### Requirement: 親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す
+
+develop の `references/epic.md` の別セッション方式は、手順 3〜8 の起床後の処理や主の返事の処理より前に、要件「親が長く待ったあとは親の表で続けるか起動し直すかを決める」の時間分類を適用しなければならない（MUST）。timeout・通知（closed / done / stopped / unrecorded 等）・主の返事が重なっても、60 分以上と確認できたときの起動し直しを最優先とする。起床の API リクエストによる時刻更新を使って短時間と判定してはならない（MUST NOT）。
+
+手順 5（位置引数の子がある wait の `timeout <N>...`）は、60 分未満か、時刻不明で 60 分以上と確認できず、他の通知や主の返事も無いときに限り、親が子 issue もエピックも読まず、主に報告もせず、直前と同じ引数の `wait` を `run_in_background: true` で再び 1 回起動してターンを終えることと、`--timeout` を足さないことを書かなければならない（MUST）。主への発言は書かないか、書くなら書き分けに従う `主がすること: なし` の 1 行だけとする（SHALL）。主への問いが未回答のあいだはその 1 行も書かず、問いを繰り返さない（SHALL）。60 分未満の通知や主の返事は既存の対応手順で処理し、timeout の掛け直しで捨てない（MUST）。親がターンを終えるときの発言の一覧は、短時間の純粋な timeout の報告を除外し、長時間後の再開案内は除外しない（MUST）。
+
+60 分以上の場合、旧親は子を調べ直したり返事を送ったり wait を掛け直したりせず、既に持つ回し方・worktree・直前の wait の引数・起床理由・未処理の出力行と stderr / exit code・未処理の主の返事と元セッション ID / 発言 uuid / 時刻・次の再開手順をエピックに追記する（MUST）。同じ worktree の新セッションで `/develop <エピック番号>` として再開するよう主に案内して旧セッションを終える（MUST）。追記に失敗したら再開可能とは報告せず、エラーと未保存内容を主に示して止める（MUST）。
+
+新親は develop の入口と手順書を読み、エピックと子の状態から手順 7 の adopt・reap・pending-owner と停止記録 URL の照合で復元する（MUST）。未処理の主の返事は保存した元セッション ID・uuid と最新の停止記録 URL で元発言の真正性と対象を確かめ、添え書きにも元の値を使って先に扱い、次に未処理通知を現在の状態と照合して既存手順へ渡し、最後に純粋な timeout の待ちを現在の対象で組み直す（MUST）。引き継ぎコメントの写しだけを主の許容と認定してはならない（MUST NOT）。`stopped-seen` の停止を pending-owner で拾い、同じ停止記録 URL の送信済み判断や記録済みの完了を二重処理しない（MUST）。起動し直しだけを理由に動いている子の監視を終えてはならない（MUST NOT）。片付け待ちだけの wait（位置引数の子なし）の `timeout` は短い掛け直しの対象にせず、長時間なら先に起動し直しても **待ちをやめてよい条件 (d)** と既存の終了直前の確認を保持し、復元だけで新たな 6 時間待ちへ入り直さない（MUST）。
+
+守備範囲: 子が印を付けずに `needs-approval` だけで止まったとき、ほかの子が動くか待ちをやめる直前まで親が気づかないことは通してよい。時間分類の入力と時刻が読めない場合の限りは親の表の要件と同じである。
+
+#### Scenario: 手順 5 は同じ wait を掛け直すだけにする
+- **WHEN** 位置引数の子がある wait が、待機前の最後のリクエストから 60 分未満で timeout になり、他の通知や主の返事が無い
+- **THEN** 子 issue もエピックも読まず主に報告もせず、同じ引数の wait を背景に 1 回だけ掛け直してターンを終え、`--timeout` を足さない
+- **AND** 手順 5 は **待ちをやめてよい条件** を指し、`needs-approval` の確認を追加しない。未回答の問いを繰り返さない
+
+#### Scenario: 5 分キャッシュの長い timeout は起動し直しを優先する
+- **WHEN** 5m の既定上限 21600 秒で待ち、最後のリクエストから 60 分以上経過して位置引数の子がある wait の timeout を受ける
+- **THEN** 旧親は wait を掛け直さず、未処理の timeout と引数をエピックへ残して新セッションへ渡す
+- **AND** 新親が手順 7 で状態を復元して待ちを組み直し、監視を終了しない
+
+#### Scenario: スリープを挟んだ timeout も起動し直しを優先する
+- **WHEN** 1h の上限 3000 秒で待った親が PC のスリープ後に timeout で起き、待機前の最後のリクエストから 60 分以上経過している
+- **THEN** 今回の起床リクエストを最後の時刻と読まず、旧親で短い wait を掛け直さず新セッションへ引き継ぐ
+
+#### Scenario: 長時間後の停止通知は受けた印を失わずに復元する
+- **WHEN** 60 分以上経過した親へ stopped の通知が届き、wait が停止の印を stopped-seen にしている
+- **THEN** 旧親は子へ返事を送らず通知を記録して起動し直し、新親は pending-owner と最新の停止記録 URL を照合して対応する
+- **AND** 同じ停止記録へ既に送信済みの判断は再送しない。closed / done / unrecorded の通知も復元後に現在の状態と照合して対応する
+
+#### Scenario: 長時間後の主の返事は新親で元発言を確かめる
+- **WHEN** 60 分以上経過した親に主の返事と timeout または通知が同時に届く
+- **THEN** 時間分類を先に適用して全てを記録し、新親が元発言の真正性と対象を確かめて返事を先に扱い、次に通知、最後に純粋な timeout の待ちを処理する
+- **AND** 引き継ぎコメントだけを主の許容と認めず、旧親へ返事を打ち直してもらうことを再開の条件にしない
+- **AND** 新親と元セッションの ID が異なる場合も、保存した元セッション ID・uuid で元ログの全文・時刻と最新の停止記録 URL を照合し、添え書きにも元の値を使って送信する。現在の ID で再検索せず、照合できた返事には再回答を要求しない
+
+#### Scenario: 短時間の通知や返事を timeout 扱いで捨てない
+- **WHEN** 最後のリクエストから 60 分未満で通知または主の返事があり、timeout の通知も届いている
+- **THEN** 既存の対応手順で通知・返事を処理し、同じ wait の掛け直しだけで終わらせない
+
+#### Scenario: 片付け待ちだけの timeout は復元後も終了条件を保持する
+- **WHEN** 位置引数の子が無く、片付け待ちだけの --timeout 21600 が timeout で終わり、親の最後のリクエストから 60 分以上たっている
+- **THEN** 旧親は起動し直しを先に行い、新親は元の timeout が条件 (d) に当たることを保持して既存の終了直前の確認を行い、終了可否を決める
+- **AND** 手順 5 の短い掛け直しにも新たな 6 時間待ちにも無条件には入らない
+
+### Requirement: 手順 5 で気づけない子のことは最初に待ちに入る通知で一度だけ主に伝える
+
+`references/epic.md` の手順 5 は、子が記録（`子の停止: 主の返事待ち`）を残さずに自分のタブで質問して止まるとこの手順では検知できないことを注記として書かなければならない（SHALL）。手順 2 は、手順 1 の `launch` のあと、このセッションで最初に待ちに入る通知で一度だけ、子のタブも見るよう主に伝えると書く（SHALL）。手順 5 の掛け直しのたびには伝えない（SHALL）。
+
+守備範囲: 拾いたいのは、手順 5 が主に何も書かなくなったことで、この注意が主に一度も届かなくなること。
+
+#### Scenario: 手順 5 に検知できないことが書かれている
+- **WHEN** `references/epic.md` の手順 5 を読む
+- **THEN** 記録を残さずに子のタブで質問して止まった子は検知できないことが書かれている
+
+#### Scenario: 検知できない子のことは最初に待ちに入る通知で一度伝える
+- **WHEN** `references/epic.md` の手順 2 を読む
+- **THEN** `launch` のあと最初に待ちに入る通知で、記録を残さずに止まった子には気づけないので子のタブも見るよう主に一度伝えることが書かれている
+
+### Requirement: timeout から外した確認は closed のときと待ちをやめる前に残し、片付け待ちだけの待ちは長い上限を明示する
+
+`references/epic.md` は、`後で別に起動するエピック: #N` の行で子を外す確認を `closed` で起こされたときだけに書き、`needs-approval` の確認を待ちをやめる直前の確認に残さなければならない（MUST）。位置引数の子が無い `wait`（手順 4 と、手順 3・7 から手順 2 に戻って動いている子が 0 件で片付け待ちの子だけを渡すとき）には `--timeout 21600` を付けると書く（MUST）。手順 6 の、何もしない子を待つ説明は、最長の時間ではなく親が気づかずに待ち続けることとして書く（SHALL）。
+
+守備範囲: 拾いたいのは、片付け待ちだけの待ちが 45 分でやめてしまうこと。
+
+#### Scenario: 子エピックの行で外す確認は closed のときだけ
+- **WHEN** `references/epic.md` の、`後で別に起動するエピック: #N` の行で子を外す確認の段落を読む
+- **THEN** その確認を `closed` で起こされたときに行うと書かれ、`timeout` で起こされたときに行うとは書かれていない
+
+#### Scenario: 片付け待ちだけの待ちは長い上限を明示する
+- **WHEN** `references/epic.md` の手順 4 の、`kept <N> not-done` の子だけを `--watch-done` に渡して待つ文を読む
+- **THEN** その `wait` に `--timeout 21600` を付けることが書かれている
+
+#### Scenario: 手順 2 に戻る片付け待ちだけの待ちも長い上限を明示する
+- **WHEN** `references/epic.md` の手順 2 の、動いている子が 0 件で片付け待ちの子だけを渡すときの文と、待ちをやめてよい条件 (d) を読む
+- **THEN** その `wait` に `--timeout 21600` を付けることが書かれ、(d) は手順 2・4 の片付け待ちの子だけを待つ `wait` の `timeout` を指している
+
+### Requirement: 規則のファイルに親の待ちの費用と使用量の超過中の扱いを書く
+
+`references/reply-after-idle.md` は、時間分類の表とは別の節に、wait が TTL によって 1h / unknown は上限 3000 秒、5m は 21600 秒を選ぶことと費用の理由を書かなければならない（MUST）。3000 秒は通常のポーリング間隔で約 45 分に起き、1 時間のキャッシュが切れる前に短く掛け直して読み出しで延ばすためと説明する。全 develop で idle compaction を無効にするため、約 54 分の idle compact 回避を現行の理由としてはならない（MUST NOT）。5m では短く起きてもキャッシュが残らず、起床回数を減らすため 21600 秒にする説明を残す（MUST）。
+
+短い timeout の掛け直しは 60 分未満に限り、5m の長い timeout やスリープで 60 分以上たった場合は時間分類が優先し、記録から新セッションで再開すると書く（MUST）。使用量の超過中は有効期限が 5 分に縮むので 21600 秒に戻すこと（根拠 https://code.claude.com/docs/en/prompt-caching を添える）、`CLAUDE_CODE_PROMPT_CACHE_TTL` / `promptCacheTtl` で固定した人の扱い、PC が寝ている間はキャッシュを延ばせないこと、片付け待ちだけの明示上限も残す（MUST）。従来の「節を足すだけで表と文を変えない」という制約は、この change の共通 idle 無効化と親の表の改定には適用しない。
+
+守備範囲: 入力は親の会話の TTL と最後のリクエストからの経過時間である。拾う誤りは、idle compact 回避を無効化後も費用の根拠にすることと、TTL による上限選択を捨てること。TTL の判定方法・値・wait の stdout / exit code は変更しない。
+
+#### Scenario: 規則のファイルに親の待ちの費用と超過中の扱いがある
+
+- **WHEN** 規則のファイルの親の待ちの費用の節を読む
+- **THEN** 3000 / 21600 秒の TTL 選択、1 時間のキャッシュ維持と 5 分の起床回数削減、使用量超過時の 5 分への短縮と根拠 URL、TTL 固定、スリープの限りが分かる
+- **AND** 約 54 分の idle compact の前に起きることを現行の理由にせず、共通 idle 無効化と親の 60 分の表に整合する
+
+#### Scenario: 待ちの費用の節も長時間後の再開を優先する
+- **WHEN** 5m の 21600 秒の timeout またはスリープ後の 60 分以上の経過を、費用の節からたどる
+- **THEN** 旧親で無条件に掛け直す案内は無く、時間分類を先に適用して記録から起動し直すと分かる
+
+### Requirement: develop の開始はセッションの役割によらず idle compaction を切る
+Claude Code で develop を開始する本体は、役割別工程や返事待ちより前に、現在の worktree の `.claude/settings.local.json` の idleCompaction を boolean false にしなければならない（MUST）。親・子・単発、interactive・unmanned によってこの方針を分岐しない。ホームの settings.json・共有設定・通常の自動 compact を止める設定は変えてはならない（MUST NOT）。子の既存の起動オプションは維持する。委譲先 Codex worker に Claude の実設定を変更させない。
+
+#### Scenario: 親と子と単発で同じ入口を使う
+- **WHEN** 親エピック、別セッションの子、単発 interactive のそれぞれで develop を開始する
+- **THEN** SKILL.md の同じ入口で local 設定を確認・適用し、親か子かの判定で適用を省略しない
+- **AND** 新セッションでの引き継ぎや compact 後の再読でも同じ確認を行い、既に false なら何も書かない
+
+#### Scenario: 通常の自動 compact の指定を維持する
+- **WHEN** 開始時の設定・子の起動コマンドの差分を調べる
+- **THEN** DISABLE_AUTO_COMPACT など通常の自動 compact を止める指定を追加せず、既存の compact 後の手順書再読み込み hook を残す
+
+### Requirement: idle compaction の設定操作は既存設定と承認規則を保つ
+設定部品は check と apply を分け、idleCompaction 以外の値を保持し、false 済みは無変更としなければならない（MUST）。PR 本文とリスク宣言に継続適用の範囲を明記し、主のマージ承認（リスク宣言の許容）をその範囲への一度の承認として記録する（MUST）。承認後の develop 開始では worktree ごとに操作承認を確認・質問してはならない（MUST NOT）。承認前の実設定変更や権限・hooks による迂回はせず、他キー・別ファイル・symlink 先は従来の聖域承認を要する（MUST）。他セッションへの持続・自動復元しないこと・戻し方も案内する。
+
+#### Scenario: 他キーを保持し false 済みを変更しない
+- **WHEN** permissions、hooks、任意の未知キーを持つ正常な設定に apply する
+- **THEN** idleCompaction だけが false となり、他キーの値が保存される
+- **AND** 再適用では内容と mtime が変わらず、ホームや共有設定に書き込みが無い
+
+#### Scenario: 一度承認した仕組みを新しい worktree でも質問せず適用する
+- **WHEN** 主が上記の継続適用の範囲を記した PR のマージを承認し、リスク宣言を許容した仕組みで、新しい worktree の develop を開始する
+- **THEN** check が exit 2 なら本体は当該キーだけの apply を行い、対象 worktree ごとの承認確認や追加質問を行わない
+- **AND** PR 本文とリスク宣言の両方に「develop 開始時、現在の worktree の `.claude/settings.local.json` の idleCompaction だけを false にする。他の設定値は保持し、ホーム・共有設定には書かない」と記し、新しい worktree・新セッション・interactive / unmanned にも継続適用する範囲を含める
+- **AND** R1 の APPROVE やエージェントの投稿だけを主の承認と読み替えない
+
+#### Scenario: 新規ファイルも一度の承認の範囲で作る
+- **WHEN** 継続適用を承認された仕組みで develop を開始し、local 設定が無い
+- **THEN** apply は idleCompaction false だけの JSON object を作り、共有設定やユーザー設定を複製しない
+
+#### Scenario: 継続適用の範囲外には従来の承認を残す
+- **WHEN** 他キー・別ファイル・symlink 先への書き込みが必要になる
+- **THEN** この PR の承認を流用せず従来の聖域承認を求め、専用部品は symlink を追って書かない
+
+#### Scenario: 仕組み自体の承認前は実設定を変えない
+- **WHEN** PR は仕様・レビュー中で、主のマージ承認とリスク宣言の許容がまだ無い
+- **THEN** 実 worktree の設定へ apply せず、仕様の作成や隔離した fixture の検証を承認済みと取り違えない
+
+### Requirement: idle compaction の設定を確かめられなければ成功にしない
+設定部品は、読めない・壊れた・object でない・重複キーのある JSON、不正な worktree、対象への symlink を検出したら書かず exit 1 にしなければならない（MUST）。check は disk 上で false なら exit 0、false への変更が必要なら exit 2 とする（MUST）。本体は disk 上の成功だけで live 反映を断定せず、反映しなければ記録から新セッションで再確認し、それでも off でなければ開始を止める（MUST）。
+
+#### Scenario: 機械確認の根拠と確認失敗時の扱い
+- **WHEN** check / apply 後に開始可否を判断する
+- **THEN** 起動引数の `--settings '{"idleCompaction":false}'` と矛盾する上書きが無いこと、起動前から disk が false の新セッションで矛盾する起動引数が無いこと、または実効値 off を機械確認できれば、interactive / unmanned とも主に聞かず進む。新規 worktree の子は check exit 2 と承認済み apply の後も起動引数の経路を使え、既存 local false は書き込まない。disk false だけや起動後の apply だけで live 反映を断定しない。主の `/config` 確認は初回の実機検証または機械確認で off を確かめられない場合に限る。後者は状態を記録して同じ worktree の新セッションで再起動し、入口から再確認する。なお不明なら interactive は主に確認を求め、unmanned は停止して理由を記録する。on の場合も未反映として再起動し、それでも off を確認できなければ開始を止める。機械で確認した範囲を超えて live で off と報告しない。
+
+#### Scenario: 既に off の起動は主の毎回確認を求めない
+- **WHEN** 新規 worktree の子が CLI false で起動した、既存 local false を起動前から読み矛盾する指定が無い、または実効値 off を機械確認できた
+- **THEN** 必要な承認済み apply の後、interactive / unmanned とも追加の主の確認を求めず進み、確認した根拠だけを記録して live 反映は断定しない
+
+#### Scenario: 不正な入力を上書きしない
+- **WHEN** 壊れた JSON、配列、重複キー、読めないファイル、worktree でないパス、.claude または settings.local.json の symlink を渡す
+- **THEN** exit 1 で対象パスと原因を出し、設定全体を出さず、ファイルとリンク先を変更しない
+
+#### Scenario: ファイルが false でも反映していない
+- **WHEN** disk 上は false だが、実機の /config では Idle compaction が on のままである
+- **THEN** live 反映済みとは報告せず、issue の記録から同じ worktree の新セッションで再確認する。再起動でも off を確認できなければ開始を止めて報告する
+
+この検査の入力元は利用者の worktree の通常の設定ファイルとパスである。拾う誤りは設定破損・他キー消失・別パスへの書き込み・未反映を成功と呼ぶこと。未知の正常な設定キーや同じ worktree の別セッションへの設定の持続は通してよい。同時書き換えの完全な排他、悪意あるファイル差し替え、将来の Claude 設定形式のすべてを防ぐ検査ではない。穴を塞ぎ切ることを完了条件にしない。
+
+### Requirement: idle compaction 無効化の実機結果はマージ後に記録する
+実装担当は #1385 に実機チェックリストを残し、主はマージ・plugin 更新後の最初の親・子で設定が off になる手順と結果を記録しなければならない（MUST）。idle の対象となる会話量、スリープなし、リクエストなしで 60 分以上の待機区間を親・子それぞれ観測し、新しい compact_boundary が無いことを記録する（MUST）。通常の上限近くでの自動 compact の発生は別区間で確認する。完了前は未検証とし、Bats の合格を代用にしない。
+
+#### Scenario: 有効な待機観測を記録する
+- **WHEN** 主が更新済み plugin の親・子を各 60 分以上待機させる
+- **THEN** 版、commit、off の確認方法・結果、会話量と適用中の idle 閾値、最後のリクエスト時刻、観測開始位置、経過秒、スリープ・追加リクエスト無し、新規 compact_boundary が 0 件である結果を #1385 にコメントする
+- **AND** 単発の設定確認結果、親の live 反映または再起動の要否も記録する
+
+#### Scenario: 観測条件不足は未検証とする
+- **WHEN** 待機中に PC が寝た、会話量が idle の対象に達していない、API リクエストや別種の compact が発生した、または off を確かめていない
+- **THEN** 印が無くても合格にせず未検証としてやり直す。ログの文章中に含む compact_boundary という単語をイベントとして数えない
+
+#### Scenario: 通常の自動 compact を別に確認する
+- **WHEN** 主が別区間で会話の上限近くに達した通常利用を観測する
+- **THEN** 自動 compact が発生し、既存 hook が develop の手順書再読み込みを案内する結果を記録する
+
+### Requirement: 子への声かけ文と返事の形は一か所の定義を共有する
+
+キャッシュ維持の声かけは、固定文・返事専用の接頭辞・順序付き欄名と区切りを一つの機械可読定義で持ち、送信・子の受信手順・発言の除外が共有しなければならない（MUST）。初期の欄名は #1374 の案の `待ち:`・`次:` とし、欄の意味の確定や調査による失敗検出を追加してはならない（MUST NOT）。返事は専用の接頭辞と各欄の短い値を持つ一行で、値に改行・区切り文字を含めない（SHALL）。
+
+#### 判定要件に共通の守備範囲
+
+この節は、送信対象・期限・TTL・端末状態・受信文・wait の起床・child-log の主/子の発言除外を判定する各要件に適用する。入力元は、同じプラグインの dispatch の引数、既存 epic-state の子の記録、GitHub の停止コメントと返事、子のトップレベル CLI 会話ログ（user/assistant/usage/timestamp）、共通定義、Orca/tmux の一覧・画面の CLI 出力である。拾いたい誤りは、別の親・完了・片付け済み・回答済みの子への送信、期限切れや不正時刻・TTL 不明を送信可とすること、曖昧な端末や実行中・入力済み・選択画面への送信、通常の主の回答や新しい質問の隠蔽、声かけだけで停止解除・親の起床・期限延長が起きることである。
+
+通してよい入力の例は、dispatch が検査済みの worktree/待ち時間、tool_result/meta が間にある正常な往復、型の各欄の任意の短い値（意味や真偽を検証しない）、予約文と完全一致する主の入力である。最後の例は送信元を識別せず声かけとして扱い、対応する型どおりの返事も除外する限界を受け入れる。識別用の仕組みは作らない。複数行・型違いの返事は通して表示し、受け入れ条件 3 の質問保持は正常な一行の往復に限る。この逸脱だけでは stop=stopped-seen を変えず、親を起こさず、停止期間の基点を延ばさない。確認できない状態は送信しないが、CLI 観測と送信の間の主の入力競合、予約文の衝突、画面・JSON・ログのあらゆる崩れ方まで穴を塞ぎ切ることは完了条件にしない。
+
+#### Scenario: 欄を追加しても照合が同じ定義に従う
+- **WHEN** 共通定義の順序付き欄名を追加・変更して声かけを生成する
+- **THEN** 生成した固定文に返事の型が含まれ、その型に従った返事を発言の除外が認識する。別のファイルに同じ固定文や欄名の一覧を持たない
+
+### Requirement: wait は主の返事待ちの子にだけキャッシュ維持の声かけを送る
+
+判定の守備範囲は要件「子への声かけ文と返事の形は一か所の定義を共有する」の「判定要件に共通の守備範囲」に従う。
+
+wait は `--watch-stopped`・位置引数の子・正の interval/timeout を持って通常の待ちを続けるときだけ、既存の親の記録が一意で、worktree が存在し、status が done でなく、stop が stopped-seen の子を声かけ候補としなければならない（MUST）。認められた投稿者の最新の主の返事待ちの停止記録があり、まだ実質的な返事が無いことを確認する（SHALL）。確認できない・起動に失敗した子には送らない（MUST NOT）。
+
+#### Scenario: 返事待ちの子だけに送る
+- **WHEN** 同じ親の子に、未回答の主の返事待ち・done・reap 済み・resumed・停止記録無し・別の親の子があり、いずれも時刻等の条件は満たす
+- **THEN** 未回答で stop=stopped-seen の子だけに固定文が送られ、他の子の端末は操作されない
+
+#### Scenario: 実際の返事を受けた子には送らない
+- **WHEN** stop=stopped-seen のままでも、停止の質問のあとに主の直接の返事・親が中継した主の返事・親の判断のいずれかが届いている
+- **THEN** 声かけを送らず、実際の返事の処理を妨げない
+
+#### Scenario: 一回確認と片付け待ちでは送らない
+- **WHEN** `wait --interval 0 --timeout 0 --watch-stopped 11`、または位置引数を持たない片付け待ちを実行する
+- **THEN** 声かけのための停止記録の読み出し・端末への送信を行わず、従来の stdout/stderr/終了コードの契約を保つ
+
+### Requirement: 子の声かけには最後のリクエストと停止期間の期限を適用する
+
+判定の守備範囲は要件「子への声かけ文と返事の形は一か所の定義を共有する」の「判定要件に共通の守備範囲」に従う。
+
+声かけは、子の最後の成功した CLI リクエストからの経過が 3000 秒以上かつ 3600 秒未満で、同じ停止の記録の作成から 86400 秒未満のときだけ送らなければならない（MUST）。声かけや wait 掛け直しで停止の基点を延ばしてはならない（MUST NOT）。起動し直しの会話量条件に該当する子、時刻・会話量・現行セッションを判定できない子、前の声かけの返事が未着の子には送らない（MUST NOT）。
+
+#### Scenario: 最後のキャッシュ読み出しをリクエストとして扱う
+- **WHEN** 1h のキャッシュ書き込みは 2 時間前だが、現在の一意の CLI セッションの最後の有効な assistant usage は cache-read のみで 3000 秒前であり、他の条件も満たす
+- **THEN** 固定文を送る。書き込みの時刻をリクエストの時刻として使わない
+
+#### Scenario: 境界とスリープ復帰
+- **WHEN** 他の条件を満たす子について最後のリクエストから 2999 秒・3000 秒・3599 秒・3600 秒、またはスリープ等で 1 時間を超える経過をそれぞれ用意する
+- **THEN** 3000 秒・3599 秒の場合だけ送る。3600 秒以上では起動も声かけもせず、実際の返事時に #1323 の規則へ渡す
+
+#### Scenario: 同じ停止の 24 時間を超えない
+- **WHEN** 最新の停止記録が 86400 秒以上前で、直前の声かけの返事と wait の掛け直しは 3000 秒前である
+- **THEN** 固定文を送らず、停止の印を保つ。停止から 86399 秒で他の条件を満たす場合は送る
+
+#### Scenario: 多重送信と起動し直しを避ける
+- **WHEN** 前の固定文にまだ返事が無い、または会話量が既存の起動し直し閾値以上である
+- **THEN** 固定文を送らず、そのために新しいセッションを起動しない
+
+### Requirement: 子のキャッシュ TTL が五分か不明なら声かけを送らない
+
+判定の守備範囲は要件「子への声かけ文と返事の形は一か所の定義を共有する」の「判定要件に共通の守備範囲」に従う。
+
+子への声かけは、既存の `cache_ttl_of` が子の最後のキャッシュ書き込みを 1h と判定した場合だけ送らなければならない（MUST）。5m または不明なら送らない（MUST NOT）。規則には、overage 等で 5m に縮むと 50 分の声かけは効かず、書き込みを観測するまでは切替を検知できないことを明記する（SHALL）。五分ごとの声かけを追加しない（MUST NOT）。
+
+#### Scenario: 子の TTL を親から独立して判断する
+- **WHEN** 親の TTL は 5m で子は 1h、または親は 1h で子は 5m/unknown である
+- **THEN** 親の既存の wait 上限は維持され、子が 1h で他の条件を満たす場合だけ声かけが送られる
+
+#### Scenario: timestamp は時刻として比較する
+- **WHEN** 20 分前の Z 付き cli/1h、3 分前を -05:00 で表した cli/5m、timestamp が `not a time` の cli/1h の行を親のトランスクリプトに置き、子 11 が closed の環境で上限未指定の `dispatch wait 11` を実行する
+- **THEN** stderr に `wait limit 21600 (parent cache 5m)` が出る。時差なしを UTC として同じ時刻関係にした場合も、新しい行を時刻として選び、不正な行を飛ばす
+
+### Requirement: 声かけは入力待ちの既存セッションにだけ届く
+
+判定の守備範囲は要件「子への声かけ文と返事の形は一か所の定義を共有する」の「判定要件に共通の守備範囲」に従う。
+
+Orca/tmux の起動部品は、キャッシュ維持の声かけを、既存の子のセッションが一意に決まり、前景が空いた入力待ちで入力欄が空のときだけ送らなければならない（MUST）。端末無し・曖昧・実行中・選択画面・入力済みは送らない（MUST NOT）。声かけのために端末の起動・再起動・終了・入力の消去をしてはならない（MUST NOT）。送信確認は返事の内容や費用削減の検証と区別する（SHALL）。
+
+画面・空欄の判定と起動時の `--prompt-suggestions false` は、同じ change の `dev-workflow-epic-state` の起動部品の契約に従う（MUST）。
+
+#### Scenario: 入力待ちに送って開始を確かめる
+- **WHEN** 既存セッションが一意で、入力待ちかつ入力欄が空である
+- **THEN** 固定文を送ってターンの開始を確かめる。起動・close は行わない
+
+#### Scenario: 対象の端末を送信できない
+- **WHEN** 端末が無い・複数の候補・空の `❯` とスピナーが同居・主の文字または Orca の提案文が draft に入っている・質問ツールや許可やフォルダ信頼の確認画面、の各状態で声かけを試みる
+- **THEN** 送信を見送り、端末や入力内容を変えない。通常の主の返事を待てる状態を保つ
+
+#### Scenario: バックグラウンドのシェルだけなら声かけできる
+- **WHEN** 既存セッションが一意で、前景の入力待ちと空欄を確認でき、実行中・選択画面は無く、`· 1 shell still running` が表示され、他の送信条件も満たす
+- **THEN** バックグラウンドの表示を busy とみなさず声かけを送る
+
+### Requirement: 子は声かけにだけ返し停止の状態を保つ
+
+判定の守備範囲は要件「子への声かけ文と返事の形は一か所の定義を共有する」の「判定要件に共通の守備範囲」に従う。
+
+子は、停止前に共通定義を読み、固定文の受信を通常の主の返事や親の判断より先に分類し、定義どおりの一行だけ返さなければならない（MUST）。声かけの受信ターンではツール・調査・作業・mark resumed/stopped・停止コメントの投稿を行ってはならない（MUST NOT）。固定文と完全一致しない実際の返事が届いた場合は従来の再開手順に従う（SHALL）。固定文は主が入力した場合も予約文として扱い、送信元の識別を追加しない（SHALL）。
+
+#### Scenario: 主の返事待ちを継続する
+- **WHEN** 質問して止まり、親が停止を受けて stop=stopped-seen になった子に固定文が届く
+- **THEN** 子は指定の一行だけ返し、status/stop・最新の停止記録の URL と本文は変わらず、元の質問が未回答のまま残る
+
+#### Scenario: 通常の返事は再開する
+- **WHEN** 声かけ後に、固定文に完全一致しない主の直接の返事または正規の親からの返事が届く
+- **THEN** 子は声かけの返事として扱わず、既存の mark resumed と続きの作業に進む
+
+### Requirement: 声かけは wait を終了させず親の起床を増やさない
+
+判定の守備範囲は要件「子への声かけ文と返事の形は一か所の定義を共有する」の「判定要件に共通の守備範囲」に従う。
+
+wait は声かけの送信・返事だけを理由に stdout の行を追加したり終了したりしてはならない（MUST NOT）。送信の失敗は stderr の診断にとどめ、通常のポーリングを続ける（SHALL）。本当の closed/done/stopped と既存のエラー・timeout は従来どおり扱う（SHALL）。規則に、打ち手が wait であり、親の追加 LLM ターンが不要なことと既存の timeout の掛け直しの費用を記す（SHALL）。
+
+#### Scenario: 声かけの後も timeout まで待つ
+- **WHEN** issue は open、status は done でなく、stop=stopped-seen の子が声かけに返し、そのあと状態に変化が無い
+- **THEN** wait は声かけの時点では終了せず、既定のポーリングを続け、上限で従来の `timeout <子>` と exit 2 を返す。主の質問とその timestamp は child-log に残る
+
+#### Scenario: 型違いの返事だけでは停止を変えず親を起こさない
+- **WHEN** stop=stopped-seen の子が固定文に複数行または型違いの返事をし、他の状態は変わらない
+- **THEN** child-log はその返事を表示して最後の子の発言とし、元の質問の保持は保証しない。status/stop・停止コメントは変えず、停止の基点も延ばさず、wait は声かけに由来する stdout や終了理由を追加せず通常のポーリングを続ける。別途 stopped/done/closed が発生した場合は従来どおり扱う
+
+#### Scenario: 失敗と実際のイベントを区別する
+- **WHEN** 声かけの送信に失敗し、後のポーリングで子が新しい mark stopped または done を付ける
+- **THEN** 送信失敗だけでは親を起こさず、実際の stopped/done は既存の出力・終了コードで親に届く
+
+### Requirement: 親と子のキャッシュ維持費用を実エピックで比較する
+
+#1383 の完了前に、実装後の実エピック一本と実装前の比較区間を既存 cost-ledger で比べ、親と子を分けて issue に記録しなければならない（MUST）。書き直しの tokens/USD、cache-read、声かけと親の起床を含む費用、件数・会話量・モデル・TTL・比較期間を記す（SHALL）。実測無しや比較不能を費用削減の成功と扱ってはならない（MUST NOT）。
+
+#### Scenario: 親子の費用を分けて記録する
+- **WHEN** 実装後の実エピックで一時間以上の主の返事待ちを含むログが得られる
+- **THEN** 子の再開区間と親の長い待ち後の起床区間について、声かけ・定期起床を含む区間全体を実装前と比較する。声かけでリクエストの空白が短くなっていても待ち区間に含め、元データの識別子と差異を #1383 に記録する
+
+#### Scenario: 実測が足りない
+- **WHEN** 実装後の実エピックが未実行、該当区間がゼロ、または比較できるログが得られない
+- **THEN** 理由と不足するデータを記録し、費用比較のタスクは未完了とする

@@ -120,8 +120,8 @@ mode_sec() { section "$SKILL" '実行モード'; }
     grep -qF "$token" "$REF" || { echo "spec-reviewer.md lacks: $token"; return 1; }
     echo "$step2" | grep -qF "$token" || { echo "SKILL.md (2) lacks: $token"; return 1; }
   done
-  # 判定と書式の正本は SKILL.md の節で、spec-reviewer.md は書式を再掲しない
-  grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$REF"
+  # 判定と書式の正本は develop の references/fix-check.md の節（#1222 で SKILL.md から移した）で、spec-reviewer.md は書式を再掲しない
+  grep -F 'レビューの周を主に聞かずに続ける（直し方の判定）' "$REF" | grep -qF 'references/fix-check.md'
   run grep -qF '^直し方の判定:' "$REF"
   [ "$status" -ne 0 ]
   run grep -qF '^主に聞かずに回した周:' "$REF"
@@ -163,8 +163,7 @@ mode_sec() { section "$SKILL" '実行モード'; }
 
 # --- 配布 ---
 
-@test "manifest: description mentions the spec review step and develop" {
-  jq -r '.description' "$MANIFEST" | grep -q '仕様レビュー'
+@test "manifest: description mentions develop and not the retired issue wording" {
   jq -r '.description' "$MANIFEST" | grep -q 'develop'
   ! jq -r '.description' "$MANIFEST" | grep -q 'github-''issue' || return 1
 }
