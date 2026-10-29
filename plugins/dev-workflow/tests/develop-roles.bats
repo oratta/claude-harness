@@ -297,9 +297,12 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 @test "gate-runner (#576): skips the pr-review-gate index and never instructs G to read SKILL.md" {
   grep -qF '索引 `skills/pr-review-gate/SKILL.md` は読まない' "$GATE"
-  # パスと Markdown の閉じバッククォートを許容し、「読まない」や索引の所在説明は拾わない。
-  if gate_all | grep -qE 'SKILL\.md`?[[:space:]]*を[[:space:]]*(Read|読む)'; then
-    echo "G の指示書に SKILL.md を読む肯定の指示がある" >&2
+  # パスと Markdown の閉じバッククォートを許容し、「読んでから」「も読む」「開く」も拾う。
+  # 「読まない」「読まず」を含む行（否定の明示）と索引の所在説明は拾わない。
+  local hits
+  hits=$(gate_all | grep -E 'SKILL\.md`?[[:space:]]*(を|も)[[:space:]]*(Read|読|開)' | grep -vE '読ま(ない|ず)' || true)
+  if [ -n "$hits" ]; then
+    echo "G の指示書に SKILL.md を読む肯定の指示がある: $hits" >&2
     return 1
   fi
 }
