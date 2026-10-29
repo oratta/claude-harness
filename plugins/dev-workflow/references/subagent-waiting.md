@@ -116,6 +116,10 @@ timeout: 540000
 | `.waitTimedOut` | `true` = まだ動いている（もう一度待つ）。`false` = 決着した |
 | `.job.status` | `completed` / `failed` などの結末。`running` / `queued` のままなら未決着 |
 
+**起動結果の `.jobId` にある完全な job id を、待ちの `status <job-id> --wait --json` と結果取得の `result <job-id>` の両方へ渡し、切り詰めない。job id を省略した `result` は使わない。** 完了判定は上表の `.job.status` と `.waitTimedOut` で行う。`status --wait` は同じ ID で再取得し、ジョブの検索は完全一致を優先し、完全一致が無い場合の前方一致は 1 件だけを採用する（複数一致・未一致は例外）。起動時の完全な ID を使うこの経路では別ジョブの結果を自分のものとして読む誤成立は起きないため、ジョブ同一性を検査する追加の nonce は不要である。一方、切り詰めた ID の前方一致では別ジョブを選びうるし、ID を省略した `result` は現セッションの最新の終了ジョブを返すため、これらの経路へ置き換えてはならない。
+
+根拠（外部コード。codex プラグイン **1.0.6** をルートとする相対パス。版が変わると行番号は動く）: `handleStatus` は `scripts/codex-companion.mjs:883-904`（ID なしの `--wait` は拒否）、`waitForSingleJobSnapshot` は同 `scripts/codex-companion.mjs:318-334`（同じ reference で再取得し、状態から `waitTimedOut` を返す）。`buildSingleJobSnapshot` は `scripts/lib/job-control.mjs:242-253`、`matchJobReference` は `scripts/lib/job-control.mjs:191-211`（完全一致優先・前方一致・例外）。結果取得の `handleResult` は `scripts/codex-companion.mjs:910-925`、`resolveResultJob` は `scripts/lib/job-control.mjs:256-278`（ID 省略時は現セッションの最新の終了ジョブ）。`generateJobId` は `scripts/lib/state.mjs:124-127`（prefix・時刻・乱数で ID を生成）。
+
 出力ファイルの中身を推測しない。exit code だけを見て「完了した」と判定しない。
 
 ## 総待ちの上限と超過時の分岐
