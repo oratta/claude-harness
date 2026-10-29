@@ -408,7 +408,9 @@ refute() {
     echo "$para" | grep -qF "$k" || return 1
   done
   ! echo "$para" | grep -qF 'Discord' || return 1
-  grep -qF 'Discord でユーザーに質問し' "${SKILL_DIR}/references/roles/worker/spec.md"
+  for k in '質問文・理由' 'return' 'needs-approval' 'W は Discord（MCP・CLI とも）へ直接送信しない' '本体の代理送信手順'; do
+    grep -qF "$k" "${SKILL_DIR}/references/roles/worker/spec.md" || return 1
+  done
 }
 
 # --- 前提 ---
