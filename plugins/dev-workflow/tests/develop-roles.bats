@@ -295,6 +295,20 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # ===== gate-runner.md =====
 
+@test "gate-runner (#576): skips the pr-review-gate index and never instructs G to read SKILL.md" {
+  grep -qF '索引 `skills/pr-review-gate/SKILL.md` は読まない' "$GATE"
+  # パスと Markdown の閉じバッククォートを許容し、「読まない」や索引の所在説明は拾わない。
+  if gate_all | grep -qE 'SKILL\.md`?[[:space:]]*を[[:space:]]*(Read|読む)'; then
+    echo "G の指示書に SKILL.md を読む肯定の指示がある" >&2
+    return 1
+  fi
+}
+
+@test "worker (#576): spec declaration points to declarations.md as the source of truth" {
+  worker_all | grep -qF 'skills/pr-review-gate/declarations.md'
+  grep -F '仕様宣言' "$W_FINISH" | grep -F '正本' | grep -qF 'skills/pr-review-gate/declarations.md'
+}
+
 @test "gate-runner: reads pr-review-gate and runs steps 1-5" {
   grep -q 'pr-review-gate' "$GATE"
   grep -qE '手順 ?1 ?〜 ?5|1〜5' "$GATE"
