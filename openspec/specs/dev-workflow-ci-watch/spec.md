@@ -209,7 +209,7 @@ dev-workflow は `/ci-watch <PR> [--merge]` の入口を持ち、対象 PR の U
 - **THEN** 入口は直接 merge API を呼ばず、PR URL を添えて人間にマージを依頼する
 
 ### Requirement: 上限時間で打ち切られたジョブは 1 回だけやり直し、やり直しを使い切った HEAD で打ち切りを見たら理由を添えてオーナーに上げる
-`ci-watch.sh wait` と `ci-watch.sh next` は、落ちたジョブの annotation に `maximum execution time` が含まれ、同じジョブに通信切れの annotation が無いとき、`pr-state.sh` の判定をそのまま通して、観測の `checks[].cause` に `job-timeout` を出さなければならない（MUST）。`next` は、`real` が混ざらず `job-timeout` を 1 件以上含む `ci-fail` を見たとき、その HEAD でまだやり直していなければ `rerun` を、やり直しを使い切っていれば `escalate` を返し、状態ファイルに `raised: true` を書き、`fixes` を増やしてはならない（MUST NOT）。`ci-watch.sh` はこの判定のための独自の分岐を持たず、判定は `pr-state.sh` に置く（MUST）。
+`ci-watch.sh wait` と `ci-watch.sh next` は、落ちたジョブの annotation に `maximum execution time` が含まれ、同じジョブに通信切れの annotation が無いとき、`pr-state.sh` の判定をそのまま通して、観測の `checks[].cause` に `job-timeout` を出さなければならない（MUST）。`next` は、`real` が混ざらず `job-timeout` を 1 件以上含む `ci-fail` を見たとき、その HEAD でまだやり直していなければ `rerun` を返す（MUST）。やり直し直後に同じジョブ ID の並びを再観測し、`dev-workflow-pr-state` の decide 規則 5（同じ HEAD で、保存済みの `reran_jobs` が空でも `null` を含むものでもなく、観測のジョブ ID の並びと一致する）に当たるときは例外として `none` を返し、状態ファイルを前回の状態のまま保つ（MUST）。この例外を除き、やり直しを使い切った HEAD で別のジョブ ID の打ち切りを観測したとき（`reran_jobs` が無い・空・`null` を含むために規則 5 に当たらないときも含む）は、`escalate` を返し、状態ファイルに `raised: true` を書かなければならない（MUST）。いずれの場合も `fixes` を増やしてはならない（MUST NOT）。`ci-watch.sh` はこの判定のための独自の分岐を持たず、判定は `pr-state.sh` に置く（MUST）。
 
 一手を「1 回もやり直さずに上げる」ではなく「1 回はやり直す」にしたのは、通信切れ（`runner-lost`）と同じく、`real` でない原因は同じ HEAD で 1 回だけやり直すという既存の規則に揃えるためである。打ち切りにはランナーが一時的に遅かっただけのものが含まれ、失うのは CI 1 周分で止まる。やり直しを使い切ったあとの打ち切りを `fix` にしないのは、ランナーの状態は PR の実装者には直せず、直しに回すと実装者が PR の差分を調べ直す空振りになるためである。
 
@@ -231,8 +231,12 @@ dev-workflow は `/ci-watch <PR> [--merge]` の入口を持ち、対象 PR の U
 - **WHEN** 状態ファイルが無く、偽物が HEAD `h1` の上と同じ打ち切られたチェックを返し、`next o/r 5` を実行する
 - **THEN** `.act` が `rerun`、状態ファイルの `.reran_head` が `h1` で、`.fixes` は書かれない
 
-#### Scenario: やり直しを使い切った HEAD の打ち切りはオーナーに上げる
-- **WHEN** 状態ファイルが `{"state":"wait","head":"h1","reran_head":"h1"}` で、偽物が HEAD `h1` の上と同じ打ち切られたチェックを返し、`next o/r 5` を実行する
+#### Scenario: やり直し直後の同じジョブ ID の打ち切りは待つ
+- **WHEN** 1 回目の打ち切りをやり直した直後の状態ファイルが `{"state":"wait","head":"h1","reran_head":"h1","reran_jobs":["77"]}` で、偽物が HEAD `h1` の同じジョブ 77 の打ち切られたチェックを返し、`next o/r 5` を実行する
+- **THEN** `.act` が `none` で、状態ファイルは前回の状態のまま（`raised` も `fixes` も書かれない）
+
+#### Scenario: やり直しを使い切った HEAD の別のジョブ ID の打ち切りはオーナーに上げる
+- **WHEN** 状態ファイルが `{"state":"wait","head":"h1","reran_head":"h1","reran_jobs":["76"]}` で、偽物が HEAD `h1` のジョブ 77 の打ち切られたチェックを返し、`next o/r 5` を実行する
 - **THEN** `.act` が `escalate`、`.obs.checks[0].cause` が `job-timeout`、状態ファイルの `.raised` が `true` で、`.fixes` は書かれない
 
 #### Scenario: 上限時間の annotation が無い取り消しは直しに回る
