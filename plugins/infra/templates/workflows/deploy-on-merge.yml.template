@@ -74,7 +74,7 @@ jobs:
             fi
             sleep 10
           done
-          echo "::error::スモークチェック失敗: $URL が 200 を返しません（最終: $STATUS）"
+          echo "::error::スモークチェック失敗: $URL が 200 を返しません（最終: ${STATUS}）"
           exit 1
 
       - name: Summary
