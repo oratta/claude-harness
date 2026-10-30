@@ -5,6 +5,8 @@
 
 exit code は、`total_tokens` が上限以下なら 0、上限を超えたら 2、引数エラー・python3 が無い・カレントディレクトリがリポジトリでないときは 1 と MUST する。紐付くサブエージェントが 0 体のときはエラーにせず、合計 0 で exit 0 と SHALL する。
 
+守備範囲: 想定する入力の出どころは、`--projects`、環境変数 `CLAUDE_PROJECTS_DIR` / `CLAUDE_CONFIG_DIR` / `HOME` で決まる 1 か所の projects ディレクトリと、`--cap` / `DEV_WORKFLOW_PR_TOKEN_CAP` の上限の値である。拾いたい誤りは、Claude Code が会話記録を書いた設定フォルダと違う場所を探して Claude 分を 0 と数え、上限の判定が効かないことである。通ることを許す入力は、1 つの記録先を別々の `CLAUDE_CONFIG_DIR` のセッションで進めたときの別の設定フォルダ側の消費（数えず、合計は少なく出る）と、会話記録の無い場所を指す `CLAUDE_CONFIG_DIR`（紐付く 0 体として合計 0・exit 0）である。これらの穴が見つかるたびに探索先を増やして塞ぎ切ることを完了条件にしない。
+
 #### Scenario: 固定のトランスクリプトで期待値と一致する
 - **WHEN** bats が用意した固定のトランスクリプト群（紐付く 2 体、別番号 1 体、別リポジトリ 1 体、重複行・壊れた行を含む）と、Codex の記録ファイル（トークン数付き 1 件・`-` で rollout から読む 1 件）・固定の rollout に対して `pr-token-budget.sh 288 --codex-records <file> --codex-home <dir>` を実行する
 - **THEN** `claude_tokens`・`codex_tokens`・`total_tokens`・`agent_count`・`codex_threads` が手計算の期待値と一致し、exit 0

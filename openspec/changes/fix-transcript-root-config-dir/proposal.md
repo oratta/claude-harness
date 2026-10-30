@@ -26,4 +26,4 @@
 - `plugins/dev-workflow/scripts/subagent-context.sh` と `plugins/dev-workflow/scripts/pr-token-budget.sh`（既定の探索先と、それを説明するヘッダのコメント）
 - `plugins/dev-workflow/tests/subagent-context.bats` と `plugins/dev-workflow/tests/pr-token-budget.bats`
 - `subagent-context.sh` を `--file` で呼ぶ `epic-dispatch.sh` は影響を受けない
-- 同じ書き方の `subagent-context-audit.sh` と `epic-launch-tmux.sh` は #1231 の対象外（design.md の Non-Goals）
+- 同じ書き方の `subagent-context-audit.sh` と `epic-launch-tmux.sh` は #1231 の対象外で、#1481 で直す（design.md の Non-Goals）

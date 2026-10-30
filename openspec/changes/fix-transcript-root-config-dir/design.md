@@ -10,7 +10,7 @@
 
 **Non-Goals:**
 
-- `subagent-context-audit.sh` と `epic-launch-tmux.sh` も同じ書き方で `CLAUDE_CONFIG_DIR` を見ないが、#1231 の受け入れ条件に無いので直さない。return で本体に伝え、扱いは本体が決める
+- `subagent-context-audit.sh` と `epic-launch-tmux.sh` も同じ書き方で `CLAUDE_CONFIG_DIR` を見ないが、#1231 の受け入れ条件に無いのでここでは直さない。#1481 で直す
 - 設定フォルダをまたいだ合算はしない（Decisions 参照）
 
 ## Decisions
@@ -26,7 +26,7 @@
 
 ## Risks / Trade-offs
 
-- [1 つの記録先を別々の `CLAUDE_CONFIG_DIR` のセッションで進めると、`pr-token-budget.sh` は実行中のセッションの設定の分しか数えない] → 受け入れる。少なく数える向きで、修正前（0 と数える）より悪くならない
+- [1 つの記録先を別々の `CLAUDE_CONFIG_DIR` のセッションで進めると、`pr-token-budget.sh` は実行中のセッションの設定の分しか数えない] → 少なく数える向きで受け入れる。`~/.claude` の分と混在する記録先では修正前より合計が小さくなることもある
 - [`CLAUDE_CONFIG_DIR` を使うセッションで上限超の exit 2 が初めて出る] → 意図した変化。exit 2 のあとの手順は既存の `skills/develop/SKILL.md` のまま
 
 ## Migration Plan
