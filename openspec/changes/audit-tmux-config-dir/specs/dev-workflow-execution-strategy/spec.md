@@ -22,7 +22,7 @@
 
 この集計は観測専用であり、閾値に基づいてセッション・ツール・エージェントの実行を止めてはならない（MUST NOT。強制停止は別の仕組みが担う）。引数エラー以外はすべて exit 0 とし、トランスクリプトが 1 件も無い・projects ディレクトリが無い・`python3` が無い場合は `count` が 0 の結果を出して exit 0 で終わらなければならない（MUST。fail-open）。個々のレコードの JSON が壊れていても、その行を飛ばして他の件の集計を続けなければならない（MUST）。
 
-この集計の守備範囲は次のとおりとする（SHALL）。①入力の出どころ: 対象は利用者の `~/.claude/projects/*/*/subagents/agent-*.jsonl` と、同じ場所の `agent-<id>.meta.json`（Claude Code が書く）で、中身は Claude Code の出力形式に従う。②拾いたい誤り: サブエージェント以外のトランスクリプトや対象期間外の個体を数えること、壊れたレコードや `meta.json` の欠落で集計全体が落ちること、分類できない個体が母集団の合計から落ちること。③通ることを許す入力の具体例: `meta.json` が無い・読めない個体は隔離なしとして `non_isolated` に数えてよく、`--by-role` の全文走査と既定の部分読みで全体キーが僅かにずれてよい。④未知の形式のトランスクリプトを見つけるたびに規則を足して塞ぎ切ることは、この要件の完了条件にしない。
+この集計の守備範囲は次のとおりとする（SHALL）。①入力の出どころ: 対象は利用者の `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/*/*/subagents/agent-*.jsonl` と、同じ場所の `agent-<id>.meta.json`（Claude Code が書く）で、中身は Claude Code の出力形式に従う。②拾いたい誤り: サブエージェント以外のトランスクリプトや対象期間外の個体を数えること、壊れたレコードや `meta.json` の欠落で集計全体が落ちること、分類できない個体が母集団の合計から落ちること。③通ることを許す入力の具体例: `meta.json` が無い・読めない個体は隔離なしとして `non_isolated` に数えてよく、`--by-role` の全文走査と既定の部分読みで全体キーが僅かにずれてよい。④未知の形式のトランスクリプトを見つけるたびに規則を足して塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 直近 14 日の集計が 1 行 JSON で出る
 
@@ -51,9 +51,9 @@
 
 #### Scenario: 既定と `--by-role` でキャッシュファイルが分かれる
 
-- **GIVEN** `--cache` を指定せずに `subagent-context-audit.sh` と `subagent-context-audit.sh --by-role` を同じ環境で実行する
+- **GIVEN** `--cache` と `SUBAGENT_CONTEXT_AUDIT_CACHE` を指定せずに `subagent-context-audit.sh` と `subagent-context-audit.sh --by-role` を同じ環境で実行する（キャッシュの基点 `${CLAUDE_CONFIG_DIR:-~/.claude}` を <基点> と呼ぶ）
 - **WHEN** それぞれの実行後にキャッシュファイルを見る
-- **THEN** 既定の実行は `~/.claude/.subagent-context-audit` に、`--by-role` の実行は `~/.claude/.subagent-context-audit.by-role` に、それぞれ別ファイルとして結果が保存される
+- **THEN** 既定の実行は `<基点>/.subagent-context-audit` に、`--by-role` の実行は `<基点>/.subagent-context-audit.by-role` に、それぞれ別ファイルとして結果が保存される
 
 #### Scenario: 対象期間外のトランスクリプトは数えない
 
@@ -81,9 +81,9 @@
 - **THEN** トランスクリプトを走査せずキャッシュの内容をそのまま出力する。`--refresh` を付けた場合は TTL を無視して再走査し、キャッシュを更新する
 
 #### Scenario: CLAUDE_CONFIG_DIR の下の会話記録を集計する
-- **GIVEN** `CLAUDE_PROJECTS_DIR` が未設定で、`CLAUDE_CONFIG_DIR` が指す一時ディレクトリの `projects/*/subagents/` に対象期間内のトランスクリプトがあり、`HOME` の下には無い
-- **WHEN** `subagent-context-audit.sh` を `--projects` なしで実行する
-- **THEN** `CLAUDE_CONFIG_DIR` の下のトランスクリプトを集計し、`count` が 1 以上になる
+- **GIVEN** `CLAUDE_PROJECTS_DIR` が未設定で、`CLAUDE_CONFIG_DIR` が指す一時ディレクトリの `projects/<project>/<session>/subagents/agent-*.jsonl`（対象期間内）に usage 付きのトランスクリプトがあり、`HOME` の下には無い。キャッシュは `--refresh` を付けて無効化する
+- **WHEN** `subagent-context-audit.sh --refresh` を `--projects` なしで実行する
+- **THEN** `CLAUDE_CONFIG_DIR` の下のトランスクリプトを走査し、`count` が 1 以上になる
 
 #### Scenario: キャッシュの既定が CLAUDE_CONFIG_DIR の下になる
 - **GIVEN** `SUBAGENT_CONTEXT_AUDIT_CACHE` と `--cache` が未指定で、`CLAUDE_CONFIG_DIR` が一時ディレクトリを指す

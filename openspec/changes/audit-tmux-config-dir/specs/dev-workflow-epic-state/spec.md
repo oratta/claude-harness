@@ -74,6 +74,6 @@
 - **THEN** `skipped input-not-empty` または `skipped dialog`（exit 0）となり、文字列も Enter も送らず入力を保持する
 
 #### Scenario: CLAUDE_CONFIG_DIR の下の会話ログで送信を確かめる
-- **GIVEN** `CLAUDE_PROJECTS_DIR` が未設定で、`CLAUDE_CONFIG_DIR` が指す一時ディレクトリの `projects/<パスの英数字以外を - にした名前>/` に、送った文を含む user の行を持つ `*.jsonl` があり、`HOME` の下には無い
-- **WHEN** `epic-launch-tmux.sh` が送った文の届きを確かめる
-- **THEN** 届いたと判定し、`started <ペイン ID>` を出す
+- **GIVEN** `CLAUDE_PROJECTS_DIR` が未設定で、`CLAUDE_CONFIG_DIR` が一時ディレクトリを指す。tmux のスタブは `new-window`・`send-keys` を受け付け、`capture-pane` が入力待ちの印を返す。送る直前に控えた時刻より後に、`CLAUDE_CONFIG_DIR` の下の `projects/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl` へ、本文が送った文の先頭を含む user の行が書かれる。`HOME` の下には会話ログが無い
+- **WHEN** `epic-launch-tmux.sh start <ワークツリー> <起動コマンド> <最初の指示> <子の呼び方>` を実行する
+- **THEN** 会話ログに届いたと判定し、`started <ペイン ID>` を出して exit 0 で終わる（`failed send` にならない）
