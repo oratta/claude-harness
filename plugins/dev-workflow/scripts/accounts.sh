@@ -13,6 +13,8 @@
 #   accounts-init.sh は「いま居るシェルの CLAUDE_SECURESTORAGE_CONFIG_DIR の実値を登録する」手段で、
 #   同じ id は上書きする。既定アカウント（securestorage が null）のスロットもこちらで作る。
 #   accounts.sh add は置き場所（<CLAUDE_ACCOUNTS_HOME>/<id>）を新しく作って登録し、同じ id は拒否する。
+#   add は id の位置のハイフン始まりの引数（--help / -h 以外）も拒否する（exit 2）。
+#   スロットは 8 個まで。登録簿の accounts が 8 要素以上のとき、add は新しい id を拒否する（exit 2）。
 #   accounts.sh は登録簿が読めない・accounts が配列でないときは何も書かず exit 1（accounts-init.sh は
 #   accounts が配列でないと空の登録簿として上書きする）。
 #
@@ -34,7 +36,8 @@ usage: accounts.sh list
        accounts.sh off <id>
        accounts.sh on <id>
 
-  id     英数字とハイフン、1〜32 文字
+  id     英数字とハイフン、1〜32 文字（add ではハイフンで始められない）
+  スロットは 8 個まで（超える add は exit 2 で拒否）
   label  制御文字を含まない 16 文字以下（省略時は id）
 USAGE
 }
@@ -70,6 +73,7 @@ case "$CMD" in
     case "$1" in
       -h|--help) usage; exit 0 ;;
       --label) die_usage "add requires <id> before --label" ;;
+      -*) die_usage "add requires <id> before options: $1" ;;
     esac
     ID="$1"; shift
     while [ $# -gt 0 ]; do
@@ -165,6 +169,8 @@ elif cmd in ("on", "off"):
 elif cmd == "add":
     if find(sid) >= 0:
         err("id already registered: %s" % sid, 2)
+    if len(accounts) >= 8:
+        err("registry already has %d slots; the maximum is 8 (nothing added)" % len(accounts), 2)
     place = os.path.join(os.environ["ACCOUNTS_HOME"], sid)
     try:
         os.makedirs(place, exist_ok=True)

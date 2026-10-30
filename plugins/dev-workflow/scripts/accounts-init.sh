@@ -15,6 +15,7 @@
 # 同じ id が既にあれば上書きし、無ければ末尾に追加する。上書きするとき、既存スロットに
 # enabled（false ならそのアカウントはオフ）が書かれていれば同じ値のまま残す。登録し直しただけで
 # オフにしたアカウントがオンに戻らないようにするため。enabled の無いスロットと新しい id には書かない。
+# スロットは 8 個まで。accounts が 8 要素以上のとき、新しい id の追加は拒否する（exit 2、何も書かない）。
 set -uo pipefail
 
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
@@ -27,6 +28,8 @@ usage: accounts-init.sh --id <slot-id> [--label <label>]
 
   --id     スロット id（英数字とハイフン、1〜32 文字）。snapshot のキーになる
   --label  statusline に出す短いラベル（省略時は id）
+
+スロットは 8 個まで（超える新しい id は exit 2 で拒否。既存 id の登録し直しはできる）。
 
 登録先は ${CLAUDE_ACCOUNTS_FILE}、無ければ ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json。
 USAGE
@@ -69,7 +72,7 @@ dir="$(dirname "$ACCOUNTS_FILE")"
 mkdir -p "$dir" || exit 1
 
 ACCOUNTS_FILE="$ACCOUNTS_FILE" SLOT_ID="$SLOT_ID" SLOT_LABEL="$SLOT_LABEL" \
-SLOT_SECURE="${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" python3 <<'PY' || exit 1
+SLOT_SECURE="${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" python3 <<'PY' || exit $?
 import json, os, sys, tempfile
 
 path = os.environ["ACCOUNTS_FILE"]
@@ -102,6 +105,11 @@ for i, existing in enumerate(doc["accounts"]):
         doc["accounts"][i] = entry
         break
 else:
+    # 使用量を読む側は先頭 8 個で打ち切るので、9 個目は黙って効かない。足さずに止める。
+    if len(doc["accounts"]) >= 8:
+        sys.stderr.write("registry already has %d slots; the maximum is 8 (nothing added): %s\n"
+                         % (len(doc["accounts"]), path))
+        raise SystemExit(2)
     doc["accounts"].append(entry)
 
 # 一時ファイル名は固定にしない。README がアカウントごとに別シェルでの実行を案内するので、
