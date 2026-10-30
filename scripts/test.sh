@@ -19,7 +19,9 @@
 #       全体を N 個の組に分けたうちの k 番目だけを実行する（k/N。issue #990）。
 #       用途は CI で bats を複数のジョブに分けて同時に走らせること。未設定か空なら
 #       分けずに全件を実行する（手元の使い方は変わらない）。
-#       `git ls-files` の一覧の i 番目（1 始まり）は (i - 1) mod N + 1 番目の組に入る。
+#       組の割り当て（issue #1028）: スイートごとの @test の件数を重みにして、重い順
+#       （同数は `git ls-files` の一覧の順）に、その時点でいちばん軽い組（同点は番号の
+#       小さい組）へ順に配る。組ごとのテスト件数がそろうので、所要時間もそろいやすい。
 #       組の割り当てはフィルタと TEST_EXCLUDE を当てる前の一覧で決めるので、
 #       あるスイートがどの組に入るかはフィルタや除外の指定で変わらない
 #       （フィルタに一致するスイートが別の組にしか無ければ、対象が空で失敗する）。
@@ -92,14 +94,40 @@ fi
 # 代入コンテキストなので単語分割は起きない（改行区切りで受ける）。
 ALL_SUITES=$(git -C "$ROOT" ls-files -- '*.bats' ':(exclude)_longruns/')
 
+# TEST_SHARD: 組の割り当て（issue #1028）。スイートごとの @test の件数を重みにして、
+# 重い順（同数は一覧の順）に、その時点でいちばん軽い組（同点は番号の小さい組）へ順に配る。
+# 入力は追跡下の一覧とファイルの中身だけで決まるので、どの組のジョブでも同じ割り当てになる。
+# フィルタと除外より先に、一覧全体に対して決める。SHARD_MEMBERS は組 K に入るパスを改行で並べたもの。
+SHARD_MEMBERS=""
+if [ -n "$SHARD_N" ]; then
+  SHARD_MEMBERS=$(
+    idx=0
+    for f in $ALL_SUITES; do
+      idx=$((idx + 1))
+      weight=$(grep -c '^@test' "$ROOT/$f" 2>/dev/null) || weight=0
+      printf '%s\t%s\t%s\n' "$weight" "$idx" "$f"
+    done | sort -t "$(printf '\t')" -k1,1nr -k2,2n | awk -F '\t' -v n="$SHARD_N" -v k="$SHARD_K" '
+      {
+        best = 1
+        for (s = 2; s <= n; s++) if (load[s] + 0 < load[best] + 0) best = s
+        load[best] += $1 + 1
+        if (best == k) print $3
+      }'
+  )
+fi
+
 SUITES=""
 SKIPPED=0
-suite_index=0
 for f in $ALL_SUITES; do
-  # TEST_SHARD: 一覧の i 番目は (i - 1) mod N + 1 番目の組。フィルタと除外より先に決める。
-  suite_index=$((suite_index + 1))
   if [ -n "$SHARD_N" ]; then
-    [ $(( (suite_index - 1) % SHARD_N + 1 )) -eq "$SHARD_K" ] || continue
+    case "
+$SHARD_MEMBERS
+" in
+      *"
+$f
+"*) ;;
+      *) continue ;;
+    esac
   fi
 
   # 引数（フィルタ）があれば、パス部分一致するものだけに絞る（OR 判定）。
