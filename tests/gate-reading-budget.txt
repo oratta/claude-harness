@@ -10,6 +10,6 @@ pass-auth 40000 skills/develop/references/roles/gate-runner.md skills/pr-review-
 pass-carryover 40000 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/declarations.md skills/pr-review-gate/stages/pass.md skills/pr-review-gate/stages/carryover.md
 pass-carryover-judge 53000 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/declarations.md skills/pr-review-gate/stages/pass.md skills/pr-review-gate/stages/carryover.md skills/pr-review-gate/stages/carryover-judge.md
 pass-carryover-origin 50000 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/declarations.md skills/pr-review-gate/stages/pass.md skills/pr-review-gate/stages/carryover.md skills/pr-review-gate/stages/carryover-origin.md
-pass-hold 48594 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/declarations.md skills/pr-review-gate/stages/pass.md skills/pr-review-gate/stages/hold.md
-hold 27036 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/hold.md
-hold-carryover 38000 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/hold.md skills/pr-review-gate/stages/carryover.md
+pass-hold 40000 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/declarations.md skills/pr-review-gate/stages/pass.md skills/pr-review-gate/stages/hold.md
+hold 27500 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/hold.md skills/pr-review-gate/stages/hold-resume.md
+hold-carryover 38500 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/hold.md skills/pr-review-gate/stages/hold-resume.md skills/pr-review-gate/stages/carryover.md

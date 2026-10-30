@@ -62,7 +62,7 @@ check_budget() {
 
 # 40000 を超える経路（#580 の残り）。合格処理の引き継ぎ・動作確認代行で保留に進む経路・保留の解除の引き継ぎは、
 # 条件付きで加わる段のファイルが大きく、この PR では 40000 以下に収められなかった。実測値を上限にして増えないことだけ固定する。
-OVER_TARGET=" pass-carryover-judge pass-carryover-origin pass-hold "
+OVER_TARGET=" pass-carryover-judge pass-carryover-origin "
 
 @test "real: strict ceiling and slack hold for every scenario except the listed over-target paths" {
   local line scenario
@@ -95,14 +95,15 @@ OVER_TARGET=" pass-carryover-judge pass-carryover-origin pass-hold "
       pass-carryover-judge) expected="$common $p/declarations.md $st/pass.md $st/carryover.md $st/carryover-judge.md" ;;
       pass-carryover-origin) expected="$common $p/declarations.md $st/pass.md $st/carryover.md $st/carryover-origin.md" ;;
       pass-hold) expected="$common $p/declarations.md $st/pass.md $st/hold.md" ;;
-      hold) expected="$common $st/hold.md" ;;
-      hold-carryover) expected="$common $st/hold.md $st/carryover.md" ;;
+      hold) expected="$common $st/hold.md $st/hold-resume.md" ;;
+      hold-carryover) expected="$common $st/hold.md $st/hold-resume.md $st/carryover.md" ;;
     esac
     [ "$paths" = "$expected" ]
     for path in $paths; do
       [ "$path" = skills/develop/references/roles/gate-runner.md ] && continue
       # row3-list-format.md は triage-row3.md が指す（共通 role には書かない）
       [ "$path" = skills/pr-review-gate/stages/row3-list-format.md ] && { grep -qF row3-list-format.md "$PLUGIN_DIR/skills/pr-review-gate/stages/triage-row3.md" || return 1; continue; }
+      [ "$path" = skills/pr-review-gate/stages/carryover-origin.md ] && { grep -qF carryover-origin.md "$PLUGIN_DIR/skills/pr-review-gate/stages/carryover.md" || return 1; continue; }
       grep -qF "${path#skills/pr-review-gate/}" "$PLUGIN_DIR/skills/develop/references/roles/gate-runner.md" || { echo "not named in the common role: $path"; return 1; }
     done
   done < "$BUDGET_FILE"

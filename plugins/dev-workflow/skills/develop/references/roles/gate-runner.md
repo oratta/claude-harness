@@ -19,7 +19,7 @@ develop の本体が `subagent_type: dev-workflow:gate-runner` で名前付き�
 | 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare.md` と `stages/prepare-step1.md`（adapter 経路はここで `needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/convergence.md`。入力は `stages/prepare.md` の「W の修正後の再レビュー」） |
 | 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md` と、その冒頭の表で当たる条件のファイル（`stages/triage-summary.md`・`stages/triage-row3.md`・`stages/triage-nonblocking.md`・`stages/triage-failed.md`・`stages/triage-escalation.md`）。一周目の要約と補足の結果は加えて `skills/develop/references/roles/gate-runner-triage.md`。戻した指摘が順 3 だけの修正のあとは加えて `stages/prepare-step1.md` |
 | 合格処理（手順 3・3-b・4・5。引き継ぎの判定の受領を含む） | `declarations.md` と `stages/pass.md`（真正性確認に入るときは加えて `stages/authenticity.md`、前の HEAD の許容があるときは加えて `stages/carryover.md`（終了コード 4 で `needs-carryover-judge` を返すときは `carryover-judge.md`、元の回答が会話・親経由なら `carryover-origin.md`）、保留を返すときは加えて `stages/hold.md`） |
-| 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md` |
+| 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md` と `stages/hold-resume.md` |
 | 一括（従来経路）でレビューを自分で起こすとき | 上の表の全部と、`stages/review-run.md` とレビュアーに渡す `stages/reviewer-brief.md` |
 
 ## return の書式

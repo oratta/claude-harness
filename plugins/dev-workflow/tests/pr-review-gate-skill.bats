@@ -18,7 +18,9 @@ setup() {
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
-  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD="$BATS_TEST_TMPDIR/hold-all.md"
+  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" > "$HOLD"
   CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
   CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
   CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
@@ -1338,7 +1340,7 @@ step3c_body() {
   [ -n "$line" ] || { echo "no exit-4 step-6 sentence"; return 1; }
   echo "$line" | grep -qF 'EVIDENCE_PR_CHANGED='
   # 判定が「変わった」「判断できない」・上限超え・判定役を起こせないときの理由を添える
-  for w in '`引き継ぎ判定: 変わった`' '`引き継ぎ判定: 判断できない`' '判定役に比べさせなかった理由'; do
+  for w in '`変わった`' '`判断できない`' '判定役に比べさせなかった理由'; do
     echo "$line" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
   done
 }

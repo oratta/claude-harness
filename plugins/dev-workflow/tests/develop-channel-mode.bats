@@ -24,7 +24,9 @@ setup() {
   # channel だけで使う 3 小節（聞き方・リスク許容・主への発言）は SKILL.md から references/ へ移した（#1221）
   CHANNEL="${PLUGIN_DIR}/skills/develop/references/channel.md"
   CMD="${PLUGIN_DIR}/commands/develop.md"
-  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD="$BATS_TEST_TMPDIR/hold-all.md"
+  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" > "$HOLD"
   CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
   CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
   CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
