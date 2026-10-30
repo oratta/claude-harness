@@ -27,10 +27,8 @@ set -uo pipefail
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
 ACCOUNTS_HOME="${CLAUDE_ACCOUNTS_HOME:-$HOME/.claude-accounts}"
 
-# usage [fd]: 既定は stderr（引数の誤り）。-h/--help のときだけ usage 1 で stdout に出す。
 usage() {
-  if [ "${1:-}" = "stdout" ]; then exec 3>&1; else exec 3>&2; fi
-  cat >&3 <<'USAGE'
+  cat <<'USAGE'
 usage: accounts.sh list
        accounts.sh add <id> [--label <label>]
        accounts.sh off <id>
@@ -41,7 +39,7 @@ usage: accounts.sh list
 USAGE
 }
 
-die_usage() { printf '%s\n' "$1" >&2; usage; exit 2; }
+die_usage() { printf '%s\n' "$1" >&2; usage >&2; exit 2; }
 
 check_id() {
   # bash 3.2 + UTF-8 ロケールでは [!A-Za-z0-9-] が照合順で評価され、全角の英数字が通る。
@@ -52,13 +50,13 @@ check_id() {
   [ "${#1}" -le 32 ] || die_usage "id is too long (max 32)"
 }
 
-[ $# -ge 1 ] || { usage; exit 2; }
+[ $# -ge 1 ] || { usage >&2; exit 2; }
 CMD="$1"; shift
 ID=""
 LABEL=""
 
 case "$CMD" in
-  -h|--help) usage stdout; exit 0 ;;
+  -h|--help) usage; exit 0 ;;
   list)
     [ $# -eq 0 ] || die_usage "list takes no arguments"
     ;;
@@ -70,7 +68,7 @@ case "$CMD" in
   add)
     [ $# -ge 1 ] || die_usage "add requires <id>"
     case "$1" in
-      -h|--help) usage stdout; exit 0 ;;
+      -h|--help) usage; exit 0 ;;
       --label) die_usage "add requires <id> before --label" ;;
     esac
     ID="$1"; shift

@@ -253,7 +253,8 @@ assert s["enabled"] is False and s["securestorage"]==sys.argv[2], s
 }
 
 # 全角の id は UTF-8 ロケールの bash 3.2（macOS の /bin/bash）では照合順で [!A-Za-z0-9-] をすり抜ける。
-# ロケールを明示して /bin/bash で走らせ、LC_ALL=C のテスト環境でも修正前に落ちるようにする。
+# macOS の /bin/bash 3.2 でだけ修正前に落ちる。CI の ubuntu では再現しない（修正後の挙動の確認にはなる）。
+# ロケールは LC_ALL=en_US.UTF-8 と明示して /bin/bash で走らせる。
 @test "add: a full-width id is rejected under a UTF-8 locale, ascii ids still pass" {
   printf '{"schema":1,"accounts":[]}\n' > "$CLAUDE_ACCOUNTS_FILE"
   LC_ALL=en_US.UTF-8 run /bin/bash "$CMD" add ｂ
@@ -273,7 +274,7 @@ assert s["enabled"] is False and s["securestorage"]==sys.argv[2], s
   for opt in --help -h; do
     run --separate-stderr "$CMD" add "$opt"
     [ "$status" -eq 0 ]
-    [[ "$output" == *"usage: accounts.sh"* ]]
+    [[ "$output" == *"usage: accounts.sh"* ]] || return 1
     [ -z "$stderr" ]
   done
   cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
@@ -294,10 +295,10 @@ assert s["enabled"] is False and s["securestorage"]==sys.argv[2], s
 @test "top-level --help prints usage on stdout; usage errors still go to stderr" {
   run --separate-stderr "$CMD" --help
   [ "$status" -eq 0 ]
-  [[ "$output" == *"usage: accounts.sh"* ]]
+  [[ "$output" == *"usage: accounts.sh"* ]] || return 1
   [ -z "$stderr" ]
   run --separate-stderr "$CMD" frobnicate
   [ "$status" -eq 2 ]
   [ -z "$output" ]
-  [[ "$stderr" == *"usage: accounts.sh"* ]]
+  [[ "$stderr" == *"usage: accounts.sh"* ]] || return 1
 }
