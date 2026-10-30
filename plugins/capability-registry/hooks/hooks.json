@@ -9,6 +9,16 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/browser-guard.sh\""
           }
         ]
+      },
+      {
+        "matcher": "Bash|Read",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/secret-guard.sh\"",
+            "timeout": 10
+          }
+        ]
       }
     ]
   }
