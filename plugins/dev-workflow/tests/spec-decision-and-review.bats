@@ -199,7 +199,7 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
   # 出力書式の節はコードブロックに "## " の行を持つので、次の節の見出しまでを切り出す
   output="$(awk '/^## 出力書式/{f=1} /^## 結果を記録先に/{f=0} f' "$REF")"
   echo "$output" | grep -qF '成り立つ判定'
-  echo "$output" | grep -qF '`条件の問い:`'
+  echo "$output" | grep -qF '`条件の問い: <問い>`'
   echo "$output" | grep -F '判定基準' | grep -qF '指摘の条件を決める段'
   record="$(section "$REF" '結果を記録先に記録する')"
   echo "$record" | grep -qF '`捨てた指摘:`'
