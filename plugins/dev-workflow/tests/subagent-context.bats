@@ -441,3 +441,13 @@ add_error_records() {
   echo "$output" | grep -q "\"file\": \"$f\""
   echo "$output" | grep -q '"context_tokens": 3000'
 }
+
+@test "search root: an empty CLAUDE_CONFIG_DIR falls back to \$HOME/.claude/projects" {
+  PROJECTS="${WORK}/home/.claude/projects"
+  f="$(make_transcript p s agent-W-590.jsonl "$PWD" 4000,0,0)"
+  run env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR= "$SCRIPT" W-590
+  echo "$output"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "\"file\": \"$f\""
+  echo "$output" | grep -q '"context_tokens": 4000'
+}

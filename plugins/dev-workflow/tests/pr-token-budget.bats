@@ -333,3 +333,13 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
   [ "$status" -eq 0 ]
   [ "$(j 'd["claude_tokens"]')" = 5 ]
 }
+
+@test "search root: an empty CLAUDE_CONFIG_DIR falls back to \$HOME/.claude/projects" {
+  PROJECTS="${WORK}/home/.claude/projects"
+  arec r1 m1 u1 7 0 0 0 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  cd "$REPO"
+  run env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR= "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 7 ]
+}
