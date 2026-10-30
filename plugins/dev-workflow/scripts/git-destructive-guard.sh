@@ -287,6 +287,7 @@ def read_heredocs(s, i, pending, subs, cmds, in_subst):
     n = len(s)
     for delim, strip_tabs, quoted in pending:
         start, body_end = i, n
+        found = False
         while i < n:
             j = s.find("\n", i)
             line = s[i:] if j < 0 else s[i:j]
@@ -294,14 +295,20 @@ def read_heredocs(s, i, pending, subs, cmds, in_subst):
             cmp = line.lstrip("\t") if strip_tabs else line
             if cmp == delim:
                 body_end, i = i, nxt
+                found = True
                 break
             # $(cat <<'EOF' ... EOF) のように、置換の中で区切り語の直後に ) が来る形
             if in_subst and cmp.startswith(delim) and cmp[len(delim):].lstrip().startswith(")"):
                 body_end, i = i, i + (len(line) - len(cmp)) + len(delim)
+                found = True
                 break
             i = nxt
-        else:
-            i = n
+        if not found:
+            # 区切り語の行が無い。算術の << などをヒアドキュメントと読み違えた可能性があるので、末尾まで
+            # 本文として捨てず、本文の開始位置に戻して後ろの行を通常のコマンドとして読む
+            charge(n - start)
+            pending.clear()
+            return start
         # 本文の終わりを探した分も仕事量に数える（本文の $(...) の中にヒアドキュメントを何重にも入れると、
         # 内側の本文を重ねた数だけ探し直す）
         charge(i - start)
@@ -382,7 +389,15 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
             continue
         if ch == "'" or (ch == "$" and s.startswith("$'", i)):
             j = i + 1 if ch == "'" else i + 2
-            k = s.find("'", j)
+            if ch == "'":
+                k = s.find("'", j)
+            else:
+                # $'...' は \ とその次の 1 文字を飛ばして次の ' を探す（\' は引用の終わりではない）
+                k = j
+                while k < n and s[k] != "'":
+                    k += 2 if s[k] == "\\" else 1
+                if k >= n:
+                    k = -1
             if k < 0:
                 raise Unclosed()
             add(s[j:k], quoted=True)
