@@ -172,6 +172,12 @@ PY
   run "$CMD" add b --label B
   [ "$status" -eq 0 ]
   [ -d "${CLAUDE_ACCOUNTS_HOME}/b" ]
+  run "$CMD" off b
+  [ "$status" -eq 0 ]
+  [ -d "${CLAUDE_ACCOUNTS_HOME}/b" ]
+  run "$CMD" on b
+  [ "$status" -eq 0 ]
+  [ -d "${CLAUDE_ACCOUNTS_HOME}/b" ]
   touch "${CLAUDE_ACCOUNTS_HOME}/b/credential"
   run "$CMD" off b
   [ "$status" -eq 0 ]
