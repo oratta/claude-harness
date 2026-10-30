@@ -30,7 +30,7 @@ rc=$?
 default_args=()
 if [ -n "${CLD_DEFAULT_ARGS:-}" ]; then
   # 語分割だけ（グロブ展開・eval はしない）
-  read -r -a default_args <<<"$CLD_DEFAULT_ARGS"
+  IFS=$' \t\n' read -r -d '' -a default_args <<<"$CLD_DEFAULT_ARGS" || true
 fi
 
 if [ -z "$selected" ]; then

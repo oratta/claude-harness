@@ -53,7 +53,7 @@ export CLD_DEFAULT_ARGS="--dangerously-skip-permissions --remote-control"   # �
 
 `cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す（slot id が無ければ usage を出して exit 2）。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら実行ファイルも同じ status で終了し、Claude は起動しない。
 
-エピックの子セッションは `epic-dispatch.sh launch`（と端末が無い子を起動し直す `reply`）が、親の環境の `CLD_DEFAULT_ARGS` を子の起動コマンドへ代入として渡す。子の `--dangerously-skip-permissions` もここから来るので、親の環境に `CLD_DEFAULT_ARGS` を置く（親に値が無ければ渡らず、子は許可の確認画面で止まる）。
+エピックの子セッションは `epic-dispatch.sh launch` と、子の端末を作るすべての経路（`reply`・`notify-closed`・`wait --resolve` の起動し直し）が、親の環境の `CLD_DEFAULT_ARGS` を子の起動コマンドへ代入として渡す。子の `--dangerously-skip-permissions` もここから来るので、親の環境に `CLD_DEFAULT_ARGS` を置く（親に値が無ければ渡らず、子は許可の確認画面で止まる）。
 
 `usage-probe.sh` の取得先は `https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1` になった（非公開の呼び方で、予告なく変わりうる）。応答に含まれるリセット権を snapshot の `accounts.<id>.reset_grants` に書き、ステータスラインが表示する。取得に失敗したアカウントの `reset_grants` は消え、試みなかったアカウントの値は保つ。
 

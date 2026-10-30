@@ -399,7 +399,7 @@ run_cld() {
   [ "$status" -eq 0 ]
   [ ! -e "${WORK}/pwned" ]
   grep -qF '<--x>' "$CLAUDE_ARGS_LOG"
-  grep -qF '<*>' "$CLAUDE_ARGS_LOG" || true
+  grep -qF '<*>' "$CLAUDE_ARGS_LOG"
 }
 
 @test "bin/cld does not override or add the idle compact threshold" {

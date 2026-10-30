@@ -744,6 +744,26 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
 
 # --- 起動コマンドの既定（bin/cld の絶対パス）と CLD_DEFAULT_ARGS の受け渡し（#1232） ---
 
+@test "launch: without an executable bin/cld next to scripts the default falls back to cld and says so on stderr" {
+  make_stub orca
+  mkdir -p "$BATS_TEST_TMPDIR/old" && cp -R "$PLUGIN_DIR/scripts" "$BATS_TEST_TMPDIR/old/scripts"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" sh -c "\"$BATS_TEST_TMPDIR/old/scripts/epic-dispatch.sh\" launch 400 11 12 2>\"$BATS_TEST_TMPDIR/stderr\""
+  [ "$status" -eq 0 ]
+  starts_with "$(cat "$STUB_CFG/tcmd_11")" "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings"
+  [ "$(grep -cF 'bin/cld is not executable' "$BATS_TEST_TMPDIR/stderr")" -eq 1 ]
+}
+
+@test "launch: without CLD_DEFAULT_ARGS the permission-prompt warning is printed once, and not with EPIC_DISPATCH_CLAUDE_CMD or a value set" {
+  make_stub orca
+  run dispatch launch 400 11 12
+  [ "$status" -eq 0 ]
+  [ "$(grep -cF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr")" -eq 1 ]
+  EPIC_DISPATCH_CLAUDE_CMD=mycld run dispatch launch 400 11
+  ! grep -qF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr"
+  CLD_DEFAULT_ARGS='--remote-control' run dispatch launch 400 11
+  ! grep -qF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr"
+}
+
 @test "launch: the default command is the absolute bin/cld in single quotes, not the cld shell function" {
   make_stub orca
   run dispatch launch 400 11
@@ -808,7 +828,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   run env -u CLD_DEFAULT_ARGS PATH="${BATS_TEST_TMPDIR}/e2e/bin:/usr/bin:/bin" E2E_ARGS="${BATS_TEST_TMPDIR}/e2e/args" \
     CLAUDE_HARNESS_SCRIPTS="${BATS_TEST_TMPDIR}/e2e/scripts" sh -c "$(cat "$STUB_CFG/tcmd_11")"
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
-  head -n 2 "${BATS_TEST_TMPDIR}/e2e/args" | tr '\n' ' ' | grep -qF '<--dangerously-skip-permissions> <--remote-control>'
+  [ "$(tr '\n' ' ' < "${BATS_TEST_TMPDIR}/e2e/args")" = "<--dangerously-skip-permissions> <--remote-control> <--settings> <{\"idleCompaction\":false}> <--model> <opus> <--prompt-suggestions> <false> " ]
 }
 
 @test "tmux launch: CLD_DEFAULT_ARGS of the parent is typed into the child's window" {
@@ -817,9 +837,8 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   CLD_DEFAULT_ARGS='--remote-control' run dispatch launch 400 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "launched 11" ]
-  grep -F '^tmux send-keys' "$STUB_LOG" >/dev/null 2>&1 || true
-  grep -E '^tmux send-keys .* -l ' "$STUB_LOG" | grep -F 'CLD_DEFAULT_ARGS=' | grep -qF -- '--remote-control'
-  grep -E '^tmux send-keys .* -l ' "$STUB_LOG" | grep -F 'EPIC_DISPATCH_PARENT_EPIC=400' | grep -qF 'bin/cld'
+  typed="$(jq -r 'select(.type == "user") | .message.content' "$(cat "$STUB_CFG/tmux_log_file")" | head -n 1)"
+  [ "$typed" = "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--remote-control' ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
 
 @test "tmux launch: without CLD_DEFAULT_ARGS no assignment is typed" {

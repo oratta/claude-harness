@@ -16,8 +16,8 @@
 なし
 
 ### Modified Capabilities
-- `usage-account-registry`: 要件「shell function から選択したアカウントで Claude を起動する」を、実行ファイル `bin/cld` / `bin/cld-account` と `CLD_DEFAULT_ARGS` の契約に変える
-- `dev-workflow-develop`: `epic-dispatch.sh` の要件 2 件を MODIFIED にする（「エピックの条件・作り方・回し方・完了条件を規定する」と「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」。起動コマンドの既定を `bin/cld` の絶対パスにし、`CLD_DEFAULT_ARGS` を親の環境から子へ渡す）
+- `usage-account-registry`: 要件「shell function から選択したアカウントで Claude を起動する」を「実行ファイル cld / cld-account から選択したアカウントで Claude を起動する」に改名（RENAMED）し、実行ファイル `bin/cld` / `bin/cld-account` と `CLD_DEFAULT_ARGS` の契約に変える
+- `dev-workflow-develop`: `epic-dispatch.sh` の要件 3 件を MODIFIED にする（「エピックの条件・作り方・回し方・完了条件を規定する」と「エピックの並列起動は 1 段で止める」と「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」。起動コマンドの既定を `bin/cld` の絶対パスにし、`CLD_DEFAULT_ARGS` を親の環境から子へ渡す）
 
 ## Impact
 

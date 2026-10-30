@@ -288,7 +288,7 @@
 - **WHEN** 週次リセットが 7 日より先のスロットを含めて自動選択する
 - **THEN** そのスロットの `margins` の値は headroom の行の `margin`（経過率を 0〜100 に切り詰めない値）と小数点以下 2 桁で一致する
 
-### Requirement: shell function から選択したアカウントで Claude を起動する
+### Requirement: 実行ファイル cld / cld-account から選択したアカウントで Claude を起動する
 `plugins/dev-workflow/bin/cld`（`cld [claude-args...]`）と `plugins/dev-workflow/bin/cld-account`（`cld-account <slot-id> [claude-args...]`）は、実行ファイルとして置かなければならない（SHALL）。`~/.zshrc` に関数定義を置かず、実行ファイルのあるディレクトリを PATH に入れる 1 行と環境変数の 1 行だけで使えなければならない（SHALL）。`plugins/dev-workflow/README.md` は、その 2 行の設定例と、旧来の関数定義・`unalias` の行を消す手順を示さなければならない（SHALL）。`cld` は起動前に `usage-probe.sh` を best-effort で実行してから自動選択し、`cld-account` は id を selector へ渡して明示選択する。選択値が空なら `CLAUDE_SECURESTORAGE_CONFIG_DIR` を unset し、空でなければその値を設定して、残りの引数を引用したまま `claude` へ渡さなければならない（SHALL）。`CLAUDE_HARNESS_SCRIPTS` が設定されていればその `scripts` を、未設定なら実行ファイル自身の位置（symlink を解いた先）から求めた `scripts` を使う。
 
 環境変数 `CLD_DEFAULT_ARGS` が設定されていれば、その値を空白で区切った語を `claude` の引数の先頭に置かなければならない（SHALL。値を `eval` してはならない（MUST NOT））。個人の既定フラグはこの環境変数で渡し、実行ファイルに埋めてはならない（MUST NOT）。環境変数 `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` は、`cld` / `cld-account` が上書きも既定値の追加もしてはならず（MUST NOT）、外から渡された値はそのまま `claude` に届かなければならない（SHALL）。
