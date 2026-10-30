@@ -425,12 +425,17 @@ codex_off_paragraph() {
   gate_runner="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   [ -f "$gate_runner" ]
   grep -qF -- '--codex-enabled' "$REVIEW_RUN"
-  for file in "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$gate_runner" "$DEVELOP_SKILL"; do
+  for file in "$SKILL" "$DECLARATIONS" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$gate_runner" "$DEVELOP_SKILL"; do
     if grep -qF -- '--codex-enabled' "$file"; then
       echo "off check repeated in ${file}"
       return 1
     fi
   done
+  # prepare.md の needs-reviewer の証拠の値は手順ではないので、その文字列だけを除く（#1019）
+  if sed 's|、Codex オフ: python3 <plugin>/scripts/usage_view.py --codex-enabled → off>|>|' "$PREPARE" | grep -qF -- '--codex-enabled'; then
+    echo "off check repeated in ${PREPARE}"
+    return 1
+  fi
   # 手順を書く段落は 1 つ。G の表はそれを指すだけにする
   [ "$(grep -cF -- '--codex-enabled' "$REVIEW_RUN")" -le 3 ]
   [ "$(grep -cF 'バイナリ探索（`command -v codex`）も' "$REVIEW_RUN")" -eq 1 ]
