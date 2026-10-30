@@ -759,9 +759,9 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "$status" -eq 0 ]
   [ "$(grep -cF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr")" -eq 1 ]
   EPIC_DISPATCH_CLAUDE_CMD=mycld run dispatch launch 400 11
-  ! grep -qF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr"
+  ! grep -qF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr" || return 1
   CLD_DEFAULT_ARGS='--remote-control' run dispatch launch 400 11
-  ! grep -qF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr"
+  ! grep -qF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr" || return 1
 }
 
 @test "launch: the default command is the absolute bin/cld in single quotes, not the cld shell function" {

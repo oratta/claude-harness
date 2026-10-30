@@ -375,7 +375,7 @@ run_cld() {
   RUN_CLD_ENV=()
   run_cld cld-account
   [ "$status" -eq 2 ]
-  [[ "$output" == *usage:* ]]
+  [[ "$output" == *usage:* ]] || return 1
   [ ! -e "$CLAUDE_ARGS_LOG" ]
 }
 
@@ -428,8 +428,8 @@ run_cld() {
 }
 
 @test "README no longer pastes shell functions and describes the PATH and env lines" {
-  ! grep -q '^cld()' "$README"
-  ! grep -q '^cld-account()' "$README"
+  ! grep -q '^cld()' "$README" || return 1
+  ! grep -q '^cld-account()' "$README" || return 1
   grep -qF 'CLD_DEFAULT_ARGS' "$README"
   grep -qF 'plugins/dev-workflow/bin' "$README"
 }
