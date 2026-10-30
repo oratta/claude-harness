@@ -19,6 +19,7 @@
 from __future__ import annotations  # macOS 同梱の python3 は 3.9 系。`str | None` を動かすため
 
 import json
+import os
 import re
 import sys
 
@@ -174,9 +175,10 @@ def check_bash(cmd: str) -> None:
 
 def check_read(path: str) -> None:
     # 判定はファイル名（最後の要素）だけで行う。親ディレクトリ名では止めない。
-    # Read は末尾に `/` を付けたパスでもファイルを読むので、先に取り除く。
-    name = path.rstrip("/").rsplit("/", 1)[-1]
-    if not name:
+    # Read は `.env/`・`.env/.`・`.env/foo/..` のようなパスでもファイルを読むので、
+    # 字句として正規化（末尾の `/`・`.`・`..` を解く）してから取り出す。
+    name = os.path.basename(os.path.normpath(path)) if path else ""
+    if name in ("", ".", ".."):
         return
     if SECRET_FILE.search(name) and not SAFE_FILE.search(name):
         deny(

@@ -185,6 +185,18 @@ EOF
   assert_denied Read /x/foo.template/.env
 }
 
+@test "read: the path is normalized lexically before the file name is taken" {
+  assert_denied Read /x/.env/.
+  assert_denied Read /x/.env/./
+  assert_denied Read /x/.env/foo/..
+  assert_denied Read /x/credentials.json/.
+  assert_denied Read /x/a.token/foo/..
+  assert_denied Read /x/ok/../.env
+  assert_passed Read /x/.env/../site.py
+  assert_passed Read /
+  assert_passed Read ''
+}
+
 @test "scope: the known over-blocking stays as it was" {
   assert_denied Bash 'cat <<EOF
 echo "$GH_TOKEN"

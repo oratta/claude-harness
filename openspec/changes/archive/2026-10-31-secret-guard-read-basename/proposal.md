@@ -8,7 +8,7 @@ secret-guard の Read の判定は、パス全体に機密らしい語（`.env`�
 - `/x/credentials-service/src/index.ts` と `/x/.env/lib/site.py` は止まらなくなる
 - `.env`、`credentials.json`、`*.token` の Read は止まり続ける
 - ファイル名自体に機密らしい語を含むもの（`/x/docs/credential-guide.md`、`/x/process.env.ts`、`/x/credentials.ts`）は止まり続ける。ファイル名だけでは値を含むかどうかを区別できず、既知の止めすぎとして残す。誤検知の逃げ道は従来どおり無効化の環境変数
-- パスの末尾の `/` は取り除いてから判定する（`/x/.env/` も止まる）
+- パスを字句として正規化してから判定する（`/x/.env/`、`/x/.env/.`、`/x/.env/foo/..` も止まる）
 - 機密らしい語がディレクトリ名にだけあるファイル（`/x/config/credentials/production.key`、`/x/service-account/prod.json`、`/x/.env/prod`）の Read は通るようになる。抜け道が増えることは受け入れる
 - Bash の機密ファイル表示（`cat <path>` など）の判定は変えない。Read だけを絞る
 
