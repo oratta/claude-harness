@@ -71,7 +71,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#385): has a route-detection section that names both values and treats a missing line as the legacy route" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   [ -n "$s" ] || { echo "no レビュー経路の判別 section"; return 1; }
   echo "$s" | grep -qF '`レビュー経路: adapter`'
   echo "$s" | grep -qF '`レビュー経路: 従来`'
@@ -81,33 +81,33 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#554): every stage G decides the route from its own launch line, with no same-G sticky rule" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF 'どの段の G も自分の起動指示の行だけで判別する'
   ! echo "$s" | grep -qF '起動済みの同一 G' || return 1
 }
 
 @test "gate-runner (#391): a missing route selects legacy only when starting a new G, including a handoff successor" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF '新しい G の起動指示（手渡しで起こされた後任 G を含む）'
   echo "$s" | grep -qF '行が無い場合だけ従来経路'
 }
 
 @test "gate-runner (#385): route-detection section comes before the reviewer table" {
   # 表は段のファイルへ移ったので、経路の判別の節が表の置き場（review-run.md）を指すことで順序を見る
-  grep -q '^## レビュー経路の判別' "$GATE"
+  grep -q '^## レビュー経路の判別' "$PREPARE"
   grep -q '^### レビューの実行者' "$REVIEW_RUN"
-  section "$GATE" 'レビュー経路の判別' | grep -qF 'stages/review-run.md'
+  section "$PREPARE" 'レビュー経路の判別' | grep -qF 'stages/review-run.md'
 }
 
 @test "gate-runner (#385): adapter route covers every adapter configuration and the legacy table applies only to the legacy value or no line" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF '新 Codex モードを含む adapter 解決の全構成'
   echo "$s" | grep -qF '`claude-default`'
   echo "$s" | grep -qE '従来モードのレビュー実行者の表.*は.*`レビュー経路: 従来`.*行が無い.*ときだけ'
 }
 
 @test "gate-runner (#385): adapter route never calls Codex/companion/reviewer itself, even for full, and returns needs-reviewer" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF 'full でも'
   echo "$s" | grep -qF '`codex exec`'
   echo "$s" | grep -qF '`codex-companion.mjs`'
@@ -117,7 +117,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#396): adapter route checks for another G on the same PR and HEAD before needs-reviewer" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   line="$(echo "$s" | grep -F '| `レビュー経路: adapter` |')"
   echo "$line" | grep -qF '手順 1 と手順 2-0 まで済ませ'
   echo "$line" | grep -qF '同一 PR/HEAD で他の G が着手済みでないことを確認してから'
@@ -125,7 +125,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#385): the adapter rule is limited to G and excluded for the phase review reviewer" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF 'phase `gate`'
   echo "$s" | grep -qE 'phase `review` のレビュアー.*適用しない'
 }
