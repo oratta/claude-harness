@@ -159,25 +159,34 @@ check_shell() {
   [ "$hit" -ge 1 ] || { echo "ルートを受けるブロックが無い"; return 1; }
 }
 
-@test "statusline setup zsh: the installed oratta-claude-harness is chosen over an older stale marketplace dir" {  # 名前順で先の壊れた旧 dir より固定候補（#1152）
-  need_zsh
-  local n i mark z b stale fixed
+@test "statusline setup zsh: candidates are tried in order: plugin root, oratta-claude-harness, marketplaces glob, installed glob" {  # 候補の順（#1152）。bash は常に、zsh は有るときだけ
+  local n i mark sh shells stale fixed inst root
+  shells="bash"; command -v zsh >/dev/null && shells="bash zsh"
   n="$(extract_blocks)" || { echo "$n"; return 1; }
   [ "$n" -ge 1 ] || { echo "ブロックを取り出せなかった: $n"; return 1; }
   for i in $(seq 1 "$n"); do
     mark="$(sed -n 2p "$BATS_TEST_TMPDIR/block-$i.meta")"
+    inst="$(sed -n 1p "$BATS_TEST_TMPDIR/block-$i.meta")"
     rm -rf "$HOME_DIR/.claude"
     stale="$HOME_DIR/.claude/plugins/marketplaces/aaa-stale/plugins/statusline"
     fixed="$HOME_DIR/.claude/plugins/marketplaces/oratta-claude-harness/plugins/statusline"
-    mkdir -p "$(dirname "$stale/$mark")" "$(dirname "$fixed/$mark")"
-    : > "$stale/$mark"; : > "$fixed/$mark"
-    run_block zsh "$i"; z="$output"
-    run_block bash "$i"; b="$output"
-    [ "$z" = "$fixed" ] || { echo "block-$i zsh: $z"; return 1; }
-    [ "$b" = "$fixed" ] || { echo "block-$i bash: $b"; return 1; }
-    # 固定候補が無ければ従来どおり glob で見つかる
+    root="$BATS_TEST_TMPDIR/root-$i"
+    mkdir -p "$(dirname "$stale/$mark")" "$(dirname "$fixed/$mark")" "$(dirname "$HOME_DIR/.claude/plugins/installed/x/$inst/$mark")" "$(dirname "$root/$mark")"
+    : > "$stale/$mark"; : > "$fixed/$mark"; : > "$HOME_DIR/.claude/plugins/installed/x/$inst/$mark"; : > "$root/$mark"
+    for sh in $shells; do
+      # 1) CLAUDE_PLUGIN_ROOT が固定候補より先
+      if [ "$sh" = zsh ]; then HOME="$HOME_DIR" run env CLAUDE_PLUGIN_ROOT="$root" zsh -f "$BATS_TEST_TMPDIR/block-$i.sh"
+      else HOME="$HOME_DIR" run env CLAUDE_PLUGIN_ROOT="$root" /bin/bash "$BATS_TEST_TMPDIR/block-$i.sh"; fi
+      [ "$output" = "$root" ] || { echo "block-$i $sh root: $output"; return 1; }
+      # 2) 固定候補が名前順で先の旧 dir より先（aaa-stale は glob の先頭に来る）
+      run_block "$sh" "$i"
+      [ "$output" = "$fixed" ] || { echo "block-$i $sh fixed: $output"; return 1; }
+    done
+    # 3) 固定候補が無ければ marketplaces の glob が installed より先
     rm -rf "$fixed"
-    run_block bash "$i"
-    [ "$output" = "$stale" ] || { echo "block-$i glob fallback: $output"; return 1; }
+    for sh in $shells; do
+      run_block "$sh" "$i"
+      [ "$output" = "$stale" ] || { echo "block-$i $sh glob before installed: $output"; return 1; }
+    done
   done
 }
