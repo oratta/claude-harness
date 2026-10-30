@@ -92,11 +92,25 @@ RECORD_NUMBER_RE = re.compile(r"[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?")
 # 料金表
 # --------------------------------------------------------------------------
 
+def prompt_length(fact: dict) -> int:
+    """1 応答のプロンプト長（入力 + キャッシュ書込 5m + キャッシュ書込 1h + キャッシュ読出）。
+
+    補足の事実は入力・キャッシュが 0 なので、応答の分を ``prompt_tokens`` に持つ
+    （欄ができる前に書かれた補足の事実は持たない。0 として閾値以下の単価になる）。
+    """
+    if fact.get("continuation"):
+        return fact.get("prompt_tokens") or 0
+    return (fact["input_tokens"] + fact["cache_write_5m_tokens"]
+            + fact["cache_write_1h_tokens"] + fact["cache_read_tokens"])
+
+
 class Pricing:
     """pricing.json の内容。単価と換算レートを持つ唯一の入口。"""
 
     def __init__(self, data: dict):
         self.models = data["models"]
+        for name, price in self.models.items():
+            self._check_long_prompt(name, price.get("long_prompt"))
         self.rate_env = data.get("usd_jpy_rate_env", "COST_LEDGER_USD_JPY")
         rate = data["usd_jpy_rate"]
         override = os.environ.get(self.rate_env)
@@ -108,6 +122,19 @@ class Pricing:
         self.jpy_rate = float(rate)
         # 最長一致の前方一致にするため、鍵を長い順に見る（表の並び順に依存させない）
         self._keys = sorted(self.models, key=len, reverse=True)
+
+    @staticmethod
+    def _check_long_prompt(name: str, tier):
+        """``long_prompt``（閾値と閾値超の単価 5 種）が欠けたまま低い単価に落ちないよう、読み込みで検べる。"""
+        if tier is None:
+            return
+        def number(value):
+            return isinstance(value, (int, float)) and not isinstance(value, bool)
+        if not isinstance(tier, dict) or not all(
+                number(tier.get(key)) for key in ("threshold",) + PRICE_FIELDS):
+            raise SystemExit(
+                "pricing.json: %s の long_prompt は threshold と %s がすべて数である必要があります"
+                % (name, "・".join(PRICE_FIELDS)))
 
     @classmethod
     def load(cls, path: str) -> "Pricing":
@@ -126,6 +153,10 @@ class Pricing:
         price = self.find(fact["model"])
         if price is None:
             return 0.0, False
+        tier = price.get("long_prompt")
+        if tier is not None and prompt_length(fact) > tier["threshold"]:
+            # 1 応答のプロンプト長が閾値を超えたら、出力を含む全トークンが閾値超の単価
+            price = tier
         total = 0.0
         for token_field, price_field in zip(TOKEN_FIELDS, PRICE_FIELDS):
             total += fact[token_field] * float(price[price_field])
@@ -860,6 +891,8 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
         fact["request_id"] = key
         if recorded:
             fact["issues"], fact["post_marker"] = [], None
+        # 単価の区分（プロンプト長の閾値）を決めるための応答のプロンプト長。トークンには数えない
+        fact["prompt_tokens"] = sum(fact[field] for field in TOKEN_KEYS if field != "output_tokens")
         for field in TOKEN_KEYS:
             fact[field] = 0
         fact["output_tokens"] = delta
