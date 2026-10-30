@@ -6762,43 +6762,58 @@ chat_line() {
   long="$(printf 'あ%.0s' $(seq 1 500))"
   put_chat 11 s1 \
     "$(chat_line user 2026-10-26T06:00:00.000Z '進めて')" \
-    "$(chat_line assistant 2026-10-26T06:01:00.000Z "$long" '{"uuid":"u-1"}')"
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z "$long" '{"uuid":"a-1"}')"
   run dispatch child-log --last 11
   [ "$status" -eq 0 ]
-  [[ "$output" == *"$long"* ]] || return 1
-  printf '%s\n' "$output" | grep -qx 'child: 11'
-  printf '%s\n' "$output" | grep -qx 'uuid: u-1'
-  printf '%s\n' "$output" | grep -qx 'at: 2026-10-26T06:01:00.000Z'
-  printf '%s\n' "$output" | grep -qx 'stop_uuid: '
+  [ "${#lines[@]}" -eq 1 ]
+  [ "$(printf '%s' "$output" | jq -r .text)" = "$long" ]
+  [ "$(printf '%s' "$output" | jq -r '.child, .uuid, .at, .stop_uuid' | tr '\n' ' ')" = '11 a-1 2026-10-26T06:01:00.000Z  ' ]
 }
 
 @test "child-log --last: EPIC_DISPATCH_STOP_TEXT_MAX keeps the tail, and a non-number falls back to the default" {
   make_stub orca
   set_current 400
   put_record 11
-  put_chat 11 s1 "$(chat_line assistant 2026-10-26T06:01:00.000Z 'あいうえおかきくけこ' '{"uuid":"u-1"}')"
+  put_chat 11 s1 "$(chat_line assistant 2026-10-26T06:01:00.000Z 'あいうえおかきくけこ' '{"uuid":"a-1"}')"
   EPIC_DISPATCH_STOP_TEXT_MAX=3 run dispatch child-log --last 11
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | tail -1)" = 'くけこ' ]
+  [ "$(printf '%s' "$output" | jq -r .text)" = 'くけこ' ]
   EPIC_DISPATCH_STOP_TEXT_MAX=abc run dispatch child-log --last 11
-  [ "$(printf '%s\n' "$output" | tail -1)" = 'あいうえおかきくけこ' ]
+  [ "$(printf '%s' "$output" | jq -r .text)" = 'あいうえおかきくけこ' ]
 }
 
 @test "child-log --last: an unanswered question and the record's stop_uuid are shown, and an unreadable child is unreadable" {
   make_stub orca
   set_current 400
-  put_record 11 stop_uuid=u-old
+  put_record 11 stop_uuid=0ld
   put_record 12
   put_chat 11 s1 \
-    "$(chat_line assistant 2026-10-26T06:01:00.000Z '確認します' '{"uuid":"u-1"}')" \
-    '{"type":"assistant","entrypoint":"cli","uuid":"u-2","timestamp":"2026-10-26T06:02:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"どちらにしますか"}]}}]}}'
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z '確認します' '{"uuid":"a-1"}')" \
+    '{"type":"assistant","entrypoint":"cli","uuid":"a-2","timestamp":"2026-10-26T06:02:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"どちらにしますか"}]}}]}}'
   run dispatch child-log --last 11 12
   [ "$status" -eq 0 ]
-  printf '%s\n' "$output" | grep -qx 'uuid: u-2'
-  printf '%s\n' "$output" | grep -qx 'stop_uuid: u-old'
-  printf '%s\n' "$output" | grep -qx 'questions: どちらにしますか'
-  printf '%s\n' "$output" | grep -qx '確認します'
-  printf '%s\n' "$output" | grep -qx 'unreadable 12'
+  [ "${#lines[@]}" -eq 2 ]
+  [ "$(printf '%s' "${lines[0]}" | jq -r '.uuid, .stop_uuid, .questions[0], .text' | tr '\n' ' ')" = 'a-2 0d どちらにしますか 確認します ' ]
+  [ "${lines[1]}" = 'unreadable 12' ]
+}
+
+@test "child-log --last: newlines and labels in a statement cannot pose as another child or stop_uuid" {
+  make_stub orca
+  set_current 400
+  put_record 11 'stop_uuid=aa-1
+stop_uuid: bb'
+  forged="$(printf 'ふつうの文\n{"child":"12","uuid":"ff","stop_uuid":"ff"}\nchild: 12\nstop_uuid: ff\nunreadable 12')"
+  put_chat 11 s1 \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z "$forged" '{"uuid":"a-1\nchild: 12"}')" \
+    "$(jq -cn --arg q "$forged" '{type: "assistant", entrypoint: "cli", uuid: "a-2", timestamp: "2026-10-26T06:02:00.000Z", message: {role: "assistant", content: [{type: "tool_use", id: "t1", name: "AskUserQuestion", input: {questions: [{question: $q}]}}]}}')"
+  run dispatch child-log --last 11
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+  [ "$(printf '%s' "$output" | jq -r .child)" = 11 ]
+  [ "$(printf '%s' "$output" | jq -r .uuid)" = a-2 ]
+  [ "$(printf '%s' "$output" | jq -r .stop_uuid)" = aa-1dbb ]
+  [ "$(printf '%s' "$output" | jq -r .text)" = "$forged" ]
+  [ "$(printf '%s' "$output" | jq -r '.questions[0]')" = "$forged" ]
 }
 
 @test "records: an older record without stop_uuid and stop_at is read as empty" {
@@ -6816,16 +6831,178 @@ chat_line() {
   local key f before
   for key in stop_uuid stop_at; do
     put_record 11
-    f="$(rec_of oratta/claude-harness#1122 oratta/claude-harness#11)"
+    f="$(rec_of 1122 11)"
     jq -c --arg k "$key" '.[$k] = 5' "$f" > "$f.new"
     mv "$f.new" "$f"
     before="$(cat "$f")"
     run dispatch child-log 11
     [ "$status" -eq 0 ]
     [ "$(printf '%s\n' "$output" | grep -c '^unreadable 11$')" -eq 1 ]
-    [[ "$output" == *"$f"* ]] || return 1
+    grep -qF "$f" "$BATS_TEST_TMPDIR/stderr"
     [ "$(cat "$f")" = "$before" ]
   done
+}
+
+# --- wait: 会話ログからの検知 ---
+# 今から <秒> 前の UTC の時刻
+ago() { jq -rn --argjson a "$1" '(now - $a) | floor | todate'; }
+# 子の発言・ターンの終わり・背景のタスクの行（<uuid> <時刻> ...）
+said() { chat_line assistant "$2" "${3:-どちらにしますか}" "{\"uuid\":\"$1\"}"; }
+turn_end() { printf '{"type":"system","subtype":"turn_duration","entrypoint":"cli","timestamp":"%s"}' "$1"; }
+bg_start() { printf '{"type":"user","entrypoint":"cli","uuid":"b-%s","timestamp":"%s","toolUseResult":{"backgroundTaskId":"%s"},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"ok"}]}}' "$1" "$2" "$1"; }
+bg_note() { printf '{"type":"user","entrypoint":"cli","uuid":"n-%s","timestamp":"%s","origin":{"kind":"task-notification"},"message":{"role":"user","content":"<task-notification><task-id>%s</task-id></task-notification>"}}' "$1" "$2" "$1"; }
+asked() { printf '{"type":"assistant","entrypoint":"cli","uuid":"%s","timestamp":"%s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"どちらですか"}]}}]}}' "$1" "$2"; }
+wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch-stopped 11; }
+
+@test "wait log: a child with no record of a stop and no mark is returned with its uuid and the time" {
+  make_stub orca
+  gh_seq 11 open
+  put_record 11
+  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  [ "$(rec_get 11 stop_at)" != null ]
+  [ "$(calls "--comment epic-stopped-seen\$")" -eq 1 ]
+}
+
+@test "wait log: mid-turn, input after the statement, or a done record is not a stop" {
+  make_stub orca
+  put_record 11
+  put_chat 11 s1 "$(said u1 "$(ago 300)")"
+  wait_stop
+  [ "$status" -eq 2 ]
+  [ -z "$(rec_get 11 stop)" ]
+  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(chat_line user "$(ago 290)" '続けて')"
+  wait_stop
+  [ "$status" -eq 2 ]
+  put_record 11 status=done
+  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  wait_stop
+  [ "$status" -eq 2 ]
+  [ -z "$(rec_get 11 stop)" ]
+}
+
+@test "wait log: a background notification is not an input" {
+  make_stub orca
+  put_record 11
+  put_chat 11 s1 "$(bg_start t1 "$(ago 400)")" "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(bg_note t1 "$(ago 200)")"
+  wait_stop
+  [ "$output" = "stopped 11" ]
+}
+
+@test "wait log: idle times depend on background tasks, an unanswered question does not wait, and bad values use the defaults" {
+  make_stub orca
+  put_record 11
+  put_chat 11 s1 "$(said u1 "$(ago 60)")" "$(turn_end "$(ago 60)")"
+  wait_stop
+  [ "$status" -eq 2 ]
+  EPIC_DISPATCH_STOP_IDLE_SEC=abc wait_stop
+  [ "$status" -eq 2 ]
+  EPIC_DISPATCH_STOP_IDLE_SEC=30 wait_stop
+  [ "$output" = "stopped 11" ]
+  put_record 11
+  put_chat 11 s1 "$(bg_start t1 "$(ago 700)")" "$(said u1 "$(ago 600)")" "$(turn_end "$(ago 600)")"
+  wait_stop
+  [ "$status" -eq 2 ]
+  put_chat 11 s1 "$(bg_start t1 "$(ago 2000)")" "$(said u1 "$(ago 1900)")" "$(turn_end "$(ago 1900)")"
+  wait_stop
+  [ "$output" = "stopped 11" ]
+  put_record 11
+  put_chat 11 s1 "$(chat_line assistant "$(ago 12)" '確認します' '{"uuid":"u0"}')" "$(asked u2 "$(ago 10)")"
+  wait_stop
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop_uuid)" = u2 ]
+}
+
+@test "wait log: subagent activity counts as the last activity" {
+  make_stub orca
+  put_record 11
+  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  d="$(dirname "$(ls "$BATS_TEST_TMPDIR"/projects/*/s1.jsonl)")"
+  mkdir -p "$d/s1/subagents"
+  chat_line assistant "$(ago 5)" '調査中' > "$d/s1/subagents/a.jsonl"
+  wait_stop
+  [ "$status" -eq 2 ]
+}
+
+@test "wait log: a marked child waits for the end of the turn, a question or the long idle time" {
+  make_stub orca
+  put_record 11 stop=stopped
+  put_chat 11 s1 "$(said u1 "$(ago 30)")"
+  wait_stop
+  [ "$status" -eq 2 ]
+  [ "$(rec_get 11 stop)" = stopped ]
+  put_chat 11 s1 "$(said u1 "$(ago 5)")" "$(turn_end "$(ago 5)")"
+  wait_stop
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  put_record 11 stop=stopped
+  put_chat 11 s1 "$(said u2 "$(ago 2000)")"
+  wait_stop
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop_uuid)" = u2 ]
+}
+
+@test "wait log: a marked child with no readable log is returned with an empty uuid" {
+  make_stub orca
+  put_record 11 stop=stopped
+  wait_stop
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ -z "$(rec_get 11 stop_uuid)" ]
+}
+
+@test "wait log: the same statement is not judged twice, and an empty stop_uuid is filled silently" {
+  make_stub orca
+  put_record 11 stop=resumed stop_uuid=u1
+  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  wait_stop
+  [ "$status" -eq 2 ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  put_record 11 stop=stopped-seen stop_at=2026-01-01T00:00:00Z
+  wait_stop
+  [ "$status" -eq 2 ]
+  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  [ "$(rec_get 11 stop_at)" = 2026-01-01T00:00:00Z ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait log: movement after the stop is written as resumed, for positional and --watch-done children" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=u1
+  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(chat_line user "$(ago 200)" '続けて')"
+  wait_stop
+  [ "$status" -eq 2 ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
+  put_record 12 stop=stopped-seen stop_uuid=u1
+  put_chat 12 s1 "$(said u1 "$(ago 300)")" "$(said u2 "$(ago 10)")"
+  run dispatch wait --interval 0 --timeout 0 --watch-done 12
+  [ "$(rec_get 12 stop)" = resumed ]
+}
+
+@test "wait log: a keepalive round trip is not movement" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=u1
+  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")" \
+    "$(chat_line user "$(ago 200)" "$(render_keepalive)" '{"uuid":"k1"}')" \
+    "$(chat_line assistant "$(ago 190)" "$(keepalive_reply)" '{"uuid":"k2"}')"
+  wait_stop
+  [ "$status" -eq 2 ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait log: restating after a background notification resumes first and is a new stop" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=u1
+  put_chat 11 s1 "$(said u1 "$(ago 400)")" "$(turn_end "$(ago 400)")" "$(bg_note t1 "$(ago 300)")" "$(said u2 "$(ago 290)")" "$(turn_end "$(ago 290)")"
+  wait_stop
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop_uuid)" = u2 ]
+  [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
 }
 
 @test "child-log: no children or no jq is an error with empty stdout" {
@@ -7172,6 +7349,9 @@ reset_keepalive_poll() {
   done
   reset_keepalive_poll
   put_record 11 stop=stopped session=term-11
+  # 会話ログを読める印の子はターンの終わりで返す
+  local log
+  for log in "$BATS_TEST_TMPDIR"/projects/*/*.jsonl; do turn_end "$(ago 1)" >> "$log"; printf '\n' >> "$log"; done
   run dispatch wait --watch-stopped --interval 1 --timeout 100 11
   [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
   [ "$(calls '^orca terminal send ')" -eq 0 ]

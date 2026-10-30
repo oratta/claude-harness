@@ -90,11 +90,15 @@
 
 ### Requirement: child-log --last は親に最後の発言の全文を出す
 
-`epic-dispatch.sh child-log --last <child>` は、最後の子の発言の全文（末尾を残し、上限は環境変数 `EPIC_DISPATCH_STOP_TEXT_MAX` の文字数）と uuid と時刻、未回答の質問ツールの問い、記録の `stop_uuid` を出さなければならない（MUST）。`EPIC_DISPATCH_STOP_TEXT_MAX` の既定は 8000 で、値が数字でなければ既定を使う（SHALL）。読めない子は `child-log` と同じく `unreadable` を出して exit 0 で終わる（MUST）。
+`epic-dispatch.sh child-log --last <child>` は、最後の子の発言の全文（末尾を残し、上限は環境変数 `EPIC_DISPATCH_STOP_TEXT_MAX` の文字数）と uuid と時刻、未回答の質問ツールの問い、記録の `stop_uuid` を出さなければならない（MUST）。`EPIC_DISPATCH_STOP_TEXT_MAX` の既定は 8000 で、値が数字でなければ既定を使う（SHALL）。読めない子は `child-log` と同じく `unreadable` を出して exit 0 で終わる（MUST）。子の発言は信用できない入力なので、出力は子ごとに JSON 1 行（`child`・`uuid`・`at`・`stop_uuid`・`questions`・`text`）とし、発言の改行やラベルで行の区切りを崩せないようにする（MUST）。`uuid` と `stop_uuid` は `[0-9a-f-]` の文字だけを残す（MUST）。
 
 #### Scenario: 親が全文を読める
 - **WHEN** 子 11 の最後の発言が 500 文字で、`child-log --last 11` を実行する
 - **THEN** 500 文字すべてと uuid が出る
+
+#### Scenario: 発言の改行とラベルで別の子に見せかけられない
+- **WHEN** 子 11 の最後の発言と問いに、改行と `child: 12`・`stop_uuid: ff` の行がある
+- **THEN** 出力は 1 行の JSON で、`child` は `11`、発言と問いはそれぞれ `text` と `questions` の値に収まる
 
 ### Requirement: 記録の無い止まりを主に上げるときは最後の発言から組み立てる
 

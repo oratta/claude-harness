@@ -1398,6 +1398,96 @@ keepalive_child() {
   return 0
 }
 
+# 記録（<f>）の子の会話ログを child-log-read.py で読む。読めなければ何も出さずに 1
+record_log_json() {
+  local w
+  w="$(es_get "$1" worktree)"
+  [ -n "$w" ] || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  child_log_json "$(transcript_dir "$w")"
+}
+
+# 受けた止まり（stopped-seen）を再開に書き換え、Orca の印へ写す（<記録>）。stop_uuid・stop_at は変えない。
+# wait の再開の確かめ・--resolve の「問いではない」・dismiss が使う。戻り値は es_modify と同じ
+stop_to_resumed() {
+  local f="$1" rc=0
+  es_modify "$f" 'if .stop == "stopped-seen" then .stop = "resumed" else empty end' >/dev/null 2>>"$errf" || rc=$?
+  [ "$rc" -ne 0 ] || mirror_state "$f" "$(es_get "$f" worktree)" resumed
+  return "$rc"
+}
+
+# wait: stopped-seen で stop_uuid のある子の会話ログが進んでいたら再開に書く（<子>）。親は起こさない。
+# 戻り値 0 = 書いた・書くものが無い / 3 = 書けなかった（失敗したポーリングに数える）
+resume_moved() {
+  local n="$1" f su json moved
+  child_record "$PARENT_TOP" "$n" 2>/dev/null || return 0
+  f="$ES_HIT"
+  [ "$(es_get "$f" stop)" = stopped-seen ] || return 0
+  su="$(es_get "$f" stop_uuid)"
+  [ -n "$su" ] || return 0
+  json="$(record_log_json "$f")" || return 0
+  moved="$(printf '%s' "$json" | jq -r --arg u "$su" '(.uuid != "" and .uuid != $u) or .input_after')"
+  [ "$moved" = true ] || return 0
+  stop_to_resumed "$f"
+  case $? in
+    0|4) return 0 ;;
+    *) return 3 ;;
+  esac
+}
+
+# wait --watch-stopped: 子 1 件が止まっていれば、排他の中で読んだときの値のままであることを確かめて
+# stopped-seen・stop_uuid・stop_at を書き、Orca の印へ写し、止まりの JSON を $STOP_DIR に残す（<子> <記録>）。
+# 読めない印の子は印だけで返す（stop_uuid は空、JSON は残さない）。stop_uuid が空の stopped-seen は uuid だけ埋める。
+# 判定は LLM を呼ばない。戻り値 0 = 止まった子 / 1 = 止まっていない / 3 = 書けなかった
+detect_stopped() {
+  local n="$1" f="$2" stop su json uuid="" marked=false rc=0
+  stop="$(es_get "$f" stop)"
+  su="$(es_get "$f" stop_uuid)"
+  json="$(record_log_json "$f")" || json=""
+  case "$stop" in
+    stopped) marked=true ;;
+    stopped-seen)
+      [ -z "$su" ] && [ -n "$json" ] || return 1
+      uuid="$(printf '%s' "$json" | jq -r .uuid)"
+      [ -n "$uuid" ] || return 1
+      # stop_at は 24 時間の基点なので動かさない
+      es_modify "$f" 'if .stop == "stopped-seen" and (.stop_uuid // "") == "" then .stop_uuid = $uuid else empty end' \
+        --arg uuid "$uuid" >/dev/null 2>>"$errf"
+      case $? in
+        0|4) return 1 ;;
+        *) return 3 ;;
+      esac ;;
+    *)
+      [ "$(es_get "$f" status)" != done ] && [ -n "$json" ] || return 1 ;;
+  esac
+  if [ -n "$json" ]; then
+    printf '%s' "$json" | jq -e --argjson marked "$marked" --arg su "$su" \
+      --argjson idle "$(num_or_default "${EPIC_DISPATCH_STOP_IDLE_SEC-}" 120)" \
+      --argjson bg "$(num_or_default "${EPIC_DISPATCH_STOP_BG_IDLE_SEC-}" 1800)" '
+      ((now | floor) - .last_activity_epoch) as $age
+      | (.questions | length > 0) as $asked
+      | if $marked then .turn_ended or $asked or $age >= $bg
+        else (.turn_ended or $asked) and .uuid != "" and .uuid != $su and (.input_after | not)
+          and ($asked or $age >= (if .bg_running then $bg else $idle end))
+        end' >/dev/null || return 1
+    uuid="$(printf '%s' "$json" | jq -r .uuid)"
+  fi
+  es_modify "$f" 'if .stop == $stop and (.stop_uuid // "") == $su
+    then .stop = "stopped-seen" | .stop_uuid = $uuid | .stop_at = $now else empty end' \
+    --arg stop "$stop" --arg su "$su" --arg uuid "$uuid" >/dev/null 2>>"$errf" || rc=$?
+  case "$rc" in
+    0) ;;
+    4) return 1 ;;
+    *) return 3 ;;
+  esac
+  mirror_state "$f" "$(es_get "$f" worktree)" stopped-seen
+  if [ -n "$json" ]; then
+    printf '%s' "$json" | jq -c --argjson max "$(stop_text_max)" --argjson marked "$marked" \
+      "$STOP_TEXT_CUT"' | .marked = $marked' > "$STOP_DIR/$(var_key "$n")"
+  fi
+  return 0
+}
+
 cmd_wait() {
   # 上限は --timeout か空でない EPIC_DISPATCH_TIMEOUT があればその値。どちらも無ければ（timeout が空のまま）、
   # 待つ前に親の会話キャッシュの有効期限で決める（下の SECONDS=0 の前）
@@ -1452,8 +1542,9 @@ cmd_wait() {
     PARENT_TOP="$(toplevel)" || PARENT_TOP=""
   fi
 
-  local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f
-  local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
+  local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f seen
+  # 止まりの JSON の置き場（子の引数を var_key にした名前で 1 ファイル。ポーリングごとに空にする）
+  local errf; errf="$(mktemp)"; STOP_DIR="$(mktemp -d)"; trap 'rm -f "$errf"; rm -rf "$STOP_DIR"' EXIT
   # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
   # 1 時間か判定できなければ 3000（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
   # 起動の時点で 1 回だけ決める（待つ間は親がリクエストを出さないので変わらない）。references/reply-after-idle.md
@@ -1484,6 +1575,16 @@ cmd_wait() {
         failed="$failed $n"
       fi
     done
+    # 再開の確かめは検知より先に行う（同じポーリングで新しい発言を止まりとして見られるように）。
+    # 完了の推定より先に行う（再開に戻った子を推定の対象に戻すため）
+    if [ -n "$watch" ] || [ "$watchstop" -eq 1 ]; then
+      seen=""
+      for n in "$@" $watch; do
+        case " $seen " in *" $n "*) continue ;; esac
+        seen="$seen $n"
+        resume_moved "$n" || wsfail=1
+      done
+    fi
     # 完了の印（status が done）と止まった印（stop が stopped）は、ポーリングごとに子の記録を読んで見る。
     # 読めない記録は失敗したポーリングに数え、同じ子の記録が 2 件以上なら印を見ない。
     # 印の無い子は完了を推定し（infer_done）、推定できた子も印が付いた子に入れる
@@ -1504,8 +1605,9 @@ cmd_wait() {
         3) wsfail=1 ;;
       esac
     done
-    # 止まった印は、閉じていない位置引数の子だけを、排他つきで受けた印（stopped-seen）に書き換えてから数える
+    # 止まった子は、閉じていない位置引数の子だけを、印と会話ログで検知し、排他つきで受けた印に書き換えてから数える
     if [ "$watchstop" -eq 1 ]; then
+      rm -f "$STOP_DIR"/*
       for n in "$@"; do
         case " $closed $stopped " in *" $n "*) continue ;; esac
         child_record "$PARENT_TOP" "$n"
@@ -1514,15 +1616,10 @@ cmd_wait() {
           3) wsfail=1; continue ;;
           *) continue ;;
         esac
-        f="$ES_HIT"
-        [ "$(es_get "$f" stop)" = stopped ] || continue
-        es_modify "$f" 'if .stop == "stopped" then .stop = "stopped-seen" else empty end' >/dev/null 2>>"$errf"
+        detect_stopped "$n" "$ES_HIT"
         case $? in
-          0)
-            mirror_state "$f" "$(es_get "$f" worktree)" stopped-seen
-            stopped="$stopped $n" ;;
-          4) ;;
-          *) wsfail=1 ;;
+          0) stopped="$stopped $n" ;;
+          3) wsfail=1 ;;
         esac
       done
     fi
@@ -1600,11 +1697,13 @@ child_log_json() {
   python3 "$LAUNCHER_DIR/child-log-read.py" "$1" 2>/dev/null
 }
 
-# 止まりの発言の全文の上限（文字数）。既定は 8000 で、値が数字でなければ既定を使う
-stop_text_max() {
-  local v="${EPIC_DISPATCH_STOP_TEXT_MAX-}"
-  if is_num "$v"; then printf '%s' "$v"; else printf '8000'; fi
+# 数字の環境変数の値を読む（<値> <既定>）。数字でなければ既定を出す
+num_or_default() {
+  if is_num "$1"; then printf '%s' "$((10#$1))"; else printf '%s' "$2"; fi
 }
+
+# 止まりの発言の全文の上限（文字数）
+stop_text_max() { num_or_default "${EPIC_DISPATCH_STOP_TEXT_MAX-}" 8000; }
 
 # 部品の JSON の text を末尾を残して切る jq の式。--argjson max で上限を渡す
 STOP_TEXT_CUT='.text |= .[((length - $max) | if . < 0 then 0 else . end):]'
@@ -1613,8 +1712,9 @@ STOP_TEXT_CUT='.text |= .[((length - $max) | if . < 0 then 0 else . end):]'
 #   `<child>\t<主の時刻>\t<冒頭>\t<子の時刻>\t<冒頭>` で出す（無い列は -）。読めない子（記録が無い・読めない・2 件以上、
 #   置き場が無い・読めない、python3 が無い）は `unreadable <child>`（記録が原因なら stderr にそのパス）を出して続ける。
 #   jq が無い・今のワークツリーを読めないときは stdout 空で exit 1。それ以外は exit 0。
-#   --last を付けると、`child:`・`uuid:`・`at:`・`stop_uuid:`（記録の値）・`questions:`（未回答の問いを ` / ` で連結）・`text:` の
-#   ラベルを順に出し、`text:` の次の行から最後の発言の全文（末尾を残し、上限は EPIC_DISPATCH_STOP_TEXT_MAX 文字）を出す
+#   --last を付けると、子ごとに JSON を 1 行出す（child・uuid・at・stop_uuid（記録の値）・questions・text）。text は最後の発言の全文で、
+#   末尾を残し、上限は EPIC_DISPATCH_STOP_TEXT_MAX 文字。子の発言は信用できない入力なので、改行やラベルを書かれても行の区切りを
+#   崩せないように JSON で出し、親は text を読むときに jq で取り出す。uuid と stop_uuid は [0-9a-f-] だけを残す
 child_log_line() {
   local json
   json="$(child_log_json "$1")" || return 1
@@ -1637,15 +1737,14 @@ print("\t".join(col(owner["at"], owner["text"]) + col(log["at"], log["text"])))
 ' 2>/dev/null
 }
 
-# child-log --last の 1 人分。ラベル付きの行で出し、複数行になりうる text を最後に置く。読めなければ 1
-# （<dir> <記録の stop_uuid>）
+# child-log --last の 1 人分の JSON を 1 行出す。読めなければ 1（<子> <dir> <記録の stop_uuid>）
 child_log_last() {
   local json max
-  json="$(child_log_json "$1")" || return 1
+  json="$(child_log_json "$2")" || return 1
   max="$(stop_text_max)"
-  printf '%s' "$json" | jq -r --argjson max "$max" --arg stop_uuid "$2" "$STOP_TEXT_CUT"' |
-    "uuid: \(.uuid)", "at: \(.at)", "stop_uuid: \($stop_uuid)",
-    "questions: \(.questions | join(" / "))", "text:", .text' 2>/dev/null
+  printf '%s' "$json" | jq -c --argjson max "$max" --arg child "$1" --arg stop_uuid "$3" "$STOP_TEXT_CUT"' |
+    def id: gsub("[^0-9a-f-]"; "");
+    {child: $child, uuid: (.uuid | id), at, stop_uuid: ($stop_uuid | id), questions, text}' 2>/dev/null
 }
 
 cmd_child_log() {
@@ -1667,8 +1766,8 @@ cmd_child_log() {
     if [ -z "$wt" ] || ! command -v python3 >/dev/null 2>&1; then echo "unreadable $n"; continue; fi
     dir="$(transcript_dir "$wt")"
     if [ "$last" -eq 1 ]; then
-      if line="$(child_log_last "$dir" "$(es_get "$ES_HIT" stop_uuid)")" && [ -n "$line" ]; then
-        printf 'child: %s\n%s\n' "$n" "$line"
+      if line="$(child_log_last "$n" "$dir" "$(es_get "$ES_HIT" stop_uuid)")" && [ -n "$line" ]; then
+        printf '%s\n' "$line"
       else
         echo "unreadable $n"
       fi
