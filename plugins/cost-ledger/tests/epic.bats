@@ -664,3 +664,71 @@ if cl.resolve_number(sys.argv[2], "10") != (None, None, 0):
     sys.exit(1)
 PY
 }
+
+# ---- cost-ledger-pricing: 未知モデルの名前と行数（epic 経路） -------------------
+
+UNKNOWN_WORDING='  未知モデル: claude-nope-9 1 行（料金表に単価が無いため 0 円として扱っている）'
+
+@test "epic: unknown-model: a row in a child interval is reported with the branch wording" {  # #11 の区間（main）の未知モデル 1 行 → branch と同じ文言。1 行目は変わらない
+  logs
+  cl_row_unknown S11 r2u 2026-09-01T00:00:25.000Z main "$RA" 1000000 | cl_write_log s11u
+  tree "" ""
+  run_split cost 10
+  [ "$status" -eq 0 ] || { echo "$ERR"; return 1; }
+  printf '%s\n' "$OUT" | grep -qxF -- "$UNKNOWN_WORDING" || { echo "$OUT"; return 1; }
+  [[ "$(printf '%s\n' "$OUT" | head -1)" == 'コスト: $'* ]] || return 1
+}
+
+@test "epic: unknown-model: no line when every model has a price" {  # 全部単価あり → 行も unknown_models の中身も無い
+  logs
+  tree "" ""
+  run_split cost 10
+  [[ "$OUT" != *'未知モデル'* ]] || { echo "$OUT"; return 1; }
+  cost_json 10 | check 'd["unknown_models"] == {}'
+}
+
+@test "epic: unknown-model: a row on a head branch outside any interval is counted" {  # feat/a 上の区間に属さない未知モデル 1 行 → 数える（--json も）
+  logs
+  cl_row_unknown SX r8 2026-09-01T00:01:20.000Z feat/a "$RA" 1000000 | cl_write_log sx
+  tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
+  run_split cost 10
+  printf '%s\n' "$OUT" | grep -qxF -- "$UNKNOWN_WORDING" || { echo "$OUT"; return 1; }
+  cost_json 10 | check 'd["unknown_models"] == {"claude-nope-9": 1}'
+}
+
+@test "epic: unknown-model: a row in an interval and on a head branch is counted once" {  # feat/a 上で #12 の区間にも属する未知モデル 1 行 → 1 行
+  logs
+  cl_row_unknown S12B r8 2026-09-01T00:01:20.000Z feat/a "$RA" 1000000 "gh issue view 12" | cl_write_log s12b
+  tree "$(pr 300 feat/a)" "$(pr 301 feat/b)"
+  run_split cost 10
+  printf '%s\n' "$OUT" | grep -qxF -- "$UNKNOWN_WORDING" || { echo "$OUT"; return 1; }
+  cost_json 10 | check 'd["unknown_models"] == {"claude-nope-9": 1}'
+}
+
+@test "epic: unknown-model: a row of unknown repository is not counted" {  # cwd が不明の区間の未知モデル → 未知モデルの行は出ず、リポジトリ不明の行だけ出る
+  logs
+  {
+    cl_row SU rU1 2026-09-01T00:02:00.000Z main /nonexistent/gone 1000000 "gh issue view 11"
+    cl_row_unknown SU rU2 2026-09-01T00:02:10.000Z main /nonexistent/gone 1000000
+  } | cl_write_log su
+  tree "" ""
+  run_split cost 10
+  [[ "$OUT" != *'未知モデル'* ]] || { echo "$OUT"; return 1; }
+  [[ "$OUT" == *'リポジトリ不明'* ]] || { echo "$OUT"; return 1; }
+  cost_json 10 | check 'd["unknown_models"] == {}'
+}
+
+@test "epic: unknown-model: the line sits between the uncounted-children line and the unknown-repository line" {  # 数えていない子 issue: → 未知モデル: → リポジトリ不明
+  logs
+  cl_row_unknown S11 r2u 2026-09-01T00:00:25.000Z main "$RA" 1000000 | cl_write_log s11u
+  cl_row SU rU1 2026-09-01T00:02:00.000Z main /nonexistent/gone 1000000 "gh issue view 11" | cl_write_log su
+  gql 10 epic OPEN "$(prs)" \
+    "$(child 11 'child a' CLOSED 0)" \
+    "$(child 12 'child b' OPEN 0 "$(prs)" acme/other)"
+  run_split cost 10
+  [ "$status" -eq 0 ] || { echo "$ERR"; return 1; }
+  a="$(printf '%s\n' "$OUT" | grep -n '数えていない子 issue:' | cut -d: -f1)"
+  b="$(printf '%s\n' "$OUT" | grep -n '未知モデル:' | cut -d: -f1)"
+  c="$(printf '%s\n' "$OUT" | grep -n 'リポジトリ不明' | cut -d: -f1)"
+  [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] || { echo "$a $b $c"; echo "$OUT"; return 1; }
+}

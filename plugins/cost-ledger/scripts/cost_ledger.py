@@ -2301,11 +2301,16 @@ def render_breakdown(summary: dict, pricing: Pricing) -> list[str]:
                     format(row["usd"], ",.2f"),
                 )
             )
-    for model, count in sorted(summary["unknown_models"].items()):
-        lines.append(
-            "  未知モデル: %s %d 行（料金表に単価が無いため 0 円として扱っている）" % (model, count)
-        )
+    lines.extend(render_unknown_models(summary["unknown_models"]))
     return lines
+
+
+def render_unknown_models(unknown_models: dict) -> list[str]:
+    """未知モデルの行（モデル名の順）。branch・issue・epic の経路が同じ文言を出す。"""
+    return [
+        "  未知モデル: %s %d 行（料金表に単価が無いため 0 円として扱っている）" % (model, count)
+        for model, count in sorted(unknown_models.items())
+    ]
 
 
 def render_price_drift(result) -> list[str]:
@@ -2749,6 +2754,8 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
         "inferred_repo_usd": _micro(inferred, pricing) / 1e6,
         "inferred_repo_messages": sum(1 for fact in inferred if not is_continuation(fact)),
         "sessions": {fact["session_id"] for fact in counted},
+        # 合計に入れた行のうち単価が引けなかったモデルと行数
+        "unknown_models": summarise(counted, pricing)["unknown_models"],
     }
 
 
@@ -2890,6 +2897,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     label = resolver.label(repo_id)
     inferred_usd, inferred_messages = inferred_totals(
         (fact for row in matched for fact in row["facts"]), pricing)
+    unknown_models = summarise(
+        [fact for row in matched for fact in row["facts"]], pricing)["unknown_models"]
     payload = {
         "issue": number,
         "repo_id": repo_id,
@@ -2901,6 +2910,7 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "unknown_repo_messages": sum(row["messages"] for row in unknown),
         "inferred_repo_usd": inferred_usd,
         "inferred_repo_messages": inferred_messages,
+        "unknown_models": unknown_models,
         "usd_jpy_rate": pricing.jpy_rate,
         "closing_prs": combined["prs"],
         "outside_pr_usd": combined["outside_usd"],
@@ -2937,6 +2947,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの #%s か絞れない）"
               % (payload["unknown_repo_messages"],
                  format(payload["unknown_repo_usd"], ",.2f"), number))
+    for line in render_unknown_models(unknown_models):
+        print(line)
     for line in render_inferred(inferred_usd, inferred_messages):
         print(line)
     print("  ※ issue 単位は区間分割による推定です。区間の内訳で寄せ先を確かめてください。")
@@ -3029,6 +3041,7 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
             "unknown_repo_messages": result["unknown_repo_messages"],
             "inferred_repo_usd": result["inferred_repo_usd"],
             "inferred_repo_messages": result["inferred_repo_messages"],
+            "unknown_models": result["unknown_models"],
         }, ensure_ascii=False, indent=2))
         return 0
     print(headline(result["total_usd"], pricing, "issue #%d (%s)" % (number, label), "子 issue 込み"))
@@ -3042,6 +3055,8 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  数えていない子 issue: %s（別のリポジトリ）"
               % "、".join("%s#%d" % (_display_text(row["repo"]), row["number"])
                              for row in skipped))
+    for line in render_unknown_models(result["unknown_models"]):
+        print(line)
     if result["unknown_repo_messages"]:
         print("  リポジトリ不明: %d 件 %s（cwd が削除済みで、どのリポジトリの issue か絞れない。"
               "合計には入れていない）"
