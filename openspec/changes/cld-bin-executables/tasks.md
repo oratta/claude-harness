@@ -5,7 +5,7 @@
 
 ## 2. epic-dispatch.sh の既定
 
-- [ ] 2.1 `agent_setup` で、親の環境の `CLD_DEFAULT_ARGS`（非空）を `shq` で包んだ代入として起動コマンドの `EPIC_DISPATCH_PARENT_EPIC=` の前に付ける（`agent_cmd` と `agent_cmd_for` の両方。`launch` と `reply` が通る）。`EPIC_DISPATCH_CLAUDE_CMD` 未設定時の既定を `bin/cld` の絶対パス（単一引用符で包む。無ければ `cld`）にし、52 行目のコメントを直す。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:52-52`、`plugins/dev-workflow/scripts/epic-dispatch.sh:444-454`
+- [ ] 2.1 `agent_setup` で、親の環境の `CLD_DEFAULT_ARGS`（非空）を `shq` で包んだ代入として `EPIC_DISPATCH_PARENT_EPIC=` の直後に付ける（`agent_rest` の先頭に代入を置けば `agent_cmd` と `agent_cmd_for` の両方に載る。`launch` と `reply` が通る）。`EPIC_DISPATCH_CLAUDE_CMD` 未設定時の既定を `bin/cld` の絶対パス（空白の有無によらず無条件に `shq` で包む。無ければ `cld`）にし、52 行目のコメントを直す。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:52-52`、`plugins/dev-workflow/scripts/epic-dispatch.sh:444-454`
 
 ## 3. 文書
 
@@ -16,5 +16,5 @@
 ## 4. テスト
 
 - [ ] 4.1 `account-selector.bats` の「README zsh functions」3 本を、`bin/cld` / `bin/cld-account` を PATH 経由で呼ぶテストにし、次を足す: symlink 経由の呼び出し、`CLAUDE_HARNESS_SCRIPTS` の上書き、`cld-account` の slot id 欠落（exit 2・`claude` 不起動）、`cld` と `cld-account` の両方への `CLD_DEFAULT_ARGS` の適用、`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` を上書きしないこと。触る範囲: `plugins/dev-workflow/tests/account-selector.bats:320-370`（`extract_readme_functions` の定義も）
-- [ ] 4.2 `epic-dispatch.bats` の起動コマンドの照合を既定の語（絶対パス）に合わせ、次のテストを足す: 未設定・非ログインの既定（PATH に `cld` が無い）、Orca の `terminal create` と tmux の `start` の両経路で `CLD_DEFAULT_ARGS='…'` の代入が起動コマンドに載ること、`reply` の起動し直しにも載ること、親に値が無いとき代入が付かないこと、起動コマンドを非ログインの `sh -c` で実行すると `bin/cld` 経由でスタブの `claude` に `CLD_DEFAULT_ARGS` の語が届くこと。`--command` の照合は代入に続くコマンド部分を見る。触る範囲: `plugins/dev-workflow/tests/epic-dispatch.bats`（`cld --settings` を含む 644・729・760・768・794・4201 行付近、3409-3410 行の SKILL 文言の照合）
+- [ ] 4.2 `epic-dispatch.bats` の起動コマンドの照合を既定の語（絶対パス）に合わせ、次のテストを足す: 未設定・非ログインの既定（PATH に `cld` が無い）、Orca の `terminal create` と tmux の `start` の両経路で `CLD_DEFAULT_ARGS='…'` の代入が起動コマンドに載ること、`reply` の起動し直しにも載ること、親に値が無いとき代入が付かないこと、起動コマンドを非ログインの `sh -c` で実行すると `bin/cld` 経由でスタブの `claude` に `CLD_DEFAULT_ARGS` の語が届くこと。`--command` の照合は代入に続くコマンド部分を見る。bats の `setup` で `CLD_DEFAULT_ARGS` を unset する（既存の `EPIC_DISPATCH_*` と同じ扱い）。触る範囲: `plugins/dev-workflow/tests/epic-dispatch.bats`（`cld --settings` を含む 644・729・760・768・794・4201 行付近、3409-3410 行の SKILL 文言の照合）
 - [ ] 4.3 `tests/injection-budget.bats` が通ることを確認する（README・SKILL.md の description は常時注入でないが、`SKILL.md` の `description` を変えた場合は予算を見る）

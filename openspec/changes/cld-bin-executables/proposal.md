@@ -17,10 +17,10 @@
 
 ### Modified Capabilities
 - `usage-account-registry`: 要件「shell function から選択したアカウントで Claude を起動する」を、実行ファイル `bin/cld` / `bin/cld-account` と `CLD_DEFAULT_ARGS` の契約に変える
-- `dev-workflow-develop`: `epic-dispatch.sh` の起動コマンドの既定を `bin/cld` の絶対パスにする要件を足す
+- `dev-workflow-develop`: `epic-dispatch.sh` の要件 2 件を MODIFIED にする（「エピックの条件・作り方・回し方・完了条件を規定する」と「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」。起動コマンドの既定を `bin/cld` の絶対パスにし、`CLD_DEFAULT_ARGS` を親の環境から子へ渡す）
 
 ## Impact
 
 - 新規: `plugins/dev-workflow/bin/cld`、`plugins/dev-workflow/bin/cld-account`
-- 変更: `plugins/dev-workflow/scripts/epic-dispatch.sh`（444 行目の既定、52 行目のコメント）、`plugins/dev-workflow/README.md`（15 行目と「Claude アカウントの起動時選択」節）、`plugins/dev-workflow/skills/develop/references/epic.md`（136・140 行目の `cld` の説明）、`plugins/dev-workflow/skills/develop/SKILL.md`（`cld` の既定の説明箇所）、`plugins/dev-workflow/tests/account-selector.bats`（README の関数を取り出すテストを実行ファイルのテストに変える）、`plugins/dev-workflow/tests/epic-dispatch.bats`（既定の語の照合）、`plugins/dev-workflow/changes/1232.md`
+- 変更: `plugins/dev-workflow/scripts/epic-dispatch.sh`（444 行目の既定、52 行目のコメント、`agent_setup` での `CLD_DEFAULT_ARGS` の前置）、`plugins/dev-workflow/README.md`（15 行目と「Claude アカウントの起動時選択」節）、`plugins/dev-workflow/skills/develop/references/epic.md`（136・140 行目の `cld` の説明）、`plugins/dev-workflow/skills/develop/SKILL.md`（`cld` の既定の説明箇所）、`plugins/dev-workflow/tests/account-selector.bats`（README の関数を取り出すテストを実行ファイルのテストに変える）、`plugins/dev-workflow/tests/epic-dispatch.bats`（既定の語の照合）、`plugins/dev-workflow/changes/1232.md`
 - README の導入手順は #1232〜#1236 の子が同じ箇所に書き足す。この change は #1232 の分だけを書き、先にマージされた子と衝突したら origin/main に追従して両方の記述を残す
