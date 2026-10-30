@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change dev-workflow-work-issue-issueify-fallback. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: 入口分岐は5分岐で対象 issue を確定する
 `/develop` コマンド定義（`commands/develop.md`。`/work-issue` はそのエイリアス）は、引数から記録先を確定するための分岐として以下の5つをすべて明記しなければならない（MUST）。既存 issue が特定できる分岐（①③）の挙動は従来から変更してはならない（MUST NOT）。issue を特定できない分岐（②④⑤）の既定は develop スキルの入口 0（issue を切らず Draft PR を記録先にする）であり、issueify フォールバックは「追跡・キュー・議論が要る」とユーザーが選んだときに限る（SHALL）。
 
@@ -46,13 +48,16 @@ issueify フォールバック経由の起票は、`skills/issueify/SKILL.md` �
 - **THEN** `/develop` のエイリアスである旨と `commands/develop.md` への参照だけがあり、5 分岐の本文は書かれていない
 
 ### Requirement: issueify フォールバックは同プラグイン内の issueify スキルを Read で解決する
-issueify フォールバックは、同じ dev-workflow プラグイン内の `skills/issueify/SKILL.md`（`${CLAUDE_PLUGIN_ROOT}/skills/issueify/SKILL.md`。`CLAUDE_PLUGIN_ROOT` が無い環境では `~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify` → `~/.claude/plugins/installed/*/dev-workflow/skills/issueify` の順で探す）を Read し、その手順（原子化 → 測定可能な受け入れ条件 → 不足だけヒアリング → 承認 → 起票）をインライン実行しなければならない（MUST）。Skill tool は使用してはならない（MUST NOT）。他プラグイン（旧 loops）への path-discovery を行ってはならない（MUST NOT）。
+issueify フォールバックは、同じ dev-workflow プラグイン内の `skills/issueify/SKILL.md`（`${CLAUDE_PLUGIN_ROOT}/skills/issueify/SKILL.md`。`CLAUDE_PLUGIN_ROOT` が無い環境では `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/issueify` → `~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify` → `~/.claude/plugins/installed/*/dev-workflow/skills/issueify` の順で探す）を Read し、その手順（原子化 → 測定可能な受け入れ条件 → 不足だけヒアリング → 承認 → 起票）をインライン実行しなければならない（MUST）。Skill tool は使用してはならない（MUST NOT）。他プラグイン（旧 loops）への path-discovery を行ってはならない（MUST NOT）。
 
 #### Scenario: 同プラグイン内の issueify で起票する
 - **WHEN** `${CLAUDE_PLUGIN_ROOT}/skills/issueify/SKILL.md` が読める
 - **THEN** その SKILL.md の手順に従って issue を起票し、起票された番号を develop パイプラインに渡す
 
+#### Scenario: 名前順で先の古い marketplace dir があっても固定パスの版を使う
+- **WHEN** `CLAUDE_PLUGIN_ROOT` が空で、`~/.claude/plugins/marketplaces/aaa-stale/plugins/dev-workflow/skills/issueify/SKILL.md` と `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/issueify/SKILL.md` の両方がある
+- **THEN** `oratta-claude-harness` 側の SKILL.md を読む
+
 #### Scenario: SKILL.md が読めないときは fail-soft で縮退する
 - **WHEN** 上の探索で `skills/issueify/SKILL.md` が見つからない
 - **THEN** コマンド定義に明記された最小手順（「これで何が変わるか」「やらないとどうなるか / 今のコスト」・概要・触るファイル・測定可能な受け入れ条件を含むドラフトを提示し、承認後 `gh issue create` で起票）にフォールバックし、エラーで停止しない
-

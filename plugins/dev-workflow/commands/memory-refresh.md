@@ -15,6 +15,7 @@ plugin_root="${CLAUDE_PLUGIN_ROOT}"
 DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
 for dir in \
   "${plugin_root:+$plugin_root/skills/memory-refresh}" \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/memory-refresh \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/memory-refresh \
   ~/.claude/plugins/installed/*/dev-workflow/skills/memory-refresh; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
