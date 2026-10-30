@@ -8,4 +8,4 @@
 - [x] 2.2 変更記録 `plugins/dev-workflow/changes/1031.md` を書く（上限の拒否、ハイフン始まりの id が `add` で登録できなくなること、戻し方） 触る範囲: plugins/dev-workflow/changes/1031.md（新規）
 
 ## 3. spec
-- [ ] 3.1 `openspec/specs/usage-account-registry/spec.md` に change の delta を取り込む（archive で反映） 触る範囲: openspec/specs/usage-account-registry/spec.md:361-371
+- [x] 3.1 `openspec/specs/usage-account-registry/spec.md` に change の delta を取り込む（archive で反映） 触る範囲: openspec/specs/usage-account-registry/spec.md:361-371

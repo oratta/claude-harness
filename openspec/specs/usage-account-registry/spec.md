@@ -2,7 +2,9 @@
 
 ## Purpose
 使用量観測の対象となる Claude アカウントを列挙するレジストリ（`accounts.json`）の所在・形状・不正スロットの扱いと、スロットから macOS Keychain のサービス名を導出する規則、および probe と statusline が共有する active スロットの判定規則を定める。レジストリを導入していない環境では既定アカウント 1 つに縮退し、挙動が変わらないことを保証する。
+
 ## Requirements
+
 ### Requirement: アカウントレジストリの所在と形状
 使用量観測の対象となる Claude アカウントは、レジストリファイル `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`（環境変数 `CLAUDE_ACCOUNTS_FILE` で上書き可能）に定義されなければならない（SHALL）。`CLAUDE_SECURESTORAGE_CONFIG_DIR` を使う運用の前提が「`CLAUDE_CONFIG_DIR` は共有する」ことであるため、レジストリは `CLAUDE_CONFIG_DIR` 配下に置く。
 
@@ -179,7 +181,6 @@
 #### Scenario: 使用量 API を叩かずにセッション記録だけで選ぶ
 - **WHEN** usage snapshot が無く、A と B それぞれの鍵のセッション記録だけがあり、`surplus_pct` が `a < b` である
 - **THEN** selector は `b` の `securestorage` を出力し、理由行に `a` と `b` の margin を含める
-
 
 ### Requirement: 古い・欠測・短期枠逼迫のスロットを候補から外す
 自動選択の候補の外し方は、headroom の行の `status` と best の除外規則（`dev-workflow-headroom` の要件「アカウントごとの項目と status」「一番余っているアカウント（best）を選ぶ」）に従わなければならず（SHALL）、`select-account.sh` で独自の検査を足してはならない（MUST NOT）。したがって、取得からの経過時間でスロットを外さず（古さは実効値の規則で扱う）、`status` が `off`・`missing`・`stale` のスロットと、`five_hour_pct` が 90 以上のスロットを外し、`five_hour_pct` が分からない（null）スロットは候補に残す。理由行では、オフを `off`、週次の値が読めないものを `missing`、週次の実効値の `observed_at`（`build_view` がそのスロットに選んだ値の取得時刻。snapshot の値が採用されれば snapshot の取得時刻、セッション記録が採用されればその記録の時刻）が今より 60 秒を超えて未来のものを `stale`、5 時間枠による除外を `five-hour>=90` と書く。候補が 1 つも無い場合は既定アカウントを表す空の `securestorage` を選ばなければならない（SHALL）。このとき、レジストリに既定スロット（`securestorage` が `null` または空文字）があれば宣言順で最初のスロットの id を `selected` に出し、無ければ登録 id では使用できない `@unregistered-default` を出さなければならない（SHALL）。このときの `selected` の決め方は `enabled` を見ない（縮退先は常に既定アカウントであり、`selected` はその起動先を指すスロットを報告するため）。理由は、オンのスロットが 1 つも無ければ `default-due-to-all-off`、オンのスロットに `missing` か `stale` による除外が 1 つでもあれば `default-due-to-missing-usage`、オンのスロットがすべて `five-hour>=90` だけで除外された場合は `default-due-to-five-hour-limit` としなければならない（SHALL）。headroom の設定（`HEADROOM_7D_CAP_PCT`・`HEADROOM_NORMAL_RATE_PCT_PER_DAY`）が不正で `compute` が例外を出したときも、同じ決め方で既定アカウントへ縮退し、理由を `default-due-to-invalid-headroom-setting`、`margins` を `-` として exit 0 で終わらなければならない（SHALL）。
@@ -359,14 +360,16 @@ snapshot を書くとき、オフのスロットの項目は前回の値（`fetc
 - **THEN** `a` と `c` のどちらにも `enabled` は書かれない
 
 ### Requirement: 登録簿を一覧・追加・オン・オフするコマンド
-`plugins/dev-workflow/scripts/accounts.sh` は、サブコマンド `list`、`add <id> [--label <label>]`、`off <id>`、`on <id>` を持たなければならない（SHALL）。登録簿の場所は `accounts-init.sh` と同じ規則（`CLAUDE_ACCOUNTS_FILE`、無ければ `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`）で決める。id と label の検査は `accounts-init.sh` と同じ（id は英数字とハイフン 1〜32 文字、label は制御文字を含まない 16 文字以下、省略時は id）。
+`plugins/dev-workflow/scripts/accounts.sh` は、サブコマンド `list`、`add <id> [--label <label>]`、`off <id>`、`on <id>` を持たなければならない（SHALL）。登録簿の場所は `accounts-init.sh` と同じ規則（`CLAUDE_ACCOUNTS_FILE`、無ければ `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`）で決める。id と label の検査は `accounts-init.sh` と同じ（`add` の id の位置の例外は下記。id は英数字とハイフン 1〜32 文字、label は制御文字を含まない 16 文字以下、省略時は id）。
 
 - `list` は登録簿を変えず、スロットごとに `<id>`・`<label>`・`on` または `off`・`<securestorage>`（`null` は `-`）をタブ区切りで 1 行ずつ、宣言順に stdout へ出さなければならない（SHALL）。オフの判定は要件「スロットを enabled でオフにできる」に従う
+- `add <id>` の `<id>` の位置に来たハイフン始まりの引数（`--lable`、`--version`、`-H`、`--`、`-` など。`--help` / `-h` は使い方を出して exit 0）は、id として受け取らず exit 2 で拒否しなければならない（SHALL）。したがって `add` の id 検査は `accounts-init.sh` より厳しく、ハイフンで始まる id（`-a` など）は `add` では登録できない（`on` / `off` と `accounts-init.sh` は従来どおりこの形の id を受ける）。タイプミスしたオプションが id として登録され、認証情報の置き場所とログインコマンドまで作られるのを防ぐため。
 - `add <id>` は、認証情報の置き場所 `<基点>/<id>` を作り、末尾に `{"id", "label", "securestorage"}` のスロットを足さなければならない（SHALL）。`securestorage` には作ったディレクトリの絶対パスを書く。基点は環境変数 `CLAUDE_ACCOUNTS_HOME`（既定 `$HOME/.claude-accounts`）で、絶対パスでなければ exit 2。`enabled` は書かない。完了時に stdout へ、ログインするコマンドを 1 行（`CLAUDE_SECURESTORAGE_CONFIG_DIR=<絶対パス> claude`）出さなければならない（SHALL）。パスはシェルの単一引用符で囲み（パス中の `'` は `'\''` に置き換える）、空白や記号を含む基点でも、表示された 1 行をそのまま貼って実行できなければならない（SHALL）
 - `off <id>` / `on <id>` は、そのスロットの `enabled` を JSON の `false` / `true` に書き換えなければならない（SHALL）。`label`・`securestorage`・スロットの順序・未知のキーは変えてはならない（MUST NOT）。認証情報の置き場所は消してはならない（MUST NOT）
+- 登録済みのスロットがすでに 8 個以上ある登録簿への、新しい id の `add` は要件「登録できるスロットは 8 個まで」に従い exit 2 で拒否する
 - 既にある id の `add`、登録簿に無い id の `on` / `off`、未知のサブコマンド、必須引数の欠落は、stderr に理由を出して exit 2 で終わり、登録簿を変えてはならない（MUST NOT）。`add` が exit 2 で終わるとき、認証情報の置き場所を新しく作ってはならない（MUST NOT）
 - 登録簿を書き換えるサブコマンド（`add` / `on` / `off`）は、書き換える前に既存の登録簿を `<登録簿>.bak` に控えなければならない（SHALL）。登録簿が JSON として読めない、または `accounts` が配列でないときは、何も書かず、stderr に理由を出して exit 1 で終わらなければならない（SHALL）。壊れた登録簿の上に書くと、既定アカウント 1 つへの縮退（要件「レジストリ不在時は既定スロット 1 つに縮退する」）で気づきにくくなるため
-- `accounts-init.sh` の挙動は変えてはならない（MUST NOT）
+- `accounts-init.sh` の挙動は、要件「登録できるスロットは 8 個まで」の拒否を除いて変えてはならない（MUST NOT）
 
 守備範囲: このコマンドの検査（id・label・基点・登録簿の形）が受け取る入力は、利用者が自分の端末で打つコマンドライン引数と環境変数、および同じ利用者が作った（このコマンドか `accounts-init.sh` か手編集による）登録簿ファイルの 2 つに限る。悪意のある第三者が作った入力は想定しない。拾いたい誤りは、タイプミスや書きかけの登録簿のせいで、登録簿が黙って消える・別のスロットが変わる・認証情報の置き場所が意図しない場所にできることの 3 つ。次の入力は誤ったまま通ることを許す: 実在しないアカウントの id（`test` など）はそのまま登録する／`label` が他のスロットと同じでも登録する／基点が実在しない親ディレクトリの下でも作れる範囲で作る（作れなければ exit 1）／`enabled` が `false` 以外の書き損じ（`"false"`、`0` など）が入っているスロットへの `on` / `off` は、その値を `true` / `false` に上書きするだけで報告しない／同時に 2 つのコマンドが走ったときは、後から置き換えた方の書き込みが残る／`.bak` は 1 世代で、続けて 2 回実行すると最初の状態の控えは残らない／登録簿の `accounts` の中にあるスロットの形が不正（`id` を欠く、など）でも、`on` / `off` は対象の id が見つかればそのスロットだけを書き換え、ほかは変えない。これらの穴を見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
 
@@ -405,6 +408,10 @@ snapshot を書くとき、オフのスロットの項目は前回の値（`fetc
 #### Scenario: このコマンドでオフにしたスロットは自動選択で選ばれない
 - **WHEN** 余り（`surplus_pct`）が最大のスロット `b` を `accounts.sh off b` でオフにして `select-account.sh` を実行する
 - **THEN** `b` は選ばれず、理由行の `margins` に `b:off` が出る
+
+#### Scenario: id の位置のハイフン始まりの引数を拒否する
+- **WHEN** 空の登録簿に `accounts.sh add --lable`、`accounts.sh add --version`、`accounts.sh add -H`、`accounts.sh add --`、`accounts.sh add -` を実行する
+- **THEN** どれも exit 2 で、登録簿の内容は変わらず、`<基点>` 以下にディレクトリも作られない
 
 ### Requirement: Codex を codex.enabled でオフにできる
 レジストリのトップレベルの `codex.enabled` が JSON の `false` であるとき、Codex は「オフ」として扱わなければならない（SHALL）。`codex` が無い、オブジェクトでない、`enabled` が無い、`true`、真偽値でない値（文字列の `"false"`、数値の `0`、`null` など）のときはオンとする。レジストリが無い・読めない・トップレベルが配列のときもオンとする。オフにするのは利用者が明示したときだけにし、書き損じで Codex が黙って止まらないようにするため。オフになる条件は `false` との一致 1 つのままにし、`false` 以外の書き損じを検出して報告することはこの要件の範囲外とする。
@@ -463,3 +470,28 @@ Codex のオフは、Codex の提供元全体に対する設定であり、Codex
 #### Scenario: 長い label は 8 桁に切る
 - **WHEN** 表示幅が 8 を超える `codex.label` を与えて Codex の表示名を求める
 - **THEN** 8 桁に切り詰めた値になる
+
+### Requirement: 登録できるスロットは 8 個まで
+`accounts.sh add` と `accounts-init.sh` は、`accounts` 配列の要素がすでに 8 個以上あるとき、登録簿にまだ無い `id` を足さず、上限の理由を stderr に出して exit 2 で終わらなければならない（SHALL）。使用量を読む処理は先頭 8 個で打ち切るので、9 個目は黙って効かなくなるため。判定は要素の数で行い、すでにある `id` の登録し直しは拒否しない。
+
+守備範囲: 入力は利用者が打つコマンドと同じ利用者の登録簿に限り、拾う誤りは「9 個目が黙って効かない」だけ。手編集で 9 個以上にした登録簿そのもの（読み取り側に任せる）／同時実行での 9 個目／不正な要素を含む 8 要素の配列への追加の拒否（登録簿を直せば足せる）／配列でない `accounts`（init は従来どおり空扱い）は許す。塞ぎ切ることは完了条件にしない。
+
+#### Scenario: 8 個登録済みで add の 9 個目を拒否する
+- **WHEN** 8 個のスロットが登録された登録簿に `accounts.sh add z` を実行する
+- **THEN** exit 2 で、stderr に上限の理由が出て、登録簿（`.bak` を含む）の内容は変わらず、`<基点>/z` も作られない
+
+#### Scenario: 8 個登録済みで accounts-init.sh の 9 個目を拒否する
+- **WHEN** 8 個のスロットが登録された登録簿に、まだ無い id で `accounts-init.sh --id z` を実行する
+- **THEN** exit 2 で、stderr に上限の理由が出て、登録簿の内容は変わらない
+
+#### Scenario: 8 個登録済みでも既存 id の登録し直しはできる
+- **WHEN** 8 個のスロットが登録された登録簿に、すでにある id で `accounts-init.sh --id a --label A2` を実行する
+- **THEN** exit 0 で、`a` の `label` が `A2` に変わり、スロット数は 8 個のまま
+
+#### Scenario: 9 個以上の登録簿への追加も拒否する
+- **WHEN** すでに 9 個の要素がある登録簿に、まだ無い id で `accounts.sh add z` と `accounts-init.sh --id z` を実行する
+- **THEN** どちらも exit 2 で、登録簿の内容は変わらない
+
+#### Scenario: 7 個から 8 個目は足せる
+- **WHEN** 7 個のスロットが登録された登録簿に `accounts.sh add z` を実行し、別の 7 個の登録簿に `accounts-init.sh --id z` を実行する
+- **THEN** どちらも exit 0 で、スロットは 8 個になる
