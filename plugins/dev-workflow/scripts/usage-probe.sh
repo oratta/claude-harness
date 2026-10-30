@@ -309,7 +309,7 @@ fi
 
 # $1=Keychain サービス名 $2=securestorage パス → OAuth アクセストークン（取れなければ空）
 slot_token() {
-  local service="$1" secure="$2" token="" cred
+  local service="$1" secure="$2" token="" cred stale="" out
   # Linux 等の平文 credentials.json を先に試す（既定スロットは従来どおり ~/.claude を見る）
   if [ -n "$secure" ]; then
     cred="${secure}/.credentials.json"
@@ -317,13 +317,32 @@ slot_token() {
     cred="$HOME/.claude/.credentials.json"
   fi
   if [ -f "$cred" ]; then
-    token="$(python3 -I -c "import json,sys;print(json.load(open(sys.argv[1])).get('claudeAiOauth',{}).get('accessToken',''))" "$cred" 2>/dev/null || true)"
+    # 1 行目=期限切れなら 1（それ以外は 0）、2 行目=トークン。
+    # expiresAt は 1e11 以上ならミリ秒、未満なら秒とみなして NOW（秒）と比べる。
+    # 数値でない・欠損・負のときは切れていない扱い（従来どおり平文を使う）。
+    out="$(python3 -I -c "
+import json,sys
+o=json.load(open(sys.argv[1])).get('claudeAiOauth',{})
+e=o.get('expiresAt')
+x=0
+if isinstance(e,(int,float)) and not isinstance(e,bool) and e>=0:
+    if e>=1e11: e=e/1000.0
+    x=1 if e<float(sys.argv[2]) else 0
+print(x);print(o.get('accessToken') or '')" "$cred" "$NOW" 2>/dev/null || true)"
+    if [ "$(printf '%s\n' "$out" | sed -n 1p)" = "1" ]; then
+      # 期限切れの平文は控えに残し、Keychain から取れたときだけ Keychain を使う
+      stale="$(printf '%s\n' "$out" | sed -n 2p)"
+    else
+      token="$(printf '%s\n' "$out" | sed -n 2p)"
+    fi
   fi
   # サービス名が空のまま Keychain を引くと全件検索になり固まる。念のための番人。
   if [ -z "$token" ] && [ -n "$service" ] && command -v security >/dev/null 2>&1; then
     token="$(security find-generic-password -s "$service" -w 2>/dev/null \
-      | python3 -I -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || true)"
+      | python3 -I -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken') or '')" 2>/dev/null || true)"
   fi
+  # Keychain を引けない・取れないときは、期限切れの平文のトークンのまま（従来の動き）
+  [ -n "$token" ] || token="$stale"
   printf '%s' "$token"
 }
 

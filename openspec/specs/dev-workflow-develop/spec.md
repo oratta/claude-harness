@@ -485,7 +485,7 @@ develop の本体は、(4) で G を起動する指示・再開する指示・�
 ### Requirement: adapter 経路の G はレビュアーを自分で呼ばず needs-reviewer を返す
 `gate-runner.md` の冒頭にある本体からの入力一覧は、PR 番号・記録先・実行モードに加えて `レビュー経路:` の 1 行を含み、adapter 経路でレビュー要約を受けて再開するときは、選ばれた executor / model と dispatch 記録のコメント URL も入力に含むことを書かなければならない（MUST）。
 
-`gate-runner.md` は、G（phase `gate` として起動された G）が `レビュー経路: adapter` のとき、full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）を済ませ、同一 PR/HEAD で他の G が着手済みでないことを確認してから `needs-reviewer` を返すことを書かなければならない（MUST）。full のときの payload の判定は `full（adapter 経路）` とし、Codex 不可の実測を行わないことを書かなければならない（MUST）。adapter 経路の payload では `選んだ経路`・`実行コマンド`・`終了コード`・`出力の要点`・`実待ち時間` を `未実行（adapter 経路）` と書き、Codex の証拠を作らないことを書かなければならない（MUST）。`pr-review-gate/SKILL.md` の PR コメント雛形も、この 5 欄すべての閉じた列挙に `未実行（adapter 経路）` を含めなければならない（MUST）。
+`gate-runner.md` は、G（phase `gate` として起動された G）が `レビュー経路: adapter` のとき、full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）を済ませ、同一 PR/HEAD で他の G が着手済みでないことを確認してから `needs-reviewer` を返すことを書かなければならない（MUST）。full のときの payload の判定は `full（adapter 経路）` とし、Codex 不可の実測を行わないことを書かなければならない（MUST）。adapter 経路の payload では `選んだ経路`・`実行コマンド`・`終了コード`・`出力の要点`・`実待ち時間` を `未実行（adapter 経路）` と書き、Codex の証拠を作らないことを書かなければならない（MUST）。`pr-review-gate/stages/review-run.md` の PR コメント雛形も、この 5 欄すべての閉じた列挙に `未実行（adapter 経路）` を含めなければならない（MUST）。
 
 この規則は phase `review` のレビュアーとして起動されたときには適用しないと限定しなければならない（MUST）。従来経路の Claude G の既定（full は G の Bash から Codex を直接呼び、Codex が使えないときと light のときだけ `needs-reviewer` を返す）は変えてはならない（MUST NOT）。従来経路の Codex G は prompt の禁止に従って別の Codex を直接呼んではならない（MUST NOT）。
 
@@ -500,7 +500,7 @@ develop の本体は、(4) で G を起動する指示・再開する指示・�
 - **THEN** G は同一 PR/HEAD で他の G が着手済みでないことを確認し、Codex を起動せず、判定 `full（adapter 経路）`・HEAD SHA・受け入れ条件の所在を含み、実行の証拠欄が `未実行（adapter 経路）` の `needs-reviewer` を返す
 
 #### Scenario: adapter 経路の証拠欄をコメント雛形で選べる
-- **WHEN** `pr-review-gate/SKILL.md` の PR コメント雛形を読む
+- **WHEN** `pr-review-gate/stages/review-run.md` の PR コメント雛形を読む
 - **THEN** `選んだ経路`・`実行コマンド`・`終了コード`・`出力の要点`・`実待ち時間` の 5 欄すべてで `未実行（adapter 経路）` を選べる
 
 #### Scenario: 従来経路の Claude G による full レビュー
@@ -524,7 +524,7 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 
 本体は選び直しと記録の前にレビュアーを起動してはならない（MUST NOT）。従来経路（`レビュー経路: 従来` または行が無い G）が `needs-reviewer` を返したときに呼び出し元がレビュアーを起こす手順（`gate-runner.md` の既存記述）は変えてはならない（MUST NOT）。
 
-`gate-runner.md` と `pr-review-gate/SKILL.md` は、adapter 経路で要約を受け取った G の「レビュー実行者:」コメントの形 `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` を持たなければならない（MUST）。`<light|full>` には手順 2-0 の判定を書く。executor が `codex` なら `<model>` は `execution.model_resolution.requested` と `resolved` を使った `<requested>→<resolved>` とし、executor が `claude` なら従来の model 値を使う。`pr-review-gate/SKILL.md` の「レビュー実行者:」の書き分けと PR コメント雛形にこの 1 形を足し、gate-runner.md と正本が食い違わないようにしなければならない（MUST）。
+`pr-review-gate/stages/triage.md` と `pr-review-gate/stages/review-run.md` は、adapter 経路で要約を受け取った G の「レビュー実行者:」コメントの形 `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` を持たなければならない（MUST）。`<light|full>` には手順 2-0 の判定を書く。executor が `codex` なら `<model>` は `execution.model_resolution.requested` と `resolved` を使った `<requested>→<resolved>` とし、executor が `claude` なら従来の model 値を使う。`stages/triage.md` の「レビュー実行者:」の書き分けと、`stages/review-run.md` の書き分けおよび PR コメント雛形に、この 1 形を足し、2 つのファイルの間で食い違わないようにしなければならない（MUST）。
 
 #### Scenario: claude-default が選ばれる
 - **WHEN** adapter 経路（自動選択）で G が `needs-reviewer` を返し、`request --phase review` が構成 `claude-default`・executor `claude`・model `opus` を返す
@@ -536,11 +536,11 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 
 #### Scenario: G がレビュー実行者を記録する
 - **WHEN** adapter 経路の G が本体から Codex レビュー要約と requested=`sol`、resolved=`gpt-6-sol`、dispatch 記録の URL を受け取る
-- **THEN** G は `レビュー実行者: codex/sol→gpt-6-sol（adapter 経路・<light|full>・dispatch 記録: <URL>）` の PR コメントを投稿し、その埋め方は `pr-review-gate/SKILL.md` の雛形にも説明される
+- **THEN** G は `レビュー実行者: codex/sol→gpt-6-sol（adapter 経路・<light|full>・dispatch 記録: <URL>）` の PR コメントを投稿し、その埋め方は `pr-review-gate/stages/review-run.md` にも説明される
 
 #### Scenario: 回帰テスト
 - **WHEN** `bash scripts/test.sh` を実行する
-- **THEN** `gate-runner.md`・`SKILL.md`・`codex-develop.md`・`pr-review-gate/SKILL.md` の上記文言を照合する bats を含めて exit 0 になる
+- **THEN** `gate-runner.md`・`SKILL.md`・`codex-develop.md`・`pr-review-gate/stages/triage.md`・`pr-review-gate/stages/review-run.md` の上記文言を照合する bats を含めて exit 0 になる
 
 ### Requirement: epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う
 `plugins/dev-workflow/scripts/epic-dispatch.sh` は、サブコマンド `route`・`launch`・`wait` を持たなければならない（MUST）。どのサブコマンドも LLM を呼んではならない（MUST NOT）。
@@ -3049,7 +3049,7 @@ develop の `references/epic.md`「エピックの扱い」→「回し方」の
 
 channel の本体は AskUserQuestion を呼んではならない（MUST NOT）。主に聞くときは、依頼の届いたチャンネル（依頼の発言の開きタグの `chat_id`）にチャンネルの返信ツールで質問を送り、そのターンを終えなければならない（MUST）。依頼がチャンネルから届いていないときは、そのセッションの運用が決める主への連絡先に送り、連絡先が分からなければ記録先に質問をコメントして `needs-approval` を付けて止まる（MUST）。記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は先に PR か記録先のコメントに書き、チャンネルの質問にそのコメントのフル URL を添える（MUST）。
 
-`skills/develop/references/channel.md` の「channel の聞き方」は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/decision-criteria.md`・`skills/develop/references/epic-child-stop.md`・`skills/develop/references/fix-check.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md と `skills/develop/references/channel.md` を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。入口の分岐で主に聞く場面なので、channel.md の読み替えの規則の例外としてその場にも書く）。
+`skills/develop/references/channel.md` の「channel の聞き方」は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/decision-criteria.md`・`skills/develop/references/epic-child-stop.md`・`skills/develop/references/fix-check.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`commands/synced-skills-slim.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md と `skills/develop/references/channel.md` を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。入口の分岐で主に聞く場面なので、channel.md の読み替えの規則の例外としてその場にも書く）。
 
 この要件の守備範囲は、channel で本体が AskUserQuestion に流れる経路を develop の文面から無くすことである。拾いたい誤りは、develop の手順のどこかが channel の本体に AskUserQuestion を呼ばせること。develop 以外のスキル（wt-clean など）が AskUserQuestion を呼ぶことと、本体が文面に反して呼ぶことを機械的に止めることは、この要件の範囲に入れない。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
 
@@ -4229,25 +4229,35 @@ Claude Code で develop を開始する本体は、役割別工程や返事待�
 - **THEN** 実 worktree の設定へ apply せず、仕様の作成や隔離した fixture の検証を承認済みと取り違えない
 
 ### Requirement: idle compaction の設定を確かめられなければ成功にしない
-設定部品は、読めない・壊れた・object でない・重複キーのある JSON、不正な worktree、対象への symlink を検出したら書かず exit 1 にしなければならない（MUST）。check は disk 上で false なら exit 0、false への変更が必要なら exit 2 とする（MUST）。本体は disk 上の成功だけで live 反映を断定せず、反映しなければ記録から新セッションで再確認し、それでも off でなければ開始を止める（MUST）。
+設定部品は、読めない・壊れた・object でない・重複キーのある JSON、不正な worktree、対象への symlink を検出したら書かず exit 1 にしなければならない（MUST）。check は disk 上で false なら exit 0、false への変更が必要なら exit 2 とする（MUST）。本体は disk 上の成功だけで live 反映を断定してはならず（MUST NOT）、機械確認で live の off を確かめられず on の証拠も無いときは、再起動を求めず止まらずに進んで「未確認」と記録する（MUST）。on 判明、check exit 1、apply 失敗での扱いは各シナリオに従う。
 
 #### Scenario: 機械確認の根拠と確認失敗時の扱い
 - **WHEN** check / apply 後に開始可否を判断する
-- **THEN** 起動引数の `--settings '{"idleCompaction":false}'` と矛盾する上書きが無いこと、起動前から disk が false の新セッションで矛盾する起動引数が無いこと、または実効値 off を機械確認できれば、interactive / unmanned とも主に聞かず進む。新規 worktree の子は check exit 2 と承認済み apply の後も起動引数の経路を使え、既存 local false は書き込まない。disk false だけや起動後の apply だけで live 反映を断定しない。主の `/config` 確認は初回の実機検証または機械確認で off を確かめられない場合に限る。後者は状態を記録して同じ worktree の新セッションで再起動し、入口から再確認する。なお不明なら interactive は主に確認を求め、unmanned は停止して理由を記録する。on の場合も未反映として再起動し、それでも off を確認できなければ開始を止める。機械で確認した範囲を超えて live で off と報告しない。
+- **THEN** 起動引数の `--settings '{"idleCompaction":false}'` と矛盾する上書きが無いこと、起動前から disk が false の新セッションで矛盾する起動引数が無いこと、または実効値 off を機械確認できれば、interactive / unmanned とも主に聞かず進む。確認した根拠を記録する。主の `/config` 確認は初回の実機検証に限る。新規 worktree の子は check exit 2 と承認済み apply の後も起動引数の経路を使え、既存 local false は書き込まない
+- **AND** これらで live の off を確かめられず on の証拠も無いとき（起動後の apply だけ、起動時の値が不明など）は、interactive / unmanned とも再起動を求めず、主に聞かず、停止せずに進み、「未確認」と記録する
+- **AND** 機械で確認した範囲を超えて live で off と報告せず、disk false だけや起動後の apply だけで live 反映を断定しない
 
 #### Scenario: 既に off の起動は主の毎回確認を求めない
 - **WHEN** 新規 worktree の子が CLI false で起動した、既存 local false を起動前から読み矛盾する指定が無い、または実効値 off を機械確認できた
 - **THEN** 必要な承認済み apply の後、interactive / unmanned とも追加の主の確認を求めず進み、確認した根拠だけを記録して live 反映は断定しない
 
+#### Scenario: 起動後の apply だけでは再起動せず未確認で進む
+- **WHEN** check が exit 2 で、apply で disk を false にしたが、起動引数に `--settings '{"idleCompaction":false}'` は無く、起動時の値も false だったと確認できない
+- **THEN** interactive / unmanned とも、新しいセッションでの再起動を求めず、主にも聞かず、開始を止めずに進む
+- **AND** 「live の off は未確認」と develop 開始コメントに記録し、「live で off」とは報告しない。compact 後の再読で既に同じ記録があれば書き足さない
+- **AND** apply 前の disk の値は on の証拠にしない。on 判明の記録があるセッションはこの扱いにせず、on 判明の規則に従う
+
 #### Scenario: 不正な入力を上書きしない
 - **WHEN** 壊れた JSON、配列、重複キー、読めないファイル、worktree でないパス、.claude または settings.local.json の symlink を渡す
 - **THEN** exit 1 で対象パスと原因を出し、設定全体を出さず、ファイルとリンク先を変更しない
+- **AND** 本体は対象パスと原因を記録して開始を止める
 
 #### Scenario: ファイルが false でも反映していない
-- **WHEN** disk 上は false だが、実機の /config では Idle compaction が on のままである
-- **THEN** live 反映済みとは報告せず、issue の記録から同じ worktree の新セッションで再確認する。再起動でも off を確認できなければ開始を止めて報告する
+- **WHEN** disk 上は false だが、実機の /config などで実効値 Idle compaction が on のままであると判明した、または矛盾する上書き指定（例えば起動引数の `{"idleCompaction":true}`）がある
+- **THEN** live 反映済みとは報告せず、未反映として状態と on 判明を issue に記録し、同じ worktree の新セッションで再起動して入口から機械確認する。interactive は主に新しいセッションでの再開を案内して終える。channel / unmanned は本体が新しいセッションを開けないので、記録して開始を止める
+- **AND** on 判明の記録がある再起動後のセッションでなお off を確認できなければ開始を止めて報告する
 
-この検査の入力元は利用者の worktree の通常の設定ファイルとパスである。拾う誤りは設定破損・他キー消失・別パスへの書き込み・未反映を成功と呼ぶこと。未知の正常な設定キーや同じ worktree の別セッションへの設定の持続は通してよい。同時書き換えの完全な排他、悪意あるファイル差し替え、将来の Claude 設定形式のすべてを防ぐ検査ではない。穴を塞ぎ切ることを完了条件にしない。
+この検査の入力元は利用者の worktree の通常の設定ファイルとパスである。拾う誤りは設定破損・他キー消失・別パスへの書き込み・未反映を成功と呼ぶこと。未知の正常な設定キーや同じ worktree の別セッションへの設定の持続、live の off が未確認のまま進むセッションは通してよい。同時書き換えの完全な排他、悪意あるファイル差し替え、将来の Claude 設定形式のすべてを防ぐ検査ではない。穴を塞ぎ切ることを完了条件にしない。
 
 ### Requirement: idle compaction 無効化の実機結果はマージ後に記録する
 実装担当は #1385 に実機チェックリストを残し、主はマージ・plugin 更新後の最初の親・子で設定が off になる手順と結果を記録しなければならない（MUST）。idle の対象となる会話量、スリープなし、リクエストなしで 60 分以上の待機区間を親・子それぞれ観測し、新しい compact_boundary が無いことを記録する（MUST）。通常の上限近くでの自動 compact の発生は別区間で確認する。完了前は未検証とし、Bats の合格を代用にしない。

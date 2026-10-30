@@ -170,7 +170,7 @@ SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflo
 ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts/accounts.sh off b
 ```
 
-オフのアカウントは、ステータスラインから消え、`dev-workflow` の起動時の自動選択（`cld`）の候補から外れ、使用量の取得もされない。
+オフのアカウントも登録簿のスロットであり続けるので、登録できる 8 個の上限には数えられる（枠を空けるには `accounts.json` の要素を手で消す）。オフのアカウントは、ステータスラインから消え、`dev-workflow` の起動時の自動選択（`cld`）の候補から外れ、使用量の取得もされない。
 
 表示するアカウントが 1 つだけになると、左端の名前と `▸` も出ない 1 アカウントの表示に戻る。
 

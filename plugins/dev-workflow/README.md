@@ -23,7 +23,7 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 - 実装と**別コンテキスト**（既定 Codex CLI、フォールバック Task サブエージェント）でレビューする
 - **リスク宣言の positive affirmation**: 「リスクなし」か「主のリスク許容が必要」のどちらかを必ず PR コメントに残す（書かないは選べない・fail-closed）
 - 動作確認の**証拠**（HEAD SHA 付き）を添付し、API で実在を実測してから `agent-review:passed` を付ける
-- 収束ルール: レビューは既定2周キャップ・再レビューは差分限定（方式の書き換え後は全体レビュー）・マージ後に直せるものは blocking にしない・マージを止めるのは全周共通で `blocking` かつ `confirmed` かつ違反文の引用（または例外 3 種）を G が照合できた指摘だけで、それ以外は止めない指摘の振り分け表に通す（段 A〜E。無条件では issue にしない）・2周目の終わりに止める指摘が残れば `needs-approval` で主に上げる（3周目を自動で開けない）。レビュアーには手順 2-1 の固定書式（深刻度・検証・根拠・場所・何が起きるか・直し方）で指摘を書かせ、「何が起きるか」は「こういう条件だと、こうなる」の形にする
+- 収束ルール: レビューは既定2周キャップ・再レビューは差分限定（方式の書き換え後は全体レビュー）・マージ後に直せるものは blocking にしない・マージを止めるのは全周共通で `blocking` かつ `confirmed` かつ違反文の引用（または例外 3 種）を G が照合できた指摘だけで、それ以外は止めない指摘の振り分け表に通す（段 A〜E。無条件では issue にしない）・2周目の終わりに止める指摘が残れば `needs-approval` で主に上げる（3周目を自動で開けない）。レビュアーには手順 2-1 の固定書式（深刻度・検証・根拠・受け入れ条件の要否・場所・何が起きるか・直し方）で指摘を書かせ、「何が起きるか」は「こういう条件だと、こうなる」の形にする
 - auto-merge workflow 配備済みリポでは passed 付与で機械マージ、未配備リポではマージは人間操作（ゲート手順は同一）
 
 ### push-guard-setup
@@ -95,7 +95,7 @@ env -u CLAUDE_SECURESTORAGE_CONFIG_DIR "$CLAUDE_HARNESS_SCRIPTS/accounts-init.sh
 "$CLAUDE_HARNESS_SCRIPTS/accounts.sh" on b           # b をオンに戻す
 ```
 
-`add` が出したコマンドをそのまま実行して `claude` を起動し、`/login` でログインする。置き場所の基点は環境変数 `CLAUDE_ACCOUNTS_HOME`（絶対パス。既定 `$HOME/.claude-accounts`）で変えられる。同じ id の `add` は拒否される。`add` / `on` / `off` は書き換える前に登録簿を `accounts.json.bak` に控える（1 世代）。登録簿が壊れているときは何も書かずに止まる。`add` は既定アカウントのスロットを作らない。`CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定していないシェルで、`add` の前に `accounts-init.sh --id a --label A` を実行して既定アカウントを登録する。登録しないと、既定アカウントのセッションの使用量が `b` のものとして扱われる（`select-account.sh` は `@unregistered-default` を返す）。`add` のあとに登録すると、登録簿の順が `b`、`a` になる。
+`add` が出したコマンドをそのまま実行して `claude` を起動し、`/login` でログインする。置き場所の基点は環境変数 `CLAUDE_ACCOUNTS_HOME`（絶対パス。既定 `$HOME/.claude-accounts`）で変えられる。同じ id の `add` は拒否される。登録できるスロットは 8 個までで（使用量を読む側が先頭 8 個で打ち切るため）、`accounts` に 8 要素以上あるとき `add` と `accounts-init.sh` は新しい id を足さず exit 2 で止まる（`accounts-init.sh` で既存の id を登録し直すのは 8 個でもできる）。オフのスロットも 8 個に数えるので、使わないアカウントの枠を空けるには、登録簿の要素を手で消す（消すコマンドは無い）。`add` は id の位置にハイフンで始まる引数（`--lable` などのタイプミス）が来ても exit 2 で拒否するので、ハイフンで始まる id は `add` では登録できない。`add` / `on` / `off` は書き換える前に登録簿を `accounts.json.bak` に控える（1 世代）。登録簿が壊れているときは何も書かずに止まる。`add` は既定アカウントのスロットを作らない。`CLAUDE_SECURESTORAGE_CONFIG_DIR` を設定していないシェルで、`add` の前に `accounts-init.sh --id a --label A` を実行して既定アカウントを登録する。登録しないと、既定アカウントのセッションの使用量が `b` のものとして扱われる（`select-account.sh` は `@unregistered-default` を返す）。`add` のあとに登録すると、登録簿の順が `b`、`a` になる。
 
 使っていないアカウントは `accounts.sh off <id>` でオフになる。オフのアカウントは `cld` の自動選択で選ばれず（理由行の `margins` に `<id>:off` と出る）、`usage-probe.sh` も使用量を取得しない。`cld-account <id>` でオフのアカウントを指定すると、戻し方を stderr に出して exit 2 で終わり、Claude は起動しない。全アカウントがオフのときは既定アカウントで起動する（理由は `default-due-to-all-off`）。既定アカウントへの縮退は `enabled` を見ないので、既定アカウント自体をオフにしていても、全アカウントがオフのとき、またはオンのアカウントがすべて欠測か 5 時間枠 90% 以上のときは、そのオフの既定アカウントで起動する。戻すときは `accounts.sh on <id>` を実行する。
 
@@ -131,6 +131,7 @@ Codex を使わない期間は、`accounts.json` のトップレベル（`accoun
 |---|---|
 | `/develop [issue番号\|URL\|自然文]` | develop スキルを interactive モードで起動する（issue が無ければ Draft PR を記録先にする） |
 | `/work-issue [issue番号\|URL\|自然文]` | `/develop` のエイリアス（旧名） |
+| `/dev-workflow:synced-skills-slim` | 同期スキルを `skillOverrides` で `name-only` にする |
 
 ## loop-dev-agent との関係
 
