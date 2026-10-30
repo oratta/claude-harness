@@ -309,7 +309,7 @@ fi
 
 # $1=Keychain サービス名 $2=securestorage パス → OAuth アクセストークン（取れなければ空）
 slot_token() {
-  local service="$1" secure="$2" token="" cred stale="" kc="" out
+  local service="$1" secure="$2" token="" cred stale="" out
   # Linux 等の平文 credentials.json を先に試す（既定スロットは従来どおり ~/.claude を見る）
   if [ -n "$secure" ]; then
     cred="${secure}/.credentials.json"
@@ -328,7 +328,7 @@ x=0
 if isinstance(e,(int,float)) and not isinstance(e,bool) and e>=0:
     if e>=1e11: e=e/1000.0
     x=1 if e<float(sys.argv[2]) else 0
-print(x);print(o.get('accessToken',''))" "$cred" "$NOW" 2>/dev/null || true)"
+print(x);print(o.get('accessToken') or '')" "$cred" "$NOW" 2>/dev/null || true)"
     if [ "$(printf '%s\n' "$out" | sed -n 1p)" = "1" ]; then
       # 期限切れの平文は控えに残し、Keychain から取れたときだけ Keychain を使う
       stale="$(printf '%s\n' "$out" | sed -n 2p)"
@@ -338,9 +338,8 @@ print(x);print(o.get('accessToken',''))" "$cred" "$NOW" 2>/dev/null || true)"
   fi
   # サービス名が空のまま Keychain を引くと全件検索になり固まる。念のための番人。
   if [ -z "$token" ] && [ -n "$service" ] && command -v security >/dev/null 2>&1; then
-    kc="$(security find-generic-password -s "$service" -w 2>/dev/null \
-      | python3 -I -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || true)"
-    token="$kc"
+    token="$(security find-generic-password -s "$service" -w 2>/dev/null \
+      | python3 -I -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken') or '')" 2>/dev/null || true)"
   fi
   # Keychain を引けない・取れないときは、期限切れの平文のトークンのまま（従来の動き）
   [ -n "$token" ] || token="$stale"

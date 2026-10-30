@@ -1242,13 +1242,48 @@ write_plain_x() {
   done
 }
 
-@test "stale plaintext: a plaintext file without expiresAt keeps the plaintext token as before" {
-  setup_keychain_stubs "" false
-  write_plain_x ""
+@test "stale plaintext: a plaintext file without expiresAt, or with a non-numeric, negative or boolean one, keeps the plaintext token as before" {
+  local exp
+  for exp in "" '"123"' -1 true; do
+    rm -f "$USAGE_PROBE_STATE" "$SNAP"
+    setup_keychain_stubs "" false
+    write_plain_x "$exp"
+    run_production_probe
+    [ "$status" -eq 0 ]
+    grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+    [ "$(grep -cxF "$SERVICE_X" "${WORK}/security-calls")" = "0" ]
+  done
+}
+
+@test "stale plaintext: the default slot reads ~/.claude/.credentials.json and falls through to the default keychain service" {
+  setup_keychain_stubs
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "d", "label": "D", "securestorage": null }
+] }
+JSON
+  mkdir -p "${WORK}/home/.claude"
+  printf '{"claudeAiOauth":{"accessToken":"plain-d","expiresAt":%s}}' "$((NOW - 3600))" > "${WORK}/home/.claude/.credentials.json"
   run_production_probe
   [ "$status" -eq 0 ]
+  grep -qF "Bearer tok-Claude Code-credentials\"" "${WORK}/curl-calls"
+  ! grep -qF "plain-d" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: expired plaintext and a keychain entry whose accessToken is null keeps the plaintext token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  cat > "${STUB}/security" <<SH
+#!/usr/bin/env bash
+printf 'called\n' >> "${WORK}/security-calls"
+printf '{"claudeAiOauth":{"accessToken":null}}\n'
+SH
+  chmod +x "${STUB}/security"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "${WORK}/security-calls" | tr -d ' ')" -ge 1 ]
   grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
-  [ "$(grep -cxF "$SERVICE_X" "${WORK}/security-calls")" = "0" ]
+  ! grep -qF "Bearer None" "${WORK}/curl-calls" || return 1
 }
 
 @test "stale plaintext: expired plaintext and no security command keeps the plaintext token" {
@@ -1258,7 +1293,7 @@ write_plain_x() {
   local nosec="${WORK}/nosec-bin" t p
   mkdir -p "$nosec"
   cp "${STUB}/curl" "${STUB}/claude" "$nosec/"
-  for t in bash sh env mktemp awk sed seq tr cut cat date rm mv cp mkdir ls wc grep head tail sort uniq printf python3 jq shasum dirname basename touch chmod sleep find readlink ln id uname stat tee xargs expr; do
+  for t in bash sh env mktemp awk sed seq tr cut cat date rm mv cp mkdir ls wc grep head tail sort uniq python3 jq shasum dirname basename touch chmod sleep find readlink ln id uname stat tee xargs expr; do
     p="$(command -v "$t" 2>/dev/null || true)"
     [ -n "$p" ] && [ ! -e "$nosec/$t" ] && ln -s "$p" "$nosec/$t"
   done
