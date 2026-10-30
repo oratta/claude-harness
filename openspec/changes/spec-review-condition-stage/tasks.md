@@ -7,10 +7,10 @@
 
 ## 2. 直し方の判定の前の段
 
-- [ ] 2.1 同じ bats に、fix-check.md の節「残った指摘の条件を確かめる」の見出しが 1 か所にあること・通す 2 つの時点・当て直しを周に数えないこと・「判定に回さず捨てる」・`needs-fix-check` に当てないこと・「主に聞くのは 2 つだけ」が方針の問いの数と書かれていること・NOTE の後で成り立つ指摘の 1 文・unmanned の引き継ぎと再開で答えを足して当て直すこと、SKILL.md の (2) が節を指すことと `## 条件の答え` を依頼文に入れることを検査するテストを足し、落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/spec-decision-and-review.bats:115-130
+- [ ] 2.1 同じ bats に、fix-check.md の節「残った指摘の条件を確かめる」の見出しが 1 か所にあること・通す 2 つの時点・当て直しを周に数えないこと・「判定に回さず捨てる」・`needs-fix-check` に当てないこと・「主に聞くのは 2 つだけ」が方針の問いの数と書かれていること・NOTE の後で成り立つ指摘の 1 文・unmanned の引き継ぎと再開で答えを足して当て直すこと・答えを足したらラベルの付け先から `needs-approval` を外すこと、SKILL.md の (2) が節を指すことと `## 条件の答え` を依頼文に入れることを検査するテストを足し、落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/spec-decision-and-review.bats:115-130
 - [ ] 2.2 `fix-check.md` の冒頭の読むときの文を直し、節「残った指摘の条件を確かめる」（「NOTE の後で成り立つ指摘は本体が行き先を決める」要件の 1 文を含む）を足し、既存の節の規則に 1 文足す。2.1 のテストのうち fix-check.md の分が通ることで確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/fix-check.md:3-9
 - [ ] 2.3 `SKILL.md` の (2) の該当行と、引き継ぎの場面を数える 1 行（「引き継ぎを書く 3 つの場面」）だけを直し、`tests/develop-startup-budget.txt` の SKILL.md の値を実測に合わせて動かす。2.1 のテストと `scripts/test.sh develop-skill`・`bats tests/develop-startup-budget.bats` が通ることで確かめる。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:113-120、plugins/dev-workflow/skills/develop/SKILL.md:274、tests/develop-startup-budget.txt:1
-- [ ] 2.4 `plugins/dev-workflow/tests/develop-handover.bats` の場面のテストに「仕様レビューの条件の問い」と `待ち理由` の値 `条件の問い` の検査を足して落ちることを確かめ、`references/handover.md` の読むときの文・場面の文・投稿の順序・`待ち理由` の行を直して通す。`scripts/test.sh develop-handover` が exit 0 であることで確かめる。触る範囲: plugins/dev-workflow/tests/develop-handover.bats:39-45、plugins/dev-workflow/skills/develop/references/handover.md:3、plugins/dev-workflow/skills/develop/references/handover.md:7-9、plugins/dev-workflow/skills/develop/references/handover.md:19
+- [ ] 2.4 `plugins/dev-workflow/tests/develop-handover.bats` の場面のテストに「仕様レビューの条件の問い」と `待ち理由` の値 `条件の問い` の検査を足して落ちることを確かめ、`references/handover.md` の読むときの文・場面の文・投稿の順序・`待ち理由` の行・再開の手順 4（次に起こす役割が R1（当て直し）なら先に R1 を起こす）を直して通す。`scripts/test.sh develop-handover` が exit 0 であることで確かめる。触る範囲: plugins/dev-workflow/tests/develop-handover.bats:39-45、plugins/dev-workflow/skills/develop/references/handover.md:3、plugins/dev-workflow/skills/develop/references/handover.md:7-9、plugins/dev-workflow/skills/develop/references/handover.md:19、plugins/dev-workflow/skills/develop/references/handover.md:50
 
 ## 3. 記録と全体の確認
 
