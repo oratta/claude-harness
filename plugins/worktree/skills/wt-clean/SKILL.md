@@ -66,6 +66,7 @@ zsh で実際に事故になった書き方（そのままコピーしないこ�
 | `for x in $pids`（複数行の変数を単語分割で回す） | zsh は既定で単語分割しないため全行が 1 要素に潰れる | `while IFS= read -r x; do … done <<< "$pids"` |
 | ループ本体で `local x` を毎周回宣言する | 2 周目以降の再宣言が `x=前回の値` を**標準出力に印字する**（bash は無言）。レポートにゴミ行が混ざる | 宣言は関数先頭にまとめる |
 | 配列の添字を 0 始まりで直接参照する | zsh の配列は 1 始まり | 添字を直に書かず `"${arr[@]}"` で回す |
+| `mktemp` で作った既存ファイルへ `>` / `2>` で書く（例: `$(cmd 2>"$TMP")`） | `noclobber` が有効だと「file exists」で拒否され、**コマンド置換の中身が実行されない**。結果が空になり「検出なし」と区別がつかない（issue #626） | `>\|` / `2>\|` を使う（bash・zsh とも noclobber を無視して上書きする） |
 
 新しいコード片を足すときは、`bats plugins/worktree/tests/` に **bash と zsh の両方で実行して結果が一致することを確かめるテスト**を添えること（既存例: `classify_dirty: behaves identically under bash and zsh`）。
 
@@ -423,7 +424,7 @@ LLM=$(ls "$WT/LLM/" 2>/dev/null)
 #    居残り（孤児）と判定して稼働シグナルから外したプロセスは stderr のノートに残るので、
 #    Pass 1 の表示・Pass 2 の提示・Step C のレポートで根拠として使う（黙って捨てない）
 ORPHAN_NOTE_TMP=$(mktemp)
-ACTIVE_PROCS=$(detect_active_procs_under "$WT" 2>"$ORPHAN_NOTE_TMP")   # 例: "48213(claude), 48310(node)"
+ACTIVE_PROCS=$(detect_active_procs_under "$WT" 2>|"$ORPHAN_NOTE_TMP")   # 例（`>|` は noclobber でも上書きする）: "48213(claude), 48310(node)"
 STALE_ORPHANS=$(grep '居残りプロセス' "$ORPHAN_NOTE_TMP" 2>/dev/null || true)
 rm -f "$ORPHAN_NOTE_TMP"
 [ -n "$STALE_ORPHANS" ] && echo "  $STALE_ORPHANS"
