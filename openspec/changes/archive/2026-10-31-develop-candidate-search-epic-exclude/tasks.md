@@ -9,4 +9,4 @@
 ## 3. 検証・archive
 
 - [x] 3.1 `bats plugins/dev-workflow/tests/develop-skill.bats` と `tests/injection-budget.bats` を通す。触る範囲: なし（実行のみ）
-- [ ] 3.2 archive は `openspec archive develop-candidate-search-epic-exclude --skip-specs` で行う（spec 本文は commit 47617a69 で変更済みなので、delta の適用で二重に当てない）
+- [x] 3.2 archive は `openspec archive develop-candidate-search-epic-exclude --skip-specs` で行う（spec 本文は commit 47617a69 で変更済みなので、delta の適用で二重に当てない）
