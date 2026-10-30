@@ -410,3 +410,250 @@ EOF
   [ "$status" -eq 1 ]
   [[ "$output" == *'hit rows require path, numeric line, and body'* ]] || return 1
 }
+
+# ===== 件数の多い語の全ヒット要約（issue #1457） =====
+
+# 語 bulk が N 行ヒットするファイルを足して commit し、固定 SHA を BULK_SHA に控える。
+# 第 2 引数以降は commit する前に実行するコマンド（追加のファイルを置く）
+commit_bulk() {
+  local count="$1"
+  shift
+  seq 1 "$count" | sed 's/^/bulk /' > "$REPO/bulk.txt"
+  if [ "$#" -gt 0 ]; then "$@"; fi
+  git -C "$REPO" add .
+  git -C "$REPO" commit -qm bulk
+  BULK_SHA="$(git -C "$REPO" rev-parse HEAD)"
+}
+
+# 指示ブロックと同じパイプで行数とハッシュを求める。引数は語の指定（既定は bulk）
+measure() {
+  [ "$#" -gt 0 ] || set -- bulk
+  COUNT="$(git -C "$REPO" grep -n "$@" "$BULK_SHA" -- . | wc -l | tr -d ' ')"
+  DIGEST="$(git -C "$REPO" grep -n "$@" "$BULK_SHA" -- . | git -C "$REPO" hash-object --stdin)"
+}
+
+# 要約の表を書く。第 1 引数は `全ヒット要約:` の値、残りは 4 列の表の行（無ければ表を省く）。
+# 検索コマンドは SEARCH で差し替えられる
+write_summary() {
+  local summary="$1"
+  shift
+  {
+    printf '修正前 SHA: %s\n' "$BULK_SHA"
+    printf '検索コマンド: %s\n' "${SEARCH:-git grep -n bulk <rev> -- .}"
+    printf '全ヒット要約: %s\n' "$summary"
+    if [ "$#" -gt 0 ]; then
+      printf '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |\n'
+      printf '|---|---:|---|---|\n'
+      for row in "$@"; do printf '%s\n' "$row"; done
+    fi
+  } > "$REPO/summary.md"
+}
+
+@test "hit summary (#1457): a 2,100-hit word with a matching summary exits zero without a four-column table" {
+  commit_bulk 2100
+  measure
+  [ "$COUNT" -eq 2100 ]
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "hit summary (#1457): a mismatch row under the summary exits zero" {
+  commit_bulk 60
+  measure
+  write_summary "$COUNT 行 $DIGEST" '| bulk.txt | 3 | `bulk 3` | 食い違い: F-1 |'
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "hit summary (#1457): shell pipeline values match the checker with a read-only .git and a quoted search" {
+  commit_bulk 60
+  export SEARCH="git grep -n -E 'bulk|needle' <rev> -- ."
+  measure -E 'bulk|needle'
+  write_summary "$COUNT 行 $DIGEST"
+  chmod -R a-w "$REPO/.git"
+  COUNT_AGAIN="$(git -C "$REPO" grep -n -E 'bulk|needle' "$BULK_SHA" -- . | wc -l | tr -d ' ')"
+  DIGEST_AGAIN="$(git -C "$REPO" grep -n -E 'bulk|needle' "$BULK_SHA" -- . | git -C "$REPO" hash-object --stdin)"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  chmod -R u+w "$REPO/.git"
+  [ "$status" -eq 0 ]
+  [ "$COUNT_AGAIN" = "$COUNT" ]
+  [ "$DIGEST_AGAIN" = "$DIGEST" ]
+}
+
+@test "hit summary (#1457): a narrowed search is rejected even when count and digest match it" {
+  commit_bulk 60
+  measure
+  export SEARCH='git grep -n bulk <rev> -- changed'
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'* ]] || return 1
+
+  export SEARCH='git grep -n --max-count=1 bulk <rev> -- .'
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'* ]] || return 1
+}
+
+@test "hit summary (#1457): a different count is reported as summary: with both values" {
+  commit_bulk 60
+  measure
+  write_summary "59 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'summary: hit count differs: table 59, actual 60'* ]] || return 1
+}
+
+@test "hit summary (#1457): a different digest is reported as summary:, and an uppercase copy does not pass" {
+  commit_bulk 60
+  measure
+  write_summary "$COUNT 行 0000000000000000000000000000000000000000"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'summary: digest differs'* ]] || return 1
+  [[ "$output" != *'hit count differs'* ]] || return 1
+
+  write_summary "$COUNT 行 $(printf '%s' "$DIGEST" | tr 'a-f' 'A-F')"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'summary: digest differs'* ]] || return 1
+}
+
+@test "hit summary (#1457): exactly 50 hits is rejected and 51 hits is accepted" {
+  commit_bulk 50
+  measure
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'*'more than 50'* ]] || return 1
+
+  commit_bulk 51
+  measure
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "hit summary (#1457): a four-column row outside the hits is reported as extra:" {
+  commit_bulk 60
+  measure
+  write_summary "$COUNT 行 $DIGEST" '| ghost.txt | 9 | `bulk ghost` | 食い違い: F-1 |'
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'extra: ghost.txt:9'* ]] || return 1
+  [[ "$output" != *'summary:'* ]] || return 1
+}
+
+@test "hit summary (#1457): a matched row under the summary is a contract violation" {
+  commit_bulk 60
+  measure
+  write_summary "$COUNT 行 $DIGEST" '| bulk.txt | 3 | `bulk 3` | 一致 |'
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'*'食い違い'* ]] || return 1
+}
+
+@test "hit summary (#1457): a malformed or repeated summary line is a contract violation" {
+  commit_bulk 60
+  measure
+  for value in "$DIGEST" "$COUNT $DIGEST" "x 行 $DIGEST" "$COUNT 行 xyz" "$COUNT 行" "-1 行 $DIGEST"; do
+    write_summary "$value"
+    run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+    [ "$status" -eq 1 ] || { echo "accepted: $value"; return 1; }
+    [[ "$output" == *'contract:'*'全ヒット要約'* ]] || { echo "no contract: $value"; return 1; }
+  done
+
+  write_summary "$COUNT 行 $DIGEST"
+  printf '全ヒット要約: %s 行 %s\n' "$COUNT" "$DIGEST" >> "$REPO/summary.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'*'全ヒット要約'* ]] || return 1
+}
+
+@test "hit summary (#1457): a sha256-length hex value passes the format check and is compared as a digest" {
+  commit_bulk 60
+  measure
+  write_summary "$COUNT 行 $(printf 'a%.0s' $(seq 1 64))"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'summary: digest differs'* ]] || return 1
+  [[ "$output" != *'contract:'* ]] || return 1
+}
+
+@test "hit summary (#1457): a summary with --head is a contract violation" {
+  commit_bulk 60
+  measure
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" --head "$BULK_SHA" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'*'--head'* ]] || return 1
+}
+
+add_binary_hit() {
+  printf 'bulk\0binary\n' > "$REPO/blob.dat"
+}
+
+@test "hit summary (#1457): a binary hit counts in the summary with and without a mismatch row" {
+  commit_bulk 60 add_binary_hit
+  measure
+  [ "$COUNT" -eq 61 ]
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+
+  write_summary "$COUNT 行 $DIGEST" '| bulk.txt | 3 | `bulk 3` | 食い違い: F-1 |'
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+
+  write_summary "$((COUNT - 1)) 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'summary: hit count differs: table 60, actual 61'* ]] || return 1
+}
+
+add_carriage_returns() {
+  printf 'bulk crlf\r\nbulk mid\rdle\n' > "$REPO/crlf.txt"
+}
+
+@test "hit summary (#1457): CRLF and mid-line carriage returns count like the shell and a row can point at a CRLF hit" {
+  commit_bulk 60 add_carriage_returns
+  measure
+  [ "$COUNT" -eq 62 ]
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+
+  write_summary "$COUNT 行 $DIGEST" '| crlf.txt | 1 | `bulk crlf` | 食い違い: F-1 |'
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+}
+
+add_latin1_hit() {
+  printf 'bulk caf\351\n' > "$REPO/latin1.txt"
+}
+
+@test "hit summary (#1457): a hit that cannot be decoded does not stop a mismatch row on another hit" {
+  commit_bulk 60 add_latin1_hit
+  measure
+  write_summary "$COUNT 行 $DIGEST" '| bulk.txt | 3 | `bulk 3` | 食い違い: F-1 |'
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "hit summary (#1457): a table with more than 50 hits written in full is still accepted" {
+  commit_bulk 51
+  {
+    printf '修正前 SHA: %s\n' "$BULK_SHA"
+    printf '検索コマンド: git grep -n bulk <rev> -- .\n'
+    printf '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |\n'
+    printf '|---|---:|---|---|\n'
+    for number in $(seq 1 51); do
+      printf '| bulk.txt | %s | `bulk %s` | 一致 |\n' "$number" "$number"
+    done
+  } > "$REPO/full.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/full.md"
+  [ "$status" -eq 0 ]
+}

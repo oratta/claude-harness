@@ -3,10 +3,14 @@
 
 With --head, also run the row-3 second stage of pr-review-gate (residual HEAD hits
 vs not-applicable rows, the rewritten not-applicable rows table, mixed groups).
+
+A table with a 全ヒット要約: line stands for every hit of a word with more than
+SUMMARY_MIN_HITS hits: it is compared by count and digest instead of row by row.
 """
 
 import argparse
 from collections import Counter
+import locale
 from pathlib import Path
 import re
 import shlex
@@ -25,6 +29,10 @@ SAFE_FLAGS = {"-F", "--fixed-strings", "-E", "--extended-regexp", "-G",
               "--basic-regexp", "-P", "--perl-regexp", "-i", "--ignore-case",
               "-w", "--word-regexp", "-I", "--text", "--and", "--or", "--not",
               "(", ")"}
+SUMMARY_PREFIX = "全ヒット要約:"
+SUMMARY_MIN_HITS = 50
+SUMMARY_RE = re.compile(r"([0-9]+) 行 ([0-9a-fA-F]+)")
+MISMATCH_RE = re.compile(r"食い違い: \S.*")
 
 
 class ContractError(ValueError):
@@ -294,6 +302,71 @@ def actual_hits(repo, command):
     return hits
 
 
+def grep_output(repo, command):
+    """Return the bytes `git grep` wrote to stdout, undecoded."""
+    result = subprocess.run(command, cwd=repo, capture_output=True)
+    if result.returncode not in (0, 1):
+        raise RuntimeError(result.stderr.decode(errors="replace").strip() or "git grep failed")
+    return result.stdout
+
+
+def hash_object(repo, output):
+    result = subprocess.run(["git", "hash-object", "--stdin"], cwd=repo, input=output,
+                            capture_output=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.decode(errors="replace").strip()
+                           or "git hash-object failed")
+    return result.stdout.decode().strip()
+
+
+def summary_hits(output):
+    """Parse hits a four-column row may point at; Binary file lines have no line number.
+
+    Decoded with the encoding text=True uses, so a row compares as it does in a full table,
+    except that an undecodable hit is left alone: no row can point at it.
+    """
+    encoding = locale.getpreferredencoding(False)
+    hits = set()
+    for raw in output.split(b"\n"):
+        if not raw or (raw.startswith(b"Binary file ") and raw.endswith(b" matches")):
+            continue
+        _revision, path, number, body = raw.decode(encoding, "surrogateescape").split(":", 3)
+        hits.add((path, int(number), body.rstrip("\r")))
+    return hits
+
+
+def check_summary(repo, lines, command, head):
+    """Compare a 全ヒット要約: table with the rerun search; return the report lines."""
+    if head is not None:
+        raise ContractError("全ヒット要約 cannot be used with --head")
+    match = SUMMARY_RE.fullmatch(field(lines, SUMMARY_PREFIX))
+    if match is None:
+        raise ContractError("全ヒット要約 must be: <decimal count> 行 <hex digest>")
+    count, digest = int(match[1]), match[2]
+    rows = parse_table(lines) if table_rows(lines, HEADER) is not None else []
+    for path, number, _body, handling in rows:
+        if not MISMATCH_RE.fullmatch(handling):
+            raise ContractError(
+                f"rows under 全ヒット要約 must be 食い違い: <finding ID>: {path}:{number}")
+
+    root = repository_root(repo)
+    output = grep_output(root, command)
+    actual_count = output.count(b"\n")
+    if actual_count <= SUMMARY_MIN_HITS:
+        raise ContractError(
+            f"全ヒット要約 requires more than {SUMMARY_MIN_HITS} hits, actual {actual_count}")
+    report = []
+    if count != actual_count:
+        report.append(f"summary: hit count differs: table {count}, actual {actual_count}")
+    if digest != hash_object(root, output):
+        report.append("summary: digest differs")
+    if rows:
+        expected = {(path, number, body) for path, number, body, _handling in rows}
+        report += [f"extra: {path}:{number}"
+                   for path, number, _body in sorted(expected - summary_hits(output))]
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("table", type=Path)
@@ -308,6 +381,11 @@ def main():
         raise ContractError("--head must be a full 40-digit SHA")
     search = field(lines, "検索コマンド:")
     command = parse_command(search, sha)
+    if any(line.startswith(SUMMARY_PREFIX) for line in lines):
+        report = check_summary(args.repo, lines, command, args.head)
+        for line in report:
+            print(line)
+        return int(bool(report))
     rows = parse_table(lines)
     rewritten = {}
     violations = []
