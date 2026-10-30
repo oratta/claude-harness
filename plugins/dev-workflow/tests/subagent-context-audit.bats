@@ -794,3 +794,28 @@ assert w["count"] == 3, w
 assert w["reread_pct"] == 100.0, w
 PYTEST
 }
+
+# CLAUDE_CONFIG_DIR を使うセッションでは、既定の走査先とキャッシュが $CLAUDE_CONFIG_DIR の下になる
+# （CLAUDE_PROJECTS_DIR 未設定。HOME の下には何も無い）。
+# spec: openspec dev-workflow-execution-strategy 「サブエージェントのコンテキスト量の母集団集計」
+@test "config dir: without --projects the scan reads CLAUDE_CONFIG_DIR/projects and the cache lands under CLAUDE_CONFIG_DIR" {
+  local cfg="${WORK}/cfg" home="${WORK}/home"
+  mkdir -p "$home"
+  PROJECTS="${cfg}/projects"
+  make_agent -tmp-a sess1 agent-aW-1-abc.jsonl plain 1000 2000 >/dev/null
+  run env -u CLAUDE_PROJECTS_DIR -u SUBAGENT_CONTEXT_AUDIT_CACHE HOME="$home" CLAUDE_CONFIG_DIR="$cfg" bash "$SCRIPT" --refresh
+  [ "$status" -eq 0 ]
+  python3 -c 'import json,sys; assert json.loads(sys.argv[1])["count"] >= 1' "$output"
+  [ -f "${cfg}/.subagent-context-audit" ]
+  [ ! -e "${home}/.claude" ]
+}
+
+@test "config dir: CLAUDE_PROJECTS_DIR still wins over CLAUDE_CONFIG_DIR" {
+  local cfg="${WORK}/cfg" home="${WORK}/home"
+  mkdir -p "$home"
+  PROJECTS="${cfg}/projects"
+  make_agent -tmp-a sess1 agent-aW-1-abc.jsonl plain 1000 2000 >/dev/null
+  run env CLAUDE_PROJECTS_DIR="${WORK}/empty" HOME="$home" CLAUDE_CONFIG_DIR="$cfg" bash "$SCRIPT" --refresh --cache "${WORK}/c2"
+  [ "$status" -eq 0 ]
+  python3 -c 'import json,sys; assert json.loads(sys.argv[1])["count"] == 0' "$output"
+}
