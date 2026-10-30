@@ -31,6 +31,7 @@ LOOPS=(
   "plugins/dev-workflow/commands/develop.md|1|/skills/develop|SKILL.md"
   "plugins/dev-workflow/commands/develop.md|2|/skills/issueify|SKILL.md"
   "plugins/dev-workflow/commands/memory-refresh.md|1|/skills/memory-refresh|SKILL.md"
+  "plugins/dev-workflow/commands/synced-skills-slim.md|1||scripts/synced-skills-name-only.sh"
   "plugins/worktree/commands/wt-clean.md|1|/skills/wt-clean|SKILL.md"
   "plugins/worktree/commands/wt-setup.md|1|/skills/wt-setup|SKILL.md"
 )

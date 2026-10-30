@@ -49,7 +49,8 @@
 #   続け、stderr に `note not posted to #<N>` と手で投稿するコマンドを出す）→ `orca terminal create
 #   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic>
 #   <cmd> --settings '{"idleCompaction":false}' --model <model>"`
-#   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
+#   （<cmd> の既定は bin/cld の絶対パス、EPIC_DISPATCH_CLAUDE_CMD で変える。親の環境に CLD_DEFAULT_ARGS があれば
+#   EPIC_DISPATCH_PARENT_EPIC=<epic> の直後に CLD_DEFAULT_ARGS='<値>' の代入として渡す。<model> の既定は opus、
 #   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。--settings は子のアイドル時の
 #   コンパクトをそのプロセスだけ切る（通常の自動コンパクトは止めない。Claude Code v2.1.290 以降。
 #   根拠は skills/develop/references/reply-after-idle.md）。
@@ -435,20 +436,42 @@ shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 
 # 子のセッションの起動コマンドと、起動完了待ち・送信の観測時間を環境変数から組み立てる（launch と reply が共用）。
 # 結果は ready / submit / agent_cmd に入れる。値が誤っていれば stderr に理由を出して 1 を返す（orca は呼ばない）
-ready=""; submit=""; agent_cmd=""; agent_rest=""
+ready=""; submit=""; agent_cmd=""; agent_rest=""; agent_notes=""
 agent_setup() {
   ready="${EPIC_DISPATCH_READY_TIMEOUT_MS:-60000}" submit="${EPIC_DISPATCH_SUBMIT_WAIT:-30}"
   is_num "$ready" || { echo "EPIC_DISPATCH_READY_TIMEOUT_MS must be a non-negative integer: $ready" >&2; return 1; }
   is_num "$submit" || { echo "EPIC_DISPATCH_SUBMIT_WAIT must be a non-negative integer: $submit" >&2; return 1; }
   local model="${EPIC_DISPATCH_MODEL-opus}"
   [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; return 1; }
-  local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
+  # 既定は bin/cld の絶対パス（ログイン zsh のシェル関数 cld に頼らない。非ログインのシェルでも解ける）。
+  # 空白の有無によらず単一引用符で包む。実行ファイルが無い古い clone では従来の cld に戻す
+  local default_cmd="cld" bin_cld
+  bin_cld="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/bin/cld"
+  agent_notes=""
+  if [ -x "$bin_cld" ]; then
+    default_cmd="$(shq "$bin_cld")"
+  elif [ -z "${EPIC_DISPATCH_CLAUDE_CMD+set}" ]; then
+    agent_notes="bin/cld is not executable at $bin_cld; falling back to the shell function cld (set EPIC_DISPATCH_CLAUDE_CMD if the child shell cannot resolve it)"
+  fi
+  local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-$default_cmd}"
   [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; return 1; }
   # 子のアイドル時のコンパクト（待っている間の自動コンパクト）はそのプロセスだけ切る。通常の自動コンパクトは止めない
   # （根拠は skills/develop/references/reply-after-idle.md）
-  agent_rest="$claude_cmd --settings '{\"idleCompaction\":false}' --model $(shq "$model")"
+  # 親の環境の CLD_DEFAULT_ARGS（子の既定フラグ。--dangerously-skip-permissions など）を、Orca の既存シェルへの送信でも
+  # tmux の新しいウィンドウでも子の claude まで届くよう、EPIC_DISPATCH_PARENT_EPIC の直後の代入として渡す。
+  # 値が無ければ付けない（子は許可の確認画面で止まる）
+  local cld_assign=""
+  [ -z "${CLD_DEFAULT_ARGS:-}" ] || cld_assign="CLD_DEFAULT_ARGS=$(shq "$CLD_DEFAULT_ARGS") "
+  if [ -z "$cld_assign" ] && [ -z "${EPIC_DISPATCH_CLAUDE_CMD+set}" ]; then
+    agent_notes="${agent_notes:+$agent_notes
+}CLD_DEFAULT_ARGS is not set in this shell; the child starts without --dangerously-skip-permissions and will stop at the first permission prompt"
+  fi
+  agent_rest="${cld_assign}$claude_cmd --settings '{\"idleCompaction\":false}' --model $(shq "$model")"
   agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 $agent_rest"
 }
+
+# agent_setup が貯めた注意書きを stderr に出す。子を起動する launch だけが 1 回呼ぶ（reply・wait などでは出さない）
+agent_warn() { [ -z "$agent_notes" ] || printf '%s\n' "$agent_notes" >&2; }
 
 # 起動コマンドの EPIC_DISPATCH_PARENT_EPIC の値を差し替える（別のリポジトリのエピックの子は <owner>/<repo>#<E>）。
 # agent_setup を済ませてから呼ぶ
@@ -624,6 +647,7 @@ cmd_launch() {
   is_num "$epic" || { echo "not an issue number: $epic" >&2; usage; }
   check_children "$@"
   agent_setup "$epic" || usage
+  agent_warn
   max_parallel_setup || usage
   if [ -n "${EPIC_DISPATCH_PARENT_EPIC-}" ]; then
     echo "this session is a child of epic #$EPIC_DISPATCH_PARENT_EPIC (EPIC_DISPATCH_PARENT_EPIC); child epics are not expanded here" >&2

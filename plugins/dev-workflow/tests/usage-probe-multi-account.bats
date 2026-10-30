@@ -1197,3 +1197,125 @@ run_two_slot_probe() {
   [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
   [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "7" ]
 }
+
+# ---------- 期限切れの平文 credentials と Keychain（#1396） ----------
+# 平文の expiresAt が過去なら、Keychain からトークンが取れたときだけ Keychain を使う。
+# 取れない（security が無い・Keychain が空）ときは、従来どおり切れた平文のトークンのまま。
+# security と curl は差し替え、HOME と securestorage は作業用ディレクトリ配下（実環境に触れない）。
+
+# $1=expiresAt の JSON 値（空なら書かない）
+write_plain_x() {
+  mkdir -p "${WORK}/claude-x"
+  local exp="${1:+, \"expiresAt\": $1}"
+  printf '{"claudeAiOauth":{"accessToken":"plain-x"%s}}' "$exp" > "${WORK}/claude-x/.credentials.json"
+}
+
+@test "stale plaintext: expired expiresAt in epoch seconds falls through to the keychain token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  grep -qF "Bearer tok-${SERVICE_X}\"" "${WORK}/curl-calls"
+  ! grep -qF "plain-x" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: expired expiresAt in epoch milliseconds falls through to the keychain token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$(( (NOW - 3600) * 1000 ))"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  grep -qF "Bearer tok-${SERVICE_X}\"" "${WORK}/curl-calls"
+  ! grep -qF "plain-x" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: a future expiresAt (seconds or milliseconds) keeps the plaintext token and skips the keychain" {
+  local exp
+  for exp in "$((NOW + 3600))" "$(( (NOW + 3600) * 1000 ))"; do
+    # 前回の試行状態が残ると 2 周目は取得を飛ばすので消す
+    rm -f "$USAGE_PROBE_STATE" "$SNAP"
+    setup_keychain_stubs "" false
+    write_plain_x "$exp"
+    run_production_probe
+    [ "$status" -eq 0 ]
+    grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+    [ "$(grep -cxF "$SERVICE_X" "${WORK}/security-calls")" = "0" ]
+  done
+}
+
+@test "stale plaintext: a plaintext file without expiresAt, or with a non-numeric, negative or boolean one, keeps the plaintext token as before" {
+  local exp
+  for exp in "" '"123"' -1 true; do
+    rm -f "$USAGE_PROBE_STATE" "$SNAP"
+    setup_keychain_stubs "" false
+    write_plain_x "$exp"
+    run_production_probe
+    [ "$status" -eq 0 ]
+    grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+    [ "$(grep -cxF "$SERVICE_X" "${WORK}/security-calls")" = "0" ]
+  done
+}
+
+@test "stale plaintext: the default slot reads ~/.claude/.credentials.json and falls through to the default keychain service" {
+  setup_keychain_stubs
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "d", "label": "D", "securestorage": null }
+] }
+JSON
+  mkdir -p "${WORK}/home/.claude"
+  printf '{"claudeAiOauth":{"accessToken":"plain-d","expiresAt":%s}}' "$((NOW - 3600))" > "${WORK}/home/.claude/.credentials.json"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  grep -qF "Bearer tok-Claude Code-credentials\"" "${WORK}/curl-calls"
+  ! grep -qF "plain-d" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: expired plaintext and a keychain entry whose accessToken is null keeps the plaintext token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  cat > "${STUB}/security" <<SH
+#!/usr/bin/env bash
+printf 'called\n' >> "${WORK}/security-calls"
+printf '{"claudeAiOauth":{"accessToken":null}}\n'
+SH
+  chmod +x "${STUB}/security"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "${WORK}/security-calls" | tr -d ' ')" -ge 1 ]
+  grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+  ! grep -qF "Bearer None" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: expired plaintext and no security command keeps the plaintext token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  # security だけを持たない PATH（curl・claude は差し替え、他は本物へのリンク）
+  local nosec="${WORK}/nosec-bin" t p
+  mkdir -p "$nosec"
+  cp "${STUB}/curl" "${STUB}/claude" "$nosec/"
+  for t in bash sh env mktemp awk sed seq tr cut cat date rm mv cp mkdir ls wc grep head tail sort uniq python3 jq shasum dirname basename touch chmod sleep find readlink ln id uname stat tee xargs expr; do
+    p="$(command -v "$t" 2>/dev/null || true)"
+    [ -n "$p" ] && [ ! -e "$nosec/$t" ] && ln -s "$p" "$nosec/$t"
+  done
+  [ ! -e "$nosec/security" ]
+  run env PATH="$nosec" HOME="${WORK}/home" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+  [ "$(wc -l < "${WORK}/security-calls" | tr -d ' ')" = "0" ]
+}
+
+@test "stale plaintext: expired plaintext and an empty keychain keeps the plaintext token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  cat > "${STUB}/security" <<SH
+#!/usr/bin/env bash
+printf 'called\n' >> "${WORK}/security-calls"
+exit 44
+SH
+  chmod +x "${STUB}/security"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "${WORK}/security-calls" | tr -d ' ')" -ge 1 ]
+  grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+}
