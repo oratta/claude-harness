@@ -14,18 +14,27 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 ### Output Style `readable` を有効にする
 
-`output-styles/readable.md`（読み手が前提を持たない状態で読める書き方のスタイル）は、`scripts/sync.sh` が `~/.claude/output-styles/` に配るだけで、有効にはしない。どのスタイルを使うかは PC ごとの設定に残すため、`sync.sh` は settings の `outputStyle` を書き換えない。使うには自分で 1 手選ぶ。
+`output-styles/readable.md`（読み手が前提を持たない状態で読める書き方のスタイル）と `rules/*.md` は、プラグインではないので `/plugin install` では届かない。クイックスタートの後に、marketplace dir の `scripts/sync.sh` を 1 回実行する（SessionStart hook などの自動実行は無い）。これが `readable.md` を `~/.claude/output-styles/` に、`rules/*.md` を `~/.claude/rules/claude-harness/` に symlink する。
 
 ```bash
-# Claude Code の中で /config を開き、Output style から readable を選ぶ
+~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh
+```
+
+`sync.sh` は settings の `outputStyle` を書き換えない（どのスタイルを使うかは PC ごとの設定に残すため）ので、届いたあとに自分で 1 手選ぶ。
+
+```bash
+# Claude Code の中で /output-style readable を実行する（/config のメニューからも選べる）
 # または ~/.claude/settings.json に書く
 { "outputStyle": "readable" }
 ```
 
-有効にしなくても、`rules/communication-style.md`（同じ原則を抜いた短い版）は常に注入されるので、書き方の要点は効く。有効にしない場合に効かないのは次の点。
+有効にしなくても、sync.sh を実行していれば `rules/communication-style.md`（`readable` から 6 原則の要点を抜いた短い版）は常に注入されるので、書き方の原則そのものは効く。sync.sh を実行していなければ、その短い版も効かない。有効にしない場合に効かないのは、短い版が省いた細部だけで、差はわずか。
 
-- メインの会話で `readable` の全文が効かない。判断を求める文章の順序と例、ヒアリングで 1 問ずつ聞く理由と例外、100 行を超える分析をページにする規則など、短い版が省いた部分
-- なお Output Style はメインの会話にしか効かないので、選んでもサブエージェントには全文が届かず、短い版だけで動く
+- 判断を求める文章の 3 つの長い例、論点の定義、主に聞く理由を 3 つに絞る説明の詳細
+- ヒアリングで選択肢を使わない 2 つの理由と、選択肢を出してよい場合の例
+- 本題への回答に大半を使う、書き出すファイルも必要な分にする、といった長さの細かい指示
+
+なお Output Style はメインの会話にしか効かないので、選んでもサブエージェントには全文が届かず、短い版だけで動く。
 
 ## プラグイン一覧
 
