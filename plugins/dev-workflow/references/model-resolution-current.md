@@ -8,7 +8,8 @@ Dispatch HEAD `219ccc5a60ccbccb4faa3fa736b4748c67027c08` の記録。規則の�
 `tests/test_model_resolution_current.py` の動的 unittest 672 ケースと、表の (役, 構成, モード) 行数が一致する。
 既存 `test_codex_develop.py` のケース数はこの 672 に含めない。`auto:` は profile の明示指定と区別する。
 自動選択は Claude/Codex の margin がそれぞれ `(20,10)`、`(-5,30)`、`(20,-5)` の 3 分岐。
-両方不足・欠測・Codex off も最後の claude-default に合流する（選択理由の既存テストは別途存在）。
+両方不足・Claude に余裕があり Codex が不足または欠測・両方欠測・Codex off も最後の claude-default に合流する（選択理由の既存テストは別途存在）。
+旧形式の `--account` / `--model` は全 role が `codex:` 指定 model になり、外部 `--profile-file` は固定表の外にある。どちらも 672 行に含めない。
 
 `request` 列は CLI が返す **requested (executor, model)**。残量モードでは変わらない。
 Claude の `applied` は本体が Agent 起動直前に文章の規則で決める値であり、Python が返す値ではない。
@@ -18,12 +19,12 @@ Claude の `applied` は本体が Agent 起動直前に文章の規則で決め�
 
 `review` は `impl-review` の互換別名（profile 検証で同値が必須）。独立した CLI phase は存在せず、テストは両方とも `--phase review` を通す。
 `spec-write` は `--phase spec`、`implement` は `--phase implement`。finish / gate も adapter では implement entry を使う。
-Claude だけで本体がモデルを決める従来経路（以下「文章既定」）と、自動選択の `auto:claude-default` は別経路。
+Claude だけで本体がモデルを決める従来経路（以下「文章既定」）は、adapter が `claude-default` を返したあと、本体が文章の規則で決める値である。`auto:claude-default` の request 列はその手前で CLI が返す値で、残量上限や事前分類は反映されない。
 
 参照元:
 - [profile の固定表](codex-role-profiles.json)、[request 実装](../scripts/codex-develop.py)（claude_default / build_request / PHASES）
 - [モデル節](../skills/develop/SKILL.md#モデル)、[事前分類](../skills/develop/references/pre-classification.md)
-- [worker 索引](../skills/develop/references/roles/worker.md)（現在は分類本文を持たず段別指示書への索引）
+- [R1 の指示書](../skills/develop/references/roles/spec-reviewer.md)、[G の指示書](../skills/develop/references/roles/gate-runner.md)、[worker 索引](../skills/develop/references/roles/worker.md)（現在は分類本文を持たず段別指示書への索引）
 - [残量モード表](../skills/develop/references/decision-criteria.md#残量モード-fable_budget_mode)、[adapter の本体操作](codex-develop.md#本体が行う操作)
 - [失敗の昇格ラダー](../templates/escalation-tripwires.md)
 
@@ -34,20 +35,20 @@ Claude だけで本体がモデルを決める従来経路（以下「文章既�
 
 | 役 | 通常 | 設計判断を含む | 事前分類 | 失敗による変更 |
 |---|---|---|---|---|
-| spec-write（W） | C:sonnet | C:opus | C:opus | 実行側の失敗なら opus 上限 |
-| implement（W） | C:sonnet | C:opus | C:opus | 実行側の失敗なら opus 上限 |
-| spec-review（R1） | C:opus | C:opus | decider に切替、C:fable（※） | 判断側ラダーを参照 |
-| impl-review / review（レビュアー） | C:opus | C:opus | decider に切替、C:fable（※） | 判断側ラダーを参照 |
+| spec-write（W） | C:sonnet | C:opus | C:opus | 役自身のモデルは変わらない。実行側の失敗では W を opus で再開する（上限は opus） |
+| implement（W） | C:sonnet | C:opus | C:opus | 役自身のモデルは変わらない。実行側の失敗では W を opus で再開する（上限は opus） |
+| spec-review（R1） | C:opus | C:opus | decider に切替、C:fable（※） | 役自身のモデルは変わらない。判断側は decider を別に起こす |
+| impl-review / review（レビュアー） | C:opus | C:opus | decider に切替、C:fable（※） | 役自身のモデルは変わらない。判断側は decider を別に起こす |
 | decider | C:fable（種別の既定） | 用途による明示値 | C:fable | 初回失敗は opus、判断側の2回目は fable |
 | explore / summarize | C:haiku（機械的作業） | 専用の設計昇格の記載なし | 専用の分類昇格の記載なし | 専用ラダーの記載なし |
 | gate-runner（G、8役の外） | C:sonnet | 上げない | 上げない | 欠陥探索は独立レビュアーへ |
 | 画面確認（V、8役の外） | C:sonnet | 上げない | 上げない | 専用ラダーの記載なし |
-| 引き継ぎ判定（8役の外） | C:opus を明示 | 同左 | 同左 | depleted では起こさない |
+| 引き継ぎ判定（8役の外） | C:opus を明示（depleted では起こさない） | 同左 | 同左 | 専用ラダーの記載なし |
 
-explore / summarize の Haiku はモデル節の「機械的」方針と adapter の既定を対応させたもの。
+explore / summarize の Haiku は [model-tiers.md](model-tiers.md) の最安ティア（ファイル探索・grep 的な調査・機械的編集・fan-out ワーカー・要約）と、decision-criteria.md の「結果が変わらない大量トークン仕事は常に安いモデル」の方針に、adapter の既定を対応させたもの。
 モデル節にこの2役を名指しした独立の役割表はないため、文章経路の全調査作業が必ず Haiku になるという意味ではない。
 
-※ 食い違い: pre-classification.md は4分類すべてで読んで判断する役を decider にするが、SKILL.md のモデル節は R1 とレビュアーについて「聖域パスだけ」では上げない。
+※ 食い違い（聖域パスだけの R1/レビュアー）: 上げる側は [pre-classification.md](../skills/develop/references/pre-classification.md) 20 行目（4分類に当たる R1/レビュアーは decider）と decision-criteria.md 106 行目（事前分類に当たれば decider で Fable）。上げない側は SKILL.md 288・292 行目、spec-reviewer.md 33 行目、gate-runner.md 118 行目、pr-review-gate の prepare.md 87 行目（聖域パスだけでは上げない、聖域パスは opus 止まり）。
 この記録では両記述を残し、聖域だけのレビューの値を一方に統一しない。
 
 | F/S モード | W/R1/G の通常起点 | 分類・設計による W | 決める役の上限 I/U |
@@ -67,21 +68,26 @@ explore / summarize の Haiku はモデル節の「機械的」方針と adapter
 
 共有枠が優先する。abundant でも役割の既定は上げない。throttled は Sonnet 起点・Opus 上限。
 Claude profile の通常起動の opus レビューは throttled で Sonnet 起点、fable decider は Opus 上限。
-haiku は throttled ではそのまま、depleted は requested にかかわらず sonnet 固定。
+haiku は throttled ではそのまま（文章に明記はなく、「残量モードの影響を受けない」と depleted の「落とす」からの読み取り）、depleted は requested にかかわらず sonnet 固定。
 事前分類に当たる R1/レビュアーは adapter でも元の review entry でなく **decider entry** に切り替えるため、下表の decider 行を参照する。
 文章既定の失敗ラダーは、初回失敗で decider=opus・W=sonnet、2回目の実行側失敗で W=opus、判断側失敗で decider=fable。
-判断側と実行側を同時に上げない。既に事前分類等で上がった W を Sonnet に戻す指示ではない。
-上限を超えた分はモード表で抑え、depleted では昇格しない。Opus が決めて Opus が実行しても2連続失敗なら人間へ返す。
+判断側と実行側を同時に上げない。
+ゲート由来の昇格は別系統で、pr-review-gate の 2-2 に従う。段 A だけで戻した failed では昇格せず W のモデルを据え置く。fable のレート制限では decider を `model: opus` に落とし、model-tiers.md 39 行目の形で 1 行残す。
+上限を超えた分はモード表で抑え、depleted では昇格しない。fable が決めて opus が実行しても落ちたら人間へ返す。fable を使えないモード（reserve の自動実行・exhausted・共有枠制約）では、Opus が決めて Opus が実行しても2連続失敗なら人間へ返す。
 コンテキスト上限は手渡しの条件で、モデル昇格の条件ではない。
 
 ## 食い違いセルの一覧
 
 下表の † は、同じ役・モードの文章既定との差を持つ返却セル。対象集合を次に列挙する（実行結果の不具合とは断定しない）。
 
-- †C: 全構成の executor=codex セル。文章既定の executor=claude と異なる。Claude の残量モードで Codex model は変わらない。
-- †W: claude-write-codex-review と auto:claude-write-codex-review、および auto:claude-default の spec-write / implement の全12モード。requested は sonnet 固定。設計判断・事前分類の文章既定は depleted 以外で opus（depleted では applied が sonnet に合流）。
-- †R: hybrid-standard と auto:claude-default の spec-review / impl-review / review の全12モード。requested は opus 固定。重要レビューでは元のセルではなく decider entry を使う。throttled / depleted の通常起点は sonnet なので requested とも異なる。
+† は、request 列の値が同じモードの文章既定の applied と異なるセルの印。
+- †C: 全構成の executor=codex セル。文章既定の executor=claude と異なる。Claude の残量モードで Codex model は変わらない。Codex の W は設計判断・事前分類・失敗でも model が変わらない。
+- †W: claude-write-codex-review と auto:claude-write-codex-review、および auto:claude-default の spec-write / implement の全12モード。requested は sonnet 固定。設計判断・事前分類の文章既定は depleted 以外で opus（depleted では applied が sonnet に合流）。実行側の失敗での opus 昇格も request には現れない。
+- †R: hybrid-standard と auto:claude-default の spec-review / impl-review / review のthrottled / depleted の8モードだけ（ok の4モードは文章既定の opus と同じで印なし）。requested は opus 固定で、通常起点が sonnet になるため異なる。重要レビューでは元のセルではなく decider entry を使う。
+- †H: claude-write-codex-review・auto:claude-write-codex-review・auto:claude-default の explore / summarize の depleted の4モード。requested は haiku 固定だが、文章では depleted が全役割 sonnet 固定。
 - †D: hybrid-standard と auto:claude-default の decider の全12モード。requested は fable 固定だが、失敗1回目の文章ラダーは opus。reserve の自動実行・exhausted・共有枠制約で applied も下がる。
+- 事前分類で opus になった W が1回目の失敗後どのモデルになるかは、文章に書かれていない。
+- throttled の haiku を据え置くかは文章に明記がなく、読み取りである（上の注記）。
 - 聖域だけの R1/レビュアーの文章間の食い違いは上記 ※。固定 profile の decider 切替に関する説明も4分類を参照しており、この曖昧さを解消していない。
 - G は文章既定で sonnet 固定だが、adapter の phase gate は implement entry を使う。codex-standard / hybrid-standard は codex:sol、codex-economy は codex:luna。この差も通常の W と G を同一役と解釈して隠さない。
 
@@ -293,16 +299,16 @@ haiku は throttled ではそのまま、depleted は requested にかかわら�
 | spec-write | hybrid-standard | exhausted/ok | codex:sol †C | sol/sol |
 | spec-write | hybrid-standard | exhausted/throttled | codex:sol †C | sol/sol |
 | spec-write | hybrid-standard | exhausted/depleted | codex:sol †C | sol/sol |
-| spec-review | hybrid-standard | abundant/ok | claude:opus †R | opus/opus |
+| spec-review | hybrid-standard | abundant/ok | claude:opus | opus/opus |
 | spec-review | hybrid-standard | abundant/throttled | claude:opus †R | sonnet/sonnet |
 | spec-review | hybrid-standard | abundant/depleted | claude:opus †R | sonnet/sonnet |
-| spec-review | hybrid-standard | conserve/ok | claude:opus †R | opus/opus |
+| spec-review | hybrid-standard | conserve/ok | claude:opus | opus/opus |
 | spec-review | hybrid-standard | conserve/throttled | claude:opus †R | sonnet/sonnet |
 | spec-review | hybrid-standard | conserve/depleted | claude:opus †R | sonnet/sonnet |
-| spec-review | hybrid-standard | reserve/ok | claude:opus †R | opus/opus |
+| spec-review | hybrid-standard | reserve/ok | claude:opus | opus/opus |
 | spec-review | hybrid-standard | reserve/throttled | claude:opus †R | sonnet/sonnet |
 | spec-review | hybrid-standard | reserve/depleted | claude:opus †R | sonnet/sonnet |
-| spec-review | hybrid-standard | exhausted/ok | claude:opus †R | opus/opus |
+| spec-review | hybrid-standard | exhausted/ok | claude:opus | opus/opus |
 | spec-review | hybrid-standard | exhausted/throttled | claude:opus †R | sonnet/sonnet |
 | spec-review | hybrid-standard | exhausted/depleted | claude:opus †R | sonnet/sonnet |
 | implement | hybrid-standard | abundant/ok | codex:sol †C | sol/sol |
@@ -317,28 +323,28 @@ haiku は throttled ではそのまま、depleted は requested にかかわら�
 | implement | hybrid-standard | exhausted/ok | codex:sol †C | sol/sol |
 | implement | hybrid-standard | exhausted/throttled | codex:sol †C | sol/sol |
 | implement | hybrid-standard | exhausted/depleted | codex:sol †C | sol/sol |
-| impl-review | hybrid-standard | abundant/ok | claude:opus †R | opus/opus |
+| impl-review | hybrid-standard | abundant/ok | claude:opus | opus/opus |
 | impl-review | hybrid-standard | abundant/throttled | claude:opus †R | sonnet/sonnet |
 | impl-review | hybrid-standard | abundant/depleted | claude:opus †R | sonnet/sonnet |
-| impl-review | hybrid-standard | conserve/ok | claude:opus †R | opus/opus |
+| impl-review | hybrid-standard | conserve/ok | claude:opus | opus/opus |
 | impl-review | hybrid-standard | conserve/throttled | claude:opus †R | sonnet/sonnet |
 | impl-review | hybrid-standard | conserve/depleted | claude:opus †R | sonnet/sonnet |
-| impl-review | hybrid-standard | reserve/ok | claude:opus †R | opus/opus |
+| impl-review | hybrid-standard | reserve/ok | claude:opus | opus/opus |
 | impl-review | hybrid-standard | reserve/throttled | claude:opus †R | sonnet/sonnet |
 | impl-review | hybrid-standard | reserve/depleted | claude:opus †R | sonnet/sonnet |
-| impl-review | hybrid-standard | exhausted/ok | claude:opus †R | opus/opus |
+| impl-review | hybrid-standard | exhausted/ok | claude:opus | opus/opus |
 | impl-review | hybrid-standard | exhausted/throttled | claude:opus †R | sonnet/sonnet |
 | impl-review | hybrid-standard | exhausted/depleted | claude:opus †R | sonnet/sonnet |
-| review | hybrid-standard | abundant/ok | claude:opus †R | opus/opus |
+| review | hybrid-standard | abundant/ok | claude:opus | opus/opus |
 | review | hybrid-standard | abundant/throttled | claude:opus †R | sonnet/sonnet |
 | review | hybrid-standard | abundant/depleted | claude:opus †R | sonnet/sonnet |
-| review | hybrid-standard | conserve/ok | claude:opus †R | opus/opus |
+| review | hybrid-standard | conserve/ok | claude:opus | opus/opus |
 | review | hybrid-standard | conserve/throttled | claude:opus †R | sonnet/sonnet |
 | review | hybrid-standard | conserve/depleted | claude:opus †R | sonnet/sonnet |
-| review | hybrid-standard | reserve/ok | claude:opus †R | opus/opus |
+| review | hybrid-standard | reserve/ok | claude:opus | opus/opus |
 | review | hybrid-standard | reserve/throttled | claude:opus †R | sonnet/sonnet |
 | review | hybrid-standard | reserve/depleted | claude:opus †R | sonnet/sonnet |
-| review | hybrid-standard | exhausted/ok | claude:opus †R | opus/opus |
+| review | hybrid-standard | exhausted/ok | claude:opus | opus/opus |
 | review | hybrid-standard | exhausted/throttled | claude:opus †R | sonnet/sonnet |
 | review | hybrid-standard | exhausted/depleted | claude:opus †R | sonnet/sonnet |
 | decider | hybrid-standard | abundant/ok | claude:fable †D | fable/fable |
@@ -449,30 +455,30 @@ haiku は throttled ではそのまま、depleted は requested にかかわら�
 | decider | claude-write-codex-review | exhausted/ok | codex:astra †C | astra/astra |
 | decider | claude-write-codex-review | exhausted/throttled | codex:astra †C | astra/astra |
 | decider | claude-write-codex-review | exhausted/depleted | codex:astra †C | astra/astra |
-| explore | claude-write-codex-review | abundant/ok | claude:haiku  | haiku/haiku |
-| explore | claude-write-codex-review | abundant/throttled | claude:haiku  | haiku/haiku |
-| explore | claude-write-codex-review | abundant/depleted | claude:haiku  | sonnet/sonnet |
-| explore | claude-write-codex-review | conserve/ok | claude:haiku  | haiku/haiku |
-| explore | claude-write-codex-review | conserve/throttled | claude:haiku  | haiku/haiku |
-| explore | claude-write-codex-review | conserve/depleted | claude:haiku  | sonnet/sonnet |
-| explore | claude-write-codex-review | reserve/ok | claude:haiku  | haiku/haiku |
-| explore | claude-write-codex-review | reserve/throttled | claude:haiku  | haiku/haiku |
-| explore | claude-write-codex-review | reserve/depleted | claude:haiku  | sonnet/sonnet |
-| explore | claude-write-codex-review | exhausted/ok | claude:haiku  | haiku/haiku |
-| explore | claude-write-codex-review | exhausted/throttled | claude:haiku  | haiku/haiku |
-| explore | claude-write-codex-review | exhausted/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | claude-write-codex-review | abundant/ok | claude:haiku  | haiku/haiku |
-| summarize | claude-write-codex-review | abundant/throttled | claude:haiku  | haiku/haiku |
-| summarize | claude-write-codex-review | abundant/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | claude-write-codex-review | conserve/ok | claude:haiku  | haiku/haiku |
-| summarize | claude-write-codex-review | conserve/throttled | claude:haiku  | haiku/haiku |
-| summarize | claude-write-codex-review | conserve/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | claude-write-codex-review | reserve/ok | claude:haiku  | haiku/haiku |
-| summarize | claude-write-codex-review | reserve/throttled | claude:haiku  | haiku/haiku |
-| summarize | claude-write-codex-review | reserve/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | claude-write-codex-review | exhausted/ok | claude:haiku  | haiku/haiku |
-| summarize | claude-write-codex-review | exhausted/throttled | claude:haiku  | haiku/haiku |
-| summarize | claude-write-codex-review | exhausted/depleted | claude:haiku  | sonnet/sonnet |
+| explore | claude-write-codex-review | abundant/ok | claude:haiku | haiku/haiku |
+| explore | claude-write-codex-review | abundant/throttled | claude:haiku | haiku/haiku |
+| explore | claude-write-codex-review | abundant/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | claude-write-codex-review | conserve/ok | claude:haiku | haiku/haiku |
+| explore | claude-write-codex-review | conserve/throttled | claude:haiku | haiku/haiku |
+| explore | claude-write-codex-review | conserve/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | claude-write-codex-review | reserve/ok | claude:haiku | haiku/haiku |
+| explore | claude-write-codex-review | reserve/throttled | claude:haiku | haiku/haiku |
+| explore | claude-write-codex-review | reserve/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | claude-write-codex-review | exhausted/ok | claude:haiku | haiku/haiku |
+| explore | claude-write-codex-review | exhausted/throttled | claude:haiku | haiku/haiku |
+| explore | claude-write-codex-review | exhausted/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | claude-write-codex-review | abundant/ok | claude:haiku | haiku/haiku |
+| summarize | claude-write-codex-review | abundant/throttled | claude:haiku | haiku/haiku |
+| summarize | claude-write-codex-review | abundant/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | claude-write-codex-review | conserve/ok | claude:haiku | haiku/haiku |
+| summarize | claude-write-codex-review | conserve/throttled | claude:haiku | haiku/haiku |
+| summarize | claude-write-codex-review | conserve/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | claude-write-codex-review | reserve/ok | claude:haiku | haiku/haiku |
+| summarize | claude-write-codex-review | reserve/throttled | claude:haiku | haiku/haiku |
+| summarize | claude-write-codex-review | reserve/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | claude-write-codex-review | exhausted/ok | claude:haiku | haiku/haiku |
+| summarize | claude-write-codex-review | exhausted/throttled | claude:haiku | haiku/haiku |
+| summarize | claude-write-codex-review | exhausted/depleted | claude:haiku †H | sonnet/sonnet |
 | spec-write | auto:claude-write-codex-review | abundant/ok | claude:sonnet †W | sonnet/sonnet |
 | spec-write | auto:claude-write-codex-review | abundant/throttled | claude:sonnet †W | sonnet/sonnet |
 | spec-write | auto:claude-write-codex-review | abundant/depleted | claude:sonnet †W | sonnet/sonnet |
@@ -545,30 +551,30 @@ haiku は throttled ではそのまま、depleted は requested にかかわら�
 | decider | auto:claude-write-codex-review | exhausted/ok | codex:astra †C | astra/astra |
 | decider | auto:claude-write-codex-review | exhausted/throttled | codex:astra †C | astra/astra |
 | decider | auto:claude-write-codex-review | exhausted/depleted | codex:astra †C | astra/astra |
-| explore | auto:claude-write-codex-review | abundant/ok | claude:haiku  | haiku/haiku |
-| explore | auto:claude-write-codex-review | abundant/throttled | claude:haiku  | haiku/haiku |
-| explore | auto:claude-write-codex-review | abundant/depleted | claude:haiku  | sonnet/sonnet |
-| explore | auto:claude-write-codex-review | conserve/ok | claude:haiku  | haiku/haiku |
-| explore | auto:claude-write-codex-review | conserve/throttled | claude:haiku  | haiku/haiku |
-| explore | auto:claude-write-codex-review | conserve/depleted | claude:haiku  | sonnet/sonnet |
-| explore | auto:claude-write-codex-review | reserve/ok | claude:haiku  | haiku/haiku |
-| explore | auto:claude-write-codex-review | reserve/throttled | claude:haiku  | haiku/haiku |
-| explore | auto:claude-write-codex-review | reserve/depleted | claude:haiku  | sonnet/sonnet |
-| explore | auto:claude-write-codex-review | exhausted/ok | claude:haiku  | haiku/haiku |
-| explore | auto:claude-write-codex-review | exhausted/throttled | claude:haiku  | haiku/haiku |
-| explore | auto:claude-write-codex-review | exhausted/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | auto:claude-write-codex-review | abundant/ok | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-write-codex-review | abundant/throttled | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-write-codex-review | abundant/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | auto:claude-write-codex-review | conserve/ok | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-write-codex-review | conserve/throttled | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-write-codex-review | conserve/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | auto:claude-write-codex-review | reserve/ok | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-write-codex-review | reserve/throttled | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-write-codex-review | reserve/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | auto:claude-write-codex-review | exhausted/ok | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-write-codex-review | exhausted/throttled | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-write-codex-review | exhausted/depleted | claude:haiku  | sonnet/sonnet |
+| explore | auto:claude-write-codex-review | abundant/ok | claude:haiku | haiku/haiku |
+| explore | auto:claude-write-codex-review | abundant/throttled | claude:haiku | haiku/haiku |
+| explore | auto:claude-write-codex-review | abundant/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | auto:claude-write-codex-review | conserve/ok | claude:haiku | haiku/haiku |
+| explore | auto:claude-write-codex-review | conserve/throttled | claude:haiku | haiku/haiku |
+| explore | auto:claude-write-codex-review | conserve/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | auto:claude-write-codex-review | reserve/ok | claude:haiku | haiku/haiku |
+| explore | auto:claude-write-codex-review | reserve/throttled | claude:haiku | haiku/haiku |
+| explore | auto:claude-write-codex-review | reserve/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | auto:claude-write-codex-review | exhausted/ok | claude:haiku | haiku/haiku |
+| explore | auto:claude-write-codex-review | exhausted/throttled | claude:haiku | haiku/haiku |
+| explore | auto:claude-write-codex-review | exhausted/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | auto:claude-write-codex-review | abundant/ok | claude:haiku | haiku/haiku |
+| summarize | auto:claude-write-codex-review | abundant/throttled | claude:haiku | haiku/haiku |
+| summarize | auto:claude-write-codex-review | abundant/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | auto:claude-write-codex-review | conserve/ok | claude:haiku | haiku/haiku |
+| summarize | auto:claude-write-codex-review | conserve/throttled | claude:haiku | haiku/haiku |
+| summarize | auto:claude-write-codex-review | conserve/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | auto:claude-write-codex-review | reserve/ok | claude:haiku | haiku/haiku |
+| summarize | auto:claude-write-codex-review | reserve/throttled | claude:haiku | haiku/haiku |
+| summarize | auto:claude-write-codex-review | reserve/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | auto:claude-write-codex-review | exhausted/ok | claude:haiku | haiku/haiku |
+| summarize | auto:claude-write-codex-review | exhausted/throttled | claude:haiku | haiku/haiku |
+| summarize | auto:claude-write-codex-review | exhausted/depleted | claude:haiku †H | sonnet/sonnet |
 | spec-write | auto:codex-standard | abundant/ok | codex:sol †C | sol/sol |
 | spec-write | auto:codex-standard | abundant/throttled | codex:sol †C | sol/sol |
 | spec-write | auto:codex-standard | abundant/depleted | codex:sol †C | sol/sol |
@@ -677,16 +683,16 @@ haiku は throttled ではそのまま、depleted は requested にかかわら�
 | spec-write | auto:claude-default | exhausted/ok | claude:sonnet †W | sonnet/sonnet |
 | spec-write | auto:claude-default | exhausted/throttled | claude:sonnet †W | sonnet/sonnet |
 | spec-write | auto:claude-default | exhausted/depleted | claude:sonnet †W | sonnet/sonnet |
-| spec-review | auto:claude-default | abundant/ok | claude:opus †R | opus/opus |
+| spec-review | auto:claude-default | abundant/ok | claude:opus | opus/opus |
 | spec-review | auto:claude-default | abundant/throttled | claude:opus †R | sonnet/sonnet |
 | spec-review | auto:claude-default | abundant/depleted | claude:opus †R | sonnet/sonnet |
-| spec-review | auto:claude-default | conserve/ok | claude:opus †R | opus/opus |
+| spec-review | auto:claude-default | conserve/ok | claude:opus | opus/opus |
 | spec-review | auto:claude-default | conserve/throttled | claude:opus †R | sonnet/sonnet |
 | spec-review | auto:claude-default | conserve/depleted | claude:opus †R | sonnet/sonnet |
-| spec-review | auto:claude-default | reserve/ok | claude:opus †R | opus/opus |
+| spec-review | auto:claude-default | reserve/ok | claude:opus | opus/opus |
 | spec-review | auto:claude-default | reserve/throttled | claude:opus †R | sonnet/sonnet |
 | spec-review | auto:claude-default | reserve/depleted | claude:opus †R | sonnet/sonnet |
-| spec-review | auto:claude-default | exhausted/ok | claude:opus †R | opus/opus |
+| spec-review | auto:claude-default | exhausted/ok | claude:opus | opus/opus |
 | spec-review | auto:claude-default | exhausted/throttled | claude:opus †R | sonnet/sonnet |
 | spec-review | auto:claude-default | exhausted/depleted | claude:opus †R | sonnet/sonnet |
 | implement | auto:claude-default | abundant/ok | claude:sonnet †W | sonnet/sonnet |
@@ -701,28 +707,28 @@ haiku は throttled ではそのまま、depleted は requested にかかわら�
 | implement | auto:claude-default | exhausted/ok | claude:sonnet †W | sonnet/sonnet |
 | implement | auto:claude-default | exhausted/throttled | claude:sonnet †W | sonnet/sonnet |
 | implement | auto:claude-default | exhausted/depleted | claude:sonnet †W | sonnet/sonnet |
-| impl-review | auto:claude-default | abundant/ok | claude:opus †R | opus/opus |
+| impl-review | auto:claude-default | abundant/ok | claude:opus | opus/opus |
 | impl-review | auto:claude-default | abundant/throttled | claude:opus †R | sonnet/sonnet |
 | impl-review | auto:claude-default | abundant/depleted | claude:opus †R | sonnet/sonnet |
-| impl-review | auto:claude-default | conserve/ok | claude:opus †R | opus/opus |
+| impl-review | auto:claude-default | conserve/ok | claude:opus | opus/opus |
 | impl-review | auto:claude-default | conserve/throttled | claude:opus †R | sonnet/sonnet |
 | impl-review | auto:claude-default | conserve/depleted | claude:opus †R | sonnet/sonnet |
-| impl-review | auto:claude-default | reserve/ok | claude:opus †R | opus/opus |
+| impl-review | auto:claude-default | reserve/ok | claude:opus | opus/opus |
 | impl-review | auto:claude-default | reserve/throttled | claude:opus †R | sonnet/sonnet |
 | impl-review | auto:claude-default | reserve/depleted | claude:opus †R | sonnet/sonnet |
-| impl-review | auto:claude-default | exhausted/ok | claude:opus †R | opus/opus |
+| impl-review | auto:claude-default | exhausted/ok | claude:opus | opus/opus |
 | impl-review | auto:claude-default | exhausted/throttled | claude:opus †R | sonnet/sonnet |
 | impl-review | auto:claude-default | exhausted/depleted | claude:opus †R | sonnet/sonnet |
-| review | auto:claude-default | abundant/ok | claude:opus †R | opus/opus |
+| review | auto:claude-default | abundant/ok | claude:opus | opus/opus |
 | review | auto:claude-default | abundant/throttled | claude:opus †R | sonnet/sonnet |
 | review | auto:claude-default | abundant/depleted | claude:opus †R | sonnet/sonnet |
-| review | auto:claude-default | conserve/ok | claude:opus †R | opus/opus |
+| review | auto:claude-default | conserve/ok | claude:opus | opus/opus |
 | review | auto:claude-default | conserve/throttled | claude:opus †R | sonnet/sonnet |
 | review | auto:claude-default | conserve/depleted | claude:opus †R | sonnet/sonnet |
-| review | auto:claude-default | reserve/ok | claude:opus †R | opus/opus |
+| review | auto:claude-default | reserve/ok | claude:opus | opus/opus |
 | review | auto:claude-default | reserve/throttled | claude:opus †R | sonnet/sonnet |
 | review | auto:claude-default | reserve/depleted | claude:opus †R | sonnet/sonnet |
-| review | auto:claude-default | exhausted/ok | claude:opus †R | opus/opus |
+| review | auto:claude-default | exhausted/ok | claude:opus | opus/opus |
 | review | auto:claude-default | exhausted/throttled | claude:opus †R | sonnet/sonnet |
 | review | auto:claude-default | exhausted/depleted | claude:opus †R | sonnet/sonnet |
 | decider | auto:claude-default | abundant/ok | claude:fable †D | fable/fable |
@@ -737,27 +743,27 @@ haiku は throttled ではそのまま、depleted は requested にかかわら�
 | decider | auto:claude-default | exhausted/ok | claude:fable †D | opus/opus |
 | decider | auto:claude-default | exhausted/throttled | claude:fable †D | opus/opus |
 | decider | auto:claude-default | exhausted/depleted | claude:fable †D | sonnet/sonnet |
-| explore | auto:claude-default | abundant/ok | claude:haiku  | haiku/haiku |
-| explore | auto:claude-default | abundant/throttled | claude:haiku  | haiku/haiku |
-| explore | auto:claude-default | abundant/depleted | claude:haiku  | sonnet/sonnet |
-| explore | auto:claude-default | conserve/ok | claude:haiku  | haiku/haiku |
-| explore | auto:claude-default | conserve/throttled | claude:haiku  | haiku/haiku |
-| explore | auto:claude-default | conserve/depleted | claude:haiku  | sonnet/sonnet |
-| explore | auto:claude-default | reserve/ok | claude:haiku  | haiku/haiku |
-| explore | auto:claude-default | reserve/throttled | claude:haiku  | haiku/haiku |
-| explore | auto:claude-default | reserve/depleted | claude:haiku  | sonnet/sonnet |
-| explore | auto:claude-default | exhausted/ok | claude:haiku  | haiku/haiku |
-| explore | auto:claude-default | exhausted/throttled | claude:haiku  | haiku/haiku |
-| explore | auto:claude-default | exhausted/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | auto:claude-default | abundant/ok | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-default | abundant/throttled | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-default | abundant/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | auto:claude-default | conserve/ok | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-default | conserve/throttled | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-default | conserve/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | auto:claude-default | reserve/ok | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-default | reserve/throttled | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-default | reserve/depleted | claude:haiku  | sonnet/sonnet |
-| summarize | auto:claude-default | exhausted/ok | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-default | exhausted/throttled | claude:haiku  | haiku/haiku |
-| summarize | auto:claude-default | exhausted/depleted | claude:haiku  | sonnet/sonnet |
+| explore | auto:claude-default | abundant/ok | claude:haiku | haiku/haiku |
+| explore | auto:claude-default | abundant/throttled | claude:haiku | haiku/haiku |
+| explore | auto:claude-default | abundant/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | auto:claude-default | conserve/ok | claude:haiku | haiku/haiku |
+| explore | auto:claude-default | conserve/throttled | claude:haiku | haiku/haiku |
+| explore | auto:claude-default | conserve/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | auto:claude-default | reserve/ok | claude:haiku | haiku/haiku |
+| explore | auto:claude-default | reserve/throttled | claude:haiku | haiku/haiku |
+| explore | auto:claude-default | reserve/depleted | claude:haiku †H | sonnet/sonnet |
+| explore | auto:claude-default | exhausted/ok | claude:haiku | haiku/haiku |
+| explore | auto:claude-default | exhausted/throttled | claude:haiku | haiku/haiku |
+| explore | auto:claude-default | exhausted/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | auto:claude-default | abundant/ok | claude:haiku | haiku/haiku |
+| summarize | auto:claude-default | abundant/throttled | claude:haiku | haiku/haiku |
+| summarize | auto:claude-default | abundant/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | auto:claude-default | conserve/ok | claude:haiku | haiku/haiku |
+| summarize | auto:claude-default | conserve/throttled | claude:haiku | haiku/haiku |
+| summarize | auto:claude-default | conserve/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | auto:claude-default | reserve/ok | claude:haiku | haiku/haiku |
+| summarize | auto:claude-default | reserve/throttled | claude:haiku | haiku/haiku |
+| summarize | auto:claude-default | reserve/depleted | claude:haiku †H | sonnet/sonnet |
+| summarize | auto:claude-default | exhausted/ok | claude:haiku | haiku/haiku |
+| summarize | auto:claude-default | exhausted/throttled | claude:haiku | haiku/haiku |
+| summarize | auto:claude-default | exhausted/depleted | claude:haiku †H | sonnet/sonnet |
