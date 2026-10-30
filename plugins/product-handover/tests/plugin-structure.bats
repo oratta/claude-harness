@@ -108,6 +108,35 @@ setup() {
   grep -q "incident-runbook.md" "${TPL}/support-desk.md"
 }
 
+@test "incident runbook covers pre-acquisition leaks in both detection and 4.1 (issue #628)" {
+  local f="${PLUGIN_DIR}/templates/ops/incident-runbook.md"
+  # 検知節の切り分け（4.1 より前）と 4.1 以降の両方に入っていること
+  local detect report
+  detect="$(sed -n '/^## 1\./,/^## 2\./p' "$f")"
+  report="$(sed -n '/^### 4\.1/,/^### 4\.2/p' "$f")"
+  echo "$detect" | grep -qE '取得しようとしている|取得予定|取得前'
+  echo "$report" | grep -qE '取得しようとしている|取得予定|取得前'
+  grep -q '該当性の判断は人間と専門家が行う' "$f"
+}
+
+@test "tokushoho address is the actually-active address only (issue #628)" {
+  local f="${PLUGIN_DIR}/templates/legal/tokushoho.md"
+  [ "$(grep -c '登記上または' "$f")" -eq 0 ]
+  grep -q '現に活動している住所' "$f"
+  grep -q '活動実態と一致' "$f"
+  grep -q '専門家レビュー' "$f"
+}
+
+@test "plugin README explains replacing relative references on deployment (issue #628)" {
+  grep -q 'incident-runbook.md' "${PLUGIN_DIR}/README.md"
+  grep -q '相対参照' "${PLUGIN_DIR}/README.md"
+}
+
+@test "top-level README counts four templates (issue #628)" {
+  [ "$(grep -c '雛形3種' "${REPO_ROOT}/README.md")" -eq 0 ]
+  grep -q '雛形4種だけ' "${REPO_ROOT}/README.md"
+}
+
 @test "autonomy lessons template exists" {
   [ -f "${TPL}/autonomy-lessons-skeleton.md" ]
 }

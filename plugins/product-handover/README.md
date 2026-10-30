@@ -17,6 +17,20 @@
 雛形はコピーして使う。展開先で問題が見つかったら、展開先だけを直して終わらせず
 このプラグイン側を直す PR を出す（次のプロダクトで同じ問題を踏まないため）。
 
+コピーしたら、展開先の配置に合わせて雛形内の相対参照を置換する。上の表の目安
+（`docs/legal-drafts/` と `docs/ops/`）に置くなら次のとおり。
+
+- `ops/incident-runbook.md`（冒頭の使い方と 4 節の補償判断）: `../legal/privacy-policy.md`・
+  `../legal/refund-policy.md` を `../legal-drafts/` 配下に、`../support-desk.md` を同じディレクトリの
+  `support-desk.md` に直す
+- `support-desk.md`: `ops/incident-runbook.md` を `incident-runbook.md` に直す
+- `legal/privacy-policy.md`: `../ops/incident-runbook.md` は `docs/legal-drafts/` から `docs/ops/` を
+  指すのでそのまま通る。置き場所を変えたときだけ直す
+- `legal/` 内の `terms.md`・`refund-policy.md`・`tokushoho.md` の相互参照（ファイル名だけ）は、
+  同じディレクトリに置く限り直さない
+
+置換したら `grep -rn '\.\./' docs/` などで、参照先が実在するかを確かめる。
+
 ## 引き渡しの順番
 
 引き渡しは5段階で、このプラグインは4番目だけを担う。前の3つは他のプラグインが持っているので、
