@@ -5,7 +5,7 @@
 
 ## 2. spec
 
-- [ ] 2.1 triage.md と同じ commit で、main の spec の要件の本文と Scenario を delta のとおり直す（`--children-only` の箇条に再実行の例外、再実行の引数保持、失敗時の扱い）。触る範囲: openspec/specs/dev-workflow-pr-review-gate/spec.md:2039-2084
+- [ ] 2.1 triage.md と同じ commit で、main の spec の要件の本文と Scenario を delta のとおり直す（`--children-only` の箇条に再実行の例外、再実行の引数保持、失敗時の扱い、要件の本文の末尾に足した「守備範囲」の段落）。触る範囲: openspec/specs/dev-workflow-pr-review-gate/spec.md:2039-2084
 
 ## 3. テスト
 
