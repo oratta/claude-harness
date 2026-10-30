@@ -173,14 +173,18 @@ import sys
 plugin = Path(sys.argv[1]).resolve()
 text = (plugin / 'skills/develop/references/reply-after-idle.md').read_text()
 text = text.split('## 開始時の設定')[1].split('## アイドル時')[0]
-# (a) unconfirmed: no restart, no stop, recorded as 未確認 in the develop start comment, both modes
-for term in ['未確認', '再起動を求めず', '止まらずに進', 'develop 開始コメント', 'interactive / unmanned']:
-    assert term in text, term
-# (b) on found: restart, and stop if still not off
-for term in ['on と判明', '開始を止める']:
-    assert term in text, term
-# contradicting override counts as on
-assert '矛盾する上書き指定は on 判明' in text
+# (a) unconfirmed: checked against the sentence that carries 「未確認」, not the whole section
+unconfirmed = next(l for l in text.splitlines() if '「未確認」' in l)
+for term in ['interactive / unmanned とも', '再起動を求めず', '主にも聞かず', '止まらずに進', 'develop 開始コメント',
+             'apply 前の disk の値は on の証拠にしない', '既に同じ記録があれば書き足さない']:
+    assert term in unconfirmed, term
+# (b) on found: record, restart in a new session, per-mode actor, stop if still not off
+on_line = next(l for l in text.splitlines() if l.startswith('- on と判明'))
+for term in ['矛盾する上書き指定は on 判明として扱う', 'issue に記録し', '同じ worktree の新セッションで再起動して入口から機械確認する',
+             'interactive は主に新しいセッションでの再開を案内して終える',
+             'channel / unmanned は本体が新しいセッションを開けないので、記録して開始を止める',
+             'なお off を確認できなければ開始を止めて報告する']:
+    assert term in on_line, term
 # (c) check exit 1 / apply failure stop
 assert '- exit 1 または apply 失敗: 対象パスと原因を記録して開始を止める' in text
 # (d) never report live off beyond what was confirmed
