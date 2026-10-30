@@ -32,7 +32,7 @@
 プラグインのディレクトリの直下からのパスが `.claude-plugin/plugin.json`・`README.md`・`CHANGELOG.md`・`hooks/hooks.json` のファイルと、`changes/`・`tests/` の配下は付属のファイルとして部品の行で覆わない。付属のファイルは、それが記録・検査・配線している部品と同じ行き先に従う。
 
 - 分割したプラグインの付属のファイルは、そのプラグインに公開版の部品の行が 1 つでもあれば公開版にも残る。個人版の部品についての記述は #1129 で書き分け、個人版の部品の検査と変更の記録は部品と一緒に個人版のリポジトリへ移し、公開版の付属のファイルには公開版の部品の記述だけを残した。固有記述の一覧はこの扱いで付属のファイルの行を載せている
-- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）は #1129 で書き分けた。dev-workflow の `hooks/hooks.json` の配線先 11 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従って一緒に個人版のリポジトリへ移した。`tests/skill-registry.bats` は公開版に残り、SKILL.md の全体を見る
+- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）は #1129 で書き分けた。dev-workflow の `hooks/hooks.json` の配線先 11 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` と `scripts/secret-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従って一緒に個人版のリポジトリへ移した。`tests/skill-registry.bats` は公開版に残り、SKILL.md の全体を見る
 
 ## 保留の行の確定
 
@@ -80,6 +80,8 @@
 | `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 公開版 | 別セッション方式（起動部品は Orca か tmux）の親が子の PR をマージしてよいかの基準。#1123 の後は Orca 経路だけのものではなく、`epic-dispatch.sh` の行と同じ側になるので、#1129 で公開版に確定 |
 | `capability-registry` | 分割 | 外部サービスの前に CLI を探す仕組みは公開版、オーナーの 1Password の保管庫とトークンの取り出しは個人版で、#1129 で個人版のリポジトリへ移した（下の「個人版に移した部品」）。下の部品の行と「capability-registry の扱い」で分ける |
 | `plugins/capability-registry/scripts/browser-guard.sh` | 公開版 | ブラウザを開く前に CLI の代替を確かめさせる hook で、住人のふるまいに効く（`fmtoken.sh` の案内は #1164 で外す） |
+| `plugins/capability-registry/scripts/secret-guard.sh` | 公開版 | シークレットの値が画面に出る形の Bash と Read を実行前に止める hook の起動部分で、誰の環境でも意味がある（#1233） |
+| `plugins/capability-registry/scripts/secret-guard.py` | 公開版 | `secret-guard.sh` が起動する判定の本体。個人の道具に専用だった検査は持ち込まない（#1233） |
 | `plugins/capability-registry/skills/capability-registry/github.md` | 公開版 | GitHub の CLI の使い方で、誰の環境でも意味がある（`fmtoken.sh` の参照は #1164 で外す） |
 | `plugins/capability-registry/skills/capability-registry/supabase.md` | 公開版 | Supabase の CLI の使い方で、誰の環境でも意味がある |
 | `plugins/capability-registry/skills/capability-registry/stripe.md` | 公開版 | Stripe の CLI の使い方で、誰の環境でも意味がある |
