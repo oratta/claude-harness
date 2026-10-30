@@ -14,6 +14,17 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 シークレットの値が画面に出る形の Bash と Read を実行前に止める `secret-guard` は `capability-registry` に入っている。`/plugin install capability-registry@oratta-claude-harness` で有効になり、`settings.json` の編集は要らない。
 
+### 複数の Claude アカウントを使う場合（`cld` / `cld-account`）
+
+アカウントを 1 つしか使わない人は、この節は読み飛ばしてよい（`claude` をそのまま使える）。複数アカウントから週の余裕が最大のものを起動時に選ぶ `cld` と、アカウントを指定して起動する `cld-account` は、`dev-workflow` の `bin/` にある実行ファイルで、`~/.zshrc` に PATH を足すと使える（関数定義は要らない）。
+
+```zsh
+export PATH="$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/bin:$PATH"
+export CLD_DEFAULT_ARGS="--dangerously-skip-permissions --remote-control"   # 個人の既定フラグ。要らなければ書かない
+```
+
+`CLD_DEFAULT_ARGS` は、`cld` / `cld-account` が `claude` の引数の先頭に置く個人の既定フラグである。アカウントの登録や、以前のシェル関数からの移行を含む詳細は、`plugins/dev-workflow/README.md` の「Claude アカウントの起動時選択」を見る。
+
 ### Output Style `readable` を有効にする
 
 `output-styles/readable.md`（読み手が前提を持たない状態で読める書き方のスタイル）と `rules/*.md` は、プラグインではないので `/plugin install` では届かない。クイックスタートの後に、marketplace dir の `scripts/sync.sh` を 1 回実行する（SessionStart hook などの自動実行は無い）。これが `readable.md` を `~/.claude/output-styles/` に、`rules/*.md` を `~/.claude/rules/claude-harness/` に symlink する。
