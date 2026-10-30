@@ -77,6 +77,38 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 ---
 
+## overlay（別の harness を重ねる）
+
+`scripts/sync.sh` は、この harness の rules と output-styles を `~/.claude/` に symlink で配る。別の harness（別の marketplace）の rules と output-styles も、同じ仕組みで重ねられる。重ねる側は次の 3 つを用意する。
+
+1. **許可ファイル**: `~/.claude/harness-overlays` に、重ねたい marketplace のディレクトリ名（`~/.claude/plugins/marketplaces/` 直下の名前）を 1 行に 1 つ書く。空行と `#` で始まる行は無視される。
+2. **印**: 重ねられる側の marketplace の直下に `.harness-overlay` を置く。1 行目がサブディレクトリ名（`[a-z0-9][a-z0-9-]*`）で、その marketplace の `rules/*.md` が `~/.claude/rules/claude-harness/<名前>/` に配られる。`output-styles/*.md` は `~/.claude/output-styles/` に配られ、公開側と同名のときは公開側が優先される（重なる側が警告される）。
+3. **再実行**: 許可ファイルを書いたら `scripts/sync.sh` を実行する。許可ファイルから行を外して再実行すると、その overlay の symlink は消える。
+
+```bash
+echo "my-harness" >> ~/.claude/harness-overlays
+~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh
+```
+
+### 許可が要る理由
+
+marketplace を入れただけの第三者が、`.harness-overlay` を置くだけで常時効く指示（rules や output-styles）をあなたの環境に張れないようにするため。`.harness-overlay` があっても、許可ファイルに書かれていない marketplace は張られず、pull もされない。許可ファイルが無いか、空行とコメントだけなら何も起きず、何も表示されない。
+
+### 飛ばされたときの警告
+
+許可した overlay に問題があると、`sync.sh` は標準エラーに `[harness-sync]` で始まる警告を出してその overlay を飛ばし、終了コードを非 0 にする（他の配線は続く）。
+
+| 警告 | 原因と直し方 |
+|------|-------------|
+| `許可した overlay のディレクトリがありません。飛ばします: <名前>` | 許可ファイルに書いた marketplace が見つからない。`~/.claude/plugins/marketplaces/` 直下の名前と綴りを確かめるか、marketplace を入れる |
+| `許可した <名前> の直下に .harness-overlay がありません。飛ばします` | 印が無い。その marketplace の直下に `.harness-overlay` を置く |
+| `overlay の名前が空か不正のため飛ばします` | `.harness-overlay` の 1 行目を `[a-z0-9][a-z0-9-]*` に直す |
+| `overlay の名前 <名前> が重複しているため飛ばします` | 別の overlay が同じ名前を使っている（marketplace 名の辞書順で先のものが採られる）。名前を変える |
+| `<配布先>/<名前> が実ファイルか symlink のため overlay を飛ばします` | `~/.claude/rules/claude-harness/<名前>` に同名の実ファイルなどがある。移すか消す |
+| `許可ファイルの行が不正のため飛ばします` | 行に `/` を含むか、`.` で始まっている。ディレクトリ名だけを書く |
+
+---
+
 ## ローカル開発
 
 開発用の clone は **marketplace dir（`~/.claude/plugins/marketplaces/oratta-claude-harness/`）の外**に置く。marketplace dir は Claude Code が自動更新するインストール成果物なので、そこで feature ブランチを checkout しない（`CLAUDE.md` の「開発場所」を参照）。
