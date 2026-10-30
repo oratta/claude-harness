@@ -627,6 +627,71 @@ add_narrowed_hits() {
   [[ "$output" == *'contract:'*'全ヒット要約'* ]] || return 1
 }
 
+# 要約の下に引数の行をそのまま置く（write_summary と違い、見出しも区切り行も足さない）
+write_summary_lines() {
+  {
+    printf '修正前 SHA: %s\n' "$BULK_SHA"
+    printf '検索コマンド: git grep -n bulk <rev> -- .\n'
+    printf '全ヒット要約: %s 行 %s\n' "$COUNT" "$DIGEST"
+    printf '%s\n' "$@"
+  } > "$REPO/summary.md"
+}
+
+HIT_HEADER='| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |'
+HIT_RULE='|---|---:|---|---|'
+GOOD_ROW='| bulk.txt | 3 | `bulk 3` | 食い違い: F-1 |'
+GHOST_ROW='| ghost.txt | 9 | `x` | 一致 |'
+
+expect_one_table_violation() {
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 1 ] || return 1
+  [[ "$output" == *'contract:'*'must stay in one four-column table'* ]] || return 1
+}
+
+@test "hit summary (#1457): a row after a blank line under a table without a separator row is a contract violation" {
+  commit_bulk 60
+  measure
+  write_summary_lines "$HIT_HEADER" "$GOOD_ROW" '' "$GHOST_ROW"
+  expect_one_table_violation
+}
+
+@test "hit summary (#1457): a row after a non-table line under a table without a separator row is a contract violation" {
+  commit_bulk 60
+  measure
+  write_summary_lines "$HIT_HEADER" "$GOOD_ROW" 'memo' "$GHOST_ROW"
+  expect_one_table_violation
+}
+
+@test "hit summary (#1457): a row above the header is a contract violation" {
+  commit_bulk 60
+  measure
+  write_summary_lines "$GHOST_ROW" "$HIT_HEADER" "$GOOD_ROW"
+  expect_one_table_violation
+}
+
+@test "hit summary (#1457): a blank line between the header and the rows is rejected on purpose, stricter than a full table" {
+  commit_bulk 60
+  measure
+  write_summary_lines "$HIT_HEADER" '' "$GOOD_ROW"
+  expect_one_table_violation
+}
+
+@test "hit summary (#1457): one row without a separator row, a table with one, and no table all exit zero" {
+  commit_bulk 60
+  measure
+  write_summary_lines "$HIT_HEADER" "$GOOD_ROW"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+
+  write_summary_lines "$HIT_HEADER" "$HIT_RULE" "$GOOD_ROW"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
+  [ "$status" -eq 0 ]
+}
+
 @test "hit summary (#1457): a 64-digit hex value passes the format check and is compared as a digest" {
   commit_bulk 60
   measure

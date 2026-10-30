@@ -338,10 +338,13 @@ def check_summary(repo, lines, command, sha, head):
     if match is None:
         raise ContractError("全ヒット要約 must be: <decimal count> 行 <hex digest>")
     count, digest = int(match[1]), match[2]
-    piped = sum(line.lstrip().startswith("|") for line in lines)
-    rows = parse_table(lines) if piped else []
-    if piped > len(rows) + 2:
-        raise ContractError("rows under 全ヒット要約 must stay in one four-column table")
+    piped = [index for index, line in enumerate(lines) if line.lstrip().startswith("|")]
+    rows = []
+    if piped:
+        first = tuple(decode_cell(cell) for cell in split_markdown_row(lines[piped[0]]))
+        if first != HEADER or piped != list(range(piped[0], piped[0] + len(piped))):
+            raise ContractError("rows under 全ヒット要約 must stay in one four-column table")
+        rows = parse_table(lines)
     for path, number, _body, handling in rows:
         if not MISMATCH_RE.fullmatch(handling):
             raise ContractError(
