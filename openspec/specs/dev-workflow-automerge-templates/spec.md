@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change promote-pr-review-gate-to-dev-workflow. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: auto-merge workflow 一式がテンプレートとして配布される
 
 dev-workflow プラグインは `templates/auto-merge/` に、展開先リポのツリーをそのまま鏡写しにした形（`.github/workflows/auto-merge.yml` / `.github/workflows/revert-pr.yml` / `docs/auto-merge.md` / `scripts/test-auto-merge-workflow.sh`）と展開手順 `README.md` を含む（SHALL）。テンプレートはリポ固有の差し替え箇所を既存マーカー（`# >>> sacred-paths` / `# >>> required-checks` 等）で明示し、README がそれ以外を変更せずに展開できる手順を提供する（SHALL）。
@@ -77,12 +79,39 @@ dev-workflow プラグインは `templates/auto-merge/` に、展開先リポの
 
 ### Requirement: deny 設定が auto-merge 配線と同じ場所から配布される
 
-テンプレートは `.claude/settings.json` に、LLM による `gh pr merge`・main / master への直接 push・force push（`-f` / `--force` / `--force-with-lease`）・`--no-verify` push を塞ぐ `permissions.deny` 断片を含まなければならない（MUST）。README は展開先の既存 `.claude/settings.json` に既存の deny を消さずにマージする手順を提供し（SHALL）、docs/auto-merge.md は各 deny が塞ぐ経路を説明する（SHALL）。配布経路は他のプラグインに依存しない（SHALL）。
+テンプレートは `.claude/settings.json` に、LLM による `gh pr merge`・main / master への直接 push・force push（`-f` / `--force` / `--force-with-lease`）・`--no-verify` push を塞ぐ `permissions.deny` 断片を含まなければならない（MUST）。拒否範囲にはオプションの前置形・後置形と main/master 宛て明示 refspec を含め、通常の feature push は拒否してはならない（MUST NOT）。README は既存 deny を消さないマージ手順を提供し（SHALL）、配布用 docs/auto-merge.md は各 deny の経路を説明する（SHALL）。配布は他プラグインに依存しない（SHALL）。
+
+**守備範囲**: 今回拡張する拒否判定の入力は、エージェントが文字列として直接打つ、引数を空白で区切った単純な `git push` コマンドを想定する。拾う誤りは、危険オプション（`--force` / `-f` / `--force-with-lease` / `--no-verify`）の前置・中置・後置、列挙した値付き `--force-with-lease`、main/master 宛て明示 refspec による push とする。`git push origin feature/foo`、`git push -u origin feature/foo`、`git push origin feature:main-fix` はこのテンプレートの deny に一致しないことを許す（他の permission 設定による許可は保証しない）。引用符・タブ・変数などの展開・URL・値を取るオプションの値の内部（列挙した値付き `--force-with-lease` を除く）・複合 shell・wrapper・global Git オプション・短いオプションの結合形や省略形・`+` refspec は今回の拡張の対象外であり、これらの構文での拒否や過剰一致の回避は保証しない。例えばオプション値の `x:main` は refspec と区別せず一致しうる。完全な Git 操作の防壁とはせず、対象外の構文による抜け穴の全面封鎖を完了条件にしない。
 
 #### Scenario: deny 断片の内容
 
 - **WHEN** `templates/auto-merge/.claude/settings.json` を jq で検査する
-- **THEN** `permissions.deny` に `Bash(gh pr merge:*)` / `Bash(git push origin main:*)` / `Bash(git push origin master:*)` / `Bash(git push -f:*)` / `Bash(git push --force:*)` / `Bash(git push --force-with-lease:*)` / `Bash(git push --no-verify:*)` の 7 件が含まれる
+- **THEN** `permissions.deny` に既存の `Bash(gh pr merge:*)` / `Bash(git push origin main:*)` / `Bash(git push origin master:*)` / `Bash(git push -f:*)` / `Bash(git push --force:*)` / `Bash(git push --force-with-lease:*)` / `Bash(git push --no-verify:*)` の 7 件が保持され、以下の拒否範囲を満たす追加エントリがある
+
+#### Scenario: オプション前置形と後置形の拒否
+
+- **WHEN** 各オプション `--force` / `-f` / `--force-with-lease` / `--no-verify` を単独の引数として `git push <option> origin feature`、`git push origin feature <option>`、`git push origin <option> feature` の位置に置いて照合する
+- **THEN** すべて deny に一致する
+
+#### Scenario: 値付き force-with-lease の拒否
+
+- **WHEN** `git push --force-with-lease=refs/heads/feature:abc123 origin feature`、`git push origin feature --force-with-lease=refs/heads/feature:abc123` を照合する
+- **THEN** どちらも deny に一致する
+
+#### Scenario: main と master 宛て refspec の拒否
+
+- **WHEN** `git push origin HEAD:<destination>` と `git push origin HEAD:<destination> --porcelain` を、宛先 `main` / `master` / `refs/heads/main` / `refs/heads/master` ごとに照合し、さらに `git push origin feature:main other:feature/bar` と `git push -u origin HEAD:master` を照合する
+- **THEN** すべて deny に一致し、送り元や refspec の位置に依存しない
+
+#### Scenario: 通常 push と似た名前の宛先を拒否しない
+
+- **WHEN** `git push origin feature/foo`、`git push -u origin feature/foo`、`git push origin HEAD:feature/foo`、`git push origin feature:main-fix`、`git push origin HEAD:master-fix`、`git push origin HEAD:refs/heads/main-fix`、`git push origin main-fix`、`git push origin master-fix` を照合する
+- **THEN** いずれもこのテンプレートの deny に一致しない（他の permission 設定による許可を保証する意味ではない）
+
+#### Scenario: 照合方法と証拠が残る
+
+- **WHEN** deny の追加を検証し、`changes/629.md` に結果を記録する
+- **THEN** 公式 permission 仕様の参照元・照合方法・前後の一致/不一致・通常 push と過剰一致の対照例・実行コマンドと終了コードを記載する。公式仕様に基づく再現を使った場合はその旨と対象範囲を明示し、Claude Code 実マッチャーの実測として扱わない。Bats は JSON の要素存在だけでなくコマンドの一致/不一致を検証する
 
 #### Scenario: 既存 settings.json へのマージで既存 deny が残る
 
@@ -175,4 +204,3 @@ auto-merge.yml は、親の判断の印があるかをマーカー `# >>> parent
 
 - **WHEN** CI（`plugins/dev-workflow/tests/automerge-templates.bats` と、展開先・原本の `scripts/test-auto-merge-workflow.sh`）が auto-merge.yml を検査する
 - **THEN** `merge-condition-paths` と `parent-merge-judgment` のマーカー対が両方にあり、`MERGE_CONDITION` の代表パスがすべて `SACRED` に一致し、`rules/`・`CLAUDE.md`・`plugins/*/hooks/` の代表パスが `MERGE_CONDITION` に一致せず、`parent-merge-judgment` の判定をスタブの `gh` で動かして上の各シナリオの真偽どおりになり、ジョブの `if:` が `parent-merge-approved` を受け、`pull_request_target` のイベント種が labeled だけであることが機械的に検証される
-
