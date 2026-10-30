@@ -77,3 +77,23 @@ run_in() { # $1=dir ; env passed by caller
   run grep -c 'dev-dir-env-check.sh' "$HOOKS_JSON"
   [ "$output" -ge 1 ]
 }
+
+# python3 の隔離（#847 の決まり）: 作業ディレクトリと PYTHONPATH の偽 json.py を読まない
+@test "isolation: fake json.py in cwd and in PYTHONPATH is never imported" {
+  unset CLAUDE_HARNESS_DEV_DIR
+  FAKE="${BATS_TEST_TMPDIR}/fake"
+  mkdir -p "$FAKE"
+  export FAKE_MARKER="${BATS_TEST_TMPDIR}/fake-loaded"
+  printf 'import os\nopen(os.environ["FAKE_MARKER"], "a").write("json\\n")\nraise ImportError("fake json")\n' >"$FAKE/json.py"
+  # 作業ディレクトリに置く（harness のリポジトリ内）
+  cp "$FAKE/json.py" "$HARNESS/json.py"
+  run_in "$HARNESS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]]
+  [ ! -e "$FAKE_MARKER" ]
+  # PYTHONPATH に置く
+  PYTHONPATH="$FAKE" run_in "$HARNESS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]]
+  [ ! -e "$FAKE_MARKER" ]
+}

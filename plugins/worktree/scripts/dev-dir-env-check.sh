@@ -16,7 +16,7 @@ MP="$TOP/.claude-plugin/marketplace.json"
 [ -f "$MP" ] || exit 0
 
 command -v python3 >/dev/null 2>&1 || exit 0
-MP="$MP" python3 -c '
+MP="$MP" python3 -I -c '
 import json, os, sys
 try:
     name = json.load(open(os.environ["MP"])).get("name")
