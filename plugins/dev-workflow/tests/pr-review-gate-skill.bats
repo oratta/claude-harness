@@ -820,6 +820,18 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   [ "$(echo "$tbl" | grep -cF '親の取得が失敗し続けたときの「範囲で成り立つ」に当たった指摘は')" -eq 2 ]
 }
 
+@test "nonblocking triage (#1011): the epic number exclude and the truncation rerun need the parent in the same repository, same wording in triage.md and the spec" {
+  spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: 候補探しのスクリプトは/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
+  [ -n "$req" ] || { echo "no candidate-search requirement"; return 1; }
+  c="$(nonblocking_para '候補探し')"
+  for t in "$c" "$req"; do
+    has_all "$t" 'エピックに属する PR で親が' 'にあるときは、さらに `--exclude <エピック番号>`' \
+      '親の取得に成功し、親が' 'にあるときに限り' '別リポジトリのとき・親の取得が失敗し続けたときは再実行せず' \
+      '初回の候補をすべて `other` と読む'
+  done
+}
+
 @test "nonblocking triage (#985): stages D and E, the record, and findings the owner chose to split off" {
   d="$(nonblocking_para '段 D（')"
   has_all "$d" '参考。この issue の受け入れ条件には足さない' '最も近い 1 件'
