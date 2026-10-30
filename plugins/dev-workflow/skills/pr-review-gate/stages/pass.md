@@ -161,7 +161,7 @@ G は CI の見張りを始めずに `passed` を return する（背景タス�
 - 前の Gate Result が `段: 照合と振り分け`: `declarations.md` 手順3へ。前許容は宣言前に carryover 3-c
 - `段: 保留の解除`: 現 HEAD の `対象 HEAD:`・`## リスク宣言` 有り→5の真正性確認、無し→ `declarations.md` の手順 3。HEAD 変更＋前許容は先に carryover 3-c
 - **引き継ぎの判定のあと**（`段: 合格処理`・Status `needs-carryover-judge`）: `declarations.md` の手順 3 から入り直し、carryover 3-c の判定の記録（`引き継ぎ判定:`）。一致する記録が無ければ `needs-carryover-judge` を返し直さず手順6。
-return: 保留は `stages/hold.md`、needs-carryover-judge は `stages/carryover.md`。
+return: 保留は `stages/hold.md`、needs-carryover-judge は `stages/carryover-judge.md`。
 
 ## 出口
 

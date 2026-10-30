@@ -25,7 +25,11 @@ setup() {
   CHANNEL="${PLUGIN_DIR}/skills/develop/references/channel.md"
   CMD="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
-  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
   AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
 }
 

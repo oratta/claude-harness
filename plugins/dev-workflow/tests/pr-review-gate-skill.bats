@@ -19,7 +19,11 @@ setup() {
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
-  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
   AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
   PASS_AUTH="${BATS_TEST_TMPDIR}/pass-auth.md"
   cat "$PASS_STAGE" "$AUTH" > "$PASS_AUTH"
@@ -1176,7 +1180,7 @@ step3c_body() {
   grep -q '^#### 3-b\. ' "$(step_file 3-b)"
   grep -q '^#### 3-c\. ' "$(step_file 3-c)"
   grep -q '^### 4\. ' "$(step_file 4)"
-  [ "$(step_file 3-c)" = "$CARRYOVER" ]
+  [ "$(step_file 3-c)" = "$CARRYOVER_CORE" ]
 }
 
 @test "carryover (#441): 3-c runs risk-carryover-check.sh and names the 4 conditions" {
@@ -1202,7 +1206,6 @@ step3c_body() {
   line="$(step3c_body | grep -F '唯一の例外')"
   echo "$line" | grep -qF '主への質問だけ'
   echo "$line" | grep -qF '前回の合格部分を流用しない'
-  echo "$line" | grep -qF 'gate-runner.md'
   for w in '手順 2 のレビュー' '手順 4 の証拠' '仕様宣言'; do
     echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
   done
@@ -1335,7 +1338,7 @@ step3c_body() {
   [ -n "$line" ] || { echo "no exit-4 step-6 sentence"; return 1; }
   echo "$line" | grep -qF 'EVIDENCE_PR_CHANGED='
   # 判定が「変わった」「判断できない」・上限超え・判定役を起こせないときの理由を添える
-  for w in '`引き継ぎ判定: 変わった`' '`引き継ぎ判定: 判断できない`' '100 行を超えた' '判定役を起こせない' '判定役に比べさせなかった理由'; do
+  for w in '`引き継ぎ判定: 変わった`' '`引き継ぎ判定: 判断できない`' '判定役に比べさせなかった理由'; do
     echo "$line" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
   done
 }

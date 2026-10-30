@@ -62,7 +62,7 @@ check_budget() {
 
 # 40000 を超える経路（#580 の残り）。合格処理の引き継ぎ・動作確認代行で保留に進む経路・保留の解除の引き継ぎは、
 # 条件付きで加わる段のファイルが大きく、この PR では 40000 以下に収められなかった。実測値を上限にして増えないことだけ固定する。
-OVER_TARGET=" pass-carryover pass-hold hold-carryover "
+OVER_TARGET=" pass-carryover-judge pass-carryover-origin pass-hold "
 
 @test "real: strict ceiling and slack hold for every scenario except the listed over-target paths" {
   local line scenario
@@ -78,7 +78,7 @@ OVER_TARGET=" pass-carryover pass-hold hold-carryover "
 }
 
 @test "real: all stages and conditional unions are measured" {
-  [ "$(cut -d' ' -f1 "$BUDGET_FILE" | sort | tr '\n' ' ')" = 'hold hold-carryover pass pass-auth pass-carryover pass-hold prepare rereview triage-escalation triage-failed triage-nonblocking triage-row3 triage-summary ' ]
+  [ "$(cut -d' ' -f1 "$BUDGET_FILE" | sort | tr '\n' ' ')" = 'hold hold-carryover pass pass-auth pass-carryover pass-carryover-judge pass-carryover-origin pass-hold prepare rereview triage-escalation triage-failed triage-nonblocking triage-row3 triage-summary ' ]
   local scenario budget paths path expected common="skills/develop/references/roles/gate-runner.md" triage="skills/develop/references/roles/gate-runner-triage.md" p="skills/pr-review-gate" st="skills/pr-review-gate/stages"
   while read -r scenario budget paths; do
     case "$scenario" in
@@ -92,6 +92,8 @@ OVER_TARGET=" pass-carryover pass-hold hold-carryover "
       pass) expected="$common $p/declarations.md $st/pass.md" ;;
       pass-auth) expected="$common $p/declarations.md $st/pass.md $st/authenticity.md" ;;
       pass-carryover) expected="$common $p/declarations.md $st/pass.md $st/carryover.md" ;;
+      pass-carryover-judge) expected="$common $p/declarations.md $st/pass.md $st/carryover.md $st/carryover-judge.md" ;;
+      pass-carryover-origin) expected="$common $p/declarations.md $st/pass.md $st/carryover.md $st/carryover-origin.md" ;;
       pass-hold) expected="$common $p/declarations.md $st/pass.md $st/hold.md" ;;
       hold) expected="$common $st/hold.md" ;;
       hold-carryover) expected="$common $st/hold.md $st/carryover.md" ;;

@@ -19,7 +19,11 @@ setup() {
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
-  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
   AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   WORKER="${ROLES}/worker.md"
@@ -1120,7 +1124,7 @@ $(section "$GATE_BODY" '段ごとの起動と入力')"
   common="$(awk '/^## Gate Result/{f=1} f&&/^```$/{exit} f' "$GATE")"
   echo "$common" | grep -E '^- Status: ' | grep -qF 'needs-carryover-judge'
   grep -qxF '| needs-carryover-judge | `合格処理` |' "$GATE"
-  grep -F 'Status ごとの欄の書式は' "$GATE_ALL" | grep -qF '`needs-carryover-judge` は `stages/carryover.md`'
+  grep -F 'Status ごとの欄の書式は' "$GATE_ALL" | grep -qF '`needs-carryover-judge` は `stages/carryover-judge.md`'
 }
 
 @test "gate-runner (#1238): the pass row of the stage table takes the carryover judgment" {
