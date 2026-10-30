@@ -1,0 +1,21 @@
+# Tasks
+
+## 1. R1 の条件の段
+
+- [ ] 1.1 `tests/spec-decision-and-review.bats` に、「条件がいつ成り立つか」の語・5 行の表・根拠の規則・`条件の問い:`・`捨てた指摘:`・flatmate #702 の例・`stages/triage.md` の段 B への参照・文書そのものの欠陥の扱いを検査するテストを足し、落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/spec-decision-and-review.bats:115-130
+- [ ] 1.2 `spec-reviewer.md` に節を足し、「レビュアーへの入力」に `## 条件の答え` の行を、「出力書式」に BLOCKER の条件の書き方を、「結果を記録先に記録する」に `捨てた指摘:` の行を、「判定基準」と「往復の上限」に段と当て直しへの参照を足す。1.1 のテストが通ることで確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md:36-41、plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md:52-65、plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md:71-78、plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md:84-87
+
+## 2. 直し方の判定の前の段
+
+- [ ] 2.1 同じ bats に、fix-check.md の節「残った指摘の条件を確かめる」の見出しが 1 か所にあること・通す 2 つの時点・当て直しを周に数えないこと・「判定に回さず捨てる」・`needs-fix-check` に当てないこと・「主に聞くのは 2 つだけ」が方針の問いの数と書かれていること、SKILL.md の (2) が節を指すことと `## 条件の答え` を依頼文に入れることを検査するテストを足し、落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/spec-decision-and-review.bats:115-130
+- [ ] 2.2 `fix-check.md` の冒頭の読むときの文を直し、節「残った指摘の条件を確かめる」を足し、既存の節の規則に 1 文足す。2.1 のテストのうち fix-check.md の分が通ることで確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/fix-check.md:3-9
+- [ ] 2.3 `SKILL.md` の (2) の該当行だけを直し、`tests/develop-startup-budget.txt` の SKILL.md の値を実測に合わせて動かす。2.1 のテストと `scripts/test.sh develop-skill`・`bats tests/develop-startup-budget.bats` が通ることで確かめる。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:113-120、tests/develop-startup-budget.txt:1
+
+## 3. 記録と全体の確認
+
+- [ ] 3.1 `plugins/dev-workflow/changes/1121.md` を書く。何を変えたか・戻し方・SKILL.md の予算を動かした理由・PR レビュー側に当てない理由を書き、ファイルがあることで確かめる。触る範囲: plugins/dev-workflow/changes/1121.md（新規）
+- [ ] 3.2 `scripts/test.sh spec-decision-and-review`・`scripts/test.sh develop-roles`・`scripts/test.sh develop-skill`・`openspec validate spec-review-condition-stage --type change --strict` を流し、すべて exit 0 であることを確かめる。触る範囲: なし（確認のみ）
+
+## Workflow follow-up
+
+- archive と PR の作成は (3b) で行う
