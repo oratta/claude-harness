@@ -12,7 +12,7 @@
 
 ### Modified Capabilities
 - `in-progress-issue-scope`: G の振り分けの対象外を外す
-- `dev-workflow-pr-review-gate`: 段 C の子の行に作業中の確認を足す（新しい要件を 1 つ追加）
+- `dev-workflow-pr-review-gate`: 段 C の子の行に作業中の確認を足す（段 C の要件と置き場所の要件のシナリオを作業中でない場合に限定し、新しい要件を 2 つ追加）
 
 ## Impact
 
