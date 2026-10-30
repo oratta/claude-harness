@@ -4,8 +4,8 @@
 
 ## 1. 対応表と tier-model
 
-- [ ] 1.1 `dw/references/model-tier-map.json` を design の形で作り、`load_tier_map(path)` で厳密に読む（欠け・未知のキーは `status: blocked`・exit 2）。`path` の既定は同梱の表。テスト: 壊れた表を一時ファイルに書いて `load_tier_map(path)` に渡すと拒否される。`request` 経由は `patch.object(m, 'TIER_MAP', <一時ファイル>)` で差し替え、blocked で依頼ファイルができないことを確かめる。`git grep -nE 'gpt-[0-9]' dw/references/model-tier-map.json` が 0 件。触る範囲: dw/references/model-tier-map.json（新規）、dw/scripts/codex-develop.py:1-44、dw/tests/test_codex_develop.py（新しいテストクラス）
-- [ ] 1.2 `tier-model` サブコマンドを足し、`main()` を command で分岐する。`--executor` と `--tier` に argparse の `choices` を使わない。テスト: 全格 exit 0、`--tier 特上` と未定義の executor は blocked・exit 2。触る範囲: dw/scripts/codex-develop.py:628-655（main）、dw/tests/test_codex_develop.py（新しいテストクラス）
+- [x] 1.1 `dw/references/model-tier-map.json` を design の形で作り、`load_tier_map(path)` で厳密に読む（欠け・未知のキーは `status: blocked`・exit 2）。`path` の既定は同梱の表。テスト: 壊れた表を一時ファイルに書いて `load_tier_map(path)` に渡すと拒否される。`request` 経由は `patch.object(m, 'TIER_MAP', <一時ファイル>)` で差し替え、blocked で依頼ファイルができないことを確かめる。`git grep -nE 'gpt-[0-9]' dw/references/model-tier-map.json` が 0 件。触る範囲: dw/references/model-tier-map.json（新規）、dw/scripts/codex-develop.py:1-44、dw/tests/test_codex_develop.py（新しいテストクラス）
+- [x] 1.2 `tier-model` サブコマンドを足し、`main()` を command で分岐する。`--executor` と `--tier` に argparse の `choices` を使わない。テスト: 全格 exit 0、`--tier 特上` と未定義の executor は blocked・exit 2。触る範囲: dw/scripts/codex-develop.py:628-655（main）、dw/tests/test_codex_develop.py（新しいテストクラス）
 
 ## 2. profile の形式版 2
 

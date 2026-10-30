@@ -42,6 +42,12 @@ comments, push, PR creation and commit yourself here, and do not return needs-co
 them. The coordinator performs only operations already recorded as ones it could not align.'''
 READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
+# The tiers from lowest to highest. Tier names are the only thing that crosses from the rule to
+# the executors; model-tier-map.json alone turns a tier into a model name.
+TIERS = ('最安', '中位', '上位', '最上位')
+TIER_MAP = ROOT / 'references/model-tier-map.json'
+
+
 def _setting_error(exc):
     """An invalid HEADROOM_* setting stops the automatic selection (blocked, exit 2)."""
     return RuntimeError(f'automatic selection cannot count headroom: {exc}')
@@ -358,6 +364,38 @@ def _unique_object(pairs):
     return value
 
 
+def load_tier_map(path=None):
+    # model-tier-resolution: nothing falls back to a default here, because a default would
+    # silently pick another model. Whether a model name exists is not checked.
+    source = TIER_MAP if path is None else path
+    try:
+        document = json.loads(Path(source).read_text(), object_pairs_hook=_unique_object)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError('tier map is unavailable or invalid') from exc
+    if (not isinstance(document, dict) or set(document) != {'version', 'tiers', 'executors'} or
+            type(document['version']) is not int or document['version'] != 1 or
+            document['tiers'] != list(TIERS)):
+        raise RuntimeError('tier map must have exactly version=1, tiers and executors')
+    executors = document['executors']
+    if not isinstance(executors, dict) or set(executors) != {'claude', 'codex'}:
+        raise RuntimeError('tier map must define exactly the claude and codex executors')
+    for executor, models in executors.items():
+        if not isinstance(models, dict) or set(models) != set(TIERS):
+            raise RuntimeError(f'tier map {executor} must define exactly the four tiers')
+        if any(not isinstance(model, str) or not model for model in models.values()):
+            raise RuntimeError(f'tier map {executor} has an empty or non-string model')
+    return document
+
+
+def tier_model(executor, tier):
+    table = load_tier_map()
+    if executor not in table['executors']:
+        raise RuntimeError(f'executor is not defined: {executor}')
+    if tier not in TIERS:
+        raise RuntimeError(f'tier is not defined: {tier}')
+    return {'executor': executor, 'tier': tier, 'model': table['executors'][executor][tier]}
+
+
 def execution_config_hash(config):
     encoded = json.dumps(config, ensure_ascii=False, sort_keys=True,
                          separators=(',', ':')).encode()
@@ -556,6 +594,8 @@ def build_request(args):
         raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
+    # The legacy pair goes around the tiers, so only the other forms need the table.
+    tier_map = None if legacy else load_tier_map()
     if legacy or profile:
         refuse_explicit_codex_when_off(args, legacy)
     mapping = account_homes(args.account_home, args.account_home_file)
@@ -644,7 +684,15 @@ def main():
     request.add_argument('--quota-margin-pct', type=float)
     request.add_argument('--out', required=True,
                          help='where to write the request file for codex-worker.py run')
-    return build_request(parser.parse_args())
+    # The values are checked in tier_model: argparse choices would refuse them without the
+    # blocked JSON that the callers read.
+    lookup = sub.add_parser('tier-model')
+    lookup.add_argument('--executor', required=True)
+    lookup.add_argument('--tier', required=True)
+    args = parser.parse_args()
+    if args.command == 'tier-model':
+        return tier_model(args.executor, args.tier)
+    return build_request(args)
 
 
 if __name__ == '__main__':

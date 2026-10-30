@@ -27,9 +27,8 @@ worker_module = importlib.util.module_from_spec(worker_spec)
 worker_spec.loader.exec_module(worker_module)
 
 
-class ForegroundRequest(unittest.TestCase):
-    # The foreground route has no run and no ledger: CODEX_HOME comes from the caller's
-    # table and an account missing from it is refused rather than replaced.
+class RequestFixture:
+    # A throwaway repository, Codex home and profile file, cut off from the real ~/.claude.
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -110,6 +109,10 @@ class ForegroundRequest(unittest.TestCase):
         with patch.object(sys, 'argv', args):
             return m.main()
 
+
+class ForegroundRequest(RequestFixture, unittest.TestCase):
+    # The foreground route has no run and no ledger: CODEX_HOME comes from the caller's
+    # table and an account missing from it is refused rather than replaced.
     def test_request_resolves_the_home_without_legacy_state(self):
         source = SCRIPT.read_text()
         for value in ('continuation', 'run-dir', 'run.json', 'pending', 'sqlite3'):
@@ -1170,6 +1173,84 @@ class ForegroundRequest(unittest.TestCase):
         self.assertEqual((outcomes[0]['configuration'], outcomes[0]['reason']),
                          ('claude-write-codex-review', 'both-providers-have-headroom'))
         self.assertEqual(set(outcomes[0]['codex']), {'account', 'margin', 'fetched_at'})
+
+
+class TierMap(RequestFixture, unittest.TestCase):
+    # model-tier-map.json is the only place that turns a tier into a model name, so a broken
+    # table stops the request instead of falling back to some other model.
+    def write_map(self, value):
+        path = self.root / 'tier-map.json'
+        path.write_text(value if isinstance(value, str) else json.dumps(value, ensure_ascii=False))
+        return path
+
+    def valid_map(self):
+        return json.loads((SCRIPT.parents[1] / 'references/model-tier-map.json').read_text())
+
+    def test_the_bundled_table_has_the_agreed_values(self):
+        table = m.load_tier_map()
+        self.assertEqual(table['tiers'], ['最安', '中位', '上位', '最上位'])
+        self.assertEqual(table['executors'], {
+            'claude': {'最安': 'haiku', '中位': 'sonnet', '上位': 'opus', '最上位': 'fable'},
+            'codex': {'最安': 'luna', '中位': 'sol', '上位': 'sol', '最上位': 'astra'}})
+
+    def test_the_table_holds_no_model_id(self):
+        path = SCRIPT.parents[1] / 'references/model-tier-map.json'
+        self.assertIsNone(re.search(r'gpt-[0-9]', path.read_text()))
+
+    def test_a_broken_table_is_refused(self):
+        def edited(change):
+            table = self.valid_map()
+            change(table)
+            return table
+        cases = {
+            'missing tier': edited(lambda t: t['executors']['codex'].pop('上位')),
+            'unknown tier': edited(lambda t: t['executors']['codex'].update({'特上': 'x'})),
+            'missing executor': edited(lambda t: t['executors'].pop('codex')),
+            'unknown executor': edited(lambda t: t['executors'].update(
+                {'local': dict(t['executors']['codex'])})),
+            'unknown key': edited(lambda t: t.update({'extra': 1})),
+            'other tiers': edited(lambda t: t.update({'tiers': ['最安']})),
+            'other version': edited(lambda t: t.update({'version': 2})),
+            'boolean version': edited(lambda t: t.update({'version': True})),
+            'empty value': edited(lambda t: t['executors']['claude'].update({'中位': ''})),
+            'not a string': edited(lambda t: t['executors']['claude'].update({'中位': 1})),
+            'duplicate key': '{"version":1,"version":1}',
+            'not json': '{',
+            'not an object': '[]',
+        }
+        for name, value in cases.items():
+            with self.subTest(case=name), self.assertRaises(RuntimeError):
+                m.load_tier_map(self.write_map(value))
+        with self.assertRaises(RuntimeError):
+            m.load_tier_map(self.root / 'absent.json')
+
+    def test_a_broken_table_blocks_the_request_without_a_request_file(self):
+        table = self.valid_map()
+        del table['executors']['codex']['上位']
+        with patch.object(m, 'TIER_MAP', self.write_map(table)), self.assertRaises(RuntimeError):
+            self.call_profile('codex-standard')
+        self.assertFalse(self.out.exists())
+
+    def run_tier_model(self, *extra):
+        return subprocess.run([sys.executable, str(SCRIPT), 'tier-model', *extra],
+                              text=True, capture_output=True, timeout=20)
+
+    def test_tier_model_returns_every_tier_of_both_executors(self):
+        for executor, models in (('claude', ('haiku', 'sonnet', 'opus', 'fable')),
+                                 ('codex', ('luna', 'sol', 'sol', 'astra'))):
+            for tier, model in zip(('最安', '中位', '上位', '最上位'), models):
+                with self.subTest(executor=executor, tier=tier):
+                    result = self.run_tier_model('--executor', executor, '--tier', tier)
+                    self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                    self.assertEqual(json.loads(result.stdout),
+                                     {'executor': executor, 'tier': tier, 'model': model})
+
+    def test_tier_model_refuses_an_undefined_tier_or_executor(self):
+        for executor, tier in (('codex', '特上'), ('local', '中位')):
+            with self.subTest(executor=executor, tier=tier):
+                result = self.run_tier_model('--executor', executor, '--tier', tier)
+                self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
+                self.assertEqual(json.loads(result.stdout)['status'], 'blocked')
 
 
 class DocumentationContracts(unittest.TestCase):
