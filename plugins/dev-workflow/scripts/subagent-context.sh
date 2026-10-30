@@ -23,8 +23,8 @@
 # skills/develop/references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」。
 # このスクリプトには書かない。正本を読むまで手渡さない。
 #
-# 探索: ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl
-# `--file <path>` はそのファイルを直接測る（worktree 隔離はファイル名に名前が入らず名前 glob で見つからない）。
+# 探索: ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/ 内の metadata の name 完全一致と従来の名前 glob。
+# `agent-*.meta.json` に対応する実在の .jsonl を候補に加える。`--file <path>` はそのファイルを直接測る。
 # 同名が複数あれば、cwd が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの。
 set -uo pipefail
 
@@ -74,7 +74,7 @@ cwd = os.environ["CWD"]
 
 direct = os.environ.get("FILE") or ""
 if direct:
-    # --file: 名前 glob を使わずそのファイルを測る（worktree 隔離では名前で引けない。#243）
+    # --file: metadata と名前 glob の探索を使わずそのファイルを測る（#243）
     if not os.path.isfile(direct):
         print(json.dumps({"agent": name, "error": "transcript not found", "file": direct}))
         sys.exit(1)
@@ -83,6 +83,17 @@ else:
     # Agent ツールはトランスクリプトを agent-<prefix><name>-<hash>.jsonl に置く（prefix は 1 文字のことがある）
     pattern = os.path.join(projects, "*", "*", "subagents", f"agent-*{name}-*.jsonl")
     files = glob.glob(pattern) + glob.glob(os.path.join(projects, "*", "*", "subagents", f"agent-*{name}.jsonl"))
+    for meta_path in glob.glob(os.path.join(projects, "*", "*", "subagents", "agent-*.meta.json")):
+        try:
+            with open(meta_path, encoding="utf-8") as f:
+                meta = json.load(f)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(meta, dict) or meta.get("name") != name:
+            continue
+        transcript = meta_path[:-len(".meta.json")] + ".jsonl"
+        if os.path.isfile(transcript):
+            files.append(transcript)
     files = sorted(set(files), key=lambda p: os.path.getmtime(p), reverse=True)
     if not files:
         print(json.dumps({"agent": name, "error": "transcript not found", "pattern": pattern}))

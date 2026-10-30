@@ -336,6 +336,9 @@ review_execution() {
 
 # --- Codex オフ（accounts.json の codex.enabled が false。#978） ---
 
+# 日本語の文は固定文字列で照合する。LC_ALL=C では [^。] がバイト単位になり、
+# 句点以外の日本語まで拒否するため（#1424）。
+
 # 「Codex がオフのとき」の段落（2-1 の表の下に 1 つだけ置く）
 codex_off_paragraph() {
   review_execution | grep -F '**Codex がオフのとき**'
@@ -347,7 +350,7 @@ codex_off_paragraph() {
   [ -n "$para" ] || { echo "no Codex off paragraph in step 2-1"; return 1; }
   [ "$(printf '%s\n' "$para" | wc -l | tr -d ' ')" -eq 1 ]
   echo "$para" | grep -qF 'scripts/usage_view.py --codex-enabled'
-  echo "$para" | grep -qE 'full と判定したあと[^。]*Codex を試す前に'
+  echo "$para" | grep -qF 'full と判定したあと、Codex を試す前に'
   echo "$para" | grep -qF '`off`'
   echo "$para" | grep -qF '`on`'
 }
@@ -361,7 +364,7 @@ codex_off_paragraph() {
 @test "codex off (#978): Codex is not called and the binary is not even looked up" {
   local para
   para="$(codex_off_paragraph)"
-  echo "$para" | grep -qE '`off` なら[^。]*バイナリ探索（`command -v codex`）も Codex の呼び出しも(し|行わ)ない'
+  echo "$para" | grep -qF '`off` なら、バイナリ探索（`command -v codex`）も Codex の呼び出しもしない'
   echo "$para" | grep -qF 'Task サブエージェント'
   echo "$para" | grep -qF 'dev-workflow:reviewer'
 }
@@ -369,11 +372,11 @@ codex_off_paragraph() {
 @test "codex off (#978): off is a setting, not one of the three measured conditions" {
   local para judge
   para="$(codex_off_paragraph)"
-  echo "$para" | grep -qE 'オフは利用者が明示した設定で[^。]*三条件の実測(では|には)'
+  echo "$para" | grep -qF 'オフは利用者が明示した設定で、下の三条件の実測ではない'
   echo "$para" | grep -qF '設定ファイルを自分で読まず'
   # 不可判定の段落も、オフが三条件とは別であることを一言で指す
   judge="$(review_execution | grep -F '**従来モードの不可判定**')"
-  echo "$judge" | grep -qE 'Codex オフ[^。]*三条件とは別'
+  echo "$judge" | grep -qF '設定による Codex オフ（上の「Codex がオフのとき」）は三条件とは別'
   # 三条件の箇条書きは 3 つのまま（オフを 4 つ目として混ぜない）
   [ "$(review_execution | grep -cE '^- (バイナリ無し|認証切れ|タイムアウト): ')" -eq 3 ]
   ! review_execution | grep -E '^- ' | grep -q 'オフ' || return 1
@@ -383,7 +386,7 @@ codex_off_paragraph() {
   local para
   para="$(codex_off_paragraph)"
   echo "$para" | grep -qE '変わるのはレビュー実行者だけ'
-  echo "$para" | grep -qE '新 Codex モード[^。]*adapter 経路[^。]*(変えない|適用しない)'
+  echo "$para" | grep -qF '新 Codex モードと develop の adapter 経路には適用しない'
 }
 
 @test "codex off (#978): the evidence template has the off form without the word measured" {
