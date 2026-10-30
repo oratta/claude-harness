@@ -56,7 +56,7 @@ check_budget() {
 
 @test "real: common role is at most 12000 bytes and body is not a G input" {
   [ "$(wc -c < "$PLUGIN_DIR/skills/develop/references/roles/gate-runner.md")" -le 12000 ]
-  ! grep -q 'gate-runner-body.md' "$BUDGET_FILE"
+  ! grep -q 'gate-runner-body.md' "$BUDGET_FILE" || return 1
   grep -q 'gate-runner-body.md' "$PLUGIN_DIR/skills/develop/SKILL.md"
 }
 
@@ -112,7 +112,7 @@ OVER_TARGET=" pass-carryover pass-hold hold-carryover "
   printf 'prepare 10 a b\n' > "$BATS_TEST_TMPDIR/budget"
   run check_budget "$BATS_TEST_TMPDIR" "$BATS_TEST_TMPDIR/budget"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'over budget: prepare'* ]]
+  [[ "$output" == *'over budget: prepare'* ]] || return 1
 }
 
 @test "regress: strict ceiling and slack are enforced at their boundaries" {
@@ -123,7 +123,7 @@ OVER_TARGET=" pass-carryover pass-hold hold-carryover "
   printf 'pass 40001 a\n' > "$BATS_TEST_TMPDIR/budget"
   run check_budget "$BATS_TEST_TMPDIR" "$BATS_TEST_TMPDIR/budget" strict
   [ "$status" -eq 1 ]
-  [[ "$output" == *'over 40000: pass'* ]]
+  [[ "$output" == *'over 40000: pass'* ]] || return 1
   printf '1234567890' > "$BATS_TEST_TMPDIR/a"
   printf 'pass 11 a\n' > "$BATS_TEST_TMPDIR/budget"
   run check_budget "$BATS_TEST_TMPDIR" "$BATS_TEST_TMPDIR/budget" strict
@@ -131,7 +131,7 @@ OVER_TARGET=" pass-carryover pass-hold hold-carryover "
   printf 'pass 12 a\n' > "$BATS_TEST_TMPDIR/budget"
   run check_budget "$BATS_TEST_TMPDIR" "$BATS_TEST_TMPDIR/budget" strict
   [ "$status" -eq 1 ]
-  [[ "$output" == *'slack budget: pass'* ]]
+  [[ "$output" == *'slack budget: pass'* ]] || return 1
 }
 
 @test "regress: missing files and malformed or duplicate entries fail" {
@@ -169,7 +169,7 @@ OVER_TARGET=" pass-carryover pass-hold hold-carryover "
       printf '%s %s %s\n' "$scenario" "$((budget + slack))" "$paths" > "$BATS_TEST_TMPDIR/budget"
       run check_budget "$BATS_TEST_TMPDIR/root" "$BATS_TEST_TMPDIR/budget"
       [ "$status" -eq 1 ]
-      [[ "$output" == *"over budget: $scenario"* ]]
+      [[ "$output" == *"over budget: $scenario"* ]] || return 1
     done
   done < "$BUDGET_FILE"
 }
@@ -179,5 +179,5 @@ OVER_TARGET=" pass-carryover pass-hold hold-carryover "
   printf 'prepare 5 a' > "$BATS_TEST_TMPDIR/budget"
   run check_budget "$BATS_TEST_TMPDIR" "$BATS_TEST_TMPDIR/budget"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'over budget: prepare'* ]]
+  [[ "$output" == *'over budget: prepare'* ]] || return 1
 }

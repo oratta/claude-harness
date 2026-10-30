@@ -127,7 +127,7 @@ fixture_pages() {
 # 手順 1 と手順 5 のコマンド例そのものが分岐を実装していることを、偽の gh で実行して確かめる。
 # 偽の gh は呼び出しを $GH_LOG に記録し、path に応じて fixture を返す。
 
-step1() { awk '/^### 1\. /{f=1} /^### 2\. /{f=0} f' "$PREPARE"; }
+step1() { cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare-step1.md"; }
 
 # 指定した手順の fenced bash ブロックのうち ISSUE= を含むものから、実行対象の行だけを抜く
 # （説明コメント行と <plugin> プレースホルダを含む spec-touch-check 行は除く）
@@ -207,8 +207,9 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
 # --- 既存件数固定アサーションを壊さない ---
 
 @test "keeps single occurrence of the cross-layer-contract and sanctuary/merge-permission phrases" {
-  [ "$(grep -cF '層間契約' "${TRIAGE}")" -eq 1 ]
-  [ "$(grep -cF '聖域パス・マージ権限' "${TRIAGE}")" -eq 1 ]
+  tr_all="$(cat "${TRIAGE}" "${PLUGIN_DIR}"/skills/pr-review-gate/stages/triage-*.md)"
+  [ "$(printf '%s\n' "$tr_all" | grep -cF '層間契約')" -eq 1 ]
+  [ "$(printf '%s\n' "$tr_all" | grep -cF '聖域パス・マージ権限')" -eq 1 ]
 }
 
 # --- 配布 ---
