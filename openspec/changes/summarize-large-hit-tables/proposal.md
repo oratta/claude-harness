@@ -30,4 +30,5 @@
 - `plugins/dev-workflow/scripts/review-hit-set.py`
 - `plugins/dev-workflow/tests/review-hit-set.bats`、`plugins/dev-workflow/tests/pr-review-gate-skill.bats`、`plugins/dev-workflow/tests/develop-roles.bats`
 - 全ヒット要約を使わない語の表と、順 3 の `--head` つきの照合の動きは変わらない
+- 50 行を超える語で食い違いが出て順 3 に当たった PR は、一周目の照合が完了しても、順 3 の全行の表が PR コメントに収まらず #1249 まで止まりうる
 - 同じファイルを変更中の開いた PR: #1436・#1438（reviewer-brief.md）、#1436・#1455（gate-runner.md）、#1410・#1453（review-hit-set.py）、#1410（spec）。どれとも同じ行を書き換えない見込みで、#1436 だけは gate-runner の該当の節を別ファイルへ移すので後からマージする側が移し先に当て直す
