@@ -7,7 +7,7 @@
 ## What Changes
 
 - capability-registry プラグインに secret-guard の検査スクリプトを足し、`hooks/hooks.json` の PreToolUse で `Bash` と `Read` に配線する。`settings.json` は触らない
-- 検査の判定は今の挙動のまま移す。値が画面に出る形（`echo "$GH_TOKEN"`、`printenv`、機密ファイルの表示など）を止め、コマンド置換で変数に入れて使う形は止めない
+- 検査の判定は、個人専用の検査の除外と明示的な無効化を除いて今の挙動のまま移す。値が画面に出る形（`echo "$GH_TOKEN"`、`printenv`、機密ファイルの表示など）を止め、コマンド置換で変数に入れて使う形は止めない
 - 公開リポジトリに入れるので、個人の道具の名前・個人のパス・個人の経緯を外す。個人の道具 1 本に専用だった検査は公開版に持ち込まない
 - 手で配線を外すと無効化の手段が無くなるので、プラグインの他の機能を残したまま止められる環境変数を足す
 - `plugins/casting/catalog/injection.md` の配線場所をプラグイン側に更新し、README の導入の案内と `docs/public-private-split.md` の仕分けの表に足す
