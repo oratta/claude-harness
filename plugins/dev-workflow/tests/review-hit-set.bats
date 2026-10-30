@@ -32,8 +32,9 @@ write_reversible_table() {
 
 write_table() {
   local handling_a="${1:-一致}" handling_b="${2:-直した}"
+  local before_sha="${3:-$SHA}"
   {
-    printf '修正前 SHA: %s\n' "$SHA"
+    printf '修正前 SHA: %s\n' "$before_sha"
     printf '検索コマンド: git grep -n needle <rev> -- .\n'
     printf '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |\n'
     printf '|---|---:|---|---|\n'
@@ -41,6 +42,45 @@ write_table() {
     printf '| other/b.txt | 1 | `needle two` | %s |\n' "$handling_b"
     printf '| other/c.txt | 1 | `    needle \\| three  ` | 一致 |\n'
   } > "$REPO/table.md"
+}
+
+@test "review hit set (#728): backtick-wrapped SHA preserves output and exit status" {
+  local mode plain_status plain_output
+  for mode in matching missing; do
+    write_table
+    if [ "$mode" = missing ]; then
+      sed -i.bak '/other\/b.txt/d' "$REPO/table.md"
+    fi
+    run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+    plain_status="$status"
+    plain_output="$output"
+    if [ "$mode" = matching ]; then
+      [ "$plain_status" -eq 0 ]
+    else
+      [ "$plain_status" -eq 1 ]
+      [[ "$plain_output" == *'missing: other/b.txt:1'* ]] || return 1
+    fi
+
+    write_table '一致' '直した' "\`$SHA\`"
+    if [ "$mode" = missing ]; then
+      sed -i.bak '/other\/b.txt/d' "$REPO/table.md"
+    fi
+    run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+    [ "$status" -eq "$plain_status" ]
+    [ "$output" = "$plain_output" ]
+  done
+}
+
+@test "review hit set (#728): one-sided backticks and invalid SHAs retain contract rejection" {
+  local invalid_sha
+  for invalid_sha in "\`$SHA" "$SHA\`" \
+    "${SHA:1}" "${SHA}0" "g${SHA:1}" \
+    "\`${SHA:1}\`" "\`${SHA}0\`" "\`g${SHA:1}\`"; do
+    write_table '一致' '直した' "$invalid_sha"
+    run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+    [ "$status" -eq 1 ]
+    [ "$output" = 'contract: 修正前 SHA must be a full 40-digit SHA' ]
+  done
 }
 
 @test "review hit set (#355): matching repository-wide table exits zero regardless of handling values" {
