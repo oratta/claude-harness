@@ -78,7 +78,7 @@ bash <plugin>/scripts/owner-reply-check.sh <セッション ID> <原文>
 # 終了コード: 0 = 主の発言として実在する / 1 = 実在しない / 2 = 確かめられない（引数の不備・この PC に会話ログが無い）
 ```
 
-同じ timestamp の `MATCH:` 全文で意思確認。宣言コメントの作成日時（`gh api repos/$R/issues/comments/<comment_id> --jq '.created_at'`）より後のこの宣言への返事だけ有効。通れば `真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh 終了コード 0）`。
+exit 0、同じ timestamp の `MATCH:` 全文で意思確認。宣言コメントの作成日時（`gh api repos/$R/issues/comments/<comment_id> --jq '.created_at'`）より後のこの宣言への返事だけ有効。通れば `真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh 終了コード 0）`。
 
 - 終了コード 0 でも同じ timestamp の `MATCH:` 無し・全文が `許容しない` なら合格させない
 - 宣言より前・同時、別の PR・記録先・リスクへの返事も合格させない
@@ -149,7 +149,7 @@ bash <plugin>/scripts/owner-reply-check.sh <セッション ID> <原文>
 
 事後報告は 1 回: 宣言コメントの URL・引用・分類（G は return）。後日の不許容は手順6（revert 等）。
 
-HEAD を実測:
+HEAD:
 
 ```bash
 HEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')
