@@ -1611,3 +1611,14 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   grep -qF '切替を観測するまで' "$idle"
 
 }
+
+@test "ask-owner (#1516): the candidate search passes the epic number to --exclude and reruns truncated paths with --children-only" {
+  s="$(section '主に聞かずに決めること')"
+  c="$(echo "$s" | grep -F '候補探し:')"
+  for token in '`--exclude` にエピックの番号も渡す' '(15 件で打ち切り。ほかにも一致あり)' \
+               '`--epic <エピック番号> --children-only`' '打ち切られたパスごとに 1 回を超えない' '`triage.md` の候補探しの段落'; do
+    echo "$c" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  echo "$c" | grep -qF '下の 2 つ目' && { echo "dangling reference remains"; return 1; }
+  return 0
+}
