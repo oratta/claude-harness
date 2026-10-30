@@ -2692,6 +2692,10 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
 
     金額は、ブランチごと・(issue, ブランチ) ごとにマイクロドルの整数へ丸めてから足し、ドルへの
     変換は最後に行う（割り当てた額の和と合計が、浮動小数の誤差なしで一致するように）。
+
+    返す ``children_usd`` と、エピックの直下の子の ``usd`` を浮動小数で足した値は、最後の桁が
+    ずれうる（0.1 + 0.2 は 0.30000000000000004）。一致するのは小数 6 桁に丸めた値（マイクロ
+    ドルの整数どうしでは一致する）。
     """
     owner = {}
     for row in issues:
