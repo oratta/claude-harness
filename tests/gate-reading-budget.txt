@@ -1,7 +1,7 @@
 prepare 27951 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/prepare.md
-prepare-rereview 69129 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/prepare.md skills/pr-review-gate/stages/triage.md
-triage 59765 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/triage.md skills/develop/references/roles/gate-runner-triage.md
-triage-row3 75722 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/triage.md skills/develop/references/roles/gate-runner-triage.md skills/pr-review-gate/stages/prepare.md
+prepare-rereview 68577 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/prepare.md skills/pr-review-gate/stages/triage.md
+triage 59213 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/triage.md skills/develop/references/roles/gate-runner-triage.md
+triage-row3 75170 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/triage.md skills/develop/references/roles/gate-runner-triage.md skills/pr-review-gate/stages/prepare.md
 pass 39998 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/declarations.md skills/pr-review-gate/stages/pass.md
-pass-hold 79843 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/declarations.md skills/pr-review-gate/stages/pass.md skills/pr-review-gate/stages/hold.md
-hold 51839 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/hold.md
+pass-hold 79616 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/declarations.md skills/pr-review-gate/stages/pass.md skills/pr-review-gate/stages/hold.md
+hold 51612 skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/hold.md
