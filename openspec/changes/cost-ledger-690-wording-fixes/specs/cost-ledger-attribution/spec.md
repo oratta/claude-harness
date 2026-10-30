@@ -23,7 +23,7 @@
 - **THEN** `total_usd` は 3.0、`closing_prs` は `[{"number": 300, "branch": "feat/a", "usd": 3.0}]`、`outside_pr_usd` は 2.0、`combined_total_usd` は 5.0（6.0 ではない）
 
 #### Scenario: 閉じた PR が 0 件なら `/cost` と同じ値
-- **WHEN** issue #12 に帰属する区間がある会話ログで、`--closing-pr` を付けずに `cost_ledger.py issue 12 --json` と `cost_ledger.py cost 12` を実行する
+- **WHEN** 子 issue を持たない issue #12 に帰属する区間がある会話ログで、`--closing-pr` を付けずに `cost_ledger.py issue 12 --json` と `cost_ledger.py cost 12` を実行する
 - **THEN** `closing_prs` は空の配列で、`combined_total_usd` と `outside_pr_usd` は `total_usd` と同じ値であり、その金額は `cost 12` の 1 行目の金額と一致する
 
 #### Scenario: PR が 2 件
