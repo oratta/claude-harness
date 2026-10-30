@@ -75,7 +75,7 @@ export CLD_DEFAULT_ARGS="--dangerously-skip-permissions --remote-control"   # �
 
 ### product-handover
 
-プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト・サポート窓口・教訓ログの雛形3種だけを持ち、オーケストレーターもスキルも持たない。
+プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト・インシデント対応手順書・サポート窓口・教訓ログの雛形4種だけを持ち、オーケストレーターもスキルも持たない。
 
 ```bash
 /plugin install product-handover@oratta-claude-harness
