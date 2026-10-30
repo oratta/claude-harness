@@ -6,6 +6,8 @@
 #
 # 守備範囲の正本は spec の要件「検査の守備範囲」。ここで固定するのは、止める形・止めない形・
 # 守備範囲の外の形・既知の止めすぎ・壊れたときの素通り・無効化・固有記述の不在で、判定の改善はしない。
+# spec の次の 2 シナリオは実機の確認が要るので、ここでは固定しない。「settings.json に配線が無い環境で止まる」は
+# PR の検証ログの claude -p の確認、「手で配線した hook と同時に走っても壊れない」は PR の動作確認ポイントで見る。
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -25,15 +27,15 @@ teardown() {
 payload() {
   python3 -I -c '
 import json, sys
-key = "file_path" if sys.argv[1] == "Read" else "command"
+key = {"Read": "file_path", "Grep": "pattern"}.get(sys.argv[1], "command")
 print(json.dumps({"tool_name": sys.argv[1], "tool_input": {key: sys.argv[2]}}))
 ' "$1" "$2"
 }
 
-# run_guard <ツール名> <コマンドかパス> — stderr を捨てて hook を実行し、stdout だけを output に残す
+# run_guard <ツール名> <コマンドかパス> — hook を実行し、stdout を output に、stderr を ${WORK}/stderr に残す
 run_guard() {
   payload "$1" "$2" >"${WORK}/payload.json"
-  run bash -c "'$SCRIPT' <'${WORK}/payload.json' 2>/dev/null"
+  run bash -c "'$SCRIPT' <'${WORK}/payload.json' 2>'${WORK}/stderr'"
 }
 
 # assert_denied <ツール名> <コマンドかパス>
@@ -54,6 +56,7 @@ assert_passed() {
   run_guard "$1" "$2"
   [ "$status" -eq 0 ] || { echo "status=$status: $2"; return 1; }
   [ -z "$output" ] || { echo "何か出力した: $2 / 出力: $output"; return 1; }
+  [ ! -s "${WORK}/stderr" ] || { echo "検査が落ちて素通りした: $2"; cat "${WORK}/stderr"; return 1; }
 }
 
 # deny_reason <ツール名> <コマンドかパス> — 拒否の理由の本文を output に入れる
@@ -75,6 +78,7 @@ assert re.fullmatch(e["matcher"], "Bash"), e["matcher"]
 assert re.fullmatch(e["matcher"], "Read"), e["matcher"]
 assert not re.fullmatch(e["matcher"], "Grep"), e["matcher"]
 assert not re.fullmatch(e["matcher"], "mcp__claude-in-chrome__navigate"), e["matcher"]
+assert e["matcher"] == "Bash|Read", e["matcher"]
 h = e["hooks"][0]
 assert h["type"] == "command"
 assert h["command"] == '"${CLAUDE_PLUGIN_ROOT}/scripts/secret-guard.sh"', h["command"]
@@ -111,7 +115,10 @@ cat .env
 cat ~/.npmrc
 op read op://v/i/f
 op item get x --fields password
+op item get x --reveal
 security find-generic-password -s x -w
+security find-generic-password -s x -g
+security find-internet-password -s x -w
 EOF
 }
 
@@ -123,6 +130,8 @@ EOF
 @test "pass: command substitution into a variable" {
   assert_passed Bash 'GH_TOKEN="$(get-token github)" gh api /user'
   assert_passed Bash 'GH_TOKEN="$(op read op://v/i/f)" gh api /user'
+  # && で区分が割れて op read が先頭になる形。コマンド置換の中という判定はこの入力でだけ通る
+  assert_passed Bash 'TOKEN="$(cd /tmp && op read op://v/i/f)" gh api /user'
 }
 
 @test "pass: checks that do not print the value, and template files" {
@@ -136,6 +145,7 @@ cat .env.example
 env FOO=1 ls
 echo "--- .env:"
 echo hi > .env
+cat notes > .env
 ls
 EOF
   assert_passed Read /x/.env.example
