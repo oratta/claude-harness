@@ -1013,7 +1013,7 @@ triage_row_section() {
   for token in '区画' '600' '400' 'review-partitions.sh' 'レビュー重量:'; do
     echo "$weight" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
-  grep -qF -- '- 区画: <なし |' "$PREPARE"
+  grep -qF -- '- 区画: <なし（二周目以降・差分限定・全体レビューの周は常に なし） |' "$PREPARE"
   grep -qF '一周目の区画:' "$PREPARE"
 }
 
