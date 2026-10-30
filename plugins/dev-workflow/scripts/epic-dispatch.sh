@@ -10,7 +10,7 @@
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
 #   epic-dispatch.sh pending-owner <child>...
-#   epic-dispatch.sh child-log <child>...
+#   epic-dispatch.sh child-log [--last] <child>...
 #   epic-dispatch.sh adopt <epic> <child>...
 #   epic-dispatch.sh clear <epic>
 #   epic-dispatch.sh max-parallel
@@ -223,7 +223,7 @@ usage:
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
   epic-dispatch.sh pending-owner <child>...
-  epic-dispatch.sh child-log <child>...
+  epic-dispatch.sh child-log [--last] <child>...
   epic-dispatch.sh adopt <epic> <child>...
   epic-dispatch.sh clear <epic>
   epic-dispatch.sh max-parallel
@@ -1591,134 +1591,66 @@ cmd_pending_owner() {
 # 固定の声かけ文を共有定義から生成する。wait の送信と child-log の完全一致に同じ生成を使う。
 # 返事の欄の意味や真偽は検証しない（#1374）。受信手順も停止前にこの定義を読む。
 keepalive_text() {
-  python3 - "$LAUNCHER_DIR/../references/child-cache-keepalive.json" <<'PY'
-import json, sys
-
-with open(sys.argv[1], encoding="utf-8") as f:
-    definition = json.load(f)
-shape = definition["separator"].join(
-    [definition["reply_prefix"]] + [field + " <値>" for field in definition["fields"]]
-)
-print(definition["request_template"].format(reply_format=shape))
-PY
+  python3 "$LAUNCHER_DIR/child-log-read.py" --keepalive-text
 }
 
-# child-log: 読み取り専用。子ごとに、記録の worktree から会話ログの置き場を引き、最新の会話ログ（置き場の直下の *.jsonl のうち
-#   最後の timestamp が最も新しい 1 本）の最後の主の発言と最後の子の発言の時刻（JST）と冒頭 80 文字を
+# 子の会話ログの置き場（<dir>）を child-log-read.py で読み、JSON を 1 行出す。読めなければ何も出さずに 1。
+# wait・pending-owner・child-log はこの 1 本だけで会話ログを読む
+child_log_json() {
+  python3 "$LAUNCHER_DIR/child-log-read.py" "$1" 2>/dev/null
+}
+
+# 止まりの発言の全文の上限（文字数）。既定は 8000 で、値が数字でなければ既定を使う
+stop_text_max() {
+  local v="${EPIC_DISPATCH_STOP_TEXT_MAX-}"
+  if is_num "$v"; then printf '%s' "$v"; else printf '8000'; fi
+}
+
+# 部品の JSON の text を末尾を残して切る jq の式。--argjson max で上限を渡す
+STOP_TEXT_CUT='.text |= .[((length - $max) | if . < 0 then 0 else . end):]'
+
+# child-log: 読み取り専用。子ごとに、記録の worktree から会話ログの置き場を引き、最新の会話ログ（child-log-read.py が選ぶ 1 本）の最後の主の発言と最後の子の発言の時刻（JST）と冒頭 80 文字を
 #   `<child>\t<主の時刻>\t<冒頭>\t<子の時刻>\t<冒頭>` で出す（無い列は -）。読めない子（記録が無い・読めない・2 件以上、
 #   置き場が無い・読めない、python3 が無い）は `unreadable <child>`（記録が原因なら stderr にそのパス）を出して続ける。
-#   jq が無い・今のワークツリーを読めないときは stdout 空で exit 1。それ以外は exit 0
+#   jq が無い・今のワークツリーを読めないときは stdout 空で exit 1。それ以外は exit 0。
+#   --last を付けると、`child:`・`uuid:`・`at:`・`stop_uuid:`（記録の値）・`questions:`（未回答の問いを ` / ` で連結）・`text:` の
+#   ラベルを順に出し、`text:` の次の行から最後の発言の全文（末尾を残し、上限は EPIC_DISPATCH_STOP_TEXT_MAX 文字）を出す
 child_log_line() {
-  local keepalive
-  keepalive="$(keepalive_text)" || return 1
-  DIR="$1" KEEPALIVE_TEXT="$keepalive" python3 - "$LAUNCHER_DIR/../references/child-cache-keepalive.json" <<'PY' 2>/dev/null
-import datetime, glob, json, os, sys
+  local json
+  json="$(child_log_json "$1")" || return 1
+  printf '%s' "$json" | python3 -c '
+import datetime, json, sys
 
 JST = datetime.timezone(datetime.timedelta(hours=9))
-with open(sys.argv[1], encoding="utf-8") as f:
-    keepalive = json.load(f)
+log = json.load(sys.stdin)
 
-def keepalive_reply(s):
-    if "\n" in s or "\r" in s:
-        return False
-    parts = s.split(keepalive["separator"])
-    if len(parts) != len(keepalive["fields"]) + 1 or parts[0] != keepalive["reply_prefix"]:
-        return False
-    for part, field in zip(parts[1:], keepalive["fields"]):
-        label = field + " "
-        if not part.startswith(label):
-            return False
-        value = part[len(label):]
-        if not value.strip() or keepalive["separator"].strip() in value:
-            return False
-    return True
-
-def parse(ts):
-    try:
-        t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
-    except Exception:
-        return None
+def col(at, text):
+    if not at:
+        return ("-", "-")
+    t = datetime.datetime.fromisoformat(at.replace("Z", "+00:00"))
     if t.tzinfo is None:
         t = t.replace(tzinfo=datetime.timezone.utc)
-    return t
+    return (t.astimezone(JST).strftime("%Y-%m-%d %H:%M"), " ".join(text.split())[:80] or "-")
 
-def text_of(content):
-    if isinstance(content, str):
-        return content
-    if isinstance(content, list) and content and all(isinstance(b, dict) and b.get("type") == "text" for b in content):
-        return "\n".join(str(b.get("text", "")) for b in content)
-    return None
+owner = log["owner"] or {"at": "", "text": ""}
+print("\t".join(col(owner["at"], owner["text"]) + col(log["at"], log["text"])))
+' 2>/dev/null
+}
 
-def head(s):
-    return " ".join(s.split())[:80]
-
-best = None
-for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
-    last = None
-    rows = []
-    try:
-        with open(p, encoding="utf-8", errors="replace") as f:
-            for line in f:
-                try:
-                    d = json.loads(line)
-                except Exception:
-                    continue
-                if not isinstance(d, dict):
-                    continue
-                t = parse(d["timestamp"]) if isinstance(d.get("timestamp"), str) else None
-                if t is not None and (last is None or t > last):
-                    last = t
-                rows.append((t, d))
-    except OSError:
-        continue
-    if last is not None and (best is None or last > best[0]):
-        best = (last, rows)
-if best is None:
-    raise SystemExit(1)
-
-owner = child = None
-awaiting_keepalive = False
-for t, d in best[1]:
-    if t is None or d.get("isSidechain") or d.get("isMeta"):
-        continue
-    msg = d.get("message")
-    if not isinstance(msg, dict):
-        continue
-    if d.get("type") == "user":
-        s = text_of(msg.get("content"))
-        if s is None or not s.strip():
-            continue
-        # Exact, unabridged reserved input, including when the owner typed it.
-        if s == os.environ["KEEPALIVE_TEXT"]:
-            awaiting_keepalive = True
-            continue
-        # A real user turn (including a parent judgment) ends correspondence.
-        awaiting_keepalive = False
-        st = s.lstrip()
-        m = st.find("主の返事（親エピック #")
-        if m > 0:
-            st = st[m:].split("</command-args>")[0]
-        elif st.startswith("親エピック #") or "<command-name>" in st or st.startswith("/develop"):
-            continue
-        owner = (t, st)
-    elif d.get("type") == "assistant":
-        s = text_of(msg.get("content"))
-        if s is None or not s.strip():
-            continue
-        matched = awaiting_keepalive and keepalive_reply(s)
-        awaiting_keepalive = False
-        if matched:
-            continue
-        child = (t, s)
-
-def col(x):
-    return ("-", "-") if x is None else (x[0].astimezone(JST).strftime("%Y-%m-%d %H:%M"), head(x[1]))
-
-print("\t".join(col(owner) + col(child)))
-PY
+# child-log --last の 1 人分。ラベル付きの行で出し、複数行になりうる text を最後に置く。読めなければ 1
+# （<dir> <記録の stop_uuid>）
+child_log_last() {
+  local json max
+  json="$(child_log_json "$1")" || return 1
+  max="$(stop_text_max)"
+  printf '%s' "$json" | jq -r --argjson max "$max" --arg stop_uuid "$2" "$STOP_TEXT_CUT"' |
+    "uuid: \(.uuid)", "at: \(.at)", "stop_uuid: \($stop_uuid)",
+    "questions: \(.questions | join(" / "))", "text:", .text' 2>/dev/null
 }
 
 cmd_child_log() {
+  local last=0
+  if [ "${1-}" = "--last" ]; then last=1; shift; fi
   [ "$#" -ge 1 ] || usage
   check_children "$@"
   need_parent
@@ -1734,7 +1666,13 @@ cmd_child_log() {
     wt="$(es_get "$ES_HIT" worktree)"
     if [ -z "$wt" ] || ! command -v python3 >/dev/null 2>&1; then echo "unreadable $n"; continue; fi
     dir="$(transcript_dir "$wt")"
-    if line="$(child_log_line "$dir")" && [ -n "$line" ]; then
+    if [ "$last" -eq 1 ]; then
+      if line="$(child_log_last "$dir" "$(es_get "$ES_HIT" stop_uuid)")" && [ -n "$line" ]; then
+        printf 'child: %s\n%s\n' "$n" "$line"
+      else
+        echo "unreadable $n"
+      fi
+    elif line="$(child_log_line "$dir")" && [ -n "$line" ]; then
       printf '%s\t%s\n' "$n" "$line"
     else
       echo "unreadable $n"

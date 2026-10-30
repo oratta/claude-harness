@@ -6490,7 +6490,7 @@ keepalive_reply() {
   put_record 11
   local copy="$BATS_TEST_TMPDIR/plugin"
   mkdir -p "$copy/scripts" "$copy/references"
-  cp "$PLUGIN_DIR/scripts/epic-dispatch.sh" "$PLUGIN_DIR/scripts/epic-state.sh" "$copy/scripts/"
+  cp "$PLUGIN_DIR/scripts/epic-dispatch.sh" "$PLUGIN_DIR/scripts/epic-state.sh" "$PLUGIN_DIR/scripts/child-log-read.py" "$copy/scripts/"
   jq '.request_template = "Test request: {reply_format}" | .reply_prefix = "[test.v2]" | .separator = " / " | .fields = ["次:", "待ち:", "追加:"]' \
     "$PLUGIN_DIR/references/child-cache-keepalive.json" > "$copy/references/child-cache-keepalive.json"
   SCRIPT="$copy/scripts/epic-dispatch.sh"
@@ -6610,8 +6610,8 @@ chat_line() {
   local t="$1" ts="$2" text="$3" extra="${4-}"
   [ -n "$extra" ] || extra='{}'
   jq -cn --arg t "$t" --arg ts "$ts" --arg x "$text" --argjson e "$extra" \
-    'if $t == "user" then {type: "user", timestamp: $ts, message: {role: "user", content: $x}} + $e
-     else {type: "assistant", timestamp: $ts, message: {role: "assistant", content: [{type: "text", text: $x}]}} + $e end'
+    'if $t == "user" then {type: "user", entrypoint: "cli", timestamp: $ts, message: {role: "user", content: $x}} + $e
+     else {type: "assistant", entrypoint: "cli", timestamp: $ts, message: {role: "assistant", content: [{type: "text", text: $x}]}} + $e end'
 }
 
 @test "child-log: prints the last owner and child messages with JST times, and a tool result is not an owner message" {
@@ -6753,6 +6753,52 @@ chat_line() {
   run dispatch child-log 11
   [ "$status" -eq 0 ]
   [ "$output" = "unreadable 11" ]
+}
+
+@test "child-log --last: prints a 500-character statement in full with its uuid and the record's stop_uuid" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  long="$(printf 'あ%.0s' $(seq 1 500))"
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z '進めて')" \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z "$long" '{"uuid":"u-1"}')"
+  run dispatch child-log --last 11
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$long"* ]] || return 1
+  printf '%s\n' "$output" | grep -qx 'child: 11'
+  printf '%s\n' "$output" | grep -qx 'uuid: u-1'
+  printf '%s\n' "$output" | grep -qx 'at: 2026-10-26T06:01:00.000Z'
+  printf '%s\n' "$output" | grep -qx 'stop_uuid: '
+}
+
+@test "child-log --last: EPIC_DISPATCH_STOP_TEXT_MAX keeps the tail, and a non-number falls back to the default" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 "$(chat_line assistant 2026-10-26T06:01:00.000Z 'あいうえおかきくけこ' '{"uuid":"u-1"}')"
+  EPIC_DISPATCH_STOP_TEXT_MAX=3 run dispatch child-log --last 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | tail -1)" = 'くけこ' ]
+  EPIC_DISPATCH_STOP_TEXT_MAX=abc run dispatch child-log --last 11
+  [ "$(printf '%s\n' "$output" | tail -1)" = 'あいうえおかきくけこ' ]
+}
+
+@test "child-log --last: an unanswered question and the record's stop_uuid are shown, and an unreadable child is unreadable" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop_uuid=u-old
+  put_record 12
+  put_chat 11 s1 \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z '確認します' '{"uuid":"u-1"}')" \
+    '{"type":"assistant","entrypoint":"cli","uuid":"u-2","timestamp":"2026-10-26T06:02:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"どちらにしますか"}]}}]}}'
+  run dispatch child-log --last 11 12
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'uuid: u-2'
+  printf '%s\n' "$output" | grep -qx 'stop_uuid: u-old'
+  printf '%s\n' "$output" | grep -qx 'questions: どちらにしますか'
+  printf '%s\n' "$output" | grep -qx '確認します'
+  printf '%s\n' "$output" | grep -qx 'unreadable 12'
 }
 
 @test "child-log: no children or no jq is an error with empty stdout" {
