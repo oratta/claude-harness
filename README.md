@@ -12,6 +12,34 @@ Claude Code用スキル・プラグインのマーケットプレイス
 /plugin install dev-workflow@oratta-claude-harness
 ```
 
+シークレットの値が画面に出る形の Bash と Read を実行前に止める `secret-guard` は `capability-registry` に入っている。`/plugin install capability-registry@oratta-claude-harness` で有効になり、`settings.json` の編集は要らない。
+
+### Output Style `readable` を有効にする
+
+`output-styles/readable.md`（読み手が前提を持たない状態で読める書き方のスタイル）と `rules/*.md` は、プラグインではないので `/plugin install` では届かない。クイックスタートの後に、marketplace dir の `scripts/sync.sh` を 1 回実行する（SessionStart hook などの自動実行は無い）。これが `readable.md` を `~/.claude/output-styles/` に、`rules/*.md` を `~/.claude/rules/claude-harness/` に symlink する。
+
+```bash
+~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh
+```
+
+初めて同期した場合は、Claude Code を再起動してスタイルファイルを読み込ませてから選ぶ。
+
+`sync.sh` は settings の `outputStyle` を書き換えない（どのスタイルを使うかは PC ごとの設定に残すため）ので、届いたあとに自分で 1 手選ぶ。
+
+```bash
+# Claude Code の中で /output-style readable を実行する（/config のメニューからも選べる）
+# または ~/.claude/settings.json に書く
+{ "outputStyle": "readable" }
+```
+
+有効にしなくても、sync.sh を実行していれば `rules/communication-style.md`（`readable` から 6 原則の要点を抜いた短い版）は常に注入されるので、書き方の原則そのものは効く。sync.sh を実行していなければ、その短い版も効かない。有効にしない場合に効かないのは、短い版が省いた細部だけで、差はわずか。
+
+- 判断を求める文章の 3 つの長い例、論点に含めないケースの説明、主に聞く理由を 3 つに絞る説明の詳細
+- ヒアリングで選択肢を使わない 2 つの理由と、選択肢を出してよい場合の例
+- 本題への回答に大半を使う、書き出すファイルも必要な分にする、といった長さの細かい指示
+
+なお Output Style はメインの会話にしか効かないので、選んでもサブエージェントには全文が届かず、短い版だけで動く。
+
 ## プラグイン一覧
 
 ### dev-workflow
@@ -61,7 +89,7 @@ Claude Code用スキル・プラグインのマーケットプレイス
 |-----------|------|
 | `worktree` | Git worktree のセットアップ（`/wt-setup`。`--with-pr` で Draft PR まで作成）とクリーンアップ（`/wt-clean`） |
 | `infra` | Vercel + Supabase + GitHub Actions で local/staging/prod の環境を一括セットアップする（`/infra-setup`） |
-| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層 |
+| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層。シークレットの値が画面に出る形の Bash と Read を止める `secret-guard` の hook も入る（無効化は環境変数 `CAPABILITY_REGISTRY_SECRET_GUARD=off`） |
 | `statusline` | 使用量ステータスライン。クォータ消化率と窓の日程消化率を1本のバーに重ね、`25%/29%` の形で「今のペースでリセットまで持つか」を示す（`/statusline:setup`） |
 
 ---
@@ -77,6 +105,38 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 ---
 
+## overlay（別の harness を重ねる）
+
+`scripts/sync.sh` は、この harness の rules と output-styles を `~/.claude/` に symlink で配る。別の harness（別の marketplace）の rules と output-styles も、同じ仕組みで重ねられる。重ねる側は次の 3 つを用意する。
+
+1. **許可ファイル**: `~/.claude/harness-overlays` に、重ねたい marketplace のディレクトリ名（`~/.claude/plugins/marketplaces/` 直下の名前）を 1 行に 1 つ書く。空行と `#` で始まる行は無視される。
+2. **印**: 重ねられる側の marketplace の直下に `.harness-overlay` を置く。1 行目がサブディレクトリ名（`[a-z0-9][a-z0-9-]*`）で、その marketplace の `rules/*.md` が `~/.claude/rules/claude-harness/<名前>/` に配られる。`output-styles/*.md` は `~/.claude/output-styles/` に配られ、公開側と同名のときは公開側が優先される（重なる側が警告される）。
+3. **再実行**: 許可ファイルを書いたら `scripts/sync.sh` を実行する。許可ファイルから行を外して再実行すると、その overlay の symlink は消える。
+
+```bash
+echo "my-harness" >> ~/.claude/harness-overlays
+~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh
+```
+
+### 許可が要る理由
+
+marketplace を入れただけの第三者が、`.harness-overlay` を置くだけで常時効く指示（rules や output-styles）をあなたの環境に張れないようにするため。`.harness-overlay` があっても、許可ファイルに書かれていない marketplace は張られず、pull もされない。許可ファイルが無いか、空行とコメントだけなら新しい overlay は張られず、以前張った overlay の symlink は削除される（何も表示されない）。公開版の同期は続く。
+
+### 飛ばされたときの警告
+
+許可した overlay の構成検査に失敗すると、`sync.sh` は標準エラーに `[harness-sync]` で始まる警告を出してその overlay を飛ばす。ファイル単位の衝突（公開側と同名の output style など）では該当ファイルだけを飛ばし、rules などは配線される。いずれも終了コードは非 0 になるが、可能な配線は続く。
+
+| 警告 | 原因と直し方 |
+|------|-------------|
+| `許可した overlay のディレクトリがありません。飛ばします: <名前>` | 許可ファイルに書いた marketplace が見つからない。`~/.claude/plugins/marketplaces/` 直下の名前と綴りを確かめるか、marketplace を入れる |
+| `許可した <名前> の直下に .harness-overlay がありません。飛ばします` | 印が無い。その marketplace の直下に `.harness-overlay` を置く |
+| `overlay の名前が空か不正のため飛ばします` | `.harness-overlay` の 1 行目を `[a-z0-9][a-z0-9-]*` に直す |
+| `overlay の名前 <名前> が重複しているため飛ばします` | 許可ファイル内の同じ marketplace の重複行を削除する。異なる marketplace 同士が同じ名前なら、片方の `.harness-overlay` の 1 行目を変える（marketplace 名の辞書順で先のものが採られる） |
+| `<配布先>/<名前> が実ファイルか symlink のため overlay を飛ばします` | `~/.claude/rules/claude-harness/<名前>` に同名の実ファイルなどがある。移すか消す |
+| `許可ファイルの行が不正のため飛ばします` | 行に `/` を含むか、`.` で始まっている。ディレクトリ名だけを書く |
+
+---
+
 ## ローカル開発
 
 開発用の clone は **marketplace dir（`~/.claude/plugins/marketplaces/oratta-claude-harness/`）の外**に置く。marketplace dir は Claude Code が自動更新するインストール成果物なので、そこで feature ブランチを checkout しない（`CLAUDE.md` の「開発場所」を参照）。
@@ -89,6 +149,20 @@ cd claude-harness
 # マージ前の動作確認は、そのセッションだけこの clone を読み込ませる
 # --plugin-dir はプラグイン 1 個のディレクトリを取る（リポジトリのルートを渡しても何も読み込まれない）
 claude --plugin-dir ./plugins/<変更したプラグイン>
+```
+
+### 開発用 clone の場所（`CLAUDE_HARNESS_DEV_DIR`）
+
+環境変数 `CLAUDE_HARNESS_DEV_DIR` は、上の開発用 clone の場所を指す。harness を直すときに worktree をその clone から生やすので、未設定だとその手順が止まる。未設定のまま harness のリポジトリでセッションを始めると、`worktree` プラグインを入れていれば 1 行の警告を出す（`/plugin install worktree@oratta-claude-harness`）（セッションは止まらない。harness を直さない人には何も出ない）。
+
+`~/.claude/settings.json` の `env` に、自分の clone の絶対パスを入れる。既に `env` がある場合は、他の値を消さずに 1 行足す。
+
+```json
+{
+  "env": {
+    "CLAUDE_HARNESS_DEV_DIR": "/path/to/claude-harness"
+  }
+}
 ```
 
 ### 新しいプラグインを追加

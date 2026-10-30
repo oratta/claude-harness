@@ -32,6 +32,7 @@
     "./commands/develop.md",
     "./commands/work-issue.md",
     "./commands/memory-refresh.md",
-    "./commands/ci-watch.md"
+    "./commands/ci-watch.md",
+    "./commands/synced-skills-slim.md"
   ]
 }

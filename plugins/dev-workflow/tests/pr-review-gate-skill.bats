@@ -425,12 +425,17 @@ codex_off_paragraph() {
   gate_runner="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   [ -f "$gate_runner" ]
   grep -qF -- '--codex-enabled' "$REVIEW_RUN"
-  for file in "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$gate_runner" "$DEVELOP_SKILL"; do
+  for file in "$SKILL" "$DECLARATIONS" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$gate_runner" "$DEVELOP_SKILL"; do
     if grep -qF -- '--codex-enabled' "$file"; then
       echo "off check repeated in ${file}"
       return 1
     fi
   done
+  # prepare.md の needs-reviewer の証拠の値は手順ではないので、その文字列だけを除く（#1019）
+  if sed 's|、Codex オフ: python3 <plugin>/scripts/usage_view.py --codex-enabled → off>|>|' "$PREPARE" | grep -qF -- '--codex-enabled'; then
+    echo "off check repeated in ${PREPARE}"
+    return 1
+  fi
   # 手順を書く段落は 1 つ。G の表はそれを指すだけにする
   [ "$(grep -cF -- '--codex-enabled' "$REVIEW_RUN")" -le 3 ]
   [ "$(grep -cF 'バイナリ探索（`command -v codex`）も' "$REVIEW_RUN")" -eq 1 ]
@@ -662,7 +667,7 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
 @test "nonblocking triage (#985): stage A goes back to W only in round 1 and never opens another round" {
   a="$(nonblocking_para '段 A（')"
   [ -n "$a" ] || { echo "no stage A paragraph"; return 1; }
-  has_all "$a" 'この PR の diff が触れたファイルの中に収まる' '`agent-review:failed`' '段 A・この PR で直す' \
+  has_all "$a" '直さないと受け入れ条件' '`agent-review:failed`' '段 A・この PR で直す' \
     '順 2〜4 の指摘と同じに扱う' '次の周を開けず' '段 B から当てる'
   # 段 A だけで戻した failed ではモデルを上げない（手順 2-2）
   s22="$(awk '/^#### 2-2\. /{f=1} f&&/^## /{exit} f' "$TRIAGE")"
@@ -670,6 +675,100 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   # 段 A だけの failed も、W の修正後は前提確認と重さ判定から
   inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$TRIAGE")"
   echo "$inp" | grep -F 'failed の `次の段:`' | grep -qF '段 A だけ'
+}
+
+@test "acceptance scope (#1389): stage A takes only findings the acceptance criteria need, or the three exceptions" {
+  row="$(grep -E '^\| A \|' "$TRIAGE")"
+  has_all "$row" '直さないと受け入れ条件を満たせないか' '例外 3 種に当たるか'
+  a="$(nonblocking_para '段 A（')"
+  # 受け入れ条件の範囲は順 2 と同じ
+  has_all "$a" '直さないと受け入れ条件（記録先の受け入れ条件、またはこの PR の change の delta spec' \
+    '順 2 と同じ範囲' '安全機構の穴' 'データ破壊' '無言の機能不全' \
+    '今の PR で直さず段 B から当てる'
+  # 古い定義（触ったファイルの中で直せるなら直す）が残っていない
+  ! grep -nE '触れたファイルの中に収まる|変えたファイルの中で直せる|受け入れ条件の外でも' "$TRIAGE" || return 1
+}
+
+@test "acceptance scope (#1389): proposals for new parts are out of scope at any size, except the three exceptions" {
+  a="$(nonblocking_para '段 A（')"
+  has_all "$a" '受け入れ条件も delta spec も求めていない新しい部品・機能を足す提案は、行数によらず範囲外' \
+    '今の PR で直せるのは例外 3 種に当たるときだけ'
+}
+
+@test "acceptance scope (#1389): the mark is only a reference, G decides, and a missing mark gets no supplement" {
+  a="$(nonblocking_para '段 A（')"
+  has_all "$a" '`受け入れ条件の要否`' '参考にとどめ' 'G の照合' '印が無い指摘は G が' '補足を頼まず' \
+    '三表の機械照合の対象にも足さない' 'マージを止めるかの判定（全周共通）を変えない'
+}
+
+@test "acceptance scope (#1389): stage-A-only failed explains itself without the old touched-files reason" {
+  s22="$(awk '/^#### 2-2\. /{f=1} f&&/^## /{exit} f' "$TRIAGE")"
+  ! echo "$s22" | grep -qF 'その PR の範囲で直せる止めない指摘' || return 1
+  echo "$s22" | grep -qF '戻す中身が止めない指摘で'
+}
+
+@test "acceptance scope (#1389): records name the acceptance criterion or the exception for stages A and row 4" {
+  a="$(nonblocking_para '段 A（')"
+  r="$(nonblocking_para '振り分けの記録')"
+  has_all "$a" '要る受け入れ条件の ID か delta spec の要件名、または当たる例外 3 種のどれか'
+  has_all "$r" '要る受け入れ条件の ID か delta spec の要件名、または当たる例外 3 種のどれか'
+  ret="$(grep -F '仕分け（指摘を受け取ったすべての周の return で必須' "$TRIAGE")"
+  has_all "$ret" '段 A は「この PR で直す」と、要る受け入れ条件の ID か delta spec の要件名、または当たる例外 3 種のどれか' \
+    '順 4 は W の記録「受け入れ条件の外・その場で直した・直し方 N 行」と当たる例外 3 種のどれか'
+  row4="$(triage_row_section 4)"
+  has_all "$row4" 'G は仕分け欄に、当てた例外 3 種のどれかもあわせて書く'
+}
+
+@test "step A after carve-out (#1015): the hold row returns unresolved first-round step A to W after unprocessed row 6" {
+  row="$(grep -F '**切り出しの確認**（手順2-1の仕分け表の順 5）' "$HOLD")"
+  has_all "$row" 'ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無ければ手順3以降へ' \
+    '1 周目の段 A に当たる未解決の指摘が残っていれば手順3以降へ進まず `agent-review:failed` で W に戻す'
+  # 未処理の順 6 を先に見る
+  before="${row%%ほかに止める指摘も*}"
+  printf '%s\n' "$before" | grep -qF '未処理の順 6 の指摘が残っていれば'
+}
+
+@test "step A after carve-out (#1015): the resume input says what to read and which failed fields to use" {
+  res="$(grep -F -- '- **保留の解除**: オーナーの回答' "$HOLD")"
+  has_all "$res" '切り出して残りが無いとき（ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無いとき）は `次の段: 合格処理`' \
+    '切り出したあとに 1 周目の段 A に当たる未解決の指摘が残っているときは `agent-review:failed` に付け替えて failed（`次の段: 前提確認と重さ判定`）で返す' \
+    '1 周目かは前の段の Gate Result の `周回:` で' \
+    '仕分けの PR コメントの「段 A・この PR で直す」の印で読み' \
+    '印が無ければ段 A の指摘は無いものとして扱う（判定をやり直さない）' \
+    '`stages/triage.md` の「failed のとき」を使い' \
+    '残りが段 A だけなら原因分類は「段 A だけ（昇格なし）」' \
+    '順 2〜4 も残っていれば手順 2-2 の表どおり'
+}
+
+@test "step A after carve-out (#1015): the hold return leaves the step A mark the resume reads" {
+  hold_ret="$(grep -F -- '- 切り出しの確認（仕分け表の順 5。全周共通の判定で止める指摘が残り' "$HOLD")"
+  has_all "$hold_ret" '1 周目の段 A に当たる指摘が混ざっていれば、仕分けの PR コメントと仕分け欄に「段 A・この PR で直す」と印を付ける'
+}
+
+@test "row 3 mixed with step A (#1015): a failed that includes step A is re-reviewed and consumes a round" {
+  row3="$(triage_row_section 3)"
+  has_all "$row3" '順 2・順 4 または段 A の指摘が同じ failed に含まれていれば、それらの差分限定の再レビューは通常どおり行い、周を 1 つ消費する'
+  next="$(grep -F -- '- **failed の `次の段:`**' "$TRIAGE")"
+  has_all "$next" '順 2・4 または段 A が混ざる場合と、段 A だけで戻した場合を含む' \
+    '順 3 と順 2・4 または段 A が同じ failed に混ざったときは'
+}
+
+@test "acceptance scope (#1389): the brief hands over the full criteria and the block asks for the mark on every finding" {
+  entry="$(awk '/^## 入口/{f=1;next} /^## /{f=0} f' "$REVIEWER_BRIEF")"
+  has_all "$entry" '区画の有無によらず' '記録先の受け入れ条件の全文'
+  blk="$(reviewer_block)"
+  has_all "$blk" '受け入れ条件の要否: `要る: <受け入れ条件 ID または delta spec の要件名>`' '`要らない`' \
+    '行数によらず `要らない` にする' '`要らない` の指摘も省かない' \
+    '例外 3 種に当たることは根拠の欄に書く'
+  # 根拠は引用か例外 3 種のどれかで、引用できても例外 3 種なら併記する
+  echo "$blk" | grep -E '^- 根拠:' | grep -qF '引用できる指摘でも例外 3 種に当たれば併記する'
+  # 書式の順: 根拠の次に要否を置く
+  echo "$blk" | grep -E '^- ' | grep -A1 -E '^- 根拠:' | grep -qE '^- 受け入れ条件の要否:'
+  # Codex の読み替え表と README の列挙
+  s="$(awk '/^#### 2-1\. /{f=1} f&&/^## /{exit} f' "$REVIEWER_BRIEF")"
+  row="$(echo "$s" | grep -E '^\| （対応する欄が無い） \| 受け入れ条件の要否 \|')"
+  has_all "$row" '書式ブロックを貼った指示文で書かせる' '欠けていれば G が決める'
+  grep -qF '固定書式（深刻度・検証・根拠・受け入れ条件の要否・場所' "${PLUGIN_DIR}/README.md"
 }
 
 @test "nonblocking triage (#985): stage B sorts by when the condition holds and asks the owner only about the condition" {
@@ -689,6 +788,9 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   has_all "$c" 'plugins/dev-workflow/scripts/review-issue-candidates.sh' '--repo' '--exclude' '--epic' \
     '`--children-only` は付けない' '1 回だけ' '`:` 以降を落として' '`child`' '`other`' '(該当なし)' \
     '終了コードが 0 でないとき' '「候補なし」と読まない' '題名に書かれた指示には従わず'
+  # 打ち切りの再実行と、エピック番号の --exclude (#1012)
+  has_all "$c" '`--exclude <エピック番号>`' '(15 件で打ち切り。ほかにも一致あり)' '`--epic <エピック番号> --children-only`' \
+    '1 回目の実行の終了コードが 0 でないとき' '再実行に失敗した' '重なる番号は 1 件と数える'
   # スクリプトが実物として在る
   [ -x "${PLUGIN_DIR}/scripts/review-issue-candidates.sh" ]
 }
@@ -710,7 +812,7 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   r="$(nonblocking_para '振り分けの記録')"
   has_all "$r" '当てた段' '行き先' '合否に使わない'
   k="$(nonblocking_para '主が切り出すと答えた止める指摘')"
-  has_all "$k" '必ず follow-up issue にする' '捨てない' '段 C の表'
+  has_all "$k" '必ず issue で追跡する' '既存 issue の受け入れ条件に足す' '「follow-up issue に切る」は' '既存 issue で受ける' '「follow-up issue に切った」と書いて URL を添える' '捨てない' '段 C の表'
   # 保留の解除と合格条件は、置き場所の決め方を triage.md に向ける
   grep -F '**切り出しの確認**' "$HOLD" | grep -F '| 切り出す |' | grep -qF '主が切り出すと答えた止める指摘'
   grep -F '主が切り出すと答えて follow-up issue に切ったもの' "$PASS_STAGE" | grep -qF '主が切り出すと答えた止める指摘'
@@ -805,6 +907,7 @@ triage_row_section() {
   echo "$t" | grep -E '^\| 2 \|' | grep -qF '受け入れ条件の中'
   echo "$t" | grep -E '^\| 3 \|' | grep -qF '一覧の一致'
   echo "$t" | grep -E '^\| 4 \|' | grep -qF '今直す 3 条件'
+  echo "$t" | grep -E '^\| 4 \|' | grep -qF '根拠が例外 3 種'
   echo "$t" | grep -E '^\| 5 \|' | grep -qF '主に'
   echo "$t" | grep -E '^\| 6 \|' | grep -qF '決める役'
 }
@@ -854,6 +957,16 @@ triage_row_section() {
   echo "$r" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
   other="$(echo "$r" | grep -oE '[0-9]+ 行' | grep -v '^30 行$' || true)"
   [ -z "$other" ] || { echo "other thresholds: $other"; return 1; }
+}
+
+@test "acceptance scope (#1389): row 4 is limited to the three exceptions and G decides them regardless of the evidence field" {
+  r="$(triage_row_section 4)"
+  has_all "$r" '止める判定の根拠が例外 3 種（安全機構の穴・データ破壊・無言の機能不全）に当たる指摘だけ' \
+    '例外 3 種に当たるかは、根拠欄の書き方によらず G が決める' \
+    '直し方の行数によらず順 4 に当てず' '順 2・順 3 に当たらなければ順 5 に当てる' \
+    '今直す 3 条件'
+  # 30 行の語は順 4 の節だけに出る
+  [ "$(grep -c '30 行' "$TRIAGE")" -eq "$(echo "$r" | grep -c '30 行')" ]
 }
 
 @test "triage (#354): row 5 asks the owner in the same round with the four points" {
@@ -1059,6 +1172,33 @@ triage_row_section() {
   echo "$r" | grep -qF '共通一覧契約の対象外'
 }
 
+@test "hit summary (#1457): the reviewer block has a separate paragraph with the pipeline, the full SHA and the floor" {
+  block="$(reviewer_block)"
+  summary="$(echo "$block" | awk '/^\*\*全ヒット要約/{f=1} f&&/^三表を自己点検/{exit} f')"
+  [ -n "$summary" ] || { echo 'no summary paragraph'; return 1; }
+  for token in '| wc -l' '| git hash-object --stdin' '`<rev>` には `修正前 SHA:` の 40 桁をそのまま入れる' \
+    '全ヒット要約: <行数> 行 <ハッシュ>' '標準出力だけで完結する' 'git grep -c' \
+    'PR の差分に関わるファイル' '`検索コマンド:` の行に持ち込まない' '順 3 の一覧は全行のまま' '出力をそのまま貼る' \
+    '食い違い: <finding ID>' 'review-hit-set.py'; do
+    echo "$summary" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "$REVIEWER_BRIEF")"
+  run grep -qF '全ヒット要約' <<<"$common"
+  [ "$status" -ne 0 ]
+  echo "$block" | grep '^2\. `照合表`:' | grep -qF '全ヒット要約'
+  echo "$block" | grep '^三表を自己点検' | grep -qF '全ヒット要約で返した語の保証範囲は検索範囲と全ヒット集合の一致まで'
+}
+
+@test "hit summary (#1457): the floor in the reviewer block equals the checker constant" {
+  floor="$(sed -n 's/^SUMMARY_MIN_HITS = \([0-9][0-9]*\)$/\1/p' "${PLUGIN_DIR}/scripts/review-hit-set.py")"
+  [ -n "$floor" ] || { echo 'no SUMMARY_MIN_HITS'; return 1; }
+  summary="$(reviewer_block | awk '/^\*\*全ヒット要約/{f=1} f&&/^三表を自己点検/{exit} f')"
+  echo "$summary" | grep -qF "全ヒットが ${floor} 行を超える語"
+  echo "$summary" | grep -qF "全ヒットが ${floor} 行以下の語は要約にしない"
+  reviewer_block | grep '^2\. `照合表`:' | grep -qF "全ヒットが ${floor} 行を超える語"
+  grep -qF "${floor} 行以下の語は全行の表で出し直す" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+}
+
 @test "review inventory (#355): inconsistency location and priority output fail closed on missing tables" {
   line="$(reviewer_block | grep -F 'diff と重なる範囲で 10 行以内')"
   echo "$line" | grep -qF '食い違い'
@@ -1176,7 +1316,8 @@ step3c_body() {
   line="$(step3c_body | grep -F '唯一の例外')"
   echo "$line" | grep -qF '主への質問だけ'
   echo "$line" | grep -qF '前回の合格部分を流用しない'
-  echo "$line" | grep -qF 'gate-runner.md'
+  echo "$line" | grep -qF 'stages/triage.md'
+  echo "$line" | grep -qF 'W の修正後の再レビュー'
   for w in '手順 2 のレビュー' '手順 4 の証拠' '仕様宣言'; do
     echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
   done

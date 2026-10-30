@@ -1,16 +1,16 @@
 #!/usr/bin/env bats
-# dev-workflow のコマンド文書（ci-watch・develop・memory-refresh）の探索ループが、探索先が無い・glob が当たらないときも zsh / bash で止まらないことの検査（#938）。
+# dev-workflow のコマンド文書（ci-watch・develop・memory-refresh・synced-skills-slim）の探索ループが、探索先が無い・glob が当たらないときも zsh / bash で止まらないことの検査（#938）。
 # 文書から `for dir in` を含む bash ブロックを取り出して実行する（手本: plugins/cost-ledger/tests/cost-command-zsh.bats）。
 # SEARCH_DOCS（改行区切りのパス）で対象の文書を差し替えられる（直す前の版で落ちることの確認用）。
 # zsh が無い環境（CI の ubuntu-latest など）では zsh の検査は skip になる。
 
 setup() {
   REPO_DIR="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  DOCS="${SEARCH_DOCS:-plugins/dev-workflow/commands/ci-watch.md\nplugins/dev-workflow/commands/develop.md\nplugins/dev-workflow/commands/memory-refresh.md}"
+  DOCS="${SEARCH_DOCS:-plugins/dev-workflow/commands/ci-watch.md\nplugins/dev-workflow/commands/develop.md\nplugins/dev-workflow/commands/memory-refresh.md\nplugins/dev-workflow/commands/synced-skills-slim.md}"
   HOME_DIR="$BATS_TEST_TMPDIR/home"
   mkdir -p "$HOME_DIR"
   # 既定の対象（SEARCH_DOCS 未設定）のときは、取り出すブロック数を期待値で固定する。差し替えのときは固定しない。
-  if [ -n "${SEARCH_DOCS:-}" ]; then EXPECT_N=; else EXPECT_N=4; fi
+  if [ -n "${SEARCH_DOCS:-}" ]; then EXPECT_N=; else EXPECT_N=5; fi
 }
 
 need_zsh() { command -v zsh >/dev/null || skip "zsh が無い"; }

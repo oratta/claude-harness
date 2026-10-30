@@ -35,7 +35,7 @@ catalog_version: 1
 | 法的・規制 | PR 時レンズ＋アクション直前ゲート | レビューレンズ（コード上の規約違反: API 使用法・レート・データ保持。#125）＋直前ゲート（成果物上の違反。#126） | `policies/regulation.md`（必要な業種のみ） |
 | 財務・コスト | 論点相談＋アクション直前ゲート | 観点スペシャリスト（#127）＋課金操作の直前ゲート（#126）。rate-guard は使用量側の部分実装 | `policies/budget.md` |
 | 信用・レピュテーション | アクション直前ゲート | sns-safety-reviewer（SNS 投稿のみ実装済み）。公開ページ・対外連絡への拡大は #126 | `policies/brand.md` |
-| 情報セキュリティ・プライバシー | 常時 | secret-guard hook（user レベル PreToolUse。transcript へのシークレット露出検査のみの部分実装・fail-open）。個人情報の移動・外部送信・保持は未配線（#126 の設計論点に含める） | — |
+| 情報セキュリティ・プライバシー | 常時 | secret-guard hook（`plugins/capability-registry/` の PreToolUse。transcript へのシークレット露出検査のみの部分実装・fail-open）。個人情報の移動・外部送信・保持は未配線（#126 の設計論点に含める） | — |
 | 資産・回復可能性 | 常時＋PR 時レンズ | destructive-git-guard rule＋auto-merge の SACRED 判定＋レビューでの聖域接触確認（脅威モデルの明文化は #119） | 聖域リスト（正本は auto-merge workflow の SACRED 定義） |
 | 報告の正確性 | 常時 | 報告系 rules＋pr-review-gate の証拠必須（exit code・実測） | — |
 | 事業方向性・戦略整合 | 毎ターンの配役判定 | casting 5手順。フェーズ宣言文の整備後の注入先は設計時 | `policies/phase.md`（既存 PHASE.md がある repo は stub 参照） |
@@ -71,7 +71,7 @@ catalog_version: 1
 | 配線 | タイミング | 実在場所 |
 |---|---|---|
 | 返信前チェック5手順 | 毎ターンの配役判定 | `rules/perspective-casting.md` |
-| secret-guard hook | 常時 | user レベル hooks（`~/.claude/settings.json` の PreToolUse → `~/.claude/hooks/secret-guard.py`）。Bash/Read 系の transcript 露出検査のみの部分実装（fail-open） |
+| secret-guard hook | 常時 | capability-registry プラグインの hook（`plugins/capability-registry/hooks/hooks.json` の PreToolUse → `plugins/capability-registry/scripts/secret-guard.sh`）。Bash/Read 系の transcript 露出検査のみの部分実装（fail-open） |
 | destructive-git-guard | 常時 | `rules/destructive-git-guard.md` |
 | 聖域（SACRED）判定 | 常時（マージ時に機械判定） | `.github/workflows/auto-merge.yml` の SACRED 定義（テンプレ正本: `plugins/dev-workflow/templates/auto-merge/`） |
 | 報告系規約 | 常時 | `rules/`＋pr-review-gate の証拠必須手順 |

@@ -32,7 +32,7 @@
 プラグインのディレクトリの直下からのパスが `.claude-plugin/plugin.json`・`README.md`・`CHANGELOG.md`・`hooks/hooks.json` のファイルと、`changes/`・`tests/` の配下は付属のファイルとして部品の行で覆わない。付属のファイルは、それが記録・検査・配線している部品と同じ行き先に従う。
 
 - 分割したプラグインの付属のファイルは、そのプラグインに公開版の部品の行が 1 つでもあれば公開版にも残る。個人版の部品についての記述は #1129 で書き分け、個人版の部品の検査と変更の記録は部品と一緒に個人版のリポジトリへ移し、公開版の付属のファイルには公開版の部品の記述だけを残した。固有記述の一覧はこの扱いで付属のファイルの行を載せている
-- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）は #1129 で書き分けた。dev-workflow の `hooks/hooks.json` の配線先 11 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従って一緒に個人版のリポジトリへ移した。`tests/skill-registry.bats` は公開版に残り、SKILL.md の全体を見る
+- ファイルの中で行き先が割れる付属のファイル（例: `hooks/hooks.json` の中で配線先のスクリプトの行き先が割れる、`tests/` のテストが公開版と個人版の両方の部品を検査する）は #1129 で書き分けた。dev-workflow の `hooks/hooks.json` の配線先 11 本はどれも公開版の部品で、エピック実行まわりの配線は無い。capability-registry の `hooks/hooks.json` の配線先は公開版の `scripts/browser-guard.sh` と `scripts/secret-guard.sh` だけで、`tests/fmtoken.bats` は個人版の `scripts/fmtoken.sh` に従って一緒に個人版のリポジトリへ移した。`tests/skill-registry.bats` は公開版に残り、SKILL.md の全体を見る
 
 ## 保留の行の確定
 
@@ -80,6 +80,8 @@
 | `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md` | 公開版 | 別セッション方式（起動部品は Orca か tmux）の親が子の PR をマージしてよいかの基準。#1123 の後は Orca 経路だけのものではなく、`epic-dispatch.sh` の行と同じ側になるので、#1129 で公開版に確定 |
 | `capability-registry` | 分割 | 外部サービスの前に CLI を探す仕組みは公開版、オーナーの 1Password の保管庫とトークンの取り出しは個人版で、#1129 で個人版のリポジトリへ移した（下の「個人版に移した部品」）。下の部品の行と「capability-registry の扱い」で分ける |
 | `plugins/capability-registry/scripts/browser-guard.sh` | 公開版 | ブラウザを開く前に CLI の代替を確かめさせる hook で、住人のふるまいに効く（`fmtoken.sh` の案内は #1164 で外す） |
+| `plugins/capability-registry/scripts/secret-guard.sh` | 公開版 | シークレットの値が画面に出る形の Bash と Read を実行前に止める hook の起動部分で、誰の環境でも意味がある（#1233） |
+| `plugins/capability-registry/scripts/secret-guard.py` | 公開版 | `secret-guard.sh` が起動する判定の本体。個人の道具に専用だった検査は持ち込まない（#1233） |
 | `plugins/capability-registry/skills/capability-registry/github.md` | 公開版 | GitHub の CLI の使い方で、誰の環境でも意味がある（`fmtoken.sh` の参照は #1164 で外す） |
 | `plugins/capability-registry/skills/capability-registry/supabase.md` | 公開版 | Supabase の CLI の使い方で、誰の環境でも意味がある |
 | `plugins/capability-registry/skills/capability-registry/stripe.md` | 公開版 | Stripe の CLI の使い方で、誰の環境でも意味がある |
@@ -174,6 +176,7 @@ https://github.com/oratta/claude-harness/issues/1164
 - **GitHub のラベル名 `human-only`**: 保管庫の名前ではなく、auto-merge と issueify が使うラベルの名前
 - **置き換える前提の例**: `/Users/example`・`/Users/x`・`<project>` のような書式の説明
 - **記録と検査**: `changes/`・`CHANGELOG.md`・`tests/`・`evals/`（変更の記録と検査は、それが記録・検査している部品と一緒に #1129・#1164 で動かす）
+- **公開リポジトリ自身の開発手順**: README のローカル開発の節と `plugins/worktree/scripts/dev-dir-env-check.sh` が `CLAUDE_HARNESS_DEV_DIR` を挙げる行。この変数は harness を直す人が自分の環境に入れるもので、README に入れ方を書くことが求められており、検索の範囲（`dev-dir-env.txt`）の外にある
 - **出典や経緯としてだけ名前を挙げる行**: `flatmate#320`・`flatmate #701`・「suimei で実発生」・「genetta-inc の flatmate リポで実運用検証済み」・「出典: oratta/marketing-harness#36」・「2026-08-10 に flatmate で実走したとき」のように、決まりの由来を示すだけで、読み手の環境にその名前の物が無くても指示として実行できる行
 - **互換のために残す旧名の読み取り**: 新しい名前が主であること、旧名を互換として読むことが同じ箇所に書かれた行（例: statusline の `FLATMATE_RATE_SHARE_DIR`・`FLATMATE_RATE_SHARE_CONF`。主は `CLAUDE_RATE_SHARE_DIR`・`CLAUDE_RATE_SHARE_CONF`）。旧名は固有名として読み手に見えるが、指示としては新名で足りる。`tests/public-names/allow/nondev.txt` に 1 行ずつ載せる（書式 `<path>:<語>:=<行に含まれる固定の文字列>`、基準は直前の `#` のコメントに書く）
 - **差し替え可能な起動部品の 1 つとして Orca を並べた行**: 「Orca・tmux」「起動部品は Orca か tmux」「Orca の部品の列」のように、`epic-launch-<名前>.sh` の差し替えの部品の 1 つとして Orca を他の部品や方式と並べた行（develop の SKILL.md の「部品ごとの欄」の見出しと表を含む）。Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらず、「Orca を使う場合」の書き方に直す。下の「一般の製品を例の 1 つとして並べる行」は一般の製品を並べた例で、この項目は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。この項目は `epic-launch-orca.sh` が公開版に決まる前提で当てるもので、#1129 で `epic-launch-orca.sh` は公開版に確定し、前提は満たされた。下の節「起動部品の 1 つとして一覧から外した行」の行は一覧に戻さない
