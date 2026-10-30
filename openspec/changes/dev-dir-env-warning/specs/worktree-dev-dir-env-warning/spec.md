@@ -2,13 +2,13 @@
 
 ### Requirement: 開発用 clone の場所の変数が未設定のとき、harness のリポジトリでだけ警告する
 
-worktree プラグインは、SessionStart で環境変数 `CLAUDE_HARNESS_DEV_DIR` が未設定か空であり、かつ作業ディレクトリが `oratta-claude-harness` の marketplace.json を最上位に持つ git リポジトリ（開発用 clone またはその worktree）のときだけ、変数の名前と入れ方の案内を含む 1 行の警告を利用者に出さなければならない（MUST）。それ以外では何も出力してはならない（MUST NOT）。どの場合もセッションの開始を止めてはならず、終了コードは 0 でなければならない（MUST）。
+SessionStart で `CLAUDE_HARNESS_DEV_DIR` が未設定か空、かつ作業ディレクトリが `oratta-claude-harness` の marketplace.json を最上位に持つ git リポジトリのときだけ、変数名と入れ方の案内を含む 1 行の警告を出さなければならない（MUST）。それ以外は無出力（MUST NOT 出力）で、どの場合も終了コードは 0（MUST）。
 
 この判定の守備範囲は次のとおりで、範囲の外の誤りを見つけることは完了条件にしない（MUST NOT）。
 
-- 想定する入力の出どころ: セッションが継承した環境変数 `CLAUDE_HARNESS_DEV_DIR`、フックを起動した作業ディレクトリ、そのリポジトリ最上位の `.claude-plugin/marketplace.json`。利用者が自分の settings.json や shell の設定で入れた値を、そのまま継承して読む
+- 想定する入力の出どころ: 継承した環境変数、フックを起動した作業ディレクトリ、その最上位の `.claude-plugin/marketplace.json`
 - 拾う誤り: 変数が未設定のまま harness のリポジトリで始めること／空文字のまま始めること
-- 通してよい入力の具体例: 値が存在しないパスや開発用 clone でないパスでも、非空なら警告しない（値の中身は検証しない）／harness の marketplace.json の name を持つ別の clone でも警告の対象になる／marketplace.json が壊れていて name を読めないときは無出力
+- 通してよい入力の具体例: 存在しないパスでも非空なら警告しない／marketplace.json が壊れていて name を読めないときは無出力
 - 見つかる穴をすべて塞ぐことは完了条件にしない
 
 #### Scenario: harness のリポジトリで未設定
