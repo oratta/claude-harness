@@ -648,6 +648,47 @@ refute() {
   echo "$s" | grep -qF '${CODEX_HOME:-$HOME/.codex}'
 }
 
+# 消費の記録の印（#1158。読み取り側 flatmate の burn-consumption-ledger の契約に合わせる）
+@test "consumption mark: form, vocabulary and three places are written once in the token budget section" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF '[消費記録 工程=<工程> 試行=<n> アカウント=<provider>:<登録名> 引継ぎ=<k>]'
+  for st in spec spec-review implement impl-review finish gate-prepare gate-triage gate-pass gate-hold decide screen-check; do
+    echo "$s" | grep -qF "\`$st\`"
+  done
+  echo "$s" | grep -qF 'claude:<登録名>'
+  echo "$s" | grep -qF 'codex:<CODEX_HOME 対応表の登録名>'
+  echo "$s" | grep -q '最初の担当には書かない'
+  echo "$s" | grep -qF '2 行目以降'
+}
+
+@test "consumption mark: no time keys, and an unknown account name is omitted not guessed" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF '`開始=` `終了=` は書かない'
+  echo "$s" | grep -qF '`アカウント=` のキーごと省き'
+}
+
+@test "consumption mark: a resumable W gets account only in description and the mark at the head of each resume message" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF '再開しうる W'
+  echo "$s" | grep -qF '`工程=` と `試行=` を書かない'
+  echo "$s" | grep -qF '再開の指示文の先頭'
+}
+
+@test "consumption mark: G stage comes from the name, reviewers are impl-review, attempt is not the name's n" {
+  s="$(section 'PR トークン上限')"
+  echo "$s" | grep -qF '`gate-<段>`'
+  echo "$s" | grep -qF 'Gate Result の `段:` は使わない'
+  echo "$s" | grep -qF '`impl-review`'
+  echo "$s" | grep -qF '名前の `<n>` は起動回数'
+  echo "$s" | grep -qF '試行を変えず `引継ぎ=` を増やす'
+}
+
+@test "consumption mark: develop start comment in Role profile section carries the launch account mark" {
+  s="$(section 'Role profile の選択')"
+  echo "$s" | grep -qF '[消費記録 アカウント=claude:<登録名>]'
+  echo "$s" | grep -qF '`工程=` と `試行=` は省いてよい'
+}
+
 @test "token budget: a failed comment fetch skips the budget and is handled as exit 1" {
   s="$(section 'PR トークン上限')"
   echo "$s" | grep -qF 'if scripts/codex-records.sh'

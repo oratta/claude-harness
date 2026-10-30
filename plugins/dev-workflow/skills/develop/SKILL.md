@@ -23,7 +23,7 @@ version: 2.1.0
 
 ## Role profile の選択
 
-profile と旧 account/model のどちらも明示しない場合、各 canonical phase の開始時に adapter で再評価する。登録 Codex accounts の週次 snapshot の実効値（取得からの経過時間で捨てず、リセット時刻で読み替えた値）と Claude 起動 account の実効値（セッション記録と snapshot をリセット時刻で読み替えた値）から構成を選ぶ（margin の求め方と構成の選び方は `references/codex-develop.md`「起動と role 解決」が正本）。開始済み role は工程途中で切り替えない。adapter が返す構成（`claude-write-codex-review`・`codex-standard`・Claude 既定構成のどれか）、reason、両 provider の margin / fetched_at、代表 Codex account を、最初の develop 開始コメントと後続 phase の dispatch 記録へ残す。値が無ければ `missing` と記録する。develop 開始コメントには、あわせて「実行モード」の節の `実行モード:` の行と、channel のときは `references/channel.md` の「channel のリスク許容」で決める `チャンネルの返事の確認:` の行を残す。
+profile と旧 account/model のどちらも明示しない場合、各 canonical phase の開始時に adapter で再評価する。登録 Codex accounts の週次 snapshot の実効値（取得からの経過時間で捨てず、リセット時刻で読み替えた値）と Claude 起動 account の実効値（セッション記録と snapshot をリセット時刻で読み替えた値）から構成を選ぶ（margin の求め方と構成の選び方は `references/codex-develop.md`「起動と role 解決」が正本）。開始済み role は工程途中で切り替えない。adapter が返す構成（`claude-write-codex-review`・`codex-standard`・Claude 既定構成のどれか）、reason、両 provider の margin / fetched_at、代表 Codex account を、最初の develop 開始コメントと後続 phase の dispatch 記録へ残す。値が無ければ `missing` と記録する。develop 開始コメントには、あわせて「実行モード」の節の `実行モード:` の行と、channel のときは `references/channel.md` の「channel のリスク許容」で決める `チャンネルの返事の確認:` の行を残す。あわせて、本体の起動アカウントの印 `[消費記録 アカウント=claude:<登録名>]` の行を残す（`工程=` と `試行=` は省いてよい。印の規約は「PR トークン上限」節の「消費の記録の印」。登録名が取れないときは `アカウント=` のキーごと省く）。
 
 `--profile NAME [--profile-file PATH]` または旧形式の Codex account/model を明示したときは、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこの SKILL.md から `../../references/codex-develop.md`）を絶対パスに解決して Read する。各委譲の直前に adapter から canonical role の per-role execution result を取得し、provider 操作は同 reference の「role 解決直後の一度だけの分岐」に従う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の entry ではなく profile の `decider` entry（executor/account/model）を使い、`subagent_type: dev-workflow:decider` として起動する。この SKILL.md はその分岐を再掲せず、工程順、role、review 条件、return 契約、次工程の判断だけを正本として維持する。
 
@@ -226,9 +226,18 @@ W は名前付きで spawn し、SendMessage で再開してコンテキスト�
 
 1 つの記録先に使ったトークンの累計に上限を掛ける（#288）。周回数のキャップでは、1 周が重い場合や W の再開が繰り返される場合を止められないため。
 
-**紐付けの規約**: その記録先のためにサブエージェントを spawn するときは、役割を問わない（W / R1 / G / G のレビュアー / 決める役はその例）で Agent ツールの `description` に記録先番号を `#N` の形で入れる（例: `W: impl for #288`。PR 番号も分かっていれば `G: gate for PR #400 (#288)` のように併記してよい）。番号の無い description のサブエージェントは計測から漏れる。
+**消費の記録の印**（工程・試行・アカウントごとに消費を数えるため。読み取り側は flatmate の `scripts/burn_consumption.py` で、契約は同 repo の `burn-consumption-ledger`「工程・試行・アカウントを記録の印から読む」）: 消費の記録には 1 行の印 `[消費記録 工程=<工程> 試行=<n> アカウント=<provider>:<登録名> 引継ぎ=<k>]` を書く。キーの順は問わない。自由文で工程や試行を書いても読み取り側は読まない。
+- 工程は `spec`・`spec-review`・`implement`・`impl-review`・`finish`・`gate-prepare`・`gate-triage`・`gate-pass`・`gate-hold`・`decide`・`screen-check` のどれか（この一覧が正本。以下の 3 か所の規約はここを指す）
+- 試行は、記録先ごと・工程ごとに 1 から数え、差戻しの修正で同じ工程をやり直すたびに 1 増やす。数えるのは本体。`引継ぎ=<k>` は、同じ工程と試行で手渡しにより起こし直した k 番目の担当にだけ書く（最初の担当には書かない）
+- アカウントは `claude:<登録名>` か `codex:<CODEX_HOME 対応表の登録名>`。登録名が取れないときは推測で埋めず、`アカウント=` のキーごと省き、読み取り側に欠測として読ませる
+- 時刻の `開始=` `終了=` は書かない（読み取り側の契約に無いキー）
+- 置き場は 3 か所: ① `Codex 消費:` コメントの 2 行目以降 ② サブエージェントの `description`（`#N` と同じ文字列の中） ③ `develop 開始` コメント（本体の起動アカウント。`工程=` と `試行=` は省いてよい）
+- **同じサブエージェントを SendMessage で別の工程・試行へ再開しうる W**（既定の W）は、description の印に `アカウント=`（と該当すれば `引継ぎ=`）だけを書き、`工程=` と `試行=` を書かない。読み取り側は 1 体を 1 行にして description の印から 1 つだけ読むので、書くと再開後の消費が起動時の工程・試行へ誤帰属する（書かなければ欠測になる）。再開のたびに、再開の指示文の先頭にその再開が担う工程・試行の印を 1 行置く（今の読み取り側は読まないが、境目として残る）。工程と試行を description に書くのは、1 つの工程・試行にしか使わない 1 体（G・V・決める役・R1 の周ごとの spawn、再開しない手渡しの担当）だけ
+- G 自身の工程は、本体が起こした段（G の名前 `G-<PR>-<prepare|triage|pass|hold>-<n>` の段）から `gate-<段>` と決める。Gate Result の `段:` は使わない（日本語名か `一括（従来経路）` を返すため）。G が要求した Codex・Claude のレビュアーは `impl-review`。G の名前の `<n>` は起動回数で試行ではない（`工程中断:` の手渡しでも増える）。G の試行は、その段をやり直した回数（差戻しのあとの同じ段は 1 増える）。手渡しで起こし直したときは試行を変えず `引継ぎ=` を増やす
 
-**Codex の消費の記録**: その記録先のために Codex を呼んだら、そのたびに記録先へ 1 行目が `Codex 消費: <thread_id> <tokens>` のコメントを投稿する。executor が `codex` の役割へ委譲したときは codex-worker の結果 JSON の `thread_id` と `usage.total.totalTokens` を書く（`usage` が null か `usage.total.totalTokens` が読めないときは `<tokens>` を `-` と書く）。G が full レビューで Bash から Codex を呼んだときは、G が return に書いた Codex thread の thread_id を使い、`<tokens>` を `-` と書く。結果 JSON を受け取れなかった委譲と、G が thread_id を取れなかった呼び出しは記録できず、上限の外になる。
+**紐付けの規約**: その記録先のためにサブエージェントを spawn するときは、役割を問わない（W / R1 / G / G のレビュアー / 決める役はその例）で Agent ツールの `description` に記録先番号を `#N` の形で入れる（例: `W: impl for #288`。PR 番号も分かっていれば `G: gate for PR #400 (#288)` のように併記してよい）。番号の無い description のサブエージェントは計測から漏れる。印は同じ文字列の中に入れる（例: `W: impl for #288 [消費記録 アカウント=claude:a]`。再開される W の書き方は上の「消費の記録の印」）。
+
+**Codex の消費の記録**: その記録先のために Codex を呼んだら、そのたびに記録先へ 1 行目が `Codex 消費: <thread_id> <tokens>` のコメントを投稿する。executor が `codex` の役割へ委譲したときは codex-worker の結果 JSON の `thread_id` と `usage.total.totalTokens` を書く（`usage` が null か `usage.total.totalTokens` が読めないときは `<tokens>` を `-` と書く）。G が full レビューで Bash から Codex を呼んだときは、G が return に書いた Codex thread の thread_id を使い、`<tokens>` を `-` と書く。結果 JSON を受け取れなかった委譲と、G が thread_id を取れなかった呼び出しは記録できず、上限の外になる。コメントの 2 行目以降に印を書く（1 行目の形は変えない。executor が `codex` の W は、その委譲の工程・試行と `codex:<登録名>`。G の full レビュー分は工程 `impl-review`）。
 
 **計測**: その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および Codex executor へ委譲する直前に、役割と executor を問わず毎回次を実行する（`subagent-context.sh` を再開前に呼ぶのと同じ位置。こちらは spawn と委譲の前にも呼ぶ）。
 
