@@ -1,13 +1,13 @@
 ## MODIFIED Requirements
 
 ### Requirement: 登録簿を一覧・追加・オン・オフするコマンド
-`plugins/dev-workflow/scripts/accounts.sh` は、サブコマンド `list`、`add <id> [--label <label>]`、`off <id>`、`on <id>` を持たなければならない（SHALL）。登録簿の場所は `accounts-init.sh` と同じ規則（`CLAUDE_ACCOUNTS_FILE`、無ければ `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`）で決める。id と label の検査は `accounts-init.sh` と同じ（id は英数字とハイフン 1〜32 文字、label は制御文字を含まない 16 文字以下、省略時は id）。
+`plugins/dev-workflow/scripts/accounts.sh` は、サブコマンド `list`、`add <id> [--label <label>]`、`off <id>`、`on <id>` を持たなければならない（SHALL）。登録簿の場所は `accounts-init.sh` と同じ規則（`CLAUDE_ACCOUNTS_FILE`、無ければ `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json`）で決める。id と label の検査は `accounts-init.sh` と同じ（`add` の id の位置の例外は下記。id は英数字とハイフン 1〜32 文字、label は制御文字を含まない 16 文字以下、省略時は id）。
 
 - `list` は登録簿を変えず、スロットごとに `<id>`・`<label>`・`on` または `off`・`<securestorage>`（`null` は `-`）をタブ区切りで 1 行ずつ、宣言順に stdout へ出さなければならない（SHALL）。オフの判定は要件「スロットを enabled でオフにできる」に従う
 - `add <id>` の `<id>` の位置に来たハイフン始まりの引数（`--lable`、`--version`、`-H`、`--`、`-` など。`--help` / `-h` は使い方を出して exit 0）は、id として受け取らず exit 2 で拒否しなければならない（SHALL）。したがって `add` の id 検査は `accounts-init.sh` より厳しく、ハイフンで始まる id（`-a` など）は `add` では登録できない（`on` / `off` と `accounts-init.sh` は従来どおりこの形の id を受ける）。タイプミスしたオプションが id として登録され、認証情報の置き場所とログインコマンドまで作られるのを防ぐため。
 - `add <id>` は、認証情報の置き場所 `<基点>/<id>` を作り、末尾に `{"id", "label", "securestorage"}` のスロットを足さなければならない（SHALL）。`securestorage` には作ったディレクトリの絶対パスを書く。基点は環境変数 `CLAUDE_ACCOUNTS_HOME`（既定 `$HOME/.claude-accounts`）で、絶対パスでなければ exit 2。`enabled` は書かない。完了時に stdout へ、ログインするコマンドを 1 行（`CLAUDE_SECURESTORAGE_CONFIG_DIR=<絶対パス> claude`）出さなければならない（SHALL）。パスはシェルの単一引用符で囲み（パス中の `'` は `'\''` に置き換える）、空白や記号を含む基点でも、表示された 1 行をそのまま貼って実行できなければならない（SHALL）
 - `off <id>` / `on <id>` は、そのスロットの `enabled` を JSON の `false` / `true` に書き換えなければならない（SHALL）。`label`・`securestorage`・スロットの順序・未知のキーは変えてはならない（MUST NOT）。認証情報の置き場所は消してはならない（MUST NOT）
-- 登録済みのスロットがすでに 8 個ある登録簿への、新しい id の `add` は要件「登録できるスロットは 8 個まで」に従い exit 2 で拒否する
+- 登録済みのスロットがすでに 8 個以上ある登録簿への、新しい id の `add` は要件「登録できるスロットは 8 個まで」に従い exit 2 で拒否する
 - 既にある id の `add`、登録簿に無い id の `on` / `off`、未知のサブコマンド、必須引数の欠落は、stderr に理由を出して exit 2 で終わり、登録簿を変えてはならない（MUST NOT）。`add` が exit 2 で終わるとき、認証情報の置き場所を新しく作ってはならない（MUST NOT）
 - 登録簿を書き換えるサブコマンド（`add` / `on` / `off`）は、書き換える前に既存の登録簿を `<登録簿>.bak` に控えなければならない（SHALL）。登録簿が JSON として読めない、または `accounts` が配列でないときは、何も書かず、stderr に理由を出して exit 1 で終わらなければならない（SHALL）。壊れた登録簿の上に書くと、既定アカウント 1 つへの縮退（要件「レジストリ不在時は既定スロット 1 つに縮退する」）で気づきにくくなるため
 - `accounts-init.sh` の挙動は、要件「登録できるスロットは 8 個まで」の拒否を除いて変えてはならない（MUST NOT）
@@ -57,7 +57,9 @@
 ## ADDED Requirements
 
 ### Requirement: 登録できるスロットは 8 個まで
-`accounts.sh add` と `accounts-init.sh` は、登録簿の `accounts` 配列の要素がすでに 8 個あるとき、登録簿にまだ無い新しい `id` を足してはならない（MUST NOT）。足そうとしたときは、何も書かず、上限が 8 個である理由を stderr に出して exit 2 で終わらなければならない（SHALL）。使用量を読む処理は先頭から 8 個で打ち切るので、9 個目は黙って効かなくなるため。判定は配列の要素の数で行い、要素の形は見ない。すでにある `id` の登録し直しはスロット数が増えないので拒否しない。
+`accounts.sh add` と `accounts-init.sh` は、`accounts` 配列の要素がすでに 8 個以上あるとき、登録簿にまだ無い `id` を足さず、上限の理由を stderr に出して exit 2 で終わらなければならない（SHALL）。使用量を読む処理は先頭 8 個で打ち切るので、9 個目は黙って効かなくなるため。判定は要素の数で行い、すでにある `id` の登録し直しは拒否しない。
+
+守備範囲: 入力は利用者が打つコマンドと同じ利用者の登録簿に限り、拾う誤りは「9 個目が黙って効かない」だけ。手編集で 9 個以上にした登録簿そのもの（読み取り側に任せる）／同時実行での 9 個目／不正な要素を含む 8 要素の配列への追加の拒否（登録簿を直せば足せる）／配列でない `accounts`（init は従来どおり空扱い）は許す。塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 8 個登録済みで add の 9 個目を拒否する
 - **WHEN** 8 個のスロットが登録された登録簿に `accounts.sh add z` を実行する
@@ -71,6 +73,10 @@
 - **WHEN** 8 個のスロットが登録された登録簿に、すでにある id で `accounts-init.sh --id a --label A2` を実行する
 - **THEN** exit 0 で、`a` の `label` が `A2` に変わり、スロット数は 8 個のまま
 
+#### Scenario: 9 個以上の登録簿への追加も拒否する
+- **WHEN** すでに 9 個の要素がある登録簿に、まだ無い id で `accounts.sh add z` と `accounts-init.sh --id z` を実行する
+- **THEN** どちらも exit 2 で、登録簿の内容は変わらない
+
 #### Scenario: 7 個から 8 個目は足せる
-- **WHEN** 7 個のスロットが登録された登録簿に `accounts.sh add z` を実行する
-- **THEN** exit 0 で、スロットは 8 個になる
+- **WHEN** 7 個のスロットが登録された登録簿に `accounts.sh add z` を実行し、別の 7 個の登録簿に `accounts-init.sh --id z` を実行する
+- **THEN** どちらも exit 0 で、スロットは 8 個になる
