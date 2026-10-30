@@ -194,6 +194,15 @@ refute() {
   echo "$loop" | grep -qF '`次の段:` どおりの G を新しく起こして再レビュー'
 }
 
+@test "loop: G failed lists all 4 cause classes and keeps W as is for stage A only (#1014)" {
+  loop="$(section '1 ループ')"
+  # G の return（triage.md）の 4 値と本体の列挙が揃っている
+  echo "$loop" | grep -qF '原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））'
+  ! echo "$loop" | grep -qF '／レビュアーの誤検出）' || return 1
+  # 本体は triage.md を読まないので、4 つ目の値の戻し方をここで引ける
+  echo "$loop" | grep -qF '段 A だけなら W を据え置きで再開する'
+}
+
 @test "loop: W is spawned by name, resumed via SendMessage, and never needs grandchildren" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -q '名前付き'
@@ -1560,4 +1569,15 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   grep -qF '86400 秒未満' "$idle"
   grep -qF '切替を観測するまで' "$idle"
 
+}
+
+@test "ask-owner (#1516): the candidate search passes the epic number to --exclude and reruns truncated paths with --children-only" {
+  s="$(section '主に聞かずに決めること')"
+  c="$(echo "$s" | grep -F '候補探し:')"
+  for token in '`--exclude` にエピックの番号も渡す' '(15 件で打ち切り。ほかにも一致あり)' \
+               '`--epic <エピック番号> --children-only`' '打ち切られたパスごとに 1 回を超えない' '`triage.md` の候補探しの段落'; do
+    echo "$c" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+  done
+  echo "$c" | grep -qF '下の 2 つ目' && { echo "dangling reference remains"; return 1; }
+  return 0
 }

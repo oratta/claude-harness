@@ -204,6 +204,17 @@ put_pane() { printf '%s\t%s\t%s\n' "$1" "${3-$WT}" "$2" >> "$STUB_CFG/panes"; }
   [ "$(calls '^orca')" -eq 0 ]
 }
 
+@test "start: with CLAUDE_PROJECTS_DIR unset the log is read from CLAUDE_CONFIG_DIR/projects" {
+  unset CLAUDE_PROJECTS_DIR
+  export CLAUDE_CONFIG_DIR="${BATS_TEST_TMPDIR}/cfgdir"
+  export HOME="${BATS_TEST_TMPDIR}/home"
+  mkdir -p "$HOME"
+  CLAUDE_PROJECTS_DIR="${CLAUDE_CONFIG_DIR}/projects" put_log 2999-01-01T00:00:00.000Z '/develop #5 の指示'
+  run tm start "$WT" 'cld --model opus' '/develop #5 の指示' 5
+  [ "$status" -eq 0 ]
+  [ "$output" = 'started %5' ]
+}
+
 # 入力欄に送った文が残っている画面（<最後の行の前に足す行>）
 screen_with_input() {
   printf '%s\n' '❯ /develop #5 の指示' '  ⏸ plan mode on (shift+tab to cycle)' > "$STUB_CFG/screen"
