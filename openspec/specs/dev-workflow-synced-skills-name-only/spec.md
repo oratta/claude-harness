@@ -1,7 +1,7 @@
 # dev-workflow-synced-skills-name-only Specification
 
 ## Purpose
-TBD - created by archiving change dev-workflow-synced-skills-name-only. Update Purpose after archive.
+claude.ai から同期されたスキルを settings.json の skillOverrides で name-only にする設定コマンド `/dev-workflow:synced-skills-slim` と、書き込みを担う `synced-skills-name-only.sh` の振る舞いを定める。
 
 ## Requirements
 
