@@ -49,7 +49,8 @@
 #   続け、stderr に `note not posted to #<N>` と手で投稿するコマンドを出す）→ `orca terminal create
 #   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic>
 #   <cmd> --settings '{"idleCompaction":false}' --model <model>"`
-#   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
+#   （<cmd> の既定は bin/cld の絶対パス、EPIC_DISPATCH_CLAUDE_CMD で変える。親の環境に CLD_DEFAULT_ARGS があれば
+#   EPIC_DISPATCH_PARENT_EPIC=<epic> の直後に CLD_DEFAULT_ARGS='<値>' の代入として渡す。<model> の既定は opus、
 #   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。--settings は子のアイドル時の
 #   コンパクトをそのプロセスだけ切る（通常の自動コンパクトは止めない。Claude Code v2.1.290 以降。
 #   根拠は skills/develop/references/reply-after-idle.md）。
@@ -441,11 +442,21 @@ agent_setup() {
   is_num "$submit" || { echo "EPIC_DISPATCH_SUBMIT_WAIT must be a non-negative integer: $submit" >&2; return 1; }
   local model="${EPIC_DISPATCH_MODEL-opus}"
   [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; return 1; }
-  local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
+  # 既定は bin/cld の絶対パス（ログイン zsh のシェル関数 cld に頼らない。非ログインのシェルでも解ける）。
+  # 空白の有無によらず単一引用符で包む。実行ファイルが無い古い clone では従来の cld に戻す
+  local default_cmd="cld" bin_cld
+  bin_cld="$(cd "$(dirname "$0")/.." 2>/dev/null && pwd)/bin/cld"
+  [ -x "$bin_cld" ] && default_cmd="$(shq "$bin_cld")"
+  local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-$default_cmd}"
   [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; return 1; }
   # 子のアイドル時のコンパクト（待っている間の自動コンパクト）はそのプロセスだけ切る。通常の自動コンパクトは止めない
   # （根拠は skills/develop/references/reply-after-idle.md）
-  agent_rest="$claude_cmd --settings '{\"idleCompaction\":false}' --model $(shq "$model")"
+  # 親の環境の CLD_DEFAULT_ARGS（子の既定フラグ。--dangerously-skip-permissions など）を、Orca の既存シェルへの送信でも
+  # tmux の新しいウィンドウでも子の claude まで届くよう、EPIC_DISPATCH_PARENT_EPIC の直後の代入として渡す。
+  # 値が無ければ付けない（子は許可の確認画面で止まる）
+  local cld_assign=""
+  [ -z "${CLD_DEFAULT_ARGS:-}" ] || cld_assign="CLD_DEFAULT_ARGS=$(shq "$CLD_DEFAULT_ARGS") "
+  agent_rest="${cld_assign}$claude_cmd --settings '{\"idleCompaction\":false}' --model $(shq "$model")"
   agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 $agent_rest"
 }
 

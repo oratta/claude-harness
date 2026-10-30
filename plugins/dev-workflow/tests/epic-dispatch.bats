@@ -54,6 +54,9 @@ setup() {
   make_stub sysctl
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
   unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
+  unset CLD_DEFAULT_ARGS
+  # 起動コマンドの既定の語は bin/cld の絶対パス（単一引用符で包む）
+  CLD_Q="'${PLUGIN_DIR}/bin/cld'"
   # 既存の launch のテストが上限に当たらないよう大きくする（上限のテストだけで上書き・unset する）。
   # 物理メモリは sysctl のスタブ（memsize / sysctl_exit）だけから読ませ、実物の /proc/meminfo を読ませない
   export EPIC_DISPATCH_MAX_PARALLEL=99
@@ -641,7 +644,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "${log[7]}" = "orca terminal list --worktree path:/work/issue-11 --json" ]
   starts_with "${log[8]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[8]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   [ "${log[9]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[10]}" "orca terminal send --terminal term-11 --text "
   case "${log[10]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
@@ -667,7 +670,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "$(calls '^orca terminal close')" -eq 0 ]
   # 起動コマンドを同じ端末に打ち込み、そのあと指示を送る。環境変数の意味は従来の terminal create と同じ
   first_send="$(grep -m1 '^orca terminal send --terminal term-11 ' "$STUB_LOG")"
-  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"cld"*"--settings"*"idleCompaction"*":false"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
+  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"/bin/cld'"*"--settings"*"idleCompaction"*":false"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
   case "$first_send" in *CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS*) echo "$first_send" >&2; false ;; esac
   [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 2 ]
   [ "$(calls '^orca terminal wait --terminal term-11 --for tui-idle')" -eq 1 ]
@@ -726,7 +729,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   EPIC_DISPATCH_MODEL='opus[1m]' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus[1m]' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus[1m]' --prompt-suggestions false" ]
 }
 
 @test "launch: EPIC_DISPATCH_CLAUDE_CMD preserves the command prefix" {
@@ -736,6 +739,96 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "$output" = "launched 11" ]
   [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
+
+# --- 起動コマンドの既定（bin/cld の絶対パス）と CLD_DEFAULT_ARGS の受け渡し（#1232） ---
+
+@test "launch: the default command is the absolute bin/cld in single quotes, not the cld shell function" {
+  make_stub orca
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ -x "${PLUGIN_DIR}/bin/cld" ]
+  cmd="$(cat "$STUB_CFG/tcmd_11")"
+  starts_with "$cmd" "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings"
+}
+
+@test "launch: CLD_DEFAULT_ARGS of the parent goes right after EPIC_DISPATCH_PARENT_EPIC (Orca)" {
+  make_stub orca
+  CLD_DEFAULT_ARGS='--dangerously-skip-permissions --remote-control' run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--dangerously-skip-permissions --remote-control' ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+}
+
+@test "launch: without CLD_DEFAULT_ARGS or with an empty one no assignment is added" {
+  make_stub orca
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  case "$(cat "$STUB_CFG/tcmd_11")" in *CLD_DEFAULT_ARGS*) false ;; *) true ;; esac
+  CLD_DEFAULT_ARGS= run dispatch launch 400 12
+  [ "$status" -eq 0 ]
+  case "$(cat "$STUB_CFG/tcmd_12")" in *CLD_DEFAULT_ARGS*) false ;; *) true ;; esac
+}
+
+@test "launch: CLD_DEFAULT_ARGS with a single quote is passed through shq intact" {
+  make_stub orca
+  CLD_DEFAULT_ARGS="--note it's" run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  cmd="$(cat "$STUB_CFG/tcmd_11")"
+  starts_with "$cmd" "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--note it'\\''s' "
+}
+
+@test "launch: an EPIC_DISPATCH_CLAUDE_CMD override still takes the CLD_DEFAULT_ARGS assignment" {
+  make_stub orca
+  CLD_DEFAULT_ARGS='--remote-control' EPIC_DISPATCH_CLAUDE_CMD='cld-account b' run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--remote-control' cld-account b --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+}
+
+@test "reply: the relaunch command carries the parent's CLD_DEFAULT_ARGS too" {
+  reply_ready
+  CLD_DEFAULT_ARGS='--remote-control' run dispatch reply --as parent 400 11 '推奨どおり'
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "relaunched 11" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--remote-control' ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+}
+
+@test "launch: the Orca command runs from a non-login sh with no cld on PATH and the flags reach claude" {
+  make_stub orca
+  CLD_DEFAULT_ARGS='--dangerously-skip-permissions --remote-control' run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  mkdir -p "${BATS_TEST_TMPDIR}/e2e/scripts" "${BATS_TEST_TMPDIR}/e2e/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${BATS_TEST_TMPDIR}/e2e/scripts/usage-probe.sh"
+  printf '#!/usr/bin/env bash\necho\n' > "${BATS_TEST_TMPDIR}/e2e/scripts/select-account.sh"
+  printf '#!/usr/bin/env bash\nprintf "<%%s>\\n" "$@" > "$E2E_ARGS"\n' > "${BATS_TEST_TMPDIR}/e2e/bin/claude"
+  chmod +x "${BATS_TEST_TMPDIR}/e2e/scripts/"*.sh "${BATS_TEST_TMPDIR}/e2e/bin/claude"
+  # 親の CLD_DEFAULT_ARGS を落とした環境で、起動コマンドの文字列だけを非ログインの sh で実行する
+  run env -u CLD_DEFAULT_ARGS PATH="${BATS_TEST_TMPDIR}/e2e/bin:/usr/bin:/bin" E2E_ARGS="${BATS_TEST_TMPDIR}/e2e/args" \
+    CLAUDE_HARNESS_SCRIPTS="${BATS_TEST_TMPDIR}/e2e/scripts" sh -c "$(cat "$STUB_CFG/tcmd_11")"
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  head -n 2 "${BATS_TEST_TMPDIR}/e2e/args" | tr '\n' ' ' | grep -qF '<--dangerously-skip-permissions> <--remote-control>'
+}
+
+@test "tmux launch: CLD_DEFAULT_ARGS of the parent is typed into the child's window" {
+  tmux_env
+  tmux_log_for /stub/common/.claude/worktrees/issue-11
+  CLD_DEFAULT_ARGS='--remote-control' run dispatch launch 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "launched 11" ]
+  grep -F '^tmux send-keys' "$STUB_LOG" >/dev/null 2>&1 || true
+  grep -E '^tmux send-keys .* -l ' "$STUB_LOG" | grep -F 'CLD_DEFAULT_ARGS=' | grep -qF -- '--remote-control'
+  grep -E '^tmux send-keys .* -l ' "$STUB_LOG" | grep -F 'EPIC_DISPATCH_PARENT_EPIC=400' | grep -qF 'bin/cld'
+}
+
+@test "tmux launch: without CLD_DEFAULT_ARGS no assignment is typed" {
+  tmux_env
+  tmux_log_for /stub/common/.claude/worktrees/issue-11
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  run grep -F 'CLD_DEFAULT_ARGS' "$STUB_LOG"
+  [ "$status" -eq 1 ]
+}
+
 
 @test "launch: an empty EPIC_DISPATCH_CLAUDE_CMD creates nothing" {
   make_stub orca
@@ -757,7 +850,7 @@ launch_ignores_idle_compact() {
   EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS="$1" run dispatch launch 400 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
 
 @test "launch: the child command turns off idle compaction and has no CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS" {
@@ -765,7 +858,7 @@ launch_ignores_idle_compact() {
   run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   run grep -F 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' "$STUB_LOG"; [ "$status" -eq 1 ]
 }
 
@@ -791,7 +884,7 @@ launch_ignores_idle_compact() {
   [ "${#lines[@]}" -eq 2 ]
   [ "$(calls '^orca terminal wait ')" -eq 1 ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
-  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'cld --settings'
+  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF "bin/cld' --settings"
   grep -F 'orca terminal send' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
   grep -qF -- '--terminal <handle from create>' "$BATS_TEST_TMPDIR/stderr"
 }
@@ -4198,7 +4291,7 @@ reply_ready() {
   run dispatch reply --as parent 400 11 '推奨どおり'
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "relaunched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   s="$(cat "$STUB_CFG/sent_term-11")"
   starts_with "$s" "/develop #11 "
   case "$s" in *"親エピック #400 の判断（主の承認ではない）: 推奨どおり") ;; *) echo "sent: $s"; false ;; esac

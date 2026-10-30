@@ -97,15 +97,6 @@ digest = hashlib.sha256(str(home.resolve()).encode()).hexdigest()
 PY
 }
 
-extract_readme_functions() {
-  export README_FUNCTIONS="${WORK}/readme-functions.zsh"
-  awk '
-    /^```zsh$/ { in_zsh = 1; next }
-    in_zsh && /^```$/ { exit }
-    in_zsh { print }
-  ' "$README" > "$README_FUNCTIONS"
-}
-
 write_shell_stubs() {
   mkdir -p "${WORK}/bin" "${WORK}/scripts"
   cat > "${WORK}/scripts/usage-probe.sh" <<'SH'
@@ -114,6 +105,7 @@ exit 0
 SH
   cat > "${WORK}/scripts/select-account.sh" <<'SH'
 #!/usr/bin/env bash
+[ -z "${SELECTOR_ARGS_LOG:-}" ] || printf '<%s>\n' "$@" > "$SELECTOR_ARGS_LOG"
 if [ "${SELECTOR_RC:-0}" -ne 0 ]; then
   exit "$SELECTOR_RC"
 fi
@@ -123,6 +115,7 @@ SH
 #!/usr/bin/env bash
 printf '%s\n' "${CLAUDE_SECURESTORAGE_CONFIG_DIR+x}:${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" > "$CLAUDE_ENV_LOG"
 printf '<%s>\n' "$@" > "$CLAUDE_ARGS_LOG"
+printf '%s\n' "${CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS+x}:${CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS-}" > "${CLAUDE_IDLE_LOG:-/dev/null}"
 SH
   chmod +x "${WORK}/scripts/usage-probe.sh" \
     "${WORK}/scripts/select-account.sh" "${WORK}/bin/claude"
@@ -316,54 +309,129 @@ JSON
   [ ! -e "$marker" ]
 }
 
-@test "README zsh functions launch with unset account env and preserve quoted arguments" {
-  command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
-  extract_readme_functions
+# bin/cld・bin/cld-account（実行ファイル）。scripts はスタブに差し替え、claude もスタブにする。
+# 関数定義の無い非ログインの bash から PATH だけで呼ぶ。
+run_cld() {
+  # $1=実行ファイル名、残りは引数。RUN_CLD_ENV（配列）に追加の環境変数を入れる
+  local exe="$1"; shift
   write_shell_stubs
-  export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"
-  export CLAUDE_ENV_LOG="${WORK}/claude-env"
-  export CLAUDE_ARGS_LOG="${WORK}/claude-args"
-  export SELECTOR_VALUE=""
-  export SELECTOR_RC=0
+  export CLAUDE_ENV_LOG="${WORK}/claude-env" CLAUDE_ARGS_LOG="${WORK}/claude-args" CLAUDE_IDLE_LOG="${WORK}/claude-idle"
+  run env -u CLD_DEFAULT_ARGS -u CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS PATH="${WORK}/bin:${PLUGIN_DIR}/bin:${PATH}" \
+    CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts" ${RUN_CLD_ENV[@]+"${RUN_CLD_ENV[@]}"} "$exe" "$@"
+}
 
-  run env PATH="${WORK}/bin:${PATH}" CLAUDE_SECURESTORAGE_CONFIG_DIR=inherited \
-    zsh -fc 'source "$README_FUNCTIONS"; cld "argument with spaces" "*.md"'
+@test "bin/cld and bin/cld-account exist and are executable" {
+  [ -x "${PLUGIN_DIR}/bin/cld" ]
+  [ -x "${PLUGIN_DIR}/bin/cld-account" ]
+}
+
+@test "bin/cld launches with unset account env and preserves quoted arguments" {
+  export SELECTOR_VALUE="" SELECTOR_RC=0
+  RUN_CLD_ENV=(CLAUDE_SECURESTORAGE_CONFIG_DIR=inherited)
+  run_cld cld "argument with spaces" "*.md"
   [ "$status" -eq 0 ]
   [ "$(cat "$CLAUDE_ENV_LOG")" = ":" ]
   [ "$(cat "$CLAUDE_ARGS_LOG")" = $'<argument with spaces>\n<*.md>' ]
 }
 
-@test "README zsh functions preserve selector exit 2 and do not launch Claude" {
-  command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
-  extract_readme_functions
-  write_shell_stubs
-  export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"
-  export CLAUDE_ENV_LOG="${WORK}/claude-env"
-  export CLAUDE_ARGS_LOG="${WORK}/claude-args"
-  export SELECTOR_RC=2
+@test "bin/cld sets the selected securestorage" {
+  export SELECTOR_VALUE="${SECURE_B}" SELECTOR_RC=0
+  RUN_CLD_ENV=()
+  run_cld cld --resume
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CLAUDE_ENV_LOG")" = "x:${SECURE_B}" ]
+  [ "$(cat "$CLAUDE_ARGS_LOG")" = '<--resume>' ]
+}
 
-  run env PATH="${WORK}/bin:${PATH}" zsh -fc \
-    'source "$README_FUNCTIONS"; cld-account missing "argument with spaces"'
+@test "bin/cld-account passes the slot id to the selector and drops it from claude args" {
+  export SELECTOR_VALUE="${SECURE_B}" SELECTOR_RC=0 SELECTOR_ARGS_LOG="${WORK}/selector-args"
+  RUN_CLD_ENV=()
+  run_cld cld-account b --resume
+  [ "$status" -eq 0 ]
+  [ "$(cat "$SELECTOR_ARGS_LOG")" = "<b>" ]
+  [ "$(cat "$CLAUDE_ENV_LOG")" = "x:${SECURE_B}" ]
+  [ "$(cat "$CLAUDE_ARGS_LOG")" = '<--resume>' ]
+}
+
+@test "bin/cld-account preserves selector exit 2 and does not launch Claude" {
+  export SELECTOR_RC=2
+  RUN_CLD_ENV=()
+  run_cld cld-account missing "argument with spaces"
   [ "$status" -eq 2 ]
   [ ! -e "$CLAUDE_ENV_LOG" ]
   [ ! -e "$CLAUDE_ARGS_LOG" ]
 }
 
-@test "README zsh functions replace legacy aliases" {
-  command -v zsh >/dev/null 2>&1 || skip "zsh unavailable"
-  extract_readme_functions
-  write_shell_stubs
-  export CLAUDE_HARNESS_SCRIPTS="${WORK}/scripts"
-  export CLAUDE_ENV_LOG="${WORK}/claude-env"
-  export CLAUDE_ARGS_LOG="${WORK}/claude-args"
-  export SELECTOR_VALUE="${SECURE_B}"
-  export SELECTOR_RC=0
+@test "bin/cld preserves a nonzero selector status and does not launch Claude" {
+  export SELECTOR_RC=3
+  RUN_CLD_ENV=()
+  run_cld cld
+  [ "$status" -eq 3 ]
+  [ ! -e "$CLAUDE_ARGS_LOG" ]
+}
 
-  run env PATH="${WORK}/bin:${PATH}" zsh -fc \
-    'alias cld="claude --dangerously-skip-permissions"; alias cld-account="claude"; source "$README_FUNCTIONS"; cld --resume'
+@test "bin/cld-account without a slot id exits 2 and does not launch Claude" {
+  export SELECTOR_VALUE="" SELECTOR_RC=0
+  RUN_CLD_ENV=()
+  run_cld cld-account
+  [ "$status" -eq 2 ]
+  [[ "$output" == *usage:* ]]
+  [ ! -e "$CLAUDE_ARGS_LOG" ]
+}
+
+@test "CLD_DEFAULT_ARGS words go first for both executables" {
+  export SELECTOR_VALUE="" SELECTOR_RC=0
+  RUN_CLD_ENV=(CLD_DEFAULT_ARGS="--dangerously-skip-permissions --remote-control")
+  run_cld cld --resume
   [ "$status" -eq 0 ]
-  [ "$(cat "$CLAUDE_ENV_LOG")" = "x:${SECURE_B}" ]
-  [ "$(cat "$CLAUDE_ARGS_LOG")" = '<--resume>' ]
+  [ "$(cat "$CLAUDE_ARGS_LOG")" = $'<--dangerously-skip-permissions>\n<--remote-control>\n<--resume>' ]
+  rm -f "$CLAUDE_ARGS_LOG"
+  RUN_CLD_ENV=(CLD_DEFAULT_ARGS="--remote-control")
+  run_cld cld-account b --resume
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CLAUDE_ARGS_LOG")" = $'<--remote-control>\n<--resume>' ]
+}
+
+@test "CLD_DEFAULT_ARGS is not evaluated by the shell" {
+  export SELECTOR_VALUE="" SELECTOR_RC=0
+  RUN_CLD_ENV=(CLD_DEFAULT_ARGS='--x $(touch '"${WORK}"'/pwned) *')
+  run_cld cld
+  [ "$status" -eq 0 ]
+  [ ! -e "${WORK}/pwned" ]
+  grep -qF '<--x>' "$CLAUDE_ARGS_LOG"
+  grep -qF '<*>' "$CLAUDE_ARGS_LOG" || true
+}
+
+@test "bin/cld does not override or add the idle compact threshold" {
+  export SELECTOR_VALUE="" SELECTOR_RC=0
+  RUN_CLD_ENV=(CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=50000)
+  run_cld cld
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CLAUDE_IDLE_LOG")" = "x:50000" ]
+  RUN_CLD_ENV=()
+  run_cld cld
+  [ "$(cat "$CLAUDE_IDLE_LOG")" = ":" ]
+}
+
+@test "bin/cld finds scripts through a symlink when CLAUDE_HARNESS_SCRIPTS is unset" {
+  # bin/ と scripts/ が兄弟の配置を作り、その bin/cld への symlink を PATH に置く
+  mkdir -p "${WORK}/clone/bin" "${WORK}/clone/scripts" "${WORK}/linkbin"
+  cp "${PLUGIN_DIR}/bin/cld" "${WORK}/clone/bin/cld"
+  write_shell_stubs
+  cp "${WORK}/scripts/"*.sh "${WORK}/clone/scripts/"
+  ln -s "${WORK}/clone/bin/cld" "${WORK}/linkbin/cld"
+  export CLAUDE_ENV_LOG="${WORK}/claude-env" CLAUDE_ARGS_LOG="${WORK}/claude-args"
+  export SELECTOR_VALUE="${SECURE_A}" SELECTOR_RC=0
+  run env -u CLAUDE_HARNESS_SCRIPTS -u CLD_DEFAULT_ARGS PATH="${WORK}/bin:${WORK}/linkbin:${PATH}" cld --resume
+  [ "$status" -eq 0 ]
+  [ "$(cat "$CLAUDE_ENV_LOG")" = "x:${SECURE_A}" ]
+}
+
+@test "README no longer pastes shell functions and describes the PATH and env lines" {
+  ! grep -q '^cld()' "$README"
+  ! grep -q '^cld-account()' "$README"
+  grep -qF 'CLD_DEFAULT_ARGS' "$README"
+  grep -qF 'plugins/dev-workflow/bin' "$README"
 }
 
 @test "tie break: equal surplus keeps registry declaration order" {
