@@ -8,6 +8,19 @@
 
 ゲートは常にこの段から始まる。PR を作ったとき、`agent-review:failed` からの再レビュー、保留からの再開で手順 1 からやり直すときに読む。
 
+## レビュー経路の判別（G として起動されたときだけ。`gate-runner.md` から移した）
+
+この節は G（phase `gate`）として起動されたときの規則で、phase `review` のレビュアーとして起動されたとき（Codex に委譲されたレビュアーがこのファイルを読む場合）には適用しない。レビュアーは自分でレビューを行う。
+
+新しい G は起動指示にある `レビュー経路:` の 1 行を見て、この行だけで経路を判別する。環境変数・記録先のコメント・自分の起動方法から推測しない。G は段ごとに新しく起こされるので、どの段の G も自分の起動指示の行だけで判別する。
+
+| 起動指示の行 | 経路 | G の動き |
+|---|---|---|
+| `レビュー経路: adapter` | adapter 経路 | full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1 と手順 2-0 まで済ませ、同一 PR/HEAD で他の G が着手済みでないことを確認してから `needs-reviewer` を return する（判定は `full（adapter 経路）` または `light`）。Codex 不可の実測（バイナリ探索・起動）は行わない。投げ先は本体が phase `review` で選び直す |
+| `レビュー経路: 従来`、または新しい G の起動指示に行が無い | 従来経路 | `skills/pr-review-gate/stages/review-run.md` の「G として動くとき（develop）」節の「レビューの実行者」の表に従う（full は G の Bash から Codex を直接呼ぶ。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは G からは使えない） |
+
+行が無い場合だけ従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任 G を含む）に適用する。`レビュー経路: adapter` は新 Codex モードを含む adapter 解決の全構成（`claude-default` を含む）を指し、新 Codex モードとは同義ではない。従来モードのレビュー実行者の表（`stages/review-run.md`）は、`レビュー経路: 従来`、または新しい G の起動指示に行が無いときだけ適用する。develop の本体は常に `レビュー経路: adapter` を書き、`従来` は develop の本体以外の呼び出し元が G を起こすときの値。
+
 ## 手順
 
 ### 1. 前提を揃える

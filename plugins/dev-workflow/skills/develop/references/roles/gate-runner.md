@@ -5,7 +5,7 @@ develop の本体が `subagent_type: dev-workflow:gate-runner` で名前付き�
 ## やること
 
 1. 下の「時点ごとに読むファイル」の表に従って段のファイルを Read し、起動指示の `段:` が担当する範囲で pr-review-gate の**手順 1〜5**（前提を揃える → レビュー → リスク宣言・仕様宣言 → 動作確認の証拠 → 照合 → Draft なら Ready 化 → `agent-review:passed`）をそのまま実行する。4 つの段を順に通ると手順 1〜5 がすべて実行され、免除される工程は無い。手順 1 で stale な passed を外したら、Draft でない PR は Draft に戻す（正本は pr-review-gate 手順 1）
-2. 手順 2 のレビューは**実装と別コンテキスト**で行う。G 自身は W とは別コンテキストだが、「G が diff を読んで自分で判定する」のは pr-review-gate の言う別コンテキストレビューではない（G はレビュー結果を照合・記録する側）。レビューの実行者は下の「レビュー経路の判別」で決める
+2. 手順 2 のレビューは**実装と別コンテキスト**で行う。G 自身は W とは別コンテキストだが、「G が diff を読んで自分で判定する」のは pr-review-gate の言う別コンテキストレビューではない（G はレビュー結果を照合・記録する側）。レビューの実行者は起動指示の `レビュー経路:` の行で決める（判別の規則は `stages/prepare.md` の「レビュー経路の判別」。前提確認と重さ判定の段と、一括の従来経路でだけ読む）
 3. Codex やレビュアーの完了を待つ目的でターンを終えない。完了は同一ターン内の前景ポーリングで確かめる（起動と完了確認の手順は `skills/pr-review-gate/stages/review-run.md` の「Codex の起動と完了確認」、待ち方の正本は `plugins/dev-workflow/references/subagent-waiting.md`）
 4. 結果を本体に return する（書式は下）。記録先へのコメント・ラベル操作は G が自分で行う（本体は return の要約だけを見る）
 5. 一時ファイルを消すときの書き方は `skills/develop/references/roles/worker/common.md`「一時ファイルを消すときの書き方」に従う（`cd` とワイルドカードを組み合わせず絶対パスで書く）
@@ -21,19 +21,6 @@ develop の本体が `subagent_type: dev-workflow:gate-runner` で名前付き�
 | 合格処理（手順 3・3-b・4・5。引き継ぎの判定の受領を含む） | `declarations.md` と `stages/pass.md`（真正性確認に入るときは加えて `stages/authenticity.md`、前の HEAD の許容があるとき・`needs-carryover-judge` を返すときは加えて `stages/carryover.md`、保留を返すときは加えて `stages/hold.md`） |
 | 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md` |
 | 一括（従来経路）でレビューを自分で起こすとき | 上の表の全部と、`stages/review-run.md` とレビュアーに渡す `stages/reviewer-brief.md` |
-
-## レビュー経路の判別（G として起動されたときだけ）
-
-この節は G（phase `gate`）として起動されたときの規則で、phase `review` のレビュアーとして起動されたとき（Codex に委譲されたレビュアーがこのファイルを読む場合）には適用しない。レビュアーは自分でレビューを行う。
-
-新しい G は起動指示にある `レビュー経路:` の 1 行を見て、この行だけで経路を判別する。環境変数・記録先のコメント・自分の起動方法から推測しない。G は段ごとに新しく起こされるので、どの段の G も自分の起動指示の行だけで判別する。
-
-| 起動指示の行 | 経路 | G の動き |
-|---|---|---|
-| `レビュー経路: adapter` | adapter 経路 | full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1 と手順 2-0 まで済ませ、同一 PR/HEAD で他の G が着手済みでないことを確認してから `needs-reviewer` を return する（判定は `full（adapter 経路）` または `light`）。Codex 不可の実測（バイナリ探索・起動）は行わない。投げ先は本体が phase `review` で選び直す |
-| `レビュー経路: 従来`、または新しい G の起動指示に行が無い | 従来経路 | `skills/pr-review-gate/stages/review-run.md` の「G として動くとき（develop）」節の「レビューの実行者」の表に従う（full は G の Bash から Codex を直接呼ぶ。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは G からは使えない） |
-
-行が無い場合だけ従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任 G を含む）に適用する。`レビュー経路: adapter` は新 Codex モードを含む adapter 解決の全構成（`claude-default` を含む）を指し、新 Codex モードとは同義ではない。従来モードのレビュー実行者の表（`stages/review-run.md`）は、`レビュー経路: 従来`、または新しい G の起動指示に行が無いときだけ適用する。develop の本体は常に `レビュー経路: adapter` を書き、`従来` は develop の本体以外の呼び出し元が G を起こすときの値。
 
 ## return の書式
 
