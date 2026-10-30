@@ -15,6 +15,7 @@ setup() {
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker/spec.md"
   REF="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
+  FIX_CHECK="${PLUGIN_DIR}/skills/develop/references/fix-check.md"
   CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
@@ -27,6 +28,12 @@ decision_sec() { section "$WORKER" '仕様化判断'; }
 loop_sec() { section "$SKILL" '1 ループ'; }
 # SKILL.md の実行モード節
 mode_sec() { section "$SKILL" '実行モード'; }
+# spec-reviewer.md の条件の段の節（#1121）
+cond_sec() { section "$REF" '指摘の条件を決める段'; }
+# fix-check.md の条件の確かめの節（#1121）
+fix_cond_sec() { section "$FIX_CHECK" '残った指摘の条件を確かめる'; }
+# SKILL.md の 1 ループの (2)
+step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
 
 # --- Requirement: 仕様化要否の判定結果を固定書式で issue に記録する ---
 
@@ -126,6 +133,153 @@ mode_sec() { section "$SKILL" '実行モード'; }
   [ "$status" -ne 0 ]
   run grep -qF '^主に聞かずに回した周:' "$REF"
   [ "$status" -ne 0 ]
+}
+
+# --- Requirement: 仕様レビューの BLOCKER は指摘の条件がいつ成り立つかを決めてから残す（#1121） ---
+
+@test "condition stage (#1121): spec-reviewer.md has the five-row table and points at triage stage B" {
+  s="$(cond_sec)"
+  [ -n "$s" ] || { echo "no section"; return 1; }
+  echo "$s" | grep -qF '条件がいつ成り立つか'
+  echo "$s" | grep -qF '`stages/triage.md` の段 B'
+  for row in \
+    '| 条件を書けない | 捨てる。理由を 1 行残す |' \
+    '| いまのエピック（無ければ記録先）の範囲で成り立つ | BLOCKER に残す |' \
+    '| 後で成り立つ | NOTE に条件を書く |' \
+    '| 成り立つ予定が無い | 捨てる。条件と理由を 1 行残す |' \
+    '| R1 が決められない | BLOCKER に残し `条件の問い:` を添える |'; do
+    echo "$s" | grep -qF -- "$row" || { echo "lacks row: $row"; return 1; }
+  done
+}
+
+@test "condition stage (#1121): evidence is limited and artifact assumptions are not evidence" {
+  s="$(cond_sec)"
+  echo "$s" | grep -qF 'エピックと記録先の本文、受け入れ条件、コード、本文の節 `## 条件の答え` の行に限る'
+  echo "$s" | grep -qF 'change の artifact に書かれた想定は主の答えではないので、根拠にしない'
+  echo "$s" | grep -qF '問いを付け直さず「いまの範囲で成り立つ」に当てる'
+}
+
+@test "condition stage (#1121): the question asks only about the condition and R1 stays read-only" {
+  s="$(cond_sec)"
+  echo "$s" | grep -qF '同じ枠を別アカウントで使い回すことは、今回あるか。今回は無くても後であるか'
+  echo "$s" | grep -qF '指摘を直すか・捨ててよいかを問わない'
+  echo "$s" | grep -qF '問いを主に聞かず、`## 条件の答え` を書かず、issue を作らない'
+}
+
+@test "condition stage (#1121): the flatmate #702 finding is the worked example" {
+  s="$(cond_sec)"
+  echo "$s" | grep -qF 'flatmate #702'
+  echo "$s" | grep -qF '新しいアカウントは新しい枠を作る。同じ枠を別アカウントで使い回さない'
+  echo "$s" | grep -F 'flatmate #702' | grep -qF '成り立つ予定が無い'
+  echo "$s" | grep -qF '`捨てた指摘:`'
+}
+
+@test "condition stage (#1121): defects of the document itself stay as BLOCKERs and the list is closed" {
+  s="$(cond_sec)"
+  line="$(echo "$s" | grep -F '文書そのものの欠陥')"
+  [ -n "$line" ]
+  for k in '観点 1' '観点 2' '観点 4' '観点 5' '観点 6' '「いまの範囲で成り立つ」に当たる' 'この列挙は網羅' '観点 3 の指摘は条件'; do
+    echo "$line" | grep -qF "$k" || { echo "lacks: $k"; return 1; }
+  done
+}
+
+@test "condition stage (#1121): the stage states its scope" {
+  s="$(cond_sec)"
+  line="$(echo "$s" | grep -F 'この段の守備範囲は')"
+  [ -n "$line" ]
+  for k in 'R1 自身が見つけた指摘' '実装を止めること' '通ることを許す' '判定の誤りが 1 件も無いことをこの段の完了条件にしない'; do
+    echo "$line" | grep -qF "$k" || { echo "lacks: $k"; return 1; }
+  done
+}
+
+@test "condition stage (#1121): input, output, record, verdict and round-cap sections use the stage" {
+  input="$(section "$REF" 'レビュアーへの入力')"
+  echo "$input" | grep -qF '`## 条件の答え`'
+  echo "$input" | grep -qF 'エピックの本文'
+  # 出力書式の節はコードブロックに "## " の行を持つので、次の節の見出しまでを切り出す
+  output="$(awk '/^## 出力書式/{f=1} /^## 結果を記録先に/{f=0} f' "$REF")"
+  echo "$output" | grep -qF '成り立つ判定'
+  echo "$output" | grep -qF '`条件の問い:`'
+  echo "$output" | grep -F '判定基準' | grep -qF '指摘の条件を決める段'
+  record="$(section "$REF" '結果を記録先に記録する')"
+  echo "$record" | grep -qF '`捨てた指摘:`'
+  echo "$record" | grep -qF '照合に使わない'
+  cap="$(section "$REF" '往復の上限')"
+  echo "$cap" | grep -qF '指摘の条件を決める段'
+  echo "$cap" | grep -qF '当て直し'
+  echo "$cap" | grep -qF 'この 2 つは方針の問いの数で、条件の問いは数えない'
+}
+
+# --- Requirement: 仕様レビューの残った指摘は直し方の判定の前に条件を確かめる（#1121） ---
+
+@test "condition check (#1121): fix-check.md has the section exactly once and the two timings" {
+  [ "$(grep -c '^## 残った指摘の条件を確かめる' "$FIX_CHECK")" -eq 1 ]
+  s="$(fix_cond_sec)"
+  echo "$s" | grep -qF '周によらず W を再開する前'
+  echo "$s" | grep -qF '2 周目以降の周の終わりに BLOCKER が残ったとき、決める役を起こす前'
+}
+
+@test "condition check (#1121): fix-check.md tells when to read the file including the new cases" {
+  head -3 "$FIX_CHECK" | grep -qF '`条件の問い:`'
+  head -3 "$FIX_CHECK" | grep -qF '後で成り立つ指摘'
+}
+
+@test "condition check (#1121): rechecking is by R1, not counted as a round, and the budget check stays" {
+  s="$(fix_cond_sec)"
+  echo "$s" | grep -qF '当て直しは周に数えない'
+  echo "$s" | grep -qF 'W を再開せず決める役も起こさず、R1 に指摘の当て直しをさせる'
+  echo "$s" | grep -qF '条件の判定が書かれていない BLOCKER'
+  echo "$s" | grep -qF '最新の `仕様レビュー:` のコメントより後に `## 条件の答え` へ行が足された'
+  echo "$s" | grep -qF 'R1 を起こす前の PR トークン上限の計測は省かない'
+  echo "$s" | grep -qF '結果コメントの周の欄は同じ周のまま'
+}
+
+@test "condition check (#1121): findings that will not hold are dropped before the fix verdict" {
+  s="$(fix_cond_sec)"
+  echo "$s" | grep -qF '成り立つ予定が無い指摘は判定に回さず捨てる'
+  echo "$s" | grep -qF '当て直しの結果が `APPROVE` なら直し方の判定を起こさず (3) へ進む'
+  echo "$s" | grep -qF '残った指摘の原文'
+}
+
+@test "condition check (#1121): the question to the owner, unmanned handover and label removal" {
+  s="$(fix_cond_sec)"
+  echo "$s" | grep -qF '指摘を直すか・捨ててよいかを聞かない'
+  echo "$s" | grep -qF 'AskUserQuestion'
+  echo "$s" | grep -qF '問いを PR（無ければ記録先）のコメントに書き'
+  echo "$s" | grep -qF '待ち理由 `条件の問い`'
+  echo "$s" | grep -qF '再開の手順 2 で得た答えを本体が同じ節に足して R1 に当て直させる'
+  echo "$s" | grep -qF '本体は答えを節に足したら、ラベルの付け先から `needs-approval` を外す'
+  echo "$s" | grep -qF 'R1（当て直し）'
+}
+
+@test "condition check (#1121): the NOTE sentence borrows the out-of-scope filing rule" {
+  fix_cond_sec | grep -F '後で成り立つ指摘' | grep -qF '「範囲外の問題の起票」の行き先の決め方（段 B の表・段 D・段 E の問い。エピックの子なら段 C も）を借りて本体が決める'
+  fix_cond_sec | grep -qF '起票してよいかを主に聞かない'
+}
+
+@test "condition check (#1121): not applied to G needs-fix-check and the scope is written" {
+  s="$(fix_cond_sec)"
+  echo "$s" | grep -qF '`needs-fix-check` には当てない'
+  line="$(echo "$s" | grep -F 'この手順の守備範囲は')"
+  [ -n "$line" ]
+  for k in 'R1 の結果の BLOCKER' '「どの直し方か」の問いに回してしまうこと' '本体が疑わずに判定へ回す' '判定の誤りが 1 件も無いことをこの手順の完了条件にしない'; do
+    echo "$line" | grep -qF "$k" || { echo "lacks: $k"; return 1; }
+  done
+}
+
+@test "condition check (#1121): the two-question rule counts policy questions only" {
+  section "$FIX_CHECK" 'レビューの周を主に聞かずに続ける（直し方の判定）' | grep -qF 'この 2 つは方針を聞くときの数で、指摘の条件を聞く問い（節「残った指摘の条件を確かめる」）は数えない'
+}
+
+@test "condition check (#1121): SKILL.md (2) points at the section and passes the condition answers" {
+  s="$(step2_sec)"
+  line="$(echo "$s" | grep -F '残った指摘の条件を確かめる')"
+  [ -n "$line" ] || { echo "no line"; return 1; }
+  echo "$line" | grep -qF '`references/fix-check.md`'
+  echo "$line" | grep -qF 'Read'
+  echo "$line" | grep -qF '直し方の判定の前'
+  echo "$line" | grep -qF '成り立つ予定が無い指摘は判定に回さず捨てる'
+  echo "$s" | grep -F '`## 条件の答え`' | grep -qF '依頼文に入れる'
 }
 
 @test "references: result comment format and posting steps live in spec-reviewer.md" {

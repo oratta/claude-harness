@@ -36,12 +36,28 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
   handover_section | grep -qF 'W の名前は書かない'
 }
 
-@test "handover: one format for the three hold scenes" {
+@test "handover: one format for the four hold scenes" {
   s="$(handover_section)"
-  for k in 'pr-review-gate の保留' 'exit 2' '2 周キャップ超え'; do
+  for k in 'pr-review-gate の保留' 'exit 2' '2 周キャップ超え' '仕様レビューの条件の問い'; do
     printf '%s' "$s" | grep -qF "$k"
   done
   printf '%s' "$s" | grep -qF '場面ごとに別の書式を作らない'
+  printf '%s' "$s" | grep -qF '`条件の問い`'
+  printf '%s' "$s" | grep -qF 'の 4 つで'
+  # 読むときの文（冒頭）と SKILL.md の案内も同じ 4 場面を数える（#1121）
+  head -3 "$HANDOVER" | grep -qF '引き継ぎを書く 4 つの場面'
+  head -3 "$HANDOVER" | grep -qF '仕様レビューの条件の問い'
+  grep -F '引き継ぎを書く 4 つの場面' "$SKILL" | grep -qF '仕様レビューの条件の問い'
+}
+
+@test "handover (#1121): the condition question is posted by the main agent before the handover" {
+  handover_section | grep -F '投稿の順序' | grep -qF 'exit 2 と 2 周キャップ超えと条件の問いは本体が問いを書く'
+}
+
+@test "resume (#1121): a rerun of R1 comes before W" {
+  line="$(handover_section | grep -E '^4\. ')"
+  printf '%s' "$line" | grep -qF '次に起こす役割が R1（当て直し）なら'
+  printf '%s' "$line" | grep -qF '先に R1 を起こし、W はその結果に従って起こす'
 }
 
 @test "handover: posting order is request, handover, guidance and the request may be a PR comment" {
