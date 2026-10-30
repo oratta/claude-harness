@@ -30,7 +30,7 @@ SAFE_FLAGS = {"-F", "--fixed-strings", "-E", "--extended-regexp", "-G",
               "-w", "--word-regexp", "-I", "--text", "--and", "--or", "--not",
               "(", ")"}
 SUMMARY_PREFIX = "全ヒット要約:"
-SUMMARY_MIN_HITS = 50
+SUMMARY_MIN_HITS = 10
 SUMMARY_RE = re.compile(r"([0-9]+) 行 ([0-9a-fA-F]+)")
 MISMATCH_RE = re.compile(r"食い違い: \S.*")
 
@@ -319,23 +319,18 @@ def hash_object(repo, output):
     return result.stdout.decode().strip()
 
 
-def summary_hits(output):
-    """Parse hits a four-column row may point at; Binary file lines have no line number.
+def summary_lines(output):
+    """Return the hit lines a four-column row is looked up in, without parsing them.
 
-    Decoded with the encoding text=True uses, so a row compares as it does in a full table,
-    except that an undecodable hit is left alone: no row can point at it.
+    Nothing is split on colons, so a path with a colon or a Binary file line (no row can
+    spell it) cannot stop the check. Decoded with the encoding text=True uses, so a row
+    compares as it does in a full table; a trailing \\r cannot be copied into a row.
     """
     encoding = locale.getpreferredencoding(False)
-    hits = set()
-    for raw in output.split(b"\n"):
-        if not raw or (raw.startswith(b"Binary file ") and raw.endswith(b" matches")):
-            continue
-        _revision, path, number, body = raw.decode(encoding, "surrogateescape").split(":", 3)
-        hits.add((path, int(number), body.rstrip("\r")))
-    return hits
+    return {raw.decode(encoding, "surrogateescape").rstrip("\r") for raw in output.split(b"\n")}
 
 
-def check_summary(repo, lines, command, head):
+def check_summary(repo, lines, command, sha, head):
     """Compare a 全ヒット要約: table with the rerun search; return the report lines."""
     if head is not None:
         raise ContractError("全ヒット要約 cannot be used with --head")
@@ -343,7 +338,10 @@ def check_summary(repo, lines, command, head):
     if match is None:
         raise ContractError("全ヒット要約 must be: <decimal count> 行 <hex digest>")
     count, digest = int(match[1]), match[2]
-    rows = parse_table(lines) if table_rows(lines, HEADER) is not None else []
+    piped = sum(line.lstrip().startswith("|") for line in lines)
+    rows = parse_table(lines) if piped else []
+    if piped > len(rows) + 2:
+        raise ContractError("rows under 全ヒット要約 must stay in one four-column table")
     for path, number, _body, handling in rows:
         if not MISMATCH_RE.fullmatch(handling):
             raise ContractError(
@@ -361,9 +359,10 @@ def check_summary(repo, lines, command, head):
     if digest != hash_object(root, output):
         report.append("summary: digest differs")
     if rows:
+        hits = summary_lines(output)
         expected = {(path, number, body) for path, number, body, _handling in rows}
-        report += [f"extra: {path}:{number}"
-                   for path, number, _body in sorted(expected - summary_hits(output))]
+        report += [f"extra: {path}:{number}" for path, number, body in sorted(expected)
+                   if f"{sha}:{path}:{number}:{body}" not in hits]
     return report
 
 
@@ -382,7 +381,7 @@ def main():
     search = field(lines, "検索コマンド:")
     command = parse_command(search, sha)
     if any(line.startswith(SUMMARY_PREFIX) for line in lines):
-        report = check_summary(args.repo, lines, command, args.head)
+        report = check_summary(args.repo, lines, command, sha, args.head)
         for line in report:
             print(line)
         return int(bool(report))

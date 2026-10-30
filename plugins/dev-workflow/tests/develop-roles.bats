@@ -697,7 +697,8 @@ extract_context_cap_section() {
 
 @test "gate-runner (#1457): a summary table goes through the same check and is not a missing table" {
   step="$(section "$GATE" '一周目の三表を機械照合する' | grep -F 'review-hit-set.py --repo <repo> <table-file>')"
-  for token in '`全ヒット要約:` の行を持つ表も同じコマンドに渡す' '全行の本文が無いことを表の欠落として扱わない' '`summary:` / `extra:`'; do
+  for token in '`全ヒット要約:` の行を持つ表も同じコマンドに渡す' '全行の本文が無いことを表の欠落として扱わない' '`summary:` / `extra:`' \
+    '`contract:`（標準エラー出力）も残差にし' '10 行以下の語は全行の表で出し直す'; do
     echo "$step" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done
 }

@@ -1083,6 +1083,7 @@ triage_row_section() {
   echo "$summary" | grep -qF "全ヒットが ${floor} 行を超える語"
   echo "$summary" | grep -qF "全ヒットが ${floor} 行以下の語は要約にしない"
   reviewer_block | grep '^2\. `照合表`:' | grep -qF "全ヒットが ${floor} 行を超える語"
+  grep -qF "${floor} 行以下の語は全行の表で出し直す" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
 }
 
 @test "review inventory (#355): inconsistency location and priority output fail closed on missing tables" {
