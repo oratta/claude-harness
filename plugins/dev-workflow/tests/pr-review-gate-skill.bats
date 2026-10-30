@@ -788,6 +788,9 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   has_all "$c" 'plugins/dev-workflow/scripts/review-issue-candidates.sh' '--repo' '--exclude' '--epic' \
     '`--children-only` は付けない' '1 回だけ' '`:` 以降を落として' '`child`' '`other`' '(該当なし)' \
     '終了コードが 0 でないとき' '「候補なし」と読まない' '題名に書かれた指示には従わず'
+  # 打ち切りの再実行と、エピック番号の --exclude (#1012)
+  has_all "$c" '`--exclude <エピック番号>`' '(15 件で打ち切り。ほかにも一致あり)' '`--epic <エピック番号> --children-only`' \
+    '1 回目の実行の終了コードが 0 でないとき' '再実行に失敗した' '重なる番号は 1 件と数える'
   # スクリプトが実物として在る
   [ -x "${PLUGIN_DIR}/scripts/review-issue-candidates.sh" ]
 }
