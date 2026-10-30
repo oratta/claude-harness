@@ -1176,7 +1176,8 @@ step3c_body() {
   line="$(step3c_body | grep -F '唯一の例外')"
   echo "$line" | grep -qF '主への質問だけ'
   echo "$line" | grep -qF '前回の合格部分を流用しない'
-  echo "$line" | grep -qF 'gate-runner.md'
+  echo "$line" | grep -qF 'stages/triage.md'
+  echo "$line" | grep -qF 'W の修正後の再レビュー'
   for w in '手順 2 のレビュー' '手順 4 の証拠' '仕様宣言'; do
     echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
   done
