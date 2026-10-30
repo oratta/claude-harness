@@ -91,7 +91,7 @@ nchars() {
 
 @test "pre-classification: referrers point to pre-classification.md, not roles/worker.md" {
   for f in skills/develop/SKILL.md skills/develop/references/roles/spec-reviewer.md \
-           skills/develop/references/decision-criteria.md skills/pr-review-gate/stages/triage.md \
+           skills/develop/references/decision-criteria.md skills/pr-review-gate/stages/triage-failed.md \
            references/model-tiers.md README.md; do
     grep -qF 'pre-classification.md' "${PLUGIN_DIR}/${f}" || { echo "no pointer: $f"; return 1; }
     if grep -n '事前分類' "${PLUGIN_DIR}/${f}" | grep -qE '(roles/)?worker\.md'; then

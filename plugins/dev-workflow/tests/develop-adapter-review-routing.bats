@@ -15,6 +15,7 @@ setup() {
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
   REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  SUMMARY="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-summary.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
@@ -52,7 +53,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "review (#405): both G instructions record requested to resolved in the existing reviewer line" {
-  for file in "$TRIAGE" "$REVIEW_RUN"; do
+  for file in "$SUMMARY" "$REVIEW_RUN"; do
     grep -qF 'レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）' "$file"
     grep -qF 'execution.model_resolution.requested' "$file"
     grep -qF 'execution.model_resolution.resolved' "$file"
@@ -241,7 +242,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
   form='（adapter 経路・<light|full>・dispatch 記録:'
-  grep -qF "$form" "${TRIAGE}"
+  grep -qF "$form" "${SUMMARY}"
   # review-run は書き分けの段落と PR コメント雛形の両方に持つ
   [ "$(grep -cF "$form" "${REVIEW_RUN}")" -ge 2 ]
 }

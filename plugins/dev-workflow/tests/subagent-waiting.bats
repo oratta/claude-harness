@@ -379,7 +379,7 @@ PY
 @test "gate-runner names both codex launch paths and defers the wait to the canonical contract" {
   # 起動の事実（どのコマンドをどう呼ぶか）は G の指示書に残す
   grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium' "${REVIEW_RUN}"
-  grep -qF 'codex-companion.mjs' "$RUNNER"
+  grep -qF 'codex-companion.mjs' "${REVIEW_RUN}"
   # 待ち方は正本に委ね、上限に達したときの G 固有の分岐だけを持つ
   grep -qF 'references/subagent-waiting.md' "${REVIEW_RUN}"
   grep -qE 'ターンを終え(ない|てはならない)' "${REVIEW_RUN}"

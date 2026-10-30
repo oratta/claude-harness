@@ -76,6 +76,7 @@ PY
 }
 
 prepare_block() { extract_block skills/pr-review-gate/stages/prepare.md "$1"; }
+step1_block() { extract_block skills/pr-review-gate/stages/prepare-step1.md "$1"; }
 pass_block() { extract_block skills/pr-review-gate/stages/pass.md "$1"; }
 push_block() { extract_block skills/push-guard-setup/SKILL.md "$1"; }
 
@@ -178,7 +179,7 @@ install_fixture() {
 }
 
 @test "prepare reset block removes passed and returns a ready PR to draft" {
-  prepare_block 1
+  step1_block 1
   GH_DRAFT=false run bash "$SNIP"
   [ "$status" -eq 0 ]
   grep -qx 'api -X DELETE repos/fixture/repo/issues/42/labels/agent-review:passed' "$CALLS"
@@ -186,14 +187,14 @@ install_fixture() {
 }
 
 @test "prepare reset block leaves an unpassed PR alone" {
-  prepare_block 1
+  step1_block 1
   GH_PASSED=no run bash "$SNIP"
   [ "$status" -eq 0 ]
   [ "$(wc -l < "$CALLS")" -eq 1 ]
 }
 
 @test "prepare criteria block selects the linked issue or falls back to the PR" {
-  prepare_block 2
+  step1_block 2
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   [ "$output" = 'issue acceptance criteria' ]
@@ -206,7 +207,7 @@ install_fixture() {
 }
 
 @test "prepare head block captures the fixed review SHA" {
-  prepare_block 3
+  step1_block 3
   printf '\nprintf "HEAD=%%s\\n" "$HEAD_SHA"\n' >> "$SNIP"
   run bash "$SNIP"
   [ "$status" -eq 0 ]
@@ -214,14 +215,14 @@ install_fixture() {
 }
 
 @test "prepare diff block counts changed lines excluding diff headers" {
-  prepare_block 4
+  prepare_block 1
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   [ "$output" = $'alpha.md\nbeta.sh\n2' ]
 }
 
 @test "pass head block retrieves comments for the fixed SHA" {
-  pass_block 11
+  pass_block 3
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   [ "$output" = 'review: fixed HEAD' ]
@@ -229,7 +230,7 @@ install_fixture() {
 }
 
 @test "pass label block makes a draft ready before adding passed" {
-  pass_block 13
+  pass_block 5
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   ready="$(grep -n '^pr ready ' "$CALLS" | cut -d: -f1)"
@@ -239,7 +240,7 @@ install_fixture() {
 }
 
 @test "pass label block refuses an invalid draft response" {
-  pass_block 13
+  pass_block 5
   GH_DRAFT=unknown run bash "$SNIP"
   [ "$status" -eq 1 ]
   [[ "$output" == *'draft を取得できない'* ]] || return 1
@@ -247,7 +248,7 @@ install_fixture() {
 }
 
 @test "pass label block stops when ready fails" {
-  pass_block 13
+  pass_block 5
   GH_FAIL_READY=1 run bash "$SNIP"
   [ "$status" -eq 1 ]
   [[ "$output" == *'gh pr ready に失敗'* ]] || return 1
