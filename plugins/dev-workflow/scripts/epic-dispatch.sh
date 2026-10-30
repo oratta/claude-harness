@@ -1225,7 +1225,8 @@ resolve_stopped() {
   local judge="${EPIC_DISPATCH_JUDGE:-$(dirname "$0")/stop-judge.sh}"
   local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body rl wpath
   local head1="親の判断: 判断できなかった"
-  local rec="" su="" stopjson="$STOP_DIR/$(var_key "$n")"
+  local rec="" su="" stopjson
+  stopjson="$STOP_DIR/$(var_key "$n")"
   if child_record "$PARENT_TOP" "$n"; then rec="$ES_HIT"; su="$(es_get "$rec" stop_uuid)"; fi
   # 会話ログを読めなかった止まりは JSON が無いので、引数を 2 つで呼ぶ
   if [ -e "$stopjson" ]; then
@@ -1502,7 +1503,7 @@ detect_stopped() {
         *) return 3 ;;
       esac ;;
     *)
-      [ "$(es_get "$f" status)" != done ] && [ -n "$json" ] || return 1 ;;
+      [ "$(es_get "$f" status)" != "done" ] && [ -n "$json" ] || return 1 ;;
   esac
   if [ -n "$json" ]; then
     printf '%s' "$json" | jq -e --argjson marked "$marked" --arg su "$su" \
