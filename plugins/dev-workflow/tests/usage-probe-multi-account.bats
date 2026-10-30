@@ -566,11 +566,18 @@ PY
 @test "test mode: an empty USAGE_PROBE_RESPONSE_FILE does not force the test path" {
   # 空文字は main と同じく本番経路。テスト経路に入ると無言で exit 0 してしまう。
   # 本番経路では Keychain / curl に進むが、認証が取れなければ fail-open で snapshot を書かない。
-  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+  # HOME と PATH の security は足場で隔離する（本物の認証情報と Keychain を読まない）。
+  # 代役の security は何も返さない（認証なし）ので、本番経路に進んでも snapshot は書かれない。
+  setup_keychain_stubs
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/security-calls"\nexit 44\n' "$WORK" > "${STUB}/security"
+  run env PATH="${STUB}:${PATH}" HOME="${WORK}/home" \
+      USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
       USAGE_PROBE_RESPONSE_FILE="" USAGE_PROBE_ENDPOINT="http://127.0.0.1:9/none" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
   [ ! -f "$SNAP" ]
+  # 本番経路に入った証拠: 足場の security が引かれている
+  [ -s "${WORK}/security-calls" ]
 }
 
 @test "test mode: a per-slot response file alone still selects the test path" {
