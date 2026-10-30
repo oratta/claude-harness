@@ -12,5 +12,6 @@
 [ "${CAPABILITY_REGISTRY_SECRET_GUARD:-}" = "off" ] && exit 0
 command -v python3 >/dev/null 2>&1 || exit 0
 
-python3 -I "${0%/*}/secret-guard.py"
+d=${0%/*}; [ "$d" = "$0" ] && d=.
+python3 -I "$d/secret-guard.py"
 exit 0
