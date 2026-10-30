@@ -10,6 +10,7 @@
 - `## 条件の答え` の行を、本体が R1 の依頼文に入れる
 - `references/fix-check.md` に、仕様レビューの残った指摘の条件を直し方の判定の前に確かめる節を足す。成り立つ予定が無い指摘は判定に回さず捨てる。SKILL.md の 1 ループの (2) には短く書いてこの節を指す
 - flatmate #702 の指摘を例に載せる
+- unmanned で条件の問いを主に聞くときの引き継ぎの場面を `references/handover.md` に足し、`待ち理由` の値に `条件の問い` を足す
 - PR のレビュー側（G の `needs-fix-check`）は変えない
 
 ## Capabilities
@@ -21,12 +22,12 @@
 ### Modified Capabilities
 
 - `dev-workflow-spec-review`: R1 の BLOCKER の判定に条件の段を足す。「主に聞くのは 2 つだけ」の数え方を、方針の問いの数だと明記する
-- `dev-workflow-develop`: 直し方の判定の前に条件を確かめる段を足す。「主に聞くのは 2 つだけ」の数え方を同じく明記する
+- `dev-workflow-develop`: 直し方の判定の前に条件を確かめる段を足す。「主に聞くのは 2 つだけ」の数え方を同じく明記する。引き継ぎの場面に仕様レビューの条件の問いを足す
 
 ## Impact
 
-- 文書: `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md`、`plugins/dev-workflow/skills/develop/references/fix-check.md`、`plugins/dev-workflow/skills/develop/SKILL.md`（(2) の該当行だけ）
+- 文書: `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md`、`plugins/dev-workflow/skills/develop/references/fix-check.md`、`plugins/dev-workflow/skills/develop/references/handover.md`、`plugins/dev-workflow/skills/develop/SKILL.md`（(2) の該当行と、引き継ぎの場面を数える 1 行）
 - 予算: SKILL.md は `tests/develop-startup-budget.txt` の予算ちょうどなので、増えた分だけ予算を動かし、理由を PR に書く
-- テスト: `plugins/dev-workflow/tests/spec-decision-and-review.bats`
+- テスト: `plugins/dev-workflow/tests/spec-decision-and-review.bats`、`plugins/dev-workflow/tests/develop-handover.bats`
 - 記録: `plugins/dev-workflow/changes/1121.md`
 - `triage.md`・`reviewer-brief.md`・`agents/decider.md` は変えない。新しいスクリプトは足さない
