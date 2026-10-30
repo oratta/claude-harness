@@ -4396,6 +4396,8 @@ make_judge() {
   cat > "$STUB_BIN/judge" <<'EOF'
 #!/bin/bash
 { printf '%s' judge; printf ' %q' "$@"; echo; } >> "$STUB_LOG"
+[ -z "${3-}" ] || cp "$3" "$STUB_CFG/judge_json"
+[ ! -e "$STUB_CFG/judge_hook" ] || bash "$STUB_CFG/judge_hook"
 if [ -e "$STUB_CFG/judge_out_$2" ]; then cat "$STUB_CFG/judge_out_$2"; else cat "$STUB_CFG/judge_out" 2>/dev/null; fi
 exit "$(cat "$STUB_CFG/judge_exit" 2>/dev/null || echo 0)"
 EOF
@@ -4427,7 +4429,7 @@ resolve_ready() {
   [ "$output" = "closed 11" ]
   [ "$(calls '^judge 400 11$')" -eq 1 ]
   [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
   [ "$(first_line '^orca terminal send')" -lt "$(first_line '^gh issue comment 400')" ]
   [ ! -e "$STUB_CFG/comment_11" ]
 }
@@ -4440,7 +4442,7 @@ resolve_ready() {
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "closed 11" ]
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
 }
 
 @test "wait --resolve: a sent pass that cannot be posted on the epic wakes the parent with unrecorded" {
@@ -4461,7 +4463,8 @@ resolve_ready() {
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: 不明" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
   grep -qF '主の好みが要る' "$STUB_CFG/comment_11"
   [ "$(calls '^orca terminal')" -eq 0 ]
   [ ! -e "$STUB_CFG/comment_400" ]
@@ -4484,7 +4487,7 @@ resolve_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: 不明" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: 不明" ]
   [ "$(calls '^orca terminal')" -eq 0 ]
 }
 
@@ -4495,7 +4498,7 @@ resolve_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
   [ "$(calls '^orca terminal')" -eq 0 ]
   resolve_ready
   rm -f "$STUB_CFG/comment_11" "$STUB_CFG/ghcount_11"
@@ -4544,7 +4547,7 @@ resolve_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 通すが送れなかった" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
   grep -qF '推奨どおり進めてよい' "$STUB_CFG/comment_11"
   grep -qF 'failed 11 send' "$STUB_CFG/comment_11"
   [ ! -e "$STUB_CFG/comment_400" ]
@@ -4970,7 +4973,7 @@ resolve_pass() {
   [ "$(calls '^orca terminal create')" -eq 1 ]
   [ "$(calls '^orca terminal send')" -ge 1 ]
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
 }
 
 @test "wait --resolve relaunch: under 60 minutes sends as is" {
@@ -6374,7 +6377,7 @@ assert_resolve_delivery() {
   else
     [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
   fi
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
 }
 
 @test "wait --resolve relaunch: short idle size boundary and context exit 0 or 2" {
@@ -7003,6 +7006,69 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
   [ "$output" = "stopped 11" ]
   [ "$(rec_get 11 stop_uuid)" = u2 ]
   [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
+}
+
+# 記録も印も無い子 11 が会話ログで止まっていて端末が 1 つある環境（2 回目のポーリングで子 11 が閉じる）
+log_resolve_ready() {
+  make_stub orca
+  make_judge
+  set_current 400
+  gh_seq 11 open closed
+  put_record 11
+  set_terms 11 term-a-11
+  put_chat 11 s1 "$(said u1 "$(ago 300)" 'ここに秘密の本文')" "$(turn_end "$(ago 300)")"
+}
+
+@test "wait --resolve log: the judge gets the stop JSON, and an escalation posts the uuid without the statement" {
+  log_resolve_ready
+  judge_says judge_out 主に上げる 主の判断が要る '' なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(jq -r .text "$STUB_CFG/judge_json")" = 'ここに秘密の本文' ]
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = u1 ]
+  [ "$(jq -r .marked "$STUB_CFG/judge_json")" = false ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: u1" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
+  [ "$(sed -n 4p "$STUB_CFG/comment_11")" = "主の判断が要る" ]
+  ! grep -qF '秘密の本文' "$STUB_CFG/comment_11"
+}
+
+@test "wait --resolve log: a pass names the uuid, and adds the URL only when there is a record" {
+  log_resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 u1" ]
+}
+
+@test "wait --resolve log: a statement that is not a question goes back to resumed, wakes nobody and sends nothing" {
+  log_resolve_ready
+  printf '判断: 問いではない\n理由: 完了の報告\n返事:\n記録: なし\n' > "$STUB_CFG/judge_out"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  grep -qF '問いではない 11 完了の報告' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^judge 400 11 ')" -eq 1 ]
+  [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ ! -e "$STUB_CFG/comment_400" ]
+  [ ! -e "$STUB_CFG/comment_11" ]
+}
+
+@test "wait --resolve log: a not-a-question that cannot be written back still wakes the parent" {
+  log_resolve_ready
+  printf '判断: 問いではない\n理由: 完了の報告\n返事:\n記録: なし\n' > "$STUB_CFG/judge_out"
+  printf 'mkdir %q\n' "$(rec_of 1122 11).lock" > "$STUB_CFG/judge_hook"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: u1" ]
 }
 
 @test "child-log: no children or no jq is an error with empty stdout" {

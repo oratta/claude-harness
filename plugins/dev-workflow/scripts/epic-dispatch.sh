@@ -108,11 +108,15 @@
 #   `done <N>...`・`stopped <N>...` を該当するものだけこの順に（1〜3 行）出して exit 0。
 #   --watch-done も --watch-stopped（子 1 件以上）も無ければ記録を読まない。
 #   --resolve <epic>（--watch-stopped と位置引数の子が 1 件以上あるときだけ働く）を付けると、止まった子ごとに
-#   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child>` で 1 回呼ぶ。
+#   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child> <止まりの
+#   JSON のパス>` で 1 回呼ぶ（会話ログを読めなかった止まりは JSON が無いので `<epic> <child>`）。
 #   `判断: 通す` で返事が空でなければ reply --as parent と同じ処理で送り、sent / relaunched ならエピックに
-#   `親の判断: 子 #<N> 通した — <理由> <記録>` を投稿して出力から外す（投稿に失敗したら `unrecorded` に入れ、
-#   stderr に投稿し直しのコマンド）。`判断: 主に上げる` は子 issue に `親の判断: 主に上げる`、判断の失敗・
-#   形の崩れは `親の判断: 判断できなかった`、通すで送信の失敗は `親の判断: 通すが送れなかった` を、2 行目 `停止の記録: <URL か 不明>` 付きで投稿して
+#   `親の判断: 子 #<N> 通した — <理由> 発言 <uuid か 不明>`（記録の URL があれば末尾に足す）を投稿して
+#   出力から外す（投稿に失敗したら `unrecorded` に入れ、stderr に投稿し直しのコマンド）。
+#   `判断: 問いではない` は記録の stop を resumed に戻し、stderr に `問いではない <N> <理由>` を出して出力から外す
+#   （子にも issue にも何も送らない）。`判断: 主に上げる` は子 issue に `親の判断: 主に上げる`、判断の失敗・
+#   形の崩れは `親の判断: 判断できなかった`、通すで送信の失敗は `親の判断: 通すが送れなかった` を、2 行目
+#   `止まりの発言: <uuid か 不明>`、3 行目 `停止の記録: <URL か なし か 不明>` 付きで投稿して
 #   `stopped` に残す（投稿に失敗したら stderr に投稿し直しのコマンド）。出力は closed / done / stopped /
 #   unrecorded の順の 1〜4 行。--resolve が無ければ判断を呼ばず、unrecorded も出さない。
 #   --resolve の値が無い・数字でない、または返事の送り方の環境変数が誤っていれば使い方を出して exit 1
@@ -1203,13 +1207,21 @@ EOF_ST
 # wait --resolve: 止まった子 1 件を判断のコマンドに渡し、結果どおりに送るか子 issue に残す
 # （<epic> <child>）。need_parent と agent_setup を済ませてから呼ぶ。
 # 戻り値 0 = 通して返事を送り、エピックに 1 行残した（出力から外す）/ 2 = 通して送ったが
-# エピックに残せなかった（unrecorded）/ 1 = 主に上げる・判断できなかった（stopped に残す）
+# エピックに残せなかった（unrecorded）/ 1 = 主に上げる・判断できなかった（stopped に残す）。
+# 「問いではない」は記録を resumed に戻して 0（親を起こさず、子にも issue にも何も送らない）
 resolve_stopped() {
   local epic="$1" n="$2"
   local judge="${EPIC_DISPATCH_JUDGE:-$(dirname "$0")/stop-judge.sh}"
   local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body rl wpath
   local head1="親の判断: 判断できなかった"
-  out="$("$judge" "$epic" "$n")"; rc=$?
+  local rec="" su="" stopjson="$STOP_DIR/$(var_key "$n")"
+  if child_record "$PARENT_TOP" "$n"; then rec="$ES_HIT"; su="$(es_get "$rec" stop_uuid)"; fi
+  # 会話ログを読めなかった止まりは JSON が無いので、引数を 2 つで呼ぶ
+  if [ -e "$stopjson" ]; then
+    out="$("$judge" "$epic" "$n" "$stopjson")"; rc=$?
+  else
+    out="$("$judge" "$epic" "$n")"; rc=$?
+  fi
   l1="$(printf '%s\n' "$out" | sed -n 1p)"
   l2="$(printf '%s\n' "$out" | sed -n 2p)"
   l3="$(printf '%s\n' "$out" | sed -n 3p)"
@@ -1223,24 +1235,33 @@ resolve_stopped() {
   elif [ -z "$l2" ] || [ -z "$l3" ] || [ -z "$url" ]; then
     why="判断の出力を 4 行の形で読めなかった"
   elif [ "$l1" = "判断: 主に上げる" ]; then
-    body="$(printf '親の判断: 主に上げる\n停止の記録: %s\n%s' "$url" "$reason")"
+    body="$(printf '親の判断: 主に上げる\n止まりの発言: %s\n停止の記録: %s\n%s' "${su:-不明}" "$url" "$reason")"
     gh issue comment "$(child_ref "$n")" --body "$body" >&2 || repost_hint "$(child_ref "$n")" "$body"
     return 1
+  elif [ "$l1" = "判断: 問いではない" ]; then
+    rc=3
+    [ -z "$rec" ] || { stop_to_resumed "$rec"; rc=$?; }
+    # 4 は判断のあいだに止まりが外れていた場合で、戻すものが無い
+    case "$rc" in
+      0|4) printf '問いではない %s %s\n' "$n" "$reason" >&2; return 0 ;;
+    esac
+    why="判断は問いではないだが、記録を再開に戻せなかった"
   elif [ "$l1" != "判断: 通す" ]; then
-    why="判断の出力の 1 行目が「判断: 通す」でも「判断: 主に上げる」でもない"
+    why="判断の出力の 1 行目が「判断: 通す」「判断: 主に上げる」「判断: 問いではない」のどれでもない"
   elif [ -z "$reply" ]; then
     why="判断は通すだが、返事の行が空"
   else
     rl=0
     # 子のワークツリーのパスは記録の worktree から読む（読めなければそのまま送る）
     wpath=""
-    if child_record "$PARENT_TOP" "$n"; then wpath="$(es_get "$ES_HIT" worktree)"; fi
+    [ -z "$rec" ] || wpath="$(es_get "$rec" worktree)"
     [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath")"
     res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply")"
     case "$res" in
       "sent $n"|"relaunched $n")
         # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに通していない判断が残る）
-        line="親の判断: 子 $(child_label "$n") 通した — $reason $url"
+        line="親の判断: 子 $(child_label "$n") 通した — $reason 発言 ${su:-不明}"
+        [ "$url" = なし ] || line="$line $url"
         if gh issue comment "$epic" --body "$line" >&2; then
           return 0
         fi
@@ -1253,7 +1274,7 @@ resolve_stopped() {
   # 判断の出力そのものは公開の子 issue に貼らない（モデルの入力には gitignore 済みの配役表も入るので、
   # 出力に引用されうる）。見たいときのために stderr にだけ出す
   [ -n "$out" ] && printf 'judge output for #%s:\n%s\n' "$n" "$out" >&2
-  body="$(printf '%s\n停止の記録: %s\n%s' "$head1" "${url:-不明}" "$why")"
+  body="$(printf '%s\n止まりの発言: %s\n停止の記録: %s\n%s' "$head1" "${su:-不明}" "${url:-不明}" "$why")"
   gh issue comment "$(child_ref "$n")" --body "$body" >&2 || repost_hint "$(child_ref "$n")" "$body"
   return 1
 }
