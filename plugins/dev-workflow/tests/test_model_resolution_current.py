@@ -138,3 +138,18 @@ for configuration, index, fable, shared in itertools.product(
     name = 'test_' + '_'.join((configuration, ROLES[index], fable, shared)).replace(':', '_').replace('-', '_')
     setattr(ModelResolutionCurrent, name,
             case(configuration, index, fable, shared, EXPECTED[configuration][index]))
+
+
+class ModelTiersDocument(unittest.TestCase):
+    # model-tiers.md still states the Claude aliases for people; they must not drift from the map.
+    def test_the_document_agrees_with_the_claude_column_of_the_map(self):
+        table = json.loads((SCRIPT.parents[1] / 'references/model-tier-map.json').read_text())
+        claude = table['executors']['claude']
+        text = (SCRIPT.parents[1] / 'references/model-tiers.md').read_text()
+        rows = {row.split('|')[1].strip().strip('`'): row.split('|')[3].strip().strip("`'")
+                for row in text.splitlines() if row.startswith('| `')}
+        self.assertEqual(rows['haiku'], claude['最安'])
+        self.assertEqual(rows['sonnet'], claude['中位'])
+        self.assertEqual(rows['fable'], claude['最上位'])
+        self.assertIn(f"重めの実装・レビューを中位ティアで回すときは `'{claude['上位']}'` を渡す", text)
+        self.assertIn('上の格の `上位` に当たる', text)
