@@ -5080,17 +5080,17 @@ resolve_pass() {
   set_current 400
   old="$(jq -rn '(now - 900) | floor | todate')"
   newer="$(jq -rn '(now - 300) | floor | todate')"
-  put_record 11 stop=stopped-seen stop_uuid=u1
-  put_chat 11 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"u1"}')" "$(chat_line assistant "$newer" '進めます' '{"uuid":"u1b"}')"
-  put_record 12 stop=stopped-seen stop_uuid=u2
-  put_chat 12 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"u2"}')"
-  put_record 13 stop=stopped-seen stop_uuid=u3
-  put_record 14 stop=stopped-seen stop_uuid=u4
-  put_chat 14 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"u4"}')" "$(chat_line user "$newer" 'こちらで' '{"uuid":"i4"}')"
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d1"}')" "$(chat_line assistant "$newer" '進めます' '{"uuid":"d1b"}')"
+  put_record 12 stop=stopped-seen stop_uuid=d2
+  put_chat 12 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d2"}')"
+  put_record 13 stop=stopped-seen stop_uuid=d3
+  put_record 14 stop=stopped-seen stop_uuid=d4
+  put_chat 14 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d4"}')" "$(chat_line user "$newer" 'こちらで' '{"uuid":"i4"}')"
   before="$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)"
   run dispatch pending-owner 11 12 13 14
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
-  [ "$output" = "$(printf 'pending 12 u2\npending 13 u3')" ]
+  [ "$output" = "$(printf 'pending 12 d2\npending 13 d3')" ]
   [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
 }
 
@@ -6900,12 +6900,12 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
   make_stub orca
   gh_seq 11 open
   put_record 11
-  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
   run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
   [ "$status" -eq 0 ]
   [ "$output" = "stopped 11" ]
   [ "$(rec_get 11 stop)" = stopped-seen ]
-  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
   [ "$(rec_get 11 stop_at)" != null ]
   [ "$(calls "--comment epic-stopped-seen\$")" -eq 1 ]
 }
@@ -6913,15 +6913,15 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
 @test "wait log: mid-turn, input after the statement, or a done record is not a stop" {
   make_stub orca
   put_record 11
-  put_chat 11 s1 "$(said u1 "$(ago 300)")"
+  put_chat 11 s1 "$(said d1 "$(ago 300)")"
   wait_stop
   [ "$status" -eq 2 ]
   [ -z "$(rec_get 11 stop)" ]
-  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(chat_line user "$(ago 290)" '続けて')"
+  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(chat_line user "$(ago 290)" '続けて')"
   wait_stop
   [ "$status" -eq 2 ]
   put_record 11 status=done
-  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
   wait_stop
   [ "$status" -eq 2 ]
   [ -z "$(rec_get 11 stop)" ]
@@ -6930,7 +6930,7 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
 @test "wait log: a background notification is not an input" {
   make_stub orca
   put_record 11
-  put_chat 11 s1 "$(bg_start t1 "$(ago 400)")" "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(bg_note t1 "$(ago 200)")"
+  put_chat 11 s1 "$(bg_start t1 "$(ago 400)")" "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(bg_note t1 "$(ago 200)")"
   wait_stop
   [ "$output" = "stopped 11" ]
 }
@@ -6938,7 +6938,7 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
 @test "wait log: idle times depend on background tasks, an unanswered question does not wait, and bad values use the defaults" {
   make_stub orca
   put_record 11
-  put_chat 11 s1 "$(said u1 "$(ago 60)")" "$(turn_end "$(ago 60)")"
+  put_chat 11 s1 "$(said d1 "$(ago 60)")" "$(turn_end "$(ago 60)")"
   wait_stop
   [ "$status" -eq 2 ]
   EPIC_DISPATCH_STOP_IDLE_SEC=abc wait_stop
@@ -6946,23 +6946,23 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
   EPIC_DISPATCH_STOP_IDLE_SEC=30 wait_stop
   [ "$output" = "stopped 11" ]
   put_record 11
-  put_chat 11 s1 "$(bg_start t1 "$(ago 700)")" "$(said u1 "$(ago 600)")" "$(turn_end "$(ago 600)")"
+  put_chat 11 s1 "$(bg_start t1 "$(ago 700)")" "$(said d1 "$(ago 600)")" "$(turn_end "$(ago 600)")"
   wait_stop
   [ "$status" -eq 2 ]
-  put_chat 11 s1 "$(bg_start t1 "$(ago 2000)")" "$(said u1 "$(ago 1900)")" "$(turn_end "$(ago 1900)")"
+  put_chat 11 s1 "$(bg_start t1 "$(ago 2000)")" "$(said d1 "$(ago 1900)")" "$(turn_end "$(ago 1900)")"
   wait_stop
   [ "$output" = "stopped 11" ]
   put_record 11
-  put_chat 11 s1 "$(chat_line assistant "$(ago 12)" '確認します' '{"uuid":"u0"}')" "$(asked u2 "$(ago 10)")"
+  put_chat 11 s1 "$(chat_line assistant "$(ago 12)" '確認します' '{"uuid":"d0"}')" "$(asked d2 "$(ago 10)")"
   wait_stop
   [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = u2 ]
+  [ "$(rec_get 11 stop_uuid)" = d2 ]
 }
 
 @test "wait log: subagent activity counts as the last activity" {
   make_stub orca
   put_record 11
-  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
   d="$(dirname "$(ls "$BATS_TEST_TMPDIR"/projects/*/s1.jsonl)")"
   mkdir -p "$d/s1/subagents"
   chat_line assistant "$(ago 5)" '調査中' > "$d/s1/subagents/a.jsonl"
@@ -6973,19 +6973,19 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
 @test "wait log: a marked child waits for the end of the turn, a question or the long idle time" {
   make_stub orca
   put_record 11 stop=stopped
-  put_chat 11 s1 "$(said u1 "$(ago 30)")"
+  put_chat 11 s1 "$(said d1 "$(ago 30)")"
   wait_stop
   [ "$status" -eq 2 ]
   [ "$(rec_get 11 stop)" = stopped ]
-  put_chat 11 s1 "$(said u1 "$(ago 5)")" "$(turn_end "$(ago 5)")"
+  put_chat 11 s1 "$(said d1 "$(ago 5)")" "$(turn_end "$(ago 5)")"
   wait_stop
   [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
   put_record 11 stop=stopped
-  put_chat 11 s1 "$(said u2 "$(ago 2000)")"
+  put_chat 11 s1 "$(said d2 "$(ago 2000)")"
   wait_stop
   [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = u2 ]
+  [ "$(rec_get 11 stop_uuid)" = d2 ]
 }
 
 @test "wait log: a marked child with no readable log is returned with an empty uuid" {
@@ -6999,37 +6999,50 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
 
 @test "wait log: the same statement is not judged twice, and an empty stop_uuid is filled silently" {
   make_stub orca
-  put_record 11 stop=resumed stop_uuid=u1
-  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  put_record 11 stop=resumed stop_uuid=d1
+  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
   wait_stop
   [ "$status" -eq 2 ]
   [ "$(rec_get 11 stop)" = resumed ]
   put_record 11 stop=stopped-seen stop_at=2026-01-01T00:00:00Z
   wait_stop
   [ "$status" -eq 2 ]
-  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
   [ "$(rec_get 11 stop_at)" = 2026-01-01T00:00:00Z ]
   [ "$(rec_get 11 stop)" = stopped-seen ]
 }
 
+@test "wait log: a log uuid outside [0-9a-f-] reaches neither the record nor pending-owner" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop=stopped-seen
+  put_chat 11 s1 "$(said 'a-1;pending-12' "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  wait_stop
+  [ "$status" -eq 2 ]
+  [ "$(rec_get 11 stop_uuid)" = null ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'pending 11' ]
+}
+
 @test "wait log: movement after the stop is written as resumed, for positional and --watch-done children" {
   make_stub orca
-  put_record 11 stop=stopped-seen stop_uuid=u1
-  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(chat_line user "$(ago 200)" '続けて')"
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(chat_line user "$(ago 200)" '続けて')"
   wait_stop
   [ "$status" -eq 2 ]
   [ "$(rec_get 11 stop)" = resumed ]
   [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
-  put_record 12 stop=stopped-seen stop_uuid=u1
-  put_chat 12 s1 "$(said u1 "$(ago 300)")" "$(said u2 "$(ago 10)")"
+  put_record 12 stop=stopped-seen stop_uuid=d1
+  put_chat 12 s1 "$(said d1 "$(ago 300)")" "$(said d2 "$(ago 10)")"
   run dispatch wait --interval 0 --timeout 0 --watch-done 12
   [ "$(rec_get 12 stop)" = resumed ]
 }
 
 @test "wait log: a keepalive round trip is not movement" {
   make_stub orca
-  put_record 11 stop=stopped-seen stop_uuid=u1
-  put_chat 11 s1 "$(said u1 "$(ago 300)")" "$(turn_end "$(ago 300)")" \
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" \
     "$(chat_line user "$(ago 200)" "$(render_keepalive)" '{"uuid":"k1"}')" \
     "$(chat_line assistant "$(ago 190)" "$(keepalive_reply)" '{"uuid":"k2"}')"
   wait_stop
@@ -7039,11 +7052,11 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
 
 @test "wait log: restating after a background notification resumes first and is a new stop" {
   make_stub orca
-  put_record 11 stop=stopped-seen stop_uuid=u1
-  put_chat 11 s1 "$(said u1 "$(ago 400)")" "$(turn_end "$(ago 400)")" "$(bg_note t1 "$(ago 300)")" "$(said u2 "$(ago 290)")" "$(turn_end "$(ago 290)")"
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(said d1 "$(ago 400)")" "$(turn_end "$(ago 400)")" "$(bg_note t1 "$(ago 300)")" "$(said d2 "$(ago 290)")" "$(turn_end "$(ago 290)")"
   wait_stop
   [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = u2 ]
+  [ "$(rec_get 11 stop_uuid)" = d2 ]
   [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
 }
 
@@ -7055,7 +7068,7 @@ log_resolve_ready() {
   gh_seq 11 open closed
   put_record 11
   set_terms 11 term-a-11
-  put_chat 11 s1 "$(said u1 "$(ago 300)" 'ここに秘密の本文')" "$(turn_end "$(ago 300)")"
+  put_chat 11 s1 "$(said d1 "$(ago 300)" 'ここに秘密の本文')" "$(turn_end "$(ago 300)")"
 }
 
 @test "wait --resolve log: the judge gets the stop JSON, and an escalation posts the uuid without the statement" {
@@ -7065,10 +7078,10 @@ log_resolve_ready() {
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
   [ "$(jq -r .text "$STUB_CFG/judge_json")" = 'ここに秘密の本文' ]
-  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = u1 ]
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d1 ]
   [ "$(jq -r .marked "$STUB_CFG/judge_json")" = false ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: u1" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: d1" ]
   [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
   [ "$(sed -n 4p "$STUB_CFG/comment_11")" = "主の判断が要る" ]
   ! grep -qF '秘密の本文' "$STUB_CFG/comment_11"
@@ -7080,7 +7093,7 @@ log_resolve_ready() {
   run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "closed 11" ]
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 u1" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 d1" ]
 }
 
 @test "wait --resolve log: a statement that is not a question goes back to resumed, wakes nobody and sends nothing" {
@@ -7090,7 +7103,7 @@ log_resolve_ready() {
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "closed 11" ]
   [ "$(rec_get 11 stop)" = resumed ]
-  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
   grep -qF '問いではない 11 完了の報告' "$BATS_TEST_TMPDIR/stderr"
   [ "$(calls '^judge 400 11 ')" -eq 1 ]
   [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
@@ -7107,7 +7120,7 @@ log_resolve_ready() {
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: u1" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: d1" ]
 }
 
 # --- dismiss ---
@@ -7115,12 +7128,12 @@ log_resolve_ready() {
 
 @test "dismiss: a received stop goes back to resumed, keeps the uuid and time, and sends nothing" {
   make_stub orca
-  put_record 11 stop=stopped-seen stop_uuid=u1 stop_at=2026-10-26T00:00:00Z
+  put_record 11 stop=stopped-seen stop_uuid=d1 stop_at=2026-10-26T00:00:00Z
   run dispatch dismiss 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "dismissed 11" ]
   [ "$(rec_get 11 stop)" = resumed ]
-  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
   [ "$(rec_get 11 stop_at)" = 2026-10-26T00:00:00Z ]
   [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
   [ "$(calls '^orca terminal send')" -eq 0 ]
@@ -7141,7 +7154,7 @@ log_resolve_ready() {
 @test "dismiss: an unreadable record fails and is left as it is, and the other children still run" {
   make_stub orca
   put_record 11 stop=paused
-  put_record 12 stop=stopped-seen stop_uuid=u2
+  put_record 12 stop=stopped-seen stop_uuid=d2
   before="$(cat "$(rec_of 1122 11)")"
   run dispatch dismiss 11 12
   [ "$status" -eq 1 ]
@@ -7151,12 +7164,12 @@ log_resolve_ready() {
 
 @test "dismiss: two records for one child are ambiguous, and a locked record fails" {
   make_stub orca
-  put_record 11 stop=stopped-seen stop_uuid=u1
-  put_record 11 epic=oratta/claude-harness#1123 stop=stopped-seen stop_uuid=u1
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_record 11 epic=oratta/claude-harness#1123 stop=stopped-seen stop_uuid=d1
   run dispatch dismiss 11
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 ambiguous-worktree" ]
-  put_record 12 stop=stopped-seen stop_uuid=u2
+  put_record 12 stop=stopped-seen stop_uuid=d2
   mkdir "$(rec_of 1122 12).lock"
   EPIC_STATE_LOCK_TIMEOUT=0 run dispatch dismiss 12
   [ "$status" -eq 1 ]
@@ -7176,7 +7189,7 @@ log_resolve_ready() {
 
 @test "dismiss: the same statement is not judged again and is not pending" {
   log_resolve_ready
-  put_record 11 stop=stopped-seen stop_uuid=u1
+  put_record 11 stop=stopped-seen stop_uuid=d1
   run dispatch dismiss 11
   [ "$output" = "dismissed 11" ]
   run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
@@ -7190,7 +7203,7 @@ log_resolve_ready() {
 
 @test "dismiss: the child is back in the done inference" {
   infer_ready
-  put_record 11 extra=1 stop=stopped-seen stop_uuid=u1
+  put_record 11 extra=1 stop=stopped-seen stop_uuid=d1
   run dispatch dismiss 11
   [ "$output" = "dismissed 11" ]
   run dispatch wait --interval 0 --timeout 60 --watch-done 11
@@ -7543,20 +7556,20 @@ reset_keepalive_poll() {
     [ "$(calls '^orca terminal send ')" -eq "$1" ]
   }
   at() { jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - $1))" '$t | todate'; }
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=u1 "stop_at=$(at 86399)"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 86399)"
   send_count 1
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=u1 "stop_at=$(at 86400)"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 86400)"
   send_count 0
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=u1
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1
   send_count 0
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=u1 "stop_at=$(at 3600)"
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 u0"}]' > "$STUB_CFG/comments_1122"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 3600)"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d0"}]' > "$STUB_CFG/comments_1122"
   send_count 1
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 u1"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1"}]' > "$STUB_CFG/comments_1122"
   send_count 0
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 u1 https://example/stop"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1 https://example/stop"}]' > "$STUB_CFG/comments_1122"
   send_count 0
-  echo '[{"author_association":"NONE","body":"親の判断: 子 #11 通した — 範囲の内側 発言 u1"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"NONE","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1"}]' > "$STUB_CFG/comments_1122"
   send_count 1
 }
 

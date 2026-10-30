@@ -35,7 +35,7 @@ read_log() { python3 "$READER" "$DIR"; }
 field() { read_log | jq -r "$1"; }
 
 @test "a child question that ended the turn gives the uuid, text and turn_ended" {
-  { user u0 2026-10-30T00:00:00.000Z 'はじめて'
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'
     child c1 2026-10-30T00:01:00.000Z '続けてよいですか'
     turn_end 2026-10-30T00:01:01.000Z; } > "$LOG"
   run read_log
@@ -54,9 +54,9 @@ field() { read_log | jq -r "$1"; }
 }
 
 @test "the middle of a turn is not turn_ended" {
-  { user u0 2026-10-30T00:00:00.000Z 'はじめて'
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'
     turn_end 2026-10-30T00:00:01.000Z
-    user u1 2026-10-30T00:01:00.000Z 'つづき'
+    user d1 2026-10-30T00:01:00.000Z 'つづき'
     child c1 2026-10-30T00:01:10.000Z 'いま進めています'
     tool_use t1 2026-10-30T00:01:11.000Z tu1 Bash '{command: "ls"}'; } > "$LOG"
   [ "$(field .turn_ended)" = false ]
@@ -65,16 +65,16 @@ field() { read_log | jq -r "$1"; }
 
 @test "an unanswered AskUserQuestion gives its questions and becomes the last child statement" {
   { child c1 2026-10-30T00:01:00.000Z '聞きます'
-    tool_use q1 2026-10-30T00:01:05.000Z tu1 AskUserQuestion '{questions: [{question: "A にしますか"}, {question: "B にしますか"}]}'; } > "$LOG"
+    tool_use a1 2026-10-30T00:01:05.000Z tu1 AskUserQuestion '{questions: [{question: "A にしますか"}, {question: "B にしますか"}]}'; } > "$LOG"
   [ "$(field '.questions | join("|")')" = 'A にしますか|B にしますか' ]
-  [ "$(field .uuid)" = q1 ]
+  [ "$(field .uuid)" = a1 ]
   [ "$(field .text)" = '聞きます' ]
   [ "$(field .turn_ended)" = false ]
 }
 
 @test "an answered AskUserQuestion has no questions and counts as an input" {
   { child c1 2026-10-30T00:01:00.000Z '聞きます'
-    tool_use q1 2026-10-30T00:01:05.000Z tu1 AskUserQuestion '{questions: [{question: "A にしますか"}]}'
+    tool_use a1 2026-10-30T00:01:05.000Z tu1 AskUserQuestion '{questions: [{question: "A にしますか"}]}'
     tool_result r1 2026-10-30T00:02:00.000Z tu1; } > "$LOG"
   [ "$(field '.questions | length')" = 0 ]
   [ "$(field .last_input_at)" = 2026-10-30T00:02:00.000Z ]
@@ -82,7 +82,7 @@ field() { read_log | jq -r "$1"; }
 }
 
 @test "a background Bash task runs until its notification, and the notification is not an input" {
-  { user u0 2026-10-30T00:00:00.000Z 'はじめて'
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'
     tool_use t1 2026-10-30T00:00:10.000Z tu1 Bash '{command: "sleep 9"}'
     tool_result r1 2026-10-30T00:00:11.000Z tu1 '{backgroundTaskId: "b1"}'
     child c1 2026-10-30T00:00:12.000Z '待ちます'
@@ -117,7 +117,7 @@ field() { read_log | jq -r "$1"; }
 }
 
 @test "a hook session in the same directory is not selected" {
-  { user u0 2026-10-30T00:00:00.000Z 'はじめて'; child c1 2026-10-30T00:01:00.000Z 'cli の発言'; } > "$LOG"
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'; child c1 2026-10-30T00:01:00.000Z 'cli の発言'; } > "$LOG"
   { line '{type: "assistant", entrypoint: "sdk-py", uuid: "h1", timestamp: "2026-10-30T09:00:00.000Z", message: {role: "assistant", content: [{type: "text", text: "hook の発言"}]}}'; } > "$DIR/s2.jsonl"
   [ "$(field .uuid)" = c1 ]
   [ "$(field .last_activity_at)" = 2026-10-30T00:01:00.000Z ]
@@ -146,6 +146,16 @@ field() { read_log | jq -r "$1"; }
   [ "$(field .uuid)" = c1 ]
   [ "$(field .last_activity_at)" = 2026-10-30T02:00:00.000Z ]
   [ "$(field .last_activity_epoch)" -gt 0 ]
+}
+
+@test "a uuid outside [0-9a-f-] or not a string is read as empty, and the statement stays" {
+  for bad in '"a-1;pending-12"' '"A-1"' '"a-1\\nb"' '12'; do
+    { line "{type: \"assistant\", uuid: $bad, timestamp: \"2026-10-30T00:01:00.000Z\", message: {role: \"assistant\", content: [{type: \"text\", text: \"聞きます\"}]}}"
+      turn_end 2026-10-30T00:01:01.000Z; } > "$LOG"
+    [ "$(field '.uuid')" = '' ]
+    [ "$(field '.text')" = '聞きます' ]
+    [ "$(field '.at')" = 2026-10-30T00:01:00.000Z ]
+  done
 }
 
 @test "no cli log exits 1 with nothing on stdout" {

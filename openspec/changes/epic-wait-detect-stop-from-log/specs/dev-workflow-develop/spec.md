@@ -53,8 +53,8 @@
 `wait` の会話ログの検知（待ち時間と印の子の扱いを含む）が入力として扱うのは、記録の `worktree` から引く `~/.claude/projects` 配下の `*.jsonl`（Claude Code が書く非公開の形式。サブエージェントのログは最後の活動の時刻にだけ使い、`entrypoint` が `cli` でないものは読まない）でなければならない（MUST）。拾いたい誤りは、記録も印も無い止まりの見逃し、背景のタスクの終わりを待つだけの子を止まりと数えること、同じ発言の二度の判断である。次は通ってよい: 背景のタスクの実行中の人待ちが最大 `EPIC_DISPATCH_STOP_BG_IDLE_SEC` 秒遅れること／権限確認の画面の止まり／会話ログを読めない子／完了報告で止まった子が判断のモデルに回ること／背景のタスクの追跡が取れず「実行中」に残ること／通知のあとに子が同じ問いを言い直し、別の発言として主に二度上がること。ログの形の変化や追跡の穴を見つけるたびに塞ぎ切ることは、この規定の完了条件としない。
 
 #### Scenario: 通知のあとの言い直しは別の発言として判断する
-- **WHEN** 子 11 が発言 `u1` で止まり `stop` が `stopped-seen` で、背景のタスクの通知のあとに子が同じ問いを発言 `u2` で言い直してターンを終える
-- **THEN** `wait` は記録を `resumed` に書いたうえで `u2` を新しい止まりとして判断のコマンドに渡す
+- **WHEN** 子 11 が発言 `d1` で止まり `stop` が `stopped-seen` で、背景のタスクの通知のあとに子が同じ問いを発言 `d2` で言い直してターンを終える
+- **THEN** `wait` は記録を `resumed` に書いたうえで `d2` を新しい止まりとして判断のコマンドに渡す
 
 ### Requirement: wait は同じ発言を二度判断しない
 
@@ -73,16 +73,22 @@
 `stop` が `stopped-seen` で `stop_uuid` のある子について、`wait` は位置引数の子と `--watch-done` の子の両方で、会話ログの最後の子の発言か最後の入力がその発言より後になったら、`stop` を `resumed` に書き、Orca の印へ写さなければならない（MUST）。声かけの往復は動きに数えない（MUST NOT）。親を起こしてはならない（MUST NOT）。子の `mark resumed` は残す（MUST）。
 
 #### Scenario: 子の発言が進むと再開になる
-- **WHEN** 子 11 の `stop` が `stopped-seen`、`stop_uuid` が `u1` で、会話ログに `u1` のあとの主の発言がある
+- **WHEN** 子 11 の `stop` が `stopped-seen`、`stop_uuid` が `d1` で、会話ログに `d1` のあとの主の発言がある
 - **THEN** 記録の `stop` が `resumed` になり、`stopped 11` は出ない
 
 #### Scenario: 声かけの往復では再開にならない
-- **WHEN** 子 11 の `stop` が `stopped-seen`、`stop_uuid` が `u1` で、`u1` のあとに固定文と型どおりの一行の返事だけがある
+- **WHEN** 子 11 の `stop` が `stopped-seen`、`stop_uuid` が `d1` で、`d1` のあとに固定文と型どおりの一行の返事だけがある
 - **THEN** 記録の `stop` は `stopped-seen` のままである
 
 ### Requirement: wait・pending-owner・child-log は子の会話ログを同じ読み取りで読む
 
 `wait`・`pending-owner`・`child-log` は、要件「child-log は最新の会話ログと子の発言を決まった規則で選ぶ」と「child-log は主の発言を決まった規則で判定する」の規則を 1 つの部品で読まなければならない（MUST）。部品は会話ログを書き換えず、LLM を呼ばない（MUST NOT）。`child-log <child>...` の 1 行の出力の形は変えてはならない（MUST NOT）。
+
+部品は発言の uuid の形を確かめ、`[0-9a-f-]` 以外の文字を含む値と文字列でない値を空として出さなければならない（MUST。会話ログは子の側が書けるので、uuid を記録・比較・`pending-owner` の出力・`親の判断:` の行へ渡す入口をここ 1 か所にする）。発言の本文と時刻はそのまま出す（MUST）。
+
+#### Scenario: 形の崩れた uuid は空として読まれる
+- **WHEN** 子 11 の最後の発言の uuid が `a-1;pending-12` で、`stop` が `stopped-seen`、`stop_uuid` が空の状態で `wait` のあと `pending-owner 11` を実行する
+- **THEN** 記録の `stop_uuid` は空のままで、stdout は `pending 11` である
 
 #### Scenario: 既存の child-log の出力が変わらない
 - **WHEN** 既存の `child-log` のテストを実行する
@@ -125,8 +131,8 @@
 `epic-dispatch.sh` はサブコマンド `dismiss <子>...` を持たなければならない（MUST）。親が問いでないと判断した止まりを戻すために呼ぶ。子の記録は親の見張りの照合で探す。排他の中で `stop` が `stopped-seen` で `stop_uuid` が空でないことを確かめ、`stop` を `resumed` に書き、Orca の印へ写して `dismissed <N>` を出す（MUST）。`stop_uuid` と `stop_at` は変えてはならない（MUST NOT）。それ以外の子は記録を変えず `skipped <N> not-stopped` を出す（MUST）。読めない記録は `failed <N> state-unreadable`、照合で 2 件以上なら `failed <N> ambiguous-worktree`、書けなければ `failed <N>` を出す（MUST）。`failed` があれば exit 1、無ければ exit 0（MUST）。子にも issue にも送ってはならない（MUST NOT）。
 
 #### Scenario: 問いでない止まりを再開に戻す
-- **WHEN** 子 11 の `stop` が `stopped-seen`、`stop_uuid` が `u1` で、親のワークツリーから `epic-dispatch.sh dismiss 11` を実行する
-- **THEN** stdout は `dismissed 11`、exit 0 で、記録の `stop` が `resumed`、`stop_uuid` は `u1` のまま、Orca の印は `epic-resumed` で、子にも issue にも何も送られない
+- **WHEN** 子 11 の `stop` が `stopped-seen`、`stop_uuid` が `d1` で、親のワークツリーから `epic-dispatch.sh dismiss 11` を実行する
+- **THEN** stdout は `dismissed 11`、exit 0 で、記録の `stop` が `resumed`、`stop_uuid` は `d1` のまま、Orca の印は `epic-resumed` で、子にも issue にも何も送られない
 
 #### Scenario: 受けた止まりでない子は戻さない
 - **WHEN** 子 11 の `stop` が `stopped`、子 12 の `stop` が `stopped-seen` で `stop_uuid` が空、子 13 の記録が無い状態で `epic-dispatch.sh dismiss 11 12 13` を実行する
@@ -137,7 +143,7 @@
 - **THEN** stdout は `failed 11 state-unreadable`、exit 1 で、記録は変わらない
 
 #### Scenario: 戻した子は同じ発言で判断されず、出し直されない
-- **WHEN** `dismiss 11` のあと、最後の子の発言が `u1` のままで `wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11` と `pending-owner 11` を実行する
+- **WHEN** `dismiss 11` のあと、最後の子の発言が `d1` のままで `wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11` と `pending-owner 11` を実行する
 - **THEN** 判断のコマンドは呼ばれず、`stopped 11` も `pending 11` も出ない
 
 #### Scenario: 戻した子は完了の推定の対象に戻る
@@ -375,8 +381,8 @@ develop の手順書（`skills/develop` 配下）に `orca` のサブコマン�
 - **THEN** stdout は `pending 11` だけで、`orca worktree set` は呼ばれない
 
 #### Scenario: pending-owner は会話ログが進んだ子を出さない
-- **WHEN** 子 11 の記録の `stop` が `stopped-seen`、`stop_uuid` が `u1` で、会話ログに `u1` のあとの子の発言がある。子 12 は同じ状態で `u2` が最後の発言である
-- **THEN** stdout は `pending 12 u2` の 1 行で、記録は書き換えられない
+- **WHEN** 子 11 の記録の `stop` が `stopped-seen`、`stop_uuid` が `d1` で、会話ログに `d1` のあとの子の発言がある。子 12 は同じ状態で `d2` が最後の発言である
+- **THEN** stdout は `pending 12 d2` の 1 行で、記録は書き換えられない
 
 ### Requirement: child-log は最新の会話ログと子の発言を決まった規則で選ぶ
 

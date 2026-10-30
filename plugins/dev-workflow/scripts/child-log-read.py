@@ -22,6 +22,8 @@ line, while text stays the last text the child wrote.
 JSON keys: session, uuid, at, text, questions, turn_ended, bg_running, last_input_at,
 input_after, last_activity_at, last_activity_epoch, owner ({at, text} or null).
 Empty values are "" (null for owner). input_after compares line order, not timestamps.
+A uuid outside [0-9a-f-] is read as "". This is the one entrance for the uuid: the record, the
+comparisons, pending-owner and the `親の判断:` lines all take it from here.
 
 The spec is dev-workflow-develop "wait・pending-owner・child-log は子の会話ログを同じ読み取りで読む".
 """
@@ -36,6 +38,7 @@ DEFINITION = os.path.join(
     os.path.dirname(os.path.abspath(__file__)), "..", "references", "child-cache-keepalive.json"
 )
 TASK_ID = re.compile(r"<task-id>([^<]+)</task-id>")
+UUID_SHAPE = re.compile(r"[0-9a-f-]+")
 
 
 def load_keepalive():
@@ -149,6 +152,11 @@ def owner_text(s):
     return st
 
 
+def safe_uuid(value):
+    """The uuid as it stands when its shape is safe to print and store, otherwise ""."""
+    return value if isinstance(value, str) and UUID_SHAPE.fullmatch(value) else ""
+
+
 def walk(rows, definition):
     keepalive = keepalive_request(definition)
     owner = child = last_input = None
@@ -243,7 +251,7 @@ def walk(rows, definition):
         if child is None or i > child["index"]:
             child = {"index": i, "uuid": uuid, "at": at, "text": text}
     return {
-        "uuid": child["uuid"] if child else "",
+        "uuid": safe_uuid(child["uuid"]) if child else "",
         "at": child["at"] if child else "",
         "text": text,
         "questions": questions,
