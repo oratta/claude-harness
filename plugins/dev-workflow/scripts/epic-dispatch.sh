@@ -140,7 +140,7 @@
 #   条件を満たせば reply --as parent と同じ処理（--relaunch も同じ）で「記録先の issue #<child> は completed で
 #   閉じた。完了報告を書き、mark done で終える（停止の記録: <URL>）」を送り（URL は OWNER / MEMBER / COLLABORATOR の
 #   最新の `子の停止: 主の返事待ち` のコメント、無ければ子 issue の URL）、送れたらエピックに
-#   `親の判断: 子 #<child> 通した — 記録先が completed で閉じたので、完了報告と mark done を促した <URL>` を投稿して
+#   `親の判断: 子 #<child> 通した — 記録先が completed で閉じたので、完了報告と mark done を促した <URL>`（記録に stop_uuid があれば URL の前に `発言 <uuid> ` を足す）を投稿して
 #   `notified <child>`（投稿に失敗したら `unrecorded <child>` と stderr に投稿し直しのコマンド）。skipped / notified /
 #   unrecorded は exit 0、送信の失敗は `failed <child> <段>` で exit 1。skipped のときはどこにも投稿しない
 # mark: 今のワークツリーを worktree に持つ自分の記録の number（<owner>/<repo>#<N> なら repo も）が <issue> の
@@ -970,7 +970,9 @@ cmd_notify_closed() {
     *) echo "$res"; exit 1 ;;
   esac
   # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに送っていない判断が残る）
-  line="親の判断: 子 $(child_label "$n") 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $url"
+  local su
+  su="$(es_get "$rec" stop_uuid)"
+  line="親の判断: 子 $(child_label "$n") 通した — 記録先が completed で閉じたので、完了報告と mark done を促した ${su:+発言 $su }$url"
   if gh issue comment "$epic" --body "$line" >&2; then
     echo "notified $n"; exit 0
   fi
@@ -1788,7 +1790,7 @@ STOP_TEXT_CUT='.text |= .[((length - $max) | if . < 0 then 0 else . end):]'
 #   `<child>\t<主の時刻>\t<冒頭>\t<子の時刻>\t<冒頭>` で出す（無い列は -）。読めない子（記録が無い・読めない・2 件以上、
 #   置き場が無い・読めない、python3 が無い）は `unreadable <child>`（記録が原因なら stderr にそのパス）を出して続ける。
 #   jq が無い・今のワークツリーを読めないときは stdout 空で exit 1。それ以外は exit 0。
-#   --last を付けると、子ごとに JSON を 1 行出す（child・uuid・at・stop_uuid（記録の値）・questions・text）。text は最後の発言の全文で、
+#   --last を付けると、子ごとに JSON を 1 行出す（child・uuid・at・stop_uuid（記録の値）・last_input_at（最後の入力の時刻。無ければ空）・questions・text）。text は最後の発言の全文で、
 #   末尾を残し、上限は EPIC_DISPATCH_STOP_TEXT_MAX 文字。子の発言は信用できない入力なので、改行やラベルを書かれても行の区切りを
 #   崩せないように JSON で出し、親は text を読むときに jq で取り出す。uuid と stop_uuid は [0-9a-f-] だけを残す
 child_log_line() {
@@ -1820,7 +1822,7 @@ child_log_last() {
   max="$(stop_text_max)"
   printf '%s' "$json" | jq -c --argjson max "$max" --arg child "$1" --arg stop_uuid "$3" "$STOP_TEXT_CUT"' |
     def id: gsub("[^0-9a-f-]"; "");
-    {child: $child, uuid: (.uuid | id), at, stop_uuid: ($stop_uuid | id), questions, text}' 2>/dev/null
+    {child: $child, uuid: (.uuid | id), at, stop_uuid: ($stop_uuid | id), last_input_at, questions, text}' 2>/dev/null
 }
 
 cmd_child_log() {

@@ -4651,6 +4651,15 @@ nothing_sent() {
   done
 }
 
+@test "notify-closed: a stop with a uuid puts it in the epic's line before the URL" {
+  closed_ready
+  put_record 11 status=waiting stop=stopped-seen stop_uuid=a-1
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "notified 11" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した 発言 a-1 $CLOSED_STOP_URL" ]
+}
+
 @test "notify-closed: the stop record is read only from trusted authors' stop comments" {
   closed_ready
   run dispatch notify-closed 400 11
@@ -6790,6 +6799,17 @@ chat_line() {
   [ "${#lines[@]}" -eq 1 ]
   [ "$(printf '%s' "$output" | jq -r .text)" = "$long" ]
   [ "$(printf '%s' "$output" | jq -r '.child, .uuid, .at, .stop_uuid' | tr '\n' ' ')" = '11 a-1 2026-10-26T06:01:00.000Z  ' ]
+  [ "$(printf '%s' "$output" | jq -r .last_input_at)" = 2026-10-26T06:00:00.000Z ]
+}
+
+@test "child-log --last: last_input_at is empty when no input has arrived" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 "$(chat_line assistant 2026-10-26T06:01:00.000Z 'はじめます' '{"uuid":"a-1"}')"
+  run dispatch child-log --last 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq -r 'has("last_input_at"), .last_input_at' | tr '\n' ' ')" = 'true  ' ]
 }
 
 @test "child-log --last: EPIC_DISPATCH_STOP_TEXT_MAX keeps the tail, and a non-number falls back to the default" {
