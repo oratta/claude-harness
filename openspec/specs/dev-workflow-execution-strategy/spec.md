@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change dev-workflow-execution-strategy. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: 残量モードによる閾値調整
 役割のモデル選択は環境変数 `FABLE_BUDGET_MODE`（`abundant` / `conserve` / `reserve` / `exhausted`）を参照しなければならない（SHALL）。定義表は develop スキルの `plugins/dev-workflow/skills/develop/references/decision-criteria.md` に置く（SHALL）。未設定時は usage snapshot からの自動導出結果を用い、snapshot も無ければ `conserve` として扱う。明示的に設定された `FABLE_BUDGET_MODE` は自動導出より優先されなければならない（SHALL）。モードが変えるのは役割（W / R1 / G）の昇格上限のみであり、1 ループの構造・トリップワイヤーは変えない。`abundant` はどの役割の既定モデルも押し上げてはならない（MUST NOT）。Fable が使えるのは決める役（`dev-workflow:decider` として spawn される役）だけであり、実行役（W）の上限はどのモードでも `opus` である（SHALL）。`exhausted` は Fable 週次枠を実質使い切った状態を表し、`reserve` と異なり interactive を含む全経路で Fable をいかなる役割でも使わず、決める役も `opus` に落とす。Fable 残量モードは Fable と Opus のあいだで役割を付け替える装置であり総量を絞る装置ではないため、総量の下限は共有枠モード（別 Requirement）が決める。
 
@@ -79,7 +81,9 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/decision-cr
 - **THEN** 共有枠モードは ok（制約なし）に導出され、Fable 残量モードの導出は従来どおり conserve に倒れる
 
 ### Requirement: サブエージェントのコンテキスト上限と手渡し
-`plugins/dev-workflow/scripts/subagent-context.sh` は、対象のトランスクリプトの最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。対象の指定は次の 2 通りとする（SHALL）: `--file <path>` はそのファイルを直接測る（`agent` はファイル名から導く）。`<agent-name>` は名前付きサブエージェントのトランスクリプト（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*<name>*.jsonl`。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの）を名前 glob で探す fallback 経路とし、`isolation: "worktree"` で起こしたサブエージェントはファイル名に名前を含まないため見つからないことがある（SHALL。この取りこぼしは途中計測 hook が補う）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、exit 2 なら再開せず、前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）と記録先を渡して新しい W / G を spawn しなければならない（MUST。モデルは変えない）。W は工程の終わりに必ず return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
+`plugins/dev-workflow/scripts/subagent-context.sh` は、対象のトランスクリプトの最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。対象の指定は次の 2 通りとする（SHALL）: `--file <path>` はそのファイルを直接測る（`agent` はファイル名から導く）。`<agent-name>` は `${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/` 内の `agent-<id>.meta.json` の `name` が指定名と完全一致する場合、対応する実在の `agent-<id>.jsonl` を候補に加え、従来の名前 glob（`agent-*<name>-*.jsonl` と `agent-*<name>.jsonl`）による候補と統合して重複を除かなければならない（SHALL）。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、その中でログの更新時刻が新しいものを選び、一致するものが無ければ全候補で最新のログを選ばなければならない（SHALL）。metadata が無い・`name` が一致しない・壊れている場合も従来のファイル名探索にフォールバックし、候補が無ければ `transcript not found` を含む JSON を出力して exit 1 としなければならない（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、exit 2 なら再開せず、前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）と記録先を渡して新しい W / G を spawn しなければならない（MUST。モデルは変えない）。W は工程の終わりに必ず return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
+
+守備範囲: 名前探索で扱う入力は、Claude Code が生成するローカルの metadata（`agent-<id>.meta.json`）とトランスクリプト（JSONL）である。防ぐのは、metadata の `name` の部分一致による誤採用、候補を統合せず cwd 一致優先・ログの更新時刻順を適用しないことによる誤選択、metadata の破損による探索停止である。metadata の `name` が指定名と不一致でも、従来のファイル名 glob に一致するログは候補として採用してよい。未知の入力による穴をすべて塞ぐことは、この要件の完了条件にしない（MUST NOT）。
 
 #### Scenario: 上限超のサブエージェントは exit 2
 - **WHEN** トランスクリプトの最後の assistant usage の合算が `DEV_WORKFLOW_CONTEXT_CAP` を超える
@@ -100,6 +104,47 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/decision-cr
 #### Scenario: 名前指定の既存の挙動は変わらない
 - **WHEN** `subagent-context.sh <agent-name>` を従来どおり実行する
 - **THEN** 出力する JSON のフィールドと exit code は `--file` 追加の前後で変わらない
+
+#### Scenario: ファイル名に名前が無くても metadata の名前で見つかる
+- **GIVEN** `agent-a123.jsonl` に上限内の assistant usage があり、隣の `agent-a123.meta.json` の `name` が `W-590` である
+- **WHEN** `subagent-context.sh W-590` を実行する
+- **THEN** `file` は `agent-a123.jsonl` を指し、その usage の計測値を出力して exit 0 で終わる
+
+#### Scenario: 従来のファイル名だけでも見つかる
+- **GIVEN** `agent-aW-590-abcd.jsonl` に上限内の assistant usage があり、metadata が無い
+- **WHEN** `subagent-context.sh W-590` を実行する
+- **THEN** そのログの計測値を出力して exit 0 で終わる
+
+#### Scenario: 探索元が異なっても cwd 一致を優先する
+- **GIVEN** metadata の `name` が `W-590` と一致する新しいログの cwd が別ディレクトリであり、従来のファイル名で一致する古いログの cwd が現在のディレクトリである
+- **WHEN** `subagent-context.sh W-590` を実行する
+- **THEN** cwd が一致する古いログが選ばれる
+
+#### Scenario: 同じ cwd の同名ログでは最新を選ぶ
+- **GIVEN** 異なるセッションに `name` が `W-590` と完全一致する metadata と対応ログがあり、両ログの cwd が現在のディレクトリである
+- **WHEN** `subagent-context.sh W-590` を実行する
+- **THEN** ログ自体の更新時刻が新しい方が選ばれる
+
+#### Scenario: cwd 一致が無ければ同名ログの最新を選ぶ
+- **GIVEN** 異なるセッションに `name` が `W-590` と完全一致する metadata と対応ログがあり、どのログの cwd も現在のディレクトリと一致しない
+- **WHEN** `subagent-context.sh W-590` を実行する
+- **THEN** ログ自体の更新時刻が新しい方が選ばれる
+
+#### Scenario: metadata の欠落・不一致・破損はファイル名探索を妨げない
+- **GIVEN** 従来のファイル名で見つかる上限内のログがあり、metadata が無い、`name` が別名、または壊れた JSON である
+- **WHEN** 各ケースで `subagent-context.sh W-590` を実行する
+- **THEN** 従来のファイル名のログを測り、exit 0 で終わる
+
+#### Scenario: metadata でもファイル名でも候補が無ければ従来のエラーになる
+- **GIVEN** metadata が無い、`name` が別名、壊れた JSON、または一致する metadata の対応ログが存在しない
+- **AND** 従来のファイル名でも一致するログが無い
+- **WHEN** 各ケースで `subagent-context.sh W-590` を実行する
+- **THEN** `transcript not found` を含む JSON を出力して exit 1 で終わる
+
+#### Scenario: metadata の名前は完全一致で判定する
+- **GIVEN** ファイル名に `W-590` を含まないログの metadata の `name` が `W-590-extra` であり、他に候補が無い
+- **WHEN** `subagent-context.sh W-590` を実行する
+- **THEN** `transcript not found` を含む JSON を出力して exit 1 で終わる
 
 ### Requirement: model 未指定の Agent spawn は hook が拒否する
 `hooks/hooks.json` は PreToolUse（matcher: `Agent`）に `scripts/agent-model-guard.sh` を登録しなければならない（MUST）。hook は stdin の payload（`tool_name` / `tool_input`）を読み、`tool_name` が `Agent` 以外なら何もしない。`tool_input.subagent_type` が `fork` なら `model` の有無にかかわらず共有枠モード（明示 env `SHARED_BUDGET_MODE`、無ければ `scripts/usage_view.py` が求める active スロットの全体週次枠の実効値 `weekly_all_pct` から導出。実効値はセッション記録と usage snapshot を突き合わせた値で、規則の正本は usage-session-records の「記録と snapshot から実効値を求める」。90 超は `depleted`、週経過% 超は `throttled`）が `ok` のときだけ許可し、それ以外は拒否する（MUST。fork は model パラメータを無視して親モデルで動くため）。
@@ -324,11 +369,13 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 対象期間の判定はファイルの mtime で行う（SHALL。レコード内のタイムスタンプは見ない）。
 
-トランスクリプトの全文を読んではならない（MUST NOT）。**ただし `--by-role` を指定した場合を除く**（この場合の全文走査は「担当分類の優先順位」「`docs_median`」「`reread_pct`」の各 Requirement が定める目的にのみ用いる）。`--by-role` を指定しない場合、初回は最初の `usage` 付きレコードで読み取りを打ち切り、最終は末尾から固定サイズの窓（既定 256 KiB）を読んで見つからなければ上限（4 MiB）まで窓を倍加し、それでも見つからない 1 件は最終側の集計から除く（SHALL）。
+トランスクリプトの全文を読んではならない（MUST NOT）。**ただし `--by-role` を指定した場合を除く**（この場合は「担当分類の優先順位」「`docs_median`」「`reread_pct`」の算出に加え、全体キー・`sources`・担当別の初回および最終コンテキストの判定にも全文走査の値を使う（SHALL）。部分読みである既定呼び出しの値とは僅かにずれうる）。`--by-role` を指定しない場合、初回は最初の `usage` 付きレコードで読み取りを打ち切り、最終は末尾から固定サイズの窓（既定 256 KiB）を読んで見つからなければ上限（4 MiB）まで窓を倍加し、それでも見つからない 1 件は最終側の集計から除く（SHALL）。
 
 集計結果は `${SUBAGENT_CONTEXT_AUDIT_CACHE:-~/.claude/.subagent-context-audit}` に 1 行 JSON で保存しなければならない（MUST）。**ただし `--cache` を明示しない場合、`--by-role` を指定したときは既定パスに `.by-role` サフィックスを足したパス（`${SUBAGENT_CONTEXT_AUDIT_CACHE:-~/.claude/.subagent-context-audit}.by-role`）に保存する（SHALL。既定呼び出しと `--by-role` の集計内容が異なるため、同じキャッシュファイルを共有すると TTL 内でどちらかの結果が誤って返るのを避ける）。`--cache` を明示した場合はそのパスにそのまま保存する（`--by-role` の有無でサフィックスを足さない。呼び出し側が衝突を自分で管理する前提）。** キャッシュの mtime が `SUBAGENT_CONTEXT_AUDIT_TTL`（秒、既定 21600）以内なら、トランスクリプトを走査せずキャッシュの内容をそのまま出力する（SHALL）。`--refresh` は TTL を無視して再走査する（SHALL）。
 
 この集計は観測専用であり、閾値に基づいてセッション・ツール・エージェントの実行を止めてはならない（MUST NOT。強制停止は別の仕組みが担う）。引数エラー以外はすべて exit 0 とし、トランスクリプトが 1 件も無い・projects ディレクトリが無い・`python3` が無い場合は `count` が 0 の結果を出して exit 0 で終わらなければならない（MUST。fail-open）。個々のレコードの JSON が壊れていても、その行を飛ばして他の件の集計を続けなければならない（MUST）。
+
+この集計の守備範囲は次のとおりとする（SHALL）。①入力の出どころ: 対象は利用者の `~/.claude/projects/*/*/subagents/agent-*.jsonl` と、同じ場所の `agent-<id>.meta.json`（Claude Code が書く）で、中身は Claude Code の出力形式に従う。②拾いたい誤り: サブエージェント以外のトランスクリプトや対象期間外の個体を数えること、壊れたレコードや `meta.json` の欠落で集計全体が落ちること、分類できない個体が母集団の合計から落ちること。③通ることを許す入力の具体例: `meta.json` が無い・読めない個体は隔離なしとして `non_isolated` に数えてよく、`--by-role` の全文走査と既定の部分読みで全体キーが僅かにずれてよい。④未知の形式のトランスクリプトを見つけるたびに規則を足して塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 直近 14 日の集計が 1 行 JSON で出る
 
@@ -353,7 +400,7 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 #### Scenario: `--by-role` 指定時のみ全文走査が許される
 
 - **WHEN** `--by-role` を付けて `subagent-context-audit.sh` を実行する
-- **THEN** 担当分類・`docs_median`・`reread_pct` の算出のためにトランスクリプトの全文が前方から走査される
+- **THEN** 担当分類・`docs_median`・`reread_pct` の算出のためにトランスクリプトの全文が前方から走査され、全体キー・`sources`・担当別の初回および最終コンテキストの判定にもその値が使われる。既定呼び出しの部分読みとは値が僅かにずれうる
 
 #### Scenario: 既定と `--by-role` でキャッシュファイルが分かれる
 
@@ -413,7 +460,7 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 `--by-role` を付けた場合、出力 JSON のトップレベルに `by_role` キーを追加しなければならない（SHALL）。`by_role` は常に 6 個の担当名（`W` / `R1` / `G` / `Reviewer` / `decider` / `unknown`）をキーに持ち、該当する件が 0 件の担当でもキー自体は省略しない（SHALL。集計対象がどの担当を含むかを呼び出し側が知っている必要がないようにするため）。各値は `count` / `first_median` / `docs_median` / `last_median` / `over_cap_pct` を持ち（SHALL）、担当 `W` の値だけは追加で `reread_pct` を持たなければならない（SHALL）。
 
-各担当の `first_median` / `last_median` / `over_cap_pct` の定義・母数（1 体のコンテキスト量の定義、初回・最終の判定方法、中央値の丸め方、`last_median` / `over_cap_pct` は最終コンテキストが見つかった件だけを母数にする点）は、全体の同名キーに使う既存 Requirement「サブエージェントのコンテキスト量の母集団集計」の定義と同一とし、担当ごとの部分母集団に適用したものでなければならない（MUST）。`count` が 0 の担当は `first_median` / `docs_median` / `last_median` を `null`、`over_cap_pct` を `0.0` とする（SHALL。`sources.isolated` / `sources.non_isolated` が 0 件のときと同じ扱い）。`W` の `reread_pct` は、算出対象（Requirement「`reread_pct`」参照）が 1 件も無い場合に `null` とする（SHALL）。
+各担当の `first_median` / `last_median` / `over_cap_pct` の定義・母数（1 体のコンテキスト量の定義、初回・最終の判定方法、中央値の丸め方、`last_median` / `over_cap_pct` は最終コンテキストが見つかった件だけを母数にする点）は、全体の同名キーに使う既存 Requirement「サブエージェントのコンテキスト量の母集団集計」の定義と同一とし、担当ごとの部分母集団に適用したものでなければならない（MUST）。ただし `--by-role` 指定時は全体キー・`sources`・担当別の初回および最終コンテキストの判定に全文走査の値を使う（SHALL）。既定呼び出しは部分読みのため、全体キーや最終判定の値が僅かにずれうる。`count` が 0 の担当は `first_median` / `docs_median` / `last_median` を `null`、`over_cap_pct` を `0.0` とする（SHALL。`sources.isolated` / `sources.non_isolated` が 0 件のときと同じ扱い）。`W` の `reread_pct` は、算出対象（Requirement「`reread_pct`」参照）が 1 件も無い場合に `null` とする（SHALL）。
 
 `by_role` の各担当の `count` の合計は、全体の `count` と一致しなければならない（MUST。分類できない件も `unknown` に含めて母集団から落とさないため）。
 
@@ -454,14 +501,14 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 1. `agentType` が `dev-workflow:decider` と一致する場合、`description` の内容に関わらず常に `decider` に分類する
 2. 1 に当たらず、`agentType` が `dev-workflow:reviewer` と一致する場合、`description` の内容に関わらず常に `Reviewer` に分類する
-3. 1 にも 2 にも当たらない場合、`description` の先頭コロン区切りトークン（例: `W: #552 ...` の `W`）が `W` / `R1` / `G` / `Reviewer` のいずれかに完全一致すればそれに分類する
+3. 1 にも 2 にも当たらない場合、`description` の先頭コロン区切りトークン（例: `W: #552 ...` の `W`）が正規表現 `^(W|R1|G|Reviewer)\d*$` に完全一致すれば、グループ1の担当名に分類する（末尾の数字は手渡し番号として扱う。`R1` 自体は担当名であり、`R12` は担当 `R1` と番号 `2` に分ける）
 4. 1〜3 のどれにも当たらない（`description` が無い・コロンが無い・未知のトークン・`meta.json` が無い/読めない）場合は `unknown` に分類する
 
 分類できない件（`unknown`）も `by_role` の合計・母集団の `count` から落としてはならない（MUST NOT）。
 
-この分類は `agent-<id>.meta.json` の `agentType` / `description` という自由記述を解釈する要件であり、次の 4 点を守備範囲とする。①入力の出どころ: `description` は develop 本体が `plugins/dev-workflow/skills/develop/SKILL.md` の紐付け規約（役割を問わず記録先番号を `#N` の形で入れる。例: `W: impl for #288`、`G: gate for PR #400 (#288)`）に沿って書く。`agentType` は Agent 呼び出しの `subagent_type` がそのまま入る。②拾いたい誤り: develop の担当を別の担当に数えること、分類できない件が母集団の合計から落ちること。③通ることを許す入力の具体例: develop 以外の経路で起こした `G: ...` のような `description` も先頭トークン一致で `G` に数えてよい。`w:`（小文字）や `Reviewer1:` のような接頭辞の変形は `unknown` に落ちてよい（規約外の書式まで拾い切ることを目的にしない）。`general-purpose` で起こした古いレビュアーは `description` の先頭トークンだけで判定し、`Reviewer:` で始まらなければ `unknown` に落ちてよい。④新しい書き方が見つかるたびに規則を足して塞ぎ切ることを完了条件にしない。
+この分類は `agent-<id>.meta.json` の `agentType` / `description` という自由記述を解釈する要件であり、次の 4 点を守備範囲とする。①入力の出どころ: `description` は develop 本体が `plugins/dev-workflow/skills/develop/SKILL.md` の紐付け規約（役割を問わず記録先番号を `#N` の形で入れる。例: `W: impl for #288`、`G: gate for PR #400 (#288)`）に沿って書く。`agentType` は Agent 呼び出しの `subagent_type` がそのまま入る。②拾いたい誤り: develop の担当を別の担当に数えること、分類できない件が母集団の合計から落ちること。③通ることを許す入力の具体例: develop 以外の経路で起こした `G: ...` のような `description` も先頭トークン一致で `G` に数えてよい。`W2:` / `R12:` / `G3:` / `Reviewer1:` のような手渡し番号付き接頭辞はそれぞれ `W` / `R1` / `G` / `Reviewer` に分類する。`w:`（小文字）や `Reviewer-1:` のような規則外の接頭辞は `unknown` に落ちてよい（規約外の書式まで拾い切ることを目的にしない）。`general-purpose` で起こした古いレビュアーは `description` の先頭トークンだけで判定し、`Reviewer:` または `Reviewer1:` のような番号付き接頭辞で始まらなければ `unknown` に落ちてよい。④新しい書き方が見つかるたびに規則を足して塞ぎ切ることを完了条件にしない。
 
-`Reviewer` は「G のレビュアー」に割り当てる担当名である。`dev-workflow:reviewer` で起こしたレビュアーは `agentType` で `Reviewer` に数えられる。新種別より前に `general-purpose` で起こしたレビュアーは `description` の先頭トークンで判定し、`Reviewer:` で始まらなければ `unknown` に落ちうる（想定内の挙動とする）。事前分類で `dev-workflow:decider` で起こしたレビュアーは、1 の規則で `decider` に数える。
+`Reviewer` は「G のレビュアー」に割り当てる担当名である。`dev-workflow:reviewer` で起こしたレビュアーは `agentType` で `Reviewer` に数えられる。新種別より前に `general-purpose` で起こしたレビュアーは `description` の先頭トークンで判定し、`Reviewer:` または `Reviewer1:` のような番号付き接頭辞で始まらなければ `unknown` に落ちうる（想定内の挙動とする）。事前分類で `dev-workflow:decider` で起こしたレビュアーは、1 の規則で `decider` に数える。
 
 #### Scenario: `agentType` が `description` の見た目より優先される
 
@@ -478,9 +525,15 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 - **WHEN** `agentType` が `dev-workflow:decider` でも `dev-workflow:reviewer` でもなく、`description` が `G: #552 のマージ前検査` のように先頭コロン区切りトークンが `G` と完全一致する
 - **THEN** その件は `G` に分類される
 
+#### Scenario: 手渡し番号付き接頭辞は担当名に分類される
+
+- **GIVEN** `agentType` による優先分類に当たらない
+- **WHEN** description の先頭トークンが `W2:` / `R1:` / `R12:` / `G3:` / `Reviewer1:` である
+- **THEN** それぞれ `W` / `R1` / `R1` / `G` / `Reviewer` に分類される
+
 #### Scenario: どちらにも当たらない件は unknown に寄せられる
 
-- **WHEN** `meta.json` が無い、または `agentType` が `dev-workflow:decider` でも `dev-workflow:reviewer` でもなく、`description` の先頭トークンが `W` / `R1` / `G` / `Reviewer` のいずれとも一致しない
+- **WHEN** `meta.json` が無い、または `agentType` が `dev-workflow:decider` でも `dev-workflow:reviewer` でもなく、`description` の先頭トークンが担当名と任意の手渡し番号の正規表現に一致しない
 - **THEN** その件は `unknown` に分類され、全体の `count` には含まれたまま `by_role` の合計にも数えられる
 
 ### Requirement: `docs_median`（指示書の読み込み量の中央値）
@@ -512,7 +565,7 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 `--by-role` は担当 `W` についてのみ `reread_pct` を算出しなければならない（SHALL）。単位は既存の `over_cap_pct` と同様に 0〜100 のパーセントとする（SHALL。0〜1 の比率にしない）。算出手順は次のとおり。
 
-1. 各 `W` の `description` に含まれる `#N`（記録先の issue/PR 番号）で、同じ記録先を担当した `W` を `timestamp`（トランスクリプトの最初のレコードのもの）の開始順にグループ化する（SHALL）。`description` に `#N` が複数出現する場合は、最も左（最初）に出現するものを記録先番号として使う（SHALL）
+1. トランスクリプトパス `<projects>/<slug>/<sess>/subagents/agent-*.jsonl` の `<slug>` をプロジェクト識別子とし、各 `W` の `description` に含まれる `#N`（記録先の issue/PR 番号）との組で、同じ記録先を担当した `W` を `timestamp`（トランスクリプトの最初のレコードのもの）の開始順にグループ化する（SHALL）。`description` に `#N` が複数出現する場合は、最も左（最初）に出現するものを記録先番号として使う（SHALL）。同じ `#N` でも異なる `<slug>` は別グループとし、同じ `<slug>` と `#N` ならセッションが異なっても同じグループにする（SHALL）
 2. 各グループの 2 番目以降の `W` について、そのグループ内で自分より前に開始した全 `W` が読んだファイルの和集合に対し、自分が読み直したファイルの割合（0〜100）を求める（SHALL）。「読んだファイル」は、`Read` ツールの `file_path` に加え、`Bash` ツールの `command` に含まれる `sed -n` / `cat` / `head` / `tail` の引数のファイルとする（SHALL。前任・後任の両方に同じ定義を使う）。一致判定はファイルの末尾のファイル名（ベースネーム）で行い、フルパス一致では判定しない（SHALL。worktree ごとに絶対パスの先頭が変わるため、同名の別ディレクトリ配下のファイルも読み直しとして数えてよい）
 3. 各グループの最初の `W`（先行が存在しない個体）は、この中央値の母数から除く（MUST。分母が定義できないため）
 4. `description` から `#N` が取れない `W` は `reread_pct` の対象から除く（MUST。グルーピングできない個体を母数に含めない）
@@ -575,6 +628,18 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 - **WHEN** グループ化のための記録先番号を決める
 - **THEN** 最も左に出現する `#400` が使われる
 
+#### Scenario: 別プロジェクトの同じ記録先番号は混ざらない
+
+- **GIVEN** 異なる `<slug>` の下に同じ `#564` を記録先とする `W` が 1 体ずつ存在する
+- **WHEN** `--by-role` を実行する
+- **THEN** それぞれ別グループの最初の個体となり、`reread_pct` は `null` になる
+
+#### Scenario: 同じプロジェクトの別セッションは同じ記録先に集計する
+
+- **GIVEN** 同じ `<slug>` の異なるセッションに同じ `#564` の `W` が 2 体あり、先行・後続が同じ 1 ファイルを読む
+- **WHEN** `--by-role` を実行する
+- **THEN** 同じグループの後続個体として `reread_pct` は `100.0` になる
+
 ### Requirement: `usage-audit.md` への `--by-role` の追記
 
 `plugins/dev-workflow/docs/usage-audit.md` は `--by-role` の使い方を追記しなければならない（SHALL）。追記内容は次を含む（SHALL）: ① `--by-role` の実行コマンド例 ② `by_role` 配下の出力キー（`count` / `first_median` / `docs_median` / `last_median` / `over_cap_pct` / `W` のみの `reread_pct`）の意味 ③ 担当分類の優先順位（`agentType` → `description` 先頭トークン → `unknown`）と `Reviewer` の接頭辞が規約に未確定である旨 ④ `reread_pct` の母数の注意（グループ最初の個体・記録先番号が取れない個体を除く、ベースネーム一致）。
@@ -583,4 +648,3 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 - **WHEN** 担当別の傾向を確認したい人が `plugins/dev-workflow/docs/usage-audit.md` を読む
 - **THEN** `--by-role` の実行コマンド・出力キーの意味・分類規則・`reread_pct` の母数の注意が揃っており、他のファイルを見ずに担当別監査を 1 回回せる
-

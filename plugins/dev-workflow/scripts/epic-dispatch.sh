@@ -10,6 +10,7 @@
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
 #   epic-dispatch.sh pending-owner <child>...
+#   epic-dispatch.sh child-log <child>...
 #   epic-dispatch.sh adopt <epic> <child>...
 #   epic-dispatch.sh clear <epic>
 #   epic-dispatch.sh max-parallel
@@ -47,11 +48,11 @@
 #   `gh issue comment <N> --body <親エピックからの注意書き: #<epic>・空行・注意書き>`（失敗しても起動は
 #   続け、stderr に `note not posted to #<N>` と手で投稿するコマンドを出す）→ `orca terminal create
 #   --worktree path:<子> --command "EPIC_DISPATCH_PARENT_EPIC=<epic>
-#   CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=<tokens> <cmd> --model <model>"`
+#   <cmd> --settings '{"idleCompaction":false}' --model <model>"`
 #   （<cmd> の既定は cld、EPIC_DISPATCH_CLAUDE_CMD で変える。<model> の既定は opus、
-#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。<tokens> は子の
-#   待っている間の自動コンパクトの閾値で既定は 120000、EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS
-#   で変える。空か数字でなければ使い方を出して exit 1（根拠は skills/develop/references/reply-after-idle.md）。
+#   EPIC_DISPATCH_MODEL で変える。どちらも空なら使い方を出して exit 1。--settings は子のアイドル時の
+#   コンパクトをそのプロセスだけ切る（通常の自動コンパクトは止めない。Claude Code v2.1.290 以降。
+#   根拠は skills/develop/references/reply-after-idle.md）。
 #   作れなければ、既存の端末が無いことの確認・作り直し・送信のコマンドを stderr に出す）→ `orca terminal wait --for tui-idle` →
 #   `orca terminal send --text <指示> --enter --wait-submit <秒>`。stdout は子ごとに `launched <N>`
 #   （send の stages に turn_started がある）/ `skipped <N>` / `failed <N>` / `deferred <N>`（上限で後回し）の 1 行。failed で
@@ -79,7 +80,10 @@
 #   `error gh <N>...`（失敗したポーリングが 3 回続いた。3 回目で失敗した子）exit 1
 #   失敗したポーリング = 1 件以上の子が失敗（gh が非 0、または出力が open / closed 以外）し、
 #   閉じた子が 1 件も無いポーリング。失敗の無いポーリングで数え直す。
-#   間隔・上限は秒。既定 300 / 21600（EPIC_DISPATCH_INTERVAL / EPIC_DISPATCH_TIMEOUT、フラグが優先）。
+#   間隔・上限は秒。間隔の既定は 300（EPIC_DISPATCH_INTERVAL、フラグが優先）。上限は --timeout、なければ
+#   空でない EPIC_DISPATCH_TIMEOUT。どちらも無いときだけ、待つ前に親のワークツリーの会話キャッシュの有効期限
+#   （cache_ttl_of）で決める: 5m なら 21600、1h か判定できなければ 3000。このときだけ待つ前に stderr へ
+#   `wait limit <秒> (parent cache <5m|1h|unknown>)` を 1 行出す（上限を明示したときは出さない）。
 #   ポーリングのあとで「経過 >= 上限」か「経過 + 間隔 > 上限」なら眠らずに timeout
 #   （--timeout 0 は間隔によらず 1 回だけ確かめる）。timeout のとき、最後のポーリングに失敗があれば溜めた stderr を出す
 #   子 issue の state は、記録の repo がエピックと同じ子と記録の無い子は repos/{owner}/{repo}、違う子は repos/<repo> で読む。
@@ -153,7 +157,8 @@
 #   `kept <N> close-failed` と stderr に主がする操作）→ `orca worktree rm`（--force なし・再試行なし。
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
-#   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）`git branch -D`。stdout は子ごとに
+#   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）
+#   期待 OID つきの `git update-ref -d refs/heads/<ブランチ> <HEAD>`。stdout は子ごとに
 #   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。reaped の子は記録を消す。
 #   orca・jq が無い・今のワークツリーを読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
 # pending-owner: 読み取り専用。子ごとに、今のワークツリーを parent_worktree に持つ記録の stop が stopped-seen
@@ -176,12 +181,12 @@
 #   無ければ物理メモリの GiB（`sysctl -n hw.memsize` のバイト、読めなければ
 #   EPIC_DISPATCH_MEMINFO_FILE（テスト用。既定 /proc/meminfo）の MemTotal の kB）を 4 で割って切り捨て、最小 1。
 #   どちらも読めなければ 2 で、stderr に `physical memory not readable`。launch も同じ値を使う
-# wait --resolve が通す返事は、送る前に references/reply-after-idle.md の表で起動し直すかを決める:
+# wait --resolve が通す返事は、送る前に references/reply-after-idle.md の子の表で起動し直すかを決める:
 #   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
-#   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前で、
-#   その assistant より後に compact_boundary が無く、subagent-context.sh --file の context_tokens が
-#   EPIC_DISPATCH_RELAUNCH_MIN_TOKENS（既定 150000）以上のときだけ --relaunch 相当。読めなければそのまま送る。
-#   2 つの変数が空か数字でなければ wait は使い方を出して exit 1。
+#   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前なら、
+#   compact_boundary の有無と会話量によらず --relaunch 相当。
+#   同じファイルの subagent-context.sh --file の context_tokens が EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS（既定 150000）以上でも起動し直す。
+#   両条件は独立し、どちらも真と確認できなければそのまま送る。両閾値は未設定時だけ既定を使い、空か数字でなければ使い方を出して exit 1。
 #   --watch-done があるとき、EPIC_DISPATCH_DONE_IDLE_SEC が空か数字でなければ gh を呼ばずに使い方を出して exit 1
 # 引数の誤り（launch は epic か子が無い、wait は子も --watch-done も 0 件（--watch-stopped だけも含む）、
 #   mark の種別（done / waiting / stopped / resumed 以外）・引数の数、
@@ -219,6 +224,7 @@ usage:
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
   epic-dispatch.sh pending-owner <child>...
+  epic-dispatch.sh child-log <child>...
   epic-dispatch.sh adopt <epic> <child>...
   epic-dispatch.sh clear <epic>
   epic-dispatch.sh max-parallel
@@ -438,9 +444,9 @@ agent_setup() {
   [ -n "$model" ] || { echo "EPIC_DISPATCH_MODEL must not be empty" >&2; return 1; }
   local claude_cmd="${EPIC_DISPATCH_CLAUDE_CMD-cld}"
   [ -n "$claude_cmd" ] || { echo "EPIC_DISPATCH_CLAUDE_CMD must not be empty" >&2; return 1; }
-  local idle_compact="${EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS-120000}"
-  is_num "$idle_compact" || { echo "EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS must be a non-negative integer: $idle_compact" >&2; return 1; }
-  agent_rest="CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS=$idle_compact $claude_cmd --model $(shq "$model")"
+  # 子のアイドル時のコンパクト（待っている間の自動コンパクト）はそのプロセスだけ切る。通常の自動コンパクトは止めない
+  # （根拠は skills/develop/references/reply-after-idle.md）
+  agent_rest="$claude_cmd --settings '{\"idleCompaction\":false}' --model $(shq "$model")"
   agent_cmd="EPIC_DISPATCH_PARENT_EPIC=$1 $agent_rest"
 }
 
@@ -1021,47 +1027,105 @@ transcript_dir() {
   printf '%s/%s' "${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}" "$(printf '%s' "$1" | sed 's/[^A-Za-z0-9]/-/g')"
 }
 
+# ワークツリー（<絶対パス>）の会話で最後にキャッシュを書いた行の有効期限を読む（#1324）。
+# 置き場（transcript_dir）の直下の *.jsonl だけを読む（<セッション>/subagents/ は読まない）。使う行は type が assistant・
+# entrypoint が cli ちょうど（対話の CLI のセッション。hook が SDK で起こしたセッションの sdk-py や claude -p の sdk-cli は、
+# 親の有効期限と関係なく 5 分で書くことがあるので読まない。entrypoint の無い行も読まない）・isSidechain が true でない・
+# timestamp が文字列・message.usage.cache_creation の ephemeral_5m_input_tokens と ephemeral_1h_input_tokens の和が正（数でない値は 0）の行のうち、timestamp が最も新しい 1 行。
+# 判定できたら stdout に「<1h|5m> <その行の timestamp の epoch 秒>」を出して 0（1h の書き込みが正なら 1h、0 なら 5m）。
+# epoch 秒は最後にキャッシュを書いた行の時刻で、最後のリクエストの時刻ではない（それが要るなら last_activity を使う）。
+# 引数が空（置き場を求めると projects の直下を指す）・*.jsonl が無い・python3 が無い・使う行が無いときは何も出さずに 1。
+# gh も LLM も呼ばず、stderr にも出さない。wait の上限の既定が使い、順番 2 の change が子のワークツリーに使う
+cache_ttl_of() {
+  [ -n "${1-}" ] || return 1
+  local dir; dir="$(transcript_dir "$1")"
+  ls "$dir"/*.jsonl >/dev/null 2>&1 || return 1
+  command -v python3 >/dev/null 2>&1 || return 1
+  DIR="$dir" python3 - <<'PY' 2>/dev/null
+import datetime, glob, json, os
+def num(v):
+    return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else 0
+best = None
+for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
+    try:
+        f = open(p, encoding="utf-8", errors="replace")
+    except OSError:
+        continue
+    with f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            if not isinstance(d, dict) or d.get("type") != "assistant" or d.get("entrypoint") != "cli" or d.get("isSidechain") is True:
+                continue
+            ts = d.get("timestamp")
+            if not isinstance(ts, str):
+                continue
+            msg = d.get("message")
+            usage = msg.get("usage") if isinstance(msg, dict) else None
+            cc = usage.get("cache_creation") if isinstance(usage, dict) else None
+            if not isinstance(cc, dict):
+                continue
+            m5 = num(cc.get("ephemeral_5m_input_tokens"))
+            h1 = num(cc.get("ephemeral_1h_input_tokens"))
+            if m5 + h1 <= 0:
+                continue
+            try:
+                t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            if t.tzinfo is None:
+                t = t.replace(tzinfo=datetime.timezone.utc)
+            if best is None or t.timestamp() > best[0]:
+                best = (t.timestamp(), "1h" if h1 > 0 else "5m")
+if best is None:
+    raise SystemExit(1)
+print(best[1], int(best[0]))
+PY
+}
+
 # 通す返事を起動し直して送るかを決める（<子のワークツリーのパス>）。起動し直すなら 1、そのまま送るなら 0 を出す。
-# 事実を 1 つでも読めなければ 0（references/reply-after-idle.md の表の「扱いが揺れる子」と同じ）
+# 子の表（references/reply-after-idle.md）のとおり、会話量 >= 閾値 OR 経過時間 >= 閾値で起動し直す。
+# compact_boundary の有無によらず、片方の計測失敗は他方を妨げない。両条件とも真と確認できなければ 0。
 decide_relaunch() {
-  local path="$1" dir files count file facts last compacted now ctx
-  local idle="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC:-3600}" min="${EPIC_DISPATCH_RELAUNCH_MIN_TOKENS:-150000}"
+  local path="$1" dir files count file last now measurement rc tokens
+  local idle="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}"
+  local force="${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}"
   dir="$(transcript_dir "$path")"
   files="$(ls -1 "$dir"/*.jsonl 2>/dev/null)"
   [ -n "$files" ] || { echo 0; return 0; }
   count="$(printf '%s\n' "$files" | wc -l | tr -d ' ')"
   [ "$count" -eq 1 ] || { echo 0; return 0; }
   file="$files"
+  measurement="$("${BASH_SOURCE[0]%/*}/subagent-context.sh" --file "$file" 2>/dev/null)"; rc=$?
+  # exit 2 はサブエージェント用の上限超過。>= の判定には JSON の実測値を使う。
+  if [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]; then
+    tokens="$(printf '%s' "$measurement" | jq -r '.context_tokens // empty' 2>/dev/null)"
+    if is_num "$tokens" && [ "$tokens" -ge "$force" ]; then
+      echo 1; return 0
+    fi
+  fi
   command -v python3 >/dev/null 2>&1 || { echo 0; return 0; }
-  facts="$(FILE="$file" python3 - <<'PY' 2>/dev/null
+  last="$(FILE="$file" python3 - <<'PY' 2>/dev/null
 import json, os, datetime
-last = None; idx_a = -1; idx_c = -1
+last = None
 with open(os.environ["FILE"], encoding="utf-8") as f:
-    for i, line in enumerate(f):
+    for line in f:
         try:
             d = json.loads(line)
         except Exception:
             continue
-        if not isinstance(d, dict):
-            continue
-        if d.get("type") == "assistant" and isinstance(d.get("timestamp"), str):
-            last = d["timestamp"]; idx_a = i
-        elif d.get("subtype") == "compact_boundary":
-            idx_c = i
+        if isinstance(d, dict) and d.get("type") == "assistant" and isinstance(d.get("timestamp"), str):
+            last = d["timestamp"]
 if last is None:
     raise SystemExit(1)
-t = datetime.datetime.fromisoformat(last.replace("Z", "+00:00")).timestamp()
-print(int(t), 1 if idx_c > idx_a else 0)
+print(int(datetime.datetime.fromisoformat(last.replace("Z", "+00:00")).timestamp()))
 PY
 )" || { echo 0; return 0; }
-  last="${facts%% *}"; compacted="${facts##* }"
   is_num "$last" || { echo 0; return 0; }
-  [ "$compacted" = 0 ] || { echo 0; return 0; }
   now="$(date +%s)"
-  [ $((now - last)) -ge "$idle" ] || { echo 0; return 0; }
-  ctx="$("$(dirname "$0")/subagent-context.sh" --file "$file" --cap 2147483647 2>/dev/null | jq -r '.context_tokens // empty' 2>/dev/null)"
-  is_num "$ctx" || { echo 0; return 0; }
-  [ "$ctx" -ge "$min" ] && echo 1 || echo 0
+  [ $((now - last)) -ge "$idle" ] && echo 1 || echo 0
 }
 
 # トランスクリプトの置き場（<ディレクトリ>）の全部の .jsonl と、そのセッションのサブエージェントの
@@ -1195,14 +1259,157 @@ resolve_stopped() {
   return 1
 }
 
+# Read-only eligibility check. TTL is the last write; request time includes cache
+# hits. The stop comment (not updated_at or a keepalive) anchors the 24h limit.
+# Missing/ambiguous measurements fail closed without changing wait's exit reason.
+keepalive_candidate() {
+  local rec="$1" childcomments="$2" epiccomments="$3" now="$4" text="$5" wt ttl
+  wt="$(es_get "$rec" worktree)"
+  [ -d "$wt" ] || return 1
+  ttl="$(cache_ttl_of "$wt")" || return 1
+  [ "${ttl%% *}" = 1h ] || return 1
+  [ "${ttl#* }" -le "$now" ] 2>/dev/null || return 1
+  REC="$rec" CHILD_COMMENTS="$childcomments" EPIC_COMMENTS="$epiccomments" \
+    DIR="$(transcript_dir "$wt")" NOW="$now" KEEPALIVE_TEXT="$text" \
+    FORCE="${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" IDLE="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" \
+    python3 - <<'PY' 2>/dev/null
+import datetime, glob, json, math, os, sys
+
+def reject():
+    raise SystemExit(1)
+def stamp(value):
+    try:
+        t = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return (t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)).timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return None
+def num(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0 else 0
+def text_of(c):
+    if isinstance(c, str): return c
+    if isinstance(c, list) and c and all(isinstance(b, dict) and b.get("type") == "text" for b in c):
+        return "\n".join(str(b.get("text", "")) for b in c)
+    return ""
+def trusted(c):
+    return isinstance(c, dict) and c.get("author_association") in ("OWNER", "MEMBER", "COLLABORATOR")
+def pages(raw):
+    result = []
+    decoder = json.JSONDecoder()
+    while raw.strip():
+        page, end = decoder.raw_decode(raw.lstrip())
+        if not isinstance(page, list): reject()
+        result.extend(page)
+        raw = raw.lstrip()[end:]
+    return result
+
+try:
+    now = int(os.environ["NOW"])
+    force, idle = os.environ["FORCE"], os.environ["IDLE"]
+    if not force.isdecimal() or not idle.isdecimal(): reject()
+    rec = json.load(open(os.environ["REC"]))
+    if rec.get("stop") != "stopped-seen" or rec.get("status") == "done" or rec.get("launch_failed") or not rec.get("session"): reject()
+    child = pages(os.environ["CHILD_COMMENTS"])
+    stops = [c for c in child if trusted(c) and c.get("body", "").splitlines()[:1] == ["子の停止: 主の返事待ち"]]
+    if not stops: reject()
+    stop = stops[-1]
+    stopped_at = stamp(stop.get("created_at"))
+    url = stop.get("html_url")
+    if stopped_at is None or not url or not 0 <= now-stopped_at < 86400: reject()
+    epic = pages(os.environ["EPIC_COMMENTS"])
+    label = "#" + str(rec["number"]) if rec["repo"] == rec["epic"].split("#")[0] else rec["child"]
+    for c in child + epic:
+        if not trusted(c) or url not in c.get("body", ""): continue
+        body = c["body"]
+        if (c in child and body.startswith("親の判断: 通した")) or any(line.startswith("親の判断: 子 " + label + " 通した") for line in body.splitlines()): reject()
+    files = glob.glob(os.path.join(os.environ["DIR"], "*.jsonl"))
+    # Same conservative selection as decide_relaunch: do not guess among sessions.
+    if len(files) != 1: reject()
+    last_request = None
+    owner = question = None
+    pending = False
+    for line in open(files[0], encoding="utf-8"):
+        try: d = json.loads(line)
+        except ValueError: continue
+        if not isinstance(d, dict) or d.get("isSidechain") or d.get("isMeta"): continue
+        msg = d.get("message")
+        if not isinstance(msg, dict): continue
+        t = stamp(d.get("timestamp"))
+        content = text_of(msg.get("content"))
+        if d.get("type") == "user" and content.strip():
+            if content == os.environ["KEEPALIVE_TEXT"]:
+                pending = True
+            else:
+                # Parent judgments count even though child-log's owner column
+                # does not display them. A real answer must stop keepalives.
+                if t is None: reject()
+                owner = t
+                pending = False
+        elif d.get("type") == "assistant":
+            if content.strip():
+                if pending:
+                    # A malformed response resolves transport too. Display and
+                    # stopped-seen remain governed by their existing contracts.
+                    pending = False
+                else:
+                    question = t
+            u = msg.get("usage")
+            if d.get("entrypoint") != "cli" or d.get("isApiErrorMessage") or d.get("error") is not None or not isinstance(u, dict): continue
+            tokens = sum(num(u.get(k)) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
+            if tokens <= 0: continue
+            if t is None or t > now: reject()
+            if last_request is None or t >= last_request[0]: last_request = (t, tokens)
+    if pending or question is None or (owner is not None and (owner > question or owner > stopped_at)): reject()
+    if last_request is None: reject()
+    t, tokens = last_request
+    if not 3000 <= now-t < min(3600, int(idle)) or tokens >= int(force): reject()
+except (OSError, ValueError, KeyError, TypeError):
+    reject()
+PY
+}
+
+# Only a normal continuing poll calls this. Recheck local state and substantive
+# input after remote reads, then use the launcher's own screen reobservation.
+keepalive_child() {
+  local n="$1" f wt name childcomments epiccomments epic repo enum text now out
+  child_record "$PARENT_TOP" "$n" || return 0
+  f="$ES_HIT"
+  [ "$(es_get "$f" stop)" = stopped-seen ] || return 0
+  [ "$(es_get "$f" status)" != "done" ] || return 0
+  [ -z "$(es_get "$f" launch_failed)" ] || return 0
+  [ -n "$(es_get "$f" session)" ] || return 0
+  wt="$(es_get "$f" worktree)"; [ -d "$wt" ] || return 0
+  name="$(es_get "$f" launcher)"
+  case "$name" in orca|tmux) ;; *) return 0 ;; esac
+  childcomments="$(gh api "$(issue_api "$n" "$f")/comments" --paginate)" || return 0
+  epic="$(es_get "$f" epic)"; repo="${epic%#*}"; enum="${epic##*#}"
+  epiccomments="$(gh api "repos/$repo/issues/$enum/comments" --paginate)" || return 0
+  text="$(keepalive_text)" || return 0
+  now="$(date +%s)"
+  keepalive_candidate "$f" "$childcomments" "$epiccomments" "$now" "$text" || return 0
+  child_record "$PARENT_TOP" "$n" || return 0
+  [ "$ES_HIT" = "$f" ] || return 0
+  [ "$(es_get "$f" worktree)" = "$wt" ] || return 0
+  [ "$(es_get "$f" launcher)" = "$name" ] || return 0
+  keepalive_candidate "$f" "$childcomments" "$epiccomments" "$(date +%s)" "$text" || return 0
+  out="$(launcher_run "$name" keepalive "$wt" "$text")"
+  case "$out" in
+    sent|skipped\ *) ;;
+    *) echo "keepalive $n: ${out:-failed send}" >&2 ;;
+  esac
+  return 0
+}
+
 cmd_wait() {
-  local interval="${EPIC_DISPATCH_INTERVAL:-300}" timeout="${EPIC_DISPATCH_TIMEOUT:-21600}"
+  # 上限は --timeout か空でない EPIC_DISPATCH_TIMEOUT があればその値。どちらも無ければ（timeout が空のまま）、
+  # 待つ前に親の会話キャッシュの有効期限で決める（下の SECONDS=0 の前）
+  local interval="${EPIC_DISPATCH_INTERVAL:-300}" timeout="${EPIC_DISPATCH_TIMEOUT:-}" autolimit=0
+  [ -n "$timeout" ] || autolimit=1
   # --watch-done の子（空白区切り。bash 3.2 の set -u で空の配列を展開できないので文字列で持つ）
   local watch="" watchstop=0 resolve=""
   while [ "$#" -gt 0 ]; do
     case "$1" in
       --interval) [ "$#" -ge 2 ] || usage; interval="$2"; shift 2 ;;
-      --timeout) [ "$#" -ge 2 ] || usage; timeout="$2"; shift 2 ;;
+      --timeout) [ "$#" -ge 2 ] || usage; timeout="$2"; autolimit=0; shift 2 ;;
       --watch-done)
         [ "$#" -ge 2 ] || usage
         es_valid_arg "$2" || { echo "--watch-done needs an issue number or <owner>/<repo>#<number>: $2" >&2; usage; }
@@ -1218,7 +1425,7 @@ cmd_wait() {
     esac
   done
   is_num "$interval" || { echo "--interval must be a non-negative integer: $interval" >&2; usage; }
-  is_num "$timeout" || { echo "--timeout must be a non-negative integer: $timeout" >&2; usage; }
+  [ "$autolimit" -eq 1 ] || is_num "$timeout" || { echo "--timeout must be a non-negative integer: $timeout" >&2; usage; }
   [ "$#" -ge 1 ] || [ -n "$watch" ] || usage
   check_children "$@"
   # 完了の推定の閾値は --watch-done があるときだけ使うので、そのときだけ待つ前に確かめる
@@ -1232,8 +1439,8 @@ cmd_wait() {
   [ "$watchstop" -eq 1 ] || resolve=""
   if [ -n "$resolve" ]; then
     agent_setup "$resolve" || usage
+    is_num "${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" || { echo "EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS must be a non-negative integer" >&2; usage; }
     is_num "${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" || { echo "EPIC_DISPATCH_RELAUNCH_IDLE_SEC must be a non-negative integer" >&2; usage; }
-    is_num "${EPIC_DISPATCH_RELAUNCH_MIN_TOKENS-150000}" || { echo "EPIC_DISPATCH_RELAUNCH_MIN_TOKENS must be a non-negative integer" >&2; usage; }
   fi
 
   # 子の記録は親のワークツリー（今のワークツリー）で探す。印を見るときは jq と今のワークツリーが要る。
@@ -1248,6 +1455,20 @@ cmd_wait() {
 
   local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f
   local errf; errf="$(mktemp)"; trap 'rm -f "$errf"' EXIT
+  # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
+  # 1 時間か判定できなければ 3000（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
+  # 起動の時点で 1 回だけ決める（待つ間は親がリクエストを出さないので変わらない）。references/reply-after-idle.md
+  if [ "$autolimit" -eq 1 ]; then
+    local ttl
+    ttl="$(cache_ttl_of "$(toplevel)")" || ttl=""
+    case "${ttl%% *}" in
+      5m) timeout=21600; ttl=5m ;;
+      1h) timeout=3000; ttl=1h ;;
+      *) timeout=3000; ttl=unknown ;;
+    esac
+    is_num "$timeout" || { echo "--timeout must be a non-negative integer: $timeout" >&2; usage; }
+    echo "wait limit $timeout (parent cache $ttl)" >&2
+  fi
   SECONDS=0
   while :; do
     closed=""; failed=""; marked=""; stopped=""; unrecorded=""; wsfail=0; : > "$errf"
@@ -1348,6 +1569,9 @@ cmd_wait() {
       if [ "$#" -gt 0 ]; then echo "timeout $*"; else echo "timeout"; fi
       exit 2
     fi
+    if [ "$watchstop" -eq 1 ] && [ "$interval" -gt 0 ] && [ "$timeout" -gt 0 ] && [ "$fails" -eq 0 ]; then
+      for n in "$@"; do keepalive_child "$n"; done
+    fi
     sleep "$interval"
   done
 }
@@ -1361,6 +1585,161 @@ cmd_pending_owner() {
   for n in "$@"; do
     child_record "$PARENT_TOP" "$n" || continue
     [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] && echo "pending $n"
+  done
+  exit 0
+}
+
+# 固定の声かけ文を共有定義から生成する。wait の送信と child-log の完全一致に同じ生成を使う。
+# 返事の欄の意味や真偽は検証しない（#1374）。受信手順も停止前にこの定義を読む。
+keepalive_text() {
+  python3 - "$LAUNCHER_DIR/../references/child-cache-keepalive.json" <<'PY'
+import json, sys
+
+with open(sys.argv[1], encoding="utf-8") as f:
+    definition = json.load(f)
+shape = definition["separator"].join(
+    [definition["reply_prefix"]] + [field + " <値>" for field in definition["fields"]]
+)
+print(definition["request_template"].format(reply_format=shape))
+PY
+}
+
+# child-log: 読み取り専用。子ごとに、記録の worktree から会話ログの置き場を引き、最新の会話ログ（置き場の直下の *.jsonl のうち
+#   最後の timestamp が最も新しい 1 本）の最後の主の発言と最後の子の発言の時刻（JST）と冒頭 80 文字を
+#   `<child>\t<主の時刻>\t<冒頭>\t<子の時刻>\t<冒頭>` で出す（無い列は -）。読めない子（記録が無い・読めない・2 件以上、
+#   置き場が無い・読めない、python3 が無い）は `unreadable <child>`（記録が原因なら stderr にそのパス）を出して続ける。
+#   jq が無い・今のワークツリーを読めないときは stdout 空で exit 1。それ以外は exit 0
+child_log_line() {
+  local keepalive
+  keepalive="$(keepalive_text)" || return 1
+  DIR="$1" KEEPALIVE_TEXT="$keepalive" python3 - "$LAUNCHER_DIR/../references/child-cache-keepalive.json" <<'PY' 2>/dev/null
+import datetime, glob, json, os, sys
+
+JST = datetime.timezone(datetime.timedelta(hours=9))
+with open(sys.argv[1], encoding="utf-8") as f:
+    keepalive = json.load(f)
+
+def keepalive_reply(s):
+    if "\n" in s or "\r" in s:
+        return False
+    parts = s.split(keepalive["separator"])
+    if len(parts) != len(keepalive["fields"]) + 1 or parts[0] != keepalive["reply_prefix"]:
+        return False
+    for part, field in zip(parts[1:], keepalive["fields"]):
+        label = field + " "
+        if not part.startswith(label):
+            return False
+        value = part[len(label):]
+        if not value.strip() or keepalive["separator"].strip() in value:
+            return False
+    return True
+
+def parse(ts):
+    try:
+        t = datetime.datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except Exception:
+        return None
+    if t.tzinfo is None:
+        t = t.replace(tzinfo=datetime.timezone.utc)
+    return t
+
+def text_of(content):
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list) and content and all(isinstance(b, dict) and b.get("type") == "text" for b in content):
+        return "\n".join(str(b.get("text", "")) for b in content)
+    return None
+
+def head(s):
+    return " ".join(s.split())[:80]
+
+best = None
+for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
+    last = None
+    rows = []
+    try:
+        with open(p, encoding="utf-8", errors="replace") as f:
+            for line in f:
+                try:
+                    d = json.loads(line)
+                except Exception:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                t = parse(d["timestamp"]) if isinstance(d.get("timestamp"), str) else None
+                if t is not None and (last is None or t > last):
+                    last = t
+                rows.append((t, d))
+    except OSError:
+        continue
+    if last is not None and (best is None or last > best[0]):
+        best = (last, rows)
+if best is None:
+    raise SystemExit(1)
+
+owner = child = None
+awaiting_keepalive = False
+for t, d in best[1]:
+    if t is None or d.get("isSidechain") or d.get("isMeta"):
+        continue
+    msg = d.get("message")
+    if not isinstance(msg, dict):
+        continue
+    if d.get("type") == "user":
+        s = text_of(msg.get("content"))
+        if s is None or not s.strip():
+            continue
+        # Exact, unabridged reserved input, including when the owner typed it.
+        if s == os.environ["KEEPALIVE_TEXT"]:
+            awaiting_keepalive = True
+            continue
+        # A real user turn (including a parent judgment) ends correspondence.
+        awaiting_keepalive = False
+        st = s.lstrip()
+        m = st.find("主の返事（親エピック #")
+        if m > 0:
+            st = st[m:].split("</command-args>")[0]
+        elif st.startswith("親エピック #") or "<command-name>" in st or st.startswith("/develop"):
+            continue
+        owner = (t, st)
+    elif d.get("type") == "assistant":
+        s = text_of(msg.get("content"))
+        if s is None or not s.strip():
+            continue
+        matched = awaiting_keepalive and keepalive_reply(s)
+        awaiting_keepalive = False
+        if matched:
+            continue
+        child = (t, s)
+
+def col(x):
+    return ("-", "-") if x is None else (x[0].astimezone(JST).strftime("%Y-%m-%d %H:%M"), head(x[1]))
+
+print("\t".join(col(owner) + col(child)))
+PY
+}
+
+cmd_child_log() {
+  [ "$#" -ge 1 ] || usage
+  check_children "$@"
+  need_parent
+  local n rc wt dir line
+  for n in "$@"; do
+    rc=0
+    child_record "$PARENT_TOP" "$n" || rc=$?
+    if [ "$rc" -eq 3 ]; then
+      echo "unreadable $n"
+      continue
+    fi
+    if [ "$rc" -ne 0 ]; then echo "unreadable $n"; continue; fi
+    wt="$(es_get "$ES_HIT" worktree)"
+    if [ -z "$wt" ] || ! command -v python3 >/dev/null 2>&1; then echo "unreadable $n"; continue; fi
+    dir="$(transcript_dir "$wt")"
+    if line="$(child_log_line "$dir")" && [ -n "$line" ]; then
+      printf '%s\t%s\n' "$n" "$line"
+    else
+      echo "unreadable $n"
+    fi
   done
   exit 0
 }
@@ -1517,7 +1896,14 @@ cmd_reap() {
         started=$SECONDS
         while :; do
           if wtl="$(gitx "$gd" worktree list --porcelain)" && ! printf '%s\n' "$wtl" | grep -qxF -- "worktree $path"; then
-            attached=0; break
+            attached=0
+            # 別のワークツリーが同じブランチを checkout していたら消さない（update-ref -d は
+            # branch -D と違い、使用中のブランチでも消せてしまうので、ここで同じ保護を入れる）
+            if printf '%s\n' "$wtl" | grep -qxF -- "branch refs/heads/$branch"; then
+              attached=1
+              echo "branch $branch is checked out by another worktree; not deleting it" >&2
+            fi
+            break
           fi
           attached=1
           tries=$(( tries - 1 ))
@@ -1527,10 +1913,12 @@ cmd_reap() {
           sleep "$di"
         done
       fi
-      # 待っている間に先端が進んだかもしれないので、消す直前に読み直して HEAD と比べる
+      # 待っている間に先端が進んだかもしれないので、消す直前に読み直して HEAD と比べる。
+      # 削除は期待 OID つきの update-ref -d にして、読み直しから削除までの間に別プロセスが
+      # ref を進めたときも Git 側で不一致として失敗させる（非 0 は branch-kept）
       if [ "$tip" = "$head" ] && [ "$attached" -eq 0 ] \
         && tip2="$(gitx "$gd" rev-parse --verify --quiet "refs/heads/$branch")" && [ "$tip2" = "$head" ] \
-        && gitx "$gd" branch -D "$branch" >&2; then
+        && gitx "$gd" update-ref -d "refs/heads/$branch" "$head" >&2; then
         rm -f "$f"; echo "reaped $n"
       else
         rm -f "$f"; echo "reaped $n branch-kept"
@@ -1637,6 +2025,7 @@ case "$sub" in
   mark) cmd_mark "$@" ;;
   reap) cmd_reap "$@" ;;
   pending-owner) cmd_pending_owner "$@" ;;
+  child-log) cmd_child_log "$@" ;;
   adopt) cmd_adopt "$@" ;;
   clear) cmd_clear "$@" ;;
   max-parallel) cmd_max_parallel "$@" ;;

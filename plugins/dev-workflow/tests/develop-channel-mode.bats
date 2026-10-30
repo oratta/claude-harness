@@ -133,7 +133,7 @@ refute() {
   printf '%s\n' "$s" | grep -qF 'チャンネルの返事の確認: 可'
   printf '%s\n' "$s" | grep -qF 'チャンネルの返事の確認: 不可（OWNER_REPLY_CHANNEL_SENDERS が無い）'
   printf '%s\n' "$s" | grep -qF '値を出さず'
-  printf '%s\n' "$s" | grep -qF 'PR #<N> にコメントで `許容する`'
+  printf '%s\n' "$s" | grep -qF '末尾の PR にコメントで `許容する`'
 }
 
 @test "channel statements: all go to the channel, follow the canonical first-line rule, no screen or tab" {
@@ -145,7 +145,8 @@ refute() {
   printf '%s\n' "$s" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
   printf '%s\n' "$s" | grep -qF '答え方の行'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで何を返すか'
-  printf '%s\n' "$s" | grep -F 'PR #<N>' | grep -qF 'フル URL'
+  printf '%s\n' "$s" | grep -F '末尾の PR に何を書くか' | grep -qF 'フル URL'
+  ! printf '%s\n' "$s" | grep -qF 'PR #<N>' || return 1
   printf '%s\n' "$s" | grep -qF '画面・タブ・入力欄'
   ! printf '%s\n' "$s" | grep -qF '`主がすること: このチャンネルで' || return 1
 }
@@ -222,6 +223,6 @@ refute() {
   printf '%s\n' "$s" | grep -qF '/develop <記録先>'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで記録先の番号を添えて返事'
   printf '%s\n' "$s" | grep -qF '`チャンネルの返事の確認:`'
-  printf '%s\n' "$s" | grep -qF 'PR #<N> にコメントで `許容する`'
+  printf '%s\n' "$s" | grep -qF '末尾の PR にコメントで `許容する`'
   refute "$s" -F '前任 W'
 }

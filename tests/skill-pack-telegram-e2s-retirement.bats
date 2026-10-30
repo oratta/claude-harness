@@ -49,11 +49,20 @@ setup() {
 }
 
 @test "README plugin table has no row for the three plugins" {
-  for p in $PLUGINS; do
-    # 「解散済みプラグイン」節の表（解散の理由と代替）は対象外。節より前だけを見る
-    run bash -c "awk '/^### 解散済みプラグイン/{exit} {print}' '$ROOT_README' | grep -n '^| \`$p\` |'"
-    [ "$status" -eq 1 ] || { echo "$output"; return 1; }
-  done
+  # 「解散済みプラグイン」節より前の表の第 1 列を正規化して比較する。
+  run awk -F '|' '
+    /^### 解散済みプラグイン/ { exit }
+    /^[[:space:]]*\|/ {
+      name = $2
+      gsub(/[[:space:]`*]/, "", name); sub(/^\[/, "", name); sub(/\]\(.*\)$/, "", name)
+      if (name == "skill-pack" || name == "telegram" || name == "experience-to-skill") {
+        print NR ":" $0
+        found = 1
+      }
+    }
+    END { exit found ? 1 : 0 }
+  ' "$ROOT_README"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
 }
 
 @test "README records the retirement, the uninstall steps and the alternatives" {

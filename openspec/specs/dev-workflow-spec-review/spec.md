@@ -2,12 +2,14 @@
 
 ## Purpose
 develop スキルが、仕様化要否の判断を機械照合できる書式で記録先（元 issue、無ければ Draft PR）に残し、書いた仕様（openspec の change artifact）を実装前に別コンテキストが審査してから実装に入ることを規定する。longrun の Build Contract レビューを dev-workflow のパイプラインに置き直したもの。
-## Requirements
-### Requirement: 仕様化要否の判定結果を固定書式で issue に記録する
-develop スキルの W の指示書（`references/roles/worker.md`）は、仕様化要否を判定した直後に、その結果を記録先（元 issue。issue が無い場合は Draft PR）のコメントとして記録する手順を明記しなければならない（MUST）。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致し（装飾・全角コロン・末尾句点を含めない）（MUST）、2 行目以降に判定理由（`references/decision-criteria.md` のどの条件に当たったか）を書く（MUST）。同接頭辞のコメントが複数あるときは作成日時が最新の 1 件を正とし（SHALL）、この記録は interactive / unmanned の両モードで行い（MUST）、記録せずに分割判定・実装へ進んではならない（MUST NOT）。後続の照合で PR から元 issue を解決する規則（PR 本文中で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`、大文字小文字不問。見つからなければ PR 自身のコメントを見る）は `references/roles/spec-reviewer.md` の「判断記録の契約」に定義する（SHALL）。
 
-#### Scenario: worker.md に記録手順と正規表現がある
-- **WHEN** `references/roles/worker.md` の仕様化判断の節を読む
+## Requirements
+
+### Requirement: 仕様化要否の判定結果を固定書式で issue に記録する
+develop スキルの W の指示書（`references/roles/worker/spec.md`。記録する前に実装へ進まない規則は `references/roles/worker/common.md`「実装に入る前の確認」）は、仕様化要否を判定した直後に、その結果を記録先（元 issue。issue が無い場合は Draft PR）のコメントとして記録する手順を明記しなければならない（MUST）。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致し（装飾・全角コロン・末尾句点を含めない）（MUST）、2 行目以降に判定理由（`references/decision-criteria.md` のどの条件に当たったか）を書く（MUST）。同接頭辞のコメントが複数あるときは作成日時が最新の 1 件を正とし（SHALL）、この記録は interactive / unmanned の両モードで行い（MUST）、記録せずに分割判定・実装へ進んではならない（MUST NOT）。後続の照合で PR から元 issue を解決する規則（PR 本文中で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`、大文字小文字不問。見つからなければ PR 自身のコメントを見る）は `references/roles/spec-reviewer.md` の「判断記録の契約」に定義する（SHALL）。
+
+#### Scenario: worker/spec.md に記録手順と正規表現がある
+- **WHEN** `references/roles/worker/spec.md` の仕様化判断の節を読む
 - **THEN** `^仕様化判断: (する|しない)$` の書式と、`gh` で記録先にコメントする手順、記録前に先へ進まない旨が書かれている
 
 #### Scenario: unmanned でも免除されない
@@ -27,8 +29,8 @@ develop スキルは、仕様化経路で、W が openspec CLI（`openspec new c
 - **WHEN** SKILL.md の 1 ループを読む
 - **THEN** W の change の作成（`openspec new change`）と W の再開（実装）の間に R1 の仕様レビューがあり、`references/roles/spec-reviewer.md` を参照し、APPROVE の記録まで実装に進まない旨が書かれている
 
-#### Scenario: worker.md の仕様化の節にもレビューがある
-- **WHEN** `references/roles/worker.md` の仕様化する場合の節を読む
+#### Scenario: worker/spec.md の仕様化する場合の節と worker/common.md の実装に入る前の確認にレビューがある
+- **WHEN** `references/roles/worker/spec.md` の仕様化する場合の節と、`references/roles/worker/common.md` の「実装に入る前の確認」の節を読む
 - **THEN** `openspec new change` と artifact の直書きの後に本体へ return して仕様レビューを受けることと、R1 の APPROVE が記録されるまで実装に進まないことが書かれている
 
 #### Scenario: 文言合わせの通し方では R1 を挟まない
@@ -106,7 +108,7 @@ develop スキルは、仕様化経路で、W が openspec CLI（`openspec new c
 - **THEN** decider 経路では記録先の本文と関連コメントを呼び出し側が入力文に貼ること、`gh` で自分で取りに行かないことが書かれている
 
 ### Requirement: 仕様レビュアーのモデルは役割で選ぶ
-R1 は本体が `model` を明示して spawn しなければならない（MUST）。既定は中位ティア（`opus`）とし（SHALL）、仕様が `references/roles/worker.md` の「重要実装の事前分類」表のマージ権限・層間契約・課金/法務に当たる場合は、`model: fable` を付けた `general-purpose` ではなく `subagent_type: dev-workflow:decider` で spawn しなければならない（MUST。聖域パスだけでは上げない。分類表の正本は worker.md であり、この要件に再掲しない）。`general-purpose` などの実行役の種別に `model: fable` を付ける spawn は `scripts/agent-model-guard.sh` に拒否される（SHALL）。残量モードは `dev-workflow-execution-strategy` の規定に従い、`FABLE_BUDGET_MODE=reserve` は自動実行のみ、`exhausted` は全経路で `opus` を上限とする（MUST）。
+R1 は本体が `model` を明示して spawn しなければならない（MUST）。既定は中位ティア（`opus`）とし（SHALL）、仕様が `references/pre-classification.md` の「重要実装の事前分類」表のマージ権限・層間契約・課金/法務に当たる場合は、`model: fable` を付けた `general-purpose` ではなく `subagent_type: dev-workflow:decider` で spawn しなければならない（MUST。聖域パスだけでは上げない。分類表の正本は `pre-classification.md` であり、この要件に再掲しない）。`general-purpose` などの実行役の種別に `model: fable` を付ける spawn は `scripts/agent-model-guard.sh` に拒否される（SHALL）。残量モードは `dev-workflow-execution-strategy` の規定に従い、`FABLE_BUDGET_MODE=reserve` は自動実行のみ、`exhausted` は全経路で `opus` を上限とする（MUST）。
 
 #### Scenario: モデル明示と既定 opus が書かれている
 - **WHEN** SKILL.md の「モデル」節または `references/roles/spec-reviewer.md` を読む
@@ -115,18 +117,6 @@ R1 は本体が `model` を明示して spawn しなければならない（MUST
 #### Scenario: 残量モードの扱いが既存規定と一致する
 - **WHEN** SKILL.md または `references/roles/spec-reviewer.md` の残量モードの記述を読む
 - **THEN** `reserve` は自動実行のみ、`exhausted` は全経路で `opus` 上限、と書き分けられている
-
-### Requirement: 仕様レビューまわりの要件が指す W の指示書の読み替え
-
-この capability の既存要件が `references/roles/worker.md` と書いた箇所は、次のとおり読まなければならない（MUST。対応表の正本は `dev-workflow-develop`「既存要件が worker.md に置いた内容は移し先のファイルを指す」）:
-
-- 「仕様化要否の判定結果を固定書式で issue に記録する」の worker.md の仕様化判断の節と、「書いた仕様は実装前に別コンテキストがレビューする」の worker.md の仕様化する場合の節は、`references/roles/worker/spec.md` の同じ節
-- 「仕様レビュアーのモデルは役割で選ぶ」の `references/roles/worker.md` の「重要実装の事前分類」表は、`references/pre-classification.md` の同じ表
-
-#### Scenario: 仕様化判断の記録手順の所在
-
-- **WHEN** `references/roles/worker/spec.md` の仕様化判断の節を読む
-- **THEN** 1 行目の正規表現 `^仕様化判断: (する|しない)$` と、記録するまで分割判定・実装へ進まないことが書かれている
 
 #### Scenario: R1 のモデル選択が指す表
 
@@ -175,4 +165,3 @@ develop スキルは、仕様化判断が「する」になった変更のうち
 #### Scenario: R1 に差し戻された change は切り替えない
 - **WHEN** `references/roles/worker/spec.md` と `references/decision-criteria.md` の文言合わせの通し方の記述を読む
 - **THEN** R1 を一度起こした change をあとから文言合わせの通し方に切り替えてはならないことが書かれている
-

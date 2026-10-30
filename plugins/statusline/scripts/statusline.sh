@@ -18,6 +18,11 @@
 # 線の先までバーが伸びていなければ日程が先行 = 使いたい時に余裕がある。
 # 線を追い越していたらリセット前に枯れるペース。
 #
+# <config>/.headroom.json（dev-workflow の headroom.py が書く schema 1）があれば読み、値を使える
+# アカウントの行では、リセット権で増えた使える量（ロケットモード 🚀）とリセット権の数（🚀×N）を描く。
+# 値を数え直さず、無い・使えないときは今の描き方のまま。正本は openspec の
+# statusline-multi-account-usage「`.headroom.json` の値を使えるアカウントを決める」から始まる要件。
+#
 # 環境変数（すべて任意）:
 #   STATUSLINE_CODEX       0 で Codex アカウント行を無効化（既定 1）
 #   STATUSLINE_CODEX_BIN   Codex CLI のパス（既定 codex）
@@ -234,6 +239,10 @@ YELLOW=$(printf '\033[33m')
 RED=$(printf '\033[31m')
 DIM=$(printf '\033[2m')
 RESET=$(printf '\033[0m')
+# ロケットモード（.headroom.json）の色。214 と 203 は usage_color_num の黄と赤と同じ番号
+ROCKET_NAME=$(printf '\033[1;38;5;16;48;5;214m')   # 名前の地: 太字・黒字・オレンジの地
+ROCKET_FG=$(printf '\033[38;5;214m')
+ROCKET_RED=$(printf '\033[38;5;203m')
 
 # Shorten directory path (similar to Prezto's prompt-pwd)
 if [[ "$cwd" == "$HOME"* ]]; then
@@ -322,6 +331,7 @@ BAR_GLYPH="${STATUSLINE_BAR_GLYPH:-▂}"
 ACTIVE_MARK="▸"
 C_EMPTY_N=238      # バー本体の未消化部分
 C_TRACK_N=252      # 日程の線
+C_SPARE_N=24       # 使える量が 100% を超えたとき、足した分の空き（ロケットモード）
 
 # バーの色番号。日程消化率が分かる窓（7d）は「日程に対して先行しているか」で判定する。
 # バー先端が日程線を追い越すと警告色になり、見た目と色の意味が一致する。
@@ -341,9 +351,14 @@ usage_color_num() {
     fi
 }
 
-# $1=消化率(整数) $2=日程消化率(整数, 空可) $3=バー色番号 → バー文字列
+# $1=消化率(整数) $2=日程消化率(整数, 空可) $3=バー色番号
+# $4=使える量(%。省略時 100) → バー文字列
+# 使える量が 100 を超えるときは、その 100% に当たるセル（BAR_WIDTH × 100 ÷ 使える量 を切り捨て）以降の
+# 塗られていないセルの背景を C_SPARE_N にする（足した分の空き）。100 のときは今と 1 バイトも変わらない。
 bar2() {
-    local pct=$1 elapsed=$2 un=$3
+    local pct=$1 elapsed=$2 un=$3 cap=${4:-100}
+    local spare=$BAR_WIDTH
+    [ "$cap" -gt 100 ] && spare=$(( BAR_WIDTH * 100 / cap ))
     local fill=$(( pct * BAR_WIDTH / 100 ))
     # 1% でも存在が見えるように最低1セル
     [ "$pct" -gt 0 ] && [ "$fill" -eq 0 ] && fill=1
@@ -357,7 +372,9 @@ bar2() {
     fi
     local out="" i bgn fgn
     for (( i = 0; i < BAR_WIDTH; i++ )); do
-        if [ "$i" -lt "$fill" ]; then bgn=$un; else bgn=$C_EMPTY_N; fi
+        if [ "$i" -lt "$fill" ]; then bgn=$un
+        elif [ "$i" -ge "$spare" ]; then bgn=$C_SPARE_N
+        else bgn=$C_EMPTY_N; fi
         # 日程が未到達のセルは線色を背景と同色にして線を消す
         if [ "$i" -lt "$mark" ]; then fgn=$C_TRACK_N; else fgn=$bgn; fi
         out+=$'\033[38;5;'"${fgn}"$'m\033[48;5;'"${bgn}"'m'"$BAR_GLYPH"
@@ -376,15 +393,34 @@ fmt_left() {
 }
 
 # $1=ラベル $2=ラベル幅 $3=消化率 $4=日程消化率(空可) $5=分母表示(1で "◯◯%/△△%")
+# $6=ロケットモードのための列を空けるなら 1（空なら今のまま）
+# $7=🚀 の列の中身（表示幅 4。空なら半角スペース 4 つ） $8=使える量の列（空なら列なし、
+#   "-" なら半角スペース 9 つ、それ以外はその文字列をバーの色で右寄せ 9 桁） $9=使える量(%。省略時 100)
 #   → "ラベル バー ◯◯%/△△%"
 # 分母は日程消化率。バー下端の線と同じ色にして、線の位置＝分母だと目で繋がるようにする。
+# 列を空けるときはラベルの欄を 7 桁にして 🚀 の列を置き、使える量の列がある行は割合を %5d で描く
+# （正本: statusline-multi-account-usage「ロケットモードのための列を空ける」）。
 bar_seg() {
     local un
     un=$(usage_color_num "$3" "$4")
-    printf '%s%-*s%s%s \033[38;5;%sm%3d%%%s' \
-        "$DIM" "$2" "$1" "$RESET" \
-        "$(bar2 "$3" "$4" "$un")" \
-        "$un" "$3" "$RESET"
+    if [ "$6" = "1" ]; then
+        printf '%s%-*s%s%s%s' "$DIM" 7 "$1" "$RESET" "${7:-    }" "$(bar2 "$3" "$4" "$un" "${9:-100}")"
+        if [ -z "$8" ]; then
+            printf ' \033[38;5;%sm%3d%%%s' "$un" "$3" "$RESET"
+        else
+            if [ "$8" = "-" ]; then
+                printf '%9s' ''
+            else
+                printf '%*s\033[38;5;%sm%s%s' "$(( 9 - ${#8} ))" '' "$un" "$8" "$RESET"
+            fi
+            printf '\033[38;5;%sm%5d%%%s' "$un" "$3" "$RESET"
+        fi
+    else
+        printf '%s%-*s%s%s \033[38;5;%sm%3d%%%s' \
+            "$DIM" "$2" "$1" "$RESET" \
+            "$(bar2 "$3" "$4" "$un")" \
+            "$un" "$3" "$RESET"
+    fi
     if [ "$5" = "1" ] && [ -n "$4" ]; then
         printf '%s/%s\033[38;5;%sm%d%%%s' "$DIM" "$RESET" "$C_TRACK_N" "$4" "$RESET"
     fi
@@ -426,6 +462,33 @@ fmt_reset_credits() {
         fi
     fi
     printf '%s%s%s' "$color" "$text" "$RESET"
+}
+
+# $1=tickets.count（空可） $2=tickets.earliest_expiry epoch（空可） $3=claude-rocket / codex-rocket / plain
+#   → 区切りに続けた "🚀×N ~1d 20h"（.headroom.json の値を使えるアカウントの右端の区画）。
+# 色はロケットモードの Claude が 214（失効まで 24 時間以内は 203）、ロケットモードの Codex が 214、
+# ロケットモードでないアカウントは DIM。Codex のロケットモードは左の残り時間と重なるので時間を付けない。
+# 残数が無い・0 なら何も出さない（正本: statusline-multi-account-usage「リセット権の区画を 🚀 と数で描く」）。
+fmt_rocket_tickets() {
+    local n="$1" exp="$2" kind="$3" color="$DIM" text left
+    [ -n "$n" ] && [ "$n" -gt 0 ] || return 0
+    text="🚀×${n}"
+    [ "$kind" = "plain" ] || color="$ROCKET_FG"
+    [ "$kind" = "codex-rocket" ] && exp=""
+    if [ -n "$exp" ]; then
+        left=$(( exp - now ))
+        text+=" $(fmt_left "$left")"
+        [ "$kind" = "claude-rocket" ] && [ "$left" -le 86400 ] && color="$ROCKET_RED"
+    fi
+    printf '  %s│%s  %s%s%s' "$DIM" "$RESET" "$color" "$text" "$RESET"
+}
+
+# $1=rocket.count → 🚀 の列の中身（表示幅 4。1 なら "🚀  "、2 以上なら "🚀2 " のように数を付ける）
+rocket_cell() {
+    local n="$1" cell="🚀" w=2
+    if [ "$n" -gt 1 ]; then cell+="$n"; w=$(( 2 + ${#n} )); fi
+    [ "$w" -lt 4 ] && cell+="$(printf '%*s' $(( 4 - w )) '')"
+    printf '%s' "$cell"
 }
 
 # Usage (rate limit) indicator — Pro/Max only; fields absent otherwise
@@ -613,6 +676,16 @@ if [ "$multi" -eq 1 ]; then
     done
 fi
 
+# 1 スロットで Codex の行が出るときは、Claude の行にも名前の列を出して Codex の行とバーの左端を揃える
+# （正本: statusline-multi-account-usage「Codex の行の名前は Codex とアカウント名にする」）。
+# 名前は登録簿の Claude <label>、登録簿が無い既定スロットは Claude。Codex の行が出ないときは今のまま。
+single_name=""; single_name_w=0
+if [ "$multi" -eq 0 ] && [ -n "$codex_rows" ]; then
+    single_name="${slot_labels[$active_idx]}"; single_name_w="${slot_widths[$active_idx]}"
+    if [ -z "$single_name" ]; then single_name="Claude"; single_name_w=6; fi
+    label_w="$single_name_w"
+fi
+
 # Codex shares the label column, without changing output when its row is absent.
 if [ -n "$codex_rows" ] && [ "$label_w" -lt "$codex_name_w" ]; then
     label_w="$codex_name_w"
@@ -775,13 +848,125 @@ for n in range(0, len(rest) - 6, 7):
 ' "$sessions_dir" "$now" "${_rec_args[@]}" 2>/dev/null)
 fi
 
+# ---- .headroom.json を jq 1 回で読む（正本: statusline-multi-account-usage
+# 「`.headroom.json` の値を使えるアカウントを決める」） ----
+# ファイルが無ければ jq を起動しない（今の出力と起動数を変えない）。全アカウント分を 1 回で読むので、
+# 途中で headroom.py が書き換えても 1 回の描画の中で新旧が混ざらない。jq の中で条件 1〜3・5〜7 を判定し、
+# 通った要素だけを「キー（Claude はスロットの id、Codex は @codex）、weekly_reset_at、rocket.count、
+# rocket.earliest_expiry、tickets.count、tickets.earliest_expiry、capacity_pct の整数」の TSV で出す。
+# 条件 4（描く週次のリセット時刻との照合）は描く値が決まってから下の bash で行う。
+# 時刻は epoch 秒の数と、snapshot の reset_grants と同じ読み方の ISO 8601 の両方を読む。
+hr_file="$CONFIG_DIR/.headroom.json"
+hr_rows=""
+if [ -f "$hr_file" ]; then
+    # `--args` はファイル名の後に置く（snapshot の jq と同じ理由）。stdin は /dev/null
+    hr_rows="$(jq -r --argjson now "$now" '
+      def iso_epoch: capture("^(?<b>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\\.[0-9]+)?(?<z>Z|[+-][0-9]{2}:[0-9]{2})$")
+        | ((.b + "Z") | fromdateiso8601)
+          - (if .z == "Z" then 0 else (if .z[0:1] == "+" then 1 else -1 end) * ((.z[1:3] | tonumber) * 3600 + (.z[4:6] | tonumber) * 60) end);
+      def tepoch: if type == "number" then floor elif type == "string" then (try iso_epoch catch empty) else empty end;
+      def epoch_or_null: (tepoch // null);
+      def isint: type == "number" and . == floor;
+      def future: (epoch_or_null) as $t | $t != null and $t > $now;
+      def rocket_ok: . == null or (try (type == "object" and (.count | isint) and .count >= 1 and (.earliest_expiry | future)) catch false);
+      def tickets_ok: . == null or (try (type == "object" and (.count | isint) and .count >= 0
+                        and (.earliest_expiry == null or (.earliest_expiry | future))) catch false);
+      select(type == "object" and (.schema | type) == "number" and .schema == 1)
+      | (.computed_at | epoch_or_null) as $c
+      | select($c != null and ($now - $c) < 21600)
+      | select((.accounts | type) == "array")
+      | .accounts as $acc
+      | (($ARGS.positional | map(["claude", .])) + [["codex", "current"]])[] as [$p, $id]
+      | [ $acc[] | select(type == "object" and .provider == $p and .account == $id) ] as $m
+      | select(($m | length) == 1)
+      | $m[0] as $e
+      | select($e.status == "ok")
+      | ($e.weekly_reset_at | epoch_or_null) as $wr
+      | select($wr != null)
+      | select(($e.rocket | rocket_ok) and ($e.tickets | tickets_ok))
+      | select($p != "claude" or $e.rocket == null or (($e.capacity_pct | type) == "number" and $e.capacity_pct > 100))
+      | [ (if $p == "codex" then "@codex" else $id end), $wr,
+          (if $e.rocket == null then "" else $e.rocket.count end),
+          (if $e.rocket == null then "" else ($e.rocket.earliest_expiry | tepoch) end),
+          (if $e.tickets == null then "" else $e.tickets.count end),
+          (if $e.tickets == null or $e.tickets.earliest_expiry == null then "" else ($e.tickets.earliest_expiry | tepoch) end),
+          (if ($e.capacity_pct | type) == "number" then ($e.capacity_pct | round) else "" end) ]
+      | @tsv
+    ' "$hr_file" --args "${slot_ids[@]}" < /dev/null 2>/dev/null)"
+fi
+hr_found=(); hr_wr=(); hr_rc=(); hr_re=(); hr_tc=(); hr_te=(); hr_cap=()
+for i in $(seq 0 $(( n_slots - 1 ))); do
+    hr_found+=(""); hr_wr+=(""); hr_rc+=(""); hr_re+=(""); hr_tc+=(""); hr_te+=(""); hr_cap+=("")
+done
+cx_found=""; cx_wr=""; cx_rc=""; cx_re=""; cx_tc=""; cx_te=""
+_is_int() { [[ "$1" =~ ^-?[0-9]+$ ]]; }
+while IFS='' read -r _row; do
+    [ -n "$_row" ] || continue
+    IFS=$'\x1f' read -r _k _wr _rc _re _tc _te _cap <<< "${_row//$'\t'/$'\x1f'}"
+    # bash の算術に渡す値は整数だけ（jq が整数を出すが、念のため形を確かめる）
+    _is_int "$_wr" || continue
+    { [ -z "$_rc" ] || { _is_int "$_rc" && _is_int "$_re"; }; } || continue
+    { [ -z "$_tc" ] || _is_int "$_tc"; } && { [ -z "$_te" ] || _is_int "$_te"; } || continue
+    if [ "$_k" = "@codex" ]; then
+        cx_found=1; cx_wr="$_wr"; cx_rc="$_rc"; cx_re="$_re"; cx_tc="$_tc"; cx_te="$_te"
+        continue
+    fi
+    for i in $(seq 0 $(( n_slots - 1 ))); do
+        [ "${slot_ids[$i]}" = "$_k" ] || continue
+        if [ -n "$_rc" ] && ! _is_int "$_cap"; then break; fi
+        hr_found[$i]=1; hr_wr[$i]="$_wr"; hr_rc[$i]="$_rc"; hr_re[$i]="$_re"
+        hr_tc[$i]="$_tc"; hr_te[$i]="$_te"; hr_cap[$i]="$_cap"
+        break
+    done
+done <<< "$hr_rows"
+
+# 条件 4: 要素の weekly_reset_at と、その行に描く週次のリセット時刻の差が 3600 秒以内。
+# Claude は描く 7d のリセット時刻（active は stdin、非 active はセッション記録と突き合わせた後の値）、
+# Codex は 10080 分の窓のリセット時刻。描く行が無い・週次のリセット時刻が無ければ使わない。
+_same_week() { _is_int "$1" && _is_int "$2" && [ $(( $1 > $2 ? $1 - $2 : $2 - $1 )) -le 3600 ]; }
+hr_use=(); hr_gap=""
+for i in $(seq 0 $(( n_slots - 1 ))); do
+    hr_use+=("")
+    [ -n "${hr_found[$i]}" ] && [ "${slot_show[$i]}" = "1" ] || continue
+    if [ "$i" -eq "$active_idx" ]; then
+        _fp="$five_h_pct"; _sp="$seven_d_pct"; _sr="$seven_d_resets"
+    else
+        _fp="${snap_five_pct[$i]}"; _sp="${snap_seven_pct[$i]}"; _sr="${snap_seven_res[$i]}"
+    fi
+    [ -n "$_fp" ] && [ -n "$_sp" ] || continue
+    _same_week "${hr_wr[$i]}" "$_sr" || continue
+    hr_use[$i]=1; hr_gap=1
+done
+cx_use=""
+if [ -n "$codex_rows" ] && [ -n "$cx_found" ]; then
+    while IFS=$'\t' read -r c_pct c_minutes c_reset c_fetched; do
+        [ "$c_minutes" = "10080" ] || continue
+        case "$c_pct" in resets|pending) continue ;; esac
+        _same_week "$cx_wr" "$c_reset" && cx_use=1
+    done <<< "$codex_rows"
+    [ -n "$cx_use" ] && hr_gap=1
+fi
+
 # $1=行頭 label 列 $2=5h消化率 $3=5hリセットepoch $4=7d消化率 $5=7dリセットepoch
 # $6=Fable週次消化率 $7=行末サフィックス（経過時間。空可）
 # $8=リセット権の残数（空なら区画なし） $9=リセット権の最短期限 epoch（空なら期限なし）
+# .headroom.json の値はグローバル変数で受け取る: rs_use（値を使えるなら 1）、rs_rc（rocket の
+# count。ロケットモードでなければ空）、rs_tc / rs_te（tickets）、rs_cap（capacity_pct）、
+# rs_prefix7（ロケットモードの 7d の行の行頭。名前をオレンジの地で描いたもの）。列を空けるかは hr_gap。
 render_slot() {
     local prefix="$1" f_pct="$2" f_res="$3" s_pct="$4" s_res="$5" fb_pct="$6" ago="$7" rg_n="$8" rg_e="$9"
-    local rg_seg=""
-    [ -n "$rg_n" ] && rg_seg="  ${DIM}│${RESET}  $(fmt_reset_credits "$rg_n" "${rg_e:-0}")"
+    local rg_seg="" rocket=""
+    [ -n "$rs_use" ] && [ -n "$rs_rc" ] && rocket=1
+    if [ -n "$rs_use" ]; then
+        # 値を使えるアカウントは今のリセット権の区画の代わりに 🚀×N を出す
+        if [ -n "$rocket" ]; then
+            rg_seg="$(fmt_rocket_tickets "$rs_tc" "$rs_te" claude-rocket)"
+        else
+            rg_seg="$(fmt_rocket_tickets "$rs_tc" "$rs_te" plain)"
+        fi
+    elif [ -n "$rg_n" ]; then
+        rg_seg="  ${DIM}│${RESET}  $(fmt_reset_credits "$rg_n" "${rg_e:-0}")"
+    fi
     [ -n "$f_pct" ] || return 0
 
     local five_h_int five_h_elapsed="" five_h_left="" secs_left_5h
@@ -794,7 +979,7 @@ render_slot() {
         fi
     fi
     local line_5h
-    line_5h="${prefix}$(bar_seg "5h" 9 "$five_h_int" "$five_h_elapsed")"
+    line_5h="${prefix}$(bar_seg "5h" 9 "$five_h_int" "$five_h_elapsed" "" "$hr_gap")"
     [ -n "$five_h_left" ] && line_5h+="  ${DIM}${five_h_left}${RESET}"
 
     if [ -z "$s_pct" ]; then
@@ -817,7 +1002,18 @@ render_slot() {
         fi
     fi
     local line_7d
-    line_7d="${prefix}$(bar_seg "7d All" 9 "$seven_d_int" "$elapsed_pct" 1)"
+    if [ -n "$rocket" ]; then
+        # 使える量に対する割合（四捨五入。使った量が 0 より大きければ最低 1）でバーと数字を描く
+        local share
+        share=$(( (seven_d_int * 200 + rs_cap) / (2 * rs_cap) ))
+        [ "$seven_d_int" -gt 0 ] && [ "$share" -eq 0 ] && share=1
+        line_7d="${rs_prefix7}$(bar_seg "7d All" 9 "$share" "$elapsed_pct" 1 1 \
+            "$(rocket_cell "$rs_rc")" "${seven_d_int}/${rs_cap}%" "$rs_cap")"
+    elif [ -n "$hr_gap" ]; then
+        line_7d="${prefix}$(bar_seg "7d All" 9 "$seven_d_int" "$elapsed_pct" 1 1 "" "-")"
+    else
+        line_7d="${prefix}$(bar_seg "7d All" 9 "$seven_d_int" "$elapsed_pct" 1)"
+    fi
     if [ -n "$fb_pct" ]; then
         local fable_int
         fable_int=$(printf "%.0f" "$fb_pct")
@@ -834,6 +1030,8 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
     # active のスロットはオフでも下のライブ値の経路で描く。
     [ "${slot_show[$i]}" = "1" ] || continue
     prefix=""
+    # ロケットモードの 7d の行の行頭。名前（うしろの空白と目印を除く）だけをオレンジの地にする
+    rs_prefix7=""
     if [ "$multi" -eq 1 ]; then
         # printf の %-*s はバイト幅で詰めるので使えない。表示幅の差だけ手で空白を足す。
         pad="$(printf '%*s' "$(( label_w - ${slot_widths[$i]} ))" '')"
@@ -841,12 +1039,23 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
             # active 行: 記号 + 通常の明るさの label。記号が主・明るさが補助なので
             # 記号にも DIM を掛けない（色が落ちても記号が残り、記号が出なくても明るさが残る）
             prefix="${ACTIVE_MARK} ${slot_labels[$i]}${pad}  "
+            rs_prefix7="${ACTIVE_MARK} ${ROCKET_NAME}${slot_labels[$i]}${RESET}${pad}  "
         else
             # 非 active 行: 記号と同じ表示幅 2 を半角スペースで埋め、label は DIM のまま。
             # 全行が等しく 2 桁を占めるので、バーの左端は揃ったまま
             prefix="  ${DIM}${slot_labels[$i]}${pad}${RESET}  "
+            rs_prefix7="  ${ROCKET_NAME}${slot_labels[$i]}${RESET}${pad}  "
         fi
+    elif [ -n "$single_name" ]; then
+        # 1 スロットで Codex の行が出るとき: 目印の列は空白、名前に DIM を掛けない
+        pad="$(printf '%*s' "$(( label_w - single_name_w ))" '')"
+        prefix="  ${single_name}${pad}  "
+        rs_prefix7="  ${ROCKET_NAME}${single_name}${RESET}${pad}  "
     fi
+    rs_use="${hr_use[$i]}"; rs_rc="${hr_rc[$i]}"
+    rs_tc="${hr_tc[$i]}"; rs_te="${hr_te[$i]}"; rs_cap="${hr_cap[$i]}"
+    # 名前の列が無い 1 スロットでは、ロケットモードの 7d の行の行頭も空のまま
+    [ -n "$rs_prefix7" ] || rs_prefix7="$prefix"
     fetched_at="${snap_fetched[$i]}"
     fable_pct="${snap_fable_pct[$i]}"
 
@@ -878,7 +1087,14 @@ done
 # Only the helper talks to app-server, detached from rendering (180s cache).
 if [ -n "$codex_rows" ]; then
     codex_pad="$(printf '%*s' "$(( label_w - codex_name_w ))" '')"
-    codex_line="  ${DIM}${codex_name}${codex_pad}${RESET}  "
+    # Codex のロケットモード（値を使えて rocket が null でない）は名前をオレンジの地で描く
+    cx_rocket=""
+    [ -n "$cx_use" ] && [ -n "$cx_rc" ] && cx_rocket=1
+    if [ -n "$cx_rocket" ]; then
+        codex_line="  ${ROCKET_NAME}${codex_name}${RESET}${codex_pad}  "
+    else
+        codex_line="  ${DIM}${codex_name}${codex_pad}${RESET}  "
+    fi
     codex_sep=""
     codex_fetched=""
     codex_resets=""
@@ -906,11 +1122,38 @@ if [ -n "$codex_rows" ]; then
         else
             c_label="${c_minutes}m"
         fi
-        codex_line+="${codex_sep}$(bar_seg "$c_label" 9 "$c_pct" "$c_elapsed" 1)"
-        [ "$c_left" -gt 0 ] && codex_line+="  ${DIM}$(fmt_left "$c_left")${RESET}"
+        if [ -n "$cx_rocket" ] && [ "$c_minutes" = "10080" ]; then
+            # 経過は常に 7 日を分母にし、起点は rocket.earliest_expiry の 7 日前（#1393）。起点より前は 0% に切り詰める。
+            # 残り時間は失効まで（24 時間以内は赤）＋かっこの週次のリセットまで
+            c_start=$(( cx_re - 604800 ))
+            c_elapsed=0
+            if [ "$now" -ge "$c_start" ]; then
+                c_elapsed=$(( (now - c_start) * 100 / 604800 ))
+                [ "$c_elapsed" -gt 100 ] && c_elapsed=100
+            fi
+            codex_line+="${codex_sep}$(bar_seg "$c_label" 9 "$c_pct" "$c_elapsed" 1 1 "🚀  " "-")"
+            c_exp_left=$(( cx_re - now ))
+            c_exp_color="$ROCKET_FG"
+            [ "$c_exp_left" -le 86400 ] && c_exp_color="$ROCKET_RED"
+            codex_line+="  ${c_exp_color}$(fmt_left "$c_exp_left")${RESET}"
+            [ "$c_left" -gt 0 ] && codex_line+=" ${DIM}($(fmt_left "$c_left"))${RESET}"
+        else
+            c_use_col=""
+            [ -n "$hr_gap" ] && [ "$c_minutes" = "10080" ] && c_use_col="-"
+            codex_line+="${codex_sep}$(bar_seg "$c_label" 9 "$c_pct" "$c_elapsed" 1 "$hr_gap" "" "$c_use_col")"
+            [ "$c_left" -gt 0 ] && codex_line+="  ${DIM}$(fmt_left "$c_left")${RESET}"
+        fi
         codex_sep="   "
     done <<< "$codex_rows"
     [ -n "$codex_fetched" ] && codex_line+="  ${DIM}$(fmt_ago $(( now - codex_fetched )))${RESET}"
+    if [ -n "$cx_use" ]; then
+        # 値を使えるときは今のリセット権の区画の代わりに .headroom.json の 🚀×N を出す
+        if [ -n "$cx_rocket" ]; then
+            codex_resets="$(fmt_rocket_tickets "$cx_tc" "$cx_te" codex-rocket)"
+        else
+            codex_resets="$(fmt_rocket_tickets "$cx_tc" "$cx_te" plain)"
+        fi
+    fi
     codex_line+="$codex_resets"
     usage_lines+=("$codex_line")
 fi

@@ -15,16 +15,22 @@
 #          → "version" を含む行を除いた本文が第 1 親か第 2 親の版と一致
 #        CHANGELOG.md（サブディレクトリを含む）
 #          → merge commit の版のすべての行が第 1 親か第 2 親の版に存在する
-#   4. 根拠ファイルそれぞれで（パスはリポジトリのルート相対）、`git diff <前> <新> -- <ファイル>` が空か、
-#      空でなくても「PR 自身の差分」が前後で同じ（#1238）。
+#   4. 根拠ファイルそれぞれで（パスはリポジトリのルート相対で、GIT_LITERAL_PATHSPECS=1 により glob ではなく字句どおりに扱う）、`git diff <前> <新> -- <ファイル>` が空か、
+#      空でなくても「PR 自身の差分」が前後で同じで、PR 自身の commit がそのファイルに触れていない（#1238・#1303）。
 #      PR 自身の差分 = その HEAD と base の merge-base からその HEAD までのそのファイルの差分
 #        （前は <merge-base(前, base)>..<前>、新は <merge-base(新, base)>..<新>）。
 #      比べ方 = `git diff -U0` の mode の行（old mode・new mode・new file mode・deleted file mode）と、最初の `@@` より
 #        後ろにある `-`・`+`・`\` で始まる行だけを、出てくる順のまま文字列で比べる（ハンクの見出しの行番号・
 #        ほかの頭の行・文脈の行は比べない。main が別の場所を変えても同じになる）。
-#      同じなら EVIDENCE_MAIN_ONLY=<ファイル>、違えば EVIDENCE_PR_CHANGED=<ファイル>。
+#      同じで、2 の merge commit でない commit のどれもそのファイルに触れていなければ EVIDENCE_MAIN_ONLY=<ファイル>、
+#      違うか、merge commit でない commit のどれかが触れていれば（commit ごとに `git diff --quiet --no-renames <親> <commit> -- <ファイル>`
+#      が終了コード 1。mode だけの変更を含む。0 と 1 以外は git の失敗として終了コード 2）EVIDENCE_PR_CHANGED=<ファイル>。比べ方は行の位置を見ないので、PR 自身の commit が
+#      自分の行を別の位置へ動かしただけでも main 由来と取り違えないよう、触れたら同じでも EVIDENCE_PR_CHANGED にする（#1303）。
 #      前後の diff が空でない根拠ファイルについて、前後の HEAD の diff か各 HEAD の PR 自身の差分のどちらかで
 #      バイナリとして扱われるとき（numstat が `-`）と、merge-base が 1 つに決まらないときは NG。
+#   ただし PR_COMMITS=0（前 HEAD のあとが main を取り込む merge commit だけ）なら 4 の比較を行わない
+#   （EVIDENCE_MAIN_ONLY・EVIDENCE_PR_CHANGED の行も、4 のバイナリと merge-base の NG も出さず、EVIDENCE_DIFF_LINES=0。
+#   根拠ファイルがどちらの HEAD にも無いときの終了コード 2 は残す）。主の判断で、main の取り込みだけなら許容を引き継ぐ（#1329）。
 # 1・2 のどれかが外れたとき、4 でバイナリか merge-base の NG が出たときは NG: 行を出す。3 だけが外れたファイル
 # （許可リストの条件を満たさない衝突解消 = 許可リストに無いファイル・許可リストのファイルで中身の条件を満たさないもの・
 # 衝突していないファイルへの手入れ）は NG にせず RESOLVED_OUTSIDE_ALLOWLIST=<ファイル> の行で出す（#694）。
@@ -36,10 +42,12 @@
 # 終了コード（優先順 1 → 4 → 3 → 0）: 0 = 無条件で引き継げる
 #   / 3 = 新しい HEAD で PR 全体を見たレビューを経ていれば引き継げる（NG も EVIDENCE_PR_CHANGED も無く、
 #     許可リストの条件を満たさない衝突解消だけがある）
-#   / 4 = 根拠ファイルの PR 自身の差分が前後で違う（NG は無い）。リスクの中身が同じかを git の履歴だけでは
+#   / 4 = 根拠ファイルの PR 自身の差分が前後で違うか、PR 自身の commit が根拠ファイルに触れた（NG は無い）。リスクの中身が同じかを git の履歴だけでは
 #     決められないという意味で、スクリプトは引き継げるかを決めない（pr-review-gate 手順 3-c が扱う）
+#   / PR_COMMITS=0 なら、1・2 に NG が無ければ 3 の結果によらず 0（RESOLVED_OUTSIDE_ALLOWLIST の行は記録のため出し、
+#     終了コードには効かせない。#1329）
 #   / 1 = 引き継げない（NG あり）
-#   / 2 = 引数不足・SHA が解決できない・根拠ファイルなし・根拠ファイルが前後どちらの HEAD にも無い・git が古い（引き継げない側）
+#   / 2 = 引数不足・SHA が解決できない・根拠ファイルなし・根拠ファイルが前後どちらの HEAD にも無い・git が古い・git diff が失敗した（引き継げない側）
 #
 # 許容の真正性・リスクの中身の同一性・終了コード 3 のときのレビューの確認はここでは見ない
 # （pr-review-gate 手順 3-c で G が確かめる）。
@@ -72,6 +80,8 @@ fi
 # pathspec をルート相対に固定する（git diff -- <pathspec> は cwd 相対、git show <rev>:<path> はルート相対のため）
 top="$(git rev-parse --show-toplevel 2>/dev/null)" || { echo "not a git repository" >&2; exit 2; }
 cd "$top"
+# 根拠ファイルのパスは glob ではなく字句どおりの名前として扱う（`ev[1].txt` を `ev1.txt` に当てない。#1303）
+export GIT_LITERAL_PATHSPECS=1
 
 resolve() {
   git rev-parse -q --verify "$1^{commit}" 2>/dev/null || { echo "cannot resolve: $1" >&2; exit 2; }
@@ -85,6 +95,7 @@ resolved=()
 outside=()
 main_only=()
 pr_changed=()
+pr_own_commits=()
 merges=0
 pr_commits=0
 diff_lines=0
@@ -147,6 +158,8 @@ else
     nparents="$(printf '%s\n' "$parents" | wc -w | tr -d ' ')"
     if [ "$nparents" -eq 1 ]; then
       pr_commits=$((pr_commits + 1))
+      # 判定 4 で、PR 自身の commit が根拠ファイルに触れたかを git diff --quiet で見るために「親 commit」の組を控える（#1303）
+      pr_own_commits+=("$parents $c")
       continue
     elif [ "$nparents" -ne 2 ]; then
       ng+=("merge commit $c has $nparents parents (only 2-parent merges are allowed)")
@@ -174,6 +187,7 @@ else
       if ! allowed "$c" "$p1" "$p2" "$f"; then
         outside+=("$f")
       fi
+    # 非 ASCII のパスは core.quotePath により quote された形で出る（許可リストは ASCII のみなので判定は outside のまま。出力の表記だけが quote 形）
     done < <(git diff --no-renames --name-only "$auto_tree" "$c")
   done < <(printf '%s\n' "$set_list")
 fi
@@ -183,6 +197,8 @@ for f in "${evidence[@]}"; do
     echo "evidence file not found at either HEAD: $f" >&2
     exit 2
   fi
+  # main の取り込みだけ（PR_COMMITS=0）なら、根拠ファイルの PR 自身の差分を比べない（主の判断。#1329）
+  [ "$pr_commits" -eq 0 ] && continue
   rc=0
   git diff --quiet "$prev" "$new" -- "$f" || rc=$?
   if [ "$rc" -eq 0 ]; then
@@ -206,7 +222,24 @@ for f in "${evidence[@]}"; do
     ng+=("cannot determine a unique merge-base with $base_ref for prev or new HEAD (or git diff failed); cannot compare the PR's own diff of $f")
     continue
   fi
+  # PR 自身の commit がこのファイルに触れたか（パスの一覧を文字列で照合せず、pathspec の解釈を git に任せる。
+  # 終了コード 1 = 触れた、0 = 触れていない、それ以外 = git の失敗で引き継げない側。#1303）
+  # PR 自身の差分が既に違うときは終了コード 4 が決まっているので回さない
+  touched=0
   if [ "$prev_diff" = "$new_diff" ]; then
+    for pc in ${pr_own_commits[@]+"${pr_own_commits[@]}"}; do
+      rc=0
+      git diff --quiet --no-renames "${pc%% *}" "${pc#* }" -- "$f" || rc=$?
+      if [ "$rc" -eq 1 ]; then
+        touched=1
+        break
+      elif [ "$rc" -ne 0 ]; then
+        echo "git diff failed for $f in ${pc#* }" >&2
+        exit 2
+      fi
+    done
+  fi
+  if [ "$prev_diff" = "$new_diff" ] && [ "$touched" -eq 0 ]; then
     main_only+=("$f")
   else
     pr_changed+=("$f")
@@ -217,9 +250,12 @@ for f in "${evidence[@]}"; do
   fi
 done
 
+# main の取り込みだけ（PR_COMMITS=0）なら、許可リストの条件を満たさない衝突解消は記録の行だけにして終了コードに効かせない（#1329）
+outside_counts=0
+[ "$pr_commits" -eq 0 ] || outside_counts="${#outside[@]}"
 if [ "${#ng[@]}" -ne 0 ]; then echo "CARRYOVER=no"
 elif [ "${#pr_changed[@]}" -ne 0 ]; then echo "CARRYOVER=if-judged"
-elif [ "${#outside[@]}" -ne 0 ]; then echo "CARRYOVER=if-rereviewed"
+elif [ "$outside_counts" -ne 0 ]; then echo "CARRYOVER=if-rereviewed"
 else echo "CARRYOVER=yes"; fi
 echo "MAIN_MERGES=$merges"
 echo "PR_COMMITS=$pr_commits"
@@ -238,5 +274,5 @@ for n in ${ng[@]+"${ng[@]}"}; do echo "NG: $n"; done
 
 [ "${#ng[@]}" -eq 0 ] || exit 1
 [ "${#pr_changed[@]}" -eq 0 ] || exit 4
-[ "${#outside[@]}" -eq 0 ] || exit 3
+[ "$outside_counts" -eq 0 ] || exit 3
 exit 0

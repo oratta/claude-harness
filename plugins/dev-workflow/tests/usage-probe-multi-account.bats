@@ -20,6 +20,11 @@ setup() {
   export USAGE_SESSIONS_DIR="${WORK}/sessions"
   export USAGE_PROBE_STATE="${WORK}/probe-state.json"
   export USAGE_PROBE_LOCK="${WORK}/probe.lock"
+  # 本番経路のテスト（curl・security の差し替え）は snapshot を書いたあと headroom.py を呼ぶ。
+  # その書き先（.headroom.json と codex-usage）と Codex の home を作業用ディレクトリに向け、
+  # 本物の ~/.claude と ~/.codex に触れない（CODEX_HOME は存在しないディレクトリにして Codex を取りに行かせない）
+  export CLAUDE_CONFIG_DIR="${WORK}/claude-config"
+  export CODEX_HOME="${WORK}/no-codex-home"
 }
 
 teardown() {
@@ -627,6 +632,8 @@ SH
   [ "$status" -eq 0 ]
   grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
   [ "$(jq -r '.accounts.x.five_hour_pct' "$SNAP")" = "10" ]
+  # 本番経路でも headroom の書き先は setup の CLAUDE_CONFIG_DIR（作業用ディレクトリ）
+  [ "$(jq -r '.schema' "${WORK}/claude-config/.headroom.json")" = "1" ]
 }
 
 @test "user-agent: falls back to a fixed version in the claude-cli form when claude is unavailable" {
@@ -1108,4 +1115,85 @@ run_production_probe() {
   [ "$(printf '%s\n' "$output" | sed -n 2p | cut -f1)" = "b" ]
   [ "$(printf '%s\n' "$output" | sed -n 1p | cut -f4)" = "Claude Code-credentials" ]
   [ "$(printf '%s\n' "$output" | sed -n 2p | cut -f4 | cut -c1-24)" = "Claude Code-credentials-" ]
+}
+
+# ---------- --refresh: 429 の待ちを残して鮮度と間隔だけを外す（#1256） ----------
+# spec: dev-workflow-escalation-tripwires「usage-probe と snapshot 契約」の手動の取り直し
+
+# $1=a の試行時刻 $2=a の連続 429 回数 $3=b の試行時刻 $4=b の連続 429 回数
+write_two_slot_state() {
+  printf '{"slots":{"a":{"last_attempt":%s,"consecutive_429":%s},"b":{"last_attempt":%s,"consecutive_429":%s}}}\n' \
+    "$1" "$2" "$3" "$4" >| "$USAGE_PROBE_STATE"
+}
+
+run_two_slot_probe() {
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE" "$@"
+}
+
+@test "refresh: slots not waiting on a 429 are fetched again inside the freshness and interval windows" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  write_two_slot_state "$((NOW - 3600))" 0 "$((NOW - 3600))" 0
+  # 対照: 引数なしでは鮮度と間隔の内側なので叩かない
+  run_two_slot_probe
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(state_of a .last_attempt)" = "$((NOW - 3600))" ]
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "96" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "8" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: a slot waiting on a 429 is not fetched and its attempt and count stay unchanged" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  # a: 連続 2 回で前回の試行が間隔（10800）の 1.5 倍前 → 待ちは 2 倍なので待ち中
+  write_two_slot_state "$((NOW - 16200))" 2 "$((NOW - 3600))" 0
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "94" ]
+  [ "$(state_of a .last_attempt)" = "$((NOW - 16200))" ]
+  [ "$(state_of a .consecutive_429)" = "2" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "8" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: a slot whose 429 wait has ended is fetched inside the freshness window" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  # a: 連続 2 回で前回の試行が間隔の 2 倍前 → 待ちが明けている
+  write_two_slot_state "$((NOW - 21600))" 2 "$((NOW - 3600))" 0
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of a .consecutive_429)" = "0" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: an off slot is not fetched and no attempt is recorded for it" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  write_two_slot_registry_enabled "" false
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of b '')" = "null" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "7" ]
 }

@@ -44,6 +44,7 @@ usage:
   epic-launch-orca.sh create <clone> <repo_id> <child number> <base> <parent worktree>
   epic-launch-orca.sh start <worktree> <start command> <first prompt> <child label>
   epic-launch-orca.sh deliver <worktree> <relaunch 0|1> <text> <start command> <relaunch prompt>
+  epic-launch-orca.sh keepalive <worktree> <text>
   epic-launch-orca.sh close <worktree> <child label>
   epic-launch-orca.sh remove <worktree>
   epic-launch-orca.sh mirror <current|worktree> <done|waiting|stopped|resumed|stopped-seen> <state record>
@@ -104,6 +105,116 @@ pick_session_term() {
     | [.[] | .handle // empty | strings | select(. != "")]
     | if length == 1 then .[0] else empty end' 2>/dev/null
   return 0
+}
+
+
+# Classify observed foreground input. An unknown display never authorizes a send.
+# A background shell alone does not make the foreground busy.
+keepalive_screen_reason() {
+  SCREEN="$1" python3 - "$2" <<'PYCODE'
+import json, os, re, sys
+raw = os.environ["SCREEN"]
+mode = sys.argv[1]
+if mode == "orca":
+    try:
+        d = json.loads(raw)["result"]
+        if not isinstance(d, dict) or not isinstance(d.get("tail"), list) or not all(isinstance(x, str) for x in d["tail"]):
+            raise ValueError()
+        if d.get("source") != "screen":
+            print("skipped unknown-state"); sys.exit()
+        raw = "\n".join(d["tail"])
+        draft = d.get("draft", "")
+        if not isinstance(draft, str):
+            raise ValueError()
+    except (ValueError, KeyError, TypeError):
+        print("failed observe"); sys.exit()
+else:
+    draft = ""
+ansi = r"\x1b\[[0-?]*[ -/]*[@-~]"
+plain = re.sub(ansi, "", raw)
+lines = [s for s in plain.splitlines() if s.strip()]
+screen = "\n".join(lines)
+if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
+    print("skipped dialog")
+elif re.search(r"[^\w\s].*(?:…|\.\.\.).*\([^\n]*\d+(?:s|m).*·", screen) or "esc to interrupt" in screen.lower():
+    print("skipped busy")
+elif draft:
+    print("skipped input-not-empty")
+elif not re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on", screen):
+    print("skipped unknown-state")
+else:
+    # Resolve the frame before inspecting input. Never choose a later prompt,
+    # border or footer from the body: multiple possible openers are ambiguous.
+    # Keep the complete observation so long input/busy/dialog evidence survives.
+    rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
+    visible = [i for i, (_, p) in enumerate(rows) if p.strip()]
+    footer = r"\s*(?:\? for shortcuts|.*\(shift\+tab to cycle\).*|.*manual mode on.*)\s*"
+    border = r"\s*[─━]+\s*"
+    openers = [i for i in range(len(rows) - 1)
+               if re.fullmatch(border, rows[i][1])
+               and re.match(r"^\s*❯(?:\s|$)", rows[i + 1][1])]
+    if (len(openers) != 1 or len(visible) < 4
+            or not re.fullmatch(footer, rows[visible[-1]][1])
+            or not re.fullmatch(border, rows[visible[-2]][1])
+            or openers[0] + 1 >= visible[-2]):
+        print("skipped unknown-state")
+    else:
+        region = rows[openers[0] + 1:visible[-2]]
+        candidate = "\n".join(s.replace("❯", "", 1) if i == 0 else s
+                              for i, (s, _) in enumerate(region))
+        # Track SGR dim across line wraps. A reset ends the suggestion; normal
+        # characters after it are human input even when the first line was dim.
+        dim = False
+        nonempty = False
+        for token in re.split("(" + ansi + ")", candidate):
+            if re.fullmatch(ansi, token):
+                if token.endswith("m"):
+                    for code in token[2:-1].split(";"):
+                        if code in ("", "0", "22"):
+                            dim = False
+                        elif code == "2" and token == "\x1b[2m":
+                            dim = True
+            elif token.strip() and not (mode == "tmux" and dim):
+                nonempty = True
+        print("skipped input-not-empty" if nonempty else "ready")
+PYCODE
+}
+
+# keepalive observes twice and sends once to an existing session only. No create,
+# close, relaunch, wait-for-idle, input clearing or retry is permitted here.
+# stdout: sent/skipped <reason> (0), failed <reason> (1); arity error: usage (2).
+cmd_keepalive() {
+  argc 2 "$#"
+  local terms count handle observed reason sent rc i after
+  if ! terms="$(orca terminal list --worktree "path:$1" --json)" \
+    || ! count="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" and all(.[]; type == "object" and (.handle | type) == "string" and .handle != "") then length else error("terminals") end' 2>/dev/null)"; then
+    echo 'failed terminal-list'; return 1
+  fi
+  [ "$count" -gt 0 ] || { echo 'skipped no-terminal'; return 0; }
+  handle="$(pick_session_term "$terms")"
+  [ -n "$handle" ] || { echo 'skipped ambiguous-terminal'; return 0; }
+  for (( i = 0; i < 2; i++ )); do
+    observed="$(orca terminal read --terminal "$handle" --screen --json)" || { echo 'failed observe'; return 1; }
+    reason="$(keepalive_screen_reason "$observed" orca)" || { echo 'failed observe'; return 1; }
+    case "$reason" in
+      ready) ;;
+      failed*) echo "$reason"; return 1 ;;
+      skipped*) echo "$reason"; return 0 ;;
+      *) echo 'failed observe'; return 1 ;;
+    esac
+  done
+  sent="$(orca terminal send --terminal "$handle" --text "$2" --enter --wait-submit "$submit" --json)"; rc=$?
+  printf '%s\n' "$sent" >&2
+  [ "$rc" -eq 0 ] || { echo 'failed send'; return 1; }
+  if turn_started "$sent"; then echo sent; return 0; fi
+  # Some providers report unsupported while the input reaches Claude. Reobserve
+  # for a new foreground spinner with an empty draft; never resend the input.
+  if after="$(orca terminal read --terminal "$handle" --screen --json)" \
+    && [ "$(keepalive_screen_reason "$after" orca)" = 'skipped busy' ] \
+    && printf '%s' "$after" | jq -e '(.result.draft // "") == ""' >/dev/null 2>&1; then
+    echo sent; return 0
+  fi
+  echo 'failed send'; return 1
 }
 
 # 子のワークツリーに worktree create が作った空のシェルの端末がちょうど 1 つあれば、そこへ起動
@@ -243,7 +354,7 @@ cmd_create() {
 # あればそこで起動し（端末が 2 つになると deliver が ambiguous-terminal で止まる）、0 個なら端末を作る
 cmd_start() {
   argc 4 "$#"
-  local child="$1" agent_cmd="$2" prompt="$3" label="$4" handle="" shell_rc=0 stage="" out rc sent
+  local child="$1" agent_cmd="$2 --prompt-suggestions false" prompt="$3" label="$4" handle="" shell_rc=0 stage="" out rc sent
   shell_start "$child" "$agent_cmd" || shell_rc=$?
   if [ "$shell_rc" -eq 0 ]; then
     handle="$SHELL_HANDLE"
@@ -281,7 +392,7 @@ cmd_start() {
 # 子のセッションに文を届ける。端末の一覧は 1 回だけ読み、送るか、閉じて起動し直すかをその場で決める
 cmd_deliver() {
   argc 5 "$#"
-  local path="$1" relaunch="$2" msg="$3" agent_cmd="$4" prompt="$5" terms tcount handle out rc sent
+  local path="$1" relaunch="$2" msg="$3" agent_cmd="$4 --prompt-suggestions false" prompt="$5" terms tcount handle out rc sent
   if ! terms="$(orca terminal list --worktree "path:$path" --json)" \
     || ! tcount="$(printf '%s' "$terms" \
       | jq -e '.result.terminals | if type == "array" then length else error("terminals is not an array") end' 2>/dev/null)"; then
@@ -403,6 +514,7 @@ case "$sub" in
   create) cmd_create "$@" ;;
   start) cmd_start "$@" ;;
   deliver) cmd_deliver "$@" ;;
+  keepalive) cmd_keepalive "$@" ;;
   close) cmd_close "$@" ;;
   remove) cmd_remove "$@" ;;
   mirror) cmd_mirror "$@" ;;

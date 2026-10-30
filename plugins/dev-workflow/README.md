@@ -12,7 +12,7 @@
 - **入口 0（記録先の決定）**: issue があればそれ、無ければ issue を切らず、worktree 直後の空 commit → push → Draft PR を記録先にする（受け入れ条件は PR 本文。PR 本文に issue 参照を書かない）
 - **1 ループ**: W（仕様化判断の記録 → 分割判定 → `openspec new change`）→ R1（別コンテキストの仕様レビュー・2 周キャップ）→ W 再開（(3a) TDD 実装 → verify で return。本体が計測してから (3b) archive → PR → 仕様宣言）→ G（pr-review-gate 手順 1〜5・2 周キャップ）
 - **モデル**: W（dev-workflow:worker）と G（dev-workflow:gate-runner）は既定 `sonnet`、R1 は既定 `opus`。G が要求するレビュアーは既定 `opus` で、編集の道具を持たない `dev-workflow:reviewer` で起こす。**W（実行役）の上限は `opus`** で、`skills/develop/references/pre-classification.md` の事前分類（聖域パス・マージ権限・層間契約・課金/法務）に当たってもそこ止まり。Fable を使うのは読んで判断する役（R1・G が要求するレビュアー）が事前分類に当たるときだけで、`subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` は付けない。判定は `scripts/agent-model-guard.sh`）。共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が `throttled` / `depleted` なら全役割 `sonnet` 起点。W の SendMessage 再開は毎回 `scripts/subagent-context.sh` で測る（G は段ごとに新しく起こすので測らない）。上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、正本を読むまで手渡さない。残量モード（`FABLE_BUDGET_MODE`）は `skills/develop/references/decision-criteria.md`
-- **エピック**: 条件・作り方・回し方・完了条件を SKILL.md に規定。子 issue ごとに 1 ループを並列に回し（`orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリー、そうでなく本体が tmux の中にいれば tmux のウィンドウで独立した Claude Code セッションとして起動する。どちらでもないときと unmanned は `isolation: "worktree"` のサブエージェント。起動部品は `scripts/epic-launch-<名前>.sh` の差し替えで、`scripts/epic-dispatch.sh` が呼ぶ）、子が全部マージされただけでは閉じない。別セッション方式では、子がループの終わりに「用が済んだ」の印を付けたワークツリーを、親セッションが安全確認（マージ済み PR の最終コミットと HEAD の一致・作業ツリーがきれい・`LLM/` が無い）のうえで片付ける。Orca を使う場合の前提は、`orca` CLI があり本体が Orca 管理のワークツリーにいること。子セッションの起動コマンドは `EPIC_DISPATCH_CLAUDE_CMD` で決め、未設定なら `epic-dispatch.sh` の既定（`cld`。ログイン zsh で定義されている必要がある。定義は下の「Claude アカウントの起動時選択」）になる。Orca 側の Claude の起動コマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変える
+- **エピック**: 条件・作り方・回し方・完了条件を skills/develop/references/epic.md に規定。子 issue ごとに 1 ループを並列に回し（`orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリー、そうでなく本体が tmux の中にいれば tmux のウィンドウで独立した Claude Code セッションとして起動する。どちらでもないときと unmanned は `isolation: "worktree"` のサブエージェント。起動部品は `scripts/epic-launch-<名前>.sh` の差し替えで、`scripts/epic-dispatch.sh` が呼ぶ）、子が全部マージされただけでは閉じない。別セッション方式では、子がループの終わりに「用が済んだ」の印を付けたワークツリーを、親セッションが安全確認（マージ済み PR の最終コミットと HEAD の一致・作業ツリーがきれい・`LLM/` が無い）のうえで片付ける。Orca を使う場合の前提は、`orca` CLI があり本体が Orca 管理のワークツリーにいること。子セッションの起動コマンドは `EPIC_DISPATCH_CLAUDE_CMD` で決め、未設定なら `epic-dispatch.sh` の既定（`cld`。ログイン zsh で定義されている必要がある。定義は下の「Claude アカウントの起動時選択」）になる。Orca 側の Claude の起動コマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変える
 
 人間が `/develop` で直接依頼した場合でも、loop-dev-agent（各リポの憲法 `docs/agent-loop.md`）が無人サイクルの中から呼ぶ場合でも同じループを回す（`--unmanned` では憲法のメインが本体を務め、G は憲法 Step 1 に委ねる）。
 
@@ -141,3 +141,45 @@ loop-dev-agent（無人常設ループ）の憲法は各リポに配備された
 ```bash
 /plugin install dev-workflow@oratta-claude-harness
 ```
+
+## plugin.json の旧 description（詳細）
+
+plugin.json の `description` は /plugin メニューに出るため 1 文に短縮した。短縮前の説明を文ごとに分けて移す。
+
+- この開発ハーネスでの標準開発ワークフローを集めるプラグイン。
+- develop: コード・スキル・コマンド・規範文書を変えるときは入口（issue 番号/URL/自然文・会話・cron・エピックの子）を問わず必ず通すワークフロー。
+- 本体はオーケストレータ専任（Edit でコードを書かず、レビューを代行しない）で、作業者 W（dev-workflow:worker）・仕様レビュアー R1・ゲート実行者 G（dev-workflow:gate-runner）・G が要求するレビュアー（dev-workflow:reviewer）を model 明示で spawn し 1 ループ（入口 0 で記録先＝issue または Draft PR を確定 → W が `仕様化判断: する|しない` を記録先に記録し change 分割と openspec new change → R1 が別コンテキストで仕様レビュー（2 周キャップ・結果を `仕様レビュー: APPROVE|REQUEST_CHANGES` で記録）→ W が (3a) TDD 実装・verify まで行って return し、本体が計測してから (3b) archive・PR・仕様宣言 → G が pr-review-gate 手順 1〜5）を回す。
+- issue が無ければ issue を切らず、空 commit → Draft PR を記録先にする（issue を切るのは追跡・キュー・議論が要るときだけ）。
+- エピックの条件・作り方・回し方・完了条件も規定。
+- 役割のモデルは pre-classification.md の事前分類（4 分類のいずれでも W は 1 周目から opus 止まりで、W の上限は opus。
+- それ以外の W は sonnet 既定。
+- G は sonnet 固定で判定は needs-reviewer のレビュアーが担う。
+- abundant はどの役割も押し上げない）と、Fable を渡せる唯一の種別 agents/decider.md（dev-workflow:decider。
+- model: fable・tools は Read/Grep/Glob の読み取り専用で、読んで判断する役はこの種別で spawn する。
+- scripts/agent-model-guard.sh が PreToolUse で他種別への model: fable を deny する）と残量モード（FABLE_BUDGET_MODE。
+- reserve は自動実行のみ・exhausted は全経路で opus 上限）と共有枠モード（SHARED_BUDGET_MODE。
+- 全モデル共通の週次枠から導出し、throttled / depleted で全役割 sonnet 起点）で決め、W の SendMessage 再開は毎回 scripts/subagent-context.sh でコンテキスト量を測り（G は段ごとに新しく起こすので測らない）、コンテキスト上限（既定値と閾値は decision-criteria.md「コンテキスト上限」）超なら作業継続の SendMessage を送らない（無条件）。
+- 前回 return を渡した同じ役割の新しいエージェント（新しい W / 新しい G）への手渡しは、前任の return の 1 行目が `工程完了: <工程名>` のときだけ行う（`工程中断:` なら再開も手渡しもしない）。
+- 昇格トリップワイヤー（templates/escalation-tripwires.md）は決める役 / 実行役の分離ラダーとして残す。
+- さらに hooks/hooks.json に配線した scripts/context-tripwire.sh が、サブエージェントの起動の途中でも PostToolUse（全ツール）/ PreToolUse（Edit|Write|NotebookEdit|Bash）で自分自身のコンテキストを測り、通知の上限超で締めを通知し 強制停止の上限超で編集系を deny する（計測対象は agent_id から導出するので worktree 隔離のサブエージェントでも効く）。
+- /develop（/work-issue はエイリアス）: 5 分岐で記録先を確定し、issue を切ると決めたときだけ issueify スキル（skills/issueify）で起票する。
+- loop-dev-agent の無人サイクルでは憲法のメインが develop の本体を務める（--unmanned）。
+- pr-review-gate: PR 作成後に必ず通す品質ゲート（別コンテキストレビュー・リスク宣言と仕様宣言の positive affirmation・動作確認証拠・agent-review:passed 付与を fail-closed で行う。
+- 仕様宣言は記録先（issue → 無ければ PR 自身）の `仕様化判断:` 記録と突き合わせ、記録なし PR は合格させない。
+- 規範パス接触の裏取りは scripts/spec-touch-check.sh。
+- レビューの重量は変更内容から light / full に事前判定し、既定と迷ったときは full＝Codex に倒す。
+- auto-merge workflow のリポ展開テンプレートは templates/auto-merge/）。
+- レビュー failed からの修正は実装品質起因のときだけ昇格し、失敗の原因が判断側か実行側かで決める役（dev-workflow:decider。
+- model は opus → fable）と実行役（sonnet → opus が上限）のどちらか一方だけを上げる（仕様曖昧・レビュアー誤検出はモデル昇格しない。
+- フォールバック記録の正本は pr-review-gate）。
+- 上流の壁打ち（/opsx:explore）は呼ばず、issue 化前の壁打ちとは切り分ける。
+- references/（プラグイン直下）: 複数プラグインで共有する契約 — self-verification.md（自己検証の共通原則）・pr-body-format.md（PR / issue 本文の型）・model-tiers.md（Workflow 実行のロール別ティア → opts.model エイリアス）・workflow-execution.md（1 ループに収まらない規模をネイティブ Workflow で回す型。
+- Review → Build → Verify・Build Contract・verifier のしきい値）。
+- 旧プラグイン 3 本は 2026-08 に解散し、契約はここへ移設（CHANGELOG.md に uninstall 手順）。
+-  usage-probe はアカウントレジストリ（`accounts.json`）の全スロットを Keychain サービス名ごとにフェッチし、snapshot を schema 2（`accounts` にスロット別の値・`active` に現在のスロット id・`five_hour` も収集）で書く。
+- トップレベルの従来キーは active スロットのミラー。
+- 使用量の主な情報源はステータスラインのセッション記録（`.usage-sessions/`）で、probe は補助。
+- 残量モードの導出と自動選択は `scripts/usage_view.py` の実効値を使う。
+- fail-open はスロット単位で、失敗したスロットは前回値と取得時刻を保持する（refresh_token でのトークン更新は本体との競合を避けるため意図的に非対応）。
+- scripts/subagent-context-audit.sh は同じコンテキスト量の定義で母集団（直近 N 日の subagents/agent-*.jsonl）を集計し、初回・最終の中央値と上限超の割合を 1 行 JSON とキャッシュ（SUBAGENT_CONTEXT_AUDIT_CACHE、TTL 既定 6 時間）に出す観測専用のスクリプトで、読み方の正本は docs/usage-audit.md（強制は加えず、SessionStart にも注入しない）。
+-  memory-refresh: メモリ索引の肥大を検知し（scripts/memory-tripwire.sh、session-tripwires.sh 経由で SessionStart ごとに閾値判定）、削除・統合・短縮・維持に分類して主の承認を得てから手で整理するスキル（/memory-refresh）。

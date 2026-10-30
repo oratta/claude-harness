@@ -336,6 +336,9 @@ review_execution() {
 
 # --- Codex オフ（accounts.json の codex.enabled が false。#978） ---
 
+# 日本語の文は固定文字列で照合する。LC_ALL=C では [^。] がバイト単位になり、
+# 句点以外の日本語まで拒否するため（#1424）。
+
 # 「Codex がオフのとき」の段落（2-1 の表の下に 1 つだけ置く）
 codex_off_paragraph() {
   review_execution | grep -F '**Codex がオフのとき**'
@@ -347,7 +350,7 @@ codex_off_paragraph() {
   [ -n "$para" ] || { echo "no Codex off paragraph in step 2-1"; return 1; }
   [ "$(printf '%s\n' "$para" | wc -l | tr -d ' ')" -eq 1 ]
   echo "$para" | grep -qF 'scripts/usage_view.py --codex-enabled'
-  echo "$para" | grep -qE 'full と判定したあと[^。]*Codex を試す前に'
+  echo "$para" | grep -qF 'full と判定したあと、Codex を試す前に'
   echo "$para" | grep -qF '`off`'
   echo "$para" | grep -qF '`on`'
 }
@@ -361,7 +364,7 @@ codex_off_paragraph() {
 @test "codex off (#978): Codex is not called and the binary is not even looked up" {
   local para
   para="$(codex_off_paragraph)"
-  echo "$para" | grep -qE '`off` なら[^。]*バイナリ探索（`command -v codex`）も Codex の呼び出しも(し|行わ)ない'
+  echo "$para" | grep -qF '`off` なら、バイナリ探索（`command -v codex`）も Codex の呼び出しもしない'
   echo "$para" | grep -qF 'Task サブエージェント'
   echo "$para" | grep -qF 'dev-workflow:reviewer'
 }
@@ -369,11 +372,11 @@ codex_off_paragraph() {
 @test "codex off (#978): off is a setting, not one of the three measured conditions" {
   local para judge
   para="$(codex_off_paragraph)"
-  echo "$para" | grep -qE 'オフは利用者が明示した設定で[^。]*三条件の実測(では|には)'
+  echo "$para" | grep -qF 'オフは利用者が明示した設定で、下の三条件の実測ではない'
   echo "$para" | grep -qF '設定ファイルを自分で読まず'
   # 不可判定の段落も、オフが三条件とは別であることを一言で指す
   judge="$(review_execution | grep -F '**従来モードの不可判定**')"
-  echo "$judge" | grep -qE 'Codex オフ[^。]*三条件とは別'
+  echo "$judge" | grep -qF '設定による Codex オフ（上の「Codex がオフのとき」）は三条件とは別'
   # 三条件の箇条書きは 3 つのまま（オフを 4 つ目として混ぜない）
   [ "$(review_execution | grep -cE '^- (バイナリ無し|認証切れ|タイムアウト): ')" -eq 3 ]
   ! review_execution | grep -E '^- ' | grep -q 'オフ' || return 1
@@ -383,7 +386,7 @@ codex_off_paragraph() {
   local para
   para="$(codex_off_paragraph)"
   echo "$para" | grep -qE '変わるのはレビュー実行者だけ'
-  echo "$para" | grep -qE '新 Codex モード[^。]*adapter 経路[^。]*(変えない|適用しない)'
+  echo "$para" | grep -qF '新 Codex モードと develop の adapter 経路には適用しない'
 }
 
 @test "codex off (#978): the evidence template has the off form without the word measured" {
@@ -1188,7 +1191,7 @@ step3c_body() {
 
 @test "carryover (#441): 3-c shows the 4 appended lines and no full declaration example" {
   # bash の呼び方のブロックを除き、追記行の書式ブロックだけを取り出す
-  block="$(step3c_body | awk '/^```bash/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  block="$(step3c_body | awk '/^```[a-z]+$/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
   echo "$block" | grep -q '^主の回答: 許容（引き継ぎ） — <元の直接の回答リンク>'
   echo "$block" | grep -q '^引き継ぎ元: <前の HEAD の 40 桁フル SHA> の宣言 '
   echo "$block" | grep -q '^引き継ぎの根拠: risk-carryover-check.sh 終了コード '
@@ -1220,9 +1223,9 @@ step3c_body() {
 }
 
 @test "carryover (#694): the evidence line records the outside-allowlist files and the re-review fixed HEAD" {
-  block="$(step3c_body | awk '/^```bash/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  block="$(step3c_body | awk '/^```[a-z]+$/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
   line="$(echo "$block" | grep '^引き継ぎの根拠: ')"
-  for w in '終了コード <0 または 3>' '許可リスト外' '取り直しのレビュー' '固定 HEAD <40 桁フル SHA>' '終了コード 0 のとき: 不要'; do
+  for w in '終了コード <0・3・4 のどれか>' '許可リスト外' '取り直しのレビュー' '固定 HEAD <40 桁フル SHA>' '終了コード 0 のとき: 不要'; do
     echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
   done
 }
@@ -1254,6 +1257,46 @@ step3c_body() {
   echo "$first" | grep -qF 'PR 自身の修正'
 }
 
+# 受け入れ条件（#1329）: main の取り込みだけ（PR_COMMITS=0）なら、取り直しのレビューの範囲・判定役によらず引き継ぐ
+@test "carryover (#1329): 3-c purpose says a main-merge-only move carries over regardless of re-review scope and judge" {
+  line="$(step3c_body | grep -F 'PR_COMMITS=0' | grep -F '#1329')"
+  [ "$(printf '%s\n' "$line" | grep -c .)" -eq 1 ] || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '手順 3 で「主のリスク許容が必要」と判定し' || { echo "$line"; return 1; }
+  for w in '取り直しのレビュー' '判定役' '引き継ぐ'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+@test "carryover (#1329): the script call block documents exit 0 with PR_COMMITS=0" {
+  call="$(step3c_body | awk '/^```bash/{f=1; next} f&&/^```$/{f=0} f')"
+  echo "$call" | grep -F '0 = ' | grep -qF 'PR_COMMITS=0' || { echo "$call"; return 1; }
+}
+
+@test "carryover (#1329): conditions 1 and 4 are not required for exit 0 with PR_COMMITS=0" {
+  body="$(step3c_body)"
+  cond1="$(echo "$body" | awk '/^1\. スクリプトが終了コード 0/{f=1} /^2\. /{f=0} f')"
+  # 条件 1 の括弧書き（終了コード 0 の意味）が PR_COMMITS=0 の場合も書く
+  echo "$cond1" | head -1 | grep -qF '`PR_COMMITS=0` なら' || { echo "$cond1" | head -1; return 1; }
+  line="$(echo "$cond1" | grep -F 'PR_COMMITS=0' | grep -F 'RESOLVED_OUTSIDE_ALLOWLIST=')"
+  echo "$line" | grep -qF 'PR 全体を見た取り直しのレビューを求めない' || { echo "$cond1"; return 1; }
+  cond4="$(echo "$body" | grep -F '`対象 HEAD:` 行を除いて')"
+  echo "$cond4" | grep -F 'PR_COMMITS=0' | grep -qF '求めない' || { echo "$cond4"; return 1; }
+}
+
+@test "carryover (#1329): with PR_COMMITS=0 the posted body stays the previous declaration's body" {
+  line="$(step3c_body | grep -F '引き継げるなら、前の宣言と同じ本文を')"
+  echo "$line" | grep -qF 'PR_COMMITS=0' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '前の宣言の本文のまま'
+  echo "$line" | grep -qF '置き換えない'
+}
+
+@test "carryover (#1329): the evidence line has the not-compared choice for PR_COMMITS=0 and keeps 4 lines" {
+  block="$(step3c_body | awk '/^```[a-z]+$/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  line="$(echo "$block" | grep '^引き継ぎの根拠: ')"
+  echo "$line" | grep -qF 'PR_COMMITS=0 のとき: 比べず（PR 自身の commit 0 件）' || { echo "$line"; return 1; }
+  [ "$(echo "$block" | wc -l | tr -d ' ')" -eq 4 ] || { echo "$block"; return 1; }
+}
+
 @test "carryover (#1238): the script call block documents exit 4 and the PR's-own-diff lines" {
   call="$(step3c_body | awk '/^```bash/{f=1; next} f&&/^```$/{f=0} f')"
   for w in 'if-judged' 'EVIDENCE_PR_CHANGED=' 'EVIDENCE_MAIN_ONLY=' 'PR_COMMITS=' 'EVIDENCE_DIFF_LINES=' '4 = '; do
@@ -1261,12 +1304,180 @@ step3c_body() {
   done
 }
 
-@test "carryover (#1238): exit 4 goes to step 6 with the EVIDENCE_PR_CHANGED lines" {
-  step3c_body | grep -F '終了コード 4' | grep -F '手順6' | grep -qF 'EVIDENCE_PR_CHANGED='
+@test "carryover (#1238): exit 4 goes to step 6 with the EVIDENCE_PR_CHANGED lines and the judge's or skip reason" {
+  line="$(step3c_body | grep -F '終了コード 4 のときは' | grep -F '手順6')"
+  [ -n "$line" ] || { echo "no exit-4 step-6 sentence"; return 1; }
+  echo "$line" | grep -qF 'EVIDENCE_PR_CHANGED='
+  # 判定が「変わった」「判断できない」・上限超え・判定役を起こせないときの理由を添える
+  for w in '`引き継ぎ判定: 変わった`' '`引き継ぎ判定: 判断できない`' '100 行を超えた' '判定役を起こせない' '判定役に比べさせなかった理由'; do
+    echo "$line" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+# 3-c の「終了コード 4 の判定役」の小節（見出しから次の見出しまで）
+judge_body() {
+  awk '/^##### 終了コード 4 の判定役/{f=1; next} /^#{3,5} /{f=0} f' "$HOLD"
+}
+
+@test "carryover judge (#1238): the script call block says exit 4 goes to the judge, not 'ask the owner for now'" {
+  call="$(step3c_body | awk '/^```bash/{f=1; next} f&&/^```$/{f=0} f')"
+  line="$(echo "$call" | grep -F '4 = ')"
+  echo "$line" | grep -qF '判定役' || { echo "$line"; return 1; }
+  ! echo "$line" | grep -qF 'いまは主に聞く' || return 1
+}
+
+@test "carryover judge (#1238): condition 1 accepts exit 4 only with a 'same' record (and the whole-PR review when outside-allowlist)" {
+  cond1="$(step3c_body | awk '/^1\. スクリプトが終了コード 0/{f=1} /^2\. /{f=0} f')"
+  line="$(echo "$cond1" | grep -F '終了コード 4')"
+  echo "$line" | grep -qF '`引き継ぎ判定: 同じ`' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF 'RESOLVED_OUTSIDE_ALLOWLIST='
+  echo "$line" | grep -qF '終了コード 3 と同じ'
+  echo "$line" | grep -qF '判定役に比べさせなかったときは条件 1 を満たさない'
+}
+
+@test "carryover judge (#1238): 3-c has the judge subsection with the decider type and opus" {
+  body="$(judge_body)"
+  [ -n "$body" ] || { echo "no judge subsection"; return 1; }
+  echo "$body" | grep -qF '`subagent_type: dev-workflow:decider`'
+  echo "$body" | grep -qF '`model: opus`'
+}
+
+@test "carryover judge (#1238): the judge runs only after conditions 2-4, the whole-PR review check and the 100-line cap" {
+  line="$(judge_body | grep -F '回す条件')"
+  [ -n "$line" ] || { echo "no run-condition line"; return 1; }
+  for w in '終了コード 4' '条件 2〜4' 'RESOLVED_OUTSIDE_ALLOWLIST=' 'PR 全体を見た' 'EVIDENCE_DIFF_LINES=' '100 以下' '100 ちょうどは判定させる' '判定役を起こさず手順6で主に聞く'; do
+    echo "$line" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+@test "carryover judge (#1238): the judge gets only the evidence diff and the previous declaration body" {
+  body="$(judge_body)"
+  line="$(echo "$body" | grep -F '渡すもの')"
+  [ -n "$line" ] || { echo "no input line"; return 1; }
+  echo "$line" | grep -qF 'git diff --no-color --no-ext-diff --no-textconv <前 HEAD> <新しい HEAD> -- <EVIDENCE_PR_CHANGED のファイル>...'
+  echo "$line" | grep -qF '前の宣言の本文'
+  echo "$line" | grep -qF '`主の回答:` 以降の追記行を除いた'
+  for w in '記録先の本文' 'レビューの指摘' 'W の return' '作業の会話'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+  echo "$line" | grep -qF '渡さない'
+  req="$(echo "$body" | grep -F '依頼文')"
+  echo "$req" | grep -qF '2 つだけから判定' || { echo "$req"; return 1; }
+  echo "$req" | grep -qF '足りなければ「判断できない」'
+  echo "$req" | grep -qF 'リポジトリを読み足さず'
+  # agents/decider.md の入力契約（4 点）はこの依頼に当てはめない（#1238 ゲート 1 周目）
+  echo "$req" | grep -qF '入力契約' || { echo "$req"; return 1; }
+  echo "$req" | grep -qF '`不足:` で返さず'
+}
+
+@test "carryover judge (#1238): the reply's first line is one of three forms; anything else is 'cannot judge' with no retry" {
+  body="$(judge_body)"
+  req="$(echo "$body" | grep -F '依頼文')"
+  for w in '`引き継ぎ判定: 同じ`' '`引き継ぎ判定: 変わった`' '`引き継ぎ判定: 判断できない`' '2 行目以降に理由'; do
+    echo "$req" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
+  done
+  # 「同じ」の意味
+  same="$(echo "$body" | grep -F '「同じ」は')"
+  for w in 'リスク内容' '該当する観点' '発生条件' '影響範囲と戻し方'; do
+    echo "$same" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+  line="$(echo "$body" | grep -F '3 形のどれにも一致しなければ')"
+  echo "$line" | grep -qF '「判断できない」' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '依頼し直さない'
+}
+
+@test "carryover judge (#1238): the judgment record format has the fixed first line and items, without the target-HEAD label" {
+  block="$(judge_body | awk '/^```text$/{f=1; next} f&&/^```$/{f=0} f')"
+  [ -n "$block" ] || { echo "no record block"; return 1; }
+  [ "$(echo "$block" | head -1)" = '引き継ぎ判定: <同じ|変わった|判断できない>' ] || { echo "$block"; return 1; }
+  for k in '前 HEAD: <40 桁フル SHA>' '新しい HEAD: <40 桁フル SHA>' '前の宣言: ' '根拠ファイル: ' '差分の行数: ' '判定役: dev-workflow:decider' '理由: '; do
+    echo "$block" | grep -q "^$k" || { echo "missing: $k"; return 1; }
+  done
+  ! echo "$block" | grep -qF '対象 HEAD:' || return 1
+  echo "$block" | grep '^判定役: ' | grep -qF '起こさなかったときは「起こさず」' || { echo "$block"; return 1; }
+  judge_body | grep -F '`対象 HEAD:`' | grep -qF '使わない'
+  judge_body | grep -qF '`^引き継ぎ判定: (同じ|変わった|判断できない)$`'
+}
+
+@test "carryover judge (#1238): only the latest record matching both HEADs and the evidence files (as a set) is used" {
+  line="$(judge_body | grep -F '記録の選び方')"
+  [ -n "$line" ] || { echo "no record-selection line"; return 1; }
+  for w in '`前 HEAD:`' '`新しい HEAD:`' '`根拠ファイル:`' 'EVIDENCE_PR_CHANGED=' '前後の空白を除い' '順序を問わず同じ集合' '最新 1 件' '起こし直さない' '一致しない記録は使わない' '一致しない記録は「判断できない」と同じに扱う'; do
+    echo "$line" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
+  done
+  judge_body | grep -F '`根拠ファイル:`' | grep -qF 'カンマ区切り'
+}
+
+@test "carryover judge (#1238): the G started after the judgment does not return needs-carryover-judge again for an unmatched record" {
+  line="$(judge_body | grep -F '記録の選び方')"
+  echo "$line" | grep -qF '判定を受けて起こされた合格処理の G' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '`needs-carryover-judge` を返し直さず「判断できない」と同じに扱い'
+  echo "$line" | grep -qF '手順6で主に聞く'
+  pline="$(grep -F '引き継ぎの判定のあと' "$PASS_STAGE")"
+  echo "$pline" | grep -qF '一致する記録が無ければ `needs-carryover-judge` を返し直さず' || { echo "$pline"; return 1; }
+}
+
+@test "carryover judge (#1238): who starts the judge: the gate itself, develop's G returns needs-carryover-judge, the bundled G does not" {
+  line="$(judge_body | grep -F '起こすセッションの区別')"
+  [ -n "$line" ] || { echo "no session line"; return 1; }
+  echo "$line" | grep -qF 'develop の外のメインセッション'
+  echo "$line" | grep -qF 'ゲート自身'
+  echo "$line" | grep -qF 'Status `needs-carryover-judge`・`次の段: 合格処理`'
+  echo "$line" | grep -qF '宣言を投稿せず'
+  echo "$line" | grep -qF '`needs-approval` も付けず'
+  echo "$line" | grep -qF '`段: 一括（従来経路）`'
+  echo "$line" | grep -qF '従来経路の一括の G（`段: 一括（従来経路）`）は判定役を起こさず手順6で主に聞く'
+}
+
+@test "carryover judge (#1238): when depleted, the side that starts the judge posts the 'cannot judge' record; develop's G does not post it" {
+  dep="$(judge_body | grep -F 'SHARED_BUDGET_MODE=depleted')"
+  [ -n "$dep" ] || { echo "no depleted line"; return 1; }
+  echo "$dep" | grep -qF '判定役を起こさず'
+  echo "$dep" | grep -qF '`引き継ぎ判定: 判断できない`'
+  echo "$dep" | grep -qF '判定役を起こさなかった（共有枠 depleted）'
+  echo "$dep" | grep -qF '判定役を起こす側（develop の外のメインセッションではゲート自身、develop では本体）'
+  echo "$dep" | grep -qF '自分で投稿しない'
+}
+
+@test "carryover judge (#1238): the evidence line can record exit 4 with the PR-changed files, line count, verdict and record link (still 4 lines)" {
+  block="$(step3c_body | awk '/^```[a-z]+$/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  # 4 行のままであること（#441 の 4 行のテストと同じ検査。終了コード 4 の欄を足しても行が増えないことをこの位置でも示す）
+  [ "$(echo "$block" | wc -l | tr -d ' ')" -eq 4 ] || { echo "$block"; return 1; }
+  line="$(echo "$block" | grep '^引き継ぎの根拠: risk-carryover-check.sh 終了コード ')"
+  for w in '終了コード <0・3・4 のどれか>' 'EVIDENCE_MAIN_ONLY' 'EVIDENCE_PR_CHANGED' 'EVIDENCE_DIFF_LINES' '判定 同じ' '判定の記録のリンク' '該当するものを並べて書く'; do
+    echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
+  done
+}
+
+@test "carryover judge (#1238): G as develop has a needs-carryover-judge section and a return heading for it" {
+  nc="$(awk '/^### needs-carryover-judge のとき/{f=1;next} /^### |^```$/{f=0} f' "$HOLD")"
+  [ -n "$nc" ] || { echo "no needs-carryover-judge section"; return 1; }
+  for w in '前 HEAD' '新しい HEAD' '40 桁' '前の宣言のコメントのリンク' 'EVIDENCE_PR_CHANGED=' 'EVIDENCE_DIFF_LINES='; do
+    echo "$nc" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
+  done
+  grep -E '^### return の書式' "$HOLD" | grep -qF 'needs-carryover-judge'
+  line="$(grep -F -- '- **許容済みの PR で HEAD が動いたとき**' "$HOLD")"
+  echo "$line" | grep -qF '終了コード 4' || { echo "$line"; return 1; }
+  echo "$line" | grep -qF '`needs-carryover-judge`'
+}
+
+@test "carryover judge (#1238): pass.md re-enters step 3 after the judgment and reads the record in 3-c" {
+  line="$(grep -F '引き継ぎの判定のあと' "$PASS_STAGE")"
+  [ -n "$line" ] || { echo "no after-judgment entry"; return 1; }
+  echo "$line" | grep -qF '`段: 合格処理`'
+  echo "$line" | grep -qF 'Status `needs-carryover-judge`'
+  echo "$line" | grep -qF '`declarations.md` の手順 3 から入り直し'
+  echo "$line" | grep -qF '判定の記録'
+}
+
+@test "carryover judge (#1238): declarations.md no longer says 3-c checks the evidence files are unchanged" {
+  run grep -n '無変更' "$DECLARATIONS"
+  [ "$status" -ne 0 ] || { echo "$output"; return 1; }
+  grep -F -- '`- 根拠ファイル:`' "$DECLARATIONS" | grep -F 'PR 自身の差分' | grep -qF '判定役'
 }
 
 @test "carryover (#1238): the evidence line records the PR's own commits and main-only evidence changes" {
-  block="$(step3c_body | awk '/^```bash/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
+  block="$(step3c_body | awk '/^```[a-z]+$/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
   line="$(echo "$block" | grep '^引き継ぎの根拠: ')"
   for w in 'PR 自身の commit' 'EVIDENCE_MAIN_ONLY'; do
     echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
@@ -1659,4 +1870,100 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
   scope="$(step5_body | grep '^守備範囲: 親の会話ログの改変')"
   echo "$scope" | grep -qF '頭を付けずに打ち込まれた文'
   echo "$scope" | grep -qF '塞ぎ切る'
+}
+
+# --- Requirement: 合格条件は主の委任で親経由に受けた許容を、委任の確認と記録で確かめて受け付ける（#1293） ---
+# 4 条件・6 条件・推奨の判定の文字列は develop-skill.bats の DELEG_STOP4・DELEG_VALID6・DELEG_RECOMMEND と同じ文字列にする
+# （epic.md・epic-child-stop.md・pass.md の 3 か所が同じ文で確かめるため）。
+
+PRG_DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1〜4 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
+PRG_DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
+PRG_DELEG_RECOMMEND='`推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
+
+deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許容（親経由で受領（委任））の真正性確認/{f=1} /^\*\*issue で承認済みの確かめ直し/{f=0} f'; }
+
+@test "delegated reply (#1293): step 5 has the delegated record format" {
+  step5_body | grep -qF '主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>'
+}
+
+@test "delegated reply (#1293): step 5 table has a delegated row that is accepted" {
+  row="$(step5_body | grep '^| ' | grep -F '親経由で受領（委任）')"
+  [ -n "$row" ]
+  echo "$row" | grep -qF '| 可 |'
+}
+
+@test "delegated reply (#1293): the delegated check section sits after the relayed check and before the issue approval recheck" {
+  body="$(deleg_check_body)"
+  [ -n "$body" ]
+  relayed_line="$(step5_body | grep -nF '親経由で受けた許容（親経由で受領）の真正性確認' | head -1 | cut -d: -f1)"
+  deleg_line="$(step5_body | grep -nF '主の委任で親経由に受けた許容（親経由で受領（委任））の真正性確認' | head -1 | cut -d: -f1)"
+  [ "$relayed_line" -lt "$deleg_line" ]
+}
+
+@test "delegated reply (#1293): pass.md has the six validity conditions, four stop conditions and recommendation judgement as the same strings" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF "$PRG_DELEG_VALID6"
+  echo "$body" | grep -qF "$PRG_DELEG_STOP4"
+  echo "$body" | grep -qF "$PRG_DELEG_RECOMMEND"
+}
+
+@test "delegated reply (#1293): the strings in pass.md are the same as epic.md and epic-child-stop.md" {
+  epic="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  child="$BATS_TEST_DIRNAME/../skills/develop/references/epic-child-stop.md"
+  for f in "$epic" "$child"; do
+    grep -qF "$PRG_DELEG_VALID6" "$f" || { echo "valid6 missing in $f"; return 1; }
+    grep -qF "$PRG_DELEG_STOP4" "$f" || { echo "stop4 missing in $f"; return 1; }
+  done
+}
+
+@test "delegated reply (#1293): step 5 checks the stop record is the latest one and runs --delegated" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF '子の停止: 主の返事待ち'
+  echo "$body" | grep -qF 'last | .html_url'
+  echo "$body" | grep -qF 'owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時>'
+  for r in not-found not-owner not-after not-asked not-direct not-before; do
+    echo "$body" | grep -qF "$r" || { echo "missing $r"; return 1; }
+  done
+  echo "$body" | grep -F '任せる意思' | grep -qF 'MATCH:'
+}
+
+@test "delegated reply (#1293): step 5 records the --delegated exit 0 and never uses --relayed for the delegated form" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF '真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh --delegated 終了コード 0）'
+  echo "$body" | grep -F -- '--relayed' | grep -F 'で確かめない' | grep -qF 'not-after'
+  ! echo "$body" | grep -qF -- 'owner-reply-check.sh --relayed <' || return 1
+}
+
+@test "delegated reply (#1293): step 5 sends back to step 6 and the child's tab when any check fails" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -F '合格させず' | grep -F '手順6' | grep -qF '子のタブ'
+}
+
+@test "delegated reply (#1293): the delegated check has its own scope paragraph" {
+  scope="$(deleg_check_body | grep '^守備範囲（委任の形）: ')"
+  [ -n "$scope" ]
+  echo "$scope" | grep -qF '起動し直した'
+  echo "$scope" | grep -qF '塞ぎ切る'
+}
+
+@test "delegated reply (#1293): step 6 resume row for risk acceptance handles a delegated record" {
+  row="$(awk '/^### 6\. /{f=1} f' "${HOLD}" | grep -F '| **リスク許容待ち**' | head -1)"
+  echo "$row" | grep -qF '主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>'
+  echo "$row" | grep -F '親経由で受領（委任）' | grep -qF '追記してから手順5'
+}
+
+@test "delegated reply (#1293): 3-c condition 3 rechecks the delegated form with --delegated, not --relayed" {
+  cond3="$(step3c_body | grep '^3\. ')"
+  echo "$cond3" | grep -qF '親経由で受領（委任）'
+  echo "$cond3" | grep -qF 'owner-reply-check.sh --delegated'
+  echo "$cond3" | grep -qF -- '`--relayed` で確かめ直さない'
+  echo "$cond3" | grep -qF '取り消し'
+  echo "$cond3" | grep -qF '`親経由で受領（委任）（親セッション ` で始まる行は委任の形、`親経由で受領（親セッション ` で始まる行は従来の形'
+}
+
+@test "delegated reply (#1293): 3-c allows four forms on line 1 and keeps four lines" {
+  body="$(step3c_body)"
+  echo "$body" | grep -F '1 行目' | grep -qF '親経由で受領（委任）（親セッション'
+  echo "$body" | grep -qF '主の回答: 許容（引き継ぎ） — 親経由で受領（委任）（親セッション … / 委任の確認 … / …）委任の記録: … 停止の記録: … 原文: …'
+  echo "$body" | grep -qF '4 つ'
 }
