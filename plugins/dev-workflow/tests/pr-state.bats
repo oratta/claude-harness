@@ -7,7 +7,7 @@
 # flatmate の scripts/test-pending-pr-merge-wait.sh の (K)(N) から移したケースは、
 # テスト名の先頭に元のケース名を書く（移し方は tasks.md 2.1）。
 #
-# spec: openspec/changes/pr-state-classifier（dev-workflow-pr-state）
+# spec: openspec/specs/dev-workflow-pr-state/spec.md（dev-workflow-pr-state）
 
 LOST='The self-hosted runner lost communication with the server.'
 # ジョブが上限時間（timeout-minutes）で打ち切られたときに GitHub が付ける annotation
