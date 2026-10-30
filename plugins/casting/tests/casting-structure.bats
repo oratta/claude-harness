@@ -472,6 +472,64 @@ SH
   [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-arg-heredoc after-dquote-subst-assign after-function-body-assign after-prefix-assign after-reserved-word-assign after-split-arg-heredoc " ]
 }
 
+# PR #635 レビュー指摘 B1 の退行ガード。位置判定は先行する単語を読み直すので、前の代入語の
+# 添字の中の `<` `;` `(` や空白で単語を切ると、前置き代入の連なりの 2 語目以降が代入語の
+# 位置に見えなくなる。`a[1<<2]=3 b[1<<2]=4` の `b[` が開かず、`<<` がヒアドキュメント開始と
+# 誤認されて以降の呼び出しが全消滅していた（無言経路）。一方、`]` の直後が `=` でない語は
+# 代入語ではないので、その後ろの `foo[bar` は引き続きコマンドの引数として読む。
+@test "check: a chain of prefix assignments keeps later subscripts arithmetic" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-prefix-chain.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+a[1<<2]=3 b[1<<2]=4
+report "after-chain-shift" "a"
+a[1 + 2]=3 b[(1<<2)]+=4 c[1<<2]=5
+report "after-chain-spaces" "b"
+a[i;j]=3 b[1<<2]=4
+report "after-chain-separator" "c"
+a[1<<2]=3 \
+b[1<<2]=4
+report "after-chain-continued" "d"
+foo[1] bar[baz <<EOF ]=3
+don't report "in-heredoc-after-glob" "x"
+EOF
+report "after-glob-heredoc" "e"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "5" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "5" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-chain-continued after-chain-separator after-chain-shift after-chain-spaces after-glob-heredoc " ]
+}
+
+# PR #635 レビュー指摘 B2 の退行ガード。`time -p` の `-p` は `time` の続きで、後ろはまだ
+# コマンド位置。`-p` を単語として数えると `time -p a[1<<2]=3` の `a[` が開かず、以降の
+# 呼び出しが全消滅していた（無言経路）。`time` の直後でない `-p` はコマンドやその引数で、
+# 後ろの `foo[bar` は引き続きコマンドの引数として読む。
+@test "check: time -p keeps the command position for an assignment subscript" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-time-p.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+time -p a[1<<2]=3
+report "after-time-p" "a"
+! time -p x=1 b[1<<2]=4
+report "after-negated-time-p" "b"
+! -p foo[bar <<EOF ]=3
+don't report "in-heredoc-negated-p" "x"
+EOF
+report "after-negated-p-heredoc" "c"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "3" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "3" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-negated-p-heredoc after-negated-time-p after-time-p " ]
+}
+
 # 添字判定を bash の位置規則に揃えた副作用で、添字でない `[` の扱いが変わっていないことの
 # 確認。test コマンド `[ -f x ]`・`[[ … ]]`・連想配列の `${m[key]}` `${#m[@]}` `${!m[@]}`・
 # glob の文字クラス `file[a-z].txt` のどれも、直後のヒアドキュメント本文を本文のまま扱い、

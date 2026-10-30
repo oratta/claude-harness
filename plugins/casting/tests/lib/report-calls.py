@@ -65,7 +65,10 @@ grep だけで数えていた頃は、行頭コメント行しか落とせず、
                              （`]` と `=` の間の行継続 `\\` は越えて読む。#244）。
                              さらにその単語がコマンド位置（先頭の予約語 `if` `{` `!`
                              などの直後を含む）か前置き代入の連なり（`x=1 a[…]=3 cmd`）
-                             か複合代入 `=( … )` の中にあるもの。`: foo[bar <<EOF ]=3`
+                             か複合代入 `=( … )` の中にあるもの。予約語の直後には
+                             `time -p` の `-p` の直後も含み、前置き代入の連なりは
+                             先行する語の添字を `]` まで 1 単語として読む
+                             （`a[1<<2]=3 b[1<<2]=4`）。`: foo[bar <<EOF ]=3`
                              のようなコマンドの引数は代入語ではない（PR #635 指摘）
 
   どちらも、対応する `]` が論理行（行末 `\\` の行継続でつないだ物理行）の中に実在する
@@ -115,6 +118,8 @@ _PARAM_BEFORE = ("${", "${#", "${!")
 _EXPANDING_KINDS = ("dquote", "heredoc")
 # 代入語（前置き代入）の形。`name=` / `name+=` / `name[…]=` / `name[…]+=`。
 _ASSIGNMENT_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\[.*\])?\+?=")
+# 添字が続きうる単語（配列名）の形。
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 # コマンドの先頭に置けて、その後ろもまだコマンド位置のままになる予約語。
 _LEADING_RESERVED = frozenset(("!", "time", "if", "then", "else", "elif", "do", "while", "until", "{"))
 
@@ -352,7 +357,7 @@ class _Scanner:
         else:
             return False
 
-        end = self._find_subscript_end(index, i)
+        end = self._find_subscript_end(self.lines, index, i)
         if end is None:
             return False
         if not in_assignment:
@@ -375,9 +380,11 @@ class _Scanner:
 
         論理行（行末 `\\` でつないだ前の物理行を含む）の start より前を単語に切り、
         直近のコマンド区切り（`;` `&` `|` 改行・`(` `)`・`` ` ``）の後ろに並ぶ単語が、
-        先頭の予約語（`if` `{` `!` など）を除いてすべて代入語なら真。複合代入 `=( … )`
-        の中も真。リダイレクト（`<` `>`）が前にあれば偽（bash もその後ろを代入語として
-        読まない）。完全なシェルパーサではなく、この物理行より前で開いた引用は追わない。
+        先頭の予約語（`if` `{` `!` など。`time` の直後の `-p` も含む）を除いてすべて
+        代入語なら真。複合代入 `=( … )` の中も真。リダイレクト（`<` `>`）が前にあれば偽
+        （bash もその後ろを代入語として読まない）。先行する代入語の添字は対応する `]`
+        まで 1 単語として読み、中の `<` `;` や空白で切らない（`a[1<<2]=3 b[1<<2]=4`。
+        PR #635 指摘）。完全なシェルパーサではなく、この物理行より前で開いた引用は追わない。
         いま居るコード領域フレーム（`$(` `` ` `` `((`）がこの論理行の中で開いていれば、
         その開きの直後から読む（`echo "$(a[…]=3)"` の `$(` の中はコマンド位置）。
         """
@@ -417,6 +424,12 @@ class _Scanner:
                 cur = (cur or "") + text[i:j]
                 i = j
                 continue
+            if ch == "[" and cur is not None and _IDENTIFIER.match(cur):
+                end = self._find_subscript_end([text], 0, i)
+                if end is not None and text.startswith(("=", "+="), end[1] + 1):
+                    cur += text[i:end[1] + 1]
+                    i = end[1] + 1
+                    continue
             if ch in " \t":
                 if cur is not None:
                     words.append(cur)
@@ -459,7 +472,9 @@ class _Scanner:
             return True
         k = 0
         while k < len(words):
-            if words[k] in _LEADING_RESERVED:
+            if words[k] == "time" and k + 1 < len(words) and words[k + 1] == "-p":
+                k += 2  # `time -p` の `-p` は `time` の続き（PR #635 指摘）
+            elif words[k] in _LEADING_RESERVED:
                 k += 1
             elif words[k] == "function" and k + 2 < len(words) and words[k + 2] == "{":
                 k += 3  # `function name {` の本体の先頭もコマンド位置
@@ -467,8 +482,9 @@ class _Scanner:
                 break
         return all(_ASSIGNMENT_WORD.match(w) for w in words[k:])
 
-    def _find_subscript_end(self, index, i):
-        """物理行 index の位置 i の `[` に対応する `]` を論理行の中で探す。
+    @staticmethod
+    def _find_subscript_end(lines, index, i):
+        """lines の物理行 index の位置 i の `[` に対応する `]` を論理行の中で探す。
 
         引用の中と `\\` エスケープは読み飛ばし、入れ子の `[` `]` は深さで追う。
         行末 `\\` の行継続は次の物理行へ続ける。見つかれば (物理行 index, 位置)、
@@ -476,8 +492,8 @@ class _Scanner:
         """
         depth = 1
         k = i + 1
-        while index < len(self.lines):
-            line = self.lines[index]
+        while index < len(lines):
+            line = lines[index]
             n = len(line)
             while k < n:
                 ch = line[k]
@@ -493,7 +509,7 @@ class _Scanner:
                     k += 1
                     continue
                 if ch == '"':
-                    k = self._skip_dquote(line, k + 1)
+                    k = _Scanner._skip_dquote(line, k + 1)
                     if k < 0:
                         return None
                     continue
