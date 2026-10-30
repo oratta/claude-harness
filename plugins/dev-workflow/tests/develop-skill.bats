@@ -289,10 +289,10 @@ refute() {
 
 @test "model: W defaults to sonnet and is capped at opus; R1 opus, G sonnet; fable only via the decider type" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| W（実行役。`dev-workflow:worker`） \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| W（実行役。`dev-workflow:worker`） \| 中位（`sonnet`） \|'
   echo "$m" | grep -qE 'W.*`opus`'
-  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
-  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| `sonnet` \|'
+  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| 上位（`opus`） \|'
+  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| 中位（`sonnet`） \|'
   ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約' || return 1
   echo "$m" | grep -q '事前分類'
   echo "$m" | grep -q 'マージ条件'
@@ -343,16 +343,21 @@ refute() {
 
 @test "loop: step 1 points the W model to the W row of the model table (#1239 C10)" {
   s1="$(grep -E '^\(1\) W を' "$SKILL")"
-  echo "$s1" | grep -qF 'references/pre-classification.md'
-  echo "$s1" | grep -qF '「1 周目」列'
+  # #614: 本体は request が返した model を使い、1 周目の値を文章の規則で計算し直さない。
+  # 事前分類への道筋は「Role profile の選択」節の格の入力を通り、「1 周目」列は正本に残る
+  echo "$s1" | grep -qF '`request` が返した `model`'
+  echo "$s1" | grep -qF '「Role profile の選択」節'
   echo "$s1" | grep -qF '「モデル」節の表の W の行'
+  ! echo "$s1" | grep -qF 'それ以外 sonnet' || return 1
+  section 'Role profile の選択' | grep -qF 'references/pre-classification.md'
+  grep -qE '^\| 分類 \| 具体 \| 1 周目 \|' "${SKILL_DIR}/references/pre-classification.md"
   ! echo "$s1" | grep -qF 'W の上限は opus' || return 1
 }
 
 @test "model: G defaults to sonnet and every pre-classification lifts W only to opus" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| `sonnet` \|'
-  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| `opus` \|'
+  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| 中位（`sonnet`） \|'
+  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| 上位（`opus`） \|'
   echo "$m" | grep -q '聖域パス'
   echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'
 }

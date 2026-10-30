@@ -8,7 +8,7 @@ SKILL.md は役割ごとの格を次のとおり規定しなければならな�
 #### Scenario: 役割別の既定モデルと昇格条件が書かれている
 - **WHEN** SKILL.md の「モデル」節を読む
 - **THEN** W の既定が 中位（`sonnet`）で上限が 上位（`opus`）、R1 の既定が 上位（`opus`）、G の既定が 中位（`sonnet`）、事前分類（聖域パス・マージ権限・層間契約・課金/法務）で W は `opus` 止まり、R1 とレビュアーの fable は `dev-workflow:decider` 経由と書かれている
-- **AND** `FABLE_BUDGET_MODE` と `SHARED_BUDGET_MODE` の効果は `references/decision-criteria.md` の表を見るよう書かれており、`abundant`・`reserve`・`exhausted`・`throttled`・`depleted` の値ごとの効果を述べた文は無い
+- **AND** `FABLE_BUDGET_MODE` と `SHARED_BUDGET_MODE` の効果は `references/decision-criteria.md` の表を見るよう書かれており、引き継ぎの判定役の行を除き `abundant`・`reserve`・`exhausted`・`throttled`・`depleted` の値ごとの効果を述べた文は無い（判定役は `request` を通らない役なので、depleted のときは起こさないことをその行に書く）
 
 #### Scenario: レビュアーの model 決定元を経路で分ける
 - **WHEN** SKILL.md の「G が要求するレビュアー」の行を読む
