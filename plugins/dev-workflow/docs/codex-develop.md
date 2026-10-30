@@ -46,7 +46,7 @@ python3 <plugin>/scripts/codex-worker.py run --request /absolute/private/request
 
 `run` は呼び出し元のプロセス連鎖が切れれば自分も終わり、SIGTERM / SIGINT でも止まる。途中で切れた委譲を後から照会・復旧する手段は無い。同じ工程をやり直すときは、記録先と worktree を確認して3手順を最初から繰り返す。同時実行の枠管理も作業ディレクトリの排他も行わない。同じworktreeへ2本同時に投げないのは本体の責任である。
 
-外部profileはversion 1の`profiles.<name>.roles`に全canonical roleを持ち、各entryでexecutor/account/model/effortを指定する。profileと旧`--account/--model`は併用不可。profileが指すaccount名が `--account-home` / `--account-home-file` の対応表に無ければ、依頼ファイルを作らずに拒否し、既定や別のCODEX_HOMEへ倒さない。workerは静的検証と`model/list`広告値による開始前検証を行う。
+外部profileは形式版2の`profiles.<name>.roles`に全canonical roleを持ち、各entryでexecutor/account/effortと任意の`tier_cap`を指定する。entryに`model`は書けず、形式版1は拒否する（書き換え方と例は`references/codex-develop-explicit.md`）。profileと旧`--account/--model`は併用不可。profileが指すaccount名が `--account-home` / `--account-home-file` の対応表に無ければ、依頼ファイルを作らずに拒否し、既定や別のCODEX_HOMEへ倒さない。workerは静的検証と`model/list`広告値による開始前検証を行う。
 
 初版は全工程fresh thread。read-only reviewerは投稿を本体に返す。実モデルによる一件完走は統合検証の証拠を参照し、fake testsだけで実運用検証済みとは扱わない。
 

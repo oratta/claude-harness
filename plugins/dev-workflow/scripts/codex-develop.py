@@ -46,6 +46,10 @@ its evidence; the coordinator posts it on your behalf, then starts a fresh phase
 # the executors; model-tier-map.json alone turns a tier into a model name.
 TIERS = ('最安', '中位', '上位', '最上位')
 TIER_MAP = ROOT / 'references/model-tier-map.json'
+# Every phase starts from one tier. W and G share the implement role, so this is keyed by phase.
+BASE_TIERS = {'spec': '中位', 'implement': '中位', 'finish': '中位', 'gate': '中位',
+              'spec-review': '上位', 'review': '上位', 'decider': '最上位',
+              'explore': '最安', 'summarize': '最安'}
 
 
 def _setting_error(exc):
@@ -340,19 +344,10 @@ def bind_codex_account(config, account, accounts):
     for role, entry in config['roles'].items():
         roles[role] = dict(entry, account=account) if entry['executor'] == 'codex' else dict(entry)
         validate_role_entry(role, roles[role], accounts, source='automatic profile role')
-    bound = {'version': 1, 'profile': config['profile'], 'roles': roles}
+    bound = {'version': 2, 'profile': config['profile'], 'roles': roles}
     if bound['roles']['review'] != bound['roles']['impl-review']:
         raise RuntimeError('profile review must equal impl-review')
     return bound
-
-
-def claude_default(role):
-    model = ('haiku' if role in {'explore', 'summarize'} else
-             'fable' if role == 'decider' else
-             'opus' if role in {'spec-review', 'impl-review', 'review'} else 'sonnet')
-    effort = 'low' if model == 'haiku' else 'high' if model in {'opus', 'fable'} else 'medium'
-    return {'role': role, 'executor': 'claude', 'account': 'current',
-            'model': model, 'effort': effort}
 
 
 def _unique_object(pairs):
@@ -385,6 +380,11 @@ def load_tier_map(path=None):
         if any(not isinstance(model, str) or not model for model in models.values()):
             raise RuntimeError(f'tier map {executor} has an empty or non-string model')
     return document
+
+
+def cap_tier(tier, cap):
+    # A cap only ever lowers: min over the tier order, with no cap leaving the tier alone.
+    return tier if cap is None else min(tier, cap, key=TIERS.index)
 
 
 def tier_model(executor, tier):
@@ -441,25 +441,24 @@ def default_automatic_account_home():
 
 
 def validate_role_entry(role, entry, accounts=None, *, source='profile role'):
-    if not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'}:
+    # An entry names who runs a role, never a model: the model comes from the tier, so a
+    # model key is an unknown key and refuses the whole profile (a version 1 leftover).
+    required = {'executor', 'account', 'effort'}
+    if not isinstance(entry, dict) or not required <= set(entry) <= required | {'tier_cap'}:
         raise RuntimeError(f'{source} {role} has invalid fields')
     if any(not isinstance(entry[key], str) or not entry[key] for key in entry):
         raise RuntimeError(f'{source} {role} has an empty or non-string value')
+    if 'tier_cap' in entry and entry['tier_cap'] not in TIERS:
+        raise RuntimeError(f'{source} {role} tier_cap is not a defined tier')
     executor = entry['executor']
     if executor not in {'claude', 'codex'}:
         raise RuntimeError(f'{source} {role} executor must be claude or codex')
     if executor == 'codex':
         if accounts is not None and entry['account'] not in accounts:
             raise RuntimeError(f'{source} {role} account is not registered')
-    else:
-        if entry['account'] != 'current':
-            raise RuntimeError(
-                f'{source} {role}: different Claude account execution is not supported yet')
-        if entry['model'] not in {'haiku', 'sonnet', 'opus', 'fable'}:
-            raise RuntimeError(
-                f'{source} {role} Claude model must be one of haiku, sonnet, opus, fable')
-        if entry['model'] == 'fable' and role != 'decider':
-            raise RuntimeError(f'{source} {role}: fable is only supported for decider')
+    elif entry['account'] != 'current':
+        raise RuntimeError(
+            f'{source} {role}: different Claude account execution is not supported yet')
     return dict(entry)
 
 
@@ -470,8 +469,8 @@ def load_profile(name, profile_file, accounts):
     except (OSError, ValueError) as exc:
         raise RuntimeError('profile file is unavailable or invalid') from exc
     if (not isinstance(document, dict) or set(document) != {'version', 'profiles'} or
-            type(document['version']) is not int or document['version'] != 1):
-        raise RuntimeError('profile document must have exactly version=1 and profiles')
+            type(document['version']) is not int or document['version'] != 2):
+        raise RuntimeError('profile document must have exactly version=2 and profiles')
     profiles = document['profiles']
     if not isinstance(profiles, dict) or name not in profiles:
         raise RuntimeError('profile is not defined')
@@ -486,7 +485,7 @@ def load_profile(name, profile_file, accounts):
         clean[role] = validate_role_entry(role, roles[role], accounts)
     if clean['review'] != clean['impl-review']:
         raise RuntimeError('profile review must equal impl-review')
-    return {'version': 1, 'profile': name, 'roles': clean}
+    return {'version': 2, 'profile': name, 'roles': clean}
 
 
 def validate_execution_config(state):
@@ -494,7 +493,7 @@ def validate_execution_config(state):
     if config is None:
         return
     if (not isinstance(config, dict) or set(config) != {'version', 'profile', 'roles'} or
-            type(config.get('version')) is not int or config.get('version') != 1 or
+            type(config.get('version')) is not int or config.get('version') != 2 or
             set(config.get('roles', {})) != set(CANONICAL_ROLES)):
         raise RuntimeError('execution config mismatch')
     for role, entry in config['roles'].items():
@@ -624,16 +623,15 @@ def build_request(args):
                      'reason': 'explicit-account-model'}
     else:
         selected, selection = automatic_selection(mapping)
-        if selected == 'claude-default':
-            state = {'cwd': str(cwd), 'automatic_claude_default': True}
-        else:
-            config = load_profile(selected, None, None)
-            config = bind_codex_account(config, selection['codex']['account'], set(mapping))
-            state = {'cwd': str(cwd), 'execution_config': config,
-                     'execution_config_hash': execution_config_hash(config)}
+        config = load_profile(selected, None, None)
+        config = bind_codex_account(config, selection['codex']['account'], set(mapping))
+        state = {'cwd': str(cwd), 'execution_config': config,
+                 'execution_config_hash': execution_config_hash(config)}
     role = PHASES[args.phase][0]
-    execution = (claude_default(role) if state.get('automatic_claude_default') else
-                 resolve_execution(state, role))
+    execution = resolve_execution(state, role)
+    if not legacy:
+        executed_tier = cap_tier(BASE_TIERS[args.phase], execution.get('tier_cap'))
+        execution['model'] = tier_map['executors'][execution['executor']][executed_tier]
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
         result = {'status': 'agent-required', 'phase': args.phase, 'role': role,

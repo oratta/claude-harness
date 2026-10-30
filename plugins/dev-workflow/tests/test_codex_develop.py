@@ -63,22 +63,17 @@ class RequestFixture:
             os.environ.pop(key, None)
 
     def write_profile(self, account):
-        roles = {role: {'executor': 'codex', 'account': account,
-                        'model': 'fixture-model', 'effort': 'low'}
+        roles = {role: {'executor': 'codex', 'account': account, 'effort': 'low'}
                  for role in m.CANONICAL_ROLES}
-        self.profile_file.write_text(json.dumps({'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+        self.profile_file.write_text(json.dumps({'version': 2, 'profiles': {'custom': {'roles': roles}}}))
 
     def write_mixed_profile(self):
-        roles = {role: {'executor': 'codex', 'account': 'mapped',
-                        'model': role + '-model', 'effort': role + '-effort'}
+        roles = {role: {'executor': 'codex', 'account': 'mapped', 'effort': role + '-effort'}
                  for role in m.CANONICAL_ROLES}
-        for role in ('spec-review', 'impl-review', 'review'):
-            roles[role] = {'executor': 'claude', 'account': 'current',
-                           'model': 'opus', 'effort': 'high'}
-        roles['decider'] = {'executor': 'claude', 'account': 'current',
-                            'model': 'fable', 'effort': 'high'}
+        for role in ('spec-review', 'impl-review', 'review', 'decider'):
+            roles[role] = {'executor': 'claude', 'account': 'current', 'effort': 'high'}
         self.profile_file.write_text(json.dumps(
-            {'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+            {'version': 2, 'profiles': {'custom': {'roles': roles}}}))
 
     def call(self, *extra, phase='implement'):
         args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
@@ -123,7 +118,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
         request = json.loads(self.out.read_text())
         self.assertEqual(request['role'], 'implement')
         self.assertEqual(request['account'], 'mapped')
-        self.assertEqual(request['model'], 'fixture-model')
+        self.assertEqual(request['model'], 'sol')
         self.assertEqual(request['effort'], 'low')
         self.assertEqual(request['codex_home'], str(self.home))
         self.assertEqual(request['origin'], 'manual')
@@ -197,49 +192,59 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 self.assertFalse(self.out.exists())
 
     def test_executor_discriminated_validation_rejects_invalid_entries(self):
-        base = {role: {'executor':'codex', 'account':'mapped',
-                       'model':'fixture-model', 'effort':'low'}
+        base = {role: {'executor':'codex', 'account':'mapped', 'effort':'low'}
                 for role in m.CANONICAL_ROLES}
         cases = [
-            ('model', 'Claude model must be one of',
-             ('spec-review', {'executor':'claude', 'account':'current', 'model':'gpt-6-astra'})),
             ('account', 'different Claude account execution is not supported yet',
-             ('spec-review', {'executor':'claude', 'account':'reviewer', 'model':'opus'})),
+             ('spec-review', {'executor':'claude', 'account':'reviewer'})),
             ('executor', 'executor must be claude or codex',
              ('implement', {'executor':'local'})),
+            ('model on codex', 'invalid fields', ('implement', {'model':'sol'})),
+            ('model on claude', 'invalid fields',
+             ('spec-review', {'executor':'claude', 'account':'current', 'model':'opus'})),
+            ('undefined cap', 'tier_cap is not a defined tier',
+             ('implement', {'tier_cap':'特上'})),
+            ('empty cap', 'empty or non-string', ('implement', {'tier_cap':''})),
         ]
-        for role in (value for value in m.CANONICAL_ROLES if value != 'decider'):
-            cases.append(('fable-' + role, 'fable is only supported for decider',
-                          (role, {'executor':'claude', 'account':'current', 'model':'fable'})))
         for index, (label, message, (role, updates)) in enumerate(cases):
             with self.subTest(case=label):
                 roles = {name: dict(entry) for name, entry in base.items()}
                 roles[role].update(updates)
                 profile = self.root/('invalid-executor-' + str(index) + '.json')
-                profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
+                profile.write_text(json.dumps({'version':2, 'profiles':{'custom':{'roles':roles}}}))
                 target = self.root/('invalid-request-' + str(index) + '.json')
                 with self.assertRaisesRegex(RuntimeError, message):
                     self.call_profile('custom', profile_file=profile, out=target)
                 self.assertFalse(target.exists())
 
+    def test_tier_cap_is_accepted_on_either_executor(self):
+        roles = {role: {'executor':'codex', 'account':'mapped', 'effort':'low', 'tier_cap':'中位'}
+                 for role in m.CANONICAL_ROLES}
+        roles['spec-review'] = {'executor':'claude', 'account':'current', 'effort':'high',
+                                'tier_cap':'最安'}
+        profile = self.root/'capped.json'
+        profile.write_text(json.dumps({'version':2, 'profiles':{'custom':{'roles':roles}}}))
+        self.assertEqual(self.call_profile('custom', profile_file=profile)['status'],
+                         'request-written')
+
     def test_external_profile_is_strict_complete_and_uses_registered_accounts(self):
-        roles = {role: {'executor':'codex', 'account':'mapped',
-                        'model':'custom-model', 'effort':'future'}
+        roles = {role: {'executor':'codex', 'account':'mapped', 'effort':'future'}
                  for role in m.CANONICAL_ROLES}
         profile = self.root/'strict-profiles.json'
-        profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
+        profile.write_text(json.dumps({'version':2, 'profiles':{'custom':{'roles':roles}}}))
         result = self.call_profile('custom', profile_file=profile)
         self.assertEqual(result['status'], 'request-written')
         self.assertEqual(json.loads(self.out.read_text())['account'], 'mapped')
 
         invalids = [
             {'version':True, 'profiles':{'custom':{'roles':roles}}},
-            {'version':2, 'profiles':{'custom':{'roles':roles}}},
-            {'version':1, 'extra':1, 'profiles':{'custom':{'roles':roles}}},
-            {'version':1, 'profiles':{'custom':{'roles':{k:v for k,v in roles.items() if k != 'decider'}}}},
-            {'version':1, 'profiles':{'custom':{'roles':dict(roles, decider=dict(roles['decider'], executor='local'))}}},
-            {'version':1, 'profiles':{'custom':{'roles':dict(roles, decider=dict(roles['decider'], account='absent'))}}},
-            '{"version":1,"version":1,"profiles":{}}',
+            {'version':1, 'profiles':{'custom':{'roles':roles}}},
+            {'version':3, 'profiles':{'custom':{'roles':roles}}},
+            {'version':2, 'extra':1, 'profiles':{'custom':{'roles':roles}}},
+            {'version':2, 'profiles':{'custom':{'roles':{k:v for k,v in roles.items() if k != 'decider'}}}},
+            {'version':2, 'profiles':{'custom':{'roles':dict(roles, decider=dict(roles['decider'], executor='local'))}}},
+            {'version':2, 'profiles':{'custom':{'roles':dict(roles, decider=dict(roles['decider'], account='absent'))}}},
+            '{"version":2,"version":2,"profiles":{}}',
         ]
         for index, value in enumerate(invalids):
             with self.subTest(invalid=index):
@@ -250,16 +255,15 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 self.assertFalse(target.exists())
 
     def test_review_must_equal_impl_review_in_profile_and_snapshot(self):
-        roles = {role: {'executor':'codex', 'account':'mapped',
-                        'model':'same-model', 'effort':'high'}
+        roles = {role: {'executor':'codex', 'account':'mapped', 'effort':'high'}
                  for role in m.CANONICAL_ROLES}
-        roles['review'] = dict(roles['review'], model='different-model')
+        roles['review'] = dict(roles['review'], effort='low')
         profile = self.root/'review-mismatch.json'
-        profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
+        profile.write_text(json.dumps({'version':2, 'profiles':{'custom':{'roles':roles}}}))
         with self.assertRaisesRegex(RuntimeError, 'review.*impl-review'):
             self.call_profile('custom', profile_file=profile)
 
-        config = {'version':1, 'profile':'custom', 'roles':roles}
+        config = {'version':2, 'profile':'custom', 'roles':roles}
         state = {'execution_config':config, 'execution_config_hash':m.execution_config_hash(config)}
         with self.assertRaisesRegex(RuntimeError, 'review.*impl-review'):
             m.resolve_execution(state, 'review')
@@ -271,8 +275,8 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
         }
         for profile, values in expected.items():
             config = m.load_profile(profile, None, {'current'})
-            self.assertEqual((config['roles']['spec-write']['model'], config['roles']['spec-write']['effort'],
-                              config['roles']['implement']['model'], config['roles']['implement']['effort']), values)
+            self.assertEqual((config['roles']['spec-write']['effort'],
+                              config['roles']['implement']['effort']), (values[1], values[3]))
             for role in m.CANONICAL_ROLES:
                 with self.subTest(profile=profile, role=role):
                     self.assertEqual(m.resolve_execution({'execution_config': config,
@@ -285,37 +289,57 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                     result = self.call_profile(profile, phase=phases[0], out=target)
                     self.assertEqual(result['status'], 'request-written')
                     request = json.loads(target.read_text())
-                    self.assertEqual((request['role'], request['model'], request['effort']),
-                                     (role, config['roles'][role]['model'], config['roles'][role]['effort']))
+                    self.assertEqual((request['role'], request['effort']),
+                                     (role, config['roles'][role]['effort']))
+                    if role in ('spec-write', 'implement'):
+                        self.assertEqual(request['model'],
+                                         values[0 if role == 'spec-write' else 2])
             self.assertEqual(m.execution_config_hash(config), hashlib.sha256(json.dumps(
                 config, ensure_ascii=False, sort_keys=True, separators=(',', ':')).encode()).hexdigest())
 
-    def test_builtin_codex_entries_name_families_not_model_ids(self):
-        # The families resolve to the newest listed version at dispatch time, so the table
-        # never needs editing when a new generation ships.
-        table = Path(m.__file__).resolve().parents[1]/'references/codex-role-profiles.json'
-        self.assertIsNone(re.search(r'gpt-[0-9]', table.read_text()))
-        for name, values in (('codex-standard', ('sol', 'sol')), ('codex-economy', ('luna', 'luna'))):
-            config = m.load_profile(name, None, {'current'})
-            expected = {'spec-write': values[0], 'implement': values[1], 'explore': 'luna',
-                        'summarize': 'luna', 'spec-review': 'sol', 'impl-review': 'sol',
-                        'review': 'sol', 'decider': 'astra'}
-            self.assertEqual({role: entry['model'] for role, entry in config['roles'].items()}, expected)
-            self.assertTrue(all(entry['executor'] == 'codex' and entry['account'] == 'current'
-                                for entry in config['roles'].values()))
+    def test_builtin_entries_hold_no_model_and_the_only_caps_are_the_economy_writers(self):
+        path = SCRIPT.parents[1] / 'references/codex-role-profiles.json'
+        self.assertIsNone(re.search(r'gpt-[0-9]', path.read_text()))
+        document = json.loads(path.read_text())
+        self.assertEqual(document['version'], 2)
+        self.assertEqual(set(document['profiles']),
+                         {'codex-standard', 'codex-economy', 'hybrid-standard',
+                          'claude-write-codex-review', 'claude-default'})
+        capped = set()
+        for name, profile in document['profiles'].items():
+            for role, entry in profile['roles'].items():
+                with self.subTest(profile=name, role=role):
+                    self.assertNotIn('model', entry)
+                if 'tier_cap' in entry:
+                    capped.add((name, role, entry['tier_cap']))
+        self.assertEqual(capped, {('codex-economy', 'spec-write', '最安'),
+                                  ('codex-economy', 'implement', '最安')})
+
+    def test_claude_default_is_a_profile_that_needs_no_account_home(self):
+        args = [str(SCRIPT), 'request', '--phase', 'decider', '--input', str(self.input),
+                '--cwd', str(self.cwd), '--profile', 'claude-default', '--out', str(self.out)]
+        with patch.object(sys, 'argv', args):
+            result = m.main()
+        self.assertEqual((result['status'], result['executor'], result['account'], result['model'],
+                          result['effort']),
+                         ('agent-required', 'claude', 'current', 'fable', 'high'))
+        self.assertEqual(result['execution_config']['profile'], 'claude-default')
+        self.assertFalse(self.out.exists())
+
+    def test_automatic_claude_default_comes_from_the_same_profile(self):
+        selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
+                     'reason': 'no-provider-has-headroom',
+                     'claude': {'account': None, 'margin': -5, 'fetched_at': None},
+                     'codex': {'account': None, 'margin': None, 'fetched_at': None}}
+        with patch.object(m, 'automatic_selection', return_value=('claude-default', selection)):
+            result = self.call_automatic(phase='explore', accounts=('a',))
+        self.assertEqual((result['status'], result['model'], result['effort']),
+                         ('agent-required', 'haiku', 'low'))
+        self.assertEqual(result['execution_config'], m.load_profile('claude-default', None, None))
+        self.assertEqual(result['execution_config_hash'],
+                         m.execution_config_hash(result['execution_config']))
 
     def test_family_names_and_exact_ids_are_written_to_the_request_unchanged(self):
-        roles = {role: {'executor':'codex', 'account':'mapped', 'model':'sol', 'effort':'high'}
-                 for role in m.CANONICAL_ROLES}
-        roles['spec-write'] = dict(roles['spec-write'], model='gpt-5.6-sol')
-        profile = self.root/'mixed-models.json'
-        profile.write_text(json.dumps({'version':1, 'profiles':{'custom':{'roles':roles}}}))
-        for phase, model in (('implement', 'sol'), ('spec', 'gpt-5.6-sol')):
-            with self.subTest(phase=phase):
-                target = self.root/('mixed-' + phase + '.json')
-                result = self.call_profile('custom', phase=phase, profile_file=profile, out=target)
-                self.assertEqual(result['status'], 'request-written')
-                self.assertEqual(json.loads(target.read_text())['model'], model)
         for model in ('sol', 'gpt-6-astra'):
             with self.subTest(legacy=model):
                 target = self.root/('legacy-' + model + '.json')
@@ -340,9 +364,12 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
             'decider': ('codex', 'current', 'astra', 'high'),
         }
         self.assertEqual(set(config['roles']), set(m.CANONICAL_ROLES))
-        for role, values in expected.items():
-            self.assertEqual(tuple(config['roles'][role][key]
-                                   for key in ('executor', 'account', 'model', 'effort')), values)
+        models = {'sonnet': '中位', 'haiku': '最安', 'sol': '上位', 'astra': '最上位'}
+        for role, (executor, account, model, effort) in expected.items():
+            entry = config['roles'][role]
+            self.assertEqual((entry['executor'], entry['account'], entry['effort']),
+                             (executor, account, effort))
+            self.assertEqual(m.tier_model(executor, models[model])['model'], model)
 
 
     def snapshot(self, margin, *, now=2_000_000, age=0, minutes=None):
@@ -933,7 +960,8 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
         }
         for role, values in expected.items():
             self.assertEqual(tuple(config['roles'][role][key]
-                                   for key in ('executor','account','model','effort')), values)
+                                   for key in ('executor','account','effort')),
+                             (values[0], values[1], values[3]))
             self.assertEqual(m.resolve_execution({'execution_config':config,
                 'execution_config_hash':m.execution_config_hash(config)}, role),
                 {'role':role} | config['roles'][role])
@@ -1140,10 +1168,10 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
 
     def test_codex_off_keeps_a_profile_without_codex_roles(self):
         self.write_registry({'enabled': False})
-        roles = {role: {'executor': 'claude', 'account': 'current',
-                        'model': 'sonnet', 'effort': 'medium'} for role in m.CANONICAL_ROLES}
+        roles = {role: {'executor': 'claude', 'account': 'current', 'effort': 'medium'}
+                 for role in m.CANONICAL_ROLES}
         self.profile_file.write_text(json.dumps(
-            {'version': 1, 'profiles': {'custom': {'roles': roles}}}))
+            {'version': 2, 'profiles': {'custom': {'roles': roles}}}))
         result = self.call()
         self.assertEqual((result['status'], result['executor']), ('agent-required', 'claude'))
         self.assertEqual(result['selection']['reason'], 'explicit-profile')
@@ -1251,6 +1279,18 @@ class TierMap(RequestFixture, unittest.TestCase):
                 result = self.run_tier_model('--executor', executor, '--tier', tier)
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
                 self.assertEqual(json.loads(result.stdout)['status'], 'blocked')
+
+
+class ProfileFormatDocument(RequestFixture, unittest.TestCase):
+    def test_the_documented_external_profile_resolves(self):
+        document = (SCRIPT.parents[1] / 'references/codex-develop-explicit.md').read_text()
+        example = re.search(r'```json\n(.*?)```', document, re.S).group(1)
+        self.profile_file.write_text(example)
+        result = self.call_profile('custom', profile_file=self.profile_file)
+        self.assertEqual((result['status'], result['account'], result['model']),
+                         ('request-written', 'mapped', 'luna'))
+        self.assertEqual(self.call_profile('custom', phase='review',
+                                           profile_file=self.profile_file)['model'], 'opus')
 
 
 class DocumentationContracts(unittest.TestCase):
