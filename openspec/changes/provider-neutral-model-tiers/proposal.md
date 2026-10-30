@@ -16,7 +16,7 @@
 - 聖域パスだけではレビューを上げない側に文書を揃える（`pre-classification.md`、`decision-criteria.md`）
 - `model-resolution-current.md` を削除し、#613 のテストを「構成を変えても格が変わらない」形に改める
 
-範囲外: 失敗時の昇格の手順（#424）、実行役の上限の強制（#615）、再開前の上限確認（SKILL.md の本体の文章規則のまま）。
+範囲外: 失敗時の昇格の手順（#424）、実行役の上限の強制（#615）。再開前の上限確認は `request` の呼び直しに改める（構成は選び直さない）。
 
 ## Capabilities
 
@@ -35,7 +35,7 @@
 
 - コード: `plugins/dev-workflow/scripts/codex-develop.py`、`plugins/dev-workflow/scripts/usage_view.py`
 - データ: `plugins/dev-workflow/references/codex-role-profiles.json`、`plugins/dev-workflow/references/model-tier-map.json`（新規）
-- 文書: `SKILL.md`、`pre-classification.md`、`decision-criteria.md`、`model-tiers.md`、`codex-develop.md`、`codex-develop-explicit.md`、`docs/codex-develop.md`
+- 文書: `SKILL.md`、`pre-classification.md`、`decision-criteria.md`、`spec-reviewer.md`、`model-tiers.md`、`codex-develop.md`、`codex-develop-explicit.md`、`docs/codex-develop.md`
 - 削除: `plugins/dev-workflow/references/model-resolution-current.md`
 - テスト: `test_model_resolution_current.py`、`test_codex_develop.py`、`model-escalation-policy.bats`
 - 利用者: 外部 profile-file を持つ人は形式版 2 への書き換えが要る。版の固定は旧形式 `--account --model` だけに残る

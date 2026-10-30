@@ -10,6 +10,8 @@ develop の各役のモデルを、提供元・構成・自動選択かどうか
 
 格は低い順に `最安`・`中位`・`上位`・`最上位` の 4 つとしなければならない（MUST）。格からモデル名への対応は `plugins/dev-workflow/references/model-tier-map.json` の 1 か所に置き、executor ごとに 4 格すべてを持たなければならない（MUST）。ファイルが読めない、または格か executor が欠けているとき、resolver は既定値に倒さず止まらなければならない（MUST）。
 
+**守備範囲（対応表と格の列挙の検証）**: ①入力の出どころは、リポジトリ同梱の `model-tier-map.json` だけである。②拾いたい誤りは、格・executor の欠けと未知のキーで、既定値に倒れて無言で別のモデルが選ばれることである。③通してよい入力は、4 格ちょうど・2 executor の表である。値の実在は検証しない（Claude はエイリアスで、Codex は worker が解決時に止める）。④この検査は入力の穴が見つかるたびに塞ぎ切ることを完了条件にしない。`tier-model` の引数と `--pre-class`・`--failure` の列挙の検証もこの段落に従う。
+
 #### Scenario: 対応表の値
 
 - **WHEN** `model-tier-map.json` を読む
@@ -22,7 +24,7 @@ develop の各役のモデルを、提供元・構成・自動選択かどうか
 
 ### Requirement: tier-model で対応表を引ける
 
-`codex-develop.py tier-model --executor <executor> --tier <格>` は、対応表の 1 件を JSON で返さなければならない（MUST）。未定義の executor または格は `status: blocked` と終了コード 2 で拒否しなければならない（MUST）。
+`codex-develop.py tier-model --executor <executor> --tier <格>` は、対応表の 1 件を JSON で返さなければならない（MUST）。未定義の executor または格は `status: blocked` と終了コード 2 で拒否しなければならない（MUST）。検証の守備範囲は要件「格の語と対応表を 1 か所に置く」の段落に従う。
 
 #### Scenario: 全格を引ける
 
@@ -36,7 +38,7 @@ develop の各役のモデルを、提供元・構成・自動選択かどうか
 
 ### Requirement: request は格の入力を受ける
 
-`request` は `--pre-class sacred|merge|contract|billing`（繰り返し可）、`--design-judgment`、`--failure first|executor|judgment`、`--unmanned` を受けなければならない（MUST）。4 分類の語は順に聖域パス・マージ権限・層間契約・課金/法務を指す。列挙の外の値は拒否し、依頼ファイルを作ってはならない（MUST NOT）。
+`request` は `--pre-class sacred|merge|contract|billing`（繰り返し可）、`--design-judgment`、`--failure first|executor|judgment`、`--unmanned` を受けなければならない（MUST）。4 分類の語は順に聖域パス・マージ権限・層間契約・課金/法務を指す。列挙の外の値は拒否し、依頼ファイルを作ってはならない（MUST NOT）。検証の守備範囲は要件「格の語と対応表を 1 か所に置く」の段落に従う。
 
 #### Scenario: 未定義の事前分類を拒否する
 
@@ -69,12 +71,12 @@ develop の各役のモデルを、提供元・構成・自動選択かどうか
 
 ### Requirement: 読んで判断する役は事前分類で decider に切り替える
 
-phase `spec-review` と `review` に `--pre-class merge`、`contract`、`billing` のどれかを渡したとき、`request` は対象 role の entry ではなく構成の `decider` entry を使い、返す `role` を `decider`、要求の格を最上位にしなければならない（MUST）。読む指示書は phase のものを保たなければならない（MUST）。`--pre-class sacred` だけでは切り替えてはならない（MUST NOT）。
+phase `spec-review` と `review` に `--pre-class merge`、`contract`、`billing` のどれかを渡したとき、`request` は対象 role の entry ではなく構成の `decider` entry を使い、返す `role` を `decider`、要求の格を最上位にしなければならない（MUST）。読む指示書は phase のものを保たなければならない（MUST）。依頼ファイルの `role` は phase の role（`impl-review` または `spec-review`）を保ち、結果 JSON の `role` だけを `decider` にしなければならない（MUST）。`codex-worker.py` の `NETWORK_ROLES` で decider だけが gh とネットワークを持たず、phase `review` の指示書は gh を使うので、sandbox を変えないためである。`--pre-class sacred` だけでは切り替えてはならない（MUST NOT）。
 
 #### Scenario: 層間契約のレビュー
 
 - **WHEN** `claude-write-codex-review` の構成で `request --phase review --pre-class contract` を実行する
-- **THEN** executor は codex、model は `astra`、`role` は `decider`、`phase` は `review` で、依頼ファイルの prompt には phase `review` の指示書が入る
+- **THEN** 結果の executor は codex、model は `astra`、`role` は `decider`、`phase` は `review` で、依頼ファイルの `role` は `impl-review`、sandbox は phase `review` と同じで、prompt には phase `review` の指示書が入る
 
 #### Scenario: 聖域パスだけのレビュー
 
@@ -85,14 +87,14 @@ phase `spec-review` と `review` に `--pre-class merge`、`contract`、`billing
 
 `request` は要求の格に `SHARED_BUDGET_MODE` と `FABLE_BUDGET_MODE` を適用した格を返さなければならない（MUST）。適用は構成の上限より先に行い、executor によって変えてはならない（MUST NOT）。適用の結果は `decision-criteria.md` の残量モードと共有枠モードの表と一致しなければならない（MUST）。
 
-#### Scenario: depleted は全役を中位に固定する
+#### Scenario: depleted は全役を中位までにする
 
 - **WHEN** `SHARED_BUDGET_MODE=depleted` で全 phase を解決する
-- **THEN** 適用後の格はどれも中位である。最安の explore も中位に上がり、Codex でも同じである
+- **THEN** 適用後の格は explore と summarize が最安のままで、それ以外は中位である。Codex でも同じである
 
 #### Scenario: throttled は上げていない役を中位まで下げる
 
-- **WHEN** `SHARED_BUDGET_MODE=throttled` で、入力なしの R1、事前分類に当たる W、事前分類に当たる R1、decider、explore を解決する
+- **WHEN** `SHARED_BUDGET_MODE=throttled` で、入力なしの R1、事前分類に当たる W、`--pre-class contract` の R1、decider、explore を解決する
 - **THEN** 適用後の格は順に中位、上位、上位、上位、最安である
 
 #### Scenario: exhausted は全経路で上位までにする
@@ -121,7 +123,7 @@ phase `spec-review` と `review` に `--pre-class merge`、`contract`、`billing
 
 #### Scenario: 実効値から導出する
 
-- **WHEN** env が無く、実効値の `fable_weekly_pct` が 95、`weekly_all_pct` が週経過率より大きく 90 以下である
+- **WHEN** env が無く、`now` を固定し、実効値の `fable_weekly_pct` が 95、`weekly_all_pct` が 60、`weekly_resets_epoch` が `now` の 6 日後である
 - **THEN** `budget_modes` は `exhausted` と `throttled` になる
 
 #### Scenario: usage データが無い
@@ -188,7 +190,7 @@ profile の entry の `tier_cap` は適用後の格をその格まで下げた `
 #### Scenario: 入力なしの通常時は今の値を保つ
 
 - **WHEN** `FABLE_BUDGET_MODE=conserve`、`SHARED_BUDGET_MODE=ok` で、全構成の全役を入力なしで解決する
-- **THEN** 8 役 × 7 分岐の executor と model は #613 で固定した値と同じである
+- **THEN** 8 役 × 7 分岐（`codex-standard`・`codex-economy`・`hybrid-standard`・`claude-write-codex-review`・`auto:claude-write-codex-review`・`auto:codex-standard`・`auto:claude-default`）の executor と model は #613 で固定した値と同じである
 
 #### Scenario: model-tiers.md の Claude の値と一致する
 

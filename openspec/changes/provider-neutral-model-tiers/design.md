@@ -10,7 +10,7 @@
 
 **Goals:** 格を決める場所を `request` の 1 か所にする。#613 の食い違いをすべて解消する。
 
-**Non-Goals:** 失敗時の昇格の手順（#424）。実行役の上限の強制（#615）。再開前の上限確認（SKILL.md 32 行目の本体の文章規則のまま）。V と引き継ぎの判定役の起動。`rules/subagent-model-selection.md` の変更。
+**Non-Goals:** 失敗時の昇格の手順（#424）。実行役の上限の強制（#615）。再開の途中での構成の選び直し。V と引き継ぎの判定役の起動。`rules/subagent-model-selection.md` の変更。
 
 ## Decisions
 
@@ -81,19 +81,19 @@ Codex の上位を `astra` にしない。W が astra になり #424 の事故�
 | `decider` | 最上位 | `--failure first` / `executor` で上位、`judgment` か無しで最上位 |
 | `explore` / `summarize` | 最安 | 上げない |
 
-切り替えは `request` が行う。使う entry は構成の `decider`、返す role は `decider`、指示書は phase のもの。`--failure` が効くのは W と phase `decider` だけで、切り替えたレビューには効かない。本体は role が `decider` なら `subagent_type: dev-workflow:decider` で起こす。
+切り替えは `request` が行う。使う entry は構成の `decider`、結果 JSON の role は `decider`、指示書は phase のもの。依頼ファイルの role は phase の role（`impl-review` / `spec-review`）を保つ。`codex-worker.py` の `NETWORK_ROLES` で decider だけが gh とネットワークを持たず、phase `review` の指示書は gh を使うので、sandbox を変えないため。`--failure` が効くのは W と phase `decider` だけで、切り替えたレビューには効かない。本体は role が `decider` なら `subagent_type: dev-workflow:decider` で起こす。
 
 ### 6. 残量モードの適用
 
 適用は executor によらず、構成の上限より先に行う。順は次のとおり。
 
-1. depleted: 全 phase を中位にする（最安も中位へ）
+1. depleted: 全 phase を中位までにする。最安はそのまま（枠が最も無いモードで消費を増やさないため）
 2. throttled: 上げていない役は中位まで下げる。W を上げた場合と role が decider の場合は上位まで下げる。最安はそのまま
 3. exhausted、および reserve かつ `--unmanned`: 上位まで下げる
 
 abundant と conserve は動かさない。未知の明示値は Fable が conserve、共有枠が throttled（`session-tripwires.sh` 136 行目に合わせる）。
 
-Codex にも Claude の残量モードを効かせる。「提供元を入力にしない」に従うため。depleted の Codex explore は sol/low になるが、実機の models_cache で対応を確認済み。
+Codex にも Claude の残量モードを効かせる。「提供元を入力にしない」に従うため。
 
 ### 7. 残量モードの導出
 
@@ -112,7 +112,7 @@ Codex にも Claude の残量モードを効かせる。「提供元を入力に
 | `model` | `executed_tier` を対応表で引いた値。本体が使う最終値 |
 | `budget_modes` | `{"fable": <値>, "shared": <値>}`。未知の値は読み替えたあとの値 |
 
-格の欄は stdout だけに出す。依頼ファイルの欄は `codex-worker.py` が限定しているので足さない。
+格の欄は stdout だけに出す。依頼ファイルの欄は `codex-worker.py` が限定しているので足さない。`tier_reason` は `tier` の変化だけを表すので、`codex-economy` のように `tier_cap` で値が変わっても `unchanged` のままになる。本体の dispatch 記録に `tier`・`executed_tier`・`tier_cap` も残して見分ける。
 
 ### 9. tier-model
 
@@ -128,7 +128,7 @@ Codex にも Claude の残量モードを効かせる。「提供元を入力に
 
 ### 12. 変えないもの
 
-- 再開前の上限確認は本体の文章規則のまま
+- 新しい起動の `model` は `request` だけが決める。再開前の上限確認は、同じ phase と入力で `request` を呼び直し、返った `tier` と動いている thread の格を比べる形に書き直す。`tier` だけを読み、構成の選び直しには使わない（`tier` は構成によらないので役の途中切り替えにならない）。今の格より `tier` が低ければ、既存の規則どおり fresh thread へ手渡す。SKILL.md 32 行目と `codex-develop.md` 23 行目を直す
 - 失敗の昇格は入力だけ足す。手順（`escalation-tripwires.md`）は #424
 - `model-tiers.md` の「ティア → opts.model」表は残し、Claude 列と対応表が一致するテストを足す
 - `rules/subagent-model-selection.md` は触らない。「中位（重めは opus）」が今回の上位に当たる点を `model-tiers.md` に書く
@@ -142,13 +142,13 @@ issue が挙げた `worker.md`「重要実装の事前分類」は `pre-classifi
 
 | 食い違い | 解消後 |
 |---|---|
-| †C: executor=codex のセルは残量モードでも設計判断でも変わらない | 同じ格の規則を通す。格は Claude と同じになる。モデルは対応表で引くので、W の上位は sol のまま、throttled / exhausted の decider は astra から sol、depleted の luna は sol になる |
+| †C: executor=codex のセルは残量モードでも設計判断でも変わらない | 同じ格の規則を通す。格は Claude と同じになる。モデルは対応表で引くので、W の上位は sol のまま、throttled / exhausted / depleted の decider は astra から sol、luna はどのモードでも luna のままになる |
 | †W（depleted を除く）: W は sonnet 固定 | `--pre-class`・`--design-judgment`・`--failure executor` で上位になり、Claude では opus |
 | †R: throttled / depleted の 8 モードでレビューが opus のまま | `tier` が中位で sonnet。`requested_model` は opus のまま残る |
-| †H: depleted の haiku | 全役を中位に固定するので sonnet |
+| †H: depleted の haiku | 文章では sonnet だが、depleted は中位を上限にするので haiku のまま。#613 の表で sonnet に上がっていた点を意図して変える。枠が最も無いモードで消費を増やさないため |
 | †D: decider の全 12 モードが fable 固定 | `--failure first` / `executor` で上位。残量モードの上限も `request` が適用する |
 | W の失敗後（文章に無い） | 事前分類に当たる W は `--failure` のどの値でも上位のまま。下がらない |
-| throttled の haiku（読み取り） | 最安のまま。`decision-criteria.md` の共有枠モードの節に 1 行足す |
+| throttled の haiku（読み取り） | 最安のまま。`decision-criteria.md` の共有枠モードの節に、throttled / depleted とも最安はそのままと書く |
 | 聖域（文章間の食い違い） | Decision 10 のとおり、聖域パスだけではレビューを上げない |
 | G: 文章は sonnet 固定、adapter は implement entry | 格は中位で上げない。entry は implement のままなので、`codex-economy` の G は `tier_cap` で luna のまま |
 
@@ -156,15 +156,15 @@ issue が挙げた `worker.md`「重要実装の事前分類」は `pre-classifi
 
 - †W の depleted 24 セルの印は余分。request の sonnet は depleted の文章既定と同じなので、† の定義に当たらない。解消の対象から外す
 - W の行の「役自身のモデルは変わらない」は SKILL.md の昇格と食い違う。SKILL.md のとおり実行側の失敗で W は上位になる
-- 「落とす」は `decision-criteria.md` の throttled 行の語で、depleted 行は「全役割 Sonnet 固定」。`model-resolution-current.md` 71 行目は depleted の語を取り違えている。throttled は下げるだけなので haiku はそのままで、depleted は固定なので haiku も sonnet に上がる
+- 「落とす」は `decision-criteria.md` の throttled 行の語で、depleted 行は「全役割 Sonnet 固定」。`model-resolution-current.md` 71 行目は depleted の語を取り違えている。この change では depleted 行を「Sonnet 上限」に直し、throttled と同じく下げるだけにする
 
 ## Risks / Trade-offs
 
 - [Codex では上位に上がってもモデルは sol のまま] → `tier` は上位になるので記録で区別できる。上位に別の系統を当てるかは #424 の実績を見て対応表を直す
-- [depleted で Codex の explore が luna から sol に上がる] → 「提供元を入力にしない」の帰結として受け入れる。Codex の枠の消費は少し増える
 - [Claude の枠が詰まると Codex の astra も sol に下がる] → 同じ理由で受け入れる。`tier_reason` に原因が出る
 - [`codex-economy` は事前分類の W でも `tier_cap` で luna のまま] → 構成の選択として受け入れる。`tier` と `executed_tier` の差で見える
 - [`usage_view.py` と `session-tripwires.sh` に導出の写しが 1 つ増える] → 範囲外（#424・#615）。式が同じことを同じ入力のテストで固定する
+- [`session-tripwires.sh` の注入文面は「全役割 sonnet 固定」のまま残り、depleted の表と語が揃わない] → 同じファイルを触らない方針を保つ。#424・#615 で揃える
 
 ## Migration Plan
 

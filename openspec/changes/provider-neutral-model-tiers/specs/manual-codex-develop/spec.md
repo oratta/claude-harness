@@ -24,7 +24,7 @@
 
 Claude role の Agent 呼び出しの `subagent_type` は、canonical role で決めなければならない（MUST）。作業者 W（仕様化判断・仕様作成・仕様差戻し、実装・TDD・verify・修正、archive・Draft PR・仕様宣言）は `dev-workflow:worker`、ゲート実行者 G（ゲートの照合・記録）は `dev-workflow:gate-runner`、G が必要とする独立 PR レビューは `dev-workflow:reviewer`、仕様レビュー R1 は `general-purpose`、`decider` role は `dev-workflow:decider` とする（SHALL）。事前分類に当たる R1 または G が要求したレビュアーを profile の `decider` entry で起こす場合は、従来どおり `dev-workflow:decider` を使う（SHALL）。
 
-名前付き profile では thread の新規作成と再開を profile role 単位で決めなければならない（MUST）。同じ profile role の Claude thread を canonical develop が再開する前には毎回、現在有効な残量モードの上限を確認する。起動時の適用 model が現在の上限内である場合に限って既存の名前付き thread を SendMessage で再開する。上限を超える場合は SendMessage で再開せず、既存の工程完了または停止確認の条件を満たしてから、要求 tuple を変更せず、上限内の適用 model で同じ role の fresh thread へ手渡しし、要求値・適用値・変更理由を記録しなければならない（MUST）。profile role が変わる境界、独立レビュー、または executor=codex の委譲では fresh thread を使い、前工程の成果物と必要な要約だけを引き継がなければならない（MUST）。
+名前付き profile では thread の新規作成と再開を profile role 単位で決めなければならない（MUST）。同じ profile role の Claude thread を canonical develop が再開する前には毎回、同じ phase と入力で `request` を呼び直し、返った `tier` と動いている thread の格（起動時に記録した `tier`）を比べる。呼び直しの結果は `tier` だけを読み、executor・account・依頼ファイルは使わず、構成の選び直しにも使わない（MUST NOT）。返った `tier` が thread の格より低くない場合に限って既存の名前付き thread を SendMessage で再開する。低い場合は SendMessage で再開せず、既存の工程完了または停止確認の条件を満たしてから、要求 tuple を変更せず、上限内の適用 model で同じ role の fresh thread へ手渡しし、要求値・適用値・変更理由を記録しなければならない（MUST）。profile role が変わる境界、独立レビュー、または executor=codex の委譲では fresh thread を使い、前工程の成果物と必要な要約だけを引き継がなければならない（MUST）。
 
 #### Scenario: 手順書から旧状態操作が消えている
 - **WHEN** adapter の通常手順を機械的に検索する
@@ -44,7 +44,7 @@ Claude role の Agent 呼び出しの `subagent_type` は、canonical role で�
 
 #### Scenario: 同じ Claude profile role を再開する
 - **WHEN** canonical develop が差戻しまたは次段のため、同じ profile role の名前付き Claude thread を再開する
-- **THEN** 再開前に現在有効な上限を確認し、既存 thread の適用 model が上限内の場合に限って、要求 tuple と適用 model を変えず SendMessage で再開する
+- **THEN** 再開前に同じ phase と入力で `request` を呼び直し、返った `tier` が thread の格より低くない場合に限って、要求 tuple と適用 model を変えず SendMessage で再開する。呼び直しで構成は選び直さない
 
 #### Scenario: exhausted へ変更後に同じ Claude profile role を再開する
 - **GIVEN** requested model=`fable`、applied model=`fable` で起動した名前付き Claude thread がある

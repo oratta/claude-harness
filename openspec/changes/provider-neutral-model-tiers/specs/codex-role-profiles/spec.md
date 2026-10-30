@@ -43,6 +43,8 @@
 ### Requirement: executor ごとの role 設定を検証する
 形式版 2 の profile の検証は executor を discriminator として行わなければならない（MUST）。`codex` entry は登録済み account と非空の effort を要求する。`claude` entry は account=`current` と非空の effort を要求しなければならない（MUST）。どちらの entry も model を持ってはならず（MUST NOT）、`tier_cap` は持つなら 4 格のどれかでなければならない（MUST）。Claude entry の effort は必須の非空文字列として解決結果に保持するが Agent 呼び出しへ渡してはならない（MUST NOT）。
 
+**守備範囲（profile の検証）**: ①入力の出どころは、組み込みの JSON と利用者の `--profile-file` である。②拾いたい誤りは、`model` キーの残存（形式版 1 の書き換え漏れ）・未定義の `tier_cap`・空値である。③通してよい入力は、`tier_cap` の無い entry と claude entry の `tier_cap` である。account の実在は Codex だけ検査する。④この検査は入力の穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+
 #### Scenario: 有効な Claude role を解決する
 - **WHEN** account=current、非空 effort の Claude review role を解決する
 - **THEN** executor/account/effort と格から引いた model を欠落なく返す
