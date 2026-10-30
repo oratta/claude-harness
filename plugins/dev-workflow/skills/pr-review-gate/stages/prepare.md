@@ -67,7 +67,7 @@ gh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除
 
 **light で変わるのはレビュー実行者だけで、免除される工程は無い** — 実装と別コンテキストであること・手順3のリスク宣言・手順4の動作確認証拠・手順5の HEAD SHA 照合と合格前の API 実測・収束ルール（stages/triage.md）はすべてそのまま適用する。
 
-**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `plugins/dev-workflow/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。パス順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。入力は `gh api repos/$R/pulls/$N/files --paginate --jq '.[] | "\(.additions + .deletions)\t\(.filename)"' | plugins/dev-workflow/scripts/review-partitions.sh`。入力エラーで exit 2 なら止め、区画を推測しない。区画に分けるのは Claude のレビュアーだけで、Codex には差分全体を渡す。二周目以降の差分限定レビューと方式書き換え後の全体レビューには区画を使わない。従来経路で Task サブエージェントを起こす側も同じスクリプトを使う。
+**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `plugins/dev-workflow/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。files API が返す順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。入力は `gh api repos/$R/pulls/$N/files --paginate --jq '.[] | "\(.additions + .deletions)\t\(.filename)"' | plugins/dev-workflow/scripts/review-partitions.sh`。入力エラーで exit 2 なら止め、区画を推測しない。区画に分けるのは Claude のレビュアーだけで、Codex には差分全体を渡す。二周目以降の差分限定レビューと方式書き換え後の全体レビューには区画を使わない。従来経路で Task サブエージェントを起こす側も同じスクリプトを使う。
 
 判定結果と根拠を PR コメントに残す（後から light 判定をサンプリング再判定できるようにするため）。2 行目には手順 1 で固定した HEAD を `固定 HEAD: <SHA>`（40 桁）の形で書く。このコメントは周ごとに増えるので、あとの段は最新の 1 件を正とする（auto-merge が宣言の照合に使う別の行と取り違えないよう、この行は固定 HEAD と書く）:
 
