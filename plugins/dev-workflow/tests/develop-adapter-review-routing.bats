@@ -5,7 +5,7 @@
 #   gate-runner.md          G: `レビュー経路:` の 1 行で経路を判別し、adapter 経路では needs-reviewer を返す
 #   develop SKILL.md        本体: G の起動指示に常に `レビュー経路: adapter` を書き、phase review を選び直して記録する
 #   codex-develop.md        G の規則が `レビュー経路: adapter` の明示に触れる
-#   pr-review-gate SKILL.md 「レビュー実行者:」の adapter 経路の形
+#   pr-review-gate stages/triage.md・stages/review-run.md 「レビュー実行者:」の adapter 経路の形
 #
 # spec: dev-workflow-develop
 
@@ -237,7 +237,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 # ===== レビュー実行者: の adapter 経路の形（1.5） =====
 
-@test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
+@test "triage and review-run (#385): both carry the adapter form of the reviewer line" {
   form='（adapter 経路・<light|full>・dispatch 記録:'
   grep -qF "$form" "${TRIAGE}"
   # review-run は書き分けの段落と PR コメント雛形の両方に持つ
