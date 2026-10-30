@@ -18,6 +18,8 @@ setup() {
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   DEV_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
@@ -153,7 +155,7 @@ setup() {
   # pr-review-gate は分類名を1行で挙げるだけで、分類表の中身（判定材料）は再掲せず
   # develop の pre-classification.md を正本として参照する
   grep -qF 'develop スキルの references/pre-classification.md が正本' "${TRIAGE}"
-  for f in "$GATE_SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; do
+  for f in "$GATE_SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$CARRYOVER" "$AUTH"; do
     ! grep -q 'github-''issue' "$f" || return 1
   done
   # 4分類の名前が出るのは正本を指す1行だけ（表として再掲していない）

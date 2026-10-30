@@ -19,6 +19,8 @@ setup() {
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   WORKER="${ROLES}/worker.md"
   W_COMMON="${ROLES}/worker/common.md"
@@ -33,7 +35,7 @@ setup() {
 }
 
 # G の否定の検査は旧 role の分割先（本体向けを含む）と段のファイル全部で見る
-gate_all() { cat "$GATE" "$GATE_BODY" "$GATE_TRIAGE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
+gate_all() { cat "$GATE" "$GATE_BODY" "$GATE_TRIAGE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$CARRYOVER" "$AUTH"; }
 # W の否定の検査（その文言が W の指示書のどこにも無いこと）は索引・worker/ の 4 本・pre-classification.md の全部で見る（#556）
 worker_all() { cat "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "$PRE"; }
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
@@ -832,7 +834,7 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#441): when HEAD moves on an accepted PR, try pr-review-gate step 3-c before asking the owner" {
-  line="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$HOLD" | grep -F '許容済みの PR で HEAD が動いた')"
+  line="$(grep -F '許容済みの PR で HEAD が動いた' "$CARRYOVER")"
   echo "$line" | grep -qF '主に聞く前に'
   echo "$line" | grep -qF 'pr-review-gate 手順 3-c'
 }
@@ -1112,7 +1114,7 @@ $(section "$GATE_BODY" '段ごとの起動と入力')"
   common="$(awk '/^## Gate Result/{f=1} f&&/^```$/{exit} f' "$GATE")"
   echo "$common" | grep -E '^- Status: ' | grep -qF 'needs-carryover-judge'
   grep -qxF '| needs-carryover-judge | `合格処理` |' "$GATE"
-  grep -F 'Status ごとの欄の書式は' "$GATE" | grep -qF '`needs-carryover-judge` は `stages/hold.md`'
+  grep -F 'Status ごとの欄の書式は' "$GATE" | grep -qF '`needs-carryover-judge` は `stages/carryover.md`'
 }
 
 @test "gate-runner (#1238): the pass row of the stage table takes the carryover judgment" {

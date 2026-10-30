@@ -18,6 +18,8 @@ setup() {
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
   GATE="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   DEVELOP="${PLUGIN_DIR}/skills/develop/SKILL.md"
   CODEX_DEVELOP="${PLUGIN_DIR}/references/codex-develop.md"

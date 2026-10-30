@@ -14,6 +14,8 @@ setup() {
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"

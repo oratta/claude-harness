@@ -18,7 +18,7 @@ develop の本体が `subagent_type: dev-workflow:gate-runner` で名前付き�
 |---|---|
 | 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare.md`（adapter 経路はここで `needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/triage.md` の収束ルールの節と「W の修正後の再レビュー」の入力） |
 | 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md` と `skills/develop/references/roles/gate-runner-triage.md`（戻した指摘が順 3 だけの修正のあとは、加えて `stages/prepare.md` の手順 1） |
-| 合格処理（手順 3・3-b・4・5。引き継ぎの判定の受領を含む） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すとき・`needs-carryover-judge` を返すときは加えて `stages/hold.md`） |
+| 合格処理（手順 3・3-b・4・5。引き継ぎの判定の受領を含む） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・`needs-carryover-judge` を返すときは加えて `stages/carryover.md`、保留を返すときは加えて `stages/hold.md`） |
 | 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md` |
 | 一括（従来経路）でレビューを自分で起こすとき | 上の表の全部と、`stages/review-run.md` とレビュアーに渡す `stages/reviewer-brief.md` |
 
@@ -63,7 +63,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 | 保留 | `保留の解除` |
 | passed / review-incomplete | `なし` |
 
-この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: `needs-reviewer` は `stages/prepare.md`、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・follow-up issue・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`。
+この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: `needs-reviewer` は `stages/prepare.md`、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・follow-up issue・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/carryover.md`。
 
 ## 段ごとの入力
 

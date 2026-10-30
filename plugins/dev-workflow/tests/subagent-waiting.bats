@@ -16,6 +16,8 @@ setup() {
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
   CANON="${PLUGIN_DIR}/references/subagent-waiting.md"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   GATE="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
@@ -30,7 +32,7 @@ setup() {
   # pr-review-gate は索引と段のファイルに分かれているので、1 つの文書として連結して検査する
   # （背景起動を書いた段と前景ポーリングを書いた段が別でも、スキル全体で併記されていればよい）。
   GATE_ALL="${BATS_TEST_TMPDIR}/pr-review-gate-all.md"
-  cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" > "$GATE_ALL"
+  cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$CARRYOVER" "$AUTH" > "$GATE_ALL"
   # W の禁止語の検査は、索引・worker/ の 4 本・事前分類表の全部を連結して見る
   WORKER_ALL="${BATS_TEST_TMPDIR}/worker-all.md"
   cat "${ROLES}/worker.md" "${ROLES}/worker/common.md" "${ROLES}/worker/spec.md" "${ROLES}/worker/implement.md" "${ROLES}/worker/finish.md" "${PLUGIN_DIR}/skills/develop/references/pre-classification.md" > "$WORKER_ALL"

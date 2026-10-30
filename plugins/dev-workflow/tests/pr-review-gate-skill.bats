@@ -19,6 +19,10 @@ setup() {
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
+  PASS_AUTH="${BATS_TEST_TMPDIR}/pass-auth.md"
+  cat "$PASS_STAGE" "$AUTH" > "$PASS_AUTH"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   DEVELOP_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
@@ -189,7 +193,7 @@ setup() {
 
 # 「### <N>. 」から次の「### 」見出しまでを切り出す（「#### 」の小見出しでは区切らない）
 # 否定の検査（その文言がスキルのどこにも無いこと）は索引だけでなく段のファイル全部で見る
-gate_all() { cat "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
+gate_all() { cat "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$CARRYOVER" "$AUTH"; }
 
 # 手順が置かれた段のファイルは、索引（SKILL.md）の手順番号の対応表から引く（索引の表そのものも検査する）
 step_file() {
@@ -425,7 +429,7 @@ codex_off_paragraph() {
   gate_runner="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   [ -f "$gate_runner" ]
   grep -qF -- '--codex-enabled' "$REVIEW_RUN"
-  for file in "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$gate_runner" "$DEVELOP_SKILL"; do
+  for file in "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$CARRYOVER" "$AUTH" "$gate_runner" "$DEVELOP_SKILL"; do
     if grep -qF -- '--codex-enabled' "$file"; then
       echo "off check repeated in ${file}"
       return 1
@@ -1133,7 +1137,7 @@ step3_body() {
 
 # 手順 3-c の本文（`#### 3-c.` から `### 4.` の直前まで）
 step3c_body() {
-  awk '/^#### 3-c\./{f=1} /^### 6\. /{f=0} f' "$HOLD"
+  awk '/^#### 3-c\./{f=1} /^## G として/{f=0} f' "$CARRYOVER"
 }
 
 @test "carryover (#441): the approval-needed template lists evidence files" {
@@ -1150,7 +1154,7 @@ step3c_body() {
   grep -q '^#### 3-b\. ' "$(step_file 3-b)"
   grep -q '^#### 3-c\. ' "$(step_file 3-c)"
   grep -q '^### 4\. ' "$(step_file 4)"
-  [ "$(step_file 3-c)" = "$HOLD" ]
+  [ "$(step_file 3-c)" = "$CARRYOVER" ]
 }
 
 @test "carryover (#441): 3-c runs risk-carryover-check.sh and names the 4 conditions" {
@@ -1316,7 +1320,7 @@ step3c_body() {
 
 # 3-c の「終了コード 4 の判定役」の小節（見出しから次の見出しまで）
 judge_body() {
-  awk '/^##### 終了コード 4 の判定役/{f=1; next} /^#{3,5} /{f=0} f' "$HOLD"
+  awk '/^##### 終了コード 4 の判定役/{f=1; next} /^#{3,5} /{f=0} f' "$CARRYOVER"
 }
 
 @test "carryover judge (#1238): the script call block says exit 4 goes to the judge, not 'ask the owner for now'" {
@@ -1450,13 +1454,13 @@ judge_body() {
 }
 
 @test "carryover judge (#1238): G as develop has a needs-carryover-judge section and a return heading for it" {
-  nc="$(awk '/^### needs-carryover-judge のとき/{f=1;next} /^### |^```$/{f=0} f' "$HOLD")"
+  nc="$(awk '/^### needs-carryover-judge のとき/{f=1;next} /^### |^```$/{f=0} f' "$CARRYOVER")"
   [ -n "$nc" ] || { echo "no needs-carryover-judge section"; return 1; }
   for w in '前 HEAD' '新しい HEAD' '40 桁' '前の宣言のコメントのリンク' 'EVIDENCE_PR_CHANGED=' 'EVIDENCE_DIFF_LINES='; do
     echo "$nc" | grep -qF -- "$w" || { echo "missing: $w"; return 1; }
   done
-  grep -E '^### return の書式' "$HOLD" | grep -qF 'needs-carryover-judge'
-  line="$(grep -F -- '- **許容済みの PR で HEAD が動いたとき**' "$HOLD")"
+  grep -qE '^### needs-carryover-judge のとき' "$CARRYOVER"
+  line="$(grep -F -- '- **許容済みの PR で HEAD が動いたとき**' "$CARRYOVER")"
   echo "$line" | grep -qF '終了コード 4' || { echo "$line"; return 1; }
   echo "$line" | grep -qF '`needs-carryover-judge`'
 }
@@ -1551,7 +1555,7 @@ judge_body() {
 
 # --- Requirement: 合格条件は会話で受けた許容を正式な回答として受け付ける（#721） ---
 
-step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}"; }
+step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_AUTH}"; }
 
 @test "conversation reply (#721): step 5 has the conversation record format and the script check" {
   body="$(step5_body)"
@@ -1786,7 +1790,7 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
 }
 
 @test "issue approved (#723): hold.md does not carry over an issue-approved declaration and states unmet conditions" {
-  grep -F 'issue で承認済み' "$HOLD" | grep -qF '引き継ぎの元にしない'
+  grep -F 'issue で承認済み' "$CARRYOVER" | grep -qF '引き継ぎの元にしない'
   awk '/^## 入口/{f=1; next} /^## /{f=0} f' "$HOLD" | grep -qF 'issue で承認済み'
   awk '/^### 6\. /{f=1} f' "$HOLD" | grep '^3\. ' | grep -qF '満たさなかった条件'
 }

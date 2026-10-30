@@ -15,6 +15,8 @@ setup() {
   HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
   COMMAND="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
 }
 
 # 引き継ぎの節（見出し「## 保留で止まるときの引き継ぎ」から次の ## まで）

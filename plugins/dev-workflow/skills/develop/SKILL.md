@@ -188,8 +188,8 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            判定の記録を記録先に投稿し、判定（決まっている／選び直しが要る）と判定の記録の URL を渡して照合と振り分けの G を新しく起こす。
            本体は自分でラベルを付け替えず、W も再開しない（W に戻す指摘の一覧とラベルは G が決める）。判定が「決まっている」で開いた周の結果
            （その周の照合と振り分けの G の return）を受け取ったら、同じ節の書式で事後報告を記録先に投稿する
-      needs-carryover-judge → 許容済みの PR で HEAD が動き、risk-carryover-check.sh が終了コード 4 を返した（G が判定に回す条件は pr-review-gate の `stages/hold.md` 手順 3-c の「終了コード 4 の判定役」）。
-           本体は PR トークン上限を測ってから、`stages/hold.md` 手順 3-c の依頼の書き方で subagent_type: dev-workflow:decider・model: `opus` の判定役を起こし
+      needs-carryover-judge → 許容済みの PR で HEAD が動き、risk-carryover-check.sh が終了コード 4 を返した（G が判定に回す条件は pr-review-gate の `stages/carryover.md` 手順 3-c の「終了コード 4 の判定役」）。
+           本体は PR トークン上限を測ってから、`stages/carryover.md` 手順 3-c の依頼の書き方で subagent_type: dev-workflow:decider・model: `opus` の判定役を起こし
            （入力は G の return の前 HEAD・新しい HEAD・前の宣言・EVIDENCE_PR_CHANGED= のファイルから作る。作業の文脈は渡さない）、判定の記録を PR に代理投稿し（書式は 3-c が正本）、
            判定と判定の記録の URL を渡して合格処理の G を新しく起こす。SHARED_BUDGET_MODE=depleted なら判定役を起こさず、3-c の書式で
            `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を新しく起こす（G が手順 6 で主に聞く）。

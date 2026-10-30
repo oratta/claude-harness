@@ -25,6 +25,8 @@ setup() {
   CHANNEL="${PLUGIN_DIR}/skills/develop/references/channel.md"
   CMD="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
 }
 
 # 「## <見出し>」から次の「## 」までを切り出す

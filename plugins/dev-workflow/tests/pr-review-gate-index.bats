@@ -45,7 +45,7 @@ step_headings() {
 }
 
 @test "index: stage files exist" {
-  for f in prepare review-run reviewer-brief triage pass hold; do
+  for f in prepare review-run reviewer-brief triage pass carryover hold; do
     [ -f "${GATE_DIR}/stages/${f}.md" ]
   done
   [ -f "${GATE_DIR}/declarations.md" ]
@@ -53,7 +53,7 @@ step_headings() {
 
 @test "index: each stage-table row points to exactly one existing stage file" {
   rows="$(stage_rows)"
-  [ "$(printf '%s\n' "$rows" | grep -c .)" -eq 6 ]
+  [ "$(printf '%s\n' "$rows" | grep -c .)" -eq 7 ]
   while IFS= read -r row; do
     n="$(printf '%s' "$row" | grep -oE 'stages/[a-z-]+\.md' | sort -u | wc -l | tr -d ' ')"
     [ "$n" -eq 1 ] || { echo "row does not point to exactly one stage file: $row"; return 1; }

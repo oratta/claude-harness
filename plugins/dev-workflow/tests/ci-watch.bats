@@ -22,6 +22,8 @@ setup() {
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  CARRYOVER="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
   DEVELOP="${PLUGIN_DIR}/skills/develop/SKILL.md"
   GATE_RUNNER="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   WORK="$(cd "$(mktemp -d)" && pwd -P)"
