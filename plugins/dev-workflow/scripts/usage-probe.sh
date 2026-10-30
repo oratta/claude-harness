@@ -19,6 +19,23 @@
 #     トップレベルの従来キーは active スロットの同名フィールドのミラー（既存の読み手用）
 #   - fail-open はスロット単位。あるスロットが失敗しても前回値（fetched_at 込み）を引き継ぐ。
 #     全スロットが失敗したとき、および組み立て・書き込みが失敗したときは snapshot を書かない
+#   - 取得先は usage API に ?cedar_ember=1&skip_spend=1 を付けた形（リセット権が cedar_ember ブロックに入る。
+#     社内の実験名の非公開の呼び方で、予告なく変わりうる）。accounts.<id>.reset_grants は任意の欄で、
+#     cedar_ember.grants の各束から resets_left / ends_at / paused だけを値を変えずに写した配列
+#     （cedar_ember が無い・eligible が true でない・grants が配列でない・全要素が不正なら欄なし。元から空なら []）。
+#     寿命: 取得に成功したスロットは応答から作り直す／取得を試みて失敗したスロットは欄を出さない
+#     （全スロット失敗で snapshot を書かない場合も、その欄だけは既存 snapshot から除く。他は変えない）／
+#     取得を試みなかったスロット（間隔内・429 の待ち中・オフ）は前回の値を保つ。読み手はダッシュボードと statusline
+#   - snapshot の置き換えに成功した直後に headroom.py write --refresh-codex を呼び、
+#     ${CLAUDE_CONFIG_DIR:-~/.claude}/.headroom.json を書き直す（正本: dev-workflow-headroom。
+#     reset_grants を除くための書き直しでも呼ぶ。出力と終了コードは probe に伝えない）
+#   - レジストリで enabled が false のスロット（オフ）は叩かない。認証情報も読まず、試行も記録しない。
+#     snapshot の同スロットの項目は、取得しなかったスロットと同じく前回値のまま引き継ぐ
+#   - 引数 --refresh（手で取り直す呼び出し元用）: 実行条件のうち鮮度（${USAGE_PROBE_STALE}）と前回の試行からの
+#     間隔（${USAGE_PROBE_INTERVAL}）を外し、429 の待ち（長さは引数なしと同じ式）とオフは残す。待ち中のスロットは
+#     叩かず、試行状態も変えない。その 1 回の実行にだけ効く（環境変数にしないのは、子プロセスへ漏れて hook など
+#     別の probe 呼び出しまで毎回取り直すのを避けるため）。ロック・試行の記録・fail-open は引数なしと同じ。
+#     USAGE_PROBE_INTERVAL=0 で間隔を外すと 429 の待ちも 0 になり、待ち中のアカウントを叩いてしまう
 #
 # refresh_token を使ったアクセストークンの更新は意図的に実装しない。
 # リフレッシュはトークンをローテートするため、Claude Code 本体が同じ refresh_token で
@@ -31,11 +48,16 @@
 #   - USAGE_PROBE_STATUS[_<ID>]:      テスト経路の HTTP ステータス（既定は応答ファイルがあれば 200）
 #   - USAGE_PROBE_NOW:                現在 epoch を固定する（実行条件と試行時刻もこの時刻で測る）
 #   いずれかが設定されていれば全スロットがテスト経路になり、Keychain / curl は使わない。
+#   テスト経路では USAGE_PROBE_HEADROOM が空でないときだけ headroom を呼ぶ（既存のテストが本物の
+#   ~/.claude/.headroom.json と ~/.codex の cache に触れないため。書き先と Codex の home はテストが
+#   CLAUDE_CONFIG_DIR と CODEX_HOME で作業用ディレクトリに向ける）。
 #   - USAGE_PROBE_USER_AGENT:         本番経路で送る User-Agent を固定する（テスト経路には切り替えない。
-#                                     既定は claude-code/<claude --version の版>）
+#                                     既定は claude-cli/<claude --version の版> (external, cli)）
 #
 # サブコマンド:
 #   --print-slots  レジストリを解決して `id<TAB>label<TAB>securestorage<TAB>service` を出力する
+#   --refresh      鮮度と間隔の条件を外して取り直す（429 の待ちとオフは残す。上の契約を参照）
+#   それ以外の引数は無視する（引数なしと同じ）
 #
 # fail-open のため set -e は使わない（フェッチ失敗で誤って落とさない）。
 set -uo pipefail
@@ -47,13 +69,14 @@ STATE="${USAGE_PROBE_STATE:-$HOME/.claude/.usage-probe-state}"
 LOCK="${USAGE_PROBE_LOCK:-$HOME/.claude/.usage-probe.lock}"
 LOCK_STALE=120
 NOW="${USAGE_PROBE_NOW:-$(date +%s 2>/dev/null || echo 0)}"
-ENDPOINT="${USAGE_PROBE_ENDPOINT:-https://api.anthropic.com/api/oauth/usage}"
+ENDPOINT="${USAGE_PROBE_ENDPOINT:-https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1}"
 ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json}"
 
 # ---- レジストリを解決してスロット一覧（TSV）を得る ----
-# 出力: id<TAB>label<TAB>securestorage<TAB>service（1 行 1 スロット）
+# 出力: id<TAB>label<TAB>securestorage<TAB>service<TAB>enabled（1 行 1 スロット）
+# enabled は 1（オン）か 0（オフ）。オフになるのは enabled が JSON の false のときだけ
 read_slots() {
-  ACCOUNTS_FILE="$ACCOUNTS_FILE" python3 <<'PY' 2>/dev/null
+  ACCOUNTS_FILE="$ACCOUNTS_FILE" python3 -I <<'PY' 2>/dev/null
 import hashlib, json, os, re, sys, unicodedata
 
 MAX_SLOTS = 8
@@ -112,12 +135,13 @@ try:
             if CTRL_RE.search(label) or CTRL_RE.search(sec):
                 continue
             label = clip_label(label, MAX_LABEL_WIDTH)
-            slots.append((sid, label, sec, service(sec)))
+            enabled = "0" if entry.get("enabled") is False else "1"
+            slots.append((sid, label, sec, service(sec), enabled))
 except Exception:
     slots = []
 
 if not slots:
-    slots = [("default", "default", "", service(""))]
+    slots = [("default", "default", "", service(""), "1")]
 
 for row in slots:
     sys.stdout.write("\t".join(row) + "\n")
@@ -132,17 +156,19 @@ slots_tsv="$(read_slots)"
 # 1 つの区切りに畳まれ、securestorage が空の既定スロットで service 列が消える
 # （空のサービス名で Keychain を引いて全件検索になり固まる事故があった）。
 # 区切りを IFS 空白ではない US(0x1f) に置換してから read する。
-slot_ids=(); slot_labels=(); slot_secures=(); slot_services=()
+# 5 列目（enabled）が無い行（上の 4 列の縮退行）はオンと読む。オフは 0 との一致だけ。
+slot_ids=(); slot_labels=(); slot_secures=(); slot_services=(); slot_enabled=()
 while IFS='' read -r line; do
   [ -n "$line" ] || continue
-  IFS=$'\x1f' read -r _id _label _secure _service <<< "${line//$'\t'/$'\x1f'}"
+  IFS=$'\x1f' read -r _id _label _secure _service _enabled <<< "${line//$'\t'/$'\x1f'}"
   [ -n "$_id" ] || continue
   slot_ids+=("$_id"); slot_labels+=("$_label")
   slot_secures+=("$_secure"); slot_services+=("$_service")
+  if [ "$_enabled" = "0" ]; then slot_enabled+=(0); else slot_enabled+=(1); fi
 done <<< "$slots_tsv"
 if [ "${#slot_ids[@]}" -eq 0 ]; then
   slot_ids=("default"); slot_labels=("default")
-  slot_secures=(""); slot_services=("Claude Code-credentials")
+  slot_secures=(""); slot_services=("Claude Code-credentials"); slot_enabled=(1)
 fi
 
 if [ "${1:-}" = "--print-slots" ]; then
@@ -153,6 +179,10 @@ if [ "${1:-}" = "--print-slots" ]; then
   done
   exit 0
 fi
+
+# 手で取り直す指定（環境変数としては受け取らない。判定の python へだけ渡す）
+refresh=0
+[ "${1:-}" = "--refresh" ] && refresh=1
 
 # ---- マシン全体で 1 本: ロックを取れなければ何もしない ----
 # ロックの古さは実時刻と mtime で測る（USAGE_PROBE_NOW は導出の決定論化用で、mtime は実時刻のため混ぜない）。
@@ -192,18 +222,21 @@ trap cleanup EXIT
 
 # ---- 実行条件: 叩くスロットを選ぶ（ロックを取ってから判定する） ----
 # 出力は叩くスロット id（1 行 1 つ）。判定自体が落ちたら何も叩かない（fail-open）
+# オフのスロットはここで落とす。認証情報を読むのはこの後なので、Keychain の読み出しも API 呼び出しも起きない
 slot_pairs=""
 for i in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
+  [ "${slot_enabled[$i]}" = "1" ] || continue
   slot_pairs+="${slot_ids[$i]}"$'\t'"${slot_secures[$i]}"$'\n'
 done
-due="$(SLOT_PAIRS="$slot_pairs" USAGE_NOW="$NOW" STALE="$STALE" INTERVAL="$INTERVAL" \
-  STATE="$STATE" SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(dirname "$0")" python3 - <<'PY' 2>/dev/null
+due="$(SLOT_PAIRS="$slot_pairs" USAGE_NOW="$NOW" STALE="$STALE" INTERVAL="$INTERVAL" REFRESH="$refresh" \
+  STATE="$STATE" SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(dirname "$0")" python3 -I - <<'PY' 2>/dev/null
 import json, os, sys
 sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
 import usage_view  # 記録の鍵と置き場所は読み手と同じ規則で求める
 
 now = int(os.environ["USAGE_NOW"])
 stale, interval = int(os.environ["STALE"]), int(os.environ["INTERVAL"])
+refresh = os.environ.get("REFRESH") == "1"  # 鮮度と間隔を外す。429 の待ちは残す
 
 def load(path):
     try:
@@ -228,11 +261,14 @@ for line in os.environ["SLOT_PAIRS"].splitlines():
     slot_id, _, secure = line.partition("\t")
     record = load(os.path.join(sessions, usage_view.session_key(secure) + ".json"))
     entry = entries.get(slot_id) if isinstance(entries.get(slot_id), dict) else {}
-    if not (old(record.get("observed_at")) or old(entry.get("fetched_at"))):
+    if not refresh and not (old(record.get("observed_at")) or old(entry.get("fetched_at"))):
         continue
     tried = state.get(slot_id) if isinstance(state.get(slot_id), dict) else {}
     last, streak = tried.get("last_attempt"), min(count(tried.get("consecutive_429")), 32)
-    wait = interval if streak == 0 else min(interval * 2 ** (streak - 1), 86400)
+    if streak == 0:
+        wait = 0 if refresh else interval
+    else:
+        wait = min(interval * 2 ** (streak - 1), 86400)
     if usage_view.finite_number(last) and now - last < wait:
         continue
     print(slot_id)
@@ -281,25 +317,39 @@ slot_token() {
     cred="$HOME/.claude/.credentials.json"
   fi
   if [ -f "$cred" ]; then
-    token="$(python3 -c "import json,sys;print(json.load(open(sys.argv[1])).get('claudeAiOauth',{}).get('accessToken',''))" "$cred" 2>/dev/null || true)"
+    token="$(python3 -I -c "import json,sys;print(json.load(open(sys.argv[1])).get('claudeAiOauth',{}).get('accessToken',''))" "$cred" 2>/dev/null || true)"
   fi
   # サービス名が空のまま Keychain を引くと全件検索になり固まる。念のための番人。
   if [ -z "$token" ] && [ -n "$service" ] && command -v security >/dev/null 2>&1; then
     token="$(security find-generic-password -s "$service" -w 2>/dev/null \
-      | python3 -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || true)"
+      | python3 -I -c "import json,sys;print(json.load(sys.stdin).get('claudeAiOauth',{}).get('accessToken',''))" 2>/dev/null || true)"
   fi
   printf '%s' "$token"
 }
 
-# 使用量 API は User-Agent が claude-code/<版> でないリクエストを厳しい別枠で数え、
+# 使用量 API は Claude Code の User-Agent を名乗らないリクエストを厳しい別枠で数え、
 # 間隔を空けても 429 を返し続ける（2026-09 実測: 同じトークンで付けないと 429、付けると 200）。
+# さらにリセット権（cedar_ember）は、Claude Code 本体と同じ claude-cli/<版> (external, cli) で
+# ないと対象外になる（2026-10 実測: claude-code/<版> だと eligible: false・ineligible_reason "surface"、
+# claude-cli の形だと eligible: true で grants が返り、使用率も同じ呼び出しで 200）。
 # 版は照合されないとの報告があるが、実際に入っている版を名乗る。取れなければ固定値に落とす。
 user_agent="${USAGE_PROBE_USER_AGENT:-}"
 if [ -z "$user_agent" ]; then
-  cc_version="$(claude --version 2>/dev/null | awk 'NR==1{print $1}' || true)"
+  # cron・hook・launchd などでは PATH に claude が無いことがあるので、標準の置き場所も探す
+  claude_bin="$(command -v claude 2>/dev/null || true)"
+  if [ -z "$claude_bin" ] && [ -n "${HOME:-}" ] && [ -x "$HOME/.local/bin/claude" ]; then
+    claude_bin="$HOME/.local/bin/claude"
+  fi
+  cc_version=""
+  if [ -n "$claude_bin" ]; then
+    cc_version="$("$claude_bin" --version 2>/dev/null | awk 'NR==1{print $1}' || true)"
+  fi
   # 数字とドットだけの版（例: 2.1.280）以外は、出力の形が変わったとみなして固定値に落とす
-  [[ "$cc_version" =~ ^[0-9]+(\.[0-9]+)+$ ]] || cc_version="2.1.0"
-  user_agent="claude-code/${cc_version}"
+  if ! [[ "$cc_version" =~ ^[0-9]+(\.[0-9]+)+$ ]]; then
+    cc_version="2.1.0"
+    echo "usage-probe: claude の版を取れなかったので User-Agent を固定の版 2.1.0 にした（PATH と \$HOME/.local/bin に claude が無いか、--version の出力が想定外）" >&2
+  fi
+  user_agent="claude-cli/${cc_version} (external, cli)"
 fi
 
 any_new=0
@@ -360,7 +410,7 @@ for idx in $(seq 0 $(( ${#slot_ids[@]} - 1 ))); do
 done
 
 # ---- 試行状態を記録する（結果にかかわらず。一時ファイルからの置き換えで書く） ----
-DUE="$due" RAW_DIR="$raw_dir" STATE="$STATE" USAGE_NOW="$NOW" python3 - <<'PY' 2>/dev/null
+DUE="$due" RAW_DIR="$raw_dir" STATE="$STATE" USAGE_NOW="$NOW" python3 -I - <<'PY' 2>/dev/null
 import json, os, tempfile
 
 now = int(os.environ["USAGE_NOW"])
@@ -392,11 +442,12 @@ os.replace(tmp, path)
 PY
 
 # どのスロットからも新しい生レスポンスが取れなかった → fail-open（snapshot を書かない）
-[ "$any_new" -eq 1 ] || exit 0
+# （ただし試みて失敗したスロットの reset_grants を既存 snapshot から除くため、試行があれば組み立てへ進む）
+[ "$any_new" -eq 1 ] || ls "$raw_dir"/*.status >/dev/null 2>&1 || exit 0
 
 # ---- パースして snapshot を組み立てる（fail-open） ----
 out="$(SLOTS_TSV="$slots_tsv" RAW_DIR="$raw_dir" PREV_SNAPSHOT="$SNAPSHOT" USAGE_NOW="$NOW" \
-       ACTIVE_SECURE="${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" python3 <<'PY' 2>/dev/null || true
+       ACTIVE_SECURE="${CLAUDE_SECURESTORAGE_CONFIG_DIR-}" python3 -I <<'PY' 2>/dev/null || true
 import hashlib, json, os, unicodedata
 
 now = int(os.environ.get("USAGE_NOW") or 0)
@@ -431,6 +482,22 @@ def window(d, key):
     if pct is None:
         pct = w.get("used_percentage")
     return pct, w.get("resets_at")
+
+def reset_grants(d):
+    """cedar_ember.grants の各束から resets_left / ends_at / paused だけを値を変えずに写す。
+    欄を出さないときは None。元から空の grants は []、空でないのに写せる束が無いときは None
+    （確定した 0 回と区別する）。値の意味の検証と数え方は読み手に委ねる。"""
+    ce = d.get("cedar_ember")
+    if not isinstance(ce, dict) or ce.get("eligible") is not True:
+        return None
+    grants = ce.get("grants")
+    if not isinstance(grants, list):
+        return None
+    out = [{k: g[k] for k in ("resets_left", "ends_at", "paused") if k in g}
+           for g in grants if isinstance(g, dict)]
+    if grants and not out:
+        return None
+    return out
 
 def parse(raw):
     """生 API JSON → 値フィールドの dict。パースできなければ None（= このスロットは失敗扱い）。"""
@@ -467,7 +534,7 @@ def parse(raw):
     if five_pct is None and seven_pct is None and fable_pct is None:
         return None
 
-    return {
+    out = {
         "fetched_at": now,
         "five_hour_pct": five_pct,
         "five_hour_resets_at": five_iso,
@@ -478,6 +545,10 @@ def parse(raw):
         "fable_weekly_pct": fable_pct,
         "fable_active": fable_active,
     }
+    grants = reset_grants(d)
+    if grants is not None:
+        out["reset_grants"] = grants
+    return out
 
 slots = []
 for line in os.environ["SLOTS_TSV"].splitlines():
@@ -507,9 +578,14 @@ for sid, label, sec, _svc in slots:
                 values = parse(fh.read())
         except Exception:
             values = None
+    attempted = os.path.exists(os.path.join(raw_dir, sid + ".status"))
+    carried_grants = None
     if values is not None:
         fresh.add(sid)
     else:
+        if not attempted:
+            cand = (prev_accounts.get(sid) or {}).get("reset_grants") if isinstance(prev_accounts.get(sid), dict) else None
+            carried_grants = cand if isinstance(cand, list) else None
         # スロット単位 fail-open: 前回値（fetched_at 込み）をそのまま引き継ぐ
         old = prev_accounts.get(sid)
         if isinstance(old, dict):
@@ -518,10 +594,26 @@ for sid, label, sec, _svc in slots:
             values = {k: None for k in FIELDS}
     entry = {"label": label, "securestorage": sec or None}
     entry.update(values)
+    if carried_grants is not None:
+        entry["reset_grants"] = carried_grants
     accounts[sid] = entry
 
 if not fresh:
-    raise SystemExit(1)  # 新しい値が 1 つも無い → fail-open（呼び出し側が空を検知）
+    # 新しい値が 1 つも無い → fail-open（呼び出し側が空を検知して snapshot を書かない）。
+    # 例外: 試みて失敗したスロットの前回の reset_grants だけは既存 snapshot から除いて書く
+    # （前回の値を写し直さない契約。使用率・fetched_at・ミラー・未試行スロットは変えない）。
+    pa = prev.get("accounts") if isinstance(prev.get("accounts"), dict) else {}
+    dropped = False
+    for sid, *_rest in slots:
+        entry = pa.get(sid)
+        if (isinstance(entry, dict) and "reset_grants" in entry
+                and os.path.exists(os.path.join(raw_dir, sid + ".status"))):
+            del entry["reset_grants"]
+            dropped = True
+    if dropped:
+        print(json.dumps(prev, ensure_ascii=False))
+        raise SystemExit(0)
+    raise SystemExit(1)
 
 # active スロットの判定（正本: usage-account-registry「active スロットの判定規則」）
 # 環境変数から導出したサービス名で突き合わせる。probe は Claude Code 本体と同じ
@@ -559,7 +651,17 @@ mkdir -p "$dir" 2>/dev/null || exit 0
 tmp="$(mktemp "${dir}/.usage-snapshot.XXXXXX" 2>/dev/null || true)"
 [ -n "$tmp" ] || exit 0
 if printf '%s\n' "$out" > "$tmp" 2>/dev/null; then
-  mv -f "$tmp" "$SNAPSHOT" 2>/dev/null || rm -f "$tmp" 2>/dev/null
+  if mv -f "$tmp" "$SNAPSHOT" 2>/dev/null; then
+    # snapshot を書いた実行だけ余りを書き直す（正本: dev-workflow-headroom）。
+    # headroom の出力と終了コードは probe の結果に伝えない。テスト経路では、テストが
+    # USAGE_PROBE_HEADROOM で明示したときだけ呼ぶ（本番の .headroom.json と ~/.codex の cache に触れないため）
+    if [ "$test_mode" -eq 0 ] || [ -n "${USAGE_PROBE_HEADROOM:-}" ]; then
+      USAGE_SNAPSHOT="$SNAPSHOT" python3 -I "$(dirname "$0")/headroom.py" write --refresh-codex \
+        --now "$NOW" >/dev/null 2>&1 || true
+    fi
+  else
+    rm -f "$tmp" 2>/dev/null
+  fi
 else
   rm -f "$tmp" 2>/dev/null
 fi

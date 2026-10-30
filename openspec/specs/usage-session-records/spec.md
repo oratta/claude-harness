@@ -4,7 +4,7 @@
 セッションのステータスラインが起動アカウント別に書く使用量の記録（置き場所・形式・アカウント鍵の導出・原子的な書き込み）と、その記録と usage-probe の snapshot から「いま使ってよい値」を求める規則（リセット時刻を過ぎた窓の 0% 扱い・古い値を下限として使うこと・2 つの情報源の合わせ方）を定める。
 ## Requirements
 ### Requirement: ステータスラインが起動アカウント別の記録を書く
-`plugins/statusline/scripts/statusline.sh` は、stdin の `rate_limits.five_hour.used_percentage` があるとき、その描画で受け取った `rate_limits` を起動アカウント別の記録 `<記録ディレクトリ>/<アカウント鍵>.json` に書かなければならない（SHALL）。記録ディレクトリは `USAGE_SESSIONS_DIR`、未設定なら `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions` とする。
+`plugins/statusline/scripts/statusline.sh` は、stdin の `rate_limits.five_hour.used_percentage` があるとき、その描画で受け取った `rate_limits` を起動アカウント別の記録 `<記録ディレクトリ>/<アカウント鍵>.json` に書かなければならない（SHALL。書くかどうかの条件は下の `observed_at` の段落に従う）。記録ディレクトリは `USAGE_SESSIONS_DIR`、未設定なら `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions` とする。
 
 アカウント鍵は書き手の起動環境の `CLAUDE_SECURESTORAGE_CONFIG_DIR` だけから決めなければならない（SHALL）。未設定または空なら `default`、それ以外は値を NFC 正規化した UTF-8 の sha256 の 16 進先頭 8 桁とする（`usage-account-registry` の Keychain サービス名の導出と同じ）。書き手は `accounts.json`・usage snapshot の `active`・レジストリの先頭スロットのいずれからも鍵を決めてはならない（MUST NOT）。
 

@@ -20,6 +20,11 @@ setup() {
   export USAGE_SESSIONS_DIR="${WORK}/sessions"
   export USAGE_PROBE_STATE="${WORK}/probe-state.json"
   export USAGE_PROBE_LOCK="${WORK}/probe.lock"
+  # 本番経路のテスト（curl・security の差し替え）は snapshot を書いたあと headroom.py を呼ぶ。
+  # その書き先（.headroom.json と codex-usage）と Codex の home を作業用ディレクトリに向け、
+  # 本物の ~/.claude と ~/.codex に触れない（CODEX_HOME は存在しないディレクトリにして Codex を取りに行かせない）
+  export CLAUDE_CONFIG_DIR="${WORK}/claude-config"
+  export CODEX_HOME="${WORK}/no-codex-home"
 }
 
 teardown() {
@@ -332,6 +337,86 @@ PY
   [ "$(jq -r '.accounts[1].id' "$ACCOUNTS")" = "b" ]
 }
 
+@test "init: overwriting an off slot keeps enabled false" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${WORK}/claude-b", "enabled": false }
+] }
+JSON
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/claude-b" \
+      "$INIT" --id b --label B2
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts | length' "$ACCOUNTS")" = "2" ]
+  [ "$(jq -r '.accounts[1].label' "$ACCOUNTS")" = "B2" ]
+  [ "$(jq -c '.accounts[1].enabled' "$ACCOUNTS")" = "false" ]
+  [ "$(jq -c '.accounts[0] | has("enabled")' "$ACCOUNTS")" = "false" ]
+}
+
+@test "init: overwriting a slot keeps the top-level codex block" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${WORK}/claude-b" }
+], "codex": { "enabled": false } }
+JSON
+  run env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label A2
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts[0].label' "$ACCOUNTS")" = "A2" ]
+  [ "$(jq -r '.accounts | length' "$ACCOUNTS")" = "2" ]
+  [ "$(jq -c '.codex' "$ACCOUNTS")" = '{"enabled":false}' ]
+}
+
+@test "init: overwriting keeps the written enabled value as it is" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null, "enabled": true },
+  { "id": "b", "label": "B", "securestorage": "${WORK}/claude-b", "enabled": "false" }
+] }
+JSON
+  env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label A2
+  env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/claude-b" \
+      "$INIT" --id b --label B2
+  [ "$(jq -c '.accounts[0].enabled' "$ACCOUNTS")" = "true" ]
+  [ "$(jq -c '.accounts[1].enabled' "$ACCOUNTS")" = '"false"' ]
+}
+
+@test "init: the completion message says that enabled was kept" {
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null },
+  { "id": "b", "label": "B", "securestorage": "${WORK}/claude-b", "enabled": false }
+] }
+JSON
+  # オフのスロットを登録し直したとき: enabled を残したことと、その値を出す（1 行のまま）
+  env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/claude-b" \
+      "$INIT" --id b --label B2 > "${WORK}/init.out" 2> "${WORK}/init.err"
+  [ ! -s "${WORK}/init.out" ]
+  [ "$(wc -l < "${WORK}/init.err" | tr -d ' ')" = 1 ]
+  grep -qF "registered slot 'b'" "${WORK}/init.err"
+  grep -qF 'kept "enabled": false' "${WORK}/init.err"
+
+  # enabled の無いスロットの上書きと新しい id では、enabled に触れない
+  env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      "$INIT" --id a --label A2 2> "${WORK}/init.err"
+  [ "$(wc -l < "${WORK}/init.err" | tr -d ' ')" = 1 ]
+  ! grep -qF 'enabled' "${WORK}/init.err" || return 1
+  env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/claude-c" \
+      "$INIT" --id c --label C 2> "${WORK}/init.err"
+  ! grep -qF 'enabled' "${WORK}/init.err" || return 1
+}
+
+@test "init: enabled is not added to a slot without it or to a new id" {
+  write_two_slot_registry
+  env -u CLAUDE_SECURESTORAGE_CONFIG_DIR CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$INIT" --id a --label A2
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" CLAUDE_SECURESTORAGE_CONFIG_DIR="${WORK}/claude-c" \
+      "$INIT" --id c --label C
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts[0].label' "$ACCOUNTS")" = "A2" ]
+  [ "$(jq -r '.accounts[2].id' "$ACCOUNTS")" = "c" ]
+  [ "$(jq -c '[.accounts[] | has("enabled")] | any' "$ACCOUNTS")" = "false" ]
+}
+
 # ---------- API エラーボディをフェッチ成功扱いにしない ----------
 # 401 / 429 / 5xx でも API は正しい JSON の dict を返す。これを成功扱いにすると
 # そのスロットの前回値を全 null で上書きしてしまい、スロット単位 fail-open が壊れる。
@@ -511,8 +596,8 @@ PY
 }
 
 # ---------- 本番経路の User-Agent ----------
-# 使用量 API は User-Agent が claude-code/<版> でないリクエストを厳しい別枠で数え、
-# 429 を返し続ける。curl と claude を差し替え、実際に送られる見出しを記録して確かめる。
+# 使用量 API は Claude Code の User-Agent を名乗らないリクエストを厳しい別枠で数え、
+# 429 を返し続ける。リセット権は claude-cli/<版> (external, cli) の形でないと対象外になる。curl と claude を差し替え、実際に送られる見出しを記録して確かめる。
 
 # $1=claude --version の出力（空なら非 0 で終わる claude を置く）
 setup_production_stubs() {
@@ -540,21 +625,23 @@ SH
   chmod +x "${STUB}/curl" "${STUB}/claude"
 }
 
-@test "user-agent: production fetch names the installed claude-code version" {
+@test "user-agent: production fetch names the installed version in the claude-cli form" {
   setup_production_stubs "2.1.280 (Claude Code)"
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.280' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
   [ "$(jq -r '.accounts.x.five_hour_pct' "$SNAP")" = "10" ]
+  # 本番経路でも headroom の書き先は setup の CLAUDE_CONFIG_DIR（作業用ディレクトリ）
+  [ "$(jq -r '.schema' "${WORK}/claude-config/.headroom.json")" = "1" ]
 }
 
-@test "user-agent: falls back to a fixed claude-code version when claude is unavailable" {
+@test "user-agent: falls back to a fixed version in the claude-cli form when claude is unavailable" {
   setup_production_stubs ""
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
 }
 
 @test "user-agent: an unexpected claude --version output falls back to the fixed version" {
@@ -562,7 +649,61 @@ SH
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
+}
+
+bats_require_minimum_version 1.5.0
+
+# PATH に claude が無い環境（cron・hook・launchd 等）の再現。claude を置かない STUB と最小の PATH を使う
+setup_no_path_claude() {
+  setup_production_stubs ""
+  rm -f "${STUB:?}/claude"
+  NOCLAUDE_PATH="${STUB}:/usr/bin:/bin"
+  if PATH="$NOCLAUDE_PATH" command -v claude >/dev/null 2>&1; then
+    skip "claude is on the minimal PATH of this machine"
+  fi
+  FAKE_HOME="${WORK}/home"
+  mkdir -p "${FAKE_HOME}/.local/bin"
+}
+
+@test "user-agent: finds claude in \$HOME/.local/bin when PATH has none" {
+  setup_no_path_claude
+  printf '#!/usr/bin/env bash\necho "2.1.280 (Claude Code)"\n' > "${FAKE_HOME}/.local/bin/claude"
+  chmod +x "${FAKE_HOME}/.local/bin/claude"
+  run env HOME="$FAKE_HOME" PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
+  [[ "$output" != *"2.1.0"* ]] || return 1
+}
+
+@test "user-agent: warns on stderr when no claude is found and the fixed version is used" {
+  setup_no_path_claude
+  run --separate-stderr env HOME="$FAKE_HOME" PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
+  [[ "$stderr" == *"claude"*"2.1.0"* ]] || return 1
+  [ "$(printf '%s\n' "$stderr" | grep -c 'usage-probe')" -eq 1 ]
+}
+
+@test "user-agent: HOME unset and no claude on PATH still falls back to the fixed version with a warning" {
+  setup_no_path_claude
+  run --separate-stderr env -u HOME PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_STATE="$USAGE_PROBE_STATE" \
+      USAGE_PROBE_LOCK="$USAGE_PROBE_LOCK" USAGE_SESSIONS_DIR="$USAGE_SESSIONS_DIR" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
+  [[ "$stderr" == *"2.1.0"* ]] || return 1
+}
+
+@test "user-agent: no warning when the version is found" {
+  setup_production_stubs "2.1.280 (Claude Code)"
+  run --separate-stderr env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [[ "$stderr" != *"2.1.0"* ]] || return 1
 }
 
 @test "user-agent: USAGE_PROBE_USER_AGENT overrides the header" {
@@ -812,4 +953,247 @@ SH
   [ "$status" -eq 0 ]
   [ ! -f "$SNAP" ]
   [ "$(state_of x .consecutive_429)" = "1" ]
+}
+
+# ---------- enabled が false のスロット（オフ）は取得しない ----------
+# spec: usage-account-registry「オフのスロットは使用量を取得しない」
+
+# $1=a の enabled（JSON の値。空なら書かない）$2=b の enabled（同）
+write_two_slot_registry_enabled() {
+  local enabled_a="${1:+, \"enabled\": $1}" enabled_b="${2:+, \"enabled\": $2}"
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "a", "label": "A", "securestorage": null${enabled_a} },
+  { "id": "b", "label": "B", "securestorage": "${WORK}/claude-b"${enabled_b} }
+] }
+JSON
+}
+
+# 本番経路の足場。security は引かれたサービス名を記録して「tok-<サービス名>」を返し、
+# curl は stdin で受けた Authorization の行を記録する（どのスロットのために呼ばれたかが分かる）。
+# $1=x の enabled $2=y の enabled（JSON の値。空なら書かない）
+setup_keychain_stubs() {
+  STUB="${WORK}/bin"
+  mkdir -p "$STUB" "${WORK}/home"
+  local enabled_x="${1:+, \"enabled\": $1}" enabled_y="${2:+, \"enabled\": $2}"
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "x", "label": "X", "securestorage": "${WORK}/claude-x"${enabled_x} },
+  { "id": "y", "label": "Y", "securestorage": "${WORK}/claude-y"${enabled_y} }
+] }
+JSON
+  SERVICE_X="$(env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$PROBE" --print-slots | sed -n 1p | cut -f4)"
+  SERVICE_Y="$(env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$PROBE" --print-slots | sed -n 2p | cut -f4)"
+  write_resp "${WORK}/resp.json" 10 20 30
+  : > "${WORK}/security-calls"
+  : > "${WORK}/curl-calls"
+  cat > "${STUB}/security" <<SH
+#!/usr/bin/env bash
+service=""
+while [ "\$#" -gt 0 ]; do
+  if [ "\$1" = "-s" ]; then service="\$2"; fi
+  shift
+done
+printf '%s\n' "\$service" >> "${WORK}/security-calls"
+printf '{"claudeAiOauth":{"accessToken":"tok-%s"}}\n' "\$service"
+SH
+  cat > "${STUB}/curl" <<SH
+#!/usr/bin/env bash
+cat >> "${WORK}/curl-calls"
+cat "${WORK}/resp.json"
+printf '\n200'
+SH
+  printf '#!/usr/bin/env bash\necho "2.1.280 (Claude Code)"\n' > "${STUB}/claude"
+  chmod +x "${STUB}/security" "${STUB}/curl" "${STUB}/claude"
+}
+
+run_production_probe() {
+  run env PATH="${STUB}:${PATH}" HOME="${WORK}/home" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_NOW="$NOW" "$PROBE"
+}
+
+@test "enabled: production fetch reads the keychain and calls the API for every on slot" {
+  # 足場の対照: オフが無ければ両スロットとも Keychain を引いて API を呼ぶ
+  setup_keychain_stubs
+  [ -n "$SERVICE_X" ] && [ -n "$SERVICE_Y" ] && [ "$SERVICE_X" != "$SERVICE_Y" ]
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ "$(grep -cxF "$SERVICE_X" "${WORK}/security-calls")" = "1" ]
+  [ "$(grep -cxF "$SERVICE_Y" "${WORK}/security-calls")" = "1" ]
+  [ "$(grep -c "Bearer tok-" "${WORK}/curl-calls")" = "2" ]
+}
+
+@test "enabled: an off slot's credentials are not read and the API is not called for it" {
+  setup_keychain_stubs "" false
+  [ -n "$SERVICE_X" ] && [ -n "$SERVICE_Y" ] && [ "$SERVICE_X" != "$SERVICE_Y" ]
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ "$(grep -cxF "$SERVICE_X" "${WORK}/security-calls")" = "1" ]
+  [ "$(grep -cxF "$SERVICE_Y" "${WORK}/security-calls")" = "0" ]
+  [ "$(wc -l < "${WORK}/security-calls" | tr -d ' ')" = "1" ]
+  [ "$(grep -c "Bearer tok-" "${WORK}/curl-calls")" = "1" ]
+  grep -qF "Bearer tok-${SERVICE_X}\"" "${WORK}/curl-calls"
+  ! grep -qF "tok-${SERVICE_Y}" "${WORK}/curl-calls" || return 1
+  [ "$(jq -r '.accounts.x.five_hour_pct' "$SNAP")" = "10" ]
+  # 前回値が無いオフのスロットは、取得しなかったスロットと同じく値が null の項目になる
+  [ "$(jq -c '.accounts.y.five_hour_pct' "$SNAP")" = "null" ]
+  [ "$(jq -c '.accounts.y.fetched_at' "$SNAP")" = "null" ]
+  [ "$(state_of x .last_attempt)" = "$NOW" ]
+  [ "$(state_of y '')" = "null" ]
+}
+
+@test "enabled: an off slot's plaintext credentials file is not read either" {
+  setup_keychain_stubs "" false
+  mkdir -p "${WORK}/claude-y"
+  printf '{"claudeAiOauth":{"accessToken":"plain-y"}}' > "${WORK}/claude-y/.credentials.json"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ "$(grep -c "Bearer " "${WORK}/curl-calls")" = "1" ]
+  ! grep -qF "plain-y" "${WORK}/curl-calls" || return 1
+}
+
+@test "enabled: an off slot keeps its previous snapshot value with fetched_at" {
+  seed_two_slot_snapshot "$((NOW - 86400))"
+  write_two_slot_registry_enabled "" false
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "96" ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "7" ]
+  [ "$(jq -r '.accounts.b.five_hour_pct' "$SNAP")" = "3" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$((NOW - 86400))" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of b '')" = "null" ]
+}
+
+@test "enabled: all slots off fetch nothing and leave the snapshot and state untouched" {
+  seed_two_slot_snapshot "$((NOW - 86400))"
+  write_two_slot_registry_enabled false false
+  cp "$SNAP" "${WORK}/snap.before"
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  cmp "$SNAP" "${WORK}/snap.before"
+  [ ! -e "$USAGE_PROBE_STATE" ]
+  [ ! -e "$USAGE_PROBE_LOCK" ]
+
+  # 本番経路でも認証情報の読み出しと API 呼び出しが起きない
+  setup_keychain_stubs false false
+  rm -f "$SNAP"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ ! -s "${WORK}/security-calls" ]
+  [ ! -s "${WORK}/curl-calls" ]
+  [ ! -e "$SNAP" ]
+  [ ! -e "$USAGE_PROBE_STATE" ]
+}
+
+@test "enabled: only the JSON false turns a slot off for the probe" {
+  local value
+  for value in '"false"' 0 null true; do
+    rm -f "$SNAP" "$USAGE_PROBE_STATE"
+    seed_two_slot_snapshot "$((NOW - 86400))"
+    write_two_slot_registry_enabled "" "$value"
+    run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+        USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+        USAGE_PROBE_NOW="$NOW" "$PROBE"
+    [ "$status" -eq 0 ]
+    [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  done
+}
+
+@test "enabled: --print-slots still prints four columns and lists off slots" {
+  write_two_slot_registry_enabled "" false
+  run env CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" "$PROBE" --print-slots
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" = "2" ]
+  [ "$(printf '%s\n' "$output" | sed -n 1p | awk -F'\t' '{print NF}')" = "4" ]
+  [ "$(printf '%s\n' "$output" | sed -n 2p | awk -F'\t' '{print NF}')" = "4" ]
+  [ "$(printf '%s\n' "$output" | sed -n 2p | cut -f1)" = "b" ]
+  [ "$(printf '%s\n' "$output" | sed -n 1p | cut -f4)" = "Claude Code-credentials" ]
+  [ "$(printf '%s\n' "$output" | sed -n 2p | cut -f4 | cut -c1-24)" = "Claude Code-credentials-" ]
+}
+
+# ---------- --refresh: 429 の待ちを残して鮮度と間隔だけを外す（#1256） ----------
+# spec: dev-workflow-escalation-tripwires「usage-probe と snapshot 契約」の手動の取り直し
+
+# $1=a の試行時刻 $2=a の連続 429 回数 $3=b の試行時刻 $4=b の連続 429 回数
+write_two_slot_state() {
+  printf '{"slots":{"a":{"last_attempt":%s,"consecutive_429":%s},"b":{"last_attempt":%s,"consecutive_429":%s}}}\n' \
+    "$1" "$2" "$3" "$4" >| "$USAGE_PROBE_STATE"
+}
+
+run_two_slot_probe() {
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE" "$@"
+}
+
+@test "refresh: slots not waiting on a 429 are fetched again inside the freshness and interval windows" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  write_two_slot_state "$((NOW - 3600))" 0 "$((NOW - 3600))" 0
+  # 対照: 引数なしでは鮮度と間隔の内側なので叩かない
+  run_two_slot_probe
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(state_of a .last_attempt)" = "$((NOW - 3600))" ]
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "96" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "8" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: a slot waiting on a 429 is not fetched and its attempt and count stay unchanged" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  # a: 連続 2 回で前回の試行が間隔（10800）の 1.5 倍前 → 待ちは 2 倍なので待ち中
+  write_two_slot_state "$((NOW - 16200))" 2 "$((NOW - 3600))" 0
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "94" ]
+  [ "$(state_of a .last_attempt)" = "$((NOW - 16200))" ]
+  [ "$(state_of a .consecutive_429)" = "2" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "8" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: a slot whose 429 wait has ended is fetched inside the freshness window" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  # a: 連続 2 回で前回の試行が間隔の 2 倍前 → 待ちが明けている
+  write_two_slot_state "$((NOW - 21600))" 2 "$((NOW - 3600))" 0
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of a .consecutive_429)" = "0" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: an off slot is not fetched and no attempt is recorded for it" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  write_two_slot_registry_enabled "" false
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of b '')" = "null" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "7" ]
 }

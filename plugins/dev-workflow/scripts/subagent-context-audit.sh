@@ -47,11 +47,11 @@
 # 担当分類は隣の agent-<id>.meta.json を次の優先順位で見る:
 #   1. agentType が dev-workflow:decider なら常に decider
 #   2. でなければ agentType が dev-workflow:reviewer なら Reviewer
-#   3. でなければ description の先頭コロン区切りトークンが W/R1/G/Reviewer に完全一致すればそれ
+#   3. でなければ description の先頭トークンが担当名＋任意の手渡し番号ならその担当名
 #   4. どれにも当たらなければ unknown（母集団の count からは落とさない）
 # docs_median は指示書 Read（file_path が plugins/cache/oratta-claude-harness/*.md）または
 # Skill 呼び出しを含むホップの usage 差分を個体ごとに合計し、担当内で中央値を取ったもの。
-# reread_pct は W だけに付き、description の #N（最も左のもの）でグループ化した同一記録先の
+# reread_pct は W だけに付き、プロジェクト識別子と description の #N（最も左のもの）でグループ化した同一記録先の
 # W のうち、先行者が読んだファイル（Read の file_path と、Bash の sed -n / cat / head / tail の
 # 引数。ベースネーム一致）を後続がどれだけ読み直したかの
 # 中央値（グループ最初と #N が取れない個体は母数から除く）。
@@ -269,8 +269,8 @@ def load_meta(path):
 
 def classify_role(meta):
     """D1: agentType が dev-workflow:decider を最優先。次に agentType が dev-workflow:reviewer
-    なら Reviewer。次に description 先頭コロン区切りトークンが W/R1/G/Reviewer に完全一致
-    すればそれ。どれにも当たらなければ unknown。"""
+    なら Reviewer。次に description 先頭コロン区切りトークンが W/R1/G/Reviewer と
+    任意の手渡し番号に完全一致すれば担当名を返す。どれにも当たらなければ unknown。"""
     if not isinstance(meta, dict):
         meta = {}
     if meta.get("agentType") == "dev-workflow:decider":
@@ -280,8 +280,9 @@ def classify_role(meta):
     desc = meta.get("description")
     if isinstance(desc, str):
         token = desc.split(":", 1)[0].strip()
-        if token in ("W", "R1", "G", "Reviewer"):
-            return token
+        match = re.fullmatch(r"(W|R1|G|Reviewer)\d*", token)
+        if match:
+            return match.group(1)
     return "unknown"
 
 
@@ -322,14 +323,14 @@ def bash_read_files(command):
                 skip_next = False
                 continue
             if ">" in w or "<" in w:
-                # 記号だけの語（> や >>）は直後の語（リダイレクト先）も数えない
-                if re.fullmatch(r"\d*(>>?|<)", w):
+                # 記号だけの語（> >> < << <<< &> &>>）は直後の語（リダイレクト先・heredoc の区切り語）も数えない
+                if re.fullmatch(r"\d*(>>?|<<?<?|&>>?)", w):
                     skip_next = True
                 continue
             if w == "-":
                 continue
             if w.startswith("-"):
-                if (cmd in ("head", "tail") and w in ("-n", "-c")) or (cmd == "sed" and w in ("-e", "-f")):
+                if (cmd in ("head", "tail") and w in ("-n", "-c", "--lines", "--bytes")) or (cmd == "sed" and w in ("-e", "-f")):
                     skip_next = True
                 continue
             if script_pending:
@@ -461,15 +462,15 @@ def median_float(vals):
 
 
 def reread_pct_for_w(w_entries):
-    """D3: w_entries = [(timestamp, leftmost #N, reads(set of basenames)), ...] は
-    role=="W" の個体だけ。#N でグループ化し、timestamp 順で 2 番目以降について、
+    """D3: w_entries = [(timestamp, project_slug, leftmost #N, reads(set of basenames)), ...] は
+    role=="W" の個体だけ。(project_slug, #N) でグループ化し、timestamp 順で 2 番目以降について、
     自分より前に開始した全員の reads 和集合に対する自分の重なり率（0-100）を求め、
     その中央値を返す（対象 0 件は None）。"""
     groups = {}
-    for ts, num, reads in w_entries:
+    for ts, slug, num, reads in w_entries:
         if num is None:
             continue
-        groups.setdefault(num, []).append((ts or "", reads))
+        groups.setdefault((slug, num), []).append((ts or "", reads))
     percents = []
     for members in groups.values():
         members.sort(key=lambda t: t[0])
@@ -510,7 +511,9 @@ def compute_by_role(paths, cutoff):
         per_role[role].append((first, last, docs_total))
         if role == "W":
             desc = meta.get("description") if isinstance(meta, dict) else None
-            w_entries.append((ts, leftmost_number(desc), reads))
+            # 固定深さ <projects>/<slug>/<sess>/subagents/agent-*.jsonl の slug。
+            slug = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(path))))
+            w_entries.append((ts, slug, leftmost_number(desc), reads))
     by_role_out = {}
     for r in ROLES:
         view = role_view(per_role[r])

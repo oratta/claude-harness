@@ -6,7 +6,6 @@ from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
-import math
 import os
 from pathlib import Path
 import select
@@ -17,8 +16,10 @@ import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 # Claude の実効値の規則は usage_view.py の 1 か所に置く（正本: usage-session-records）
+# margin（週の経過率 − 使用率）は headroom.py の行から取る（正本: dev-workflow-headroom）
 sys.path.insert(0, str(ROOT / 'scripts'))
 import usage_view  # noqa: E402
+import headroom  # noqa: E402
 CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
                    'decider', 'explore', 'summarize')
 PHASES = {
@@ -41,59 +42,54 @@ comments, push, PR creation and commit yourself here, and do not return needs-co
 them. The coordinator performs only operations already recorded as ones it could not align.'''
 READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
-WEEK_SECONDS = 604800
+def _setting_error(exc):
+    """An invalid HEADROOM_* setting stops the automatic selection (blocked, exit 2)."""
+    return RuntimeError(f'automatic selection cannot count headroom: {exc}')
 
 
-def usage_margin(snapshot, now):
+def usage_margin(snapshot, now, account='codex'):
     """Return the unrounded weekly margin of a Codex snapshot, or None for missing/unsafe input.
 
-    Same effective-value rule as the Claude side (usage-session-records): the age of the fetch is
-    not checked. Past the weekly reset the window reads as 0% with the reset moved forward by whole
-    weeks; before it the fetched value is a lower bound. A reset more than a week ahead is accepted
-    (the margin just goes negative).
+    The margin is the one of headroom's row for this cache (headroom.codex_row, given the account
+    name of the mapping; the name does not change the margin): the age of the fetch is not
+    checked, past the weekly reset the window reads as 0%, a fetch more than 60 seconds in the
+    future is stale. Only an `ok` row gives a margin.
     """
-    if not isinstance(snapshot, dict) or type(snapshot.get('fetched_at')) is not int:
-        return None
-    if snapshot['fetched_at'] > now:
-        return None
-    windows = snapshot.get('windows')
-    if not isinstance(windows, list):
-        return None
-    weekly = [item for item in windows if isinstance(item, dict) and
-              item.get('minutes') == 10080]
-    if not weekly:
-        return None
-    used, reset = weekly[0].get('used_percent'), weekly[0].get('reset_at')
-    if (type(used) not in (int, float) or not math.isfinite(used) or not 0 <= used <= 100 or
-            type(reset) is not int):
-        return None
-    if now >= reset:
-        used = 0
-        reset += ((now - reset) // WEEK_SECONDS + 1) * WEEK_SECONDS
-    elapsed = 100 * (1 - (reset - now) / WEEK_SECONDS)
-    return elapsed - used
+    try:
+        row = headroom.codex_row(account, snapshot, now)
+    except headroom.ConfigError as exc:
+        raise _setting_error(exc) from None
+    return row['margin'] if row['status'] == 'ok' else None
 
 
 def claude_usage_evidence(snapshot_path, now):
-    """Margin of the launch account from its effective values (usage-session-records).
+    """Margin of the launch account from headroom's row for it (usage-session-records values).
 
-    The age of the probe's fetch is not checked: past its reset a window reads as 0%, before it the
-    value is a lower bound, so an old value stays usable while the usage API keeps failing.
+    The launch account is the `active` of the effective values; its margin is the one of
+    headroom.claude_rows with the same snapshot, used only when that row is `ok`.
     """
     try:
         view = usage_view.build_view(snapshot_path=str(snapshot_path), now=now)
     except Exception:
         return {'account': None, 'margin': None, 'fetched_at': None}
     active = view['active']
-    slot = view['accounts'].get(active) or {}
-    used, reset = slot.get('weekly_all_pct'), slot.get('weekly_resets_epoch')
-    margin = None
-    if usage_view.finite_number(used) and 0 <= used <= 100 and usage_view.finite_number(reset):
-        margin = 100 * (1 - (reset - now) / WEEK_SECONDS) - used
-    return {'account': active, 'margin': margin, 'fetched_at': slot.get('observed_at')}
+    try:
+        rows = headroom.claude_rows(now, str(snapshot_path))
+    except headroom.ConfigError as exc:
+        raise _setting_error(exc) from None
+    row = next((r for r in rows if r['account'] == active), None)
+    if row is None:
+        slot = view['accounts'].get(active) or {}
+        return {'account': active, 'margin': None, 'fetched_at': slot.get('observed_at')}
+    return {'account': active, 'margin': row['margin'] if row['status'] == 'ok' else None,
+            'fetched_at': row['observed_at']}
 
 
-def select_configuration(claude_margin, codex_margin):
+def select_configuration(claude_margin, codex_margin, codex_enabled=True):
+    # Codex off (accounts.json "codex"."enabled": false) is the user's setting, not a
+    # headroom result, so it has its own reason whatever the margins are.
+    if not codex_enabled:
+        return 'claude-default', 'codex-off'
     claude_ok, codex_ok = (claude_margin is not None and claude_margin >= 0,
                            codex_margin is not None and codex_margin >= 0)
     if claude_ok and codex_ok:
@@ -119,7 +115,8 @@ def _auth_identity(home):
             'account_id_hash': hashlib.sha256(tokens['account_id'].encode()).hexdigest()}
 
 
-def _rpc_requests(home, requests, timeout=15):
+def _rpc_requests(home, requests, timeout=None):
+    timeout = RPC_TIMEOUT if timeout is None else timeout
     env = clean_env() | {'CODEX_HOME': home}
     proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'],
         env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
@@ -189,6 +186,27 @@ def _quota_windows(result):
     return windows
 
 
+def _reset_credits(result):
+    """rateLimitResetCredits -> {'available_count', 'expires_at'} or None when unreadable.
+
+    codex-role-profiles: only availableCount (an integer >= 0) and the expiresAt of credits whose
+    status is available are kept; an expiresAt that is not an integer is kept as null. No credit id
+    and no other field is stored. None (no resets in the cache) means "unknown", not zero.
+    """
+    credits = result.get('rateLimitResetCredits')
+    if not isinstance(credits, dict):
+        return None
+    count, items = credits.get('availableCount'), credits.get('credits')
+    if type(count) is not int or count < 0 or not isinstance(items, list):
+        return None
+    expires = []
+    for item in items:
+        if isinstance(item, dict) and item.get('status') == 'available':
+            value = item.get('expiresAt')
+            expires.append(value if type(value) is int else None)
+    return {'available_count': count, 'expires_at': expires}
+
+
 def probe_codex_account(home):
     identity = _auth_identity(home)
     initialized, observed, limits = _rpc_requests(home, [
@@ -205,7 +223,11 @@ def probe_codex_account(home):
     windows = _quota_windows(limits)
     if not windows:
         raise RuntimeError('Codex weekly quota is unavailable')
-    return {'identity': identity, 'windows': windows}
+    value = {'identity': identity, 'windows': windows}
+    resets = _reset_credits(limits)
+    if resets is not None:
+        value['resets'] = resets
+    return value
 
 
 def _cache_path(config_dir, home):
@@ -236,8 +258,10 @@ def _update_codex_cache(name, home, config_dir, now):
                 previous = None
         try:
             result = probe_codex_account(home)
-            value = {'version': 1, 'identity': result['identity'],
+            value = {'version': 2, 'identity': result['identity'],
                      'fetched_at': now, 'windows': result['windows']}
+            if result.get('resets') is not None:
+                value['resets'] = result['resets']
             write(path, value)
         except Exception:
             value = previous
@@ -258,12 +282,20 @@ def read_codex_usages(mapping, config_dir, now):
     return {name: values.get(name) for name in mapping}
 
 
+# usage-probe.sh runs headroom.py write --refresh-codex after the snapshot, which starts the Codex
+# app-server and sends 3 requests, each allowed RPC_TIMEOUT seconds (plus 2 to stop it): up to about
+# 47 seconds on a slow Codex, on top of the Claude fetches (curl --max-time 10 per slot). A kill on
+# timeout skips the probe's exit trap and leaves its lock for 120 seconds, so wait well past that.
+RPC_TIMEOUT = 15
+USAGE_PROBE_TIMEOUT = 90
+
+
 def _run_usage_probe(snapshot_path):
     env = clean_env() | {'USAGE_SNAPSHOT': str(snapshot_path)}
     try:
         subprocess.run([str(ROOT / 'scripts/usage-probe.sh')], env=env,
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                       timeout=20, check=False)
+                       timeout=USAGE_PROBE_TIMEOUT, check=False)
     except (OSError, subprocess.TimeoutExpired):
         pass
 
@@ -274,22 +306,25 @@ def automatic_selection(mapping, now=None):
     _run_usage_probe(snapshot_path)
     now = int(time.time()) if now is None else now
     claude = claude_usage_evidence(snapshot_path, now)
-    usages = read_codex_usages(mapping, str(config_dir), now) if mapping else {}
+    codex_enabled = usage_view.read_codex_enabled(usage_view.default_paths()['accounts_file'])
+    # Off means no Codex usage read at all: no app-server start and no cache update.
+    usages = read_codex_usages(mapping, str(config_dir), now) if mapping and codex_enabled else {}
     candidates = []
     for order, (name, value) in enumerate(usages.items()):
-        margin = usage_margin(value, now)
+        margin = usage_margin(value, now, name)
         if margin is not None:
             candidates.append((margin, -order, name, value))
     best = max(candidates) if candidates else None
     codex = {'account': best[2] if best else None, 'margin': best[0] if best else None,
              'fetched_at': best[3].get('fetched_at') if best else None}
-    selected, reason = select_configuration(claude['margin'], codex['margin'])
+    if not codex_enabled:
+        codex['enabled'] = False
+    selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled)
     return selected, {'selection_mode': 'automatic', 'configuration': selected,
         'reason': reason,
         'claude': {'account': claude['account'], 'margin': claude['margin'],
                    'fetched_at': claude['fetched_at']},
-        'codex': {'account': codex['account'], 'margin': codex['margin'],
-                  'fetched_at': codex['fetched_at']}}
+        'codex': codex}
 
 
 def bind_codex_account(config, account, accounts):
@@ -497,6 +532,21 @@ REQUEST:
     return text
 
 
+def refuse_explicit_codex_when_off(args, legacy):
+    # An explicit Codex request is never silently replaced by Claude. This runs before the
+    # account-home table is read, so the refusal names the off setting and not a missing
+    # account. A profile is read without the table only to see whether any role uses Codex.
+    accounts_file = usage_view.default_paths()['accounts_file']
+    if usage_view.read_codex_enabled(accounts_file):
+        return
+    if not legacy:
+        roles = load_profile(args.profile, args.profile_file, None)['roles']
+        if all(entry['executor'] != 'codex' for entry in roles.values()):
+            return
+    raise RuntimeError('codex is off: set "codex"."enabled" to true or remove it in '
+                       + str(accounts_file))
+
+
 def build_request(args):
     # Role settings are resolved for each request, and CODEX_HOME comes from the caller's
     # explicit account table. The profile form and account/model form are mutually exclusive.
@@ -506,6 +556,8 @@ def build_request(args):
         raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
+    if legacy or profile:
+        refuse_explicit_codex_when_off(args, legacy)
     mapping = account_homes(args.account_home, args.account_home_file)
     if not legacy and not profile and not args.account_home and not args.account_home_file:
         mapping = default_automatic_account_home()

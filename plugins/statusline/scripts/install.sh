@@ -9,7 +9,12 @@
 #   - marketplace dir はプラグイン自動更新で再 clone される。そこを settings.json から
 #     直接指すと、更新のたびにユーザーの色・幅の調整が消える
 #   - cache dir はバージョンごとに path が変わるので settings.json から指せない
-#   → 安定した <config>/statusline.sh に置く。更新時は再実行する
+#   → 安定した <config>/statusline.sh に置く
+#
+# コピーした内容の SHA-256 を <config>/.statusline-installed に記録する。statusline プラグインの
+# SessionStart フック（statusline-update-hook.sh）はこの記録と比べ、手を入れていないコピーは
+# プラグインの本体に揃え、手を入れたコピーは上書きせず「更新あり」の印を置く。
+# 再実行すると手を入れたコピーも本体に揃い（バックアップは取る）、印は消える。
 #
 # 使い方:
 #   install.sh              導入・更新する
@@ -32,7 +37,21 @@ HELPER_DEST="$CONFIG_DIR/statusline-codex.py"
 SETTINGS="$CONFIG_DIR/settings.json"
 DESIRED_CMD="bash $DEST"
 
+RECORD="$CONFIG_DIR/.statusline-installed"
+MARK="$CONFIG_DIR/.statusline-update-available"
+
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
+
+# ファイルの SHA-256（64 桁の 16 進数）。shasum も sha256sum も無ければ空を返す。
+sha256_of() {
+    local h=""
+    if command -v shasum >/dev/null 2>&1; then
+        h="$(shasum -a 256 "$1" 2>/dev/null | awk '{print $1}')"
+    elif command -v sha256sum >/dev/null 2>&1; then
+        h="$(sha256sum "$1" 2>/dev/null | awk '{print $1}')"
+    fi
+    printf '%s' "$h"
+}
 
 [ -f "$SRC" ] || fail "スクリプト本体が見つからない: $SRC"
 [ -f "$HELPER_SRC" ] || fail "Codex helper が見つからない: $HELPER_SRC"
@@ -126,6 +145,22 @@ if [ "$settings_action" != "up-to-date" ]; then
         rm -f "$tmp"
         fail "settings.json の更新に失敗（バックアップ: ${SETTINGS}.bak-${ts}）"
     fi
+fi
+
+# ---- 3. コピーした内容の記録（フックが手を入れたかどうかを見分ける） ----
+script_hash="$(sha256_of "$DEST")"
+helper_hash="$(sha256_of "$HELPER_DEST")"
+if [ -n "$script_hash" ] && [ -n "$helper_hash" ]; then
+    tmp="$(mktemp "${RECORD}.XXXXXX")" || fail "記録の一時ファイルを作れない"
+    if printf '%s  statusline.sh\n%s  statusline-codex.py\n' "$script_hash" "$helper_hash" > "$tmp" \
+        && mv -f "$tmp" "$RECORD"; then
+        rm -f "$MARK"
+    else
+        rm -f "$tmp"
+        fail "記録の書き込みに失敗: $RECORD"
+    fi
+else
+    printf 'WARN: shasum も sha256sum も無いので %s を書かない（自動更新は効かない）\n' "$RECORD" >&2
 fi
 
 printf '\n完了。次のステータスライン再描画から反映される。\n'

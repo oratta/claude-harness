@@ -77,6 +77,23 @@ PY
   [[ "$output" != *'$30.50'* ]] || return 1   # claude-opus-5 の単価に食われると $30.50 になる
 }
 
+@test "pricing: claude-sonnet-5-5 resolves to its own row, not claude-sonnet-5" {  # claude-sonnet-5-5 は claude-sonnet-5 に食われず、自分の行の単価（input 2 + output 10 + cache_read 0.1）で引かれる
+  cl_mini_log mini claude-sonnet-5-5 '{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}'
+  run python3 "$CL" branch mini
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'$12.10'* ]] || return 1
+  [[ "$output" != *'$12.20'* ]] || return 1   # claude-sonnet-5 の単価に食われると $12.20 になる
+  [[ "$output" != *"未知モデル"* ]] || return 1
+}
+
+@test "pricing: claude-haiku-5-5 has its own row, not unknown and not claude-haiku-4-5" {  # claude-haiku-5-5 は未知扱いにならず、自分の行の単価（input 0.1 + output 0.5 + cache_read 0.01）で引かれる
+  cl_mini_log mini claude-haiku-5-5 '{"input_tokens":1000000,"output_tokens":1000000,"cache_read_input_tokens":1000000}'
+  run python3 "$CL" branch mini
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'$0.61'* ]] || return 1
+  [[ "$output" != *"未知モデル"* ]] || return 1
+}
+
 @test "pricing: a dated model name resolves to the undated key" {  # 日付付きのモデル名が日付なしの鍵の単価で引かれる
   cl_mini_log mini claude-haiku-4-5-20251001 '{"input_tokens":1000000,"output_tokens":0,"cache_read_input_tokens":0}'
   run python3 "$CL" branch mini

@@ -25,19 +25,27 @@
 2. **開発ワークフローの導入** — dev-workflow プラグインの導入コマンド（#204 のマージ後は `develop` スキルが正本）
 3. **auto-merge の配線** — dev-workflow の `templates/auto-merge/` をリポに展開する
 4. **運営の引き渡し** — このプラグインの雛形3種を展開し、窓口と法務ドラフトを用意する
-5. **マーケ運転** — `/sns-autopilot:sns-autopilot-setup`（SNS 運用をするなら）
+5. **マーケ運転** — SNS 運用をするなら、SNS 運用のプラグインの導入コマンド
 
 auto-merge の配線を先に済ませてから運営の引き渡しに入る。マージが機械判定になっていない
 状態で法務ドラフトだけ置いても、エージェントに任せられる範囲は広がらない。
 
-配線するとき、聖域パス（常に人間がマージするパス）に**金・DB・法務**を足す。dev-workflow の
-既定は自己言及コア（`.github/workflows/`・`.claude/`・`CLAUDE.md`・憲法 doc）だけなので、
-価格ロジックと決済導線、DB マイグレーション、公開する法務ページを展開先のパスで書き足す。
-法務ページを聖域にしないと、下の法務ドラフトがレビューを経ずに公開される経路が残る。
+配線するとき、`auto-merge.yml` の聖域パス（`SACRED`。`# >>> sacred-paths` マーカーの間）と
+マージ条件のパス（`MERGE_CONDITION`。`# >>> merge-condition-paths` マーカーの間）の両方に
+**金・DB・法務**を足す。dev-workflow の既定は自己言及コア（`.github/workflows/`・`.claude/`・
+`CLAUDE.md`・憲法 doc）だけなので、価格ロジックと決済導線、DB マイグレーション、公開する法務
+ページを展開先のパスで書き足す。法務ページを両方に足さないと、下の法務ドラフトが
+人間のマージ判断を経ずに main に入る経路が残る。
 
-聖域を足したら、同梱の `scripts/test-auto-merge-workflow.sh` の must-match リストにも
-代表パスを足す。片方だけ直すとテストが実態を見なくなる（手順の正本は dev-workflow の
-`templates/auto-merge/README.md`）。
+2 つの違いは、親の判断の印があるときの扱い。聖域に触れる PR は、印があれば `human-merge` が
+外れて自動マージされうる。`MERGE_CONDITION` に触れる PR は、印があっても `human-merge` が
+外れず、主が手でマージする。`MERGE_CONDITION` に入れたパスは必ず `SACRED` にも入れる
+（`MERGE_CONDITION` は `SACRED` の部分集合）。`SACRED` にだけ足したパスは、親の判断で
+マージされうる。金・DB・法務を必ず人間がマージするパスにするには `MERGE_CONDITION` にも足す。
+
+足したら、同梱の `scripts/test-auto-merge-workflow.sh` の `SACRED` 用と `MERGE_CONDITION` 用の
+must-match リストそれぞれにも代表パスを足す。片方だけ直すとテストが実態を見なくなる
+（手順の正本は dev-workflow の `templates/auto-merge/README.md`）。
 
 ## リポ側と住人側の分担
 
@@ -46,10 +54,10 @@ auto-merge の配線を先に済ませてから運営の引き渡しに入る。
 
 | | 担当 | 中身 |
 |---|---|---|
-| リポ側 | このプラグイン（と infra / dev-workflow / sns-autopilot） | 法務ドラフト・窓口設定・教訓ログ・auto-merge 配線・CI |
-| 住人側 | flatmate の `new-resident` | workspace の作成、定期実行（cron）の配線、連絡チャンネルの用意 |
+| リポ側 | このプラグイン（と infra / dev-workflow / SNS 運用のプラグイン） | 法務ドラフト・窓口設定・教訓ログ・auto-merge 配線・CI |
+| 住人側 | 導入先の環境（住人を用意する仕組み） | workspace の作成、定期実行（cron）の配線、連絡チャンネルの用意 |
 
-住人側は flatmate 側で完結するので、こちらから起動も設定もしない。逆に、住人を用意しただけでは
+住人側は導入先の環境で完結するので、こちらから起動も設定もしない。逆に、住人を用意しただけでは
 リポ側の雛形は入らないので、両方を通して初めて引き渡しが済む。
 
 ## 変更履歴

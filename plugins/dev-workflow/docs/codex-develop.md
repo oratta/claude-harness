@@ -21,7 +21,7 @@ Claudeの会話で実行する:
 
 `--executor codex` は後方互換の別名として上の形式に追加できる。profile の Claude entry は `account=current`、model は `haiku|sonnet|opus|fable` のみとし、`fable` は `decider` role だけに指定できる。
 
-profile/旧 account/model を省略すると、各工程の開始時に Codex は週次使用量の実効値、Claude はセッション記録と snapshot の実効値（どちらも、リセット前の値は取得からの経過時間によらず下限として使い、リセットを過ぎた窓は 0% で読む）から `週経過率 - 使用率` を比較する。両方に余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。
+profile/旧 account/model を省略すると、各工程の開始時に Codex は週次使用量の実効値、Claude はセッション記録と snapshot の実効値（どちらも、リセット前の値は取得からの経過時間によらず下限として使い、リセットを過ぎた窓は 0% で読む）から `週経過率 - 使用率` を比較する。この値は自分で数えず、headroom（`scripts/headroom.py`）の行の `margin` を使う（取得時刻が 60 秒を超えて未来の値は欠測）。両方に余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。`accounts.json` のトップレベルに `"codex": {"enabled": false}` を書いて Codex をオフにしている間は、自動選択は Codex の使用量を読まずに Claude 既定構成（`claude-default`、reason `codex-off`）を返し、Codex に投げる明示指定（Codex の role を含む `--profile` と旧形式の `--account`/`--model`）は依頼ファイルを作らず exit 2 で拒否する（黙って Claude に差し替えない）。
 
 Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。profile で実行先を選んでもこの判断と工程は変わらない。差戻しも該当 role の実行先へ委譲する。burnを有効化する必要はない。
 

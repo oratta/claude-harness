@@ -16,16 +16,18 @@
 
 | 順位 | 手段 | 使い方 | 使う条件 |
 |---|---|---|---|
-| **既定** | Codex CLI | `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` 直叩き、または companion 経由（`/codex:adversarial-review --background --base origin/main` / `codex:codex-rescue` サブエージェント） | **full** と判定したとき（full ではまずここから試す） |
-| フォールバック | Task サブエージェント | Agent ツール（`subagent_type: dev-workflow:reviewer`）に受け入れ条件＋diff 範囲＋`stages/reviewer-brief.md` のレビュアー向け指示ブロックを渡す。差分が 600 行を超えた一周目は `stages/prepare.md` 2-0 の区画ごとに起こす | ① **light** と判定したとき（最初からこれ）② full だが Codex CLI が使えないとき（実測したバイナリ無し・認証切れ・タイムアウト） |
+| **既定** | Codex CLI | `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` 直叩き、または companion 経由（`/codex:adversarial-review --background --base origin/main` / `codex:codex-rescue` サブエージェント） | **full** と判定し、Codex がオンのとき（full ではまずここから試す。オフのときは表の下の「Codex がオフのとき」） |
+| フォールバック | Task サブエージェント | Agent ツール（`subagent_type: dev-workflow:reviewer`）に受け入れ条件＋diff 範囲＋`stages/reviewer-brief.md` のレビュアー向け指示ブロックを渡す。差分が 600 行を超えた一周目は `stages/prepare.md` 2-0 の区画ごとに起こす | ① **light** と判定したとき（最初からこれ）② full だが Codex CLI が使えないとき（実測したバイナリ無し・認証切れ・タイムアウト）③ full で Codex がオフのとき（設定） |
+
+**Codex がオフのとき**: full と判定したあと、Codex を試す前に最初の 1 手として `python3 <plugin>/scripts/usage_view.py --codex-enabled` を実行する（`on` か `off` を 1 行出し、常に exit 0。`accounts.json` の `codex.enabled` が `false` のときだけ `off`）。`off` なら、バイナリ探索（`command -v codex`）も Codex の呼び出しもしないで、Task サブエージェント（`subagent_type: dev-workflow:reviewer`）でレビューする。`on` なら表の既定どおり Codex から試す。出力が `on` でも `off` でもない（コマンドが失敗した）ときは `on` と同じに扱い、その出力を `実行コマンド` の証拠に書く。設定ファイルを自分で読まず、このコマンドの出力だけで分岐する。オフは利用者が明示した設定で、下の三条件の実測ではない（未試行の Codex を不可と推測することの禁止には当たらない）。変わるのはレビュー実行者だけで、light の判定・手順 3 のリスク宣言・手順 4 の動作確認・fail-closed の判定順序は変わらない。新 Codex モードと develop の adapter 経路には適用しない。
 
 Codex CLI は区画に分けず差分全体を渡す。150,000 トークンの上限は Claude のサブエージェントの hook の上限で Codex には掛からず、三表が欠けた場合は G の機械照合が fail-closed で止める。
 
 Codex を full の既定にする理由: **実装者と別モデル系列で読ませたほうがレビューの独立性が上がる**（同一モデルは同じ盲点を共有する）。加えて**レビューで Claude の 5h/7d 枠を消費しない**ので、枠を実装サイクルに残せる。
 
-**2-0 の事前判定と、この障害時フォールバックは役割が違う** — 前者はレビュー開始前に**変更内容**から重量を決める設計上の選択、後者は full と判定した後に **Codex の可用性**が理由で発生する迂回路。どちらの経路で Task サブエージェントになったかを PR コメントで書き分ける（`レビュー実行者: Task サブエージェント（light 判定のため）` / `レビュー実行者: Task サブエージェント（full・実測した Codex 不可: <条件>）`）。develop の adapter 経路（G が `needs-reviewer` を返し、本体が phase `review` で投げ先を選び直した場合）では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` と書く（手順は develop の `references/roles/gate-runner.md`「レビュー経路の判別」）。executor が codex なら、worker 結果の `execution.model_resolution.requested` と `execution.model_resolution.resolved` を使って `<model>` を `<requested>→<resolved>` と書く。resolved が null なら未観測と明示し、要求値や dispatch 時の model で補完しない。executor が claude なら従来の model 値を使う。**どちらの経路でも手順3のリスク宣言・手順4の動作確認・fail-closed の判定順序は一切変わらない** — 変わるのはレビューを実行する主体だけで、免除される工程は無い。
+**2-0 の事前判定と、この障害時フォールバックは役割が違う** — 前者はレビュー開始前に**変更内容**から重量を決める設計上の選択、後者は full と判定した後に **Codex の可用性**が理由で発生する迂回路。どちらの経路で Task サブエージェントになったかを PR コメントで書き分ける（`レビュー実行者: Task サブエージェント（light 判定のため）` / `レビュー実行者: Task サブエージェント（full・実測した Codex 不可: <条件>）` / `レビュー実行者: Task サブエージェント（full・Codex オフ）`）。develop の adapter 経路（G が `needs-reviewer` を返し、本体が phase `review` で投げ先を選び直した場合）では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` と書く（手順は develop の `references/roles/gate-runner.md`「レビュー経路の判別」）。executor が codex なら、worker 結果の `execution.model_resolution.requested` と `execution.model_resolution.resolved` を使って `<model>` を `<requested>→<resolved>` と書く。resolved が null なら未観測と明示し、要求値や dispatch 時の model で補完しない。executor が claude なら従来の model 値を使う。**どちらの経路でも手順3のリスク宣言・手順4の動作確認・fail-closed の判定順序は一切変わらない** — 変わるのはレビューを実行する主体だけで、免除される工程は無い。
 
-**従来モードの不可判定**: companion / slash command が無ければ、`command -v codex` 等でバイナリを確認し、あれば exec を試す。companion 導入は任意で、不在だけでは Codex 不可にしない。不可と判定できるのは次の実測だけ:
+**従来モードの不可判定**: companion / slash command が無ければ、`command -v codex` 等でバイナリを確認し、あれば exec を試す。companion 導入は任意で、不在だけでは Codex 不可にしない。設定による Codex オフ（上の「Codex がオフのとき」）は三条件とは別で、ここでは扱わない。不可と判定できるのは次の実測だけ:
 
 - バイナリ無し: `command -v codex` 等の探索コマンドが不在を示した。
 - 認証切れ: 実際の Codex 呼び出しが認証切れの応答を返した。
@@ -33,16 +35,16 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 
 未試行、auth.json の有無、バージョン表示だけでは可否を確定しない。「サブスク切れ」との推測も認証切れの実測に代用しない。引数誤り・権限拒否・通信障害などを三条件に読み替えて Claude へ暗黙にフォールバックしない。該当しないエラーは証拠とともに本体へ返す。
 
-従来モードの full は、成功時も不可時も次の証拠を PR コメントに残す。終了コードは取得できた場合だけ書く。タイムアウトで完了未確認なら実待ち時間を書き、架空の終了コードを書かない。light は事前判定の根拠を記録し、未実行の Codex 証拠を作らない。develop の adapter 経路では同じ雛形の証拠欄を `未実行（adapter 経路）` と書き、レビュー実行者行は adapter 経路の形にする。
+従来モードの full は、成功時も不可時も次の証拠を PR コメントに残す。終了コードは取得できた場合だけ書く。タイムアウトで完了未確認なら実待ち時間を書き、架空の終了コードを書かない。light は事前判定の根拠を記録し、未実行の Codex 証拠を作らない。develop の adapter 経路では同じ雛形の証拠欄を `未実行（adapter 経路）` と書き、レビュー実行者行は adapter 経路の形にする。Codex オフのときは `選んだ経路`・`終了コード`・`実待ち時間` を `未実行（Codex オフ）` と書き、`実行コマンド` にオフの判定に使ったコマンドとその出力を書く。
 
 ```text
 対象 HEAD: <40 桁フル SHA>
-レビュー実行者: <Codex CLI | Task サブエージェント（full・実測した Codex 不可: 条件） | <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）>
-選んだ経路: <exec | companion | バイナリ探索で不在 | 未実行（adapter 経路）>
-実行コマンド: <実際の探索・起動・待機コマンド | 未実行（adapter 経路）>
-終了コード: <取得値 | 未取得 | 未実行（adapter 経路）>
-出力の要点: <完了結果 | 実測した不可条件と応答 | 未実行（adapter 経路）>
-実待ち時間: <タイムアウト時の実測値、完了未確認 | 未実行（adapter 経路）>
+レビュー実行者: <Codex CLI | Task サブエージェント（full・実測した Codex 不可: 条件） | Task サブエージェント（full・Codex オフ） | <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）>
+選んだ経路: <exec | companion | バイナリ探索で不在 | 未実行（adapter 経路） | 未実行（Codex オフ）>
+実行コマンド: <実際の探索・起動・待機コマンド | 未実行（adapter 経路） | python3 <plugin>/scripts/usage_view.py --codex-enabled → off>
+終了コード: <取得値 | 未取得 | 未実行（adapter 経路） | 未実行（Codex オフ）>
+出力の要点: <完了結果 | 実測した不可条件と応答 | 未実行（adapter 経路） | Codex オフの設定により Codex を試していない>
+実待ち時間: <タイムアウト時の実測値、完了未確認 | 未実行（adapter 経路） | 未実行（Codex オフ）>
 ```
 
 **Task サブエージェントのモデルは明示指定する（Agent ツールの `model` パラメータ）**:
@@ -53,7 +55,7 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 
 **Codex の呼び出し規約**（2026-08-07 の調査で確定。守らないと「原因不明のタイムアウト」になる）:
 
-- **前景 1 回で起動から完了まで待ち切ろうとする呼び方を禁止する**（前景で待つこと自体の禁止ではない。完了の確認は下のとおり前景ポーリングで行う）。Claude Code の Bash は 1 回 **10 分**が上限で、Codex レビューはそれを超えることがある（上の「10 分でタイムアウト」の直接原因はこれ）。`/codex:adversarial-review` は必ず **`--background`** で起動する。
+- **前景 1 回で起動から完了まで待ち切ろうとする呼び方を禁止する**（前景で待つこと自体の禁止ではない。完了の確認は下のとおり前景ポーリングで行う）。Claude Code の Bash は 1 回 **10 分**が上限で、Codex レビューはそれを超えることがある（stages/prepare.md の手順 2-0 にある「10 分でタイムアウト」の直接原因はこれ）。`/codex:adversarial-review` は必ず **`--background`** で起動する。
 - **待ち方は読み手で変わる。** 待ち値・完了シグナル・繰り返し回数・総待ちの上限の正本は `plugins/dev-workflow/references/subagent-waiting.md` で、**ここには再掲しない**（2 か所に置くと片方だけ古くなる）:
   - **メインセッション（本体）**: 背景タスクの完了で再起動されるので、`--background` 起動 ＋ 完了通知での続行でよい。
   - **サブエージェント（G など）**: 再起動されないので、完了の確認を**同一ターン内の前景ポーリング**で行う。完了を待つ目的でターンを終えてはならない（サブエージェントは再起動されないので、ターンを終えるとオーナーが気づくまで止まったままになり、気づかれなければ何時間でも作業が進まない）。正本を開いて雛形どおりに実行する。
@@ -94,6 +96,7 @@ G はサブエージェントなので Agent ツールを持たず、Task サブ
 | 判定 | 実行者 | G の動き |
 |---|---|---|
 | **full**（既定） | Codex CLI | G の **Bash から直接**呼ぶ。どちらか: (a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` を `run_in_background` で起動する（レビュー指示は引数に埋めず、ファイルに保存して標準入力から渡す。書き方は下の正本）、(b) codex プラグインの `scripts/codex-companion.mjs`（`~/.claude/plugins/marketplaces/*/plugins/codex/scripts/codex-companion.mjs` を path-discovery で特定）に `task … --effort medium` を投げる。**どちらの経路も完了の確認は下の「Codex の起動と完了確認」**（起動しただけで出力ファイルを読んで済ませない）。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは **G からは使えない**（前者は本体専用の slash command、後者は Agent ツールを要する）。`--effort minimal` は 400 エラーになるので使わない |
+| **full** で Codex がオフ（手順 2-1 の「Codex がオフのとき」の判定が `off`。Codex を試す前に確かめる） | 本体が spawn するレビュアー | Codex を試さない（バイナリ探索もしない）。`needs-reviewer` を return し、根拠に `Codex オフ（設定）` と書く（書式は `stages/prepare.md` の「G として動くとき（develop）」節。証拠欄は手順 2-1 の雛形のオフの値） |
 | **full** だが Codex が使えない（実測したバイナリ無し・認証切れ・タイムアウト＝下記の正本が定める総待ちの上限に達した） | 本体が spawn するレビュアー | `needs-reviewer` を return する（書式は `stages/prepare.md` の「G として動くとき（develop）」節） |
 | **light** | 本体が spawn するレビュアー | `needs-reviewer` を return する（書式は `stages/prepare.md` の「G として動くとき（develop）」節） |
 

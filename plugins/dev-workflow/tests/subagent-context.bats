@@ -30,6 +30,161 @@ make_transcript() {
   echo "$f"
 }
 
+set_mtime() {
+  python3 -c 'import os,sys; t=int(sys.argv[2]); os.utime(sys.argv[1], (t,t))' "$1" "$2"
+}
+
+assert_transcript() {
+  [ "$status" -eq 0 ]
+  python3 - "$output" "$1" "$2" <<'PY'
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["file"] == sys.argv[2], d
+assert d["context_tokens"] == int(sys.argv[3]), d
+PY
+}
+
+@test "metadata: finds an opaque filename by exact name" {
+  local f
+  f="$(make_transcript p1 s1 agent-a123.jsonl "$PWD" "1,2,3")"
+  printf '{"name":"W-590"}' > "${f%.jsonl}.meta.json"
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$f" 6
+}
+
+@test "metadata: name matching rejects prefixes and suffixes" {
+  local f name
+  f="$(make_transcript p1 s1 agent-a123.jsonl "$PWD" "1,2,3")"
+  for name in W-590-extra prefix-W-590; do
+    printf '{"name":"%s"}' "$name" > "${f%.jsonl}.meta.json"
+    run "$SCRIPT" W-590 --projects "$PROJECTS"
+    [ "$status" -eq 1 ]
+    [ "$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"])')" = "transcript not found" ]
+  done
+}
+
+@test "lookup: both legacy filename forms work without metadata" {
+  local f sess=0 fname
+  for fname in agent-aW-590-abcd.jsonl agent-aW-590.jsonl; do
+    sess=$((sess + 1))
+    f="$(make_transcript p1 "s$sess" "$fname" "$PWD" "1,2,3")"
+    set_mtime "$f" "$((1000 + sess))"
+    run "$SCRIPT" W-590 --projects "$PROJECTS"
+    assert_transcript "$f" 6
+  done
+}
+
+@test "metadata: multiple sessions prefer matching cwd over newer logs" {
+  local matching newer
+  matching="$(make_transcript p1 s1 agent-a123.jsonl "$PWD" "0,0,111")"
+  newer="$(make_transcript p2 s2 agent-b456.jsonl /elsewhere "0,0,222")"
+  printf '{"name":"W-590"}' > "${matching%.jsonl}.meta.json"
+  printf '{"name":"W-590"}' > "${newer%.jsonl}.meta.json"
+  set_mtime "$matching" 1000
+  set_mtime "$newer" 2000
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$matching" 111
+}
+
+@test "metadata: same cwd selects latest transcript rather than latest metadata" {
+  local older newer
+  older="$(make_transcript p1 s1 agent-a123.jsonl "$PWD" "0,0,111")"
+  newer="$(make_transcript p1 s2 agent-b456.jsonl "$PWD" "0,0,222")"
+  printf '{"name":"W-590"}' > "${older%.jsonl}.meta.json"
+  printf '{"name":"W-590"}' > "${newer%.jsonl}.meta.json"
+  set_mtime "$older" 1000
+  set_mtime "$newer" 2000
+  set_mtime "${older%.jsonl}.meta.json" 4000
+  set_mtime "${newer%.jsonl}.meta.json" 3000
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$newer" 222
+}
+
+@test "metadata: no matching cwd selects latest transcript across sessions" {
+  local older newer
+  older="$(make_transcript p1 s1 agent-a123.jsonl /elsewhere "0,0,111")"
+  newer="$(make_transcript p2 s2 agent-b456.jsonl /other "0,0,222")"
+  printf '{"name":"W-590"}' > "${older%.jsonl}.meta.json"
+  printf '{"name":"W-590"}' > "${newer%.jsonl}.meta.json"
+  set_mtime "$older" 1000
+  set_mtime "$newer" 2000
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$newer" 222
+}
+
+@test "metadata: merges legacy and metadata candidates before applying cwd and mtime priority" {
+  local legacy meta
+  legacy="$(make_transcript p1 s1 agent-aW-590-abcd.jsonl "$PWD" "0,0,111")"
+  meta="$(make_transcript p2 s2 agent-b456.jsonl /elsewhere "0,0,222")"
+  printf '{"name":"W-590"}' > "${meta%.jsonl}.meta.json"
+  set_mtime "$legacy" 1000
+  set_mtime "$meta" 2000
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$legacy" 111
+
+  # 両方 cwd が一致した場合は探索元にかかわらずログの mtime で選ぶ。
+  make_transcript p2 s2 agent-b456.jsonl "$PWD" "0,0,222" >/dev/null
+  set_mtime "$meta" 2000
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$meta" 222
+  set_mtime "$legacy" 3000
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$legacy" 111
+}
+
+# 各ケースで filename fallback・候補ゼロ・別の正常な metadata の探索を確認する。
+check_metadata_fallback() {
+  local kind="$1" legacy opaque meta good
+  legacy="$(make_transcript p1 s1 agent-aW-590-abcd.jsonl "$PWD" "0,0,111")"
+  opaque="${legacy%/*}/agent-b456.jsonl"
+  meta="${legacy%.jsonl}.meta.json"
+  case "$kind" in
+    absent) ;;
+    mismatch) printf '{"name":"someone-else"}' > "$meta" ;;
+    broken) printf '{not json' > "$meta" ;;
+    non-object) printf '["W-590"]' > "$meta" ;;
+    no-name) printf '{}' > "$meta" ;;
+    no-log) printf '{"name":"W-590"}' > "${legacy%/*}/agent-missing.meta.json" ;;
+  esac
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$legacy" 111
+
+  mv "$legacy" "$opaque"
+  if [ -f "$meta" ]; then mv "$meta" "${opaque%.jsonl}.meta.json"; fi
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  [ "$status" -eq 1 ]
+  [ "$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"])')" = "transcript not found" ]
+
+  good="$(make_transcript p2 s2 agent-c789.jsonl "$PWD" "0,0,333")"
+  printf '{"name":"W-590"}' > "${good%.jsonl}.meta.json"
+  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  assert_transcript "$good" 333
+}
+
+@test "metadata fallback: absent metadata" {
+  check_metadata_fallback absent
+}
+
+@test "metadata fallback: mismatching name" {
+  check_metadata_fallback mismatch
+}
+
+@test "metadata fallback: broken JSON" {
+  check_metadata_fallback broken
+}
+
+@test "metadata fallback: non-object JSON" {
+  check_metadata_fallback non-object
+}
+
+@test "metadata fallback: missing name" {
+  check_metadata_fallback no-name
+}
+
+@test "metadata fallback: missing corresponding log" {
+  check_metadata_fallback no-log
+}
+
 @test "script: is executable and prints usage without args" {
   [ -x "$SCRIPT" ]
   run "$SCRIPT"
@@ -186,4 +341,66 @@ PY
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 1,1,1)"
   DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=abc run "$SCRIPT" --file "$f" --stop-since 1
   [ "$status" -eq 1 ]
+}
+
+# 末尾に利用上限エラーのレコード（usage 全部 0・isApiErrorMessage）を $2 行足す
+add_error_records() {
+  local f="$1" k="$2" i
+  for i in $(seq "$k"); do
+    printf '{"type":"assistant","isApiErrorMessage":true,"message":{"model":"<synthetic>","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}\n' >> "$f"
+  done
+}
+
+@test "api error: trailing zero-usage error record is skipped, over cap reported (exit 2)" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
+  add_error_records "$f" 1
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"context_tokens": 160000'
+  echo "$output" | grep -q '"over_cap": true'
+  echo "$output" | grep -q '"last_record": "api_error"'
+}
+
+@test "api error: under cap stays exit 0 with the previous usage" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,99990)"
+  add_error_records "$f" 1
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '"context_tokens": 100000'
+  echo "$output" | grep -q '"over_cap": false'
+}
+
+@test "api error: three trailing error records still use the last normal usage" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
+  add_error_records "$f" 3
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"context_tokens": 160000'
+}
+
+@test "api error: only error records means no usage (exit 1)" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD")"
+  add_error_records "$f" 2
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 1 ]
+  echo "$output" | grep -q 'no assistant usage yet'
+}
+
+@test "api error: error key with a falsy value and non-zero usage is still skipped" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
+  printf '{"type":"assistant","error":{},"message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":99990,"output_tokens":5}}}\n' >> "$f"
+  printf '{"type":"assistant","error":"","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":99990,"output_tokens":5}}}\n' >> "$f"
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"context_tokens": 160000'
+  echo "$output" | grep -q '"last_record": "api_error"'
+}
+
+@test "api error: error record without usage still sets last_record" {
+  f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
+  printf '{"type":"assistant","isApiErrorMessage":true,"message":{"model":"<synthetic>"}}\n' >> "$f"
+  run "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  echo "$output" | grep -q '"context_tokens": 160000'
+  echo "$output" | grep -q '"last_record": "api_error"'
 }

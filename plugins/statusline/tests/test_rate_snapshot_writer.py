@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 from pathlib import Path
 import subprocess
 import time
@@ -27,7 +28,7 @@ def make_writer(tmp_path):
     snap = config / ".rate-limit-snapshot"
     reset_base = int(time.time())
 
-    def run(*, session="writer-a", pct=50, limits=True, share=None):
+    def run(*, session="writer-a", pct=50, limits=True, share=None, cwd=None):
         data = {"session_id": session, "workspace": {"current_dir": str(tmp_path)},
                 "model": {"display_name": "Opus"},
                 "rate_limits": {"five_hour": {"used_percentage": 10, "resets_at": reset_base + 7200},
@@ -37,7 +38,7 @@ def make_writer(tmp_path):
         if share is not None:
             env["FLATMATE_RATE_SHARE_DIR"] = str(share)
         result = subprocess.run(["bash", str(SCRIPT)], input=json.dumps(data), text=True,
-                                capture_output=True, env=env)
+                                capture_output=True, env=env, cwd=cwd)
         assert result.returncode == 0, result.stderr
         assert "Opus" in result.stdout
         return json.loads(snap.read_text()) if snap.exists() else None
@@ -90,12 +91,48 @@ def check_writer_shared_body_and_atomic_replacement(writer):
     first = run(share=share)
     remote = share / f"{first['host']}.json"
     assert remote.read_bytes() == snap.read_bytes()
-    assert list(snap.parent.glob(".rate-limit-snapshot.*")) == []
+    assert list(snap.parent.glob(".rate-snapshot.*")) == []
     assert list(share.iterdir()) == [remote]
     second = run(pct=90, share=share)
     assert second["seven_day_pct"] == 90
     assert remote.read_bytes() == snap.read_bytes()
     assert list(share.iterdir()) == [remote]
+
+
+def check_writer_trims_share_dir_from_environment(writer):
+    tmp, home, _, snap, run = writer
+    workdir = tmp / "cwd"
+    workdir.mkdir()
+    # 空白だけ: 空文字と同じく共有しない。cwd に空白名のディレクトリを作らない
+    run(share="  ", cwd=workdir)
+    assert list(workdir.iterdir()) == []
+    # 前後に空白がある: 空白を除いたパスへ書く
+    share = tmp / "share"
+    observed = run(share=f"  {share} \t", cwd=workdir)
+    assert (share / f"{observed['host']}.json").read_bytes() == snap.read_bytes()
+    assert list(workdir.iterdir()) == []
+    # 先頭・末尾の LF / CR / タブも除く（reader の str.strip() と同じ解決値にする）
+    for padded in (f"\n  {share} \n", f"\r\n\t{share}\n\n", "\n \n"):
+        shutil.rmtree(share, ignore_errors=True)
+        observed = run(share=padded, cwd=workdir)
+        if padded.strip():
+            assert (share / f"{observed['host']}.json").read_bytes() == snap.read_bytes()
+        else:
+            assert not share.exists()
+        assert list(workdir.iterdir()) == []
+    # ~ の展開は空白除去のあとで効く
+    home_share = home / "share-home"
+    observed = run(share="\n  ~/share-home \n", cwd=workdir)
+    assert (home_share / f"{observed['host']}.json").read_bytes() == snap.read_bytes()
+    assert list(workdir.iterdir()) == []
+
+
+def check_writer_snapshot_permission_is_0644(writer):
+    tmp, _, _, snap, run = writer
+    share = tmp / "share"
+    observed = run(share=share)
+    assert snap.stat().st_mode & 0o777 == 0o644
+    assert (share / f"{observed['host']}.json").stat().st_mode & 0o777 == 0o644
 
 
 def check_writer_normalizes_host_for_shared_filename(writer):
@@ -162,7 +199,8 @@ class RateSnapshotWriterTests(unittest.TestCase):
 
     def test_account_id_validation(self):
         cases = [(" acct-a ", True), ("acct-a", True), (None, False),
-                 ("", False), ("   ", False), ("a\nb", False),
+                 ("", False), ("   ", False), ("a\nb", False), ("a\rb", False),
+                 ("a\r\nb", False),
                  ("x" * 257, False), (42, False)]
         for value, valid in cases:
             with self.subTest(value=value):
@@ -173,6 +211,12 @@ class RateSnapshotWriterTests(unittest.TestCase):
 
     def test_shared_body_and_atomic_replacement(self):
         check_writer_shared_body_and_atomic_replacement(self.writer)
+
+    def test_share_dir_environment_is_trimmed(self):
+        check_writer_trims_share_dir_from_environment(self.writer)
+
+    def test_snapshot_permission_is_0644(self):
+        check_writer_snapshot_permission_is_0644(self.writer)
 
     def test_host_normalization(self):
         check_writer_normalizes_host_for_shared_filename(self.writer)

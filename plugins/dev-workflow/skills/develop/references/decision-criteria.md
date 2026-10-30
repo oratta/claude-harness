@@ -26,9 +26,32 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 - 依存パッケージのバージョン上げのみ（挙動変更を伴わない）
 - **受け入れ条件が記録先（issue または Draft PR 本文）に明記された機械的な振る舞い変更**（設計判断を含まない）。記録先とテストが記録として十分なため spec は省略できる
 
+### 仕様化するが軽く通す（仕様の文言合わせ）
+
+仕様化「する」のうち、既存の仕様の文言を実装に合わせて直すだけの変更は、成果物を仕様の差分 1 ファイルだけにし、R1 の仕様レビューを省く（以下「文言合わせの通し方」）。対象・当てる条件・省くものの正本はこの小節。
+
+**対象**（すべて満たす変更に限る）:
+
+- `openspec/specs/` の既存の要件の文を、実装に合わせて直すだけである
+- 新しい要件を足さない・要件を消さない・要件の名前を変えない（差分が `## MODIFIED Requirements` だけで書ける）
+- 設計の選択が無い（直し方が 1 つに決まっている）
+- 直す要件が 1 つの capability の spec に収まる（差分が 1 ファイルになる）
+
+**当てる条件**: 記録先の受け入れ条件（issue 本文。Draft PR が記録先なら PR 本文）に「どの仕様のどの文をどう直すか」が書けていること。直す要件ごとに、spec のパス（または capability 名）・要件名・直し方の 3 つが受け入れ条件から読み取れるときに「書けている」とする。
+
+**省くもの**: proposal・design・tasks と、R1 の仕様レビュー。W は `openspec/changes/<change-name>/specs/<capability>/spec.md` の 1 ファイルだけを書き、作業項目は return に置く（手順は `references/roles/worker/spec.md`）。仕様の差分は実装後レビュー（pr-review-gate）が PR diff の一部として見る。実装後レビューとテスト作成は省かない。
+
+**記録**: 仕様化判断のコメントの 1 行目（`仕様化判断: する`）は変えず、2 行目以降に `通し方: 文言合わせ` の行と、直す要件ごとの `直す文:` の行を書く。本体とゲートはこの行で見分ける（行の書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）。`通し方:` の行が無い「する」は、これまでどおり artifact 一式と R1 のレビューを要する。
+
+**当てないとき**: 受け入れ条件に直す文が書けていない変更と、対象のどれかを満たすか迷う変更には当てず、これまでどおり artifact 一式（proposal / design / tasks / specs）を作って R1 のレビューを受ける。当てるかどうかは W が決め、interactive でも主に聞かない（聞くと、手間を減らすための通し方に質問の往復が入る）。unmanned も同じ対象・同じ当てる条件で当てる。
+
+**途中で対象から外れたとき**: 仕様を書く途中か実装の途中で対象のどれかを満たさないと分かったら（新しい要件が要る・設計の選択が出た・2 つ以上の capability に広がった）、W は手を止めて return し、`通し方:` の行の無い仕様化判断を投稿し直してから artifact 一式を作り、R1 のレビューを受ける。R1 を一度起こした change は、あとから文言合わせの通し方に切り替えない（差し戻しを避ける手段にしないため）。
+
+**守備範囲**: 機械で止めるのは、pr-review-gate の合格処理が実測する 4 点（仕様宣言の形・archive 済みの差分がちょうど 1 ファイル・ADDED / REMOVED / RENAMED の見出しが無い・差分の要件名がすべて `直す文:` の行にある。正本は `skills/pr-review-gate/stages/pass.md` の手順 5）だけ。受け入れ条件と `直す文:` の行の突き合わせ、挙げた要件の中での書き換えすぎ、R1 の差し戻しのあとの切り替えは機械では止めない（見るのは実装後レビューと主）。
+
 ### 判定したら必ず記録する
 
-判定結果は記録先に `仕様化判断: する` / `仕様化判断: しない`（1 行目・完全一致）＋理由のコメントで残す。書式と照合規則の正本は `references/roles/spec-reviewer.md`「判断記録の契約」。
+判定結果は記録先に `仕様化判断: する` / `仕様化判断: しない`（1 行目・完全一致）＋理由のコメントで残す。書式と照合規則の正本は `references/roles/spec-reviewer.md`「判断記録の契約」。文言合わせの通し方を当てるときは、同じコメントの 2 行目以降に `通し方: 文言合わせ` の行と `直す文:` の行を足す（上の小節の「記録」）。
 
 ### どの判定でも変えないもの
 
@@ -38,6 +61,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 
 - **interactive モード**: W は本体に return し、本体が「これは仕様として残しますか、それともコード修正だけで済ませますか？」と聞く。
 - **unmanned モード**: 判断がつかない場合は**仕様化する側に倒す**（過剰な spec 化のコストより、無人ループが判断ミスで仕様の裏付けなしに振る舞いを変えるリスクの方が高い）。
+- **文言合わせの通し方を当てるかどうかで迷ったら**: どちらのモードでも主に聞かず、当てない側（artifact 一式と R1 のレビュー）に倒す。
 
 ## Step C: 単一 change か複数 change か
 
@@ -59,7 +83,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 - 受け入れ条件が多く、明確な順序依存を持つサブタスクに割れる（例: 「スキーマ変更 → API 実装 → UI 実装」のように前工程が終わらないと後工程が着手できない）
 - 1 実装サイクルで完結しない規模（loop-dev-agent の `size:large` 相当の分量）
 
-**境界の一言定義**: 「opsx change が2つ以上必要になりそうなら複数 change」。複数 change が独立してマージできる PR に割れるなら、`SKILL.md`「エピックの扱い」の条件にも当たる。
+**境界の一言定義**: 「opsx change が2つ以上必要になりそうなら複数 change」。複数 change が独立してマージできる PR に割れるなら、`references/epic.md`「エピックの扱い」の条件にも当たる。
 
 ### 複数 change に割れた場合の分割方法
 
@@ -70,7 +94,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 ### 割り方が判断できないほど曖昧な場合
 
 - **interactive モード**: W は本体に return し、本体が AskUserQuestion で聞く（例: 「issue に書かれている内容は、A と B の2つの独立した変更に見えます。分けて進めてよいですか、それとも1つの change として扱いますか？」）。
-- **unmanned モード**: Discord でユーザーに同様の質問を送る。返信を待つ間は `needs-approval` ラベルを付けて経緯を記録先にコメントし、そのサイクルは終了する。
+- **unmanned モード**: W は子 issue を作らず、質問文・理由と `needs-approval` を return に含め、記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return する。W は Discord（MCP・CLI とも）へ直接送信しない。本体が代理送信してサイクルを終了する手順は SKILL.md「実行モード」を参照。
 
 ## 残量モード `FABLE_BUDGET_MODE`
 
@@ -99,7 +123,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 
 Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。
 
-週次余裕を使う provider 選択では、Codex の週次 snapshot も Claude 側（起動 account の選択と codex-develop の Claude margin）も、取得からの経過時間では捨てない。どちらも後述の実効値（リセット時刻より前の値は取得からの経過時間によらず下限として使い、リセット時刻を過ぎた窓は 0% として読む）で判定する。Codex の snapshot は 7 日より先のリセット時刻も欠測にしない（余裕が負になるだけ）。
+週次余裕を使う provider 選択では、Codex の週次 snapshot も Claude 側も、取得からの経過時間では捨てない。どちらも後述の実効値を headroom（`scripts/headroom.py`）が数えた行で判定する（`cld` の起動 account は余りが最大のもの、codex-develop の margin は行の値）。Codex の snapshot は 7 日より先のリセット時刻も欠測にしない（余裕が負になるだけ）。
 
 ## コンテキスト上限（サブエージェントの手渡し）
 
@@ -146,7 +170,7 @@ W は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継�
 
 ### `FABLE_BUDGET_MODE` の自動導出（セッション記録と usage snapshot 契約）
 
-使用量の主な情報源はステータスラインが描画のたびに書く起動アカウント別のセッション記録（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`。5 時間枠と全体の週次）で、`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から書く `~/.claude/.usage-snapshot`（schema 2。スロット別に `fable_weekly_pct` / `weekly_resets_epoch` などを含む JSON）は、Fable 週次と記録の無いアカウントを埋める補助である。probe は、記録が無い・記録が 3 時間（`USAGE_PROBE_STALE`）より古い、または snapshot の `fetched_at` が 3 時間より古い（無い場合を含む）スロットだけを叩き、前回の試行から 3 時間（`USAGE_PROBE_INTERVAL`）は叩かない。429 が続くスロットは待ちを倍々に延ばす（上限 1 日）。試行は結果にかかわらず `~/.claude/.usage-probe-state` に記録し、`~/.claude/.usage-probe.lock` でマシン全体 1 本に絞る。fail-open はスロット単位（失敗したスロットは前回値を引き継ぎ、全スロット失敗なら snapshot を書かない）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、active スロットの実効値からモードを導出して残量ブロックを文脈に注入する。
+使用量の主な情報源はステータスラインが値の変わった描画で書く起動アカウント別のセッション記録（`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`。5 時間枠と全体の週次）で、`scripts/usage-probe.sh` が OAuth usage API（`/api/oauth/usage`）から書く `~/.claude/.usage-snapshot`（schema 2。スロット別に `fable_weekly_pct` / `weekly_resets_epoch` などを含む JSON）は、Fable 週次と記録の無いアカウントを埋める補助である。probe は、記録が無い・記録が 3 時間（`USAGE_PROBE_STALE`）より古い、または snapshot の `fetched_at` が 3 時間より古い（無い場合を含む）スロットだけを叩き、前回の試行から 3 時間（`USAGE_PROBE_INTERVAL`）は叩かない。429 が続くスロットは待ちを倍々に延ばす（上限 1 日）。試行は結果にかかわらず `~/.claude/.usage-probe-state` に記録し、`~/.claude/.usage-probe.lock` でマシン全体 1 本に絞る。fail-open はスロット単位（失敗したスロットは使用率などの前回値を引き継ぐが、試行して失敗したスロットの `reset_grants` は引き継がずに除く。全スロット失敗なら snapshot を書かないが、除く `reset_grants` があるときはその欄だけを除いて書き直す）。`scripts/session-tripwires.sh` が SessionStart 毎にこの probe を best-effort 実行し、active スロットの実効値からモードを導出して残量ブロックを文脈に注入する。
 
 実効値は `scripts/usage_view.py` の 1 か所で求める（`select-account.sh`・`agent-model-guard.sh`・`codex-develop.py` も同じ実装を使う）。取得からの経過時間で値を捨てず、リセット時刻より前の値は下限としてそのまま使い、リセット時刻を過ぎた値は 0% とみなす。記録と snapshot の両方にあるときは、同じ窓なら取得時刻の新しい方を取る（手動リセットで使用率は同じ窓のまま下がりうるため。取得時刻が等しい・片方無しなら大きい方）。規則の正本は openspec の `usage-session-records`「記録と snapshot から実効値を求める」。
 
@@ -169,4 +193,4 @@ W は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継�
 
 - `docs/agent-loop.md` の有無 — これは loop-dev-agent（無人ループ）が導入済みかどうかの判定材料であり、wt-setup 済みかどうかや仕様化要否の判定には使わない。
 - issue に付いているラベルの種類 — `agent-ready` 等のラベルは loop-dev-agent 側の運用状態を表すものであり、Step B・Step C の判定基準そのものではない（unmanned モードで呼ばれた時点で、着手可否の判定は既に呼び出し側=loop-dev-agent の Step 0.9 が済ませている）。`size:large` は「分割の方向性を人間に委ねる」印で、分割判定の入力ではない。
-- issue 本文の長さ・チェックリスト数・言及ファイル数 — 旧実行戦略の入力だったが、分割判定は記録先の記述内容で行う。
+- issue 本文の長さ・チェックリスト数・言及ファイル数 — 分割判定の入力にしない。分割判定は記録先の記述内容で行う。

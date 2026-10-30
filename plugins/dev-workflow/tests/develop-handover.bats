@@ -2,7 +2,8 @@
 #
 # 保留で止まるときの引き継ぎと、新しいセッションでの再開（issue #515）
 #
-#   skills/develop/SKILL.md                     引き継ぎの書式・投稿順・手渡し可否・再開手順・守備範囲
+#   skills/develop/references/handover.md      引き継ぎの書式・投稿順・手渡し可否・再開手順・守備範囲（#1220 で SKILL.md から移した）
+#   skills/develop/SKILL.md                     移設先を Read する案内と、他の節から移設先への参照
 #   commands/develop.md                         引き継ぎのある記録先の入口
 #   skills/pr-review-gate/stages/hold.md        手順 6 の依頼文の案内（項目一覧は持たない）
 #
@@ -11,14 +12,15 @@
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
   COMMAND="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
 }
 
 # 引き継ぎの節（見出し「## 保留で止まるときの引き継ぎ」から次の ## まで）
-handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")==1{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
+handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")==1{f=1; print; next} /^## /{f=0} f' "$HANDOVER"; }
 
-@test "handover: SKILL.md has the handover section with the one-line header regex" {
+@test "handover: handover.md has the handover section with the one-line header regex" {
   [ -n "$(handover_section)" ]
   handover_section | grep -qF '^引き継ぎ: 主の返事待ち$'
   [ "$(grep -c '引き継ぎ' "$SKILL")" -ge 1 ]
@@ -82,8 +84,8 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 }
 
 @test "loop: the hold row and the token-cap exit 2 point to the handover section" {
-  grep -n '保留 → needs-approval' "$SKILL" | grep -qF '保留で止まるときの引き継ぎ'
-  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF '保留で止まるときの引き継ぎ'
+  grep -n '保留 → needs-approval' "$SKILL" | grep -qF 'references/handover.md'
+  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'references/handover.md'
 }
 
 @test "command: an existing handover comment routes to the resume steps regardless of the label" {
@@ -101,4 +103,35 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 
 @test "loop: the token-cap exit 2 puts the label where the handover's label target says (PR if any, else the record)" {
   awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'PR があれば PR、無ければ記録先に `needs-approval` を付け'
+}
+
+@test "handover (#721): guidance accepts a conversation reply or /develop args without a PR comment" {
+  s="$(handover_section)"
+  printf '%s' "$s" | grep -qF '/develop <記録先> 許容する'
+  printf '%s' "$s" | grep -qF 'PR へのコメントは要らない'
+}
+
+@test "handover (#721): resume step 2 passes session id, timestamp and text to the G" {
+  handover_section | grep '^2\. ' | grep -qF 'CLAUDE_CODE_SESSION_ID'
+}
+
+# 保留の依頼の出し直し（issue #724）
+@test "resend: with no new information a repeated notice does not rewrite the request" {
+  handover_section | grep -qF '**依頼の出し直し**'
+  handover_section | grep -qF '新しい情報が無ければ'
+  handover_section | grep -qF '書き直さない'
+  handover_section | grep -qF '「変化なし」の 1 行'
+  # 具体例（何を新しい情報とみなすか）
+  handover_section | grep -qF '新しい情報とみなす例'
+  handover_section | grep -qF '新しい情報とみなさない例'
+}
+
+@test "resend: with new information the full request is rewritten and the earlier message is not pointed at" {
+  handover_section | grep -qF '依頼の全文'
+  handover_section | grep -qF '`~/.claude/output-styles/readable.md` の節 3 の型の全文とリンク'
+  handover_section | grep -qF '前のメッセージを指さない'
+}
+
+@test "resend: the gate hold line in the loop points at the resend rule" {
+  grep -F '保留 → needs-approval のまま' "$SKILL" | grep -qF '依頼の出し直し'
 }

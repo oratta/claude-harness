@@ -65,7 +65,7 @@ gh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除
 
 **迷ったら full に倒す（fail-closed）。「判断がつかない」は light の理由にならない。** 誤りは片側だけ危険で、full を light にすると重い変更が独立性の低いレビューで auto-merge に乗るのに対し、light を full にした損失は待ち時間だけ。
 
-**light で変わるのはレビュー実行者だけで、免除される工程は無い** — 実装と別コンテキストであること・手順3のリスク宣言・手順4の動作確認証拠・手順5の HEAD SHA 照合と合格前の API 実測・下の収束ルールはすべてそのまま適用する。
+**light で変わるのはレビュー実行者だけで、免除される工程は無い** — 実装と別コンテキストであること・手順3のリスク宣言・手順4の動作確認証拠・手順5の HEAD SHA 照合と合格前の API 実測・収束ルール（stages/triage.md）はすべてそのまま適用する。
 
 **区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `plugins/dev-workflow/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。パス順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。入力は `gh api repos/$R/pulls/$N/files --paginate --jq '.[] | "\(.additions + .deletions)\t\(.filename)"' | plugins/dev-workflow/scripts/review-partitions.sh`。入力エラーで exit 2 なら止め、区画を推測しない。区画に分けるのは Claude のレビュアーだけで、Codex には差分全体を渡す。二周目以降の差分限定レビューと方式書き換え後の全体レビューには区画を使わない。従来経路で Task サブエージェントを起こす側も同じスクリプトを使う。
 
