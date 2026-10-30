@@ -2,7 +2,9 @@
 
 ## Purpose
 `/cost` の入力解釈と出力の契約。番号が PR か issue かを GitHub に問い合わせて振り分け、issue の経路は実行した作業ディレクトリのリポジトリで絞る。出力の 1 行目は後続のゲート連携がそのまま PR に貼れる固定書式にする。
+
 ## Requirements
+
 ### Requirement: `/cost <番号>` の入力解釈
 システムは `/cost <番号>` を受け取り、その番号が PR か issue かを GitHub に問い合わせて判別 SHALL する。PR ならその PR のヘッドブランチのコストを、子 issue を持たない issue ならその issue を触った区間のコスト合計と、その issue を閉じた PR の分を合わせた合計（閉じた PR があるとき）を、子 issue を持つ issue なら「子 issue を持つ issue では、子 issue ごとの内訳と合計を返す」が定める合計と内訳を返 MUST す。子 issue を持つかどうかは、番号の判別に使う issue の問い合わせ（REST の `repos/{owner}/{repo}/issues/<番号>`）の応答の `sub_issues_summary.total` が 1 以上かどうかで決め SHALL、判別のための `gh` の呼び出しを増やしてはなら MUST NOT ない。この値が応答に無いか整数として読めないときは、子 issue を持たない issue として扱 MUST う。
 
@@ -312,3 +314,13 @@ PR の経路はブランチ名だけで引いて SHALL よい。PR のヘッド�
 - **WHEN** 子 issue を持たない issue #12 と、PR #300 に、それぞれ `cost_ledger.py cost <番号>` を実行する
 - **THEN** `gh` が呼ばれた回数は issue が 3 回（うち GraphQL は閉じた PR の問い合わせの 1 回）、PR が 1 回で PR の GraphQL は 0 回
 
+### Requirement: 未知モデルの行は利用者に見せる
+`commands/cost.md` は、`cost_ledger.py` の出力に `未知モデル:` で始まる行があるとき、1 行目に続けてその行も利用者に見せるよう指示 SHALL する（1 行目だけを見せる既存の指示のままでは、単価が引けず 0 円として扱った分が利用者に届かず、額が黙って小さく出る）。会話ログに現れる `<synthetic>`（API 呼び出しを伴わず、トークンが 0 の行）だけが未知モデルなら、額に影響しない旨を添え MUST る（行そのものは消さない。branch の出力を変えないため）。PR に貼るのは引き続き 1 行目だけ。
+
+#### Scenario: cost.md が未知モデルの行を見せる指示を持つ
+- **WHEN** `commands/cost.md` の「出力の扱い」を調べる
+- **THEN** `未知モデル:` の行があれば 1 行目に続けてその行も利用者に見せる旨の指示があり、PR に貼るのは 1 行目だけである旨が保たれている
+
+#### Scenario: `<synthetic>` は額に影響しないと添える
+- **WHEN** `commands/cost.md` の「出力の扱い」を調べる
+- **THEN** `<synthetic>` だけなら額に影響しない旨の添え書きがある
