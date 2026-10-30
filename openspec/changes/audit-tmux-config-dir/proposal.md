@@ -18,4 +18,4 @@
 
 ## Impact
 
-`plugins/dev-workflow/scripts/subagent-context-audit.sh`、`plugins/dev-workflow/scripts/epic-launch-tmux.sh`、`tests/`。`CLAUDE_CONFIG_DIR` 未設定時の挙動は変わらない。
+`plugins/dev-workflow/scripts/subagent-context-audit.sh`、`plugins/dev-workflow/scripts/epic-launch-tmux.sh`、`plugins/dev-workflow/tests/subagent-context-audit.bats`、`plugins/dev-workflow/tests/epic-launch-tmux.bats`。`CLAUDE_CONFIG_DIR` 未設定時の挙動は変わらない。
