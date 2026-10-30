@@ -96,3 +96,25 @@ check_shell() {
   [ "$status" -eq 0 ] || { echo "status $status: $output"; return 1; }
   [ "$output" = "CL=$root/scripts/cost_ledger.py" ] || { echo "$output"; return 1; }
 }
+
+@test "cost zsh: candidates are tried in order: oratta-claude-harness, older marketplaces dir, installed (#1480)" {  # 固定候補が名前順で先の旧 dir より先。無ければ glob、それも無ければ installed
+  local sh shells m="$HOME_DIR/.claude/plugins/marketplaces" want
+  shells="bash"; command -v zsh >/dev/null && shells="bash zsh"
+  fake "$m/aaa-stale/plugins/cost-ledger/scripts"
+  fake "$m/oratta-claude-harness/plugins/cost-ledger/scripts"
+  fake "$HOME_DIR/.claude/plugins/installed/x/cost-ledger/scripts"
+  for sh in $shells; do
+    run_in "$sh"
+    [ "$output" = "CL=$m/oratta-claude-harness/plugins/cost-ledger/scripts/cost_ledger.py" ] || { echo "$sh fixed: $output"; return 1; }
+  done
+  rm -rf "$m/oratta-claude-harness"
+  for sh in $shells; do
+    run_in "$sh"
+    [ "$output" = "CL=$m/aaa-stale/plugins/cost-ledger/scripts/cost_ledger.py" ] || { echo "$sh glob: $output"; return 1; }
+  done
+  rm -rf "$m/aaa-stale"
+  for sh in $shells; do
+    run_in "$sh"
+    [ "$output" = "CL=$HOME_DIR/.claude/plugins/installed/x/cost-ledger/scripts/cost_ledger.py" ] || { echo "$sh installed: $output"; return 1; }
+  done
+}

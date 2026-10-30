@@ -16,6 +16,7 @@ plugin_root="${CLAUDE_PLUGIN_ROOT}"
 DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
 for dir in \
   "${plugin_root:+$plugin_root}" \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow \
   ~/.claude/plugins/installed/*/dev-workflow; do
   [ -n "$dir" ] && [ -f "$dir/references/ci-watch.md" ] && echo "$dir" && break
