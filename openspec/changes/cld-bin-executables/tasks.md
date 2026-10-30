@@ -5,7 +5,7 @@
 
 ## 2. epic-dispatch.sh の既定
 
-- [ ] 2.1 `EPIC_DISPATCH_CLAUDE_CMD` 未設定時の既定を `bin/cld` の絶対パス（単一引用符で包む。無ければ `cld`）にし、52 行目のコメントを直す。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:52-52`、`plugins/dev-workflow/scripts/epic-dispatch.sh:444-446`
+- [ ] 2.1 `agent_setup` で、親の環境の `CLD_DEFAULT_ARGS`（非空）を `shq` で包んだ代入として起動コマンドの `EPIC_DISPATCH_PARENT_EPIC=` の前に付ける（`agent_cmd` と `agent_cmd_for` の両方。`launch` と `reply` が通る）。`EPIC_DISPATCH_CLAUDE_CMD` 未設定時の既定を `bin/cld` の絶対パス（単一引用符で包む。無ければ `cld`）にし、52 行目のコメントを直す。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:52-52`、`plugins/dev-workflow/scripts/epic-dispatch.sh:444-454`
 
 ## 3. 文書
 
