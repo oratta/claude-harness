@@ -91,6 +91,20 @@ cd claude-harness
 claude --plugin-dir ./plugins/<変更したプラグイン>
 ```
 
+### 開発用 clone の場所（`CLAUDE_HARNESS_DEV_DIR`）
+
+環境変数 `CLAUDE_HARNESS_DEV_DIR` は、上の開発用 clone の場所を指す。harness を直すときに worktree をその clone から生やすので、未設定だとその手順が止まる。未設定のまま harness のリポジトリでセッションを始めると、`worktree` プラグインが 1 行の警告を出す（セッションは止まらない。harness を直さない人には何も出ない）。
+
+`~/.claude/settings.json` の `env` に、自分の clone の絶対パスを入れる。既に `env` がある場合は、他の値を消さずに 1 行足す。
+
+```json
+{
+  "env": {
+    "CLAUDE_HARNESS_DEV_DIR": "/path/to/claude-harness"
+  }
+}
+```
+
 ### 新しいプラグインを追加
 
 ```bash
