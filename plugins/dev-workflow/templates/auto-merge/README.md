@@ -93,7 +93,7 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
 
    auto-merge は「LLM が `gh pr merge` や main への直接 push を**しない**」ことを前提にした仕組みで、
    その前提を守るのは Claude Code の permissions deny（ハーネスが実行前にブロックする層）。
-   テンプレートの `.claude/settings.json` にある deny リスト 7 件を、展開先の `.claude/settings.json` に
+   テンプレートの `.claude/settings.json` にある deny リスト 25 件（既存 7 件 + 追加 18 件）を、展開先の `.claude/settings.json` に
    **既存の deny を消さずに**足す:
 
    ```sh
