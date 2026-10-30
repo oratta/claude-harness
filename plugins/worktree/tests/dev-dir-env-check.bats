@@ -24,15 +24,15 @@ run_in() { # $1=dir ; env passed by caller
   unset CLAUDE_HARNESS_DEV_DIR
   run_in "$HARNESS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]]
-  [[ "$output" == *README* ]]
+  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]] || return 1
+  [[ "$output" == *README* ]] || return 1
   python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert "\n" not in d["systemMessage"]' "$output"
 }
 
 @test "empty string counts as unset" {
   CLAUDE_HARNESS_DEV_DIR="" run_in "$HARNESS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]]
+  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]] || return 1
 }
 
 @test "set (even to a nonexistent path): silent" {
@@ -67,15 +67,15 @@ run_in() { # $1=dir ; env passed by caller
   unset CLAUDE_HARNESS_DEV_DIR
   mkdir -p "$HARNESS/sub"
   run_in "$HARNESS/sub"
-  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]]
+  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]] || return 1
 }
 
 @test "script is executable, passes bash -n, and is wired in hooks.json" {
   [ -x "$CHECK_SH" ]
   run bash -n "$CHECK_SH"
   [ "$status" -eq 0 ]
-  run grep -c 'dev-dir-env-check.sh' "$HOOKS_JSON"
-  [ "$output" -ge 1 ]
+  run jq '[.hooks.SessionStart[].hooks[].command | select(contains("dev-dir-env-check.sh"))] | length' "$HOOKS_JSON"
+  [ "$output" = "1" ]
 }
 
 # python3 の隔離（#847 の決まり）: 作業ディレクトリと PYTHONPATH の偽 json.py を読まない
@@ -89,11 +89,11 @@ run_in() { # $1=dir ; env passed by caller
   cp "$FAKE/json.py" "$HARNESS/json.py"
   run_in "$HARNESS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]]
+  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]] || return 1
   [ ! -e "$FAKE_MARKER" ]
   # PYTHONPATH に置く
   PYTHONPATH="$FAKE" run_in "$HARNESS"
   [ "$status" -eq 0 ]
-  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]]
+  [[ "$output" == *CLAUDE_HARNESS_DEV_DIR* ]] || return 1
   [ ! -e "$FAKE_MARKER" ]
 }

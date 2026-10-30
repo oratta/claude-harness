@@ -25,7 +25,7 @@ except Exception:
 if name != "oratta-claude-harness":
     sys.exit(0)
 msg = ("環境変数 CLAUDE_HARNESS_DEV_DIR（harness の開発用 clone の場所）が未設定です。"
-       "worktree を切る手順が止まるので、README の「ローカル開発」の節を見て ~/.claude/settings.json の env に入れてください。")
+       "別のプロジェクトから harness を直す手順が止まるので、README の「ローカル開発」の節を見て ~/.claude/settings.json の env に入れてください。")
 print(json.dumps({"systemMessage": msg}, ensure_ascii=False))
 ' 2>/dev/null || true
 
