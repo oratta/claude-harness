@@ -62,6 +62,35 @@ assert s=={"id":"b","label":"B","securestorage":sys.argv[2]}, s
   [ ! -e "${CLAUDE_ACCOUNTS_FILE}.bak" ]
 }
 
+@test "add: without --label on a missing registry writes label = id and schema 1" {
+  run "$CMD" add b
+  [ "$status" -eq 0 ]
+  run python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert d["schema"]==1, d
+assert d["accounts"]==[{"id":"b","label":"b","securestorage":sys.argv[2]}], d
+' "$CLAUDE_ACCOUNTS_FILE" "${CLAUDE_ACCOUNTS_HOME}/b"
+  [ "$status" -eq 0 ]
+}
+
+@test "add: to a non-empty registry appends at the end, keeps existing slots, and .bak is the registry before" {
+  write_registry
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  run "$CMD" add d --label D
+  [ "$status" -eq 0 ]
+  cmp "${CLAUDE_ACCOUNTS_FILE}.bak" "${WORK}/before"
+  run python3 -c '
+import json,sys
+old=json.load(open(sys.argv[1]))
+new=json.load(open(sys.argv[2]))
+assert new["accounts"][:-1]==old["accounts"], new
+assert new["accounts"][-1]=={"id":"d","label":"D","securestorage":sys.argv[3]}, new
+assert len(new["accounts"])==len(old["accounts"])+1, new
+' "${WORK}/before" "$CLAUDE_ACCOUNTS_FILE" "${CLAUDE_ACCOUNTS_HOME}/d"
+  [ "$status" -eq 0 ]
+}
+
 @test "add: an existing id exits 2, leaves the registry and does not create the directory" {
   write_registry
   cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
@@ -139,12 +168,19 @@ PY
   [ "$status" -eq 0 ]
 }
 
-@test "off: the credential directory is not removed" {
-  write_registry
-  mkdir -p "${CLAUDE_ACCOUNTS_HOME}/b"
+@test "off then on: the credential directory of the slot itself is not removed" {
+  run "$CMD" add b --label B
+  [ "$status" -eq 0 ]
+  [ -d "${CLAUDE_ACCOUNTS_HOME}/b" ]
+  touch "${CLAUDE_ACCOUNTS_HOME}/b/credential"
   run "$CMD" off b
   [ "$status" -eq 0 ]
   [ -d "${CLAUDE_ACCOUNTS_HOME}/b" ]
+  [ -f "${CLAUDE_ACCOUNTS_HOME}/b/credential" ]
+  run "$CMD" on b
+  [ "$status" -eq 0 ]
+  [ -d "${CLAUDE_ACCOUNTS_HOME}/b" ]
+  [ -f "${CLAUDE_ACCOUNTS_HOME}/b/credential" ]
 }
 
 @test "on/off: an unknown id exits 2 and leaves the registry" {
