@@ -9,7 +9,7 @@
 ## 2. 検査
 
 - [x] 2.1 印の形・置き場 3 か所・工程名 11 語・時刻を書かないこと・再開される W の description に `工程=` `試行=` を書かず再開の指示文の先頭に印を置くこと・G の工程を名前の段から決めること・G が要求したレビュアーを `impl-review` とすること・G の試行は名前の `<n>` でなく手渡しで増やさないことを検査する bats を足す。触る範囲: `plugins/dev-workflow/tests/develop-skill.bats`（「token budget:」の既存テスト 555 行付近の後）
-- [ ] 2.2 `scripts/test.sh` が exit 0 であることを確かめる
+- [x] 2.2 `scripts/test.sh` が exit 0 であることを確かめる
 
 ## 3. 実機確認（マージ前）
 
