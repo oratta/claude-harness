@@ -57,6 +57,16 @@ MARGINS = {'auto:claude-write-codex-review': (20, 10),
 class ModelResolutionCurrent(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
+        # Keep the independently collected cases and the documented triple rows aligned.
+        document = SCRIPT.parents[1] / 'references/model-resolution-current.md'
+        rows = [line.split('|')[1:4] for line in document.read_text().splitlines()
+                if line.startswith('| ') and line.split('|')[1].strip() in ROLES
+                and line.split('|')[2].strip() in EXPECTED]
+        keys = [tuple(cell.strip() for cell in row) for row in rows]
+        expected_keys = {(role, config, f'{fable}/{shared}') for role, config, fable, shared
+                         in itertools.product(ROLES, EXPECTED, FABLE_MODES, SHARED_MODES)}
+        assert len(keys) == 672 and set(keys) == expected_keys
+        assert ROLES == m.CANONICAL_ROLES
         cls.temp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         cls.root = Path(cls.temp.name).resolve()
