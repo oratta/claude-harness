@@ -194,6 +194,15 @@ refute() {
   echo "$loop" | grep -qF '`次の段:` どおりの G を新しく起こして再レビュー'
 }
 
+@test "loop: G failed lists all 4 cause classes and keeps W as is for stage A only (#1014)" {
+  loop="$(section '1 ループ')"
+  # G の return（triage.md）の 4 値と本体の列挙が揃っている
+  echo "$loop" | grep -qF '原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））'
+  ! echo "$loop" | grep -qF '／レビュアーの誤検出）' || return 1
+  # 本体は triage.md を読まないので、4 つ目の値の戻し方をここで引ける
+  echo "$loop" | grep -qF '段 A だけなら W を据え置きで再開する'
+}
+
 @test "loop: W is spawned by name, resumed via SendMessage, and never needs grandchildren" {
   loop="$(section '1 ループ')"
   echo "$loop" | grep -q '名前付き'

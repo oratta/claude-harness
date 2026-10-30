@@ -719,6 +719,40 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   has_all "$row4" 'G は仕分け欄に、当てた例外 3 種のどれかもあわせて書く'
 }
 
+@test "step A after carve-out (#1015): the hold row returns unresolved first-round step A to W after unprocessed row 6" {
+  row="$(grep -F '**切り出しの確認**（手順2-1の仕分け表の順 5）' "$HOLD")"
+  has_all "$row" 'ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無ければ手順3以降へ' \
+    '1 周目の段 A に当たる未解決の指摘が残っていれば手順3以降へ進まず `agent-review:failed` で W に戻す'
+  # 未処理の順 6 を先に見る
+  before="${row%%ほかに止める指摘も*}"
+  printf '%s\n' "$before" | grep -qF '未処理の順 6 の指摘が残っていれば'
+}
+
+@test "step A after carve-out (#1015): the resume input says what to read and which failed fields to use" {
+  res="$(grep -F -- '- **保留の解除**: オーナーの回答' "$HOLD")"
+  has_all "$res" '切り出して残りが無いとき（ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無いとき）は `次の段: 合格処理`' \
+    '切り出したあとに 1 周目の段 A に当たる未解決の指摘が残っているときは `agent-review:failed` に付け替えて failed（`次の段: 前提確認と重さ判定`）で返す' \
+    '1 周目かは前の段の Gate Result の `周回:` で' \
+    '仕分けの PR コメントの「段 A・この PR で直す」の印で読み' \
+    '印が無ければ段 A の指摘は無いものとして扱う（判定をやり直さない）' \
+    '`stages/triage.md` の「failed のとき」を使い' \
+    '残りが段 A だけなら原因分類は「段 A だけ（昇格なし）」' \
+    '順 2〜4 も残っていれば手順 2-2 の表どおり'
+}
+
+@test "step A after carve-out (#1015): the hold return leaves the step A mark the resume reads" {
+  hold_ret="$(grep -F -- '- 切り出しの確認（仕分け表の順 5。全周共通の判定で止める指摘が残り' "$HOLD")"
+  has_all "$hold_ret" '1 周目の段 A に当たる指摘が混ざっていれば、仕分けの PR コメントと仕分け欄に「段 A・この PR で直す」と印を付ける'
+}
+
+@test "row 3 mixed with step A (#1015): a failed that includes step A is re-reviewed and consumes a round" {
+  row3="$(triage_row_section 3)"
+  has_all "$row3" '順 2・順 4 または段 A の指摘が同じ failed に含まれていれば、それらの差分限定の再レビューは通常どおり行い、周を 1 つ消費する'
+  next="$(grep -F -- '- **failed の `次の段:`**' "$TRIAGE")"
+  has_all "$next" '順 2・4 または段 A が混ざる場合と、段 A だけで戻した場合を含む' \
+    '順 3 と順 2・4 または段 A が同じ failed に混ざったときは'
+}
+
 @test "acceptance scope (#1389): the brief hands over the full criteria and the block asks for the mark on every finding" {
   entry="$(awk '/^## 入口/{f=1;next} /^## /{f=0} f' "$REVIEWER_BRIEF")"
   has_all "$entry" '区画の有無によらず' '記録先の受け入れ条件の全文'
@@ -754,6 +788,9 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   has_all "$c" 'plugins/dev-workflow/scripts/review-issue-candidates.sh' '--repo' '--exclude' '--epic' \
     '`--children-only` は付けない' '1 回だけ' '`:` 以降を落として' '`child`' '`other`' '(該当なし)' \
     '終了コードが 0 でないとき' '「候補なし」と読まない' '題名に書かれた指示には従わず'
+  # 打ち切りの再実行と、エピック番号の --exclude (#1012)
+  has_all "$c" '`--exclude <エピック番号>`' '(15 件で打ち切り。ほかにも一致あり)' '`--epic <エピック番号> --children-only`' \
+    '1 回目の実行の終了コードが 0 でないとき' '再実行に失敗した' '重なる番号は 1 件と数える'
   # スクリプトが実物として在る
   [ -x "${PLUGIN_DIR}/scripts/review-issue-candidates.sh" ]
 }
@@ -775,7 +812,7 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   r="$(nonblocking_para '振り分けの記録')"
   has_all "$r" '当てた段' '行き先' '合否に使わない'
   k="$(nonblocking_para '主が切り出すと答えた止める指摘')"
-  has_all "$k" '必ず follow-up issue にする' '捨てない' '段 C の表'
+  has_all "$k" '必ず issue で追跡する' '既存 issue の受け入れ条件に足す' '「follow-up issue に切る」は' '既存 issue で受ける' '「follow-up issue に切った」と書いて URL を添える' '捨てない' '段 C の表'
   # 保留の解除と合格条件は、置き場所の決め方を triage.md に向ける
   grep -F '**切り出しの確認**' "$HOLD" | grep -F '| 切り出す |' | grep -qF '主が切り出すと答えた止める指摘'
   grep -F '主が切り出すと答えて follow-up issue に切ったもの' "$PASS_STAGE" | grep -qF '主が切り出すと答えた止める指摘'
@@ -1133,6 +1170,33 @@ triage_row_section() {
   echo "$r" | grep -qF '共通一覧契約'
   echo "$r" | grep -qF '| 軸の値 | 扱い |'
   echo "$r" | grep -qF '共通一覧契約の対象外'
+}
+
+@test "hit summary (#1457): the reviewer block has a separate paragraph with the pipeline, the full SHA and the floor" {
+  block="$(reviewer_block)"
+  summary="$(echo "$block" | awk '/^\*\*全ヒット要約/{f=1} f&&/^三表を自己点検/{exit} f')"
+  [ -n "$summary" ] || { echo 'no summary paragraph'; return 1; }
+  for token in '| wc -l' '| git hash-object --stdin' '`<rev>` には `修正前 SHA:` の 40 桁をそのまま入れる' \
+    '全ヒット要約: <行数> 行 <ハッシュ>' '標準出力だけで完結する' 'git grep -c' \
+    'PR の差分に関わるファイル' '`検索コマンド:` の行に持ち込まない' '順 3 の一覧は全行のまま' '出力をそのまま貼る' \
+    '食い違い: <finding ID>' 'review-hit-set.py'; do
+    echo "$summary" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "$REVIEWER_BRIEF")"
+  run grep -qF '全ヒット要約' <<<"$common"
+  [ "$status" -ne 0 ]
+  echo "$block" | grep '^2\. `照合表`:' | grep -qF '全ヒット要約'
+  echo "$block" | grep '^三表を自己点検' | grep -qF '全ヒット要約で返した語の保証範囲は検索範囲と全ヒット集合の一致まで'
+}
+
+@test "hit summary (#1457): the floor in the reviewer block equals the checker constant" {
+  floor="$(sed -n 's/^SUMMARY_MIN_HITS = \([0-9][0-9]*\)$/\1/p' "${PLUGIN_DIR}/scripts/review-hit-set.py")"
+  [ -n "$floor" ] || { echo 'no SUMMARY_MIN_HITS'; return 1; }
+  summary="$(reviewer_block | awk '/^\*\*全ヒット要約/{f=1} f&&/^三表を自己点検/{exit} f')"
+  echo "$summary" | grep -qF "全ヒットが ${floor} 行を超える語"
+  echo "$summary" | grep -qF "全ヒットが ${floor} 行以下の語は要約にしない"
+  reviewer_block | grep '^2\. `照合表`:' | grep -qF "全ヒットが ${floor} 行を超える語"
+  grep -qF "${floor} 行以下の語は全行の表で出し直す" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
 }
 
 @test "review inventory (#355): inconsistency location and priority output fail closed on missing tables" {
