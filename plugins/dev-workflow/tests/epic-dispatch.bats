@@ -7071,6 +7071,95 @@ log_resolve_ready() {
   [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: u1" ]
 }
 
+# --- dismiss ---
+# spec: dev-workflow-develop（親は問いでない止まりを dismiss で再開に戻す）
+
+@test "dismiss: a received stop goes back to resumed, keeps the uuid and time, and sends nothing" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=u1 stop_at=2026-10-26T00:00:00Z
+  run dispatch dismiss 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "dismissed 11" ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(rec_get 11 stop_uuid)" = u1 ]
+  [ "$(rec_get 11 stop_at)" = 2026-10-26T00:00:00Z ]
+  [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^gh issue comment')" -eq 0 ]
+}
+
+@test "dismiss: a stop that was not received or has no uuid, and a child with no record, are skipped" {
+  make_stub orca
+  put_record 11 stop=stopped
+  put_record 12 stop=stopped-seen stop_uuid=
+  before="$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")"
+  run dispatch dismiss 11 12 13
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'skipped 11 not-stopped\nskipped 12 not-stopped\nskipped 13 not-stopped')" ]
+  [ "$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")" = "$before" ]
+}
+
+@test "dismiss: an unreadable record fails and is left as it is, and the other children still run" {
+  make_stub orca
+  put_record 11 stop=paused
+  put_record 12 stop=stopped-seen stop_uuid=u2
+  before="$(cat "$(rec_of 1122 11)")"
+  run dispatch dismiss 11 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'failed 11 state-unreadable\ndismissed 12')" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
+}
+
+@test "dismiss: two records for one child are ambiguous, and a locked record fails" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=u1
+  put_record 11 epic=oratta/claude-harness#1123 stop=stopped-seen stop_uuid=u1
+  run dispatch dismiss 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 ambiguous-worktree" ]
+  put_record 12 stop=stopped-seen stop_uuid=u2
+  mkdir "$(rec_of 1122 12).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch dismiss 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 12" ]
+  [ "$(rec_get 12 stop)" = stopped-seen ]
+}
+
+@test "dismiss: a bad child number prints usage, and no children is an error" {
+  make_stub orca
+  run dispatch dismiss x
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run dispatch dismiss
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "dismiss: the same statement is not judged again and is not pending" {
+  log_resolve_ready
+  put_record 11 stop=stopped-seen stop_uuid=u1
+  run dispatch dismiss 11
+  [ "$output" = "dismissed 11" ]
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "dismiss: the child is back in the done inference" {
+  infer_ready
+  put_record 11 extra=1 stop=stopped-seen stop_uuid=u1
+  run dispatch dismiss 11
+  [ "$output" = "dismissed 11" ]
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+  [ "$(rec_get 11 status)" = done ]
+}
+
 @test "child-log: no children or no jq is an error with empty stdout" {
   make_stub orca
   set_current 400

@@ -10,6 +10,7 @@
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
 #   epic-dispatch.sh reap <child>...
 #   epic-dispatch.sh pending-owner <child>...
+#   epic-dispatch.sh dismiss <child>...
 #   epic-dispatch.sh child-log [--last] <child>...
 #   epic-dispatch.sh adopt <epic> <child>...
 #   epic-dispatch.sh clear <epic>
@@ -168,6 +169,12 @@
 #   （親が受けたまま、子が mark resumed を付けていない）なら `pending <N>` を 1 行ずつ出して exit 0（記録も Orca の印も
 #   書かない）。読めない記録の子は飛ばす。起動し直した親が、主の返事待ちの子を出し直す対象を集める。
 #   jq が無い・今のワークツリーを読めなければ stdout 空で exit 1
+# dismiss: 親が問いでないと判断した止まりを戻す。子ごとに、今のワークツリーを parent_worktree に持つ記録を探し、
+#   排他の中で stop が stopped-seen で stop_uuid が空でないことを確かめて stop を resumed に書き、Orca の印へ写して
+#   `dismissed <N>` を出す（stop_uuid・stop_at は変えない）。それ以外は `skipped <N> not-stopped`、読めない記録は
+#   `failed <N> state-unreadable`、2 件以上は `failed <N> ambiguous-worktree`、書けなければ `failed <N>`。
+#   failed があれば exit 1、無ければ exit 0。子にも issue にも送らない。jq が無い・今のワークツリーを読めなければ
+#   stdout 空で exit 1
 # adopt: 記録の無い子ごとに、`orca worktree list --json` の、repoId が今のワークツリーと同じ・linkedIssue が子・
 #   archive されていない・parentWorktreeId が今のワークツリーの id のワークツリーを探す。ちょうど 1 つなら path・
 #   branch と、workspaceStatus（completed → done、in-review → waiting、ほか → running）と comment（epic-stopped →
@@ -227,6 +234,7 @@ usage:
   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
   epic-dispatch.sh reap <child>...
   epic-dispatch.sh pending-owner <child>...
+  epic-dispatch.sh dismiss <child>...
   epic-dispatch.sh child-log [--last] <child>...
   epic-dispatch.sh adopt <epic> <child>...
   epic-dispatch.sh clear <epic>
@@ -1428,11 +1436,12 @@ record_log_json() {
   child_log_json "$(transcript_dir "$w")"
 }
 
-# 受けた止まり（stopped-seen）を再開に書き換え、Orca の印へ写す（<記録>）。stop_uuid・stop_at は変えない。
+# 受けた止まり（stopped-seen で stop_uuid がある）を再開に書き換え、Orca の印へ写す（<記録>）。stop_uuid・stop_at は変えない。
 # wait の再開の確かめ・--resolve の「問いではない」・dismiss が使う。戻り値は es_modify と同じ
 stop_to_resumed() {
   local f="$1" rc=0
-  es_modify "$f" 'if .stop == "stopped-seen" then .stop = "resumed" else empty end' >/dev/null 2>>"$errf" || rc=$?
+  es_modify "$f" 'if .stop == "stopped-seen" and (.stop_uuid // "") != "" then .stop = "resumed" else empty end' \
+    >/dev/null 2>>"$errf" || rc=$?
   [ "$rc" -ne 0 ] || mirror_state "$f" "$(es_get "$f" worktree)" resumed
   return "$rc"
 }
@@ -1704,6 +1713,31 @@ cmd_pending_owner() {
     [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] && echo "pending $n"
   done
   exit 0
+}
+
+cmd_dismiss() {
+  [ "$#" -ge 1 ] || usage
+  check_children "$@"
+  need_parent
+  local n rrc rc fail=0 errf=/dev/stderr
+  for n in "$@"; do
+    child_record "$PARENT_TOP" "$n"; rrc=$?
+    case "$rrc" in
+      0) ;;
+      2) echo "failed $n ambiguous-worktree"; fail=1; continue ;;
+      3) echo "failed $n state-unreadable"; fail=1; continue ;;
+      *) echo "skipped $n not-stopped"; continue ;;
+    esac
+    rc=0
+    stop_to_resumed "$ES_HIT" || rc=$?
+    case "$rc" in
+      0) echo "dismissed $n" ;;
+      2) echo "failed $n state-unreadable"; fail=1 ;;
+      4) echo "skipped $n not-stopped" ;;
+      *) echo "failed $n"; fail=1 ;;
+    esac
+  done
+  exit "$fail"
 }
 
 # 固定の声かけ文を共有定義から生成する。wait の送信と child-log の完全一致に同じ生成を使う。
@@ -2073,6 +2107,7 @@ case "$sub" in
   mark) cmd_mark "$@" ;;
   reap) cmd_reap "$@" ;;
   pending-owner) cmd_pending_owner "$@" ;;
+  dismiss) cmd_dismiss "$@" ;;
   child-log) cmd_child_log "$@" ;;
   adopt) cmd_adopt "$@" ;;
   clear) cmd_clear "$@" ;;
