@@ -14,6 +14,10 @@
 # 仕様: openspec の dev-workflow-model-switch-recache-notice
 set -uo pipefail
 
+# ファイルサイズ上限（ulimit -f）が小さい環境では、ヒアドキュメントの一時ファイルへの書き込みで SIGXFSZ が飛び、
+# シェルごと signal 終了（exit 153）になる。無視して書き込みの失敗（エラー）に落とし、下の空チェックで exit 0 にする。
+trap '' XFSZ
+
 command -v python3 >/dev/null 2>&1 || exit 0
 
 # Python 本体はヒアドキュメントで変数に読み、-c の引数で渡す。payload は stdin のまま読ませる
