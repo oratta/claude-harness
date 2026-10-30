@@ -2,6 +2,8 @@
 
 672 independently collected cases correspond to the rows in model-resolution-current.md.
 Expected tuples are literals: never read the profile JSON to derive this oracle.
+request does not read the two budget variables: its output has 56 distinct results, and the
+12-mode cells pin that insensitivity.
 """
 import importlib.util
 import itertools
@@ -52,6 +54,9 @@ EXPECTED = {
 # Feed provider evidence to the real automatic selector (no network or personal usage).
 MARGINS = {'auto:claude-write-codex-review': (20, 10),
            'auto:codex-standard': (-5, 30), 'auto:claude-default': (20, -5)}
+REASONS = {'auto:claude-write-codex-review': 'both-providers-have-headroom',
+           'auto:codex-standard': 'only-codex-has-headroom',
+           'auto:claude-default': 'only-claude-has-headroom'}
 
 
 class ModelResolutionCurrent(unittest.TestCase):
@@ -59,23 +64,29 @@ class ModelResolutionCurrent(unittest.TestCase):
     def setUpClass(cls):
         # Keep the independently collected cases and the documented triple rows aligned.
         document = SCRIPT.parents[1] / 'references/model-resolution-current.md'
-        rows = [line.split('|')[1:4] for line in document.read_text().splitlines()
-                if line.startswith('| ') and line.split('|')[1].strip() in ROLES
-                and line.split('|')[2].strip() in EXPECTED]
-        keys = [tuple(cell.strip() for cell in row) for row in rows]
+        text = document.read_text()
+        section = text.split('## request の全672ケース', 1)[1]
+        rows = [[cell.strip() for cell in line.split('|')[1:6]]
+                for line in section.splitlines() if line.startswith('| ')][1:]
+        keys = [(row[0], row[1], row[2]) for row in rows]
         expected_keys = {(role, config, f'{fable}/{shared}') for role, config, fable, shared
                          in itertools.product(ROLES, EXPECTED, FABLE_MODES, SHARED_MODES)}
         assert len(keys) == 672 and set(keys) == expected_keys
+        for row in rows:
+            executor, model = EXPECTED[row[1]][ROLES.index(row[0])]
+            assert row[3].split(' ')[0] == f'{executor}:{model}', row
         assert ROLES == m.CANONICAL_ROLES
         cls.temp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         cls.root = Path(cls.temp.name).resolve()
         cls.cwd = cls.root / 'repo'
         cls.cwd.mkdir()
-        subprocess.run(['git', 'init', '-q', str(cls.cwd)], check=True)
+        git_env = {'PATH': os.environ['PATH'], 'HOME': str(cls.root),
+                   'GIT_CONFIG_GLOBAL': os.devnull, 'GIT_CONFIG_NOSYSTEM': '1'}
+        subprocess.run(['git', 'init', '-q', str(cls.cwd)], check=True, env=git_env)
         subprocess.run(['git', '-C', str(cls.cwd), '-c', 'user.name=Test',
                         '-c', 'user.email=test@example.invalid', 'commit',
-                        '--allow-empty', '-qm', 'fixture'], check=True)
+                        '--allow-empty', '-qm', 'fixture'], check=True, env=git_env)
         cls.home = cls.root / 'home'
         cls.home.mkdir()
         cls.instructions = cls.root / 'input.txt'
@@ -97,7 +108,8 @@ def case(configuration, index, fable, shared, expected):
         claude_margin, codex_margin = MARGINS.get(configuration, (20, 10))
         with patch.dict(os.environ, {'FABLE_BUDGET_MODE': fable,
                                      'SHARED_BUDGET_MODE': shared,
-                                     'CLAUDE_CONFIG_DIR': str(self.root)}, clear=True), \
+                                     'CLAUDE_CONFIG_DIR': str(self.root),
+                                     'PATH': os.environ['PATH']}, clear=True), \
                 patch.object(sys, 'argv', args), \
                 patch.object(m, '_run_usage_probe'), \
                 patch.object(m, 'claude_usage_evidence', return_value={
@@ -107,6 +119,8 @@ def case(configuration, index, fable, shared, expected):
                 patch.object(m.usage_view, 'read_codex_enabled', return_value=True):
             result = m.main()
         self.assertEqual(result['selection']['configuration'], selected)
+        if automatic:
+            self.assertEqual(result['selection']['reason'], REASONS[configuration])
         self.assertEqual(result['selection']['selection_mode'], 'automatic' if automatic else 'explicit')
         self.assertEqual((result['executor'], result['model']), expected)
         self.assertEqual(result['role'], 'impl-review' if ROLES[index] == 'review' else ROLES[index])
