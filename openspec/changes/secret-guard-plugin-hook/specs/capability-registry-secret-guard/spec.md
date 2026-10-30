@@ -27,12 +27,16 @@ capability-registry は `hooks/hooks.json` の PreToolUse に、`Bash` と `Read
 
 ### Requirement: 検査の守備範囲
 
-検査の目的は、エージェントが値の出る形をそのまま書いたときに止めることで、セキュリティ境界ではない。受け取る入力は、Claude Code が PreToolUse で渡す Bash と Read の payload と、hook プロセスの環境変数 `CAPABILITY_REGISTRY_SECRET_GUARD` に限る。拾う型は、要件「値が画面に出る形を止める」に挙げた形をそのまま書いたものとする。次は通ることを許す: `Grep` など Bash と Read 以外のツール／ssh 越しの実行（`ssh host cat .env`）／スクリプトファイルの中の実行（`bash show.sh`）／別の言語からの読み出し（`python3 -c ...`）／シークレットらしくない名前の変数（`echo "$MY_VALUE"`）／変数に入れたパス（`cat "$F"`）。止めすぎる向きの既知の挙動（ヒアドキュメント本文の行をコマンドとして読む、`credentials.ts` の Read を止める）も変えてはならない（MUST NOT。正本は要件「値が画面に出ない使い方は止めない」の「判定は移す前の hook と同じ」）。穴が見つかるたびに塞ぎ切ることは完了条件にしない（MUST NOT）。
+検査の目的は、エージェントが値の出る形をそのまま書いたときに止めることで、セキュリティ境界ではない。受け取る入力は、Claude Code が PreToolUse で渡す Bash と Read の payload と、hook プロセスの環境変数 `CAPABILITY_REGISTRY_SECRET_GUARD` に限る。拾う型は、要件「値が画面に出る形を止める」に挙げた形をそのまま書いたものとする。次は通ることを許す: `Grep` など Bash と Read 以外のツール／ssh 越しの実行（`ssh host cat .env`）／スクリプトファイルの中の実行（`bash show.sh`）／別の言語からの読み出し（`python3 -c ...`）／シークレットらしくない名前の変数（`echo "$MY_VALUE"`）／変数に入れたパス（`cat "$F"`）。穴が見つかるたびに塞ぎ切ることは完了条件にしない（MUST NOT）。
 
 #### Scenario: 守備範囲の外の入力は通す
 
 - **WHEN** `ssh host cat .env`、`bash show.sh`、`echo "$MY_VALUE"`、`cat "$F"` を Bash の payload で渡す
 - **THEN** どれも exit 0 で何も出力しない
+
+### Requirement: 止めすぎる向きの既知の挙動を変えない
+
+止めすぎる向きの既知の挙動（ヒアドキュメント本文の行をコマンドとして読む、`credentials.ts` の Read を止める）を変えてはならない（MUST NOT。正本は要件「値が画面に出ない使い方は止めない」の「判定は移す前の hook と同じ」）。
 
 #### Scenario: 止めすぎる向きの既知の挙動も変えない
 

@@ -36,7 +36,7 @@ issue の方針案どおりにする。トークンと認証を扱うプラグ�
 
 ### スクリプトは薄い `.sh` と本体の `.py` の 2 本
 
-hooks.json には `"${CLAUDE_PLUGIN_ROOT}/scripts/secret-guard.sh"` を登録する。`.sh` は無効化のスイッチと python3 の有無を見て、`exec python3 -I` で隣の `secret-guard.py` を起動する。
+hooks.json には `"${CLAUDE_PLUGIN_ROOT}/scripts/secret-guard.sh"` を登録する。`.sh` は無効化のスイッチと python3 の有無を見て、`python3 -I` で隣の `secret-guard.py` を実行し、`exit 0` で終える。`exec` にしないのは、本体の `.py` が無いと python3 が exit 2 で終わり、hook の exit 2 が全 Bash と Read を止めるためである（fail-open の要件に反する）。
 
 - `.sh` なら python3 の隔離の検査（`tests/hook-python-isolation.bats`）の範囲に自動で入る
 - python3 が無い環境で、起動の失敗を hook のエラーとして出さず、黙って通せる

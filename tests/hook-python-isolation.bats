@@ -285,6 +285,26 @@ body_hook_payload() {
   [ "$output" = "$clean" ]
 }
 
+@test "#1233: capability-registry secret-guard does not load fake modules" {
+  local plugin="${REPO_ROOT}/plugins/capability-registry"
+  local guard="${plugin}/scripts/secret-guard.sh"
+  printf '%s' '{"tool_name":"Bash","tool_input":{"command":"echo \"$GH_TOKEN\""}}' > "${WORK}/payload.json"
+  run bash -c "'$guard' < '${WORK}/payload.json'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"permissionDecision"'* ]] || return 1
+  local clean="$output"
+
+  # 対照: -I なしの python3 なら偽物が読まれる（unisolated_copy は隣の .py を複製しないので本体を直に実行する）
+  run in_fake bash -c "python3 '${plugin}/scripts/secret-guard.py' < '${WORK}/payload.json'"
+  [ -s "$FAKE_MARKER" ] || { echo "対照で偽のモジュールが読まれない"; return 1; }
+  rm -f "$FAKE_MARKER"
+
+  run in_fake bash -c "'$guard' < '${WORK}/payload.json'"
+  [ "$status" -eq 0 ]
+  [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
+  [ "$output" = "$clean" ]
+}
+
 @test "#847: the fake modules are loaded by an unisolated python3 (control for the tests above)" {
   run in_fake python3 -c 'import json'
   [ "$status" -ne 0 ]
