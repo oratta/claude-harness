@@ -27,7 +27,7 @@ SECRET_VAR = re.compile(
     r"^[A-Z0-9_]*(TOKEN|SECRET|PASSWORD|PASSWD|API_?KEY|CREDENTIAL|PRIVATE_KEY|_PAT|_KEY)[A-Z0-9_]*$"
 )
 
-# ── シークレットらしいファイル ─────────────────────────────────────────────
+# ── シークレットらしいファイル（Read はファイル名だけに当てる。Bash はトークン全体） ──
 SECRET_FILE = re.compile(
     r"(\.token\b|\.env\b|\.env\.[a-z]+|credentials?\b|\.pem\b|id_rsa\b|id_ed25519\b"
     r"|\.netrc\b|\.npmrc\b|\.pgpass\b|service[-_]account[^\s]*\.json)",
@@ -173,7 +173,12 @@ def check_bash(cmd: str) -> None:
 
 
 def check_read(path: str) -> None:
-    if SECRET_FILE.search(path) and not SAFE_FILE.search(path):
+    # 判定はファイル名（最後の要素）だけで行う。親ディレクトリ名では止めない。
+    # Read は末尾に `/` を付けたパスでもファイルを読むので、先に取り除く。
+    name = path.rstrip("/").rsplit("/", 1)[-1]
+    if not name:
+        return
+    if SECRET_FILE.search(name) and not SAFE_FILE.search(name):
         deny(
             f"機密ファイルを Read すると中身が transcript に載ります: {path}\n"
             "値を含まないファイルの誤検知なら、利用者に hook の環境変数 CAPABILITY_REGISTRY_SECRET_GUARD=off を相談する。"

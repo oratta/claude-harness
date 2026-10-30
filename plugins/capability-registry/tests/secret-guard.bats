@@ -170,6 +170,19 @@ EOF
   assert_passed Bash 'echo "$MY_VALUE"'
   assert_passed Bash 'cat "$F"'
   assert_passed Grep '.env'
+  assert_passed Read /x/config/credentials/production.key
+  assert_passed Read /x/service-account/prod.json
+}
+
+@test "read: only the file name decides, a parent directory name does not" {
+  assert_passed Read /x/credentials-service/src/index.ts
+  assert_passed Read /x/.env/lib/site.py
+  assert_denied Read /x/.env
+  assert_denied Read /x/credentials.json
+  assert_denied Read /x/a.token
+  assert_denied Read /x/.env/
+  assert_denied Read /x/credentials.json/
+  assert_denied Read /x/foo.template/.env
 }
 
 @test "scope: the known over-blocking stays as it was" {
@@ -177,7 +190,8 @@ EOF
 echo "$GH_TOKEN"
 EOF'
   assert_denied Read /x/credentials.ts
-  assert_denied Read /x/credentials-service/src/index.ts
+  assert_denied Read /x/docs/credential-guide.md
+  assert_denied Read /x/process.env.ts
 }
 
 @test "fail-open: unreadable stdin passes" {
