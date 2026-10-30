@@ -42,12 +42,11 @@
 
 外した文ごとに、上の 5 種類のどれに当たるかを PR 本文の移設表に載せなければならない（MUST）。分類は段落単位でまとめて示してよい（MAY。同じ段落の文が同じ分類に入るとき）。`rules/README.md` の一覧表はルールごとの移設先と常時注入に残した要点までを持ち、文ごとの分類は持たなくてよい。どの分類にも当たらない文は、次の列挙に無くても短い形で常時注入に残さなければならない（MUST）。
 
-次の指示はこの条件に当たるため、縮約したルールの中でも短い形で常時注入に残さなければならない（MUST）。この列挙は 2026-09-11 の見直しで判定した結果で、判定に当たる文をすべて尽くしたものではない。禁じるのは縮約を理由に外すことであり、指示そのものが不要になった場合や、指示が前提とする仕組み（環境変数名・コマンド名・手順の構成）が変わった場合は、同じ変更の中でこの列挙も直す。
+次の指示はこの条件に当たるため、縮約したルールの中でも短い形で常時注入に残さなければならない（MUST）。この列挙は 2026-09-11 の見直しで判定した結果で、判定に当たる文をすべて尽くしたものではない。禁じるのは縮約を理由に外すことであり、指示そのものが不要になった場合や、指示が前提とする仕組み（環境変数名・コマンド名・手順の構成）が変わった場合は、同じ変更の中でこの列挙も直す。プラグイン編集ルール（`rules/plugin-editing.md`）は、全員に要る部分（自動更新されるインストール先とローカルコピーを編集しない、部品はその部品を持つリポジトリの開発用 clone で直す、状態がおかしくなっても手動で削除しない）だけを公開版に短くして残す。Harness 開発者向けの部分（開発用 clone の場所の解決、worktree を切る前の fetch、`/wt-setup` の誤爆、`sync.sh` の扱い、変更の記録と Draft PR）は #1129 で個人版のリポジトリ `oratta/claude-harness-oratta` の `rules/harness-dev.md` に移したので、この列挙に載せない。移す前にこの列挙で残すとしていた指示（worktree を切る前に fetch する、別プロジェクトの worktree で `/wt-setup` を走らせるとそちらのリポジトリに Draft PR が作られる）は、個人版のルールの本文に残っている。公開版に残す部分のうち「状態がおかしくなっても手動で削除しない」は、壊れた状態を見た瞬間に消したくなる行動を止める一文で、その瞬間に先に別のファイルを読む判断ができないので、短い形で常時注入に残さなければならない（MUST）。
 
 - 観点の配役（`rules/perspective-casting.md`）の返信前チェックの各手順の判定（担い手が主の観点が 1 つでもあれば主へ上げる、判断基準が無い・読めないときは主へ上げる、全観点を移譲済みなら独断せずスペシャリストに相談する）と、主からフィードバックを受けたらそのターンで配役表を更新する義務: 発火させる hook が無く、フィードバックは主の発言がきっかけでスキルを読む契機が無い
 - 書き方ルール（`rules/communication-style.md`）の ✅/❌ 例、専門用語の初出の言い換え、読み手の側にしか無い情報が要るときは質問してよいという例外: サブエージェントには Output Style が効かず、PR 本文や issue コメントを書くのはサブエージェントである
 - コミットポリシー（`rules/git-commit-policy.md`）の、PR 運用とローカル main 運用それぞれで自律実行してよい範囲の線引き: commit・push の瞬間に目に入らないと効かない
-- プラグイン編集ルール（`rules/plugin-editing.md`）の「開発用 clone は自動更新されないので worktree を切る前に fetch する」と「別プロジェクトの worktree で `/wt-setup` を走らせるとそちらのリポジトリに Draft PR が作られる」: このルールが想定する場面で踏む事故の防止策である
 - 一回限りの操作ルール（`rules/one-off-no-script.md`）の「この実行では起きない入力への指摘を直し始めたら、汎用ツールを作ろうとしているサイン」: 手を止めるきっかけの一文である
 - モデル選択ルール（`rules/subagent-model-selection.md`）の「最上位ティアを使う前に `FABLE_BUDGET_MODE` を確認する」: ワークフロー外で決める役を立てるときに確認されなくなる
 
@@ -74,12 +73,12 @@
 #### Scenario: 瞬間に目に入らないと効かない指示が縮約後も常時注入に残っている
 
 - **WHEN** 縮約後の `rules/perspective-casting.md`・`rules/communication-style.md`・`rules/git-commit-policy.md`・`rules/plugin-editing.md`・`rules/one-off-no-script.md`・`rules/subagent-model-selection.md` を読む
-- **THEN** この要件で残すとした指示（返信前チェックの各手順の判定とフィードバック時の更新義務、✅/❌ 例・専門用語の初出の言い換え・質問してよい例外、運用ごとの自律実行の範囲、fetch してから worktree を切ることと `/wt-setup` の誤爆、汎用ツール化のサイン、`FABLE_BUDGET_MODE` の確認）が、それぞれのルールの本文に短い形で残っている
+- **THEN** この要件で残すとした指示（返信前チェックの各手順の判定とフィードバック時の更新義務、✅/❌ 例・専門用語の初出の言い換え・質問してよい例外、運用ごとの自律実行の範囲、状態がおかしくなっても手動で削除しないこと、汎用ツール化のサイン、`FABLE_BUDGET_MODE` の確認）が、それぞれのルールの本文に短い形で残っている
 
 #### Scenario: 残すと決めた指示はテストで検査される
 
 - **WHEN** 上の列挙で残すとした指示のうち 1 つを `rules/*.md` から消した状態で `scripts/test.sh` を実行する
-- **THEN** exit code が 0 以外になる（テストが、残すと決めた指示ごとの目印となる語句（`FABLE_BUDGET_MODE`・「`git fetch origin` してから」・「そちらのリポジトリに Draft PR が作られる」など）を該当ルールの本文から検査している）
+- **THEN** exit code が 0 以外になる（テストが、残すと決めた指示ごとの目印となる語句（`FABLE_BUDGET_MODE`・「手動で削除しない」・「汎用ツールを作ろうとしているサイン」・「例外なく事前承認」など）を該当ルールの本文から検査している）
 
 ### Requirement: 縮約は削除ではなく移設で、移設先を任意の cwd から辿れる形にする
 
@@ -87,17 +86,23 @@
 
 `rules/*.md` は symlink で**全プロジェクト**のセッションに載るため、移設先は harness のリポジトリを cwd に持たないセッションからも解決できる形で書かなければならない（MUST）。リポジトリ相対パス（`plugins/casting/skills/casting/SKILL.md`・`docs/worktree-recovery.md` 等）で書いてはならない（MUST NOT）。他プロジェクトで作業中にそのルールが発火したとき、そのパスは Read できず、移設した内容に誰も届かなくなる。
 
-解決できる形とは次の 2 つをいう。
+解決できる形とは次の 3 つをいう。
 
 - skill へ移す場合: **スキル名**で書く（`casting:casting`・`dev-workflow:pr-review-gate`）。スキルはどの cwd からでも起動できる
 - `references/` / `docs/` へ移す場合: **`~/.claude/plugins/marketplaces/oratta-claude-harness/<path>`** の形で書く
+- 全文の正本が Output Style の場合: **`~/.claude/output-styles/<name>.md`**（Output Style `<name>`）の形で書く。`scripts/sync.sh` が Output Style をこのパスに symlink するので、どの cwd からでも解決でき、marketplace の clone の場所（オーナーの環境の固有名）を本文に書かずに済む。配る候補の規則（`harness-public-private-split` の「配る候補の規則は環境固有の記述を持たず…」の 6 ファイル）は、この形で書かなければならない（MUST）
 
 加えて `rules/README.md` のファイル一覧表に、ルールごとの移設先を書かなければならない（MUST）。`rules/README.md` は集計対象外（`list_synced_md` が除外する）なので、ここに書いても常時注入の合計は増えない。
 
 #### Scenario: 縮約したルールから移設先を辿れる
 
 - **WHEN** 縮約した各ルールの本文を読む
-- **THEN** 詳細の移設先がスキル名か `~/.claude/plugins/marketplaces/oratta-claude-harness/` から始まる絶対パスで書かれており、その解決先（該当スキル、または展開後のファイル）が実在する
+- **THEN** 詳細の移設先がスキル名か `~/.claude/plugins/marketplaces/oratta-claude-harness/` から始まる絶対パス（Output Style が正本のルールは `~/.claude/output-styles/<name>.md`）で書かれており、その解決先（該当スキル、または展開後のファイル）が実在する
+
+#### Scenario: Output Style が正本のルールは cwd に依らない参照で示す
+
+- **WHEN** `rules/communication-style.md` の全文の正本を示す文を読む
+- **THEN** `~/.claude/output-styles/readable.md` と Output Style `readable` の名で書かれ、`marketplaces/` を含まず、`rules/README.md` の同じルールの行に marketplace の clone のパスでの場所が書かれている
 
 #### Scenario: 移設先にリポジトリ相対パスが残っていない
 

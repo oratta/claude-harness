@@ -34,15 +34,18 @@ PY
   [ "$lines" -le 80 ]
 }
 
-@test "SKILL.md: initial 5 proven services are in the index" {
-  for svc in "op" "gh" "supabase" "vercel" "stripe"; do
-    grep -q "$svc" "$SKILL"
+@test "SKILL.md: the 4 public services are in the index, 1Password row is not" {
+  for svc in "gh" "supabase" "vercel" "stripe"; do
+    grep -q "^| .* | ${svc} |" "$SKILL"
   done
+  ! grep -q "^| 1Password |" "$SKILL" || return 1
 }
 
-@test "SKILL.md: fmtoken.sh token retrieval and verify principle documented" {
-  grep -q "fmtoken.sh" "$SKILL"
-  grep -q "CLAUDE_PLUGIN_ROOT" "$SKILL"
+@test "SKILL.md: has no private token tool, points token location to the owner's index, keeps verify principle" {
+  # 個人版の 2 節は #1129 で個人版のリポジトリに移したので、SKILL.md の全体を見る
+  ! grep -q "fmt[o]ken" "$SKILL" || return 1
+  ! grep -Eq '^## (表記規約|資格情報の階層)' "$SKILL" || return 1
+  grep -q "オーナーの環境の索引" "$SKILL"
   # 「記述を信じず verify を実行する」原則
   grep -Eq "(verify|認証確認)" "$SKILL"
 }
@@ -52,9 +55,12 @@ PY
 }
 
 @test "per-service detail files exist (lazy-loaded)" {
-  for f in 1password.md github.md supabase.md vercel.md stripe.md; do
+  for f in github.md supabase.md vercel.md stripe.md; do
     [ -f "${PLUGIN_DIR}/skills/capability-registry/${f}" ]
+    ! grep -q "fmt[o]ken" "${PLUGIN_DIR}/skills/capability-registry/${f}" || return 1
   done
+  # 1password.md は #1129 で個人版のリポジトリに移した。公開版の索引は参照しない
+  ! grep -q "1password.md" "$SKILL" || return 1
 }
 
 @test "plugin.json: exists, parses, registers the skill" {

@@ -2,7 +2,9 @@
 
 ## Purpose
 dev-workflow のサブエージェント（W / R1 / G）が長時間処理の完了をどう待つかの契約 — 待つためにターンを終えない・完了シグナルを経路ごとに定める・前景の有限ループを上限回数まで呼び直す・待ち値は Bash ツールの timeout パラメータにミリ秒で指定する。
+
 ## Requirements
+
 ### Requirement: サブエージェントは完了を待つためにターンを終えない
 dev-workflow のサブエージェント（W / R1 / G）は、長時間処理（Codex レビュー・フルテスト・ビルド）の完了通知を待つ目的でターンを終えてはならない（MUST NOT）。名前付き background サブエージェントは idle になっても自分の背景タスクの完了では再起動されず、完了通知はキューに積まれるだけで新しいターンを起こさないためである。待ちは同一ターン内の前景ポーリングで行わなければならない（MUST）。Monitor ツールや `run_in_background` の「完了したら続きが動く」挙動に依存してはならない（MUST NOT）。ただし禁止されるのは待ち方であって起動方法ではなく、10 分を超えうる処理を `run_in_background` で起動すること自体は許可される（SHALL）。この禁止はサブエージェントに限られ、背景タスクの完了で再起動されるメインセッションには適用されない（SHALL）。この禁止は手順書の記述だけでなく、要件「未完了の背景タスクを残したサブエージェントの停止を実行時に拒否する」の hook で実行時に守らせる（SHALL）。
 
@@ -50,7 +52,7 @@ dev-workflow のサブエージェント（W / R1 / G）は、長時間処理（
 ### Requirement: 待ちは前景の有限ループを上限回数まで呼び直す
 待ちループは Bash ツール呼び出しの `timeout` パラメータを明示した前景実行の中で、終了条件を持つ有限ループ（例: `until <完了シグナル>; do sleep <間隔>; done`）として書かなければならない（MUST）。1 回の呼び出しで完了しなければ、同じ呼び出しをもう一度発行して待ちを継続する（SHALL。1 回の Bash 呼び出しはターンの終わりではない）。行頭の裸の長時間 `sleep` は使わない（MUST NOT）が、ループ内の `sleep` は許可対象である。
 
-**総待ちには上限を設けなければならない（MUST）。** 既定は前景ループ 3 回（540000 ms × 3 = 27 分）とする。上限に達しても完了しない場合は待ちをやめ、経路ごとの分岐に入らなければならない（MUST）。G は `needs-reviewer` を return し、根拠に「Codex タイムアウト（27 分）」と書く。これは `skills/pr-review-gate/SKILL.md` のフォールバック条件「未導入・サブスク切れ・タイムアウト」の「タイムアウト」の定義であり、この上限がフォールバックの発火点になる（SHALL）。W / R1 は待ちをやめて本体に return する。上限なしに待ち続けてはならない（MUST NOT。ジョブが死んで出力が来ない場合と、単に時間がかかっている場合を区別できなくなるため）。
+**総待ちには上限を設けなければならない（MUST）。** 既定は前景ループ 3 回（540000 ms × 3 = 27 分）とする。上限に達しても完了しない場合は待ちをやめ、経路ごとの分岐に入らなければならない（MUST）。G は `needs-reviewer` を return し、根拠に「Codex タイムアウト（27 分）」と書く。この上限が `skills/pr-review-gate/stages/review-run.md` 手順 2-1 のタイムアウト条件の定義であり、フォールバックの発火点になる（SHALL。不可判定の条件名はそちらが正本で、ここには再掲しない）。W / R1 は待ちをやめて本体に return する。上限なしに待ち続けてはならない（MUST NOT。ジョブが死んで出力が来ない場合と、単に時間がかかっている場合を区別できなくなるため）。
 
 **待ちをやめて return するとき（上限到達のほか、背景タスクの結果を使わないと決めて放棄するときも含む）は、return する前にその背景タスクを TaskStop ツール（旧名 KillShell）で停止しなければならない（MUST）。** 停止するとそのタスクは SubagentStop の payload `background_tasks` から消えるので、要件「未完了の背景タスクを残したサブエージェントの停止を実行時に拒否する」の hook がその停止を通す。これが上限到達後の正当な出口であり、停止せずに return しようとすると hook に拒否される。return には停止したタスクと、どこまで待ったかを書く（SHALL）。
 
@@ -78,7 +80,7 @@ dev-workflow のサブエージェント（W / R1 / G）は、長時間処理（
 - **THEN** `<値>` は 600000 未満であり、既定として 540000 が示されている
 
 ### Requirement: 待ち方の契約は共有 references に 1 本置く
-待ち方の正本は `plugins/dev-workflow/references/subagent-waiting.md` に置かなければならない（MUST）。W / R1 / G の各指示書と `skills/pr-review-gate/SKILL.md` は、禁止そのものを 1 行で書いたうえでこの正本を参照する（SHALL）。同じ待ち方の手順を複数のファイルに複製してはならない（MUST NOT）。
+待ち方の正本は `plugins/dev-workflow/references/subagent-waiting.md` に置かなければならない（MUST）。`skills/develop/references/roles/worker/implement.md`・`spec-reviewer.md`・`gate-runner.md` と `skills/pr-review-gate/SKILL.md` は、禁止そのものを 1 行で書いたうえでこの正本を参照する（SHALL）。同じ待ち方の手順を複数のファイルに複製してはならない（MUST NOT）。
 
 複製の禁止は具体的に、**完了マーカーの雛形・具体の待ち値（`--timeout-ms <数値>` / `timeout: <数値>`）・総待ちの上限（回数と分数）を正本以外の文書に書かないこと**を指す（MUST NOT）。指示書に残してよいのは、禁止の 1 行・正本への参照・その役割固有の分岐（G なら上限到達時の `needs-reviewer`）・起動コマンドそのものの事実（どのバイナリをどのフラグで呼ぶか）である（SHALL）。この境界は退行検出で機械的に守る（MUST）。指示書に再掲した手順が正本と食い違ったまま残る事故が実際に起きたため（2026-09-09 のレビューで、gate-runner に再掲した companion の判定方法が事実と食い違っていた）。
 
@@ -90,12 +92,17 @@ dev-workflow のサブエージェント（W / R1 / G）は、長時間処理（
 - **WHEN** 指示書に完了マーカーの雛形や具体の待ち値を書き戻す
 - **THEN** 退行検出が失敗し、正本へ参照を寄せるよう促す
 
+#### Scenario: 待ちの規約の所在
+
+- **WHEN** `worker/implement.md` の全経路共通の大原則を読む
+- **THEN** 長時間処理の完了を待つ目的でターンを終えないことと、正本が `plugins/dev-workflow/references/subagent-waiting.md` であることが書かれている
+
 ### Requirement: 待ち方の退行を機械検出する
 `plugins/dev-workflow/tests/subagent-waiting.bats` が、dev-workflow の手順書と正本に対して次の各点を検査しなければならない（MUST）。
 
 1. 待ちを背景タスクの完了通知や Monitor に委ねる指示が残っていないこと
 2. 文書中に現れる `--timeout-ms <数値>` と `timeout: <数値>` の 2 パターンの数値がすべて前景上限未満であること。上限値はスイート内の 1 変数（`FOREGROUND_LIMIT_MS=600000`）にまとめ、出典（Claude Code の Bash ツールの前景上限）をコメントで書く（SHALL）。この 2 パターン以外の `timeout` の出現は検査対象にしない（無関係な出現が大半のため）
-3. `skills/develop/references/roles/` 配下の各指示書に、待ちでターンを終えない旨の記述と `references/subagent-waiting.md` への参照があること
+3. `skills/develop/references/roles/worker/implement.md`・`spec-reviewer.md`・`gate-runner.md` に、待ちでターンを終えない旨の記述と `references/subagent-waiting.md` への参照があること
 4. 完了マーカーの雛形・具体の待ち値・総待ちの上限が、サブエージェントが読む指示書（W / R1 / G と `skills/pr-review-gate/SKILL.md`）に再掲されていないこと
 5. 正本の `codex exec` 雛形を、文言検査と実行時検査の 2 本立てで検査すること（MUST）
    - **文言検査**: nonce が排他生成（`mktemp -d`）で作られる形であること、`date +%s` と `$RANDOM` を nonce の作り方として例示していないこと（「使わない」と禁じる文の中の出現は許す）、プロンプトとログが固定パス（`/tmp/codex-prompt-` / `/tmp/codex-review-`）ではなく生成したディレクトリの配下に置かれること、レビュー指示を標準入力から渡す形であること
@@ -163,7 +170,7 @@ dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hook
 - **THEN** 守備範囲の「守らないもの」に当たるので、この要件の範囲外として扱い、塞ぐことを完了条件にしない
 
 ### Requirement: 停止の拒否は上限回数までの後詰めにする
-正当な出口は「前景で完了まで待つ」か「TaskStop で停止してから終える」であり、hook の拒否回数の上限は、理由文を無視して停止を繰り返すサブエージェントを無限に止め続けないための後詰めである（SHALL）。hook は同じサブエージェント（`session_id` と `agent_id` の組）への拒否回数を `${TMPDIR:-/tmp}/dev-workflow-stop-guard/<session_id>-<agent_id>.count` に数え、正本 `subagent-waiting.md` の総待ちの上限回数（前景ループの回数）に達した後の停止は通さなければならない（MUST）。**停止を通す時点（上限到達で通す場合と、未完了の背景タスクが無く通す場合のいずれでも）でそのカウンタファイルを削除する（SHALL。削除できなくても停止は通す）。** 拒否の判定に `stop_hook_active` を使ってはならない（MUST NOT）— 1 回拒否した後の継続中は常に真になり、2 回目以降の停止を無条件に通してしまうため。hook が持つ上限回数は 1 か所の定数にし、テストで正本の記述と一致することを検査しなければならない（MUST）。上限を超えて通すときは、その旨を stderr に 1 行出す（SHALL）。
+正当な出口は「前景で完了まで待つ」か「TaskStop で停止してから終える」であり、hook の拒否回数の上限は、理由文を無視して停止を繰り返すサブエージェントを無限に止め続けないための後詰めである（SHALL）。hook は同じサブエージェント（`session_id` と `agent_id` の組）への拒否回数を `${TMPDIR:-/tmp}/dev-workflow-stop-guard/<session_id>-<agent_id>.count` に数え、正本 `subagent-waiting.md` の総待ちの上限回数（前景ループの回数）に達した後の停止は通さなければならない（MUST）。**停止を通す時点（上限到達で通す場合と、未完了の背景タスクが無く通す場合のいずれでも）でそのカウンタファイルを削除する（SHALL。削除できなくても停止は通す）。判定を見送って通す場合（対象トランスクリプトが見つからない・読めない場合、`DEV_WORKFLOW_STOP_GUARD=off` の場合など）はこの削除の対象外で、カウンタファイルは残る。残った値は、次に停止を通す時点で削除されるまで引き継がれ、その間の拒否は 1 回目からではなく残った回数の続きから数える（`2/3` から始まりうる）。拒否回数のファイルが読めない場合は、削除されるまで判定の見送りが続く。** 拒否の判定に `stop_hook_active` を使ってはならない（MUST NOT）— 1 回拒否した後の継続中は常に真になり、2 回目以降の停止を無条件に通してしまうため。hook が持つ上限回数は 1 か所の定数にし、テストで正本の記述と一致することを検査しなければならない（MUST）。上限を超えて通すときは、その旨を stderr に 1 行出す（SHALL）。
 
 #### Scenario: 上限回数まで拒否した後にもう一度止まる
 - **WHEN** 同じサブエージェントをすでに上限回数まで拒否しており、未完了の背景タスクを残したままもう一度ターンを終えようとする
@@ -172,6 +179,10 @@ dev-workflow プラグインは `scripts/subagent-stop-guard.sh` を `hooks/hook
 #### Scenario: 正本の上限回数を変えた
 - **WHEN** 正本の総待ちの上限回数を変えたが、hook の定数を直していない
 - **THEN** `scripts/test.sh` が失敗し、hook の定数を正本に合わせるよう示す
+
+#### Scenario: 判定を見送って通した後はカウンタが残る
+- **WHEN** サブエージェントが一度拒否されたあと、対象トランスクリプトが見つからないか読めない、または `DEV_WORKFLOW_STOP_GUARD=off` のために hook が判定を見送って停止を通す
+- **THEN** hook はカウンタファイルを削除せず、そのあと停止を通してカウンタが削除される前に同じサブエージェントが再び拒否されるときの回数は、1 回目からではなく残った回数の続き（`2/3` など）から数える
 
 #### Scenario: 正しく待ってから停止したのにカウンタが残っている
 - **WHEN** サブエージェントが一度拒否されたあと、理由文どおりに前景で待つ、または TaskStop で背景タスクを停止してから停止し、未完了の背景タスクが無い状態で hook が停止を通す
@@ -197,27 +208,17 @@ hook は payload に `agent_id` が無い停止（メインセッション）に
 - **THEN** 未完了の背景タスクがあっても hook は停止を通す
 
 ### Requirement: 実行時の検査が文言検査の素通りする違反を止めることを再現ケースで示す
-`tests/subagent-stop-guard.bats` は、規約違反の待ち方（背景起動の後に終了通知を待たずにターンを終える）を表す合成トランスクリプトで hook が停止を拒否することを検査しなければならない（MUST）。あわせて、同じ違反を言い換えて指示書に書いた形を `subagent-waiting.bats` の文言検査が検出しないことを、同じスイートで対にして示さなければならない（MUST）。後者は、プラグインのディレクトリを `BATS_TEST_TMPDIR` に複製し、複製の `skills/develop/references/roles/worker.md` に言い換えた違反を差し込み、その複製に対して既存の `subagent-waiting.bats` を実際に実行して exit 0 になることで示す（SHALL）。禁止語のリストを新しいスイートに写してはならない（MUST NOT。2 か所になると片方だけ古くなる）。実セッションでの再現（`claude -p --plugin-dir` で背景 `sleep` を起動してターンを終えるサブエージェントに拒否理由が届くこと）は、実行コマンドと出力を記録先に添付する（SHALL）。
+`tests/subagent-stop-guard.bats` は、規約違反の待ち方（背景起動の後に終了通知を待たずにターンを終える）を表す合成トランスクリプトで hook が停止を拒否することを検査しなければならない（MUST）。あわせて、同じ違反を言い換えて指示書に書いた形を `subagent-waiting.bats` の文言検査が検出しないことを、同じスイートで対にして示さなければならない（MUST）。後者は、プラグインのディレクトリを `BATS_TEST_TMPDIR` に複製し、複製の `skills/develop/references/roles/worker/implement.md` に言い換えた違反を差し込み、その複製に対して既存の `subagent-waiting.bats` を実際に実行して exit 0 になることで示す（SHALL）。禁止語のリストを新しいスイートに写してはならない（MUST NOT。2 か所になると片方だけ古くなる）。実セッションでの再現（`claude -p --plugin-dir` で背景 `sleep` を起動してターンを終えるサブエージェントに拒否理由が届くこと）は、実行コマンドと出力を記録先に添付する（SHALL）。
 
 #### Scenario: 文言検査は素通りし、実行時の検査は止める
-- **WHEN** 待ちでターンを終える指示を禁止語を使わずに言い換えて複製の worker.md に差し込み、その指示どおりに動いたトランスクリプトを用意する
+- **WHEN** 待ちでターンを終える指示を禁止語を使わずに言い換えて複製の worker/implement.md に差し込み、その指示どおりに動いたトランスクリプトを用意する
 - **THEN** 複製に対して走らせた `subagent-waiting.bats` は exit 0 で、`subagent-stop-guard.sh` はそのトランスクリプトでの停止を拒否する
 
 #### Scenario: hooks.json の登録
 - **WHEN** `hooks/hooks.json` を読む
 - **THEN** `SubagentStop` に `${CLAUDE_PLUGIN_ROOT}/scripts/subagent-stop-guard.sh` が登録されており、既存の SessionStart / UserPromptSubmit / PreToolUse / PostToolUse のエントリは変わっていない
 
-### Requirement: 待ちの規約を検査する W の指示書の読み替え
-
-この capability の既存要件が W の指示書として `skills/develop/references/roles/worker.md`（複製の worker.md を含む）と書いた箇所は、長時間処理の待ちの規約が移った `skills/develop/references/roles/worker/implement.md` と読まなければならない（MUST。対応表の正本は `dev-workflow-develop`「既存要件が worker.md に置いた内容は移し先のファイルを指す」）。「実行時の検査が文言検査の素通りする違反を止めることを再現ケースで示す」の対の検査は、複製の `worker/implement.md` に違反を差し込まなければならない（MUST）。
-
 #### Scenario: 対の検査の差し込み先
 
 - **WHEN** `tests/subagent-stop-guard.bats` の対の検査を読む
 - **THEN** 複製の `skills/develop/references/roles/worker/implement.md` に言い換えた違反を差し込んでいる
-
-#### Scenario: 待ちの規約の所在
-
-- **WHEN** `worker/implement.md` の全経路共通の大原則を読む
-- **THEN** 長時間処理の完了を待つ目的でターンを終えないことと、正本が `plugins/dev-workflow/references/subagent-waiting.md` であることが書かれている
-

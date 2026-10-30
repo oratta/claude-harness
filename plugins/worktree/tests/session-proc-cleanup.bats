@@ -387,6 +387,15 @@ fresh_stamp() {
   grep -Eq ' none .*trigger=sweep' "$LOG"
 }
 
+@test "sweep: empty ps comm list -> 'none' with reason=ps-comm-empty (not read env list as comm)" {
+  make_fixture
+  : >"$FIX/ps-comm.txt"
+  printf '  100 Sat Sep 26 08:00:00 2026\n' >"$FIX/lstart.txt"
+  run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" "$REAPER" --sweep
+  [ "$status" -eq 0 ]
+  grep -Eq 'none .*reason=ps-comm-empty' "$LOG"
+}
+
 @test "session-end (fixture): owner alive after the wait -> nothing stopped, 'none' logged" {
   make_fixture
   run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" SESSION_REAPER_OWNER_WAIT_SECS=0 \
@@ -600,8 +609,8 @@ import json
 d = json.load(open('${HOOKS_JSON}'))['hooks']
 start = [h['command'] for g in d['SessionStart'] for h in g['hooks']]
 end = [h['command'] for g in d['SessionEnd'] for h in g['hooks']]
-assert any(c == '\${CLAUDE_PLUGIN_ROOT}/scripts/session-proc-mark.sh' for c in start), start
-assert any(c == '\${CLAUDE_PLUGIN_ROOT}/scripts/session-proc-end.sh' for c in end), end
+assert any(c == '\"\${CLAUDE_PLUGIN_ROOT}/scripts/session-proc-mark.sh\"' for c in start), start
+assert any(c == '\"\${CLAUDE_PLUGIN_ROOT}/scripts/session-proc-end.sh\"' for c in end), end
 assert all(g.get('matcher') == 'startup|resume|clear' for g in d['SessionStart']), d['SessionStart']
 "
   echo "$output"

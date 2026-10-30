@@ -38,7 +38,7 @@ PR マージ率を大きく上げる）。受け入れ条件は「実行コマ�
 
 ### Step 2: 各タスクのドラフト生成
 
-リポジトリに issue テンプレート（`.github/ISSUE_TEMPLATE/` 配下。flatmate の `new-resident` が配る `agent-task.md` 等）が
+リポジトリに issue テンプレート（`.github/ISSUE_TEMPLATE/` 配下。`agent-task.md` 等）が
 あればその構造に合わせ、無ければ次の 6 節でドラフトを作る（先頭 2 節は人間の承認・優先度判断用。
 翻訳の規律＝機構名ではなく発生する事象を書く、は `plugins/dev-workflow/references/pr-body-format.md` を参照）:
 

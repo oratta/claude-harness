@@ -92,7 +92,7 @@ rl_asst_tool() {
 }
 
 # 担当分類（agentType 優先 / description 先頭トークン / unknown）を確かめるための
-# 7 体の混在 fixture（W / R1 / G / Reviewer / decider / unknown x2）を作る。
+# 8 体の混在 fixture（W / R1 / G / Reviewer x2 / decider / unknown x2）を作る。
 seed_role_mix() {
   local f
   f="$(make_role_agent p1 s1 agent-w1.jsonl general-purpose "W: #552 impl")"
@@ -105,6 +105,10 @@ seed_role_mix() {
   rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
 
   f="$(make_role_agent p1 s1 agent-reviewer1.jsonl general-purpose "Reviewer: code review for #552")"
+  rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
+
+  # agentType が dev-workflow:reviewer なら description が Reviewer: で始まらなくても Reviewer に分類される
+  f="$(make_role_agent p1 s1 agent-reviewer2.jsonl dev-workflow:reviewer "code review for #552")"
   rl_asst 1000 >> "$f"; rl_asst 2000 >> "$f"
 
   # agentType が decider を示せば description が R1 の体裁でも decider に分類される（D1）
@@ -450,10 +454,10 @@ SHIM
   make_agent p1 s1 agent-aW-2-2222.jsonl plain 20000 50000 >/dev/null
   run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE"
   [ "$status" -eq 0 ]
-  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "by_role" not in d, d'
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "by_role" not in d, d; assert d["count"] == 2, d; assert d["first_median"] == 15000, d; assert d["last_median"] == 45000, d'
 }
 
-@test "by-role: agentType decider overrides description, leading token maps roles, rest fall to unknown" {
+@test "by-role: agentType decider/reviewer override description, leading token maps roles, rest fall to unknown" {
   seed_role_mix
   run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
   [ "$status" -eq 0 ]
@@ -464,7 +468,7 @@ br = d["by_role"]
 assert br["W"]["count"] == 1, br
 assert br["R1"]["count"] == 1, br
 assert br["G"]["count"] == 1, br
-assert br["Reviewer"]["count"] == 1, br
+assert br["Reviewer"]["count"] == 2, br  # description 先頭 Reviewer: と agentType dev-workflow:reviewer
 # agentType: dev-workflow:decider が description の "R1:" 見た目より優先される
 assert br["decider"]["count"] == 1, br
 assert br["unknown"]["count"] == 2, br  # note: something / meta 無し
@@ -579,6 +583,100 @@ assert d["by_role"]["W"]["reread_pct"] == 50.0, d["by_role"]["W"]
 PY
 }
 
+# Bash の command を持つ assistant レコード（#651）。JSON のエスケープは python に任せる
+rl_asst_bash() {
+  python3 - "$1" "$2" <<'PY'
+import json, sys
+print(json.dumps({"type": "assistant", "message": {"usage": {"input_tokens": 0, "cache_creation_input_tokens": 0, "cache_read_input_tokens": int(sys.argv[1]), "output_tokens": 1}, "content": [{"type": "tool_use", "name": "Bash", "input": {"command": sys.argv[2]}}]}}))
+PY
+}
+
+# 先行が fileA.md を Read、後続が $1 の Bash command で読んだときの reread_pct を出す
+reread_via_bash() {
+  f1="$(make_role_agent p1 s1 agent-w-first.jsonl general-purpose "W: #651 first")"
+  rl_user "2026-09-01T00:00:00Z" >> "$f1"
+  rl_asst_tool 1000 Read "/Users/oratta/wtA/fileA.md" >> "$f1"
+  rl_asst 2000 >> "$f1"
+  f2="$(make_role_agent p1 s1 agent-w-second.jsonl general-purpose "W: #651 second")"
+  rl_user "2026-09-02T00:00:00Z" >> "$f2"
+  rl_asst_bash 3000 "$1" >> "$f2"
+  rl_asst 4000 >> "$f2"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+print(json.loads(sys.argv[1])["by_role"]["W"]["reread_pct"])
+PY
+}
+
+@test "reread_pct: Bash sed -n by the later W counts as re-reading a file the earlier W Read" {
+  run reread_via_bash "sed -n '10,20p' /Users/oratta/wtB/fileA.md"
+  [ "$output" = "100.0" ]
+}
+
+@test "reread_pct: Bash cat / head / tail of the same file are counted too" {
+  for c in "cat /x/fileA.md" "head -n 5 /x/fileA.md" "tail -n 5 /x/fileA.md" "cd /x && cat fileA.md | head -3"; do
+    run reread_via_bash "$c"
+    [ "$output" = "100.0" ] || { echo "not counted: $c -> $output"; return 1; }
+  done
+}
+
+@test "reread_pct: Bash sed script, option values, redirects and echo args are not counted as files" {
+  # 後続の W は fileA〜fileD の 4 つだけを Read する。数えるべきでない語（10,20p 20 out.txt fileE.md）
+  # を後続側に Read させると分母分子が同じだけ増えて除外の有無が見えなくなるので、
+  # 除外は先行側（Bash で読んだ前任）の集合で検証する。
+  f1="$(make_role_agent p1 s1 agent-w-first.jsonl general-purpose "W: #651 first")"
+  rl_user "2026-09-01T00:00:00Z" >> "$f1"
+  rl_asst_bash 1000 "sed -n '10,20p' fileA.md; head -n 20 fileB.md; cat fileC.md > out.txt; cat fileD.md 2>/dev/null; echo fileE.md" >> "$f1"
+  rl_asst 2000 >> "$f1"
+  f2="$(make_role_agent p1 s1 agent-w-second.jsonl general-purpose "W: #651 second")"
+  rl_user "2026-09-02T00:00:00Z" >> "$f2"
+  for n in fileA.md fileB.md fileC.md fileD.md; do
+    rl_asst_tool 3000 Read "/x/$n" >> "$f2"
+  done
+  rl_asst 4000 >> "$f2"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PY'
+import json, sys
+# 先行の集合は {fileA, fileB, fileC, fileD}。後続が読んだ 4 個は全部一致するので 4/4 = 100.0。
+# 余計な語（10,20p 20 out.txt fileE.md）が先行の集合に入っていれば分母が 8 になり 50.0 になる。
+assert json.loads(sys.argv[1])["by_role"]["W"]["reread_pct"] == 100.0, sys.argv[1]
+PY
+}
+
+@test "reread_pct: heredoc, &> targets and head/tail --lines/--bytes values are not counted as files" {
+  # 数えるのは fileA〜fileD だけ。EOF・out.txt・5・7 が先行の集合に入ると分母が 8 になり 50.0 になる
+  f1="$(make_role_agent p1 s1 agent-w-first.jsonl general-purpose "W: #653 first")"
+  rl_user "2026-09-01T00:00:00Z" >> "$f1"
+  rl_asst_bash 1000 "cat fileA.md << EOF > out.txt; cat fileB.md &> out.txt; head --lines 5 fileC.md; tail --bytes 7 fileD.md" >> "$f1"
+  rl_asst 2000 >> "$f1"
+  f2="$(make_role_agent p1 s1 agent-w-second.jsonl general-purpose "W: #653 second")"
+  rl_user "2026-09-02T00:00:00Z" >> "$f2"
+  for n in fileA.md fileB.md fileC.md fileD.md; do
+    rl_asst_tool 3000 Read "/x/$n" >> "$f2"
+  done
+  rl_asst 4000 >> "$f2"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ] || return 1
+  python3 - "$output" <<'PY'
+import json, sys
+assert json.loads(sys.argv[1])["by_role"]["W"]["reread_pct"] == 100.0, sys.argv[1]
+PY
+}
+
+@test "reread_pct: sed -ne, globs and variables are passed over (not counted)" {
+  for c in "sed -ne 1p /x/fileA.md" 'cat $F' "cat /x/*.md"; do
+    run reread_via_bash "$c"
+    [ "$output" = "0.0" ] || { echo "unexpectedly counted: $c -> $output"; return 1; }
+  done
+}
+
+@test "reread_pct: Bash commands that read no file leave reread_pct unchanged" {
+  run reread_via_bash "git status && ls -la"
+  [ "$output" = "0.0" ]
+}
+
 @test "reread_pct: group leader and #N-less W are excluded, leftmost #N is used for grouping" {
   # 自分だけの単独グループ（先行なし）→ 母数から除かれる
   fL="$(make_role_agent p1 s1 agent-w-leader-only.jsonl general-purpose "W: #700 only")"
@@ -627,4 +725,72 @@ PY
   [ -f "${default_cache}.by-role" ]
   ! grep -q '"by_role"' "$default_cache" || return 1
   grep -q '"by_role"' "${default_cache}.by-role"
+}
+
+@test "by-role: missing python3 exits zero without by_role" {
+  local bin="${WORK}/no-python" cmd
+  mkdir -p "$bin"
+  # PATH 全体を置換し、システム側の python3 も確実に隠す。
+  for cmd in bash date stat cat printf; do
+    ln -s "$(type -P "$cmd")" "${bin}/${cmd}"
+  done
+  run env PATH="$bin" "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role --refresh
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PYTEST'
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["count"] == 0, d
+assert "by_role" not in d, d
+assert d["note"] == "python3 not found", d
+PYTEST
+}
+
+@test "by-role: numbered handoff prefixes map to their roles" {
+  local token f n=0
+  for token in W2 R1 R12 G3 Reviewer1 W2extra w2 R2 Reviewer-1; do
+    n=$((n + 1))
+    f="$(make_role_agent p1 s1 "agent-${n}.jsonl" general-purpose "${token}: #564 担当")"
+    rl_asst 1000 >> "$f"
+  done
+  # 種別による優先順位は番号付きの description に対しても維持する。
+  make_role_agent p1 s1 agent-decider.jsonl dev-workflow:decider "W2: #564 担当" >/dev/null
+  make_role_agent p1 s1 agent-reviewer.jsonl dev-workflow:reviewer "G3: #564 担当" >/dev/null
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PYTEST'
+import json, sys
+br = json.loads(sys.argv[1])["by_role"]
+expected = {"W": 1, "R1": 2, "G": 1, "Reviewer": 2, "decider": 1, "unknown": 4}
+assert {r: v["count"] for r, v in br.items()} == expected, br
+PYTEST
+}
+
+@test "reread_pct: matching issue numbers in different project slugs stay separate" {
+  local f
+  f="$(make_role_agent p1 s1 agent-first.jsonl general-purpose "W: #564 先行")"
+  rl_user "2026-10-01T00:00:00Z" >> "$f"
+  rl_asst_tool 1000 Read "/repo/file.md" >> "$f"
+  f="$(make_role_agent p2 s1 agent-second.jsonl general-purpose "W: #564 後続")"
+  rl_user "2026-10-02T00:00:00Z" >> "$f"
+  rl_asst_tool 2000 Read "/repo/file.md" >> "$f"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role --refresh
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PYTEST'
+import json, sys
+w = json.loads(sys.argv[1])["by_role"]["W"]
+assert w["count"] == 2, w
+assert w["reread_pct"] is None, w
+PYTEST
+  # 同じ slug ならセッションが異なっても同じ記録先として集計する。
+  f="$(make_role_agent p1 s2 agent-third.jsonl general-purpose "W2: #564 手渡し後")"
+  rl_user "2026-10-03T00:00:00Z" >> "$f"
+  rl_asst_tool 3000 Read "/repo/file.md" >> "$f"
+  run "$SCRIPT" --projects "$PROJECTS" --cache "$CACHE" --by-role --refresh
+  [ "$status" -eq 0 ]
+  python3 - "$output" <<'PYTEST'
+import json, sys
+w = json.loads(sys.argv[1])["by_role"]["W"]
+assert w["count"] == 3, w
+assert w["reread_pct"] == 100.0, w
+PYTEST
 }

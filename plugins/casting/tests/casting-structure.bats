@@ -71,6 +71,18 @@ lint_template_paths() {
   LC_ALL=C grep -qF -- "catalog/catalog.md" "$SKILL"
 }
 
+@test "rule (#1035): step 1 treats reverting own unique mistakes as recoverable, except git and the sanctuary" {
+  RULE="${REPO_ROOT}/rules/perspective-casting.md"
+  SKILL="${PLUGIN_DIR}/skills/casting/SKILL.md"
+  for f in "$RULE" "$SKILL"; do
+    step1="$(grep -E '^1\. \*\*聖域か\*\*' "$f")"
+    [ -n "$step1" ] || { echo "no step 1 in $f"; return 1; }
+    for token in "戻し先が差分から一意" "git の破壊的操作と聖域への変更を戻す操作は除く" "回復不能側に倒す"; do
+      echo "$step1" | grep -qF -- "$token" || { echo "$f step 1 lacks: $token"; return 1; }
+    done
+  done
+}
+
 @test "rule: listed in rules/README.md" {
   LC_ALL=C grep -qF -- "perspective-casting.md" "${REPO_ROOT}/rules/README.md"
 }
@@ -536,7 +548,7 @@ SH
 # 「N項目」と書いている全文書を、出現ごとに実装のカテゴリ数と突き合わせる。
 # 全角数字（「５項目」）も半角に正規化してから比較するので、片側だけ全角で
 # 残した状態も落ちる。失敗時は実装側の数と文書側の表記の両方を出す。
-@test "docs: item-count wording in README, SKILL, script, plugin.json, marketplace.json and the spec matches the implementation" {
+@test "docs: item-count wording in README, SKILL, script, the spec and (when present) the manifest descriptions matches the implementation" {
   local n
   n="$(detection_category_count)"
   [ "$n" -ge 1 ]
@@ -549,17 +561,23 @@ plugin_dir, marketplace_path, spec_path = sys.argv[2], sys.argv[3], sys.argv[4]
 
 targets = {}
 for rel in ("README.md", "skills/casting/SKILL.md",
-            "scripts/casting-check.sh", ".claude-plugin/plugin.json"):
+            "scripts/casting-check.sh"):
     with open(f"{plugin_dir}/{rel}", encoding="utf-8") as fh:
         targets[rel] = fh.read()
 
+# manifest の description は /plugin メニュー用に 1 文へ短縮したので「N項目」の記載は必須にしない。
+# ただし spec は両 manifest も突き合わせ対象に挙げているので、書かれていれば件数を実装と照合する
+# （短縮後の説明文に誤った件数が再混入しても落ちる）。
+optional = {}
+with open(f"{plugin_dir}/.claude-plugin/plugin.json", encoding="utf-8") as fh:
+    optional["plugin.json (description)"] = json.load(fh).get("description", "")
 with open(marketplace_path, encoding="utf-8") as fh:
     entries = json.load(fh)["plugins"]
 desc = next((e["description"] for e in entries if e.get("name") == "casting"), None)
 if desc is None:
     print("marketplace.json に casting エントリが無い")
     raise SystemExit(1)
-targets["marketplace.json (casting description)"] = desc
+optional["marketplace.json (casting description)"] = desc
 
 # 規範の正本。実装とプラグイン文書だけを揃えても spec が取り残されると、
 # 「何項目を検査しなければならないか」の MUST が実装と食い違ったまま残る。
@@ -577,6 +595,14 @@ for name, text in targets.items():
     if stale:
         failures.append(
             f"{name}: 実装の検出カテゴリ数は {n} だが文書の表記は {stale}（全角も半角に正規化して比較）"
+        )
+
+for name, text in optional.items():
+    found = [int(unicodedata.normalize("NFKC", m)) for m in pattern.findall(text)]
+    stale = sorted({v for v in found if v != n})
+    if stale:
+        failures.append(
+            f"{name}: 実装の検出カテゴリ数は {n} だが説明文の表記は {stale}（全角も半角に正規化して比較）"
         )
 
 for line in failures:

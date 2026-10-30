@@ -34,7 +34,7 @@ communication-style.md	センターピン
 communication-style.md	見出しや表で番号を振るのは構わない
 communication-style.md	ひとつの説明に複数混ぜない
 communication-style.md	専門用語は初出で一言の言い換えを添える
-communication-style.md	これを飲めるならAで進める
+communication-style.md	理由が無ければ聞かずに
 communication-style.md	読み手の側にしかない情報
 communication-style.md	他の資料を見に行かないと判断できない書き方はしない
 communication-style.md	前置きと注意書きは短くする
@@ -48,10 +48,6 @@ git-commit-policy.md	作業完了＋archive（`/opsx:archive` / `/wt-clean` 完�
 git-commit-policy.md	feature → main のマージと `git push origin main` は明示承認
 git-commit-policy.md	などの直接マージは、どちらの運用でも明示承認なしに実行しない
 git-commit-policy.md	ゲート通過後に commit を積んだら取り直す
-plugin-editing.md	パスを文書やスクリプトに固定で書かない
-plugin-editing.md	`git fetch origin` してから
-plugin-editing.md	そちらのリポジトリに Draft PR が作られる
-plugin-editing.md	Draft PR まで作る
 plugin-editing.md	手動で削除しない
 one-off-no-script.md	汎用ツールを作ろうとしているサイン
 subagent-model-selection.md	FABLE_BUDGET_MODE

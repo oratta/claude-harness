@@ -22,12 +22,10 @@ setup() {
   RULE="${REPO_ROOT}/rules/subagent-model-selection.md"
   CONSUMERS=(
     "plugins/infra/skills/infra-setup/SKILL.md"
-    "plugins/weekly-report/skills/weekly-report/SKILL.md"
-    "plugins/daily-report/skills/daily-report/SKILL.md"
-    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"
     "plugins/worktree/skills/wt-setup/SKILL.md"
     "plugins/worktree/skills/wt-clean/SKILL.md"
     "plugins/worktree/references/wt-clean-verification.md"
+    "plugins/dev-workflow/skills/push-guard-setup/SKILL.md"
   )
 }
 
@@ -65,18 +63,18 @@ setup() {
   ! grep -q 'plugins/longrun/' "$SELFV" || return 1
 }
 
-@test "self-verification audit list has the six live skills and no retired ones" {
+@test "self-verification audit list has the four live skills and no retired or moved ones" {
   grep -q '対象スキル一覧' "$SELFV"
   for p in \
     "plugins/worktree/skills/wt-setup/SKILL.md" \
     "plugins/worktree/skills/wt-clean/SKILL.md" \
-    "plugins/daily-report/skills/daily-report/SKILL.md" \
-    "plugins/weekly-report/skills/weekly-report/SKILL.md" \
     "plugins/infra/skills/infra-setup/SKILL.md" \
-    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"; do
+    "plugins/dev-workflow/skills/push-guard-setup/SKILL.md"; do
     grep -qF "$p" "$SELFV" || { echo "missing ${p}"; return 1; }
   done
   ! grep -q 'longrun-plan\|loops-design\|loops-goalify\|longrun-feedback\|longrun-mvp' "$SELFV" || return 1
+  # daily-report・weekly-report は #1129 で個人版のリポジトリに移した
+  ! grep -q 'plugins/daily-report/\|plugins/weekly-report/' "$SELFV" || return 1
 }
 
 @test "all seven consumers reference the new self-verification path and none the old" {

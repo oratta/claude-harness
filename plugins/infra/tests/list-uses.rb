@@ -5,7 +5,7 @@
 # 引数の YAML ファイルを本当にパースし、任意の深さの mapping にある `uses` キーを
 # 全数列挙して 1 件 1 行で stdout に出す:
 #
-#   <値の開始行（1 始まり）>\t<値の終了行（1 始まり）>\t<同じ行のコメント部分>\t<値>
+#   <値の開始行（1 始まり）>\t<値の終了行（1 始まり）>\t<同じ行のコメント部分>\t<値の開始行の本文>\t<値>
 #
 # 行 grep でキー形を追いかける旧方式は、flow mapping の前置キーの引用値
 # （`- { name: "uses: actions/cache@v4", uses: evil/action@v1 }` /
@@ -15,7 +15,15 @@
 #
 # - ファイルは `---` 区切りの複数 document をすべて走査する（`Psych.parse_file` は
 #   最初の document しか返さないので、2 つ目以降に置いた `uses` が素通りしていた）
-# - キーは引用の有無を問わず Scalar 値が `uses` のもの（`"uses":` / `'uses':` を含む）
+# - キーは引用の有無を問わず Scalar 値が `uses` のもの（`"uses":` / `'uses':` を含む）、および
+#   `uses` の Scalar に付いた anchor を参照する Alias（`anchors: { k: &u uses }` の後の
+#   `- *u: evil/action@v1`。YAML の意味論では `uses` キーで、GitHub Actions は実行する。#246）。
+#   anchor の付け替えは厳密に追わず、一度でも `uses` に付いた anchor 名の Alias は `uses` キー
+#   とみなす（多く拾う方向＝fail-closed）
+# - 行は libyaml と同じ改行判定（CRLF・bare CR・NEL・LS・PS・LF）で切る。`String#lines` は
+#   LF でしか切らないので、bare CR を含むファイルでパーサの行番号が別の物理行を指し、別行の
+#   コメントをバージョンコメントに採用していた（#247）。本文（違反行の表示）も同じ基準で
+#   この出力の列に載せ、検査側の `sed -n` の行引きは使わない
 # - 値が Scalar でない（mapping / sequence / null 以外の複合値）ときは値を空にして出す
 #   （検査側の値形チェックで違反に落ちる＝fail-closed）
 # - コメント部分は、値の開始行のうち「その行で終わる Scalar / Alias / flow collection の
@@ -31,15 +39,29 @@
 
 require 'yaml'
 
-def walk(node, &blk)
+# `uses` の Scalar に付いた anchor 名を集める
+def collect_uses_anchors(node, names)
+  names << node.anchor if node.is_a?(Psych::Nodes::Scalar) && node.anchor && node.value == 'uses'
+  return unless node.respond_to?(:children) && node.children
+
+  node.children.each { |child| collect_uses_anchors(child, names) }
+end
+
+def uses_key?(key, uses_anchors)
+  return key.value == 'uses' if key.is_a?(Psych::Nodes::Scalar)
+
+  key.is_a?(Psych::Nodes::Alias) && uses_anchors.include?(key.anchor)
+end
+
+def walk(node, uses_anchors, &blk)
   if node.is_a?(Psych::Nodes::Mapping)
     node.children.each_slice(2) do |key, value|
-      blk.call(key, value) if key.is_a?(Psych::Nodes::Scalar) && key.value == 'uses'
-      walk(key, &blk)
-      walk(value, &blk)
+      blk.call(key, value) if uses_key?(key, uses_anchors)
+      walk(key, uses_anchors, &blk)
+      walk(value, uses_anchors, &blk)
     end
   elsif node.respond_to?(:children) && node.children
-    node.children.each { |child| walk(child, &blk) }
+    node.children.each { |child| walk(child, uses_anchors, &blk) }
   end
 end
 
@@ -64,7 +86,7 @@ end
 def comment_on(lines, line, ends, spanning)
   return '-' if spanning[line]
 
-  rest = lines[line].to_s.chomp[ends[line]..-1].to_s
+  rest = lines[line].to_s[ends[line]..-1].to_s
   index = rest.index('#')
   index ? rest[index..-1] : '-'
 end
@@ -72,18 +94,21 @@ end
 path = ARGV.fetch(0)
 text = File.read(path, mode: 'r:bom|utf-8')
 stream = Psych.parse_stream(text, filename: path)
-lines = text.lines
+lines = text.split(/\r\n|[\r\n\u0085\u2028\u2029]/, -1)
+uses_anchors = []
+collect_uses_anchors(stream, uses_anchors)
 ends = Hash.new(0)
 spanning = {}
 collect_line_ends(stream, ends, spanning)
 
-walk(stream) do |_key, value|
+walk(stream, uses_anchors) do |_key, value|
   comment = comment_on(lines, value.start_line, ends, spanning)
   value_text = value.is_a?(Psych::Nodes::Scalar) ? value.value : ''
   puts [
     value.start_line + 1,
     value.end_line + 1,
     comment.tr("\n\t", '  '),
+    lines[value.start_line].to_s.tr("\n\t", '  '),
     value_text.tr("\n\t", '  ')
   ].join("\t")
 end

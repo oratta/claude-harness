@@ -15,6 +15,13 @@ cl_setup() {
   export CLAUDE_CONFIG_DIR="$CONFIG_DIR"
   # 実行環境のレート上書きがテストに漏れないようにする
   unset COST_LEDGER_USD_JPY
+  # 利用者の台帳（COST_LEDGER_PATH）が設定された環境でも、テストは台帳を読み書きしない。
+  # 残すと合成ログの行が利用者の台帳へ追記され、テスト間で requestId が重複扱いになる。
+  # 台帳を使うテスト（ledger.bats）は自分の一時ファイルを明示して渡す
+  unset COST_LEDGER_PATH CLAUDE_PLUGIN_OPTION_LEDGER_PATH
+  # 利用者の許可の一覧（GitHub に書いてよいリポジトリ）の場所を引き継がない。hook を流すテストは
+  # 自分の一時ディレクトリの中のファイルを COST_LEDGER_WRITE_REPOS_FILE に明示して渡す
+  unset COST_LEDGER_WRITE_REPOS_FILE
 }
 
 # 実在の git リポジトリを 1 つ作る（リポジトリ識別子の導出に本物の git が要る）

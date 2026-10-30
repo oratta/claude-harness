@@ -26,10 +26,10 @@ awk '
     }
     for (i = 1; i <= file_count; i++) {
       if (lines[i] == 0) {
-        if (!sections) {
-          sections = 1
-          open = 1
-        }
+        # 0 行のファイルは区画を作らず、直前のファイルの区画に入れる。
+        # 先頭から続くときはまだ区画が無いので区画 1 に入れる。
+        assigned[i] = sections ? sections : 1
+        continue
       } else if (lines[i] > 400) {
         sections++
         open = 0

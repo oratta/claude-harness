@@ -282,6 +282,43 @@ PRECEDENTS
   [[ "$output" == *"論点・各人格の主張・裁定・根拠・判例リンク"* ]] || return 1
 }
 
+# 上の2件は、検査の前処理 stripped_copy が出力を必ず改行で終わらせるため、read ループの
+# `|| [ -n "$line" ]` を外しても pass する（#306）。ガードそのものを固定するため、
+# stripped_copy を通さない（= 末尾改行の無い）入力を各ループへ直接食わせる。
+
+# 関数定義だけを casting-check.sh から取り出す（スクリプト全体は実行しない）
+extract_fn() {
+  sed -n "/^$1() {/,/^}/p" "$SCRIPT"
+}
+
+# strip_html_comments のループ（HTML コメント・フェンス除去）は、末尾改行の無い入力の
+# 最終行を落とさない。落とすと最終行の「- 経路:」等が作業コピーから消える。
+@test "strip_html_comments: the last line of an input without a trailing newline is kept" {
+  local fns="${BATS_TEST_TMPDIR}/fns.sh" in="${BATS_TEST_TMPDIR}/in.md" out="${BATS_TEST_TMPDIR}/out.md"
+  { extract_fn comment_tail_open; extract_fn strip_html_comments; } > "$fns"
+  [ -s "$fns" ]
+  printf -- 'first\n<!-- c -->\n- 経路: 相談の上自走した' > "$in"
+  run bash -c 'source "$1"; strip_html_comments "$2" "$3"' _ "$fns" "$in" "$out"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$out")" = "$(printf 'first\n- 経路: 相談の上自走した')" ]
+}
+
+# 判例ブロック分割ループ（スクリプト本体の while）は、stripped_copy の出力が改行で
+# 終わらなくなっても最終行を落とさない。stripped_copy だけを「末尾改行を削る」版に
+# 差し替えたスクリプトの複製で、経路が最終行の台帳を検査する。
+@test "consultation block loop: a route line as the last line is kept even if stripped_copy stops adding a trailing newline" {
+  local dir="${BATS_TEST_TMPDIR}/no-eol-loop" mutant="${BATS_TEST_TMPDIR}/casting-check-mutant.sh"
+  mkdir -p "${dir}/.claude/casting"
+  sed 's|^  strip_html_comments "\$file" "\$out" \|\| true$|&; printf "%s" "$(cat "$out")" > "$out"|' "$SCRIPT" > "$mutant"
+  # 差し替えが実際に当たったことを確かめる（当たらないとこのテストは何も固定しない）
+  ! cmp -s "$SCRIPT" "$mutant" || return 1
+  printf -- '---\ncatalog_version: 1\n---\n\n# 判例台帳\n\n### 2026-08-27 末尾改行なしで経路が最終行\n\n- 観点: 技術設計・品質\n- 帰結: 自走した\n- 還元: なし\n- 経路: 相談の上自走した' \
+    > "${dir}/.claude/casting/precedents.md"
+  run bash "$mutant" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"consultation-missing-element"* ]] || return 1
+}
+
 # --- 回帰: macOS の sort/uniq がロケール照合で異なる日本語観点列を同一視する（LC_ALL=C 強制） ---
 
 @test "distinct-not-issue fixture: two different multi-perspective strings are not merged into a repeated-not-issue" {
@@ -508,4 +545,71 @@ _fence_trailing_ctrl_fixture() { # $1=出力先ディレクトリ $2=行末に�
   run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
   [ "$status" -eq 0 ]
   [[ "$output" == *"| 財務・コスト | 実際の指定 |"*"| 主 | project |"* ]] || return 1
+}
+
+# --- #150: 複数行コメントを閉じた行に、閉じたコメントがもう1つ同居しても閉じ忘れ扱いにしない ---
+# 修正前は「閉じたあとの残りに <!-- があれば開き直す」だけを見ていたため、
+# `mid --> <!-- b --> tail` の <!-- b --> を閉じ忘れと誤判定して止まっていた（上書き行も 0 になる）。
+# 動的に生成する fixture（静的 fixture を足すと fixtures 一覧の件数を数える検査に触れるため）。
+_pj_fixture() { # $1=出力先ディレクトリ $2=表の前に置く本文（printf の書式ではなく生の文字列）
+  local dir="$1" body="$2"
+  mkdir -p "${dir}/.claude/casting"
+  {
+    printf -- '---\ncatalog_version: 1\n---\n\n# 配役表\n\n'
+    printf '%s\n' "$body"
+    printf '\n| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 |\n|---|---|---|---|---|\n'
+    printf '%s\n' '| 財務・コスト | 支出・API 消費・収益に影響するか | 混合（判断力は内蔵・閾値は注入） | 予算方針文（上限額と裁量範囲） | 主 |'
+  } > "${dir}/.claude/casting/project.md"
+}
+
+@test "close-then-reopen-closed: 'mid --> <!-- b --> tail' after a multi-line comment is not reported as unclosed" {
+  local dir="${BATS_TEST_TMPDIR}/close-reopen-closed"
+  _pj_fixture "$dir" $'<!-- open\nmid --> <!-- b --> tail'
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"unclosed-comment"* ]] || return 1
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"| 主 | project |"* ]] || return 1
+}
+
+@test "close-then-reopen-unclosed: 'mid --> <!-- b' after a multi-line comment is still reported as unclosed" {
+  local dir="${BATS_TEST_TMPDIR}/close-reopen-unclosed"
+  _pj_fixture "$dir" $'<!-- open\nmid --> <!-- b'
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"unclosed-comment"* ]] || return 1
+}
+
+# --- #150: エスケープされたパイプ \| は列区切りとして数えない ---
+
+@test "escaped-pipe: a 5-column row whose cell contains \\| is not malformed and resolves with the human value" {
+  local dir="${BATS_TEST_TMPDIR}/escaped-pipe"
+  mkdir -p "${dir}/.claude/casting"
+  printf '%s\n' '---' 'catalog_version: 1' '---' '' '# 配役表' '' \
+    '| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 |' \
+    '|---|---|---|---|---|' \
+    '| 財務・コスト | 支出 \| API 消費に影響するか | 混合（判断力は内蔵・閾値は注入） | 予算方針文（上限額と裁量範囲） | 主 |' \
+    > "${dir}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"malformed-row"* ]] || return 1
+  run "$SCRIPT" resolve --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 0 ]
+  # 担い手が予算方針文の列へずれず「主」になり、セルの中身は \| のまま出る
+  [[ "$output" == *"| 財務・コスト | 支出 \\| API 消費に影響するか | 混合（判断力は内蔵・閾値は注入） | 予算方針文（上限額と裁量範囲） | 主 | project |"* ]] || return 1
+}
+
+@test "escaped-pipe: an unescaped extra | is still reported as malformed-row (the message names the \\| escape)" {
+  local dir="${BATS_TEST_TMPDIR}/unescaped-pipe"
+  mkdir -p "${dir}/.claude/casting"
+  printf '%s\n' '---' 'catalog_version: 1' '---' '' '# 配役表' '' \
+    '| 観点 | この観点が要る論点の条件 | 判断基準の出どころ | 移譲に必要な文書 | 既定の担い手 |' \
+    '|---|---|---|---|---|' \
+    '| 財務・コスト | 支出 | API 消費に影響するか | 混合 | 予算方針文 | 主 |' \
+    > "${dir}/.claude/casting/project.md"
+  run "$SCRIPT" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"malformed-row"* ]] || return 1
+  [[ "$output" == *'\|'* ]] || return 1
 }

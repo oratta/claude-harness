@@ -10,6 +10,9 @@
 # spec: openspec/changes/pr-state-classifier（dev-workflow-pr-state）
 
 LOST='The self-hosted runner lost communication with the server.'
+# ジョブが上限時間（timeout-minutes）で打ち切られたときに GitHub が付ける annotation
+TIMED_OUT='The job running on runner mac-1 has exceeded the maximum execution time of 40 minutes.'
+CANCELED='The operation was canceled.'
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -196,6 +199,38 @@ no_gh_called() {
   [ "$(jq -c .failed <<<"$output")" = '["test"]' ]
 }
 
+@test "observe: a job cut off at its time limit is job-timeout and retryable" {  # observe: 上限時間で打ち切られたジョブは job-timeout
+  jq -cn --arg m "$TIMED_OUT" --arg c "$CANCELED" '{annotations_by_job: {"77": [$m, $c]}}' > "${WORK}/hints.json"
+  run observe_of "$(view MERGEABLE "[$(actions_check test CANCELLED 700 77)]" h)" --hints "${WORK}/hints.json"
+  [ "$status" -eq 0 ]
+  [ "$(jq -c '[.checks[0].cause, .retry]' <<<"$output")" = '["job-timeout",true]' ]
+  no_gh_called
+}
+
+@test "observe: a cancel without the time-limit annotation stays real" {  # observe: 上限時間の annotation が無い取り消しは今までどおり real
+  jq -cn --arg c "$CANCELED" '{annotations_by_job: {"77": [$c]}}' > "${WORK}/hints.json"
+  run observe_of "$(view MERGEABLE "[$(actions_check test CANCELLED 700 77)]" h)" --hints "${WORK}/hints.json"
+  [ "$(jq -c '[.checks[0].cause, .retry]' <<<"$output")" = '["real",false]' ]
+}
+
+@test "observe: job-timeout wins over --unrelated" {  # observe: 上限時間の打ち切りは --unrelated より先に決まる
+  jq -cn --arg m "$TIMED_OUT" '{annotations_by_job: {"77": [$m]}}' > "${WORK}/hints.json"
+  run observe_of "$(view MERGEABLE "[$(actions_check test CANCELLED 700 77)]" h)" --hints "${WORK}/hints.json" --unrelated test
+  [ "$(jq -c '[.checks[0].cause, .retry]' <<<"$output")" = '["job-timeout",true]' ]
+}
+
+@test "observe: a job-timeout hint does not leak to a same-named check in another job" {  # observe: 上限時間の打ち切りを別のジョブに移さない
+  jq -cn --arg m "$TIMED_OUT" '{annotations_by_job: {"77": [$m]}}' > "${WORK}/hints.json"
+  run observe_of "$(view MERGEABLE "[$(actions_check test CANCELLED 700 77),$(actions_check test FAILURE 800 88)]" h)" --hints "${WORK}/hints.json"
+  [ "$(jq -c '[(.checks[] | select(.job == "77") | .cause), (.checks[] | select(.job == "88") | .cause), .retry]' <<<"$output")" = '["job-timeout","real",false]' ]
+}
+
+@test "observe: runner-lost wins when a job has both annotations" {  # observe: 通信切れと上限時間の両方があれば runner-lost
+  jq -cn --arg m "$TIMED_OUT" --arg l "$LOST" '{annotations_by_job: {"77": [$m, $l]}}' > "${WORK}/hints.json"
+  run observe_of "$(view MERGEABLE "[$(actions_check test CANCELLED 700 77)]" h)" --hints "${WORK}/hints.json"
+  [ "$(jq -r '.checks[0].cause' <<<"$output")" = runner-lost ]
+}
+
 @test "observe: without hints every failure is real and retry is false" {  # observe: 手がかりが無ければやり直さない
   run observe_of "$(view MERGEABLE "[$(actions_check test FAILURE 555 9)]" h)"
   [ "$(jq -c '[([.checks[].cause] | unique), .retry]' <<<"$output")" = '[["real"],false]' ]
@@ -217,6 +252,28 @@ no_gh_called() {
   printf 'not json' > "${WORK}/bad.json"
   run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/bad.json"
   [ "$status" -ne 0 ]
+}
+
+@test "observe: a malformed --hints file is rejected with a hints message, not the stdin one" {  # observe: 形の崩れた --hints は stdin のメッセージでなく hints のメッセージで弾く
+  printf '{"annotations_by_job": []}' > "${WORK}/h1.json"
+  printf '[1]' > "${WORK}/h2.json"
+  printf '{}\n{}\n' > "${WORK}/h3.json"
+  printf '{"annotations_by_job":{"77":"x"}}' > "${WORK}/h4.json"
+  for f in h1 h2 h3 h4; do
+    run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/${f}.json"
+    [ "$status" -ne 0 ]
+    [[ "$output" == *"pr-state.sh: cannot read --hints file"* ]] || return 1
+    [[ "$output" != *"gh pr view JSON from stdin"* ]] || return 1
+  done
+}
+
+@test "observe: empty-object hints are still accepted" {  # observe: 空のオブジェクトの hints は従来どおり通る
+  printf '{}' > "${WORK}/ok1.json"
+  printf '{"annotations_by_job":{}}' > "${WORK}/ok2.json"
+  run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/ok1.json"
+  [ "$status" -eq 0 ]
+  run observe_of "$(view MERGEABLE '[]' h)" --hints "${WORK}/ok2.json"
+  [ "$status" -eq 0 ]
 }
 
 # ── decide: flatmate (N) から移す ───────────────────────────────
@@ -265,10 +322,11 @@ no_gh_called() {
 @test "Ne1-Ne2 (runner-lost hint): rerun first, then fix on the same head" {  # Ne1・Ne2（通信切れの手がかりつき）: 1 回目は rerun、同じ HEAD でまた落ちたら fix
   local v
   v="$(view MERGEABLE "[$(actions_check test FAILURE 555 1)]" e1)"
-  jq -cn --arg m "$LOST" '{annotations_by_job: {"1": [$m]}}' > "${WORK}/hints.json"
+  jq -cn --arg m "$LOST" '{annotations_by_job: {"1": [$m], "2": [$m]}}' > "${WORK}/hints.json"
   watch "$v" --hints "${WORK}/hints.json"
   [ "$ACT" = rerun ]
-  watch "$v" --hints "${WORK}/hints.json"
+  # やり直しの結果は新しいジョブ ID で返る
+  watch "$(view MERGEABLE "[$(actions_check test FAILURE 555 2)]" e1)" --hints "${WORK}/hints.json"
   [ "$ACT" = fix ]
   [ "$(jq -r .fixes <<<"$PREV")" = 1 ]
 }
@@ -310,6 +368,24 @@ no_gh_called() {
 
 # ── decide: 足すケース ────────────────────────────────────────
 
+@test "decide: rerun takes priority over escalate when fixes is 2" {  # decide: 修正回数が 2 でも escalate よりやり直しを優先
+  PREV='{"fixes":2}'
+  step "$(obs ci-fail x1 true)"
+  [ "$ACT" = rerun ]
+  [ "$(jq -r .reran_head <<<"$PREV")" = x1 ]
+  [ "$(jq -r .fixes <<<"$PREV")" = 2 ]
+  [ "$(jq '.raised == null or .raised == false' <<<"$PREV")" = true ]
+}
+
+@test "decide: rerun, then wait on the same head, then ci-fail is fix" {  # decide: やり直し後に同じ HEAD で待ってから落ちたら fix
+  step "$(obs ci-fail e1 true)"
+  [ "$ACT" = rerun ]
+  step "$(obs wait e1)"
+  step "$(obs ci-fail e1 true)"
+  [ "$ACT" = fix ]
+  [ "$(jq -r .fixes <<<"$PREV")" = 1 ]
+}
+
 @test "decide: two failures on the same head rerun only once" {  # decide: 同じ HEAD で 2 回落ちてもやり直しは 1 回
   step "$(obs ci-fail e1 true)"
   [ "$ACT" = rerun ]
@@ -342,6 +418,101 @@ no_gh_called() {
   PREV='{"state":"conflict","head":"x1","fixes":2,"raised":true}'
   step "$(obs ci-fail x2 true)"
   [ "$ACT" = none ]
+}
+
+# ── decide: 上限時間の打ち切り（#991）──────────────────────────────
+
+@test "decide: job-timeout reruns once, then escalates on the same head without counting a fix" {  # decide: 打ち切りは 1 回やり直し、使い切った HEAD ではオーナーに上げる
+  local v
+  v="$(view MERGEABLE "[$(actions_check test CANCELLED 555 1)]" t1)"
+  jq -cn --arg m "$TIMED_OUT" '{annotations_by_job: {"1": [$m], "2": [$m]}}' > "${WORK}/hints.json"
+  watch "$v" --hints "${WORK}/hints.json"
+  [ "$ACT" = rerun ]
+  [ "$(jq -r .reran_head <<<"$PREV")" = t1 ]
+  # やり直しの結果は新しいジョブ ID で返る
+  watch "$(view MERGEABLE "[$(actions_check test CANCELLED 555 2)]" t1)" --hints "${WORK}/hints.json"
+  [ "$ACT" = escalate ]
+  [ "$(jq -r .raised <<<"$PREV")" = true ]
+  [ "$(jq -r 'has("fixes")' <<<"$PREV")" = false ]
+  no_gh_called
+}
+
+@test "decide: escalating a job-timeout keeps fixes as it was" {  # decide: 打ち切りで上げても修正回数は増えない
+  jq -cn --arg m "$TIMED_OUT" '{annotations_by_job: {"1": [$m]}}' > "${WORK}/hints.json"
+  PREV='{"state":"wait","head":"t1","reran_head":"t1","fixes":1}'
+  watch "$(view MERGEABLE "[$(actions_check test CANCELLED 555 1)]" t1)" --hints "${WORK}/hints.json"
+  [ "$ACT" = escalate ]
+  [ "$(jq -r .fixes <<<"$PREV")" = 1 ]
+}
+
+@test "decide: a job-timeout mixed with a real failure is fix" {  # decide: 本当の失敗が混ざった打ち切りは直しに回す
+  jq -cn --arg m "$TIMED_OUT" '{annotations_by_job: {"1": [$m]}}' > "${WORK}/hints.json"
+  PREV='{"state":"wait","head":"t1","reran_head":"t1"}'
+  watch "$(view MERGEABLE "[$(actions_check test CANCELLED 555 1),$(actions_check lint FAILURE 555 2)]" t1)" --hints "${WORK}/hints.json"
+  [ "$ACT" = fix ]
+  [ "$(jq -r .fixes <<<"$PREV")" = 1 ]
+}
+
+@test "decide: after a job-timeout escalation a new head is none" {  # decide: 上げたあとの打ち切りは何もしない
+  jq -cn --arg m "$TIMED_OUT" '{annotations_by_job: {"1": [$m]}}' > "${WORK}/hints.json"
+  PREV='{"state":"wait","head":"t1","reran_head":"t1"}'
+  watch "$(view MERGEABLE "[$(actions_check test CANCELLED 555 1)]" t1)" --hints "${WORK}/hints.json"
+  [ "$ACT" = escalate ]
+  watch "$(view MERGEABLE "[$(actions_check test CANCELLED 555 1)]" t2)" --hints "${WORK}/hints.json"
+  [ "$ACT" = none ]
+}
+
+@test "decide: a first job-timeout after another cause used the rerun escalates" {  # decide: 前回の原因は見ない（unrelated でやり直したあとの初めての打ち切りも上げる）
+  local v
+  v="$(view MERGEABLE "[$(actions_check test CANCELLED 555 1)]" t1)"
+  watch "$v" --unrelated test
+  [ "$ACT" = rerun ]
+  jq -cn --arg m "$TIMED_OUT" '{annotations_by_job: {"2": [$m]}}' > "${WORK}/hints.json"
+  watch "$(view MERGEABLE "[$(actions_check test CANCELLED 555 2)]" t1)" --hints "${WORK}/hints.json"
+  [ "$ACT" = escalate ]
+}
+
+@test "decide: right after a rerun, a stale failure with the same job ids is none" {  # decide: やり直した直後に同じジョブ ID の古い失敗を読んでも none
+  watch "$(view MERGEABLE "[$(actions_check test FAILURE 555 1)]" e1)" --unrelated test
+  [ "$ACT" = rerun ]
+  [ "$(jq -c .reran_jobs <<<"$PREV")" = '["1"]' ]
+  local before="$PREV"
+  watch "$(view MERGEABLE "[$(actions_check test FAILURE 555 1)]" e1)" --unrelated test
+  [ "$ACT" = none ]
+  [ "$PREV" = "$before" ]
+  no_gh_called
+}
+
+@test "decide: after a rerun, a failure with a new job id is still fixed" {  # decide: やり直し後に別のジョブ ID で再び落ちたら従来どおり fix
+  watch "$(view MERGEABLE "[$(actions_check test FAILURE 555 1)]" e1)" --unrelated test
+  [ "$ACT" = rerun ]
+  watch "$(view MERGEABLE "[$(actions_check test FAILURE 555 2)]" e1)" --unrelated test
+  [ "$ACT" = fix ]
+  [ "$(jq -r .fixes <<<"$PREV")" = 1 ]
+}
+
+@test "decide: after rerunning two jobs, a failure left on only one of the old job ids is none" {  # decide: 2 件やり直した後に古いジョブ ID 1 件だけ残っても none
+  watch "$(view MERGEABLE "[$(actions_check test FAILURE 555 1),$(actions_check lint FAILURE 556 2)]" e1)" --unrelated test --unrelated lint
+  [ "$ACT" = rerun ]
+  local before="$PREV"
+  watch "$(view MERGEABLE "[$(actions_check lint FAILURE 556 2)]" e1)" --unrelated test --unrelated lint
+  [ "$ACT" = none ]
+  [ "$PREV" = "$before" ]
+}
+
+@test "decide: a non-array reran_jobs is ignored instead of failing" {  # decide: reran_jobs が配列でなくても落ちず従来の判定
+  PREV='{"state":"wait","head":"t1","reran_head":"t1","reran_jobs":"2"}'
+  step "$(obs ci-fail t1 true)"
+  [ "$ACT" = fix ]
+}
+
+@test "decide: a retryable observation without checks still ends in fix on the same head" {  # decide: checks の無い・空の観測は今までどおり fix
+  PREV='{"state":"wait","head":"t1","reran_head":"t1"}'
+  step "$(obs ci-fail t1 true)"
+  [ "$ACT" = fix ]
+  PREV='{"state":"wait","head":"t1","reran_head":"t1"}'
+  step '{"head":"t1","state":"ci-fail","retry":true}'
+  [ "$ACT" = fix ]
 }
 
 @test "decide: a wait in between does not reset fixes (flatmate#899)" {  # decide: UNKNOWN を挟んでも修正回数が戻らない（flatmate#899）
