@@ -2623,7 +2623,7 @@ def issue_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoR
     outside_usd = summarise(outside, pricing)["total_usd"]
     all_facts.extend(outside)
     total += outside_usd
-    return {"prs": prs, "outside_usd": outside_usd, "total_usd": total,
+    return {"prs": prs, "outside_usd": outside_usd, "total_usd": total, "facts": all_facts,
             "current": (int(round(total * 1e6)),) + token_totals(all_facts)}
 
 
@@ -2897,8 +2897,10 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     label = resolver.label(repo_id)
     inferred_usd, inferred_messages = inferred_totals(
         (fact for row in matched for fact in row["facts"]), pricing)
+    # 閉じた PR を合わせるときは、合計に入る行（PR のブランチの行と PR の外の区間の行）を数える
     unknown_models = summarise(
-        [fact for row in matched for fact in row["facts"]], pricing)["unknown_models"]
+        combined["facts"] if closing_prs
+        else [fact for row in matched for fact in row["facts"]], pricing)["unknown_models"]
     payload = {
         "issue": number,
         "repo_id": repo_id,

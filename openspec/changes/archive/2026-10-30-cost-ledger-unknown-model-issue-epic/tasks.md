@@ -9,7 +9,7 @@
 ## 2. テスト（bats）
 
 - [x] 2.1 issue 経路・epic 経路で名前と行数の行が出ること、未知モデルが無いと出ないこと、`--json` の `unknown_models` を固定する。文言は branch 経路と同じ文字列で比べる。epic は、ヘッドブランチ上で区間に属さない行を数える・区間とヘッドブランチの両方に属する行は 1 回・リポジトリ不明の行は数えない、の 3 つも固定する 触る範囲: plugins/cost-ledger/tests/（新規 unknown-model.bats。epic の準備は tests/epic.bats を参照）
-- [x] 2.2 cost.md の指示の有無を grep で固定する 触る範囲: plugins/cost-ledger/tests/cost-command.bats
+- [x] 2.2 cost.md の指示の有無を grep で固定する 触る範囲: plugins/cost-ledger/tests/unknown-model.bats
 
 ## 3. 記録
 
