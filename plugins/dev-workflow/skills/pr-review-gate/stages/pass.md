@@ -6,7 +6,7 @@ LLM の直接マージ（`gh pr merge`・REST merge API）は禁止。
 
 ## 入口
 
-手順 4（`stages/pass-verify.md`）のあと。許容待ちは hold。
+手順 4（`stages/pass-verify.md`）のあと。許容待ちは hold（依頼の文面は `~/.claude/output-styles/readable.md` 節3）。
 
 ### 5. 合格処理
 

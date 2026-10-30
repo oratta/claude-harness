@@ -35,7 +35,7 @@ referrers() {
     plugins/dev-workflow/skills/develop/references/epic.md \
     plugins/dev-workflow/skills/develop/references/epic-child-stop.md \
     plugins/dev-workflow/skills/pr-review-gate/stages/hold.md \
-    plugins/dev-workflow/skills/pr-review-gate/stages/pass-verify.md \
+    plugins/dev-workflow/skills/pr-review-gate/stages/pass.md \
     plugins/dev-workflow/references/ci-watch.md \
     rules/one-off-no-script.md \
     plugins/dev-workflow/references/one-off-operations.md \

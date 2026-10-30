@@ -26,7 +26,7 @@ setup() {
   CMD="${PLUGIN_DIR}/commands/develop.md"
   HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   HOLD="$BATS_TEST_TMPDIR/hold-all.md"
-  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" > "$HOLD"
+  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-categories.md" > "$HOLD"
   CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
   CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
   CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
@@ -34,7 +34,7 @@ setup() {
   CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
   cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
   AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
-  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated-first.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
 }
 
 # 「## <見出し>」から次の「## 」までを切り出す

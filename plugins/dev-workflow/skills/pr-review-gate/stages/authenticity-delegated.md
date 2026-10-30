@@ -8,11 +8,9 @@
 主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>
 ```
 
-`--relayed` で確かめない（`not-after` になる）。
+`--relayed` で確かめない（`not-after` になる）。引き継ぎでなければ加えて `stages/authenticity-delegated-first.md` の 1 と 3 を確かめる。
 
-1. 停止の記録を `gh api repos/$R/issues/comments/<comment_id> --jq '{body, author_association, issue_url, html_url, created_at}'` で確かめる: 先頭行=`子の停止: 主の返事待ち`、author_association=OWNER/MEMBER/COLLABORATOR、issue_url=記録先。`gh api repos/$R/issues/<記録先>/comments --paginate --jq '[.[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR") | select((.body | split("\n")[0]) == "子の停止: 主の返事待ち")] | last | .html_url'` で最新の停止の記録と一致必須
 2. 委任の記録が、①エピック #<E> の issue のコメントで、1〜4 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）。<E> は子に届いた返事の頭 `主の返事（親エピック #<E> 経由）` の番号で、委任の記録 URL の issue 番号と一致必須（定型文: develop `references/epic.md`）
-3. ①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる
 4. 委任の日時（`gh api repos/$R/issues/comments/<comment_id> --jq .created_at`）・停止日時で実行。exit 0・同 timestamp の `MATCH:` 全文に任せる意思が必須
 
    ```bash
