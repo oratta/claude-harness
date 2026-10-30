@@ -3,7 +3,8 @@
 
 The rules are specified in openspec/specs/usage-session-records ("記録と snapshot から実効値を
 求める"). Every dev-workflow reader (select-account.sh, session-tripwires.sh,
-agent-model-guard.sh, codex-develop.py) uses this one implementation.
+agent-model-guard.sh, codex-develop.py) uses this one implementation. budget_modes() turns
+those values into the budget modes for codex-develop.py.
 
   usage_view.py --json [--now EPOCH]   print {"now", "active", "accounts"} as one JSON line
   usage_view.py --codex-enabled        print "on" or "off" (registry "codex"."enabled"), exit 0
@@ -25,6 +26,8 @@ ID_RE = re.compile(r"[A-Za-z0-9-]{1,32}\Z")
 CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
 WEEK_SECONDS = 7 * 24 * 60 * 60
 SAME_WINDOW_SECONDS = 3600
+FABLE_MODES = ("abundant", "conserve", "reserve", "exhausted")
+SHARED_MODES = ("ok", "throttled", "depleted")
 
 
 def config_dir():
@@ -241,6 +244,44 @@ def active_slot(slots, snapshot, active_secure):
     if snapshot.get("active") in ids:
         return snapshot["active"]
     return ids[0]
+
+
+def _elapsed_pct(resets_epoch, now):
+    if not resets_epoch:
+        return None
+    return max(0.0, min(100.0, (WEEK_SECONDS - (int(resets_epoch) - now)) / WEEK_SECONDS * 100.0))
+
+
+def budget_modes(slot, now, environ=None):
+    """FABLE_BUDGET_MODE and SHARED_BUDGET_MODE of one slot's effective values.
+
+    The formula is the one in session-tripwires.sh: explicit env first, then no data, then the
+    weekly thresholds. Unknown explicit values read as the safe side (conserve / throttled).
+    """
+    environ = os.environ if environ is None else environ
+    slot = slot if isinstance(slot, dict) else {}
+    pct, all_pct = slot.get("fable_weekly_pct"), slot.get("weekly_all_pct")
+    fable = (environ.get("FABLE_BUDGET_MODE") or "").strip()
+    if fable:
+        fable = fable if fable in FABLE_MODES else "conserve"
+    elif pct is None:
+        fable = "conserve"
+    elif pct > 90:
+        fable = "exhausted"
+    else:
+        elapsed = _elapsed_pct(slot.get("fable_resets_epoch"), now)
+        fable = "abundant" if elapsed is not None and pct <= elapsed else "conserve"
+    shared = (environ.get("SHARED_BUDGET_MODE") or "").strip()
+    if shared:
+        shared = shared if shared in SHARED_MODES else "throttled"
+    elif all_pct is None:
+        shared = "ok"
+    elif all_pct > 90:
+        shared = "depleted"
+    else:
+        elapsed = _elapsed_pct(slot.get("weekly_resets_epoch"), now)
+        shared = "throttled" if elapsed is not None and all_pct > elapsed else "ok"
+    return {"fable": fable, "shared": shared}
 
 
 def build_view(accounts_file=None, sessions_dir=None, snapshot_path=None, now=None,

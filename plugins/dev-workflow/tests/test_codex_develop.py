@@ -56,6 +56,9 @@ class RequestFixture:
             'USAGE_PROBE_STATE': str(self.root / '.usage-probe-state'),
             'USAGE_PROBE_LOCK': str(self.root / '.usage-probe.lock'),
             'USAGE_PROBE_RESPONSE_FILE': str(self.root / 'nonexistent.json'),
+            # The resolver reads these; without them a test would follow the real week's usage.
+            'FABLE_BUDGET_MODE': 'conserve',
+            'SHARED_BUDGET_MODE': 'ok',
         })
         environ.start()
         self.addCleanup(environ.stop)
@@ -145,16 +148,17 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
         self.assertEqual(request['codex_home'], str(self.home))
         self.assertNotIn('effort', request)
 
-    def test_request_routes_claude_without_writing_codex_request_or_applying_budget_cap(self):
+    def test_request_routes_claude_without_writing_codex_request(self):
         self.write_mixed_profile()
-        for mode, value in (('FABLE_BUDGET_MODE', 'exhausted'),
-                            ('SHARED_BUDGET_MODE', 'depleted')):
+        for mode, value, model in (('FABLE_BUDGET_MODE', 'exhausted', 'opus'),
+                                   ('SHARED_BUDGET_MODE', 'depleted', 'sonnet')):
             with self.subTest(mode=mode), patch.dict(os.environ, {mode: value}, clear=False):
                 result = self.call('--account-home', 'mapped=' + str(self.home), phase='decider')
                 self.assertEqual(result['status'], 'agent-required')
                 self.assertEqual(tuple(result[key]
                                        for key in ('role', 'executor', 'account', 'model', 'effort')),
-                                 ('decider', 'claude', 'current', 'fable', 'high'))
+                                 ('decider', 'claude', 'current', model, 'high'))
+                self.assertEqual(result['requested_model'], 'fable')
                 self.assertEqual(result['head'], subprocess.check_output(
                     ['git', '-C', str(self.cwd), 'rev-parse', 'HEAD'], text=True).strip())
                 self.assertFalse(self.out.exists())
@@ -1386,6 +1390,245 @@ class TierRule(RequestFixture, unittest.TestCase):
         self.assertEqual((result['status'], result['role'], result['executor'], result['model']),
                          ('agent-required', 'decider', 'claude', 'fable'))
         self.assertFalse(self.out.exists())
+
+
+class BudgetModeDerivation(RequestFixture, unittest.TestCase):
+    # usage_view.budget_modes is a copy of the formula in session-tripwires.sh, which stays
+    # untouched, so the tripwire script itself is the expected value in the last test.
+    NOW = 2_000_000
+    DAY = 86400
+
+    def slot(self, fable=None, weekly=None, fable_resets=None, weekly_resets=None):
+        return {'fable_weekly_pct': fable, 'weekly_all_pct': weekly,
+                'fable_resets_epoch': fable_resets, 'weekly_resets_epoch': weekly_resets}
+
+    def test_explicit_env_wins_over_the_effective_values(self):
+        slot = self.slot(fable=95, weekly=95, weekly_resets=self.NOW + self.DAY)
+        self.assertEqual(m.usage_view.budget_modes(
+            slot, self.NOW, {'FABLE_BUDGET_MODE': 'reserve', 'SHARED_BUDGET_MODE': 'ok'}),
+            {'fable': 'reserve', 'shared': 'ok'})
+
+    def test_effective_values_give_exhausted_and_throttled(self):
+        slot = self.slot(fable=95, weekly=60, weekly_resets=self.NOW + 6 * self.DAY)
+        self.assertEqual(m.usage_view.budget_modes(slot, self.NOW, {}),
+                         {'fable': 'exhausted', 'shared': 'throttled'})
+
+    def test_no_data_gives_conserve_and_ok(self):
+        for slot in (None, {}, self.slot()):
+            with self.subTest(slot=slot):
+                self.assertEqual(m.usage_view.budget_modes(slot, self.NOW, {}),
+                                 {'fable': 'conserve', 'shared': 'ok'})
+
+    def test_unknown_explicit_values_read_as_the_safe_side(self):
+        self.assertEqual(m.usage_view.budget_modes(
+            None, self.NOW, {'FABLE_BUDGET_MODE': 'foo', 'SHARED_BUDGET_MODE': 'bar'}),
+            {'fable': 'conserve', 'shared': 'throttled'})
+
+    def test_blank_explicit_values_are_not_set(self):
+        self.assertEqual(m.usage_view.budget_modes(
+            None, self.NOW, {'FABLE_BUDGET_MODE': ' ', 'SHARED_BUDGET_MODE': ''}),
+            {'fable': 'conserve', 'shared': 'ok'})
+
+    def test_same_values_as_session_tripwires(self):
+        script = SCRIPT.parent / 'session-tripwires.sh'
+        snapshot = self.root / 'parity-snapshot.json'
+        env = {key: value for key, value in os.environ.items()
+               if key not in ('FABLE_BUDGET_MODE', 'SHARED_BUDGET_MODE')}
+        env.update(CLAUDE_PLUGIN_ROOT=str(SCRIPT.parents[1]), TRIPWIRES_SCOPE='subagent-budget',
+                   USAGE_SNAPSHOT=str(snapshot), USAGE_PROBE_NOW=str(self.NOW),
+                   CLAUDE_ACCOUNTS_FILE=str(self.root / 'no-registry.json'))
+        for fable, weekly, days in ((95, 60, 6), (91, 91, 1), (90, 90, 1), (10, 20, 1),
+                                    (50, 10, 1), (50, 10, 6), (None, 60, 6), (20, None, 1),
+                                    (14, 14, 6), (15, 15, 6), (None, None, None)):
+            with self.subTest(fable=fable, weekly=weekly, days=days):
+                entry = {'fetched_at': self.NOW - 60}
+                if fable is not None:
+                    entry['fable_weekly_pct'] = fable
+                if weekly is not None:
+                    entry['weekly_all_pct'] = weekly
+                if days is not None:
+                    entry['weekly_resets_epoch'] = self.NOW + days * self.DAY
+                snapshot.write_text(json.dumps(
+                    {'schema': 2, 'active': 'default', 'accounts': {'default': entry}}))
+                output = subprocess.run([str(script)], env=env, text=True, capture_output=True,
+                                        timeout=20).stdout
+                expected = {
+                    'fable': re.search(r'FABLE_BUDGET_MODE: (\w+)', output).group(1),
+                    'shared': re.search(r'SHARED_BUDGET_MODE: (\w+)', output).group(1)}
+                with patch.dict(os.environ, {'USAGE_SNAPSHOT': str(snapshot),
+                                             'CLAUDE_ACCOUNTS_FILE': env['CLAUDE_ACCOUNTS_FILE']}):
+                    os.environ.pop('FABLE_BUDGET_MODE')
+                    os.environ.pop('SHARED_BUDGET_MODE')
+                    self.assertEqual(m.read_budget_modes(self.NOW), expected)
+
+
+class BudgetFixture(RequestFixture):
+    def resolve(self, phase, *extra, profile='claude-default', fable='conserve', shared='ok'):
+        args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
+                '--cwd', str(self.cwd), '--profile', profile,
+                '--account-home', 'current=' + str(self.home), '--out', str(self.out), *extra]
+        environment = {'FABLE_BUDGET_MODE': fable, 'SHARED_BUDGET_MODE': shared}
+        with patch.object(sys, 'argv', args), patch.dict(os.environ, environment):
+            return m.main()
+
+
+class BudgetApplication(BudgetFixture, unittest.TestCase):
+    # model-tier-resolution: the modes act on the tier before the cap of the configuration.
+    def test_depleted_holds_every_role_at_the_middle_tier(self):
+        for profile in ('claude-default', 'codex-standard'):
+            for phase in m.PHASES:
+                with self.subTest(profile=profile, phase=phase):
+                    self.assertEqual(self.resolve(phase, profile=profile, shared='depleted')['tier'],
+                                     '最安' if phase in ('explore', 'summarize') else '中位')
+
+    def test_throttled_keeps_what_was_raised_at_the_upper_tier(self):
+        cases = ((('spec-review',), '中位'), (('review',), '中位'), (('gate',), '中位'),
+                 (('implement', '--pre-class', 'merge'), '上位'),
+                 (('implement', '--failure', 'executor'), '上位'),
+                 (('spec-review', '--pre-class', 'contract'), '上位'),
+                 (('decider',), '上位'), (('decider', '--failure', 'first'), '上位'),
+                 (('explore',), '最安'), (('implement',), '中位'))
+        for arguments, tier in cases:
+            with self.subTest(arguments=arguments):
+                self.assertEqual(self.resolve(*arguments, shared='throttled')['tier'], tier)
+
+    def test_exhausted_caps_every_route_at_the_upper_tier(self):
+        for extra in ((), ('--unmanned',)):
+            with self.subTest(extra=extra):
+                self.assertEqual(self.resolve('decider', *extra, fable='exhausted')['tier'], '上位')
+
+    def test_reserve_caps_only_unmanned_runs(self):
+        self.assertEqual(self.resolve('decider', '--unmanned', fable='reserve')['tier'], '上位')
+        self.assertEqual(self.resolve('decider', fable='reserve')['tier'], '最上位')
+
+    def test_abundant_raises_nothing(self):
+        for phase in m.PHASES:
+            with self.subTest(phase=phase):
+                self.assertEqual(self.resolve(phase, fable='abundant')['tier'],
+                                 self.resolve(phase, fable='conserve')['tier'])
+
+    def test_unknown_values_act_like_conserve_and_throttled(self):
+        result = self.resolve('spec-review', fable='foo', shared='bar')
+        self.assertEqual(result['tier'], self.resolve('spec-review', shared='throttled')['tier'])
+        self.assertEqual(result['budget_modes'], {'fable': 'conserve', 'shared': 'throttled'})
+
+    def test_the_configuration_does_not_change_the_applied_tier(self):
+        for profile in ('claude-default', 'codex-standard', 'codex-economy', 'hybrid-standard',
+                        'claude-write-codex-review'):
+            with self.subTest(profile=profile):
+                result = self.resolve('decider', profile=profile, fable='exhausted')
+                self.assertEqual((result['requested_tier'], result['tier']), ('最上位', '上位'))
+
+    def test_an_explicit_profile_does_not_run_the_probe_and_unreadable_usage_does_not_stop(self):
+        os.environ.pop('FABLE_BUDGET_MODE')
+        os.environ.pop('SHARED_BUDGET_MODE')
+        with patch.object(m, '_run_usage_probe') as probe, \
+                patch.object(m.usage_view, 'build_view', side_effect=OSError('unreadable')), \
+                patch.object(sys, 'argv', [
+                    str(SCRIPT), 'request', '--phase', 'decider', '--input', str(self.input),
+                    '--cwd', str(self.cwd), '--profile', 'claude-default', '--out', str(self.out)]):
+            result = m.main()
+        probe.assert_not_called()
+        self.assertEqual(result['budget_modes'], {'fable': 'conserve', 'shared': 'ok'})
+        self.assertEqual(result['model'], 'fable')
+
+    def test_the_modes_do_not_change_the_recorded_configuration(self):
+        calm = self.resolve('decider')
+        tight = self.resolve('decider', fable='exhausted', shared='depleted')
+        self.assertEqual(calm['execution_config'], tight['execution_config'])
+        self.assertEqual(calm['execution_config_hash'], tight['execution_config_hash'])
+
+
+class TierOutput(BudgetFixture, unittest.TestCase):
+    def test_claude_applied_value_keeps_the_requested_one(self):
+        result = self.resolve('decider', fable='exhausted')
+        self.assertEqual({key: result[key] for key in (
+            'requested_tier', 'tier', 'tier_reason', 'tier_cap', 'executed_tier',
+            'requested_model', 'model', 'budget_modes')},
+            {'requested_tier': '最上位', 'tier': '上位', 'tier_reason': 'FABLE_BUDGET_MODE=exhausted',
+             'tier_cap': None, 'executed_tier': '上位', 'requested_model': 'fable', 'model': 'opus',
+             'budget_modes': {'fable': 'exhausted', 'shared': 'ok'}})
+
+    def test_both_modes_lowering_to_the_same_tier_name_the_shared_one(self):
+        result = self.resolve('decider', fable='exhausted', shared='throttled')
+        self.assertEqual((result['tier'], result['tier_reason']),
+                         ('上位', 'SHARED_BUDGET_MODE=throttled'))
+
+    def test_unchanged_reason_and_depleted_reason(self):
+        self.assertEqual(self.resolve('implement')['tier_reason'], 'unchanged')
+        self.assertEqual(self.resolve('review', shared='depleted')['tier_reason'],
+                         'SHARED_BUDGET_MODE=depleted')
+
+    def test_cap_lowers_the_executed_tier_only(self):
+        for extra, tier in (((), '中位'), (('--pre-class', 'merge'), '上位')):
+            with self.subTest(extra=extra):
+                result = self.resolve('implement', *extra, profile='codex-economy')
+                self.assertEqual((result['tier'], result['tier_cap'], result['executed_tier'],
+                                  result['requested_model'], result['model']),
+                                 (tier, '最安', '最安', 'sol', 'luna'))
+                self.assertEqual(result['tier_reason'], 'unchanged')
+
+    def test_gate_of_the_economy_profile_stays_on_the_cap(self):
+        result = self.resolve('gate', profile='codex-economy')
+        self.assertEqual((result['tier'], result['executed_tier'], result['model']),
+                         ('中位', '最安', 'luna'))
+
+    def test_a_cap_above_the_tier_changes_nothing(self):
+        roles = {role: {'executor': 'codex', 'account': 'current', 'effort': 'low',
+                        'tier_cap': '最上位'} for role in m.CANONICAL_ROLES}
+        self.profile_file.write_text(json.dumps(
+            {'version': 2, 'profiles': {'custom': {'roles': roles}}}))
+        result = self.resolve('implement', '--profile-file', str(self.profile_file),
+                              profile='custom')
+        self.assertEqual((result['tier'], result['executed_tier'], result['model']),
+                         ('中位', '中位', 'sol'))
+
+    def test_the_request_file_gains_no_tier_field_and_the_worker_accepts_it(self):
+        linked = self.root / 'linked'
+        subprocess.run(['git', '-C', str(self.cwd), 'worktree', 'add', '-q', '-b', 'feature',
+                        str(linked)], check=True)
+        args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
+                '--cwd', str(linked), '--profile', 'codex-standard', '--pre-class', 'merge',
+                '--account-home', 'current=' + str(self.home), '--out', str(self.out)]
+        with patch.object(sys, 'argv', args):
+            result = m.main()
+        request = json.loads(self.out.read_text())
+        self.assertEqual(set(request), {'request_id', 'origin', 'account', 'cwd', 'model', 'role',
+                                        'prompt', 'effort', 'codex_home'})
+        self.assertEqual(request['model'], result['model'])
+        request.pop('codex_home')
+        self.assertEqual(worker_module.validate_request(request)['model'], 'sol')
+
+
+class LegacyForm(RequestFixture, unittest.TestCase):
+    def legacy(self, model, *extra, phase='implement'):
+        args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
+                '--cwd', str(self.cwd), '--account', 'mapped', '--model', model,
+                '--account-home', 'mapped=' + str(self.home), '--out', str(self.out), *extra]
+        with patch.object(sys, 'argv', args):
+            return m.main()
+
+    def test_the_legacy_form_goes_around_the_tiers(self):
+        result = self.legacy('gpt-6-sol', '--pre-class', 'merge', '--design-judgment', '--failure',
+                             'executor', '--unmanned', phase='review')
+        self.assertEqual((result['role'], result['model'], result['requested_model']),
+                         ('impl-review', 'gpt-6-sol', 'gpt-6-sol'))
+        for key in ('requested_tier', 'tier', 'tier_reason', 'tier_cap', 'executed_tier',
+                    'budget_modes'):
+            with self.subTest(key=key):
+                self.assertIsNone(result[key])
+        request = json.loads(self.out.read_text())
+        self.assertEqual((request['role'], request['model']), ('impl-review', 'gpt-6-sol'))
+
+    def test_family_names_and_exact_ids_pass_unchanged(self):
+        for model in ('sol', 'gpt-6-astra'):
+            with self.subTest(model=model):
+                self.assertEqual(self.legacy(model)['model'], model)
+
+    def test_the_legacy_form_ignores_a_broken_table_and_the_modes(self):
+        with patch.object(m, 'TIER_MAP', self.root / 'absent.json'), \
+                patch.dict(os.environ, {'SHARED_BUDGET_MODE': 'depleted'}):
+            self.assertEqual(self.legacy('astra', phase='decider')['model'], 'astra')
 
 
 class ProfileFormatDocument(RequestFixture, unittest.TestCase):

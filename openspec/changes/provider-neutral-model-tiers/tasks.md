@@ -20,13 +20,13 @@
 
 ## 4. 残量モード
 
-- [ ] 4.1 `usage_view.py` に残量モードの導出の関数を足す。式は `session-tripwires.sh` 92-122 行目と同じ。未知の明示値は conserve / throttled、データ無しは conserve / ok に読み替える。テスト: 明示 env が勝つ・データ無し・未知の値の scenario、`now` を固定して fable_weekly_pct 95・weekly_all_pct 60・weekly_resets_epoch = now + 6 日で exhausted / throttled になること、`session-tripwires.sh` と同じ入力で同じ値になること。触る範囲: dw/scripts/usage_view.py:195-246（slot_view・active_slot の次）、dw/tests/test_codex_develop.py（新しいテストクラス）
-- [ ] 4.2 要求の格に残量モードを適用する関数を作り、`codex-develop.py` から導出を呼ぶ。読めないときは止まらない。明示 profile でも usage probe は走らせない。テスト: `model-tier-resolution` の「残量モードを格に適用する」の scenario 全部。既存のテストは残量 env を固定する（`setUp` で conserve / ok）。触る範囲: dw/scripts/codex-develop.py:65-87（claude_usage_evidence の近く）、dw/scripts/codex-develop.py:550-626、dw/tests/test_codex_develop.py:100-112、dw/tests/test_codex_develop.py:152-153
+- [x] 4.1 `usage_view.py` に残量モードの導出の関数を足す。式は `session-tripwires.sh` 92-122 行目と同じ。未知の明示値は conserve / throttled、データ無しは conserve / ok に読み替える。テスト: 明示 env が勝つ・データ無し・未知の値の scenario、`now` を固定して fable_weekly_pct 95・weekly_all_pct 60・weekly_resets_epoch = now + 6 日で exhausted / throttled になること、`session-tripwires.sh` と同じ入力で同じ値になること。触る範囲: dw/scripts/usage_view.py:195-246（slot_view・active_slot の次）、dw/tests/test_codex_develop.py（新しいテストクラス）
+- [x] 4.2 要求の格に残量モードを適用する関数を作り、`codex-develop.py` から導出を呼ぶ。読めないときは止まらない。明示 profile でも usage probe は走らせない。テスト: `model-tier-resolution` の「残量モードを格に適用する」の scenario 全部。既存のテストは残量 env を固定する（`setUp` で conserve / ok）。触る範囲: dw/scripts/codex-develop.py:65-87（claude_usage_evidence の近く）、dw/scripts/codex-develop.py:550-626、dw/tests/test_codex_develop.py:100-112、dw/tests/test_codex_develop.py:152-153
 
 ## 5. 上限と出力
 
-- [ ] 5.1 `tier_cap` から `executed_tier` を作り、対応表で `requested_model` と `model` を引いて結果に 8 欄を足す。`tier_reason` は共有枠モードを優先する。依頼ファイルの欄は増やさない。テスト: `model-tier-resolution` の「構成の上限」「格の出力」の scenario 全部。依頼ファイルが `codex-worker.py run` に受け付けられる。触る範囲: dw/scripts/codex-develop.py:595-626、dw/tests/test_codex_develop.py（新しいテストクラス）
-- [ ] 5.2 旧形式は規則・残量モード・対応表を通さず、格の欄を null にする。格の入力の引数は受けて無視する。テスト: `model-tier-resolution` の「旧形式は格の規則を通らない」と `codex-role-profiles` の「旧形式で系統名と完全 ID を指定する」。触る範囲: dw/scripts/codex-develop.py:576-584、dw/tests/test_codex_develop.py（新しいテストクラス）
+- [x] 5.1 `tier_cap` から `executed_tier` を作り、対応表で `requested_model` と `model` を引いて結果に 8 欄を足す。`tier_reason` は共有枠モードを優先する。依頼ファイルの欄は増やさない。テスト: `model-tier-resolution` の「構成の上限」「格の出力」の scenario 全部。依頼ファイルが `codex-worker.py run` に受け付けられる。触る範囲: dw/scripts/codex-develop.py:595-626、dw/tests/test_codex_develop.py（新しいテストクラス）
+- [x] 5.2 旧形式は規則・残量モード・対応表を通さず、格の欄を null にする。格の入力の引数は受けて無視する。テスト: `model-tier-resolution` の「旧形式は格の規則を通らない」と `codex-role-profiles` の「旧形式で系統名と完全 ID を指定する」。触る範囲: dw/scripts/codex-develop.py:576-584、dw/tests/test_codex_develop.py（新しいテストクラス）
 
 ## 6. 文書
 

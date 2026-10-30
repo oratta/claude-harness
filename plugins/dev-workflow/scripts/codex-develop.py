@@ -101,6 +101,22 @@ def claude_usage_evidence(snapshot_path, now):
             'fetched_at': row['observed_at']}
 
 
+def usage_paths():
+    config_dir = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
+    return config_dir, Path(os.environ.get('USAGE_SNAPSHOT', config_dir / '.usage-snapshot'))
+
+
+def read_budget_modes(now=None):
+    # Unreadable usage is not a reason to stop a request: it reads as no data.
+    now = int(time.time()) if now is None else now
+    try:
+        view = usage_view.build_view(snapshot_path=str(usage_paths()[1]), now=now)
+        slot = view['accounts'].get(view['active'])
+    except Exception:
+        slot = None
+    return usage_view.budget_modes(slot, now)
+
+
 def select_configuration(claude_margin, codex_margin, codex_enabled=True):
     # Codex off (accounts.json "codex"."enabled": false) is the user's setting, not a
     # headroom result, so it has its own reason whatever the margins are.
@@ -317,8 +333,7 @@ def _run_usage_probe(snapshot_path):
 
 
 def automatic_selection(mapping, now=None):
-    config_dir = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
-    snapshot_path = Path(os.environ.get('USAGE_SNAPSHOT', config_dir / '.usage-snapshot'))
+    config_dir, snapshot_path = usage_paths()
     _run_usage_probe(snapshot_path)
     now = int(time.time()) if now is None else now
     claude = claude_usage_evidence(snapshot_path, now)
@@ -402,6 +417,40 @@ def requested_tier(phase, pre_class, design_judgment, failure):
     if phase == 'decider' and failure in {'first', 'executor'}:
         return '上位'
     return BASE_TIERS[phase]
+
+
+def apply_budget(tier, phase, switched, modes, unmanned):
+    # Returns the tier after the modes and what lowered it. The shared mode goes first, so it is
+    # the one named when both would land on the same tier. Nothing here raises a tier, and the
+    # lowest tier stays where it is even when depleted: that mode must not add consumption.
+    applied, reason = tier, 'unchanged'
+    if modes['shared'] == 'depleted':
+        limit = '中位'
+    elif modes['shared'] == 'throttled':
+        keeps_upper = switched or phase == 'decider' or phase in WRITER_PHASES
+        limit = '上位' if keeps_upper else '中位'
+    else:
+        limit = None
+    if cap_tier(applied, limit) != applied:
+        applied, reason = cap_tier(applied, limit), 'SHARED_BUDGET_MODE=' + modes['shared']
+    if modes['fable'] == 'exhausted' or modes['fable'] == 'reserve' and unmanned:
+        if cap_tier(applied, '上位') != applied:
+            applied, reason = '上位', 'FABLE_BUDGET_MODE=' + modes['fable']
+    return applied, reason
+
+
+def tier_fields(args, execution, switched, tier_map):
+    # The stdout fields of a resolved request. The cap comes last, so `tier` is the same for
+    # every configuration; `model` is the only value that depends on who executes.
+    modes = read_budget_modes()
+    requested = requested_tier(args.phase, args.pre_class, args.design_judgment, args.failure)
+    tier, reason = apply_budget(requested, args.phase, switched, modes, args.unmanned)
+    cap = execution.get('tier_cap')
+    executed = cap_tier(tier, cap)
+    models = tier_map['executors'][execution['executor']]
+    return {'requested_tier': requested, 'tier': tier, 'tier_reason': reason, 'tier_cap': cap,
+            'executed_tier': executed, 'requested_model': models[requested],
+            'model': models[executed], 'budget_modes': modes}
 
 
 def cap_tier(tier, cap):
@@ -654,22 +703,22 @@ def build_request(args):
     # the worker chooses the sandbox from that role, and the phase instructions use gh.
     switched = not legacy and switches_to_decider(args.phase, args.pre_class)
     execution = resolve_execution(state, 'decider' if switched else role)
-    if not legacy:
-        tier = requested_tier(args.phase, args.pre_class, args.design_judgment, args.failure)
-        executed_tier = cap_tier(tier, execution.get('tier_cap'))
-        execution['model'] = tier_map['executors'][execution['executor']][executed_tier]
+    # The legacy pair is the one way to pin a version, so no rule, mode or table touches it.
+    tiers = (dict.fromkeys(('requested_tier', 'tier', 'tier_reason', 'tier_cap', 'executed_tier',
+                            'budget_modes'))
+             | {'requested_model': args.model, 'model': args.model} if legacy else
+             tier_fields(args, execution, switched, tier_map))
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
         result = {'status': 'agent-required', 'phase': args.phase, 'role': execution['role'],
                 'executor': execution['executor'], 'account': execution['account'],
-                'model': execution['model'], 'effort': execution.get('effort'),
-                'head': head, 'selection': selection}
+                'effort': execution.get('effort'), 'head': head, 'selection': selection} | tiers
         if 'execution_config' in state:
             result.update(execution_config=state['execution_config'],
                           execution_config_hash=state['execution_config_hash'])
         return result
     request = dict(request_id='develop-' + uuid.uuid4().hex, origin='manual',
-                   account=execution['account'], model=execution['model'], cwd=str(cwd), role=role,
+                   account=execution['account'], model=tiers['model'], cwd=str(cwd), role=role,
                    codex_home=mapping[execution['account']],
                    prompt=prompt(args.phase, 'Dispatch HEAD: ' + head + '\n' + Path(args.input).read_text(), state))
     if 'effort' in execution:
@@ -681,8 +730,8 @@ def build_request(args):
     result = {'status': 'request-written', 'request': str(out), 'request_id': request['request_id'],
             'phase': args.phase, 'role': execution['role'], 'executor': execution['executor'],
             'account': execution['account'],
-            'codex_home': request['codex_home'], 'model': execution['model'],
-            'effort': execution.get('effort'), 'head': head, 'selection': selection}
+            'codex_home': request['codex_home'], 'effort': execution.get('effort'),
+            'head': head, 'selection': selection} | tiers
     if 'execution_config' in state:
         result.update(execution_config=state['execution_config'],
                       execution_config_hash=state['execution_config_hash'])
