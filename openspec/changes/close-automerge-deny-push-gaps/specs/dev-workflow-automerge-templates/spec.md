@@ -4,6 +4,8 @@
 
 テンプレートは `.claude/settings.json` に、LLM による `gh pr merge`・main / master への直接 push・force push（`-f` / `--force` / `--force-with-lease`）・`--no-verify` push を塞ぐ `permissions.deny` 断片を含まなければならない（MUST）。拒否範囲にはオプションの前置形・後置形と main/master 宛て明示 refspec を含め、通常の feature push は拒否してはならない（MUST NOT）。README は既存 deny を消さないマージ手順を提供し（SHALL）、配布用 docs/auto-merge.md は各 deny の経路を説明する（SHALL）。配布は他プラグインに依存しない（SHALL）。
 
+**守備範囲**: 今回拡張する拒否判定の入力は、エージェントが文字列として直接打つ、引数を空白で区切った単純な `git push` コマンドを想定する。拾う誤りは、危険オプション（`--force` / `-f` / `--force-with-lease` / `--no-verify`）の前置・中置・後置、列挙した値付き `--force-with-lease`、main/master 宛て明示 refspec による push とする。`git push origin feature/foo`、`git push -u origin feature/foo`、`git push origin feature:main-fix` はこのテンプレートの deny に一致しないことを許す（他の permission 設定による許可は保証しない）。引用符・タブ・変数などの展開・URL・値を取るオプションの値の内部（列挙した値付き `--force-with-lease` を除く）・複合 shell・wrapper・global Git オプション・短いオプションの結合形や省略形・`+` refspec は今回の拡張の対象外であり、これらの構文での拒否や過剰一致の回避は保証しない。例えばオプション値の `x:main` は refspec と区別せず一致しうる。完全な Git 操作の防壁とはせず、対象外の構文による抜け穴の全面封鎖を完了条件にしない。
+
 #### Scenario: deny 断片の内容
 
 - **WHEN** `templates/auto-merge/.claude/settings.json` を jq で検査する
