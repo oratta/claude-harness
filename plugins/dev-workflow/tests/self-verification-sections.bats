@@ -83,10 +83,14 @@ _artifact_kw() {
 # S51: 棚卸しリストの網羅性（issue #218）。実在する SKILL.md は全件が対象表か対象外表に実パスで現れる。
 # 発見は ls glob で動的に行い、スキルを新設して載せ忘れたらここで落ちる。
 @test "S51: every existing SKILL.md appears in the audit list by real path" {
+  audit_paths="$(awk -F '|' '
+    /^#/ { in_audit = ($0 ~ /^### 対象（/ || $0 ~ /^### 対象外（/); next }
+    in_audit && /^\| / { print $2 }
+  ' "$REF")"
   missing=""
   for f in "${REPO_ROOT}"/plugins/*/skills/*/SKILL.md; do
     rel="${f#"${REPO_ROOT}"/}"
-    grep -qF "$rel" "$REF" || missing="${missing} ${rel}"
+    grep -qF "$rel" <<<"$audit_paths" || missing="${missing} ${rel}"
   done
   [ -z "$missing" ] || { echo "not in audit list:${missing}"; return 1; }
 }
