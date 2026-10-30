@@ -431,8 +431,8 @@ codex_off_paragraph() {
       return 1
     fi
   done
-  # prepare.md の needs-reviewer の `- 実行コマンド:` の行は証拠の値で、手順ではないので除く（#1019）
-  if grep -v '^- 実行コマンド:' "$PREPARE" | grep -qF -- '--codex-enabled'; then
+  # prepare.md の needs-reviewer の証拠の値は手順ではないので、その文字列だけを除く（#1019）
+  if sed 's|、Codex オフ: python3 <plugin>/scripts/usage_view.py --codex-enabled → off>|>|' "$PREPARE" | grep -qF -- '--codex-enabled'; then
     echo "off check repeated in ${PREPARE}"
     return 1
   fi
