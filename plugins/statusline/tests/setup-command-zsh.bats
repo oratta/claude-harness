@@ -158,3 +158,26 @@ check_shell() {
   done
   [ "$hit" -ge 1 ] || { echo "ルートを受けるブロックが無い"; return 1; }
 }
+
+@test "statusline setup zsh: the installed oratta-claude-harness is chosen over an older stale marketplace dir" {  # 名前順で先の壊れた旧 dir より固定候補（#1152）
+  need_zsh
+  local n i mark z b stale fixed
+  n="$(extract_blocks)" || { echo "$n"; return 1; }
+  [ "$n" -ge 1 ] || { echo "ブロックを取り出せなかった: $n"; return 1; }
+  for i in $(seq 1 "$n"); do
+    mark="$(sed -n 2p "$BATS_TEST_TMPDIR/block-$i.meta")"
+    rm -rf "$HOME_DIR/.claude"
+    stale="$HOME_DIR/.claude/plugins/marketplaces/aaa-stale/plugins/statusline"
+    fixed="$HOME_DIR/.claude/plugins/marketplaces/oratta-claude-harness/plugins/statusline"
+    mkdir -p "$(dirname "$stale/$mark")" "$(dirname "$fixed/$mark")"
+    : > "$stale/$mark"; : > "$fixed/$mark"
+    run_block zsh "$i"; z="$output"
+    run_block bash "$i"; b="$output"
+    [ "$z" = "$fixed" ] || { echo "block-$i zsh: $z"; return 1; }
+    [ "$b" = "$fixed" ] || { echo "block-$i bash: $b"; return 1; }
+    # 固定候補が無ければ従来どおり glob で見つかる
+    rm -rf "$fixed"
+    run_block bash "$i"
+    [ "$output" = "$stale" ] || { echo "block-$i glob fallback: $output"; return 1; }
+  done
+}
