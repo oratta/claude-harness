@@ -6801,6 +6801,33 @@ chat_line() {
   printf '%s\n' "$output" | grep -qx 'unreadable 12'
 }
 
+@test "records: an older record without stop_uuid and stop_at is read as empty" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop=stopped-seen
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"pending 11"* ]] || return 1
+}
+
+@test "records: a stop_uuid or stop_at that is not a string makes the record unreadable" {
+  make_stub orca
+  set_current 400
+  local key f before
+  for key in stop_uuid stop_at; do
+    put_record 11
+    f="$(rec_of oratta/claude-harness#1122 oratta/claude-harness#11)"
+    jq -c --arg k "$key" '.[$k] = 5' "$f" > "$f.new"
+    mv "$f.new" "$f"
+    before="$(cat "$f")"
+    run dispatch child-log 11
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s\n' "$output" | grep -c '^unreadable 11$')" -eq 1 ]
+    [[ "$output" == *"$f"* ]] || return 1
+    [ "$(cat "$f")" = "$before" ]
+  done
+}
+
 @test "child-log: no children or no jq is an error with empty stdout" {
   make_stub orca
   set_current 400

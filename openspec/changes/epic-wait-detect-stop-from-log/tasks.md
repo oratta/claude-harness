@@ -10,7 +10,7 @@
 
 ## 2. 記録の項目
 
-- [ ] 2.1 `stop_uuid`・`stop_at` を任意項目として足す。無い記録は空として読み、読めない記録にしない。`stop` の写しに親の `wait` と `dismiss` の `resumed` を通す。確認: 以前の形の記録を読むテストと、`stop_uuid`・`stop_at` が文字列でない記録が読めない記録になるテスト。触る範囲: `plugins/dev-workflow/scripts/epic-state.sh:6-153`（`ES_VALID` は 85 行付近）、`plugins/dev-workflow/scripts/epic-dispatch.sh:368`
+- [x] 2.1 `stop_uuid`・`stop_at` を任意項目として足す。無い記録は空として読み、読めない記録にしない。`stop` の写しに親の `wait` と `dismiss` の `resumed` を通す。確認: 以前の形の記録を読むテストと、`stop_uuid`・`stop_at` が文字列でない記録が読めない記録になるテスト。触る範囲: `plugins/dev-workflow/scripts/epic-state.sh:6-153`（`ES_VALID` は 85 行付近）、`plugins/dev-workflow/scripts/epic-dispatch.sh:368`
 
 ## 3. wait の検知
 
