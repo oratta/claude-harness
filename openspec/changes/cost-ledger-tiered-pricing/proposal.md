@@ -12,9 +12,10 @@
 ## Capabilities
 
 ### Modified Capabilities
-- `cost-ledger-pricing`: 「トークン内訳からのコスト算出」に閾値超の単価の選び方を足し、料金表の置き場所の要件に任意の閾値欄を足す
+- `cost-ledger-pricing`: 「トークン内訳からのコスト算出」に閾値超の単価の選び方と料金表の検査の守備範囲を足し、料金表の置き場所の要件に任意の閾値欄を足す
+- `cost-ledger-attribution`: 「同じ応答の 2 行目以降の issue と投稿の印」の補足の事実に `prompt_tokens` を足し、守備範囲の「後続行の入力・キャッシュの取り込みはしない」を「数えない。区分を決めるプロンプト長としてだけ読む」に直す
 
 ## Impact
 
 - `plugins/cost-ledger/pricing.json`、`plugins/cost-ledger/scripts/cost_ledger.py`（`Pricing`、補足の事実を作る箇所）、`plugins/cost-ledger/tests/pricing.bats`、`plugins/cost-ledger/README.md`、`plugins/cost-ledger/changes/1103.md`
-- 台帳（ledger）の既存の行は書き換えない。既存の補足の事実は `prompt_tokens` を持たず、出力の差分が閾値以下の単価で出る（既知の取りこぼし）
+- 台帳（ledger）の既存の行は書き換えない。既存の補足の事実は `prompt_tokens` を持たず、出力の差分が閾値以下の単価で出る。`--rescan` でも直らない既知の取りこぼし
