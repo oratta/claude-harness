@@ -70,7 +70,9 @@ for line in sys.stdin:
   if config.get('complete_on'):
    later(lambda:Path(config['complete_on']).exists(),{'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'completed','items':[{'type':'agentMessage','phase':'final_answer','text':'DONE'}]}}})
   if config.get('wait') or config.get('complete_on'):continue
-  print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'completed','items':[]}}}),flush=True)
+  for notification in config.get('errors',[]):
+   print(json.dumps({'method':'error','params':{'threadId':'thread','turnId':'turn',**notification}}),flush=True)
+  print(json.dumps({'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'completed','items':[],**config.get('completed_turn',{})}}}),flush=True)
  if method=='turn/interrupt' and config.get('interrupt_delay'):
   until=time.monotonic()+config['interrupt_delay']
   later(lambda:time.monotonic()>until,{'method':'turn/completed','params':{'threadId':'thread','turn':{'id':'turn','status':'interrupted','items':[]}}})
@@ -344,6 +346,39 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(result['status'], 'failed')
         self.assertEqual(result['error_kind'], 'result_phase_unknown')
         self.assertIsNone(result['text'])
+
+    def test_failed_turn_reports_server_error_message(self):
+        self.config(completed_turn={'status': 'failed',
+                    'error': {'message': 'boom', 'codexErrorInfo': 'serverOverloaded'}},
+                    errors=[{'error': {'message': 'earlier notification'}}])
+        result = self.run_cli(code=2)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['error_kind'], 'turn_failed: boom')
+
+    def test_failed_turn_without_error_has_fallback_reason(self):
+        self.config(completed_turn={'status': 'failed'})
+        result = self.run_cli(code=2)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['error_kind'], 'turn_failed')
+
+    def test_failed_turn_uses_error_notification_when_turn_error_absent(self):
+        self.config(completed_turn={'status': 'failed', 'error': None},
+                    errors=[{'error': {'message': 'notification boom'}}])
+        result = self.run_cli(code=2)
+        self.assertEqual(result['status'], 'failed')
+        self.assertEqual(result['error_kind'], 'turn_failed: notification boom')
+
+    def test_failed_turn_message_is_single_line_and_bounded(self):
+        message = 'boom\r\nnext\n' + '長' * 250
+        for job, fixture in (
+                ('turn-error', {'completed_turn': {'status': 'failed', 'error': {'message': message}}}),
+                ('notification-error', {'completed_turn': {'status': 'failed'},
+                                        'errors': [{'error': {'message': message}}]})):
+            with self.subTest(job=job):
+                self.config(job, **fixture)
+                result = self.run_cli(job, code=2)
+                self.assertEqual(result['status'], 'failed')
+                self.assertEqual(result['error_kind'], 'turn_failed: ' + ' '.join(message.splitlines())[:200])
 
     def test_multiple_finals_are_not_review_evidence(self):
         self.config(items=[{'type':'agentMessage','phase':'final_answer','text':'仕様レビュー: APPROVE'},
