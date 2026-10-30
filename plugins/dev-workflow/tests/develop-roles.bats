@@ -882,6 +882,14 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -E '^\| needs-reviewer / needs-decider / needs-fix-check \|' "$GATE" | grep -qF '`照合と振り分け`'
 }
 
+@test "gate-runner (#1016): the hold-release row also reads triage.md when the owner answers split off" {
+  row="$(grep -E '^\| 保留の解除（' "$GATE")"
+  [ -n "$row" ] || { echo "no hold-release row"; return 1; }
+  echo "$row" | grep -qF '`stages/hold.md`'
+  echo "$row" | grep -qF '切り出しの確認に「切り出す」と答えられたときは加えて'
+  echo "$row" | grep -qF '`stages/triage.md` の置き場所の段落・候補探し・段 C の節'
+}
+
 @test "gate-runner (#554): G name and description name the stage and keep the G: prefix" {
   s="$(step4_554)"
   for f in "$GATE"; do
