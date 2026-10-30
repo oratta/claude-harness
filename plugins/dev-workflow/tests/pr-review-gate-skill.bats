@@ -719,6 +719,40 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   has_all "$row4" 'G は仕分け欄に、当てた例外 3 種のどれかもあわせて書く'
 }
 
+@test "step A after carve-out (#1015): the hold row returns unresolved first-round step A to W after unprocessed row 6" {
+  row="$(grep -F '**切り出しの確認**（手順2-1の仕分け表の順 5）' "$HOLD")"
+  has_all "$row" 'ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無ければ手順3以降へ' \
+    '1 周目の段 A に当たる未解決の指摘が残っていれば手順3以降へ進まず `agent-review:failed` で W に戻す'
+  # 未処理の順 6 を先に見る
+  before="${row%%ほかに止める指摘も*}"
+  printf '%s\n' "$before" | grep -qF '未処理の順 6 の指摘が残っていれば'
+}
+
+@test "step A after carve-out (#1015): the resume input says what to read and which failed fields to use" {
+  res="$(grep -F -- '- **保留の解除**: オーナーの回答' "$HOLD")"
+  has_all "$res" '切り出して残りが無いとき（ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無いとき）は `次の段: 合格処理`' \
+    '切り出したあとに 1 周目の段 A に当たる未解決の指摘が残っているときは `agent-review:failed` に付け替えて failed（`次の段: 前提確認と重さ判定`）で返す' \
+    '1 周目かは前の段の Gate Result の `周回:` で' \
+    '仕分けの PR コメントの「段 A・この PR で直す」の印で読み' \
+    '印が無ければ段 A の指摘は無いものとして扱う（判定をやり直さない）' \
+    '`stages/triage.md` の「failed のとき」を使い' \
+    '残りが段 A だけなら原因分類は「段 A だけ（昇格なし）」' \
+    '順 2〜4 も残っていれば手順 2-2 の表どおり'
+}
+
+@test "step A after carve-out (#1015): the hold return leaves the step A mark the resume reads" {
+  hold_ret="$(grep -F -- '- 切り出しの確認（仕分け表の順 5。全周共通の判定で止める指摘が残り' "$HOLD")"
+  has_all "$hold_ret" '1 周目の段 A に当たる指摘が混ざっていれば、仕分けの PR コメントと仕分け欄に「段 A・この PR で直す」と印を付ける'
+}
+
+@test "row 3 mixed with step A (#1015): a failed that includes step A is re-reviewed and consumes a round" {
+  row3="$(triage_row_section 3)"
+  has_all "$row3" '順 2・順 4 または段 A の指摘が同じ failed に含まれていれば、それらの差分限定の再レビューは通常どおり行い、周を 1 つ消費する'
+  next="$(grep -F -- '- **failed の `次の段:`**' "$TRIAGE")"
+  has_all "$next" '順 2・4 または段 A が混ざる場合と、段 A だけで戻した場合を含む' \
+    '順 3 と順 2・4 または段 A が同じ failed に混ざったときは'
+}
+
 @test "acceptance scope (#1389): the brief hands over the full criteria and the block asks for the mark on every finding" {
   entry="$(awk '/^## 入口/{f=1;next} /^## /{f=0} f' "$REVIEWER_BRIEF")"
   has_all "$entry" '区画の有無によらず' '記録先の受け入れ条件の全文'
