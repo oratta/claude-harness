@@ -1,6 +1,6 @@
 ## 1. 判定の変更
 
-- [x] 1.1 `check_read` の `SECRET_FILE` / `SAFE_FILE` の入力を、パスの最後の要素に変える。パスの末尾の `/` を取り除いてから最後の要素を取り出し、空（`/` と空文字列だけ）なら何もしない。拒否の理由に引用するのは従来どおりパス全体。触る範囲: plugins/capability-registry/scripts/secret-guard.py:175-181（`check_read`）。モジュール docstring（同:1-18）と `SECRET_FILE` のコメント（同:30）に Read はファイル名で判定すると一言足す
+- [x] 1.1 `check_read` の `SECRET_FILE` / `SAFE_FILE` の入力を、パスの最後の要素に変える。パスの末尾の `/` を取り除いてから最後の要素を取り出し、空（`/` と空文字列だけ）なら何もしない。拒否の理由に引用するのは従来どおりパス全体。触る範囲: plugins/capability-registry/scripts/secret-guard.py:175-181（`check_read`）。`SECRET_FILE` のコメント（同:30）に Read はファイル名で判定すると一言足した。モジュール docstring（同:1-18）への追記は見送った（docstring は守備範囲の正本を spec に委ねており、判定対象の細部は spec とコードのコメントに置くため）
 
 ## 2. テスト
 
