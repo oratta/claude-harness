@@ -181,6 +181,11 @@ no_gh_called() {
   [ "$(jq -c '[.checks[0].cause, .retry]' <<<"$output")" = '["unrelated",true]' ]
 }
 
+@test "observe: --unrelated with a comma in the name matches the normalized check name" {  # observe: カンマ入りの --unrelated はチェック名と同じ置き換えで一致する
+  run observe_of "$(view MERGEABLE "[$(actions_check 'test (ubuntu, 3.11)' FAILURE 700 5)]" h)" --unrelated 'test (ubuntu, 3.11)'
+  [ "$(jq -c '[.checks[0].cause, .retry]' <<<"$output")" = '["unrelated",true]' ]
+}
+
 @test "observe: --unrelated can be given more than once" {  # observe: --unrelated は複数回指定できる
   run observe_of "$(view MERGEABLE "[$(actions_check e2e FAILURE 700 5),$(actions_check smoke FAILURE 701 6)]" h)" --unrelated e2e --unrelated smoke
   [ "$(jq -c '[.checks[].cause, .retry]' <<<"$output")" = '["unrelated","unrelated",true]' ]
