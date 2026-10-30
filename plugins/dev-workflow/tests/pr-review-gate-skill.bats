@@ -804,8 +804,36 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   [ -n "$c" ] || { echo "no stage C paragraph"; return 1; }
   has_all "$c" 'issues/<記録先 issue の番号>/parent' 'その子 issue の受け入れ条件に足す' 'その issue をエピックの子に足す' \
     'この指摘だけの新しい子 issue を作る' '当たる issue が無い' '外の PR のマージ後に着手' \
-    'author_association' '`OWNER`' '`MEMBER`' '`COLLABORATOR`'
+    'author_association' '`OWNER`' '`MEMBER`' '`COLLABORATOR`' \
+    "--jq '{number,repository_url}'" 'HTTP 404' '1 回だけやり直し' '`--epic` を付けず' '全候補を `other`' 'sub_issues' '段 D の参考コメントで済ませず'
   [ "$(echo "$c" | grep -cE '^\| (同じエピックの子 issue|エピックの外の issue|当たる issue が無い)')" -eq 4 ]
+}
+
+@test "nonblocking triage (#1011): the parent fetch wording is the same in triage.md and the spec (404 only, one retry, other repository)" {
+  # archive 前は change の delta spec、archive 後は main spec を読む
+  spec="${PLUGIN_ROOT}/openspec/changes/pr-review-gate-stage-c-parent-fetch/specs/dev-workflow-pr-review-gate/spec.md"
+  [ -f "$spec" ] || spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: エピックの完了条件に効く指摘は既存 issue との関係で分ける（段 C）/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
+  [ -n "$req" ] || { echo "no stage C requirement"; return 1; }
+  c="$(nonblocking_para '段 C（')"
+  has_all "$req" "--jq '{number,repository_url}'" 'HTTP 404' '1 回だけやり直し' '`--epic` を付けず' '全候補を `other`' 'sub_issues' '段 D の参考コメントで済ませず'
+  has_all "$c" "--jq '{number,repository_url}'" 'HTTP 404' '1 回だけやり直し' '`--epic` を付けず' '全候補を `other`' 'sub_issues' '段 D の参考コメントで済ませず'
+  # 候補探しの前に取る・失敗時の例外が段 D・段 E の行と候補探しにある
+  has_all "$(nonblocking_para '候補探し')" '親の取得が失敗し続けたとき'
+  tbl="$(nonblocking_section | grep -E '^\| (D|E) \|')"
+  [ "$(echo "$tbl" | grep -cF '親の取得が失敗し続けたときの「範囲で成り立つ」に当たった指摘は')" -eq 2 ]
+}
+
+@test "nonblocking triage (#1011): the epic number exclude and the truncation rerun need the parent in the same repository, same wording in triage.md and the spec" {
+  spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: 候補探しのスクリプトは/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
+  [ -n "$req" ] || { echo "no candidate-search requirement"; return 1; }
+  c="$(nonblocking_para '候補探し')"
+  for t in "$c" "$req"; do
+    has_all "$t" 'エピックに属する PR で親が' 'にあるときは、さらに `--exclude <エピック番号>`' \
+      '親の取得に成功し、親が' 'にあるときに限り' '別リポジトリのとき・親の取得が失敗し続けたときは再実行せず' \
+      '初回の候補をすべて `other` と読む'
+  done
 }
 
 @test "nonblocking triage (#985): stages D and E, the record, and findings the owner chose to split off" {
