@@ -12,6 +12,8 @@ Claude Code用スキル・プラグインのマーケットプレイス
 /plugin install dev-workflow@oratta-claude-harness
 ```
 
+シークレットの値が画面に出る形の Bash と Read を実行前に止める `secret-guard` は `capability-registry` に入っている。`/plugin install capability-registry@oratta-claude-harness` で有効になり、`settings.json` の編集は要らない。
+
 ### Output Style `readable` を有効にする
 
 `output-styles/readable.md`（読み手が前提を持たない状態で読める書き方のスタイル）と `rules/*.md` は、プラグインではないので `/plugin install` では届かない。クイックスタートの後に、marketplace dir の `scripts/sync.sh` を 1 回実行する（SessionStart hook などの自動実行は無い）。これが `readable.md` を `~/.claude/output-styles/` に、`rules/*.md` を `~/.claude/rules/claude-harness/` に symlink する。
@@ -87,7 +89,7 @@ Claude Code用スキル・プラグインのマーケットプレイス
 |-----------|------|
 | `worktree` | Git worktree のセットアップ（`/wt-setup`。`--with-pr` で Draft PR まで作成）とクリーンアップ（`/wt-clean`） |
 | `infra` | Vercel + Supabase + GitHub Actions で local/staging/prod の環境を一括セットアップする（`/infra-setup`） |
-| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層 |
+| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層。シークレットの値が画面に出る形の Bash と Read を止める `secret-guard` の hook も入る（無効化は環境変数 `CAPABILITY_REGISTRY_SECRET_GUARD=off`） |
 | `statusline` | 使用量ステータスライン。クォータ消化率と窓の日程消化率を1本のバーに重ね、`25%/29%` の形で「今のペースでリセットまで持つか」を示す（`/statusline:setup`） |
 
 ---

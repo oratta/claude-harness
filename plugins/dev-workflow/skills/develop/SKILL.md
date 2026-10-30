@@ -112,7 +112,9 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 (2) R1 を spawn（model: 既定 opus。マージ条件・層間契約・課金/法務に触れれば subagent_type: dev-workflow:decider で spawn する。聖域パスだけでは上げない）:
       references/roles/spec-reviewer.md に従って別コンテキストで仕様レビュー → 結果を記録先にコメント → return
       dev-workflow:decider で起こした R1 は gh を実行できないので投稿せず return し、本体が同じ書式で代理投稿する
-      （記録先の本文と関連コメントは本体が入力文に貼って渡す）
+      （記録先の本文と関連コメントは本体が入力文に貼って渡す。エピックの子ならエピックの本文も）
+      R1 を起こすときは（当て直しを含む）エピックの本文（エピックの子でなければ記録先の本文）の節 `## 条件の答え` の行を依頼文に入れ、エピックの子ならエピックの番号も書く
+      BLOCKER に `条件の問い:` がある・2 周目以降の周の終わりに BLOCKER が残った・NOTE に `後で成り立つ:` の行があるときは、W の再開と直し方の判定の前に `references/fix-check.md` を Read し、その節「残った指摘の条件を確かめる」を通す（成り立つ予定が無い指摘は判定に回さず捨てる）
       REQUEST_CHANGES → W を SendMessage で再開（再開指示に `段: spec`）して artifact を修正 → R1 を再開して差分再レビュー
       （既定 2 周＝初回＋差分 1 回。2 周目以降の周の終わりに BLOCKER が残れば、`references/fix-check.md` を Read し、その節「レビューの周を主に聞かずに続ける（直し方の判定）」の判定を通す。
        残った BLOCKER がすべて直し方が決まっているもので PR トークン上限の内側（`pr-token-budget.sh` が exit 2 でない）なら、主に聞かず次の周を回す（W を `段: spec` で再開 → R1 に差分再レビュー。その周の R1 の結果を受け取ったら、`references/fix-check.md` の「続行と事後報告」の書式で事後報告を記録先に投稿する）。
@@ -147,8 +149,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            G が `工程中断:` で返したら同じ段の新しい G を起こし、前任の return 全文と前任の起動指示に書いた入力を渡す
            （起こしてよい条件は references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」の「手渡しの許可」）
       4 つの段で pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / needs-fix-check / review-incomplete / needs-carryover-judge / 次の段へ」
-      次の段へ → `次の段:` の G を新しく起こす（照合と振り分けが止める指摘なしで終われば合格処理。保留の解除は合格処理か前提確認と重さ判定で、
-           代替案で手順 2 からやり直すときに W の修正が要るなら、W の修正のあとで前提確認と重さ判定の G を起こす）
+      次の段へ → `次の段:` の G を新しく起こす（照合と振り分けが止める指摘なしで終われば合格処理。保留の解除は合格処理か前提確認と重さ判定）
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
       passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
            見張りの背景タスクの `stopped` / `killed` 通知は `references/ci-watch.md` の 9 に従う。
@@ -280,7 +281,7 @@ PR トークン上限: <権限>
 
 引き継ぎの書式・投稿の順序・主への案内・新しいセッションでの再開の手順は `references/handover.md` にある。次のときにそのファイルを Read してから進める。
 
-- 主の返事を待って止まる前のうち、引き継ぎを書く 3 つの場面（pr-review-gate の保留・「PR トークン上限」の exit 2・レビューの 2 周キャップ超え）に当たるとき。引き継ぎを書き終えるまで止まらない
+- 主の返事を待って止まる前のうち、引き継ぎを書く 4 つの場面（pr-review-gate の保留・「PR トークン上限」の exit 2・レビューの 2 周キャップ超え・仕様レビューの条件の問い）に当たるとき。引き継ぎを書き終えるまで止まらない
 - 記録先に 1 行目が `引き継ぎ: 主の返事待ち` のコメントがある保留中の記録先を再開するとき（`/develop <記録先>` の入口、または channel で `#<番号>` を添えた返事を受けたとき）。`needs-approval` の有無によらず、入口 0 に進む前に読む
 
 ## エピックの子が主の返事を待って止まるとき
