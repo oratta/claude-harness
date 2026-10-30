@@ -159,9 +159,36 @@ for path in paths:
     for term in ['起動引数', 'disk', 'live', '初回の実機検証', '機械確認', 'unmanned', '主に聞かず進む']:
         assert term in text, (path, term)
 text = paths[0].read_text().split('## 開始時の設定')[1].split('## アイドル時')[0]
-for term in ['新規 worktree', '既存 local false', '--settings', '起動前', '再起動', '矛盾', '追加確認を求めない', 'unmanned は停止']:
+for term in ['新規 worktree', '既存 local false', '--settings', '起動前', '再起動', '矛盾', '追加確認を求めない']:
     assert term in text, term
 assert '主が `/config` の Idle compaction が off であることを確認する。' not in text
+PY
+  [ "$status" -eq 0 ]
+}
+
+@test "startup docs (#1497): unconfirmed live off proceeds without restart; on / exit 1 still stop" {
+  run python3 - "$BATS_TEST_DIRNAME/.." <<'PY'
+from pathlib import Path
+import sys
+plugin = Path(sys.argv[1]).resolve()
+text = (plugin / 'skills/develop/references/reply-after-idle.md').read_text()
+text = text.split('## 開始時の設定')[1].split('## アイドル時')[0]
+# (a) unconfirmed: no restart, no stop, recorded as 未確認 in the develop start comment, both modes
+for term in ['未確認', '再起動を求めず', '止まらずに進', 'develop 開始コメント', 'interactive / unmanned']:
+    assert term in text, term
+# (b) on found: restart, and stop if still not off
+for term in ['on と判明', '開始を止める']:
+    assert term in text, term
+# contradicting override counts as on
+assert '矛盾する上書き指定は on 判明' in text
+# (c) check exit 1 / apply failure stop
+assert '- exit 1 または apply 失敗: 対象パスと原因を記録して開始を止める' in text
+# (d) never report live off beyond what was confirmed
+assert '「live で off」とは報告しない' in text
+# old rules removed
+assert 'または機械確認で off を確かめられなかった場合' not in text
+assert 'unmanned は停止' not in text
+assert '主に聞かず進む' in text and '初回の実機検証' in text
 PY
   [ "$status" -eq 0 ]
 }
