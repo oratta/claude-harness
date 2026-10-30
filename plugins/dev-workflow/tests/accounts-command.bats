@@ -320,7 +320,7 @@ PY
   cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
   run --separate-stderr "$CMD" add z
   [ "$status" -eq 2 ]
-  [[ "$stderr" == *"8"* ]] || return 1
+  [[ "$stderr" == *"maximum is 8"* ]] || return 1
   cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
   [ ! -e "${CLAUDE_ACCOUNTS_HOME}/z" ]
   [ ! -e "${CLAUDE_ACCOUNTS_FILE}.bak" ]
@@ -331,7 +331,7 @@ PY
   cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
   run --separate-stderr "$INIT" --id z --label Z
   [ "$status" -eq 2 ]
-  [[ "$stderr" == *"8"* ]] || return 1
+  [[ "$stderr" == *"maximum is 8"* ]] || return 1
   cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
 }
 
@@ -388,4 +388,16 @@ assert [s["label"] for s in d["accounts"] if s["id"]=="s3"]==["S3b"], d
   done
   cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
   [ ! -e "${CLAUDE_ACCOUNTS_HOME}" ]
+}
+
+@test "accounts-init.sh and on/off still accept an id that starts with a hyphen" {
+  run "$INIT" --id -a --label A
+  [ "$status" -eq 0 ]
+  run "$CMD" off -a
+  [ "$status" -eq 0 ]
+  run "$CMD" on -a
+  [ "$status" -eq 0 ]
+  run "$CMD" list
+  [ "$status" -eq 0 ]
+  [[ "$output" == -a$'\t'A$'\t'on* ]] || return 1
 }

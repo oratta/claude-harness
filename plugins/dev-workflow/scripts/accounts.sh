@@ -72,7 +72,6 @@ case "$CMD" in
     [ $# -ge 1 ] || die_usage "add requires <id>"
     case "$1" in
       -h|--help) usage; exit 0 ;;
-      --label) die_usage "add requires <id> before --label" ;;
       -*) die_usage "add requires <id> before options: $1" ;;
     esac
     ID="$1"; shift
@@ -170,7 +169,7 @@ elif cmd == "add":
     if find(sid) >= 0:
         err("id already registered: %s" % sid, 2)
     if len(accounts) >= 8:
-        err("registry already has %d slots; the maximum is 8 (nothing added)" % len(accounts), 2)
+        err("registry already has %d slots; the maximum is 8 (nothing added); turned-off slots count too; remove an entry from the registry by hand to free one" % len(accounts), 2)
     place = os.path.join(os.environ["ACCOUNTS_HOME"], sid)
     try:
         os.makedirs(place, exist_ok=True)

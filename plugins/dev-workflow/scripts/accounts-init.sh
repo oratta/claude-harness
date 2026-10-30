@@ -107,7 +107,7 @@ for i, existing in enumerate(doc["accounts"]):
 else:
     # 使用量を読む側は先頭 8 個で打ち切るので、9 個目は黙って効かない。足さずに止める。
     if len(doc["accounts"]) >= 8:
-        sys.stderr.write("registry already has %d slots; the maximum is 8 (nothing added): %s\n"
+        sys.stderr.write("registry already has %d slots; the maximum is 8 (nothing added); turned-off slots count too; remove an entry from the registry by hand to free one: %s\n"
                          % (len(doc["accounts"]), path))
         raise SystemExit(2)
     doc["accounts"].append(entry)
