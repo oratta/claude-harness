@@ -18,11 +18,12 @@ set -uo pipefail
 fail() { printf 'ERROR: %s\n' "$1" >&2; exit 1; }
 
 DRY_RUN=0
-case "${1:-}" in
-  "") ;;
-  --dry-run) DRY_RUN=1 ;;
-  *) fail "不明な引数: $1（使えるのは --dry-run だけ）" ;;
-esac
+if [ "$#" -ge 1 ]; then
+  case "$1" in
+    --dry-run) DRY_RUN=1 ;;
+    *) fail "不明な引数: $1（使えるのは --dry-run だけ）" ;;
+  esac
+fi
 [ "$#" -le 1 ] || fail "引数が多すぎる（使えるのは --dry-run だけ）"
 command -v jq >/dev/null 2>&1 || fail "jq が必要"
 
@@ -48,15 +49,18 @@ all="$(printf '%s\n' "${names[@]}" | sort -u | jq -R . | jq -s -c .)"
 
 # 実体（symlink なら指す先）
 target="$SETTINGS"
+hops=0
 while [ -L "$target" ]; do
+  hops=$((hops + 1))
+  [ "$hops" -le 40 ] || fail "settings.json の symlink が循環している: $SETTINGS"
   link="$(readlink "$target")"
   case "$link" in /*) target="$link" ;; *) target="$(dirname "$target")/$link" ;; esac
 done
 
 if [ -e "$target" ]; then
-  jq -e 'type == "object"' "$target" >/dev/null 2>&1 \
+  jq -e -s 'length == 1 and (.[0] | type == "object")' "$target" >/dev/null 2>&1 \
     || fail "settings.json が壊れている（JSON として読めない、または最上位がオブジェクトでない）: $SETTINGS"
-  jq -e '(.skillOverrides // {}) | type == "object"' "$target" >/dev/null \
+  jq -e 'if has("skillOverrides") then (.skillOverrides | type == "object") else true end' "$target" >/dev/null \
     || fail "skillOverrides がオブジェクトでない: $SETTINGS"
   current="$(cat "$target")"
 else
@@ -64,18 +68,18 @@ else
 fi
 
 # まだ無いキーだけ
-add="$(printf '%s' "$current" | jq -r --argjson all "$all" '(.skillOverrides // {}) as $o | $all[] | select($o[.] == null)')"
-kept="$(printf '%s' "$current" | jq -r --argjson all "$all" '(.skillOverrides // {}) as $o | $all[] | select($o[.] != null)')"
+add="$(printf '%s' "$current" | jq -r --argjson all "$all" '(.skillOverrides // {}) as $o | $all[] | select(. as $k | $o | has($k) | not)')"
+kept="$(printf '%s' "$current" | jq -r --argjson all "$all" '(.skillOverrides // {}) as $o | $all[] | select(. as $k | $o | has($k))')"
 
 if [ -n "$kept" ]; then
-  printf '既にあるので変えない:\n'; printf '  %s\n' $kept
+  printf '既にあるので変えない:\n'; printf '%s\n' "$kept" | sed 's/^/  /'
 fi
 if [ -z "$add" ]; then
   echo "足すキーは無い。settings.json は変更しない"
   exit 0
 fi
 if [ "$DRY_RUN" -eq 1 ]; then
-  printf '足す予定（name-only）:\n'; printf '  %s\n' $add
+  printf '足す予定（name-only）:\n'; printf '%s\n' "$add" | sed 's/^/  /'
   echo "(--dry-run のため書き込まない)"
   exit 0
 fi
@@ -83,16 +87,20 @@ fi
 dir="$(dirname "$target")"
 mkdir -p "$dir"
 if [ -e "$target" ]; then
-  bak="$target.bak-$(date +%Y%m%d%H%M%S)"
+  # symlink でも実体の隣ではなく settings.json の隣に作る
+  bak="$SETTINGS.bak-$(date +%Y%m%d%H%M%S)"
+  [ ! -e "$bak" ] || fail "バックアップが既にある: $bak"
   cp -p "$target" "$bak" || fail "バックアップを作れない: $bak"
 fi
 tmp="$(mktemp "$dir/.settings.json.XXXXXX")" || fail "一時ファイルを作れない"
+trap 'rm -f "$tmp"; exit 143' INT TERM HUP
 if [ -e "$target" ]; then cp -p "$target" "$tmp" || { rm -f "$tmp"; fail "権限を写せない"; }; fi
-if printf '%s' "$current" | jq --argjson all "$all" '.skillOverrides = ((.skillOverrides // {}) as $o | $o + ([$all[] | select($o[.] == null) | {(.): "name-only"}] | add // {}))' > "$tmp"; then
+if printf '%s' "$current" | jq --argjson all "$all" '.skillOverrides = ((.skillOverrides // {}) as $o | $o + ([$all[] | select(. as $k | $o | has($k) | not) | {(.): "name-only"}] | add // {}))' > "$tmp"; then
   mv -f "$tmp" "$target" || { rm -f "$tmp"; fail "置き換えに失敗した"; }
 else
   rm -f "$tmp"; fail "jq の書き換えに失敗した"
 fi
-printf '足した（name-only）:\n'; printf '  %s\n' $add
+trap - INT TERM HUP
+printf '足した（name-only）:\n'; printf '%s\n' "$add" | sed 's/^/  /'
 [ -n "${bak:-}" ] && printf 'バックアップ: %s\n' "$bak"
 exit 0
