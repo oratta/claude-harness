@@ -516,6 +516,7 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
     cancel_at = None
     watch = AuthWatch(rpc, runtime, account)
     changed = False
+    turn_error_message = None
     while True:
         cancel = recorder.poll()
         # Once a stop is decided, from any source, the reason is kept and nothing is re-read.
@@ -548,6 +549,8 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
         if params.get('threadId') != thread:
             continue
         if params.get('turnId') == turn:
+            if msg.get('method') == 'error':
+                turn_error_message = (params.get('error') or {}).get('message')
             if msg.get('method') == 'thread/tokenUsage/updated':
                 state.usage = params.get('tokenUsage')
                 recorder.record_usage(state.usage)
@@ -565,8 +568,18 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
                 except Rejected as error:
                     # Execution is terminal, but ambiguous output cannot authorize a quality gate.
                     return ('failed', '', str(error))
-            return (status, text, 'auth_profile_changed' if changed else
-                    'unsupported_server_request' if rpc.unsupported else None)
+            error_kind = ('auth_profile_changed' if changed else
+                          'unsupported_server_request' if rpc.unsupported else None)
+            if status == 'failed' and error_kind is None:
+                error_kind = 'turn_failed'
+                # Only server messages are safe here; exception text can contain credentials.
+                message = (params['turn']['error'].get('message')
+                           if params['turn'].get('error') else turn_error_message)
+                if isinstance(message, str):
+                    detail = ' '.join(message.splitlines())[:200]
+                    if detail:
+                        error_kind += ': ' + detail
+            return (status, text, error_kind)
 
 
 class ForegroundRecorder:
