@@ -812,7 +812,7 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   r="$(nonblocking_para '振り分けの記録')"
   has_all "$r" '当てた段' '行き先' '合否に使わない'
   k="$(nonblocking_para '主が切り出すと答えた止める指摘')"
-  has_all "$k" '必ず follow-up issue にする' '捨てない' '段 C の表'
+  has_all "$k" '必ず issue で追跡する' '既存 issue の受け入れ条件に足す' '「follow-up issue に切る」は' '既存 issue で受ける' '「follow-up issue に切った」と書いて URL を添える' '捨てない' '段 C の表'
   # 保留の解除と合格条件は、置き場所の決め方を triage.md に向ける
   grep -F '**切り出しの確認**' "$HOLD" | grep -F '| 切り出す |' | grep -qF '主が切り出すと答えた止める指摘'
   grep -F '主が切り出すと答えて follow-up issue に切ったもの' "$PASS_STAGE" | grep -qF '主が切り出すと答えた止める指摘'
