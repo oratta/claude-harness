@@ -15,7 +15,8 @@ toolUseResult.backgroundTaskId (Bash) or status async_launched + agentId (Agent)
 at a <task-notification> with its <task-id>.
 
 An input is an owner's or parent's message or the answer to a question tool. The keepalive
-round trip and background notifications are not inputs and do not end a turn.
+round trip, background notifications, local slash commands (a <command-name> line followed by
+its output, which never reaches the model) and ! lines are not inputs and do not end a turn.
 An unanswered AskUserQuestion is the child's latest statement: uuid and at come from its
 line, while text stays the last text the child wrote.
 
@@ -39,6 +40,7 @@ DEFINITION = os.path.join(
 )
 TASK_ID = re.compile(r"<task-id>([^<]+)</task-id>")
 UUID_SHAPE = re.compile(r"[0-9a-f-]+")
+NOT_INPUT_PREFIXES = ("<local-command-", "<bash-input>", "<bash-stdout>", "<bash-stderr>")
 
 
 def load_keepalive():
@@ -152,6 +154,21 @@ def owner_text(s):
     return st
 
 
+def local_command(rows, i, s):
+    """Whether the <command-name> line at i was handled by Claude Code: its output comes next."""
+    if "<command-name>" not in s:
+        return False
+    for _, d in rows[i + 1:]:
+        if d.get("type") == "queue-operation" or d.get("isSidechain"):
+            continue
+        if d.get("type") == "system":
+            return d.get("subtype") == "local_command"
+        msg = d.get("message")
+        following = text_of(msg.get("content")) if isinstance(msg, dict) else None
+        return d.get("type") == "user" and following is not None and following.lstrip().startswith("<local-command-")
+    return False
+
+
 def safe_uuid(value):
     """The uuid as it stands when its shape is safe to print and store, otherwise ""."""
     return value if isinstance(value, str) and UUID_SHAPE.fullmatch(value) else ""
@@ -207,7 +224,9 @@ def walk(rows, definition):
                         input_index = i
                         turn_ended = False
             s = text_of(content)
-            if s is None or not s.strip() or s.lstrip().startswith("<local-command-"):
+            if s is None or not s.strip() or s.lstrip().startswith(NOT_INPUT_PREFIXES):
+                continue
+            if local_command(rows, i, s):
                 continue
             # Exact, unabridged reserved input, including when the owner typed it.
             if s == keepalive:

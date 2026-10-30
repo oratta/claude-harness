@@ -421,6 +421,22 @@ not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の
   grep -q '最後の入力の時刻: 2026-10-26T05:00:00.500Z' "$STUB_CFG/model_in"
 }
 
+@test "stop-judge json: the model gets the questions, the background task and the mark" {
+  run judge 400 11 "$(stop_json '{questions: ["どちらですか"], bg_running: true, marked: true}')"
+  [ "$status" -eq 0 ]
+  grep -qF '未回答の問い: どちらですか' "$STUB_CFG/model_in"
+  grep -qF '背景のタスク: 実行中' "$STUB_CFG/model_in"
+  grep -qF '止まった印: あり' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: without them the model is told there are none" {
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  grep -qF '未回答の問い: なし' "$STUB_CFG/model_in"
+  grep -qF '背景のタスク: なし' "$STUB_CFG/model_in"
+  grep -qF '止まった印: なし' "$STUB_CFG/model_in"
+}
+
 @test "stop-judge json: a record in the same second as the last input is this stop's record" {
   one_record 2026-10-26T05:00:00Z
   run judge 400 11 "$(stop_json)"

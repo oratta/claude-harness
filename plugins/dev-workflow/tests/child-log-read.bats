@@ -31,6 +31,22 @@ keepalive_request() { python3 "$READER" --keepalive-text; }
 keepalive_reply() {
   jq -r '.separator as $s | [.reply_prefix] + [.fields[] | . + " value"] | join($s)' "$PLUGIN_DIR/references/child-cache-keepalive.json"
 }
+raw_user() { # <uuid> <時刻> <本文>
+  jq -cn --arg u "$1" --arg t "$2" --arg x "$3" '{entrypoint: "cli", type: "user", uuid: $u, timestamp: $t, message: {role: "user", content: $x}}'
+}
+# Claude Code がその場で処理したスラッシュコマンド。実ログでは caveat の行・コマンドの行・出力の行の順に並ぶ
+local_command() { # <時刻> <コマンド名>
+  line "{type: \"user\", isMeta: true, uuid: \"cv\", timestamp: \"$1\", message: {role: \"user\", content: \"<local-command-caveat>x</local-command-caveat>\"}}"
+  raw_user cmd "$1" "<command-name>/$2</command-name>
+            <command-message>$2</command-message>
+            <command-args></command-args>"
+}
+local_output_user() { raw_user lo "$1" '<local-command-stdout>done</local-command-stdout>'; }
+local_output_system() { line "{type: \"system\", subtype: \"local_command\", uuid: \"lo\", timestamp: \"$1\", content: \"<local-command-stdout>done</local-command-stdout>\"}"; }
+bang_line() { # <時刻>。主が ! で打った行とその出力
+  raw_user bi "$1" '<bash-input>git status</bash-input>'
+  raw_user bo "$1" '<bash-stdout>clean</bash-stdout><bash-stderr></bash-stderr>'
+}
 read_log() { python3 "$READER" "$DIR"; }
 field() { read_log | jq -r "$1"; }
 
@@ -137,6 +153,65 @@ field() { read_log | jq -r "$1"; }
     line '{type: "user", isMeta: true, uuid: "m1", timestamp: "2026-10-30T00:02:00.000Z", message: {role: "user", content: "<system-reminder>x</system-reminder>"}}'
     line '{type: "user", isCompactSummary: true, uuid: "m2", timestamp: "2026-10-30T00:03:00.000Z", message: {role: "user", content: "要約"}}'; } > "$LOG"
   [ "$(field .input_after)" = false ]
+}
+
+@test "a local slash command is not an input, whether its output comes as a user or a system line" {
+  for output in local_output_user local_output_system; do
+    { user d0 2026-10-30T00:00:00.000Z 'はじめて'
+      child c1 2026-10-30T00:01:00.000Z '続けてよいですか'
+      turn_end 2026-10-30T00:01:01.000Z
+      local_command 2026-10-30T00:02:00.000Z mcp
+      "$output" 2026-10-30T00:02:01.000Z; } > "$LOG"
+    [ "$(field .uuid)" = c1 ]
+    [ "$(field .input_after)" = false ]
+    [ "$(field .turn_ended)" = true ]
+    [ "$(field .last_input_at)" = 2026-10-30T00:00:00.000Z ]
+    [ "$(field .owner.text)" = 'はじめて' ]
+  done
+}
+
+@test "a local slash command does not hide an unanswered question" {
+  { child c1 2026-10-30T00:01:00.000Z '聞きます'
+    tool_use a1 2026-10-30T00:01:05.000Z tu1 AskUserQuestion '{questions: [{question: "A にしますか"}]}'
+    local_command 2026-10-30T00:02:00.000Z reload-plugins
+    local_output_system 2026-10-30T00:02:01.000Z; } > "$LOG"
+  [ "$(field .uuid)" = a1 ]
+  [ "$(field '.questions | length')" = 1 ]
+  [ "$(field .input_after)" = false ]
+  [ "$(field .last_input_at)" = '' ]
+}
+
+@test "a ! line and its output are neither inputs nor the owner's words" {
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'
+    child c1 2026-10-30T00:01:00.000Z '続けてよいですか'
+    turn_end 2026-10-30T00:01:01.000Z
+    bang_line 2026-10-30T00:02:00.000Z; } > "$LOG"
+  [ "$(field .input_after)" = false ]
+  [ "$(field .turn_ended)" = true ]
+  [ "$(field .last_input_at)" = 2026-10-30T00:00:00.000Z ]
+  [ "$(field .owner.text)" = 'はじめて' ]
+}
+
+@test "a keepalive reply is still matched after a local command in between" {
+  { child c1 2026-10-30T00:01:00.000Z '続けてよいですか'
+    turn_end 2026-10-30T00:01:01.000Z
+    jq -cn --arg x "$(keepalive_request)" '{entrypoint: "cli", type: "user", uuid: "k1", timestamp: "2026-10-30T01:00:00.000Z", message: {role: "user", content: $x}}'
+    bang_line 2026-10-30T01:00:01.000Z
+    jq -cn --arg x "$(keepalive_reply)" '{entrypoint: "cli", type: "assistant", uuid: "k2", timestamp: "2026-10-30T01:00:02.000Z", message: {role: "assistant", content: [{type: "text", text: $x}]}}'; } > "$LOG"
+  [ "$(field .uuid)" = c1 ]
+}
+
+@test "a slash command sent to the model stays an input and is not the owner's words" {
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'
+    child c1 2026-10-30T00:01:00.000Z '続けてよいですか'
+    turn_end 2026-10-30T00:01:01.000Z
+    raw_user s1 2026-10-30T00:02:00.000Z '<command-message>dev-workflow:develop</command-message>
+<command-name>/dev-workflow:develop</command-name>
+<command-args>11</command-args>'
+    line '{type: "user", isMeta: true, uuid: "m1", timestamp: "2026-10-30T00:02:00.000Z", message: {role: "user", content: [{type: "text", text: "スキルの本文"}]}}'; } > "$LOG"
+  [ "$(field .input_after)" = true ]
+  [ "$(field .last_input_at)" = 2026-10-30T00:02:00.000Z ]
+  [ "$(field .owner.text)" = 'はじめて' ]
 }
 
 @test "subagent logs count only for the last activity" {

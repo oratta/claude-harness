@@ -7082,6 +7082,25 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
   [ "$output" = "stopped 11" ]
 }
 
+@test "wait log: a local command and a ! line are not inputs, so the stop stays pending" {
+  make_stub orca
+  put_record 11
+  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" \
+    "$(chat_line user "$(ago 200)" '<command-name>/mcp</command-name>')" \
+    "$(chat_line user "$(ago 200)" '<local-command-stdout>done</local-command-stdout>')" \
+    "$(chat_line user "$(ago 190)" '<bash-input>git status</bash-input>')" \
+    "$(chat_line user "$(ago 190)" '<bash-stdout>clean</bash-stdout>')"
+  wait_stop
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  gh_seq 11 open
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  run dispatch pending-owner 11
+  [ "$output" = "pending 11 d1" ]
+}
+
 @test "wait log: idle times depend on background tasks, an unanswered question does not wait, and bad values use the defaults" {
   make_stub orca
   put_record 11
