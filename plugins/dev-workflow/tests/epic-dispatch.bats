@@ -670,7 +670,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "$(calls '^orca terminal close')" -eq 0 ]
   # 起動コマンドを同じ端末に打ち込み、そのあと指示を送る。環境変数の意味は従来の terminal create と同じ
   first_send="$(grep -m1 '^orca terminal send --terminal term-11 ' "$STUB_LOG")"
-  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"/bin/cld'"*"--settings"*"idleCompaction"*":false"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
+  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"/bin/cld"*"--settings"*"idleCompaction"*":false"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
   case "$first_send" in *CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS*) echo "$first_send" >&2; false ;; esac
   [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 2 ]
   [ "$(calls '^orca terminal wait --terminal term-11 --for tui-idle')" -eq 1 ]
@@ -884,7 +884,7 @@ launch_ignores_idle_compact() {
   [ "${#lines[@]}" -eq 2 ]
   [ "$(calls '^orca terminal wait ')" -eq 1 ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
-  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF "bin/cld' --settings"
+  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF "/bin/cld'\\'' --settings"
   grep -F 'orca terminal send' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
   grep -qF -- '--terminal <handle from create>' "$BATS_TEST_TMPDIR/stderr"
 }
