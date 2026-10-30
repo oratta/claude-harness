@@ -263,6 +263,14 @@ NINE_KINDS=(
   expect_silent $'cat <<END-TAG\nEND\ngit reset --hard\nEND-TAG'
 }
 
+@test "shell syntax: arithmetic << and an escaped quote in dollar-quote do not hide later commands (#981)" {
+  expect_stopped $'(( x << 2 ))\ngit reset --hard'
+  expect_stopped $'let y=1<<2\ngit reset --hard'
+  expect_stopped "echo \$'it\\'s'; git reset --hard"
+  # 区切り語の行がある本物のヒアドキュメントの本文は今までどおり止めない
+  expect_silent $'cat <<EOF\ngit reset --hard\nEOF'
+}
+
 @test "shell syntax: substitutions in a quoted heredoc body are not judged (F10)" {
   expect_silent $'cat <<\'EOF\'\n$(git reset --hard)\nEOF'
   expect_silent $'cat <<"EOF"\n`git reset --hard`\nEOF'
