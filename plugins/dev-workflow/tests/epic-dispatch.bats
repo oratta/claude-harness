@@ -3785,16 +3785,16 @@ orca_cmd_scripts() {
   printf '%s\n' "$l2" | grep -F '`unrecorded <N>...`' | grep -qF '1〜4 行'
   printf '%s\n' "$l2" | grep -F '付けないときは従来どおり' | grep -qF '1〜3 行'
   printf '%s\n' "$l2" | grep -F '`unrecorded <N>...` で起こされたら' | grep -F '主に上げず' | grep -qF '投稿し直しのコマンド'
-  printf '%s\n' "$l2" | grep -qF '親の判断: 子 #N 通した — 理由は記録できなかった <最新の子の停止の記録の URL>'
+  printf '%s\n' "$l2" | grep -qF '親の判断: 子 #N 通した — 理由は記録できなかった 発言 <止まりの uuid か 不明>'
   printf '%s\n' "$l2" | grep -qF 'references/parent-pass-criteria.md'
   p="$(printf '%s\n' "$r" | grep -E '^8\. ')"
-  printf '%s\n' "$p" | grep -F '`停止の記録:`' | grep -qF 'URL と一致する最新の `親の判断:`'
+  printf '%s\n' "$p" | grep -F '`止まりの発言:`' | grep -qF 'その uuid と一致する最新の `親の判断:`'
   printf '%s\n' "$p" | grep -qF '一致する `親の判断:` が無ければ、判断が無いものとして扱う'
   run grep -F '判断が無いものとして主に上げる' <<<"$p"; [ "$status" -eq 1 ]
   # 主に上げる前に親が自分で基準に照らし、主に聞く理由の無い止まりは通す
   printf '%s\n' "$p" | grep -F '主に上げる前に' | grep -qF '`references/parent-pass-criteria.md` に照らす'
   printf '%s\n' "$p" | grep -F '主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作' | grep -qF 'どれにも当たらず'
-  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — <理由> <停止の記録の URL>'
+  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — <理由> 発言 <止まりの uuid か 不明>'
   printf '%s\n' "$p" | grep -F '判断が「主に上げる」' | grep -qF '判断できなかった'
   printf '%s\n' "$p" | grep -F '覆して通す' | grep -qF '3 つの理由のどれにも当たらない根拠を 1 文で'
   printf '%s\n' "$p" | grep -F '主に聞く理由が成り立つか迷うときは' | grep -qF '主に上げる'
@@ -3857,7 +3857,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -F '数字として読めない' | grep -qF '主に上げる'
   printf '%s\n' "$p" | grep -qF '続ける。新しい上限 <権限>（親の権限。<権限のコメントの URL>）'
   printf '%s\n' "$p" | grep -qF 'reply --as parent'
-  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — PR トークン上限を親の権限 <権限> まで上げた（合計の見込み <Y>） <停止の記録の URL>'
+  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — PR トークン上限を親の権限 <権限> まで上げた（合計の見込み <Y>） 発言 <止まりの uuid> <停止の記録の URL>'
   printf '%s\n' "$p" | grep -qF '権限の値と権限を広げる選び方'
   printf '%s\n' "$p" | grep -F '広げて答えたら' | grep -qF '照らし直し'
   printf '%s\n' "$p" | grep -F '「続ける」とだけ' | grep -qF 'reply --as owner'
