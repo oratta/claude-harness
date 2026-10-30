@@ -12,6 +12,21 @@ Claude Code用スキル・プラグインのマーケットプレイス
 /plugin install dev-workflow@oratta-claude-harness
 ```
 
+### Output Style `readable` を有効にする
+
+`output-styles/readable.md`（読み手が前提を持たない状態で読める書き方のスタイル）は、`scripts/sync.sh` が `~/.claude/output-styles/` に配るだけで、有効にはしない。どのスタイルを使うかは PC ごとの設定に残すため、`sync.sh` は settings の `outputStyle` を書き換えない。使うには自分で 1 手選ぶ。
+
+```bash
+# Claude Code の中で /config を開き、Output style から readable を選ぶ
+# または ~/.claude/settings.json に書く
+{ "outputStyle": "readable" }
+```
+
+有効にしなくても、`rules/communication-style.md`（同じ原則を抜いた短い版）は常に注入されるので、書き方の要点は効く。有効にしない場合に効かないのは次の点。
+
+- メインの会話で `readable` の全文が効かない。判断を求める文章の順序と例、ヒアリングで 1 問ずつ聞く理由と例外、100 行を超える分析をページにする規則など、短い版が省いた部分
+- なお Output Style はメインの会話にしか効かないので、選んでもサブエージェントには全文が届かず、短い版だけで動く
+
 ## プラグイン一覧
 
 ### dev-workflow
