@@ -1,8 +1,7 @@
 #!/usr/bin/env bats
 # G の段別・条件別の合計。パスは plugins/dev-workflow/ 相対、wc -c で測る。
 # 形式: <scenario> <byte-limit> <path>...。最終目標は全行 40000 以下。
-# #580 段 1 は実測を暫定上限とする。後続の削減ごとに下げ、最終段で
-# check_budget の strict を実 repo にも適用する（40000 と実測の 1.1 倍を検査）。
+# 上限は実測値（40000 を超える経路は OVER_TARGET に列挙し、実測の 1.1 倍）。strict（40000 以下かつ実測の 1.1 倍以内）は列挙外に掛ける。
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   PLUGIN_DIR="$REPO_ROOT/plugins/dev-workflow"
@@ -61,23 +60,48 @@ check_budget() {
   grep -q 'gate-runner-body.md' "$PLUGIN_DIR/skills/develop/SKILL.md"
 }
 
+# 40000 を超える経路（#580 の残り）。合格処理の引き継ぎ・動作確認代行で保留に進む経路・保留の解除の引き継ぎは、
+# 条件付きで加わる段のファイルが大きく、この PR では 40000 以下に収められなかった。実測値を上限にして増えないことだけ固定する。
+OVER_TARGET=" pass-carryover pass-hold hold-carryover "
+
+@test "real: strict ceiling and slack hold for every scenario except the listed over-target paths" {
+  local line scenario
+  : > "$BATS_TEST_TMPDIR/strict.txt"
+  while IFS= read -r line; do
+    scenario=${line%% *}
+    case "$OVER_TARGET" in *" $scenario "*) continue ;; esac
+    printf '%s\n' "$line" >> "$BATS_TEST_TMPDIR/strict.txt"
+  done < "$BUDGET_FILE"
+  run check_budget "$PLUGIN_DIR" "$BATS_TEST_TMPDIR/strict.txt" strict
+  printf '%s\n' "$output"
+  [ "$status" -eq 0 ]
+}
+
 @test "real: all stages and conditional unions are measured" {
-  [ "$(cut -d' ' -f1 "$BUDGET_FILE" | sort | tr '\n' ' ')" = 'hold pass pass-hold prepare prepare-rereview triage triage-row3 ' ]
-  local scenario budget paths path expected common="skills/develop/references/roles/gate-runner.md" triage="skills/develop/references/roles/gate-runner-triage.md" prefix="skills/pr-review-gate"
+  [ "$(cut -d' ' -f1 "$BUDGET_FILE" | sort | tr '\n' ' ')" = 'hold hold-carryover pass pass-auth pass-carryover pass-hold prepare rereview triage-escalation triage-failed triage-nonblocking triage-row3 triage-summary ' ]
+  local scenario budget paths path expected common="skills/develop/references/roles/gate-runner.md" triage="skills/develop/references/roles/gate-runner-triage.md" p="skills/pr-review-gate" st="skills/pr-review-gate/stages"
   while read -r scenario budget paths; do
     case "$scenario" in
-      prepare) expected="$common $prefix/stages/prepare.md" ;;
-      prepare-rereview) expected="$common $prefix/stages/prepare.md $prefix/stages/triage.md" ;;
-      triage) expected="$common $prefix/stages/triage.md $triage" ;;
-      triage-row3) expected="$common $prefix/stages/triage.md $triage $prefix/stages/prepare.md" ;;
-      pass) expected="$common $prefix/declarations.md $prefix/stages/pass.md" ;;
-      pass-hold) expected="$common $prefix/declarations.md $prefix/stages/pass.md $prefix/stages/hold.md" ;;
-      hold) expected="$common $prefix/stages/hold.md" ;;
+      prepare) expected="$common $st/prepare.md $st/prepare-step1.md" ;;
+      rereview) expected="$common $st/prepare.md $st/prepare-step1.md $st/convergence.md" ;;
+      triage-summary) expected="$common $st/triage.md $st/triage-summary.md $triage" ;;
+      triage-failed) expected="$common $st/triage.md $st/triage-failed.md" ;;
+      triage-row3) expected="$common $st/triage.md $st/triage-row3.md $st/row3-list-format.md $st/prepare-step1.md" ;;
+      triage-nonblocking) expected="$common $st/triage.md $st/triage-nonblocking.md" ;;
+      triage-escalation) expected="$common $st/triage.md $st/triage-escalation.md" ;;
+      pass) expected="$common $p/declarations.md $st/pass.md" ;;
+      pass-auth) expected="$common $p/declarations.md $st/pass.md $st/authenticity.md" ;;
+      pass-carryover) expected="$common $p/declarations.md $st/pass.md $st/carryover.md" ;;
+      pass-hold) expected="$common $p/declarations.md $st/pass.md $st/hold.md" ;;
+      hold) expected="$common $st/hold.md" ;;
+      hold-carryover) expected="$common $st/hold.md $st/carryover.md" ;;
     esac
     [ "$paths" = "$expected" ]
     for path in $paths; do
       [ "$path" = skills/develop/references/roles/gate-runner.md ] && continue
-      grep -qF "${path#skills/pr-review-gate/}" "$PLUGIN_DIR/skills/develop/references/roles/gate-runner.md"
+      # row3-list-format.md は triage-row3.md が指す（共通 role には書かない）
+      [ "$path" = skills/pr-review-gate/stages/row3-list-format.md ] && { grep -qF row3-list-format.md "$PLUGIN_DIR/skills/pr-review-gate/stages/triage-row3.md" || return 1; continue; }
+      grep -qF "${path#skills/pr-review-gate/}" "$PLUGIN_DIR/skills/develop/references/roles/gate-runner.md" || { echo "not named in the common role: $path"; return 1; }
     done
   done < "$BUDGET_FILE"
 }
