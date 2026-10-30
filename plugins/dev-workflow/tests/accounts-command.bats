@@ -302,3 +302,102 @@ assert s["enabled"] is False and s["securestorage"]==sys.argv[2], s
   [ -z "$output" ]
   [[ "$stderr" == *"usage: accounts.sh"* ]] || return 1
 }
+
+# 8 スロット上限（spec: 登録できるスロットは 8 個まで）
+# n 個のスロット（id s1..sn）を持つ登録簿を書く。
+write_n_slots() {
+  python3 - "$CLAUDE_ACCOUNTS_FILE" "$1" <<'PY'
+import json, sys
+n = int(sys.argv[2])
+json.dump({"schema": 1, "accounts": [
+    {"id": "s%d" % i, "label": "S%d" % i, "securestorage": "/x/s%d" % i} for i in range(1, n + 1)
+]}, open(sys.argv[1], "w"))
+PY
+}
+
+@test "add: a 9th slot is rejected with exit 2, registry untouched, no directory, no .bak" {
+  write_n_slots 8
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  run --separate-stderr "$CMD" add z
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"maximum is 8"* ]] || return 1
+  cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  [ ! -e "${CLAUDE_ACCOUNTS_HOME}/z" ]
+  [ ! -e "${CLAUDE_ACCOUNTS_FILE}.bak" ]
+}
+
+@test "accounts-init.sh: a 9th slot is rejected with exit 2 (not 1), registry untouched" {
+  write_n_slots 8
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  run --separate-stderr "$INIT" --id z --label Z
+  [ "$status" -eq 2 ]
+  [[ "$stderr" == *"maximum is 8"* ]] || return 1
+  cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+}
+
+@test "accounts-init.sh: re-registering an existing id still works with 8 slots" {
+  write_n_slots 8
+  run "$INIT" --id s3 --label S3b
+  [ "$status" -eq 0 ]
+  run python3 -c '
+import json,sys
+d=json.load(open(sys.argv[1]))
+assert len(d["accounts"])==8, d
+assert [s["label"] for s in d["accounts"] if s["id"]=="s3"]==["S3b"], d
+' "$CLAUDE_ACCOUNTS_FILE"
+  [ "$status" -eq 0 ]
+}
+
+@test "the 8th slot can be added from 7 by both add and accounts-init.sh" {
+  write_n_slots 7
+  run "$CMD" add z
+  [ "$status" -eq 0 ]
+  [ -d "${CLAUDE_ACCOUNTS_HOME}/z" ]
+  [ "$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["accounts"]))' "$CLAUDE_ACCOUNTS_FILE")" = 8 ]
+  write_n_slots 7
+  run "$INIT" --id z --label Z
+  [ "$status" -eq 0 ]
+  [ "$(python3 -c 'import json,sys;print(len(json.load(open(sys.argv[1]))["accounts"]))' "$CLAUDE_ACCOUNTS_FILE")" = 8 ]
+}
+
+@test "a registry already holding 9 slots rejects a new id in both scripts" {
+  write_n_slots 9
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  run "$CMD" add z
+  [ "$status" -eq 2 ]
+  run "$INIT" --id z
+  [ "$status" -eq 2 ]
+  cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  [ ! -e "${CLAUDE_ACCOUNTS_HOME}/z" ]
+}
+
+@test "accounts-init.sh: a broken registry still exits 1 and is not touched" {
+  printf '{ not json' > "$CLAUDE_ACCOUNTS_FILE"
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  run "$INIT" --id z
+  [ "$status" -eq 1 ]
+  cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+}
+
+@test "add: a hyphen-leading argument in the id position exits 2 and changes nothing" {
+  printf '{"schema":1,"accounts":[]}\n' > "$CLAUDE_ACCOUNTS_FILE"
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  for arg in --lable --version -H -- - -a; do
+    run "$CMD" add "$arg"
+    [ "$status" -eq 2 ] || { echo "arg=$arg status=$status"; return 1; }
+  done
+  cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  [ ! -e "${CLAUDE_ACCOUNTS_HOME}" ]
+}
+
+@test "accounts-init.sh and on/off still accept an id that starts with a hyphen" {
+  run "$INIT" --id -a --label A
+  [ "$status" -eq 0 ]
+  run "$CMD" off -a
+  [ "$status" -eq 0 ]
+  run "$CMD" on -a
+  [ "$status" -eq 0 ]
+  run "$CMD" list
+  [ "$status" -eq 0 ]
+  [[ "$output" == -a$'\t'A$'\t'on* ]] || return 1
+}
