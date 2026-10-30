@@ -302,6 +302,8 @@ def main():
     args = parser.parse_args()
     lines = args.table.read_text().splitlines()
     sha = field(lines, "修正前 SHA:")
+    if sha.startswith("`") and sha.endswith("`"):
+        sha = sha[1:-1]
     if not SHA_RE.fullmatch(sha):
         raise ContractError("修正前 SHA must be a full 40-digit SHA")
     if args.head is not None and not SHA_RE.fullmatch(args.head):
