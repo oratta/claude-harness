@@ -416,7 +416,7 @@ not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の
   run judge 400 11 "$(stop_json)"
   [ "$status" -eq 0 ]
   [ "${lines[3]}" = '記録: なし' ]
-  ! grep -q '古いリスク許容の本文' "$STUB_CFG/model_in"
+  ! grep -q '古いリスク許容の本文' "$STUB_CFG/model_in" || return 1
   grep -q '子の最後の発言の全文' "$STUB_CFG/model_in"
   grep -q '最後の入力の時刻: 2026-10-26T05:00:00.500Z' "$STUB_CFG/model_in"
 }

@@ -91,5 +91,5 @@ dispatch() { PATH="$STUB_BIN:$PATH" bash "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/std
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
   [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: $SAID_UUID" ]
   [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
-  ! grep -qF "$SECRET" "$STUB_CFG/comment_11"
+  ! grep -qF "$SECRET" "$STUB_CFG/comment_11" || return 1
 }

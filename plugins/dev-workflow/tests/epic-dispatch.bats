@@ -7231,7 +7231,7 @@ log_resolve_ready() {
   [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: d1" ]
   [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
   [ "$(sed -n 4p "$STUB_CFG/comment_11")" = "主の判断が要る" ]
-  ! grep -qF '秘密の本文' "$STUB_CFG/comment_11"
+  ! grep -qF '秘密の本文' "$STUB_CFG/comment_11" || return 1
 }
 
 @test "wait --resolve log: a pass names the uuid, and adds the URL only when there is a record" {
