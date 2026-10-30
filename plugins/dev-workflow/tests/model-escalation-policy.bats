@@ -91,6 +91,20 @@ setup() {
   echo "$line" | grep -qF '聖域パスだけでは上げない'
 }
 
+@test "spec reviewer: the spawn uses the model and role request returned, keeping the wording of the spec" {
+  R1_DOC="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
+  sec="$(awk '/^## R1 の spawn/{f=1; next} /^## /{f=0} f' "$R1_DOC")"
+  echo "$sec" | grep -qF '`codex-develop.py request --phase spec-review` が返す `model`'
+  echo "$sec" | grep -qF '`role: decider`'
+  echo "$sec" | grep -qF '`model: opus`'
+  echo "$sec" | grep -qF 'references/pre-classification.md'
+  echo "$sec" | grep -qF '聖域パスだけでは上げない'
+  echo "$sec" | grep -qF '`reserve` は自動実行のみ'
+  echo "$sec" | grep -qF '`exhausted` は全経路で `opus` 上限'
+  echo "$sec" | grep -qF '`sonnet` 上限'
+  ! echo "$sec" | grep -qF '`sonnet` 固定' || return 1
+}
+
 @test "shared budget: depleted is a Sonnet cap and haiku stays haiku under both modes" {
   grep -F '| `depleted`' "$CRITERIA" | grep -qF 'Sonnet 上限'
   ! grep -F '| `depleted`' "$CRITERIA" | grep -qF 'Sonnet 固定' || return 1
