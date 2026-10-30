@@ -103,7 +103,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 | 値 | 意味 | 効果 |
 |---|---|---|
 | `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | **どの役割の既定も上げない**。役割表の既定どおりで、Fable が使われる経路は決める役（`subagent_type: dev-workflow:decider`）だけ。余った Fable 枠は人間の対話と verify に回す（abundant を役割の既定引き上げに使うと、消費ペースが遅い週ほど大半の実行が Fable に流れ、温存のつもりが最大消費の経路になる） |
-| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/pre-classification.md`）に当たる場合、読んで判断する役（R1 / G が要求するレビュアー）だけ `subagent_type: dev-workflow:decider` で Fable。実行役（W）はどの分類でも `opus` 止まり |
+| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/pre-classification.md`）のマージ権限・層間契約・課金/法務に当たる場合、読んで判断する役（R1 / G が要求するレビュアー）だけ `subagent_type: dev-workflow:decider` で Fable（聖域パスだけでは上げない）。実行役（W）はどの分類でも `opus` 止まり |
 | `reserve` | Fable 枠を人間用に温存 | conserve に加えて、**自動実行（unmanned / cron / loop 経由）では Fable をいかなる役割でも使わない**。昇格ラダーは Opus 上限。Opus でも2連続失敗が続く問題は `needs-approval` で人間に返す。interactive は conserve と同一 |
 | `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー5） |
 
@@ -119,9 +119,11 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 |---|---|---|
 | `ok` | データ無し、または消費が週の経過ペース以下 | 制約なし。役割表の既定どおり |
 | `throttled` | `weekly_all_pct` が週経過% より大きい（このペースだと週末までに枠が尽きる） | W / R1 / G の既定を **Sonnet** に落とす。昇格上限 Opus。`abundant` の押し上げは無効 |
-| `depleted` | `weekly_all_pct > 90` | 全役割 Sonnet 固定・昇格なし。事前分類に当たっても Fable / Opus を使わない（枠が無いので使えば全員が止まる） |
+| `depleted` | `weekly_all_pct > 90` | 全役割 Sonnet 上限・昇格なし。事前分類に当たっても Fable / Opus を使わない（枠が無いので使えば全員が止まる） |
 
 Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。
+
+`haiku` の役割（explore と summarize）は `throttled` でも `depleted` でも `haiku` のまま（上限なので最安を上げない）。
 
 週次余裕を使う provider 選択では、Codex の週次 snapshot も Claude 側も、取得からの経過時間では捨てない。どちらも後述の実効値を headroom（`scripts/headroom.py`）が数えた行で判定する（`cld` の起動 account は余りが最大のもの、codex-develop の margin は行の値）。Codex の snapshot は 7 日より先のリセット時刻も欠測にしない（余裕が負になるだけ）。
 

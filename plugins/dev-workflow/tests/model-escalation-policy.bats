@@ -82,6 +82,22 @@ setup() {
   fi
 }
 
+@test "pre-classification: the table feeds --pre-class and the sacred path alone does not raise a review" {
+  grep -qF '`--pre-class`' "$PRE"
+  grep -qF '聖域パスだけではレビューを上げない' "$PRE"
+  grep -qF 'マージ権限・層間契約・課金/法務に当たるときは' "$PRE"
+  line="$(grep -F '| `conserve`' "$CRITERIA")"
+  echo "$line" | grep -qF 'マージ権限・層間契約・課金/法務に当たる'
+  echo "$line" | grep -qF '聖域パスだけでは上げない'
+}
+
+@test "shared budget: depleted is a Sonnet cap and haiku stays haiku under both modes" {
+  grep -F '| `depleted`' "$CRITERIA" | grep -qF 'Sonnet 上限'
+  ! grep -F '| `depleted`' "$CRITERIA" | grep -qF 'Sonnet 固定' || return 1
+  grep -qF '`haiku` の役割（explore と summarize）は `throttled` でも `depleted` でも `haiku` のまま' "$CRITERIA"
+  grep -qF '`sonnet` 上限' "$PRE"
+}
+
 @test "pre-classification: budget mode still caps escalation" {
   grep -qF 'FABLE_BUDGET_MODE=reserve' "$PRE"
   grep -qF 'exhausted' "$PRE"
