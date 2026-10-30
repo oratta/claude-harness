@@ -166,8 +166,9 @@
 #   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。reaped の子は記録を消す。
 #   orca・jq が無い・今のワークツリーを読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
 # pending-owner: 読み取り専用。子ごとに、今のワークツリーを parent_worktree に持つ記録の stop が stopped-seen
-#   （親が受けたまま、子が mark resumed を付けていない）なら `pending <N>` を 1 行ずつ出して exit 0（記録も Orca の印も
-#   書かない）。読めない記録の子は飛ばす。起動し直した親が、主の返事待ちの子を出し直す対象を集める。
+#   （親が受けたまま、子が mark resumed を付けていない）なら `pending <N>`（stop_uuid があれば `pending <N> <uuid>`）を
+#   1 行ずつ出して exit 0（記録も Orca の印も書かない）。stop_uuid のある子は、会話ログが stop_uuid の発言より進んで
+#   いれば出さない（会話ログを読めなければ出す）。読めない記録の子は飛ばす。起動し直した親が、主の返事待ちの子を出し直す対象を集める。
 #   jq が無い・今のワークツリーを読めなければ stdout 空で exit 1
 # dismiss: 親が問いでないと判断した止まりを戻す。子ごとに、今のワークツリーを parent_worktree に持つ記録を探し、
 #   排他の中で stop が stopped-seen で stop_uuid が空でないことを確かめて stop を resumed に書き、Orca の印へ写して
@@ -1288,7 +1289,9 @@ resolve_stopped() {
 }
 
 # Read-only eligibility check. TTL is the last write; request time includes cache
-# hits. The stop comment (not updated_at or a keepalive) anchors the 24h limit.
+# hits. stop_at, or the stop comment when it is empty (not updated_at or a keepalive),
+# anchors the 24h limit. A stop with stop_uuid needs no stop comment, and passes are
+# matched by that uuid; a stop without one is matched by the stop comment's URL.
 # Missing/ambiguous measurements fail closed without changing wait's exit reason.
 keepalive_candidate() {
   local rec="$1" childcomments="$2" epiccomments="$3" now="$4" text="$5" wt ttl
@@ -1301,7 +1304,7 @@ keepalive_candidate() {
     DIR="$(transcript_dir "$wt")" NOW="$now" KEEPALIVE_TEXT="$text" \
     FORCE="${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" IDLE="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" \
     python3 - <<'PY' 2>/dev/null
-import datetime, glob, json, math, os, sys
+import datetime, glob, json, math, os, re, sys
 
 def reject():
     raise SystemExit(1)
@@ -1338,17 +1341,22 @@ try:
     if rec.get("stop") != "stopped-seen" or rec.get("status") == "done" or rec.get("launch_failed") or not rec.get("session"): reject()
     child = pages(os.environ["CHILD_COMMENTS"])
     stops = [c for c in child if trusted(c) and c.get("body", "").splitlines()[:1] == ["子の停止: 主の返事待ち"]]
-    if not stops: reject()
-    stop = stops[-1]
-    stopped_at = stamp(stop.get("created_at"))
-    url = stop.get("html_url")
-    if stopped_at is None or not url or not 0 <= now-stopped_at < 86400: reject()
+    stop = stops[-1] if stops else None
+    uuid = rec.get("stop_uuid") or ""
+    if not uuid and stop is None: reject()
+    url = stop.get("html_url") if stop else None
+    if not uuid and not url: reject()
+    stopped_at = stamp(rec.get("stop_at") or (stop or {}).get("created_at"))
+    if stopped_at is None or not 0 <= now-stopped_at < 86400: reject()
     epic = pages(os.environ["EPIC_COMMENTS"])
     label = "#" + str(rec["number"]) if rec["repo"] == rec["epic"].split("#")[0] else rec["child"]
     for c in child + epic:
-        if not trusted(c) or url not in c.get("body", ""): continue
-        body = c["body"]
-        if (c in child and body.startswith("親の判断: 通した")) or any(line.startswith("親の判断: 子 " + label + " 通した") for line in body.splitlines()): reject()
+        if not trusted(c): continue
+        body = c.get("body", "")
+        lines = [line for line in body.splitlines() if line.startswith("親の判断: 子 " + label + " 通した")]
+        if uuid:
+            if any(re.search(" 発言 " + re.escape(uuid) + r"( |$)", line) for line in lines): reject()
+        elif url in body and (lines or (c in child and body.startswith("親の判断: 通した"))): reject()
     files = glob.glob(os.path.join(os.environ["DIR"], "*.jsonl"))
     # Same conservative selection as decide_relaunch: do not guess among sessions.
     if len(files) != 1: reject()
@@ -1446,18 +1454,22 @@ stop_to_resumed() {
   return "$rc"
 }
 
+# 会話ログの JSON が止まりの発言より進んでいるか（<JSON> <stop_uuid>）。wait の再開の確かめと pending-owner が使う
+log_moved() {
+  printf '%s' "$1" | jq -e --arg u "$2" '(.uuid != "" and .uuid != $u) or .input_after' >/dev/null
+}
+
 # wait: stopped-seen で stop_uuid のある子の会話ログが進んでいたら再開に書く（<子>）。親は起こさない。
 # 戻り値 0 = 書いた・書くものが無い / 3 = 書けなかった（失敗したポーリングに数える）
 resume_moved() {
-  local n="$1" f su json moved
+  local n="$1" f su json
   child_record "$PARENT_TOP" "$n" 2>/dev/null || return 0
   f="$ES_HIT"
   [ "$(es_get "$f" stop)" = stopped-seen ] || return 0
   su="$(es_get "$f" stop_uuid)"
   [ -n "$su" ] || return 0
   json="$(record_log_json "$f")" || return 0
-  moved="$(printf '%s' "$json" | jq -r --arg u "$su" '(.uuid != "" and .uuid != $u) or .input_after')"
-  [ "$moved" = true ] || return 0
+  log_moved "$json" "$su" || return 0
   stop_to_resumed "$f"
   case $? in
     0|4) return 0 ;;
@@ -1707,10 +1719,19 @@ cmd_pending_owner() {
   [ "$#" -ge 1 ] || usage
   check_children "$@"
   need_parent
-  local n
+  local n su json
   for n in "$@"; do
     child_record "$PARENT_TOP" "$n" || continue
-    [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] && echo "pending $n"
+    [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] || continue
+    su="$(es_get "$ES_HIT" stop_uuid)"
+    if [ -z "$su" ]; then
+      echo "pending $n"
+      continue
+    fi
+    # 会話ログを読めなければ今どおり出す
+    json="$(record_log_json "$ES_HIT")" || json=""
+    if [ -n "$json" ] && log_moved "$json" "$su"; then continue; fi
+    echo "pending $n $su"
   done
   exit 0
 }

@@ -30,8 +30,8 @@
 
 ## 5. 記録の無い止まりの扱い
 
-- [ ] 5.1 `pending-owner` を会話ログの確かめと `pending <N> <uuid>` の形に替える。読み取り専用を保つ。確認: spec の「pending-owner は会話ログが進んだ子を出さない」のシナリオと、既存の `pending 11` のテスト。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:1579-1589`、`plugins/dev-workflow/scripts/epic-dispatch.sh:163`
-- [ ] 5.2 `keepalive_candidate` の 24 時間の基点を `stop_at`（空なら記録の作成時刻）に、通した判定を uuid に替え、停止コメントの必須をやめる。確認: spec の「記録の無い止まりにも送る」のシナリオと既存の声かけのテスト。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:1264-1367`（照合は 1318-1326）
+- [x] 5.1 `pending-owner` を会話ログの確かめと `pending <N> <uuid>` の形に替える。読み取り専用を保つ。確認: spec の「pending-owner は会話ログが進んだ子を出さない」のシナリオと、既存の `pending 11` のテスト。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:1579-1589`、`plugins/dev-workflow/scripts/epic-dispatch.sh:163`
+- [x] 5.2 `keepalive_candidate` の 24 時間の基点を `stop_at`（空なら記録の作成時刻）に、通した判定を uuid に替え、停止コメントの必須をやめる。確認: spec の「記録の無い止まりにも送る」のシナリオと既存の声かけのテスト。触る範囲: `plugins/dev-workflow/scripts/epic-dispatch.sh:1264-1367`（照合は 1318-1326）
 - [ ] 5.3 手順書を直す。手順 2・5 の注意、手順 7・8 の `child-log --last` と uuid の照合、記録の無い止まりの組み立て、問いでなければ `dismiss` を呼んでから 2 に戻ること（手順 7 の出し直しも同じ）、状態の正本の説明、復元元の表と声かけの節。`委任で送る` は記録のある止まりに限ると添える。確認: `develop-skill.bats` に spec の手順 5・8 のシナリオ（「問いでない止まりは dismiss してから待ちに戻る」と、uuid 照合に揃えた「親の手順に resolve と主に上げる説明の順が書かれている」「主に聞く理由の無い止まりは親が通す」を含む）の文言の検査を足す。`epic-child-stop.md` は編集しない。触る範囲: `plugins/dev-workflow/skills/develop/references/epic.md:33`、`plugins/dev-workflow/skills/develop/references/epic.md:80-86`、`plugins/dev-workflow/skills/develop/references/epic.md:104-105`、`plugins/dev-workflow/skills/develop/references/reply-after-idle.md:61-65`、`plugins/dev-workflow/skills/develop/references/reply-after-idle.md:97-98`、`plugins/dev-workflow/tests/develop-skill.bats`
 
 ## 6. 仕上げの確認

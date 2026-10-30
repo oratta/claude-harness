@@ -5066,6 +5066,25 @@ resolve_pass() {
   [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
 }
 
+@test "pending-owner: a child whose log moved past the stop is not pending, and the others print the uuid" {
+  make_stub orca
+  set_current 400
+  old="$(jq -rn '(now - 900) | floor | todate')"
+  newer="$(jq -rn '(now - 300) | floor | todate')"
+  put_record 11 stop=stopped-seen stop_uuid=u1
+  put_chat 11 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"u1"}')" "$(chat_line assistant "$newer" '進めます' '{"uuid":"u1b"}')"
+  put_record 12 stop=stopped-seen stop_uuid=u2
+  put_chat 12 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"u2"}')"
+  put_record 13 stop=stopped-seen stop_uuid=u3
+  put_record 14 stop=stopped-seen stop_uuid=u4
+  put_chat 14 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"u4"}')" "$(chat_line user "$newer" 'こちらで' '{"uuid":"i4"}')"
+  before="$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)"
+  run dispatch pending-owner 11 12 13 14
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "$(printf 'pending 12 u2\npending 13 u3')" ]
+  [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
+}
+
 @test "pending-owner: an Orca stopped-seen mark alone is not pending" {
   make_stub orca
   set_current 400
@@ -7492,6 +7511,33 @@ reset_keepalive_poll() {
     [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
     [ "$(calls '^orca terminal send ')" -eq 0 ]
   done
+}
+
+@test "keepalive wait: a stop with a uuid needs no stop record, runs 24 hours from stop_at and matches passes by uuid" {
+  keepalive_wait_setup
+  echo '[]' > "$STUB_CFG/comments_11"
+  send_count() {
+    reset_keepalive_poll
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    [ "$(calls '^orca terminal send ')" -eq "$1" ]
+  }
+  at() { jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - $1))" '$t | todate'; }
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=u1 "stop_at=$(at 86399)"
+  send_count 1
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=u1 "stop_at=$(at 86400)"
+  send_count 0
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=u1
+  send_count 0
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=u1 "stop_at=$(at 3600)"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 u0"}]' > "$STUB_CFG/comments_1122"
+  send_count 1
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 u1"}]' > "$STUB_CFG/comments_1122"
+  send_count 0
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 u1 https://example/stop"}]' > "$STUB_CFG/comments_1122"
+  send_count 0
+  echo '[{"author_association":"NONE","body":"親の判断: 子 #11 通した — 範囲の内側 発言 u1"}]' > "$STUB_CFG/comments_1122"
+  send_count 1
 }
 
 @test "keepalive wait: one-shot, cleanup and event polls never send" {
