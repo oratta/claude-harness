@@ -1610,7 +1610,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
    1. `gh pr list --head <ブランチ> --state merged --json headRefOid --jq '.[].headRefOid'` が非 0 なら `kept <N> pr-lookup-failed`。出力のどれかの行が HEAD と一致すれば 7 を通る
    2. 1 で一致する行が無い（出力が空、または一致しない）ときに限り、ブランチ名を問わずに探す。`gh pr list --state merged --search <HEAD> --json headRefOid --jq '.[].headRefOid'` が非 0 なら `kept <N> pr-lookup-failed`、出力のどれかの行が HEAD と一致すれば 7 を通る（squash マージでは子の HEAD が main の祖先にならず、子のブランチと別名のブランチの PR で入ることがあるため）。一致する行が無ければ、1 と 2 の出力がどちらも空なら `kept <N> no-merged-pr`、どちらかに出力があったなら `kept <N> head-mismatch`
 
-1〜7 をすべて通った子に限り、`orca terminal close --worktree path:<子のパス> --all`、`orca worktree rm --worktree path:<子のパス>` をこの順に呼ばなければならない（MUST。rm は子ごとに 1 回、close は成功すれば 1 回）。`orca worktree rm` に `--force` を付けてはならない（MUST NOT）。close が非 0 で終わったとき（Orca が `terminal_close_incomplete` を返す場合。子のセッションが印を付けた直後でターンをまだ終えておらず、端末を閉じきれないことがある）は、次の順で 1 回だけ閉じ直さなければならない（MUST）。(a) 原因の手がかりとして `orca terminal list --worktree path:<子のパス> --json` を 1 回呼び、その出力を stderr に流す（読めなくても先へ進む）。(b) `EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT` 秒（既定 10。数字でなければ既定）待つ。(c) `orca terminal close` を同じ引数でもう 1 回呼ぶ。閉じ直しで exit 0 になれば、そのまま rm へ進む。閉じ直しも非 0 なら、rm を呼ばずに `kept <N> close-failed` を出し、stderr に主がする操作（どの画面で何をするか。Orca で子のワークスペース `<子のパス>` を開き、動いているターンの終了を待つか端末を手で閉じてから、親で `epic-dispatch.sh reap <N>` をやり直す）を 1〜2 行で出す（MUST）。閉じ直しは 1 回までで、3 回目は呼ばない（MUST NOT）。rm が非 0 なら `kept <N> rm-failed` を出す（MUST）。ただし rm が非 0 で、その stderr に `terminal sweep failed` を含むとき（Orca が端末の片付けを確かめられずに削除を止めたとき）は、理由を `rm-failed-terminal-sweep` にして `kept <N> rm-failed-terminal-sweep` を出す（MUST）。どちらの rm の失敗でも `--force` を付けた再試行をしてはならず、rm は子ごとに 1 回しか呼ばない（MUST NOT。`--force` は端末の片付けの確認だけでなく git の未コミット変更の保護も外すため。Orca を再起動してから `reap` をやり直せば通る見込みで、やり直しは親の判断に残す）。rm の stderr は従来どおり親の stderr にも流す（SHALL）。rm が exit 0 のあと、`git rev-parse --verify --quiet refs/heads/<ブランチ>` が exit 0 で、その出力が 7 で一致した HEAD と同じときだけ、`git worktree list --porcelain` にその子のパスが無くなるまで待ち（`EPIC_DISPATCH_REAP_DETACH_TIMEOUT` 秒を上限、既定 30。確認の回数（上限秒数 ÷ 間隔 + 1 回）か経過秒数のどちらか早い方で止める。`EPIC_DISPATCH_REAP_DETACH_INTERVAL` 秒間隔、既定 1。`git worktree list` が非 0 のときは残っているものとして待つ）、無くなったら、ブランチの先端を読み直して HEAD と同じときだけ `git branch -D <ブランチ>` を呼ぶ（MUST。違えば呼ばずに `reaped <N> branch-kept`）。上限を超えても残っているときは `git branch -D` を呼ばずに `reaped <N> branch-kept` を出す（MUST）。ブランチが無いか、`git branch -D` が exit 0 なら `reaped <N>`、先端が違うか `git branch -D` が非 0 なら `reaped <N> branch-kept` を出す（MUST）。1〜7 のどれかで外れた子、close か rm が失敗した子について、`git branch -D` を呼んではならない（MUST NOT）。stdout には子ごとに 1 行だけを出し、`orca`・`git`・`gh` 自身の出力は stderr に流す（SHALL）。子ごとの行を出し終えたら、`kept` があっても exit 0 で終わる（MUST）。
+1〜7 をすべて通った子に限り、`orca terminal close --worktree path:<子のパス> --all`、`orca worktree rm --worktree path:<子のパス>` をこの順に呼ばなければならない（MUST。rm は子ごとに 1 回、close は成功すれば 1 回）。`orca worktree rm` に `--force` を付けてはならない（MUST NOT）。close が非 0 で終わったとき（Orca が `terminal_close_incomplete` を返す場合。子のセッションが印を付けた直後でターンをまだ終えておらず、端末を閉じきれないことがある）は、次の順で 1 回だけ閉じ直さなければならない（MUST）。(a) 原因の手がかりとして `orca terminal list --worktree path:<子のパス> --json` を 1 回呼び、その出力を stderr に流す（読めなくても先へ進む）。(b) `EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT` 秒（既定 10。数字でなければ既定）待つ。(c) `orca terminal close` を同じ引数でもう 1 回呼ぶ。閉じ直しで exit 0 になれば、そのまま rm へ進む。閉じ直しも非 0 なら、rm を呼ばずに `kept <N> close-failed` を出し、stderr に主がする操作（どの画面で何をするか。Orca で子のワークスペース `<子のパス>` を開き、動いているターンの終了を待つか端末を手で閉じてから、親で `epic-dispatch.sh reap <N>` をやり直す）を 1〜2 行で出す（MUST）。閉じ直しは 1 回までで、3 回目は呼ばない（MUST NOT）。rm が非 0 なら `kept <N> rm-failed` を出す（MUST）。ただし rm が非 0 で、その stderr に `terminal sweep failed` を含むとき（Orca が端末の片付けを確かめられずに削除を止めたとき）は、理由を `rm-failed-terminal-sweep` にして `kept <N> rm-failed-terminal-sweep` を出す（MUST）。どちらの rm の失敗でも `--force` を付けた再試行をしてはならず、rm は子ごとに 1 回しか呼ばない（MUST NOT。`--force` は端末の片付けの確認だけでなく git の未コミット変更の保護も外すため。Orca を再起動してから `reap` をやり直せば通る見込みで、やり直しは親の判断に残す）。rm の stderr は従来どおり親の stderr にも流す（SHALL）。rm が exit 0 のあと、`git rev-parse --verify --quiet refs/heads/<ブランチ>` が exit 0 で、その出力が 7 で一致した HEAD と同じときだけ、`git worktree list --porcelain` にその子のパスが無くなるまで待ち（`EPIC_DISPATCH_REAP_DETACH_TIMEOUT` 秒を上限、既定 30。確認の回数（上限秒数 ÷ 間隔 + 1 回）か経過秒数のどちらか早い方で止める。`EPIC_DISPATCH_REAP_DETACH_INTERVAL` 秒間隔、既定 1。`git worktree list` が非 0 のときは残っているものとして待つ）、無くなったら、同じ一覧に `branch refs/heads/<ブランチ>` の行（別の worktree がそのブランチを checkout している）が無いことを確かめ（あれば `git update-ref -d` を呼ばず、stderr に理由を 1 行出して `reaped <N> branch-kept`。`git update-ref -d` は `git branch -D` と違い使用中のブランチも消せるため）、ブランチの先端を読み直して HEAD と同じときだけ `git update-ref -d refs/heads/<ブランチ> <HEAD>`（期待 OID つき。読み直しから削除までの間に別プロセスが ref を進めていれば Git が不一致で失敗する）を呼ぶ（MUST。違えば呼ばずに `reaped <N> branch-kept`）。上限を超えても残っているときは `git update-ref -d` を呼ばずに `reaped <N> branch-kept` を出す（MUST）。ブランチが無いか、`git update-ref -d` が exit 0 なら `reaped <N>`、先端が違うか `git update-ref -d` が非 0（期待 OID の不一致を含む）なら `reaped <N> branch-kept` を出す（MUST）。1〜7 のどれかで外れた子、close か rm が失敗した子について、`git update-ref -d` を呼んではならない（MUST NOT）。stdout には子ごとに 1 行だけを出し、`orca`・`git`・`gh` 自身の出力は stderr に流す（SHALL）。子ごとの行を出し終えたら、`kept` があっても exit 0 で終わる（MUST）。
 
 この要件の守備範囲で入力として扱うのは、develop の本体が `references/epic.md` の手順どおりに渡す番号と、`orca worktree current --json`・`orca worktree list --json` の出力（2026-10-08、Orca 1.4.222 で確かめた `id`・`repoId`・`path`・`branch`・`linkedIssue`・`isArchived`・`isMainWorktree`・`workspaceStatus`・`parentWorktreeId`）に加え、7 の 2 段目で判定する `gh pr list --state merged --search <HEAD>` の出力（`headRefOid` の行。検索が返す PR の絞り込みは信用せず、完全一致だけで判定する）と、`orca terminal close` の終了コード（非 0 なら失敗として閉じ直す。失敗の種類は区別しない）と、閉じ直しの前に呼ぶ診断用の `orca terminal list --worktree path:<子のパス> --json` の出力（stderr に流すだけで、中身は読まず判定に使わない。非 0 でも先へ進む）と、`orca worktree rm` の stderr（`terminal sweep failed` を含むかだけを見る。文言が変わると `rm-failed` に戻り、消す側には倒れない）と、`orca worktree rm` が exit 0 のあとに `git worktree list --porcelain` が返す出力と終了コード（`worktree <パス>` の行だけを見て、対象の子のパスと完全一致する行があるかだけで判定する。非 0 のときは残っているものとして扱う）である。拾いたい誤りは、対象のワークツリーが git に残っている間にそのブランチを消そうとして失敗すること（残っている間は消さずに待つ。上限を超えたら消さずに `branch-kept`）、印が付いていない子・親の `launch` が作っていないワークツリー・push していないコミットや未コミットの変更や `LLM/` を持つワークツリーを消すことである。次は通してよく、この要件では止めない: 一覧に対象以外のパスだけがある（対象のパスは無い。パスの前方一致・部分一致は残っている扱いにしない）ときは待たずにブランチ削除へ進む／Orca の出力の形が変わったときの検知（読めなければ `gone` か `kept` になり、消す側には倒れない）／フォークの同名ブランチのマージ済み PR（HEAD の一致で落ちる）／オーナーがボードで手で `completed` に動かした子（子が付けた印と同じに扱う）／確認から削除までの間に子が積んだコミット（`--force` を付けない rm と、ブランチの先端の比較で残る）。`mark` は `<issue>` の PR がマージ済みかを検査しない（手順書の条件に頼る。誤って付いた印は `reap` の `no-merged-pr`・`head-mismatch` で止まる）。`.gitignore` の対象のうち `LLM/` 以外は守らない（`git status --porcelain` に出ないので、ワークツリーと一緒に消える）。すり抜ける入力が見つかるたびに確認を足すことは、この要件の完了条件としない。
 
@@ -1674,7 +1674,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 #### Scenario: 条件を外れた子は消さずに理由を出す
 - **WHEN** 上の Scenario から 1 点だけを変えたスタブ環境（`workspaceStatus` が `in-review`／ワークツリーの HEAD が PR の `headRefOid` と違う／`git status --porcelain` に出力がある／`<子>/LLM` がある）それぞれで `epic-dispatch.sh reap 11` を実行する
-- **THEN** どの場合も `orca terminal close`・`orca worktree rm`・`git branch -D` は 1 回も呼ばれず、stdout は順に `kept 11 not-done`・`kept 11 head-mismatch`・`kept 11 dirty`・`kept 11 llm-logs` の 1 行で exit 0
+- **THEN** どの場合も `orca terminal close`・`orca worktree rm`・`git update-ref -d` は 1 回も呼ばれず、stdout は順に `kept 11 not-done`・`kept 11 head-mismatch`・`kept 11 dirty`・`kept 11 llm-logs` の 1 行で exit 0
 
 #### Scenario: マージ済みの PR が無い子と、PR を調べられない子は消さない
 - **WHEN** `gh pr list` の出力が空のスタブ環境、および `gh pr list` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
@@ -1694,15 +1694,15 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 #### Scenario: 残ったブランチは先端が PR の最終コミットと同じときだけ消す
 - **WHEN** `orca worktree rm` のあともローカルブランチ `oratta/issue-11` が残り、その先端が PR の `headRefOid` と同じスタブ環境、および先端が違うスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** 前者は `git branch -D oratta/issue-11` が 1 回呼ばれて stdout は `reaped 11`、後者は `git branch -D` が呼ばれず stdout は `reaped 11 branch-kept`、どちらも exit 0
+- **THEN** 前者は `git update-ref -d refs/heads/oratta/issue-11 <HEAD>` が 1 回呼ばれて stdout は `reaped 11`、後者は `git update-ref -d` が呼ばれず stdout は `reaped 11 branch-kept`、どちらも exit 0
 
-#### Scenario: ブランチが残っていなければ git branch -D を呼ばない
+#### Scenario: ブランチが残っていなければ git update-ref -d を呼ばない
 - **WHEN** `orca worktree rm` のあと `git rev-parse --verify --quiet refs/heads/oratta/issue-11` が非 0 で終わるスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** `git branch -D` は呼ばれず、stdout は `reaped 11` で exit 0
+- **THEN** `git update-ref -d` は呼ばれず、stdout は `reaped 11` で exit 0
 
 #### Scenario: 端末を閉じられなければ 1 回だけ閉じ直し、それでも閉じられなければワークツリーを消さない
 - **WHEN** `orca terminal close` が常に非 0 で終わり、待ち時間を 0 秒にしたスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** `orca terminal close` はちょうど 2 回呼ばれ、`orca worktree rm` と `git branch -D` は呼ばれず、stdout は `kept 11 close-failed` の 1 行で exit 0。stderr には主がする操作（`issue-11` のワークスペースを Orca で開いて端末を閉じ、`epic-dispatch.sh reap 11` をやり直す）が出る
+- **THEN** `orca terminal close` はちょうど 2 回呼ばれ、`orca worktree rm` と `git update-ref -d` は呼ばれず、stdout は `kept 11 close-failed` の 1 行で exit 0。stderr には主がする操作（`issue-11` のワークスペースを Orca で開いて端末を閉じ、`epic-dispatch.sh reap 11` をやり直す）が出る
 
 #### Scenario: 1 回目の閉じが不完全でも、閉じ直しで成功すれば片付ける
 - **WHEN** `orca terminal close` が 1 回目は非 0、2 回目は exit 0 で終わるスタブ環境（ほかは全部の確認を通る子）で `epic-dispatch.sh reap 11` を実行する
@@ -1710,7 +1710,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 #### Scenario: 端末の片付けの失敗で止まった rm は別の理由で返し、強制しない
 - **WHEN** 条件をすべて満たす子 11 について、`orca worktree rm` が非 0 で終わり stderr に `terminal sweep failed` を含むスタブ環境、および非 0 で終わるが stderr にそれを含まないスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** 前者は stdout が `kept 11 rm-failed-terminal-sweep`、後者は `kept 11 rm-failed`、どちらも exit 0。`orca worktree rm` はどちらも 1 回だけ呼ばれ、どの `orca` の呼び出しにも `--force` が無く、`git branch -D` は呼ばれない。rm の stderr は親の stderr にも出る
+- **THEN** 前者は stdout が `kept 11 rm-failed-terminal-sweep`、後者は `kept 11 rm-failed`、どちらも exit 0。`orca worktree rm` はどちらも 1 回だけ呼ばれ、どの `orca` の呼び出しにも `--force` が無く、`git update-ref -d` は呼ばれない。rm の stderr は親の stderr にも出る
 
 #### Scenario: 複数の子は 1 件ずつ判定する
 - **WHEN** 子 11 は条件をすべて満たし、子 12 は `workspaceStatus` が `in-review` のスタブ環境で `epic-dispatch.sh reap 11 12` を実行する
@@ -1722,19 +1722,23 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 #### Scenario: rm のあとしばらくワークツリーが git に残っても、外れたらブランチを消す
 - **WHEN** `orca worktree rm` が exit 0 で、その後 `git worktree list --porcelain` に子のパスが 2 回目の確認まで残り、先端が HEAD と同じブランチが残るスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** `git branch -D oratta/issue-11` が 1 回呼ばれ、stdout は `reaped 11` で exit 0
+- **THEN** `git update-ref -d refs/heads/oratta/issue-11 <HEAD>` が 1 回呼ばれ、stdout は `reaped 11` で exit 0
 
 #### Scenario: 上限を超えても残るなら branch-kept
 - **WHEN** `git worktree list --porcelain` が常に子のパスを返し、上限を短くしたスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** `git branch -D` は呼ばれず、stdout は `reaped 11 branch-kept` で exit 0
+- **THEN** `git update-ref -d` は呼ばれず、stdout は `reaped 11 branch-kept` で exit 0
+
+#### Scenario: 別の worktree が checkout しているブランチは消さない
+- **WHEN** `orca worktree rm` が exit 0 で、`git worktree list --porcelain` に子のパスは無いが、別のパスの worktree が `branch refs/heads/oratta/issue-11` を持ち、先端が HEAD と同じブランチが残るスタブ環境で `epic-dispatch.sh reap 11` を実行する
+- **THEN** `git update-ref -d` は呼ばれず、ブランチは残り、stdout は `reaped 11 branch-kept` で exit 0。別の worktree が `branch refs/heads/oratta/issue-110`（前方一致の別ブランチ）を持つだけなら、`git update-ref -d refs/heads/oratta/issue-11 <HEAD>` が 1 回呼ばれて stdout は `reaped 11`
 
 #### Scenario: 先端が HEAD と違うブランチは待たずに消さない
 - **WHEN** ブランチの先端が HEAD と違い、`git worktree list --porcelain` に子のパスが残るスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** `git worktree list` を繰り返し呼んで待つことはなく、`git branch -D` は呼ばれず、stdout は `reaped 11 branch-kept` で exit 0
+- **THEN** `git worktree list` を繰り返し呼んで待つことはなく、`git update-ref -d` は呼ばれず、stdout は `reaped 11 branch-kept` で exit 0
 
 #### Scenario: 一覧に対象以外のパスだけがあるときは待たずにブランチを消す
 - **WHEN** `git worktree list --porcelain` が `/work/issue-110`（子 11 のパスの前方一致）と別のワークツリーのパスだけを返し、先端が HEAD と同じブランチが残るスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** `git branch -D oratta/issue-11` が 1 回呼ばれ、stdout は `reaped 11` で exit 0
+- **THEN** `git update-ref -d refs/heads/oratta/issue-11 <HEAD>` が 1 回呼ばれ、stdout は `reaped 11` で exit 0
 
 ### Requirement: wait のテストはポーリングごとの stderr の空化を固定する
 `plugins/dev-workflow/tests/epic-dispatch.bats` の「`gh` の stderr はエラー行の直前に出る」テストは、`error` で終わったときに本体の stderr に出るのが最後（3 回目）のポーリングの `gh` の stderr だけであることを確かめなければならない（MUST）。`gh` のスタブは失敗のたびに `gh: mock failure for issue <N> (poll <回数>)` を stderr に出すので、stderr に `(poll 3)` が含まれることと、`mock failure` を含む行がちょうど 1 行であることを確かめる（MUST）。
@@ -2498,11 +2502,11 @@ develop の手順書（SKILL.md と `references/epic.md`・`references/epic-chil
 
 #### Scenario: main に入っていない commit がある子と、祖先を判定できない子は残す
 - **WHEN** 最初の Scenario から、`git merge-base --is-ancestor` の終了コードを 1 に変えたスタブ環境と 128 に変えたスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** どちらも `orca terminal close`・`orca worktree rm`・`git branch -D` は呼ばれず、stdout は順に `kept 11 unmerged-commits`・`kept 11 git-failed` で exit 0
+- **THEN** どちらも `orca terminal close`・`orca worktree rm`・`git update-ref -d` は呼ばれず、stdout は順に `kept 11 unmerged-commits`・`kept 11 git-failed` で exit 0
 
 #### Scenario: リモートの base が巻き戻されていれば、古い追跡参照と同じ HEAD の子も残す
 - **WHEN** 最初の Scenario から、手元の `refs/remotes/origin/main` が子の HEAD と同じ（巻き戻し前の先端）で、`git ls-remote` が返す base の先端が巻き戻し後の別の commit、その先端に対する `git merge-base --is-ancestor <HEAD> <base の先端>` が exit 1 のスタブ環境で `epic-dispatch.sh reap 11` を実行する
-- **THEN** `orca terminal close`・`orca worktree rm`・`git branch -D` は呼ばれず、stdout は `kept 11 unmerged-commits` で exit 0
+- **THEN** `orca terminal close`・`orca worktree rm`・`git update-ref -d` は呼ばれず、stdout は `kept 11 unmerged-commits` で exit 0
 
 #### Scenario: リモートの base を読めない子は残す
 - **WHEN** 最初の Scenario から、`git ls-remote` が非 0 で終わるスタブ環境、`git ls-remote` の出力が空のスタブ環境、`git cat-file -e` が常に非 0 で `git fetch` が非 0 で終わるスタブ環境、`git cat-file -e` が常に非 0 で `git fetch` が exit 0 のスタブ環境で `epic-dispatch.sh reap 11` を実行する
