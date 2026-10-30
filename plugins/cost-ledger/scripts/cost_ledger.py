@@ -110,7 +110,8 @@ class Pricing:
     def __init__(self, data: dict):
         self.models = data["models"]
         for name, price in self.models.items():
-            self._check_long_prompt(name, price.get("long_prompt"))
+            if "long_prompt" in price:
+                self._check_long_prompt(name, price["long_prompt"])
         self.rate_env = data.get("usd_jpy_rate_env", "COST_LEDGER_USD_JPY")
         rate = data["usd_jpy_rate"]
         override = os.environ.get(self.rate_env)
@@ -126,10 +127,9 @@ class Pricing:
     @staticmethod
     def _check_long_prompt(name: str, tier):
         """``long_prompt``（閾値と閾値超の単価 5 種）が欠けたまま低い単価に落ちないよう、読み込みで検べる。"""
-        if tier is None:
-            return
         def number(value):
-            return isinstance(value, (int, float)) and not isinstance(value, bool)
+            return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(value))
         if not isinstance(tier, dict) or not all(
                 number(tier.get(key)) for key in ("threshold",) + PRICE_FIELDS):
             raise SystemExit(
@@ -885,14 +885,16 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                 if key in seen:
                     continue
             fact = build_fact(record, resolver, path)
+            # 単価の区分（プロンプト長の閾値）を決めるための応答のプロンプト長。トークンには数えない。
+            # usage の欄が数でない行はここで落ちるので、try の内側で求める
+            prompt_tokens = sum(fact[field] for field in TOKEN_KEYS if field != "output_tokens")
         except (AttributeError, TypeError, ValueError):
             SCAN_STATS["unreadable_lines"] += 1
             continue
         fact["request_id"] = key
         if recorded:
             fact["issues"], fact["post_marker"] = [], None
-        # 単価の区分（プロンプト長の閾値）を決めるための応答のプロンプト長。トークンには数えない
-        fact["prompt_tokens"] = sum(fact[field] for field in TOKEN_KEYS if field != "output_tokens")
+        fact["prompt_tokens"] = prompt_tokens
         for field in TOKEN_KEYS:
             fact[field] = 0
         fact["output_tokens"] = delta

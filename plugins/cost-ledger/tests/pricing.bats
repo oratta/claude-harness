@@ -278,12 +278,72 @@ PY
   [ "$output" = "$direct" ] || { echo "$direct"; echo "$output"; return 1; }
 }
 
-@test "pricing tier: a long-prompt rate with a missing or non-numeric field fails the load" {  # 閾値超の単価や閾値が欠けた・数でない料金表は読み込みで失敗する
+# 同じ応答の後続行の usage が文字列の欄を持つログ。健全な応答を崩れた後続行の前後に置く。
+# 健全な応答 2 件の額は $0.51（入力 100,000 + 出力 1,000,000）と $0.01（入力 100,000）。
+# $1=後続行の形（confirmed=確定行 / issue=`gh issue view` を実行した行） $2=文字列にする欄
+broken_followup_log() {
+  mkdir -p "$CONFIG_DIR/projects/tier"
+  python3 - "$CONFIG_DIR/projects/tier/tier.jsonl" "$1" "$2" <<'PY'
+import json, sys
+path, shape, field = sys.argv[1:4]
+def row(request, uuid, ts, usage, stop=None, content=None):
+    msg = {"model": "claude-haiku-5-5", "role": "assistant", "stop_reason": stop, "usage": usage,
+           "content": content or [{"type": "text", "text": "x"}]}
+    return json.dumps({"type": "assistant", "requestId": request, "uuid": uuid, "timestamp": ts,
+                       "sessionId": "T1", "isSidechain": False, "cwd": "/nonexistent/t",
+                       "gitBranch": "tier", "message": msg}, separators=(",", ":"))
+broken = {"input_tokens": 1, "output_tokens": 9, "cache_read_input_tokens": 0}
+broken[field] = "12"
+if shape == "confirmed":
+    follow = row("r1", "u2", "2026-09-01T00:00:02.000Z", broken, stop="end_turn")
+else:
+    bash = {"type": "tool_use", "id": "t1", "name": "Bash", "input": {"command": "gh issue view 123"}}
+    follow = row("r1", "u2", "2026-09-01T00:00:02.000Z", broken, content=[bash])
+lines = [row("r0", "u0", "2026-09-01T00:00:00.000Z", {"input_tokens": 100000, "output_tokens": 1000000}),
+         row("r1", "u1", "2026-09-01T00:00:01.000Z", {"input_tokens": 1, "output_tokens": 8}),
+         follow,
+         row("r2", "u3", "2026-09-01T00:00:03.000Z", {"input_tokens": 100000, "output_tokens": 0})]
+open(path, "w", encoding="utf-8").write("\n".join(lines) + "\n")
+PY
+}
+
+@test "pricing tier: a follow-up line whose usage has a string field is skipped and counted, not fatal" {  # 後続行の usage が文字列の欄を持っても集計は完走し、その行は「読み取れなかった行」に数える
+  for shape in confirmed issue; do
+    for field in input_tokens cache_read_input_tokens; do
+      broken_followup_log "$shape" "$field"
+      run python3 "$CL" branch tier
+      [ "$status" -eq 0 ] || { echo "$shape $field: $output"; return 1; }
+      [[ "$output" == *'$0.52'* ]] || { echo "$shape $field: $output"; return 1; }
+      [[ "$output" == *'読み取れなかった行: 1 件'* ]] || { echo "$shape $field: $output"; return 1; }
+    done
+  done
+}
+
+@test "pricing tier: ledger-sync keeps the healthy responses of a log with a broken follow-up line" {  # 同じログの ledger-sync は完走し、健全な応答を台帳に書く（崩れた後続行は書かない）
+  export COST_LEDGER_PATH="$BATS_TEST_TMPDIR/ledger/cost-ledger.jsonl"
+  for shape in confirmed issue; do
+    rm -f "$COST_LEDGER_PATH"
+    broken_followup_log "$shape" input_tokens
+    run python3 "$CL" ledger-sync --quiet
+    [ "$status" -eq 0 ] || { echo "$shape: $output"; return 1; }
+    run python3 - "$COST_LEDGER_PATH" <<'PY'
+import json, sys
+print(" ".join(sorted(json.loads(line)["request_id"] for line in open(sys.argv[1], encoding="utf-8"))))
+PY
+    [ "$output" = "r0 r1 r2" ] || { echo "$shape: $output"; return 1; }
+  done
+}
+
+@test "pricing tier: a long-prompt rate with a missing or non-numeric field fails the load" {  # 閾値超の単価や閾値が欠けた・数でない（null・NaN・無限大を含む）料金表は、料金表の不備を示すエラーで読み込みに失敗する
   cl_mini_log mini claude-haiku-5-5 '{"input_tokens":1,"output_tokens":1,"cache_read_input_tokens":0}'
   for mutation in 'del d["models"]["claude-haiku-5-5"]["long_prompt"]["cache_read"]' \
                   'del d["models"]["claude-haiku-5-5"]["long_prompt"]["threshold"]' \
                   'd["models"]["claude-haiku-5-5"]["long_prompt"]["output"]="x"' \
-                  'd["models"]["claude-haiku-5-5"]["long_prompt"]["threshold"]=True'; do
+                  'd["models"]["claude-haiku-5-5"]["long_prompt"]["threshold"]=True' \
+                  'd["models"]["claude-haiku-5-5"]["long_prompt"]=None' \
+                  'd["models"]["claude-haiku-5-5"]["long_prompt"]["threshold"]=float("nan")' \
+                  'd["models"]["claude-haiku-5-5"]["long_prompt"]["output"]=float("nan")' \
+                  'd["models"]["claude-haiku-5-5"]["long_prompt"]["threshold"]=float("inf")'; do
     python3 - "$PRICING" "$BATS_TEST_TMPDIR/bad.json" "$mutation" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -292,6 +352,7 @@ json.dump(d, open(sys.argv[2], "w", encoding="utf-8"))
 PY
     run python3 "$CL" --pricing "$BATS_TEST_TMPDIR/bad.json" branch mini
     [ "$status" -ne 0 ] || { echo "accepted: $mutation"; return 1; }
+    [[ "$output" == *"long_prompt は threshold"* ]] || return 1
   done
 }
 
