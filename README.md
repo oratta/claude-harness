@@ -23,7 +23,7 @@ export PATH="$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/de
 export CLD_DEFAULT_ARGS="--dangerously-skip-permissions --remote-control"   # 個人の既定フラグ。要らなければ書かない
 ```
 
-`CLD_DEFAULT_ARGS` は、`cld` / `cld-account` が `claude` の引数の先頭に置く個人の既定フラグである。アカウントの登録や、以前のシェル関数からの移行を含む詳細は、`plugins/dev-workflow/README.md` の「Claude アカウントの起動時選択」を見る。
+`CLD_DEFAULT_ARGS` は、`cld` / `cld-account` が `claude` の引数の先頭に置く個人の既定フラグである。アカウントが 1 つでも、エピックの子を別セッションで起こすなら `CLD_DEFAULT_ARGS` は親の環境に置く（無いと子は許可の確認画面で止まる）。アカウントの登録や、以前のシェル関数からの移行を含む詳細は、`plugins/dev-workflow/README.md` の「Claude アカウントの起動時選択」を見る。
 
 ### Output Style `readable` を有効にする
 
