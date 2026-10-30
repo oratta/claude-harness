@@ -44,7 +44,7 @@
 
 ## 8. 受け入れ条件の確認
 
-- [ ] 8.1 全体の確認を通す。`bats plugins/dev-workflow/tests tests/injection-budget.bats` と `python3 -m pytest plugins/dev-workflow/tests` が exit 0。issue の `awk | grep -c` が 0。全 entry の走査テストで `model` キーが無い。`tier-model` が全格で exit 0、未定義の格で exit 2。触る範囲: なし（確認のみ）
+- [x] 8.1 全体の確認を通す。`bats plugins/dev-workflow/tests tests/injection-budget.bats` と `python3 -m pytest plugins/dev-workflow/tests` が exit 0。issue の `awk | grep -c` が 0。全 entry の走査テストで `model` キーが無い。`tier-model` が全格で exit 0、未定義の格で exit 2。触る範囲: なし（確認のみ）
 
 ## Workflow follow-up
 
