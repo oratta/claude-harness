@@ -2108,3 +2108,12 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
   echo "$body" | grep -qF '主の回答: 許容（引き継ぎ） — 親経由で受領（委任）（親セッション … / 委任の確認 … / …）委任の記録: … 停止の記録: … 原文: …'
   echo "$body" | grep -qF '4 つ'
 }
+
+@test "nonblocking triage (#1498): stage C checks whether the child is in progress before adding, and splits off a new child if so" {
+  c="$(nonblocking_para '段 C（')"
+  has_all "$c" '足す前に、その子 issue が作業中か' '`develop 開始`' '`実行モード:`' \
+    '--json comments' 'gh pr list' '--state open' 'in:body' '`Closes` / `Fixes` / `Refs #<番号>`' \
+    '足さず' '新しい子 issue' '作業中の子の番号' '主に聞かない' 'スクリプトは作らない'
+  k="$(nonblocking_para '主が切り出すと答えた止める指摘')"
+  has_all "$k" '作業中の確認' '段 C'
+}
