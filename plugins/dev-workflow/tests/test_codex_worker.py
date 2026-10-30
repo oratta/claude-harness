@@ -685,10 +685,13 @@ class ForegroundTest(unittest.TestCase):
         return json.loads(p.stdout.splitlines()[-1])
 
     def test_request_built_by_the_adapter_runs_exactly_as_written(self):
-        roles = {role:{'executor':'codex','account':'personal','model':'fixture-model','effort':'low'}
+        # #614: a version 2 profile has no model, so the adapter takes it from the tier map
+        # (implement is 中位, which is sol on Codex) and the worker resolves that family.
+        (self.home/'fixture.json').write_text(json.dumps({'model_pages':[CURRENT_LIST]}))
+        roles = {role:{'executor':'codex','account':'personal','effort':'low'}
                  for role in worker_module.ROLES}
         profile = self.root/'profiles.json'
-        profile.write_text(json.dumps({'version':1,'profiles':{'custom':{'roles':roles}}}))
+        profile.write_text(json.dumps({'version':2,'profiles':{'custom':{'roles':roles}}}))
         instructions = self.root/'input.txt';instructions.write_text('Do only this phase.')
         out = self.root/'request.json'
         built = self.develop('request','--phase','implement','--input',str(instructions),
@@ -697,7 +700,7 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(built['codex_home'],str(self.home.resolve()))
         request = json.loads(out.read_text())
         self.assertEqual([request['role'],request['model'],request['effort'],request['codex_home']],
-                         ['implement','fixture-model','low',str(self.home.resolve())])
+                         ['implement','sol','low',str(self.home.resolve())])
         p = subprocess.run([sys.executable,str(SCRIPT),'run','--request',str(out)],
                            env=self.env,text=True,capture_output=True,timeout=40)
         self.assertEqual(p.returncode,0,p.stdout+p.stderr)
@@ -707,7 +710,8 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(result['text'],'DONE')
         self.assertEqual(result['execution']['role'],'implement')
         self.assertEqual(result['execution']['requested'],
-                         {'executor':'codex','account':'personal','model':'fixture-model','effort':'low'})
+                         {'executor':'codex','account':'personal','model':'sol','effort':'low'})
+        self.assertEqual(result['execution']['model_resolution']['resolved'],'gpt-6-sol')
         # The fixture advertises no thread/turn observation, so the effective side stays
         # unobserved instead of being filled in from the request.
         self.assertIsNone(result['execution']['effective']['model'])
