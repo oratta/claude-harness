@@ -92,18 +92,18 @@ echo "my-harness" >> ~/.claude/harness-overlays
 
 ### 許可が要る理由
 
-marketplace を入れただけの第三者が、`.harness-overlay` を置くだけで常時効く指示（rules や output-styles）をあなたの環境に張れないようにするため。`.harness-overlay` があっても、許可ファイルに書かれていない marketplace は張られず、pull もされない。許可ファイルが無いか、空行とコメントだけなら何も起きず、何も表示されない。
+marketplace を入れただけの第三者が、`.harness-overlay` を置くだけで常時効く指示（rules や output-styles）をあなたの環境に張れないようにするため。`.harness-overlay` があっても、許可ファイルに書かれていない marketplace は張られず、pull もされない。許可ファイルが無いか、空行とコメントだけなら新しい overlay は張られず、以前張った overlay の symlink は削除される（何も表示されない）。公開版の同期は続く。
 
 ### 飛ばされたときの警告
 
-許可した overlay に問題があると、`sync.sh` は標準エラーに `[harness-sync]` で始まる警告を出してその overlay を飛ばし、終了コードを非 0 にする（他の配線は続く）。
+許可した overlay の構成検査に失敗すると、`sync.sh` は標準エラーに `[harness-sync]` で始まる警告を出してその overlay を飛ばす。ファイル単位の衝突（公開側と同名の output style など）では該当ファイルだけを飛ばし、rules などは配線される。いずれも終了コードは非 0 になるが、可能な配線は続く。
 
 | 警告 | 原因と直し方 |
 |------|-------------|
 | `許可した overlay のディレクトリがありません。飛ばします: <名前>` | 許可ファイルに書いた marketplace が見つからない。`~/.claude/plugins/marketplaces/` 直下の名前と綴りを確かめるか、marketplace を入れる |
 | `許可した <名前> の直下に .harness-overlay がありません。飛ばします` | 印が無い。その marketplace の直下に `.harness-overlay` を置く |
 | `overlay の名前が空か不正のため飛ばします` | `.harness-overlay` の 1 行目を `[a-z0-9][a-z0-9-]*` に直す |
-| `overlay の名前 <名前> が重複しているため飛ばします` | 別の overlay が同じ名前を使っている（marketplace 名の辞書順で先のものが採られる）。名前を変える |
+| `overlay の名前 <名前> が重複しているため飛ばします` | 許可ファイル内の同じ marketplace の重複行を削除する。異なる marketplace 同士が同じ名前なら、片方の `.harness-overlay` の 1 行目を変える（marketplace 名の辞書順で先のものが採られる） |
 | `<配布先>/<名前> が実ファイルか symlink のため overlay を飛ばします` | `~/.claude/rules/claude-harness/<名前>` に同名の実ファイルなどがある。移すか消す |
 | `許可ファイルの行が不正のため飛ばします` | 行に `/` を含むか、`.` で始まっている。ディレクトリ名だけを書く |
 
