@@ -2044,3 +2044,16 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
   echo "$body" | grep -qF '主の回答: 許容（引き継ぎ） — 親経由で受領（委任）（親セッション … / 委任の確認 … / …）委任の記録: … 停止の記録: … 原文: …'
   echo "$body" | grep -qF '4 つ'
 }
+
+@test "condition question delivery (#1013): the same sentence is in gate-runner.md, triage.md and the spec; develop SKILL.md points to it" {
+  s='照合と振り分けの G の return の仕分け欄に `条件の確認待ち` の質問文があれば、G を起こした側（develop では本体）は、その質問文と `条件の確認待ち` の PR コメントの URL を主への次の報告にそのまま載せる（無人運用（loop-dev-agent）では記録先にコメントする）。'
+  grep -qF -- "$s" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+  grep -qF -- "$s" "$TRIAGE"
+  # archive 前は change の delta spec、archive 後は main spec を読む
+  spec="${PLUGIN_ROOT}/openspec/changes/condition-question-delivery/specs/dev-workflow-pr-review-gate/spec.md"
+  [ -f "$spec" ] || spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  grep -qF -- "$s" "$spec"
+  grep -qF '自分でゲートを回すセッションは、G を起こした側を兼ねる。' "$TRIAGE"
+  grep -qF '自分でゲートを回すセッションは、G を起こした側を兼ねる。' "$spec"
+  grep -F '次の段へ → `次の段:`' "$DEVELOP_SKILL" | grep -qF '`条件の確認待ち` の質問文があれば主へ届ける（gate-runner.md）'
+}
