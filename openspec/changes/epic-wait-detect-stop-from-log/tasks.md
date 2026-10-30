@@ -39,5 +39,5 @@
 
 ## 6. 仕上げの確認
 
-- [ ] 6.1 全体の回帰を確かめる。`owner-reply-relayed-scenario` と `owner-reply-delegated-scenario` が変更なしで通り、`scripts/test.sh` 全体が通り、`tests/injection-budget.bats` が通る。`orca` の語が `stop-judge.sh` と develop の手順書に増えていない。触る範囲: 確認のみ
+- [x] 6.1 全体の回帰を確かめる。`owner-reply-relayed-scenario` と `owner-reply-delegated-scenario` が変更なしで通り、`scripts/test.sh` 全体が通り、`tests/injection-budget.bats` が通る。`orca` の語が `stop-judge.sh` と develop の手順書に増えていない。触る範囲: 確認のみ
 - [x] 6.2 変更の記録を書く。確認: `plugins/dev-workflow/changes/1382.md` に、1 本目で変わること（記録の無い子の検知・`親の判断:` の書式）と 2 本目の予定がある。main に同じ番号の記録があれば PR 番号の名前にする。触る範囲: `plugins/dev-workflow/changes/1382.md`（新規）
