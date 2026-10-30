@@ -338,6 +338,8 @@ verdict() { # <budget> <total> → over | under | ok
 # 推奨予算 = 実測 + 約 5%（整数演算）。
 recommended_budget() { printf '%s\n' "$(( $1 + $1 / 20 ))"; }
 
+REVIEW_DOC='docs/injection-budget-review.md'
+
 # ── 失敗時の出力（予算・実測・差分量／どちら側か／8 種の内訳／取るべき行動）──
 report() { # <verdict> <budget> <total> <内訳テキスト>
   local v="$1" budget="$2" total="$3" lines="$4" name bytes
@@ -478,8 +480,6 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
 check_frontmatter_shape() { emit_z "$@" | check_frontmatter_shape_z; }
 check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_shape_z; }
 
-# ══ 1. 集計ヘルパ ══════════════════════════════════════════
-
 # ── 思考の深さを文で指示する言い回しの検査（issue #712）──────────
 # 「よく考えて」「Think deeply.」の類は、現行モデルでは効かないか余計な長考を招く
 # （/doctor prompt-audit の指摘）。一度消した句が戻るのを止めるための検査である。
@@ -492,7 +492,6 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
 # 「必ず」「絶対」「MUST」「IMPORTANT」などの強調語は対象にしない（破壊的操作の防止に
 # 理由つきで使われているものが大半で、一律に禁じると必要な制約まで落ちる）。
 THINKING_PHRASE_RE='よく考え|think deeply|think hard|think carefully|think step by step'
-REVIEW_DOC='docs/injection-budget-review.md'
 
 # check_thinking_phrases_z — stdin: NUL 区切りの一覧。該当行を「ファイル:行番号:本文」で
 # 出力し、1 件でもあれば 1 を返す。英語の句は大文字小文字を区別しない。
@@ -519,6 +518,8 @@ list_thinking_phrase_targets() {
   list_dir_files "$REPO_ROOT/.claude/skills" '*'
   list_dir_files "$REPO_ROOT/.agents/skills" '*'
 }
+
+# ══ 1. 集計ヘルパ ══════════════════════════════════════════
 
 @test "sum_files adds up the byte counts of the given list" {
   printf '12345' > "$TMPD/a.md"      # 5 bytes
