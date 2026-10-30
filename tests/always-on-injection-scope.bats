@@ -48,7 +48,7 @@ git-commit-policy.md	作業完了＋archive（`/opsx:archive` / `/wt-clean` 完�
 git-commit-policy.md	feature → main のマージと `git push origin main` は明示承認
 git-commit-policy.md	などの直接マージは、どちらの運用でも明示承認なしに実行しない
 git-commit-policy.md	ゲート通過後に commit を積んだら取り直す
-git-commit-policy.md	足してよいかを主に聞くならその前
+git-commit-policy.md	in:body" --json url,body
 git-commit-policy.md	作業中で、新しい issue に切り出す
 git-commit-policy.md	作業中であること（PR があればその URL）を書いて主に聞く
 plugin-editing.md	手動で削除しない

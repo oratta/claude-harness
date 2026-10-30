@@ -1,7 +1,7 @@
 # in-progress-issue-scope Specification
 
 ## Purpose
-TBD - created by archiving change in-progress-issue-scope. Update Purpose after archive.
+作業中の issue に受け入れ条件が足されて範囲が広がるのを防ぐため、足す前に作業中かを確かめ、作業中なら新しい issue に切り出すか、作業中と書いて主に聞く。
 
 ## Requirements
 
@@ -40,13 +40,13 @@ G がレビュー指摘の振り分け（`dev-workflow:pr-review-gate` の手順
 
 ### Requirement: 作業中かを 2 つの材料で判定する
 
-エージェントは、issue が作業中かを `develop 開始` のコメントと開いた紐づく PR の 2 つで判定しなければならない（MUST）。どちらかがあれば作業中である。開いた紐づく PR とは、本文に `Closes` / `Fixes` / `Refs #<番号>` のいずれかがある open の PR である。番号が PR の本文に現れるだけで、この 3 つの参照の形でないものは含まない。マージ済みの PR は開いた紐づく PR に数えない。したがって、マージ済みの PR だけが残る open の issue は、`develop 開始` のコメントがあれば作業中、無ければ作業中でない。
+エージェントは、issue が作業中かを `develop 開始` か `実行モード:` の行があるコメントと、開いた紐づく PR の 2 つで判定しなければならない（MUST）。どちらかがあれば作業中である。開いた紐づく PR とは、本文に `Closes` / `Fixes` / `Refs #<番号>`（大文字小文字不問）のいずれかがある open の PR である。番号が PR の本文に現れるだけで、この 3 つの参照の形でないものは含まない。マージ済みの PR は開いた紐づく PR に数えない。したがって、マージ済みの PR だけが残る open の issue は、`develop 開始` か `実行モード:` の行があるコメントがあれば作業中、無ければ作業中でない。
 
-**守備範囲**: 入力の出どころは、`gh` が返す issue のコメントと open の PR の本文である。拾いたい誤りは、issue の本文だけを見て作業中の issue に足すことである。通してよい例は、番号が本文に現れない PR で進む作業、PR も `develop 開始` のコメントも無い作業、放置された issue を作業中と読むことである。穴が見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
+**守備範囲**: 入力の出どころは、`gh` が返す issue のコメントと open の PR の本文である。拾いたい誤りは、issue の本文だけを見て作業中の issue に足すことである。通してよい例は、番号が本文に現れない PR で進む作業、PR も開始のコメントも無い作業、放置された issue を作業中と読むことである。穴が見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: Refs で参照する PR だけで進む作業
 
-- **WHEN** open の PR の本文に `Refs #<番号>` があり、issue に `develop 開始` のコメントが無い
+- **WHEN** open の PR の本文に `Refs #<番号>` があり、issue に `develop 開始` か `実行モード:` の行があるコメントが無い
 - **THEN** エージェントは、その issue を作業中と読む
 
 #### Scenario: 番号が PR の本文に現れるだけ
@@ -57,7 +57,7 @@ G がレビュー指摘の振り分け（`dev-workflow:pr-review-gate` の手順
 #### Scenario: マージ済みの PR だけが残る
 
 - **WHEN** open の issue に、紐づくマージ済みの PR だけがあり、開いた紐づく PR が無い
-- **THEN** エージェントは `develop 開始` のコメントがあれば作業中と読み、無ければ作業中でないと読む
+- **THEN** エージェントは `develop 開始` か `実行モード:` の行があるコメントがあれば作業中と読み、無ければ作業中でないと読む
 
 ### Requirement: 作業中なら新しい issue に切り出すのを既定にする
 
@@ -65,12 +65,12 @@ G がレビュー指摘の振り分け（`dev-workflow:pr-review-gate` の手順
 
 #### Scenario: 作業中の issue に足す内容が見つかった
 
-- **WHEN** issue に `develop 開始` のコメントか、開いた紐づく PR がある
+- **WHEN** issue に `develop 開始` か `実行モード:` の行があるコメントか、開いた紐づく PR がある
 - **THEN** エージェントは元の issue の本文を編集せず、内容を新しい issue に起票し、URL を事後報告する
 
 #### Scenario: 作業中でない
 
-- **WHEN** issue に `develop 開始` のコメントも、開いた紐づく PR も無い
+- **WHEN** issue に `develop 開始` か `実行モード:` の行があるコメントも、開いた紐づく PR も無い
 - **THEN** この要件は何も求めない。受け入れ条件を足すかどうかは、これまでの判断のとおりに決める
 
 ### Requirement: 作業中の issue に足すときは作業中と書いて主に聞く
