@@ -234,7 +234,9 @@ model_section() {
   echo "$sec" | grep -qF 'FABLE_BUDGET_MODE'
   echo "$sec" | grep -qF 'SHARED_BUDGET_MODE'
   echo "$sec" | grep -qF 'references/decision-criteria.md'
-  ! echo "$sec" | grep -qE 'abundant|reserve|exhausted|throttled|depleted' || return 1
+  # 引き継ぎの判定役の行だけが例外: request を通らない役なので、depleted のときは起こさないことをその行に書く
+  ! echo "$sec" | grep -vF '| 引き継ぎの判定役' | grep -qE 'abundant|reserve|exhausted|throttled|depleted' || return 1
+  echo "$sec" | grep -F '| 引き継ぎの判定役' | grep -qF 'SHARED_BUDGET_MODE=depleted'
 }
 
 @test "model section: no route-by-route model names per configuration" {
