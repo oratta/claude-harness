@@ -592,8 +592,12 @@ def build_request(args):
             state = {'cwd': str(cwd), 'execution_config': config,
                      'execution_config_hash': execution_config_hash(config)}
     role = PHASES[args.phase][0]
-    execution = (claude_default(role) if state.get('automatic_claude_default') else
-                 resolve_execution(state, role))
+    # --entry-role picks which profile entry supplies executor/account/model while the phase
+    # (and so the instructions and the sandbox) stays the one requested: a pre-classified review
+    # runs with the decider entry's model but the review phase's reviewer brief.
+    entry_role = args.entry_role or role
+    execution = (claude_default(entry_role) if state.get('automatic_claude_default') else
+                 resolve_execution(state, entry_role))
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
         result = {'status': 'agent-required', 'phase': args.phase, 'role': role,
@@ -630,6 +634,8 @@ def main():
     sub = parser.add_subparsers(dest='command', required=True)
     request = sub.add_parser('request')
     request.add_argument('--phase', choices=PHASES, required=True)
+    request.add_argument('--entry-role', choices=CANONICAL_ROLES,
+                         help='profile entry used for executor/account/model; default is the phase role')
     request.add_argument('--input', required=True,
                          help='UTF-8 phase instructions prepared by coordinator')
     request.add_argument('--cwd', required=True)

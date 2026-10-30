@@ -162,7 +162,9 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            ② 返った選択（構成・reason・両 provider の margin・各 fetched_at・代表 Codex account。欠測は missing）と解決した executor / model を
               記録先に dispatch 記録として投稿する。投稿に成功するまでレビュアーを起動しない
            ③ 選ばれた投げ先でレビュアーを起動する（executor が claude なら Agent ツールで `subagent_type: dev-workflow:reviewer` として、model は adapter の値に残量上限を適用したもの。
-              事前分類に当たれば profile の decider entry で dev-workflow:decider。codex なら request を実行する）
+              事前分類に当たれば profile の decider entry で dev-workflow:decider。codex なら request を実行する。
+              codex の request は事前分類に当たるときも phase `review`（reviewer-brief の指示）で作り、decider entry は `--entry-role decider` で渡す。phase `decider` は判断役の指示（Bash 禁止）が渡るのでレビュアーには使わない。
+              codex の review phase は読み取り専用 sandbox で一時ディレクトリに書けず bats を始められないので、request を作る前に本体が固定 HEAD で必須テストを走らせ、コマンドと exit code とログ末尾を `--input` に含める。レビュアーはそのログを証拠にし、再実行できないことを中断の理由にしない）
               一周目で payload に区画があり executor が claude なら、区画ごとに 1 体ずつ並列に起こす。description は
               `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` とする。executor が codex なら区画を使わず差分全体を 1 つの request に渡す。
            ④ レビュー要約と、選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。review phase の executor が codex なら、worker の結果 JSON の `execution.model_resolution.requested` / `execution.model_resolution.resolved` も G に渡す。resolved が未観測なら null をそのまま渡し、要求値や dispatch 時の model で補完しない。Claude の G は照合と振り分けの G を新しく起こし、前の Gate Result ブロックと一緒に起動指示で渡す
