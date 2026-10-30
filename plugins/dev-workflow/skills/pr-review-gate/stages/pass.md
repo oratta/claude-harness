@@ -75,27 +75,18 @@ gh api repos/$R/issues/$N/comments --jq \
 ```bash
 ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')
 REC=${ISSUE:-$N}   # 記録先の番号: issue 参照があればその issue、無ければ PR 自身
-# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する。
-# コメントは 30 件でページが切れるので --paginate --slurp で全ページを取り（--slurp は --jq と併用不可なので jq へパイプ）、add で 1 配列にしてから「最新 1 件」を選ぶ
 gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body | split("\n")[0]'
 gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様レビュー: (APPROVE|REQUEST_CHANGES)$"))] | last | .body | split("\n")[0]'
 # 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）
 bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし
-# 文言合わせの通し方かどうかは、同じ最新の仕様化判断のコメントの本文（2 行目以降）で見分ける
 DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body')
-WAY=$(printf '%s\n' "$DEC" | grep -cx '通し方: 文言合わせ')   # 1 以上なら文言合わせの通し方。0 件のとき grep の終了コードは 1 になるので、終了コードではなく出力の値で判定する
-FIXES=$(printf '%s\n' "$DEC" | grep '^直す文: ')             # 直す要件ごとに 1 行
-echo "$WAY"; printf '%s\n' "$FIXES"
-# ここから下の 3 本は WAY が 1 以上のときだけ実行する。場所は PR の HEAD の作業ツリー（git rev-parse HEAD の出力が $HEAD_SHA と一致すること）。CHANGE には仕様宣言が指す change 名を入れる
-ls openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md | wc -l          # ちょうど 1（archive 済みで、差分が 1 ファイル）
-grep -cE '^## (ADDED|REMOVED|RENAMED) Requirements' openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md   # 0（ここも終了コードではなく出力の値で判定する）
-grep -h '^### Requirement: ' openspec/changes/archive/*-"$CHANGE"/specs/*/spec.md | sed 's/^### Requirement: //' | while IFS= read -r REQ; do printf '%s\n' "$FIXES" | grep -qF "「${REQ}」" || echo "直す文に無い要件: ${REQ}"; done   # 何も出力されなければ、要件名はすべて直す文の行にある
+WAY=$(printf '%s\n' "$DEC" | grep -cx '通し方: 文言合わせ')   # 1 以上なら文言合わせの通し方（`stages/pass-wording.md`）。grep の終了コードではなく出力の値で判定する
 ```
 
 | 記録先（issue、無ければ PR 自身）の記録 | 合格に必要な状態 |
 |---|---|
 | `仕様化判断: する`（`通し方: 文言合わせ` の行なし） | 「更新した」＋ PR の `openspec/` 差分か base の `openspec/changes/archive/*-<change-name>/` を実測。最新の `仕様レビュー:` コメントが `APPROVE`（REQUEST_CHANGES は不可） |
-| `仕様化判断: する`＋`通し方: 文言合わせ` の行あり | `仕様レビュー:` のコメントは照合しない。実測: ①更新した＋ `仕様レビュー: 省いた（文言合わせ。` ②HEAD の `openspec/changes/archive/*-<change-name>/specs/*/spec.md` ちょうど 1 つ ③ADDED / REMOVED / RENAMED 見出しなし ④全要件名が `直す文:` の `「<要件名>」` にある。1 つでも満たさなければ合格しない。修正か、`通し方:` の行の無い仕様化判断を投稿し直して artifact 一式・仕様レビューへ |
+| `仕様化判断: する`＋`通し方: 文言合わせ` の行あり | `仕様レビュー:` のコメントは照合しない。`stages/pass-wording.md` の実測 4 点。満たさなければ合格しない |
 | `仕様化判断: しない` | 「変更なし＋理由」、`openspec/` 差分は矛盾で不可。`spec-touch-check.sh` exit 2 は規範パス接触の理由必須 |
 | 記録なし | 合格しない。判断からやり直す。参照無し PR は自身に記録（`gh api -X POST repos/$R/issues/$REC/comments`） |
 
