@@ -1,9 +1,8 @@
-"""Characterize request tuples, not coordinator-applied Claude budget caps (#613).
+"""The tier of a role does not depend on the configuration (model-tier-resolution, #614).
 
-672 independently collected cases correspond to the rows in model-resolution-current.md.
-Expected tuples are literals: never read the profile JSON to derive this oracle.
-request does not read the two budget variables: its output has 56 distinct results, and the
-12-mode cells pin that insensitivity.
+Expected values are literals: never read the profile JSON or the tier map to derive this oracle.
+Every role, configuration, budget mode pair and input combination is pinned, and the tuples of
+the no-input conserve / ok row stay the values fixed in #613.
 """
 import importlib.util
 import itertools
@@ -13,6 +12,7 @@ from pathlib import Path
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest.mock import patch
 
@@ -58,24 +58,47 @@ REASONS = {'auto:claude-write-codex-review': 'both-providers-have-headroom',
            'auto:codex-standard': 'only-codex-has-headroom',
            'auto:claude-default': 'only-claude-has-headroom'}
 
+INPUTS = {
+    'none': (),
+    'sacred': ('--pre-class', 'sacred'),
+    'merge': ('--pre-class', 'merge'),
+    'contract': ('--pre-class', 'contract'),
+    'billing': ('--pre-class', 'billing'),
+    'design': ('--design-judgment',),
+    'first': ('--failure', 'first'),
+    'executor': ('--failure', 'executor'),
+    'judgment': ('--failure', 'judgment'),
+    'unmanned': ('--unmanned',),
+    'merge-unmanned': ('--pre-class', 'merge', '--unmanned'),
+}
+# The twelve tiers of one row, in the order FABLE_MODES x SHARED_MODES (ok, throttled, depleted).
+LOW = ('最安',) * 12
+MIDDLE = ('中位',) * 12
+READER = ('上位', '中位', '中位') * 4
+RAISED = ('上位', '上位', '中位') * 4
+TOP = (('最上位', '上位', '中位') * 3) + ('上位', '上位', '中位')
+TOP_UNMANNED = (('最上位', '上位', '中位') * 2) + (('上位', '上位', '中位') * 2)
+WRITER = {'none': MIDDLE, 'sacred': RAISED, 'merge': RAISED, 'contract': RAISED,
+          'billing': RAISED, 'design': RAISED, 'first': MIDDLE, 'executor': RAISED,
+          'judgment': MIDDLE, 'unmanned': MIDDLE, 'merge-unmanned': RAISED}
+GATE = dict.fromkeys(INPUTS, MIDDLE)
+REVIEW = {'none': READER, 'sacred': READER, 'merge': TOP, 'contract': TOP, 'billing': TOP,
+          'design': READER, 'first': READER, 'executor': READER, 'judgment': READER,
+          'unmanned': READER, 'merge-unmanned': TOP_UNMANNED}
+DECIDER = {'none': TOP, 'sacred': TOP, 'merge': TOP, 'contract': TOP, 'billing': TOP,
+           'design': TOP, 'first': RAISED, 'executor': RAISED, 'judgment': TOP,
+           'unmanned': TOP_UNMANNED, 'merge-unmanned': TOP_UNMANNED}
+READ_ONLY_LOW = dict.fromkeys(INPUTS, LOW)
+TIER_TABLE = {'spec': WRITER, 'implement': WRITER, 'finish': WRITER, 'gate': GATE,
+              'spec-review': REVIEW, 'review': REVIEW, 'decider': DECIDER,
+              'explore': READ_ONLY_LOW, 'summarize': READ_ONLY_LOW}
 
-class ModelResolutionCurrent(unittest.TestCase):
+
+class Fixture(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        # Keep the independently collected cases and the documented triple rows aligned.
-        document = SCRIPT.parents[1] / 'references/model-resolution-current.md'
-        text = document.read_text()
-        section = text.split('## request の全672ケース', 1)[1]
-        rows = [[cell.strip() for cell in line.split('|')[1:6]]
-                for line in section.splitlines() if line.startswith('| ')][1:]
-        keys = [(row[0], row[1], row[2]) for row in rows]
-        expected_keys = {(role, config, f'{fable}/{shared}') for role, config, fable, shared
-                         in itertools.product(ROLES, EXPECTED, FABLE_MODES, SHARED_MODES)}
-        assert len(keys) == 672 and set(keys) == expected_keys
-        for row in rows:
-            executor, model = EXPECTED[row[1]][ROLES.index(row[0])]
-            assert row[3].split(' ')[0] == f'{executor}:{model}', row
         assert ROLES == m.CANONICAL_ROLES
+        assert set(TIER_TABLE) == set(m.PHASES)
         cls.temp = tempfile.TemporaryDirectory()
         cls.addClassCleanup(cls.temp.cleanup)
         cls.root = Path(cls.temp.name).resolve()
@@ -91,19 +114,14 @@ class ModelResolutionCurrent(unittest.TestCase):
         cls.home.mkdir()
         cls.instructions = cls.root / 'input.txt'
         cls.instructions.write_text('Characterization only.')
+        cls.out = cls.root / 'request.json'
 
-
-def case(configuration, index, fable, shared, expected):
-    def test(self):
-        out = self.root / 'request.json'
-        if out.exists():
-            out.unlink()
-        args = [str(SCRIPT), 'request', '--phase', PHASES[index],
+    def call(self, configuration, phase, fable='conserve', shared='ok', inputs=()):
+        self.out.unlink(missing_ok=True)
+        args = [str(SCRIPT), 'request', '--phase', phase, *inputs,
                 '--input', str(self.instructions), '--cwd', str(self.cwd),
-                '--account-home', 'current=' + str(self.home), '--out', str(out)]
-        automatic = configuration.startswith('auto:')
-        selected = configuration.removeprefix('auto:')
-        if not automatic:
+                '--account-home', 'current=' + str(self.home), '--out', str(self.out)]
+        if not configuration.startswith('auto:'):
             args.extend(['--profile', configuration])
         claude_margin, codex_margin = MARGINS.get(configuration, (20, 10))
         with patch.dict(os.environ, {'FABLE_BUDGET_MODE': fable,
@@ -117,8 +135,49 @@ def case(configuration, index, fable, shared, expected):
                 patch.object(m, 'read_codex_usages', return_value={'current': {'fetched_at': 1}}), \
                 patch.object(m, 'usage_margin', return_value=codex_margin), \
                 patch.object(m.usage_view, 'read_codex_enabled', return_value=True):
-            result = m.main()
-        self.assertEqual(result['selection']['configuration'], selected)
+            return m.main()
+
+
+class ConfigurationDoesNotChangeTheTier(Fixture):
+    def test_a_writer_stays_upper_under_claude_write_codex_review(self):
+        # #605: the automatic route ran a pre-classified W on sonnet.
+        for configuration in ('claude-write-codex-review', 'auto:claude-write-codex-review'):
+            with self.subTest(configuration=configuration):
+                result = self.call(configuration, 'implement', inputs=INPUTS['contract'])
+                self.assertEqual((result['tier'], result['model']), ('上位', 'opus'))
+
+
+def tier_case(configuration, phase):
+    def test(self):
+        # 11 inputs x 12 modes would spend most of the run in git and in writing request files, so
+        # these are replaced here and the cells are compared at once. The tuple tests keep them.
+        toplevel = types.SimpleNamespace(returncode=0, stdout=str(self.cwd))
+        cells = [(name, index, fable, shared) for name, (index, (fable, shared)) in itertools.product(
+            INPUTS, enumerate(itertools.product(FABLE_MODES, SHARED_MODES)))]
+        with patch.object(m.subprocess, 'run', return_value=toplevel), \
+                patch.object(m, 'git', return_value='fixture-head'), \
+                patch.object(m, 'prompt', return_value='fixture prompt'), \
+                patch.object(m, 'write'):
+            actual = {cell: self.call(configuration, phase, cell[2], cell[3], INPUTS[cell[0]])['tier']
+                      for cell in cells}
+        self.assertEqual(actual, {cell: TIER_TABLE[phase][cell[0]][cell[1]] for cell in cells})
+    return test
+
+
+for configuration, phase in itertools.product(EXPECTED, TIER_TABLE):
+    name = 'test_' + '_'.join((configuration, phase)).replace(':', '_').replace('-', '_')
+    setattr(ConfigurationDoesNotChangeTheTier, name, tier_case(configuration, phase))
+
+
+class NoInputKeepsTheCurrentTuples(Fixture):
+    """The conserve / ok row with no input is the executor and model fixed in #613."""
+
+
+def tuple_case(configuration, index, expected):
+    def test(self):
+        result = self.call(configuration, PHASES[index])
+        self.assertEqual(result['selection']['configuration'], configuration.removeprefix('auto:'))
+        automatic = configuration.startswith('auto:')
         if automatic:
             self.assertEqual(result['selection']['reason'], REASONS[configuration])
         self.assertEqual(result['selection']['selection_mode'], 'automatic' if automatic else 'explicit')
@@ -126,18 +185,17 @@ def case(configuration, index, fable, shared, expected):
         self.assertEqual(result['role'], 'impl-review' if ROLES[index] == 'review' else ROLES[index])
         if expected[0] == 'codex':
             self.assertEqual(result['status'], 'request-written')
-            self.assertEqual(json.loads(out.read_text())['model'], expected[1])
+            self.assertEqual(json.loads(self.out.read_text())['model'], expected[1])
         else:
             self.assertEqual(result['status'], 'agent-required')
-            self.assertFalse(out.exists())
+            self.assertFalse(self.out.exists())
     return test
 
 
-for configuration, index, fable, shared in itertools.product(
-        EXPECTED, range(8), FABLE_MODES, SHARED_MODES):
-    name = 'test_' + '_'.join((configuration, ROLES[index], fable, shared)).replace(':', '_').replace('-', '_')
-    setattr(ModelResolutionCurrent, name,
-            case(configuration, index, fable, shared, EXPECTED[configuration][index]))
+for configuration, index in itertools.product(EXPECTED, range(8)):
+    name = 'test_' + '_'.join((configuration, ROLES[index])).replace(':', '_').replace('-', '_')
+    setattr(NoInputKeepsTheCurrentTuples, name,
+            tuple_case(configuration, index, EXPECTED[configuration][index]))
 
 
 class ModelTiersDocument(unittest.TestCase):
