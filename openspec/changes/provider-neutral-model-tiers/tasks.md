@@ -40,7 +40,7 @@
 
 - [x] 7.1 `test_model_resolution_current.py` を書き換える。役 × 構成 × 12 モード × 入力の `tier` をリテラルの期待値で確かめ、入力なしの conserve / ok は executor と model が #613 の値のままであることも確かめる。遅ければ git の呼び出しを差し替える。テスト: `python3 -m pytest plugins/dev-workflow/tests/test_model_resolution_current.py` が exit 0 で、`claude-write-codex-review` の事前分類の W が上位。触る範囲: dw/tests/test_model_resolution_current.py:1-140
 - [x] 7.2 `model-resolution-current.md` を削除し、参照を消す。確認: `git grep -n 'model-resolution-current' -- plugins/dev-workflow ':!plugins/dev-workflow/changes'` が 0 件。触る範囲: dw/references/model-resolution-current.md:1-769（削除）、dw/references/codex-develop-explicit.md:13、dw/tests/test_model_resolution_current.py:3、dw/tests/test_model_resolution_current.py:66
-- [ ] 7.3 変更の記録を書く。BREAKING（外部 profile-file の version 1 の拒否と書き換え方）を含める。確認: ファイルがあり、#614 と書き換え方が書かれている。触る範囲: dw/changes/614.md（新規）
+- [x] 7.3 変更の記録を書く。BREAKING（外部 profile-file の version 1 の拒否と書き換え方）を含める。確認: ファイルがあり、#614 と書き換え方が書かれている。触る範囲: dw/changes/614.md（新規）
 
 ## 8. 受け入れ条件の確認
 
