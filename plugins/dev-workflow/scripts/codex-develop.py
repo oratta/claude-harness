@@ -50,6 +50,12 @@ TIER_MAP = ROOT / 'references/model-tier-map.json'
 BASE_TIERS = {'spec': '中位', 'implement': '中位', 'finish': '中位', 'gate': '中位',
               'spec-review': '上位', 'review': '上位', 'decider': '最上位',
               'explore': '最安', 'summarize': '最安'}
+WRITER_PHASES = frozenset({'spec', 'implement', 'finish'})
+REVIEW_PHASES = frozenset({'spec-review', 'review'})
+PRE_CLASSES = ('sacred', 'merge', 'contract', 'billing')
+# A sacred path alone does not raise a reader: in repositories whose product is agent settings
+# nearly every change touches one, and raising them would spend most of the top tier.
+DECIDER_PRE_CLASSES = frozenset({'merge', 'contract', 'billing'})
 
 
 def _setting_error(exc):
@@ -382,6 +388,22 @@ def load_tier_map(path=None):
     return document
 
 
+def switches_to_decider(phase, pre_class):
+    return phase in REVIEW_PHASES and bool(DECIDER_PRE_CLASSES.intersection(pre_class))
+
+
+def requested_tier(phase, pre_class, design_judgment, failure):
+    # Configuration, executor and automatic selection are deliberately not parameters: a route
+    # that could read them would need the rule copied for it. An input not named here is inert.
+    if switches_to_decider(phase, pre_class):
+        return '最上位'
+    if phase in WRITER_PHASES and (pre_class or design_judgment or failure == 'executor'):
+        return '上位'
+    if phase == 'decider' and failure in {'first', 'executor'}:
+        return '上位'
+    return BASE_TIERS[phase]
+
+
 def cap_tier(tier, cap):
     # A cap only ever lowers: min over the tier order, with no cap leaving the tier alone.
     return tier if cap is None else min(tier, cap, key=TIERS.index)
@@ -628,13 +650,17 @@ def build_request(args):
         state = {'cwd': str(cwd), 'execution_config': config,
                  'execution_config_hash': execution_config_hash(config)}
     role = PHASES[args.phase][0]
-    execution = resolve_execution(state, role)
+    # A switched review runs on the decider entry but keeps the phase role in the request file:
+    # the worker chooses the sandbox from that role, and the phase instructions use gh.
+    switched = not legacy and switches_to_decider(args.phase, args.pre_class)
+    execution = resolve_execution(state, 'decider' if switched else role)
     if not legacy:
-        executed_tier = cap_tier(BASE_TIERS[args.phase], execution.get('tier_cap'))
+        tier = requested_tier(args.phase, args.pre_class, args.design_judgment, args.failure)
+        executed_tier = cap_tier(tier, execution.get('tier_cap'))
         execution['model'] = tier_map['executors'][execution['executor']][executed_tier]
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
-        result = {'status': 'agent-required', 'phase': args.phase, 'role': role,
+        result = {'status': 'agent-required', 'phase': args.phase, 'role': execution['role'],
                 'executor': execution['executor'], 'account': execution['account'],
                 'model': execution['model'], 'effort': execution.get('effort'),
                 'head': head, 'selection': selection}
@@ -653,7 +679,7 @@ def build_request(args):
     out = Path(args.out).expanduser().resolve()
     write(out, request)
     result = {'status': 'request-written', 'request': str(out), 'request_id': request['request_id'],
-            'phase': args.phase, 'role': role, 'executor': execution['executor'],
+            'phase': args.phase, 'role': execution['role'], 'executor': execution['executor'],
             'account': execution['account'],
             'codex_home': request['codex_home'], 'model': execution['model'],
             'effort': execution.get('effort'), 'head': head, 'selection': selection}
@@ -680,6 +706,11 @@ def main():
     request.add_argument('--account-home-file',
                          help='flat JSON object of account name to CODEX_HOME')
     request.add_argument('--quota-margin-pct', type=float)
+    request.add_argument('--pre-class', action='append', default=[], choices=PRE_CLASSES,
+                         help='pre-classification of the work; repeatable')
+    request.add_argument('--design-judgment', action='store_true')
+    request.add_argument('--failure', choices=('first', 'executor', 'judgment'))
+    request.add_argument('--unmanned', action='store_true')
     request.add_argument('--out', required=True,
                          help='where to write the request file for codex-worker.py run')
     # The values are checked in tier_model: argparse choices would refuse them without the

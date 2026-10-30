@@ -15,8 +15,8 @@
 
 ## 3. 格の規則
 
-- [ ] 3.1 `request` に `--pre-class`・`--design-judgment`・`--failure`・`--unmanned` を足し、phase と入力から要求の格を決める関数を作る。W と G は phase で分ける。テスト: `model-tier-resolution` の「格は役と入力だけから決める」の scenario 全部と、未定義の `--pre-class` で依頼ファイルができないこと。触る範囲: dw/scripts/codex-develop.py:550-626（build_request）、dw/scripts/codex-develop.py:628-655（main）、dw/tests/test_codex_develop.py（新しいテストクラス）
-- [ ] 3.2 spec-review / review の merge・contract・billing で decider の entry に切り替える。指示書は phase のものを保つ。結果の role だけを decider にし、依頼ファイルの role は phase の role を保つ。テスト: `claude-write-codex-review` の review + contract が codex・astra・結果の role=decider で、依頼ファイルの role が `impl-review` で、prompt に phase `review` の指示書が入る。`--pre-class sacred` だけなら切り替わらず、`--failure` が効かない。触る範囲: dw/scripts/codex-develop.py:595-596、dw/scripts/codex-develop.py:496-534（prompt）、dw/tests/test_codex_develop.py（新しいテストクラス）
+- [x] 3.1 `request` に `--pre-class`・`--design-judgment`・`--failure`・`--unmanned` を足し、phase と入力から要求の格を決める関数を作る。W と G は phase で分ける。テスト: `model-tier-resolution` の「格は役と入力だけから決める」の scenario 全部と、未定義の `--pre-class` で依頼ファイルができないこと。触る範囲: dw/scripts/codex-develop.py:550-626（build_request）、dw/scripts/codex-develop.py:628-655（main）、dw/tests/test_codex_develop.py（新しいテストクラス）
+- [x] 3.2 spec-review / review の merge・contract・billing で decider の entry に切り替える。指示書は phase のものを保つ。結果の role だけを decider にし、依頼ファイルの role は phase の role を保つ。テスト: `claude-write-codex-review` の review + contract が codex・astra・結果の role=decider で、依頼ファイルの role が `impl-review` で、prompt に phase `review` の指示書が入る。`--pre-class sacred` だけなら切り替わらず、`--failure` が効かない。触る範囲: dw/scripts/codex-develop.py:595-596、dw/scripts/codex-develop.py:496-534（prompt）、dw/tests/test_codex_develop.py（新しいテストクラス）
 
 ## 4. 残量モード
 

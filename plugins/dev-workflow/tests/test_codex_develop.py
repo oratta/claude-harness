@@ -1281,6 +1281,113 @@ class TierMap(RequestFixture, unittest.TestCase):
                 self.assertEqual(json.loads(result.stdout)['status'], 'blocked')
 
 
+class TierRule(RequestFixture, unittest.TestCase):
+    # model-tier-resolution: the tier comes from the phase and the request inputs alone.
+    WRITERS = ('spec', 'implement', 'finish')
+
+    def rule(self, phase, *pre_class, design=False, failure=None):
+        return m.requested_tier(phase, list(pre_class), design, failure)
+
+    def resolve(self, profile, phase, *extra):
+        args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
+                '--cwd', str(self.cwd), '--profile', profile,
+                '--account-home', 'current=' + str(self.home), '--out', str(self.out), *extra]
+        with patch.object(sys, 'argv', args):
+            return m.main()
+
+    def test_base_tier_of_every_phase(self):
+        expected = {'spec': '中位', 'implement': '中位', 'finish': '中位', 'gate': '中位',
+                    'spec-review': '上位', 'review': '上位', 'decider': '最上位',
+                    'explore': '最安', 'summarize': '最安'}
+        self.assertEqual(set(expected), set(m.PHASES))
+        for phase, tier in expected.items():
+            with self.subTest(phase=phase):
+                self.assertEqual(self.rule(phase), tier)
+
+    def test_writer_is_raised_to_the_upper_tier_and_no_further(self):
+        for phase in self.WRITERS:
+            for label, tier in (
+                    *((name, self.rule(phase, name)) for name in ('sacred', 'merge', 'contract', 'billing')),
+                    ('design', self.rule(phase, design=True)),
+                    ('failure', self.rule(phase, failure='executor')),
+                    ('all', self.rule(phase, 'merge', 'billing', design=True, failure='executor'))):
+                with self.subTest(phase=phase, input=label):
+                    self.assertEqual(tier, '上位')
+
+    def test_writer_failure_alone_does_not_raise_and_never_lowers(self):
+        for phase in self.WRITERS:
+            for failure in ('first', 'judgment'):
+                with self.subTest(phase=phase, failure=failure):
+                    self.assertEqual(self.rule(phase, failure=failure), '中位')
+                    self.assertEqual(self.rule(phase, 'merge', failure=failure), '上位')
+
+    def test_gate_is_never_raised(self):
+        self.assertEqual(self.rule('gate', 'merge', design=True, failure='executor'), '中位')
+
+    def test_decider_failure_steps(self):
+        self.assertEqual(self.rule('decider', failure='first'), '上位')
+        self.assertEqual(self.rule('decider', failure='executor'), '上位')
+        self.assertEqual(self.rule('decider', failure='judgment'), '最上位')
+        self.assertEqual(self.rule('decider'), '最上位')
+
+    def test_inputs_outside_the_rule_do_not_move_the_tier(self):
+        for phase in ('explore', 'summarize'):
+            self.assertEqual(self.rule(phase, 'merge', design=True, failure='executor'), '最安')
+        self.assertEqual(self.rule('decider', 'merge', design=True), '最上位')
+        self.assertEqual(self.rule('spec-review', 'sacred', design=True, failure='executor'), '上位')
+
+    def test_undefined_inputs_are_refused_without_a_request_file(self):
+        for extra in (('--pre-class', 'other'), ('--failure', 'other')):
+            with self.subTest(extra=extra):
+                result = subprocess.run(
+                    [sys.executable, str(SCRIPT), 'request', '--phase', 'implement', '--input',
+                     str(self.input), '--cwd', str(self.cwd), '--profile', 'codex-standard',
+                     '--account-home', 'current=' + str(self.home), '--out', str(self.out), *extra],
+                    text=True, capture_output=True, timeout=20)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertFalse(self.out.exists())
+
+    def test_review_switches_to_the_decider_entry_and_keeps_the_phase_instructions(self):
+        for name in ('merge', 'contract', 'billing'):
+            with self.subTest(pre_class=name):
+                self.out.unlink(missing_ok=True)
+                result = self.resolve('claude-write-codex-review', 'review', '--pre-class', name)
+                self.assertEqual((result['executor'], result['model'], result['role'], result['phase']),
+                                 ('codex', 'astra', 'decider', 'review'))
+                request = json.loads(self.out.read_text())
+                self.assertEqual(request['role'], 'impl-review')
+                self.assertEqual(request['model'], 'astra')
+                self.assertIn('Codex delegated develop phase: review. Role: impl-review.',
+                              request['prompt'])
+                self.assertIn('skills/develop/references/roles/gate-runner.md', request['prompt'])
+                self.assertNotIn('agents/decider.md', request['prompt'])
+
+    def test_the_switched_review_keeps_the_sandbox_of_the_phase(self):
+        self.resolve('codex-standard', 'review', '--pre-class', 'contract')
+        role = json.loads(self.out.read_text())['role']
+        self.assertIn(role, worker_module.NETWORK_ROLES)
+        self.assertNotIn('decider', worker_module.NETWORK_ROLES)
+
+    def test_spec_review_switches_too(self):
+        result = self.resolve('codex-standard', 'spec-review', '--pre-class', 'billing')
+        self.assertEqual((result['role'], result['model']), ('decider', 'astra'))
+        self.assertEqual(json.loads(self.out.read_text())['role'], 'spec-review')
+
+    def test_sacred_alone_does_not_switch(self):
+        result = self.resolve('codex-standard', 'spec-review', '--pre-class', 'sacred')
+        self.assertEqual((result['role'], result['model']), ('spec-review', 'sol'))
+
+    def test_failure_does_not_reach_a_switched_review(self):
+        result = self.resolve('codex-standard', 'review', '--pre-class', 'merge', '--failure', 'first')
+        self.assertEqual((result['role'], result['model']), ('decider', 'astra'))
+
+    def test_a_switched_review_on_a_claude_decider_is_returned_to_the_coordinator(self):
+        result = self.resolve('hybrid-standard', 'review', '--pre-class', 'contract')
+        self.assertEqual((result['status'], result['role'], result['executor'], result['model']),
+                         ('agent-required', 'decider', 'claude', 'fable'))
+        self.assertFalse(self.out.exists())
+
+
 class ProfileFormatDocument(RequestFixture, unittest.TestCase):
     def test_the_documented_external_profile_resolves(self):
         document = (SCRIPT.parents[1] / 'references/codex-develop-explicit.md').read_text()
