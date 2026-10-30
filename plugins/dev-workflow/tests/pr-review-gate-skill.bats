@@ -812,7 +812,7 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   r="$(nonblocking_para '振り分けの記録')"
   has_all "$r" '当てた段' '行き先' '合否に使わない'
   k="$(nonblocking_para '主が切り出すと答えた止める指摘')"
-  has_all "$k" '必ず follow-up issue にする' '捨てない' '段 C の表'
+  has_all "$k" '必ず issue で追跡する' '既存 issue の受け入れ条件に足す' '「follow-up issue に切る」は' '既存 issue で受ける' '「follow-up issue に切った」と書いて URL を添える' '捨てない' '段 C の表'
   # 保留の解除と合格条件は、置き場所の決め方を triage.md に向ける
   grep -F '**切り出しの確認**' "$HOLD" | grep -F '| 切り出す |' | grep -qF '主が切り出すと答えた止める指摘'
   grep -F '主が切り出すと答えて follow-up issue に切ったもの' "$PASS_STAGE" | grep -qF '主が切り出すと答えた止める指摘'
@@ -1170,6 +1170,33 @@ triage_row_section() {
   echo "$r" | grep -qF '共通一覧契約'
   echo "$r" | grep -qF '| 軸の値 | 扱い |'
   echo "$r" | grep -qF '共通一覧契約の対象外'
+}
+
+@test "hit summary (#1457): the reviewer block has a separate paragraph with the pipeline, the full SHA and the floor" {
+  block="$(reviewer_block)"
+  summary="$(echo "$block" | awk '/^\*\*全ヒット要約/{f=1} f&&/^三表を自己点検/{exit} f')"
+  [ -n "$summary" ] || { echo 'no summary paragraph'; return 1; }
+  for token in '| wc -l' '| git hash-object --stdin' '`<rev>` には `修正前 SHA:` の 40 桁をそのまま入れる' \
+    '全ヒット要約: <行数> 行 <ハッシュ>' '標準出力だけで完結する' 'git grep -c' \
+    'PR の差分に関わるファイル' '`検索コマンド:` の行に持ち込まない' '順 3 の一覧は全行のまま' '出力をそのまま貼る' \
+    '食い違い: <finding ID>' 'review-hit-set.py'; do
+    echo "$summary" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  common="$(awk '/^\*\*共通一覧契約/{f=1} f&&/^\*\*/&&seen{exit} f{seen=1; print}' "$REVIEWER_BRIEF")"
+  run grep -qF '全ヒット要約' <<<"$common"
+  [ "$status" -ne 0 ]
+  echo "$block" | grep '^2\. `照合表`:' | grep -qF '全ヒット要約'
+  echo "$block" | grep '^三表を自己点検' | grep -qF '全ヒット要約で返した語の保証範囲は検索範囲と全ヒット集合の一致まで'
+}
+
+@test "hit summary (#1457): the floor in the reviewer block equals the checker constant" {
+  floor="$(sed -n 's/^SUMMARY_MIN_HITS = \([0-9][0-9]*\)$/\1/p' "${PLUGIN_DIR}/scripts/review-hit-set.py")"
+  [ -n "$floor" ] || { echo 'no SUMMARY_MIN_HITS'; return 1; }
+  summary="$(reviewer_block | awk '/^\*\*全ヒット要約/{f=1} f&&/^三表を自己点検/{exit} f')"
+  echo "$summary" | grep -qF "全ヒットが ${floor} 行を超える語"
+  echo "$summary" | grep -qF "全ヒットが ${floor} 行以下の語は要約にしない"
+  reviewer_block | grep '^2\. `照合表`:' | grep -qF "全ヒットが ${floor} 行を超える語"
+  grep -qF "${floor} 行以下の語は全行の表で出し直す" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
 }
 
 @test "review inventory (#355): inconsistency location and priority output fail closed on missing tables" {
