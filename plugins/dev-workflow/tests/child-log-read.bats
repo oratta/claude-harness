@@ -19,7 +19,9 @@ child() { line "{type: \"assistant\", uuid: \"$1\", timestamp: \"$2\", message: 
 turn_end() { line "{type: \"system\", subtype: \"turn_duration\", uuid: \"td\", timestamp: \"$1\"}"; }
 tool_use() { line "{type: \"assistant\", uuid: \"$1\", timestamp: \"$2\", message: {role: \"assistant\", content: [{type: \"tool_use\", id: \"$3\", name: \"$4\", input: $5}]}}"; }
 tool_result() { # <uuid> <時刻> <tool_use_id> [<toolUseResult の JSON>]
-  line "{type: \"user\", uuid: \"$1\", timestamp: \"$2\", toolUseResult: ${4:-{\}}, message: {role: \"user\", content: [{type: \"tool_result\", tool_use_id: \"$3\", content: \"ok\"}]}}"
+  local extra="${4-}"
+  [ -n "$extra" ] || extra='{}'
+  line "{type: \"user\", uuid: \"$1\", timestamp: \"$2\", toolUseResult: $extra, message: {role: \"user\", content: [{type: \"tool_result\", tool_use_id: \"$3\", content: \"ok\"}]}}"
 }
 notification() { # <時刻> <task-id>
   line "{type: \"queue-operation\", operation: \"enqueue\", timestamp: \"$1\", content: \"<task-notification>\\n<task-id>$2</task-id>\\n</task-notification>\"}"
