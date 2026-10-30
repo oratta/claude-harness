@@ -1153,3 +1153,10 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -F 'レビューの周を主に聞かずに続ける（直し方の判定）' "$W_SPEC" | grep -qF 'references/fix-check.md' || return 1
   grep -qxF '## レビューの周を主に聞かずに続ける（直し方の判定）' "${PLUGIN_DIR}/skills/develop/references/fix-check.md"
 }
+
+# 順 3 と順 2・4 が混ざった failed のあと、要約受領の分岐で順 3 の一覧表を三表より先に照合する（#586）。
+@test "gate-runner summary-receipt branch checks the order-3 list table before the three tables (#586)" {
+  L=$(grep -F -- '- **レビュアーの要約受領**: `stages/triage.md`' "${ROLES}/gate-runner.md")
+  [ -n "$L" ] || return 1
+  echo "$L" | grep -qF '三表の照合より先に、その一覧表のコメント（`## 一覧（順 3）`）を `stages/triage.md` の順 3 の 2 段で照合する' || return 1
+}
