@@ -1017,6 +1017,15 @@ triage_row_section() {
   grep -qF '一周目の区画:' "$PREPARE"
 }
 
+@test "review partitions (#622): prepare feeds the script via a temp file and checks the total" {
+  weight="$(awk '/^#### 2-0\./{f=1} f&&/^## G として/{exit} f' "$PREPARE")"
+  echo "$weight" | grep -qF 'mktemp'
+  echo "$weight" | grep -qF 'review-partitions.sh < "$f"'
+  echo "$weight" | grep -qF "pulls/\$N --jq '.additions+.deletions'"
+  echo "$weight" | grep -qF '合計 0 行'
+  ! grep -qF '| plugins/dev-workflow/scripts/review-partitions.sh' "$PREPARE"
+}
+
 @test "review partitions (#514): reviewer instructions scope every section" {
   block="$(reviewer_block)"
   for token in 'P<k>-' '区画の対象外:' '全ハンク' '<rev>' '区画 1' 'テスト・lint'; do
