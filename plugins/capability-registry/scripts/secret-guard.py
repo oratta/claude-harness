@@ -138,7 +138,7 @@ def check_bash(cmd: str) -> None:
                 runs_command = True
                 break
             if not runs_command:
-                deny("env の裸実行は環境変数の値を画面に出します（トークンが env に入っています）。")
+                deny("env の裸実行は環境変数の値を画面に出します。")
 
     # 3) 機密ファイルの表示。リダイレクト先（`> file`）は書き込みなので対象外
     for seg in split_segments(cmd):
@@ -174,7 +174,10 @@ def check_bash(cmd: str) -> None:
 
 def check_read(path: str) -> None:
     if SECRET_FILE.search(path) and not SAFE_FILE.search(path):
-        deny(f"機密ファイルを Read すると中身が transcript に載ります: {path}")
+        deny(
+            f"機密ファイルを Read すると中身が transcript に載ります: {path}\n"
+            "値を含まないファイルの誤検知なら、利用者に hook の環境変数 CAPABILITY_REGISTRY_SECRET_GUARD=off を相談する。"
+        )
 
 
 def main() -> None:

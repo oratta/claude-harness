@@ -101,6 +101,13 @@ PY
   [ -x "$SCRIPT" ]
 }
 
+@test "script: finds the body when started by file name alone" {
+  payload Read /x/.env >"${WORK}/payload.json"
+  run bash -c "cd '${PLUGIN_DIR}/scripts' && bash secret-guard.sh <'${WORK}/payload.json'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"permissionDecision": "deny"'* ]] || return 1
+}
+
 @test "deny: Bash forms that put a secret value on screen" {
   local c
   while IFS= read -r c; do
@@ -146,6 +153,7 @@ env FOO=1 ls
 echo "--- .env:"
 echo hi > .env
 cat notes > .env
+[ "$CAPABILITY_REGISTRY_SECRET_GUARD" = off ] && echo disabled
 ls
 EOF
   assert_passed Read /x/.env.example
@@ -169,6 +177,7 @@ EOF
 echo "$GH_TOKEN"
 EOF'
   assert_denied Read /x/credentials.ts
+  assert_denied Read /x/credentials-service/src/index.ts
 }
 
 @test "fail-open: unreadable stdin passes" {
@@ -208,6 +217,7 @@ EOF'
 @test "switch: off in the hook process environment skips the check" {
   export CAPABILITY_REGISTRY_SECRET_GUARD=off
   assert_passed Bash 'echo "$GH_TOKEN"'
+  assert_passed Read /x/credentials.ts
 }
 
 @test "switch: unset or any other value keeps the check on" {
@@ -240,11 +250,22 @@ EOF'
   [[ "$rest" != *"op-sa"* ]] || return 1
 }
 
+@test "deny reason: a Read names the switch, and the env reason asserts nothing about the environment" {
+  deny_reason Read /x/credentials.ts
+  [[ "$output" == *"CAPABILITY_REGISTRY_SECRET_GUARD=off"* ]] || return 1
+  deny_reason Bash env
+  [[ "$output" != *"トークンが env に入っています"* ]] || return 1
+}
+
 @test "docs: injection.md points to the plugin hook" {
   local doc="${REPO_ROOT}/plugins/casting/catalog/injection.md"
   run grep -n -F 'secret-guard' "$doc"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"plugins/capability-registry/"* ]] || return 1
+  [ "${#lines[@]}" -eq 2 ] || return 1
+  local line
+  for line in "${lines[@]}"; do
+    [[ "$line" == *"plugins/capability-registry/"* ]] || return 1
+  done
   [[ "$output" != *"~/.claude/hooks/secret-guard.py"* ]] || return 1
   [[ "$output" != *"settings.json"* ]] || return 1
 }
@@ -256,7 +277,10 @@ EOF'
 
 @test "docs: the change record says how and when to remove a hand-wired hook" {
   local rec="${PLUGIN_DIR}/changes/1233.md"
-  grep -q -F 'settings.json' "$rec"
+  grep -q -F '`PreToolUse` から secret-guard のエントリを外し' "$rec"
+  grep -q -F '代替の検査' "$rec"
   grep -q -F '本人の判断' "$rec"
   grep -q -F '動作確認' "$rec"
+  # 手の配線が残ったセッションでは、止まってもプラグインの hook の確認にならない
+  grep -q -F -- '--setting-sources project' "$rec"
 }
