@@ -5,7 +5,7 @@
 ## 2. コマンド
 
 - [ ] 2.1 `plugins/dev-workflow/commands/synced-skills-slim.md` を書く。`allowed-tools` に AskUserQuestion を入れる。探索ループは `memory-refresh.md` の `plugin_root="${CLAUDE_PLUGIN_ROOT}"` の形にする（プラグインルートの特定 → `--dry-run` → 確認 → 適用 → 結果報告、戻し方、`name-only` の注意、実測した版）。`description` は短くする  触る範囲: plugins/dev-workflow/commands/synced-skills-slim.md（新規）、plugins/dev-workflow/commands/memory-refresh.md（探索ループの手本）、plugins/statusline/commands/setup.md:1-60（進め方の手本）
-- [ ] 2.2 `plugins/dev-workflow/.claude-plugin/plugin.json` の `commands` に `./commands/synced-skills-slim.md` を足す  触る範囲: plugins/dev-workflow/.claude-plugin/plugin.json:33-40
+- [ ] 2.2 `plugins/dev-workflow/.claude-plugin/plugin.json` の `commands` に `./commands/synced-skills-slim.md` を足す  触る範囲: plugins/dev-workflow/.claude-plugin/plugin.json:31-36
 - [ ] 2.3 `tests/command-plugin-root.bats` の LOOPS（33 行目付近）と `plugins/dev-workflow/tests/command-search-zsh.bats` の DOCS（9 行目）・EXPECT_N に新しいコマンド文書を足す  触る範囲: tests/command-plugin-root.bats:33、plugins/dev-workflow/tests/command-search-zsh.bats:9
 
 ## 3. テスト
