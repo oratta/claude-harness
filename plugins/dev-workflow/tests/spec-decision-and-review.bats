@@ -239,7 +239,7 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
 }
 
 @test "condition check (#1121): the owner's condition answer after a re-selection question goes back to R1" {
-  fix_cond_sec | grep -F '「選び直しが要る」で主に聞いた問いへの答えが条件についての答えである' | grep -qF '節に足して'
+  fix_cond_sec | grep -F '「選び直しが要る」で主に聞いた問いへの答えが条件についての答えである' | grep -qF '節に足し'
 }
 
 @test "condition check (#1121): with nothing to recheck only a later-round BLOCKER goes to the fix verdict" {
@@ -323,7 +323,7 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
   echo "$line" | grep -qF 'Read'
   echo "$line" | grep -qF '直し方の判定の前'
   echo "$line" | grep -qF '成り立つ予定が無い指摘は判定に回さず捨てる'
-  echo "$s" | grep -F '`## 条件の答え`' | grep -qF '依頼文に入れる'
+  echo "$s" | grep -F '`## 条件の答え`' | grep -qF '依頼文に入れ'
   echo "$s" | grep -F '`## 条件の答え`' | grep -qF 'エピックの本文（エピックの子でなければ記録先の本文）'
   echo "$s" | grep -F '`## 条件の答え`' | grep -qF 'エピックの子ならエピックの番号も書く'
   echo "$line" | grep -qF 'NOTE に `後で成り立つ:` の行がある'
