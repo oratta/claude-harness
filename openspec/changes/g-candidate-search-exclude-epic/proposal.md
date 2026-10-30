@@ -17,3 +17,5 @@ PR #1002 の段 C の候補探しには 2 つの欠陥がある（#1012）。(1)
 ## Impact
 
 `plugins/dev-workflow/skills/pr-review-gate/stages/triage.md`（候補探しの段落と段 B 後の表の行）、`openspec/specs/dev-workflow-pr-review-gate/spec.md`。スクリプト `review-issue-candidates.sh` は変えない（`--children-only` は既にある）。
+
+同じ欠陥は `plugins/dev-workflow/skills/develop/SKILL.md:71` と `openspec/specs/dev-workflow-develop/spec.md:2007` にもあるが、受け入れ条件の外なので今回は直さない。
