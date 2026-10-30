@@ -30,17 +30,19 @@ Claudeが既存developの進め方でworktree/記録先を準備し、仕様化�
 本体は委譲のたびに次の3手順を回す。transport の永続状態は作らず、継続状態は記録先と worktree に置く。
 
 1. **指示をファイルに書く。** 担当工程に限定した指示（依頼・完了条件・記録先URL・対象artifact・固定HEAD）をUTF-8ファイルに書く。秘密情報は入れない。
-2. **前景コマンドを背景実行で起動する。** `request` で役割別のexecutor/account/model/effortとCODEX_HOMEを解決した依頼ファイルを作り、そのファイルを渡して `run` をBashツールの背景実行で起こす。
+2. **前景コマンドを背景実行で起動する。** `request` に事前分類・設計判断・失敗・自動実行かどうかを渡し、役割別のexecutor/account/model/effortとCODEX_HOMEを解決した依頼ファイルを作り、そのファイルを渡して `run` をBashツールの背景実行で起こす。
 3. **完了通知で結果を読む。** 標準出力の1行JSONを読む。成功はexit 0、失敗はexit 2。
 
 ```sh
 python3 <plugin>/scripts/codex-develop.py request --phase spec --input /absolute/request.txt \
   --cwd /absolute/target-worktree --profile hybrid-standard [--profile-file /absolute/profiles.json] \
-  --account-home current=/absolute/path/to/codex-profile --out /absolute/private/request.json
+  --account-home current=/absolute/path/to/codex-profile \
+  [--pre-class sacred|merge|contract|billing]... [--design-judgment] \
+  [--failure first|executor|judgment] [--unmanned] --out /absolute/private/request.json
 python3 <plugin>/scripts/codex-worker.py run --request /absolute/private/request.json
 ```
 
-`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。model は系統名（worker が呼ぶ直前に model/list の最新版へ解決する）か完全なモデル ID のどちらでも書ける。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・選択した role/account/CODEX_HOME・要求された model・effort と selection evidence を返す（model は系統名ならその値のまま返り、完全 ID への解決は worker が呼ぶ直前に行う）。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
+`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。model は系統名（worker が呼ぶ直前に model/list の最新版へ解決する）か完全なモデル ID のどちらでも書ける。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`--pre-class`（繰り返し可。順に聖域パス・マージ権限・層間契約・課金/法務）・`--design-judgment`・`--failure`・`--unmanned` は格の入力で、当たるものだけ渡す。旧形式では受けて無視する。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・選択した role/account/CODEX_HOME・effort・selection evidence に加えて、`requested_tier`・`tier`・`tier_reason`・`tier_cap`・`executed_tier`・`requested_model`・`model`・`budget_modes` を返す（model は系統名ならその値のまま返り、完全 ID への解決は worker が呼ぶ直前に行う。旧形式は `requested_model` と `model` が指定された値で、ほかの格の欄は null）。Claude role は返った `model` で Agent を起動し、再開の前は同じ phase と入力で `request` を呼び直して `tier` だけを見る。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
 
 `run` の結果JSONは `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`。実効model/effortやIDが未観測ならnullであり、成功値を推測しない。完了は実行terminalであって品質承認ではなく、`completed` でも `error_kind` が非空なら実行成功として扱わない。review verdictと投稿を確認するのはClaude側。コマンド失敗はそこで停止し、別providerへfallbackしない。
 

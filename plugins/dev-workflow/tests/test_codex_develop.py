@@ -1704,6 +1704,19 @@ class DocumentationContracts(unittest.TestCase):
         self.assertIn('depleted', self.adapter)
         self.assertIn('requested model / applied model / reason', self.adapter)
 
+    def test_claude_roles_use_what_request_returned_and_resume_compares_tiers(self):
+        for field in ('requested_model', 'tier_reason', 'executed_tier', 'tier_cap'):
+            self.assertIn(f'`{field}`', self.adapter)
+        self.assertIn('本体は上限を計算し直さない', self.adapter)
+        self.assertNotIn('再計算', self.adapter)
+        self.assertIn('sonnet 上限で haiku はそのまま', self.adapter)
+        self.assertNotIn('applied=sonnet に固定', self.adapter)
+        self.assertIn('同じ phase と入力（実行先オプションも同じ）で `request` を呼び直し', self.adapter)
+        self.assertIn('呼び直しで書かれた依頼ファイルは使わず捨てる', self.adapter)
+        for flag in ('--pre-class', '--design-judgment', '--failure', '--unmanned'):
+            self.assertIn(flag, self.adapter)
+            self.assertIn(flag, (self.root / 'docs/codex-develop.md').read_text())
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -13,10 +13,11 @@
 - **BREAKING** `codex-role-profiles.json` を形式版 2 にする。entry は `{executor, account, effort, tier_cap(任意)}` で、`model` キーは拒否する。外部 profile-file の形式版 1 も拒否する
 - `claude-default` を組み込み profile に足し、コード内の既定表を消す
 - SKILL.md「モデル」節と `codex-develop.md` は規則の説明と `request` への参照にし、経路ごとのモデル名の書き分けをなくす
+- 再開前の上限確認は `request` の呼び直しに改める（構成は選び直さない）
 - 聖域パスだけではレビューを上げない側に文書を揃える（`pre-classification.md`、`decision-criteria.md`）
 - `model-resolution-current.md` を削除し、#613 のテストを「構成を変えても格が変わらない」形に改める
 
-範囲外: 失敗時の昇格の手順（#424）、実行役の上限の強制（#615）。再開前の上限確認は `request` の呼び直しに改める（構成は選び直さない）。
+範囲外: 失敗時の昇格の手順（#424）、実行役の上限の強制（#615）。
 
 ## Capabilities
 
