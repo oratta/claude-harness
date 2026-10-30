@@ -82,6 +82,7 @@ refute() {
   printf '%s\n' "$s" | grep -qF 'ターンを終える'
   printf '%s\n' "$s" | grep -qF 'needs-approval'
   printf '%s\n' "$s" | grep -qF 'フル URL'
+  printf '%s\n' "$s" | grep -F '記録に残す問い' | grep -qF '仕様レビューの条件の問い'
   printf '%s\n' "$s" | grep -qF 'channel ではこの聞き方に読む'
 }
 

@@ -44,6 +44,8 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
   printf '%s' "$s" | grep -qF '場面ごとに別の書式を作らない'
   printf '%s' "$s" | grep -qF '`条件の問い`'
   printf '%s' "$s" | grep -qF 'の 4 つで'
+  # 条件の問いの引き継ぎはモードによらない（#1121）
+  printf '%s' "$s" | grep -qF '仕様レビューの条件の問い（`条件の問い:` を主に聞くとき）'
   # 読むときの文（冒頭）と SKILL.md の案内も同じ 4 場面を数える（#1121）
   head -3 "$HANDOVER" | grep -qF '引き継ぎを書く 4 つの場面'
   head -3 "$HANDOVER" | grep -qF '仕様レビューの条件の問い'
@@ -58,6 +60,25 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
   line="$(handover_section | grep -E '^4\. ')"
   printf '%s' "$line" | grep -qF '次に起こす役割が R1（当て直し）なら'
   printf '%s' "$line" | grep -qF '先に R1 を起こし、W はその結果に従って起こす'
+  # R1 の文が W の起こし方より先にある
+  printf '%s' "$line" | grep -qE '^4\. 次に起こす役割が R1（当て直し）なら'
+}
+
+@test "resume (#1121): a condition answer to a re-selection question also goes to R1 first" {
+  line="$(handover_section | grep -E '^4\. ')"
+  printf '%s' "$line" | grep -qF '待ち理由が `2 周キャップ超え` で手順 2 の答えが条件についての答えのときも'
+  printf '%s' "$line" | grep -qF 'ラベルの付け先から `needs-approval` を外し'
+}
+
+@test "resume (#1121): the stage of the W after R1 follows the R1 result" {
+  line="$(handover_section | grep -E '^4\. ')"
+  printf '%s' "$line" | grep -qF '`APPROVE` なら `段: implement`'
+  printf '%s' "$line" | grep -qF '「判定に回す指摘」どおり'
+  printf '%s' "$line" | grep -qF '`段: spec`'
+}
+
+@test "handover (#1121): next role names the result comment for a rerun of R1" {
+  handover_section | grep -F '| 次に起こす役割 |' | grep -qF 'R1（当て直し）なら残った BLOCKER を載せた結果コメントの URL'
 }
 
 @test "handover: posting order is request, handover, guidance and the request may be a PR comment" {

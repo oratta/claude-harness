@@ -4,7 +4,7 @@
 
 `skills/develop/references/fix-check.md` は、節「残った指摘の条件を確かめる」を 1 か所だけ持ち、仕様レビューの残った BLOCKER の条件を確かめる本体の手順の正本としなければならない（MUST）。`skills/develop/SKILL.md` の 1 ループの (2) は、直し方の判定の前に残った指摘の条件が成り立つかを確かめ、成り立つ予定が無い指摘は判定に回さず捨てることを短く書き、この節を指さなければならない（MUST）。
 
-**通す時点**: 本体は次の 2 つの時点でこの節の手順を通す（MUST）。①R1 の `REQUEST_CHANGES` の BLOCKER に `条件の問い:` の行があるとき、周によらず W を再開する前 ②2 周目以降の周の終わりに BLOCKER が残ったとき、決める役を起こす前。
+**通す時点**: 本体は次の 3 つの時点でこの節の手順を通す（MUST）。①R1 の `REQUEST_CHANGES` の BLOCKER に `条件の問い:` の行があるとき、周によらず W を再開する前 ②2 周目以降の周の終わりに BLOCKER が残ったとき、決める役を起こす前 ③直し方の判定が「選び直しが要る」で主に聞いた問いへの答えが条件についての答えのとき、W を再開する前。R1 の NOTE に `後で成り立つ:` の行があるときは、周と結果によらず段落「NOTE の後で成り立つ指摘」だけを当て、手順は通さない（MUST）。
 
 #### Scenario: SKILL.md の (2) に判定の前の段が書かれている
 - **WHEN** `skills/develop/SKILL.md` の 1 ループの (2) を読む
@@ -16,17 +16,30 @@
 
 ### Requirement: 指摘の当て直しは R1 が行い周に数えない
 
-**手順**: 本体は次のどれかに当たる限り、W を再開せず決める役も起こさず、R1 に指摘の当て直しをさせる（MUST）。
+**手順**: 本体は次のどれかに当たる限り、W を再開せず決める役も起こさず、R1 に指摘の当て直しをさせる（MUST）。どれにも当たらなければ主に聞かず R1 も起こさず、2 周目以降の周の終わりに BLOCKER が残っていれば直し方の判定に進み、それ以外は通常の流れに戻る（MUST）。
 
-- `条件の問い:` の行がある BLOCKER がある。本体は問いを主に聞き、答えを 1 行にしてエピックの本文（エピックの子でなければ記録先の本文）の節 `## 条件の答え` に足す（MUST。節が無ければ作る）。unmanned で引き継ぎを残して止まったときは、再開の手順 2 で得た答えを本体が同じ節に足して R1 に当て直させる（MUST。`references/handover.md` の再開の手順 4 に、次に起こす役割が R1（当て直し）なら先に R1 を起こし、W はその結果に従って起こすことを書く）。本体は答えを節に足したら、ラベルの付け先から `needs-approval` を外す（MUST）
+- `条件の問い:` の行がある BLOCKER がある。本体は問いを主に聞き、答えを 1 行にしてエピックの本文（エピックの子でなければ記録先の本文）の節 `## 条件の答え` に足す（MUST。節が無ければ作る）。引き継ぎを残して止まったあと新しいセッションで再開したときは、再開の手順 2 で得た答えを本体が同じ節に足して R1 に当て直させる（MUST。`references/handover.md` の再開の手順 4 に、次に起こす役割が R1（当て直し）なら先に R1 を起こし、W はその結果に従って起こすことと、そのあとの W の `段:` は R1 の結果で決める（`APPROVE` なら `段: implement`、BLOCKER が残れば「判定に回す指摘」どおりで、W を起こすなら `段: spec`）ことを書く）。本体は答えを節に足したら、ラベルの付け先から `needs-approval` を外す（MUST）
+- 直し方の判定が「選び直しが要る」で主に聞いた問いへの答えが条件についての答えである（例:「その場面は起きない」）。本体は聞き直さず、答えを 1 行にして同じ節に足し、ラベルの付け先から `needs-approval` を外す（MUST）。待ち理由 `2 周キャップ超え` の引き継ぎから再開したときも同じにする（MUST。`references/handover.md` の再開の手順 4 に書く）
 - 2 周目以降の周の終わりで、条件の判定が書かれていない BLOCKER がある
 - 最新の `仕様レビュー:` のコメントより後に `## 条件の答え` へ行が足された
 
-**当て直し**: 当て直しの R1 は artifact の差分を見ず、残った BLOCKER に「仕様レビューの BLOCKER は指摘の条件がいつ成り立つかを決めてから残す」Requirement の段だけを当て直し、同じ書式で結果を記録先に投稿する（MUST）。当て直しは周に数えない（MUST。結果コメントの周の欄は同じ周のまま、当て直しである旨を書く）。投稿者は通常の周と同じとする（MUST）。R1 を起こす前の PR トークン上限の計測は省かない（MUST）。
+**当て直し**: 当て直しの R1 は artifact の差分を見ず、残った BLOCKER に「仕様レビューの BLOCKER は指摘の条件がいつ成り立つかを決めてから残す」Requirement の段だけを当て直し、同じ書式で結果を記録先に投稿する（MUST）。本体は依頼文に、残った BLOCKER を載せた最新の `仕様レビュー:` のコメントの URL（`gh` を持たない経路は本文）を入れる（MUST）。前の結果の SHOULD_FIX・NOTE・`捨てた指摘:` は同じ本文に写す（MUST）。当て直しは周に数えない（MUST。結果コメントの周の欄は同じ周のまま、当て直しである旨を書く）。主に聞かずに回した周に当て直しが入ったら、事後報告はその周の最後の結果のあとに 1 回書く（MUST）。投稿者は通常の周と同じとする（MUST）。R1 を起こす前の PR トークン上限の計測は省かない（MUST）。
 
 #### Scenario: 1 周目の問いは W を再開する前に聞く
 - **WHEN** 1 周目の R1 の結果が `REQUEST_CHANGES` で、BLOCKER の 1 件に `条件の問い:` の行がある
 - **THEN** 本体は W を再開せず主に条件を聞き、答えを `## 条件の答え` に足して R1 に当て直させる
+
+#### Scenario: 選び直しのあとに主が条件を答える
+- **WHEN** 直し方の判定が「選び直しが要る」で主に聞いた問いに、主が「その場面は起きない」と条件について答える
+- **THEN** 本体は同じ問いを出さず W を再開せず、答えを `## 条件の答え` に足してラベルの付け先から `needs-approval` を外し、先に R1 を起こして当て直させる。待ち理由 `2 周キャップ超え` の引き継ぎから再開したときも同じで、W はその結果に従って起こす
+
+#### Scenario: NOTE の行だけでは直し方の判定に進まない
+- **WHEN** 問いの無い 1 周目の `REQUEST_CHANGES` か `APPROVE` の結果の NOTE に `後で成り立つ:` の行がある
+- **THEN** 本体は段落「NOTE の後で成り立つ指摘」だけを当て、決める役を起こさず通常の流れに戻る
+
+#### Scenario: 当て直しの結果に前の結果を写す
+- **WHEN** 1 周目の結果が問い付きの BLOCKER と SHOULD_FIX を持ち、当て直しの結果が `APPROVE` になる
+- **THEN** 当て直しの結果コメントに前の結果の SHOULD_FIX・NOTE・`捨てた指摘:` が写されている
 
 ### Requirement: 成り立つ予定が無い指摘は直し方の判定に回さず捨てる
 
@@ -42,22 +55,30 @@
 
 ### Requirement: 条件の問いは条件だけを主に聞く
 
-**主への問い**: 問いは条件についての問いだけにし、指摘を直すか・捨ててよいかを聞いてはならない（MUST NOT）。interactive は AskUserQuestion で聞く（MUST。その場で答えが返るので `needs-approval` も引き継ぎも要らない）。unmanned は `needs-approval` を付けて問いを PR（無ければ記録先）のコメントに書き、そのコメントを「主への依頼」として `references/handover.md` の引き継ぎを待ち理由 `条件の問い` で残し、そのサイクルを終える（MUST）。
+**主への問い**: 問いは条件についての問いだけにし、指摘を直すか・捨ててよいかを聞いてはならない（MUST NOT）。主がいつ答えるかを本体は知らないので、どのモードでも、答えを待つ前に `needs-approval` を付けて問いを PR（無ければ記録先）のコメントに書き、そのコメントを「主への依頼」として `references/handover.md` の引き継ぎを待ち理由 `条件の問い` で残す（MUST）。そのうえで interactive は AskUserQuestion で聞き（MUST）、channel はそのコメントの URL を添えてチャンネルで聞き（MUST）、unmanned はそのサイクルを終える（MUST）。
 
 #### Scenario: 主への問いは条件だけを聞く
 - **WHEN** `references/fix-check.md` の節「残った指摘の条件を確かめる」を読む
-- **THEN** 聞くのは条件についての問いだけで、指摘を直すか・捨ててよいかを聞かないこと、unmanned は `needs-approval` を付け、待ち理由 `条件の問い` の引き継ぎを残してサイクルを終えることが書かれている
+- **THEN** 聞くのは条件についての問いだけで、指摘を直すか・捨ててよいかを聞かないこと、どのモードでも答えを待つ前に `needs-approval` を付け、待ち理由 `条件の問い` の引き継ぎを残すこと、unmanned はサイクルを終えることが書かれている
 
-#### Scenario: unmanned の問いの答えで再開する
+#### Scenario: interactive の問いも答えを待つ前に記録に残す
+- **WHEN** interactive の本体が R1 の `条件の問い:` を主に聞く
+- **THEN** 本体は AskUserQuestion の前に `needs-approval` を付け、問いのコメントと待ち理由 `条件の問い` の引き継ぎを残す。主がセッションを閉じても、新しいセッションが同じ問いを拾える
+
+#### Scenario: channel の問いもコメントの URL を添えて聞く
+- **WHEN** channel の本体が R1 の `条件の問い:` を主に聞く
+- **THEN** 本体は問いのコメントと待ち理由 `条件の問い` の引き継ぎを残し、そのコメントのフル URL を添えた質問をチャンネルに送ってターンを終える
+
+#### Scenario: 条件の問いの答えで再開する
 - **WHEN** 待ち理由 `条件の問い` の引き継ぎがある記録先を新しいセッションの本体が再開し、再開の手順 2 で主の答えを得る
 - **THEN** 本体は同じ問いを出さず、手順 3 の確認のあとで答えを `## 条件の答え` に足してラベルの付け先から `needs-approval` を外し、先に R1 を起こして当て直させ、W はその結果に従って起こす
 
 ### Requirement: NOTE の後で成り立つ指摘は本体が行き先を決める
 
-**NOTE の後で成り立つ指摘**: R1 の NOTE の後で成り立つ指摘は G の振り分けを経ていないので、SKILL.md「範囲外の問題の起票」の行き先の決め方（段 B の表・段 D・段 E の問い。エピックの子なら段 C も）を借りて本体が決める（MUST）。SKILL.md のその節の対象文は変えない（MUST NOT）。`references/fix-check.md` の節「残った指摘の条件を確かめる」に同じ 1 文を置く（MUST）。起票してよいかを主に聞かない（MUST NOT）。
+**NOTE の後で成り立つ指摘**: R1 の NOTE の後で成り立つ指摘（`後で成り立つ:` の行）は G の振り分けを経ていないので、SKILL.md「範囲外の問題の起票」の行き先の決め方（段 B の表・段 D・段 E の問い。エピックの子なら段 C も）を借りて本体が決める（MUST）。SKILL.md のその節の対象文は変えない（MUST NOT）。`references/fix-check.md` の節「残った指摘の条件を確かめる」に同じ 1 文を置く（MUST）。起票してよいかを主に聞かない（MUST NOT）。
 
 #### Scenario: NOTE に後で成り立つ指摘がある
-- **WHEN** R1 の結果の NOTE に、後で成り立つ指摘とその条件がある
+- **WHEN** R1 の結果の NOTE に、`後で成り立つ:` の行（後で成り立つ指摘とその条件）がある
 - **THEN** 本体は SKILL.md「範囲外の問題の起票」の行き先の決め方（段 B の表・段 D・段 E の問い。エピックの子なら段 C も）を借りて行き先を決め、起票してよいかを主に聞かない
 
 ### Requirement: 条件の確かめは PR のレビューに当てない
@@ -80,7 +101,7 @@
 
 ### Requirement: 保留で止まるときは記録先に引き継ぎのコメントを 1 種類の書式で残す
 
-本体は、`needs-approval` を付けて主の返事を待つすべての場面で、止まる前に記録先へ引き継ぎのコメントを投稿しなければならない（MUST）。場面は pr-review-gate の保留（リスク許容・動作確認・切り出しの確認）、`skills/develop/SKILL.md`「PR トークン上限」の exit 2、レビューの 2 周キャップ超え、仕様レビューの条件の問い（unmanned で `条件の問い:` を主に聞くとき）の 4 つで、書式は場面によらず 1 種類とする（MUST）。場面ごとに別の書式を作ってはならない（MUST NOT）。
+本体は、`needs-approval` を付けて主の返事を待つすべての場面で、止まる前に記録先へ引き継ぎのコメントを投稿しなければならない（MUST）。場面は pr-review-gate の保留（リスク許容・動作確認・切り出しの確認）、`skills/develop/SKILL.md`「PR トークン上限」の exit 2、レビューの 2 周キャップ超え、仕様レビューの条件の問い（`条件の問い:` を主に聞くとき）の 4 つで、書式は場面によらず 1 種類とする（MUST）。場面ごとに別の書式を作ってはならない（MUST NOT）。
 
 **投稿の順序**: 本体は、どの場面でも次の順で投稿する（MUST）。①主への依頼のコメントを投稿し、その URL を得る。依頼コメントの置き場は、対象の PR があれば PR、無ければ記録先とする（`stages/hold.md` 手順 6 は依頼を PR に投稿するので、記録先が issue でも PR のコメントの URL でよい。引き継ぎのコメント自体は常に記録先に投稿する）。G の保留では G が投稿した依頼コメントの URL を使い、G が投稿していなければ本体が依頼文を PR（無ければ記録先）のコメントとして投稿する。exit 2 と 2 周キャップ超えと条件の問いでは本体が問いを PR（無ければ記録先）のコメントに書く。②その URL を「主への依頼」に書いて引き継ぎのコメントを投稿する。③主に案内する。①より前に引き継ぎを投稿してはならない（MUST NOT。URL が無いため）。
 
@@ -123,8 +144,8 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 
 #### Scenario: 仕様レビューの条件の問いで止まる
 
-- **WHEN** unmanned の本体が R1 の `条件の問い:` を主に聞くために `needs-approval` を付ける
-- **THEN** 本体は条件の問いを PR（無ければ記録先）のコメントに書いたあとで同じ書式の引き継ぎのコメントを残し、待ち理由は `条件の問い`、主への依頼はそのコメントの URL、次に起こす役割は R1（当て直し）とする
+- **WHEN** 本体が R1 の `条件の問い:` を主に聞くために `needs-approval` を付ける
+- **THEN** 本体は条件の問いを PR（無ければ記録先）のコメントに書いたあとで同じ書式の引き継ぎのコメントを残し、待ち理由は `条件の問い`、主への依頼はそのコメントの URL、次に起こす役割は R1（当て直し）で、入力は残った BLOCKER を載せた結果コメントの URL とする
 
 #### Scenario: 前任 W が工程中断のまま保留に入る
 
@@ -199,3 +220,31 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 #### Scenario: 選択肢で振る舞いが変わるなら主に聞く
 - **WHEN** 残った BLOCKER の直し方の選択肢によって、利用者に見える振る舞いか受け入れ条件が変わる
 - **THEN** 判定は「選び直しが要る」になり、本体は主に聞く
+
+### Requirement: channel モードでは主に聞くときチャンネルに送り、AskUserQuestion を呼ばない
+
+channel の本体は AskUserQuestion を呼んではならない（MUST NOT）。主に聞くときは、依頼の届いたチャンネル（依頼の発言の開きタグの `chat_id`）にチャンネルの返信ツールで質問を送り、そのターンを終えなければならない（MUST）。依頼がチャンネルから届いていないときは、そのセッションの運用が決める主への連絡先に送り、連絡先が分からなければ記録先に質問をコメントして `needs-approval` を付けて止まる（MUST）。記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限・仕様レビューの条件の問い）は先に PR か記録先のコメントに書き、チャンネルの質問にそのコメントのフル URL を添える（MUST）。
+
+`skills/develop/references/channel.md` の「channel の聞き方」は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/decision-criteria.md`・`skills/develop/references/epic-child-stop.md`・`skills/develop/references/fix-check.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md と `skills/develop/references/channel.md` を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。入口の分岐で主に聞く場面なので、channel.md の読み替えの規則の例外としてその場にも書く）。
+
+この要件の守備範囲は、channel で本体が AskUserQuestion に流れる経路を develop の文面から無くすことである。拾いたい誤りは、develop の手順のどこかが channel の本体に AskUserQuestion を呼ばせること。develop 以外のスキル（wt-clean など）が AskUserQuestion を呼ぶことと、本体が文面に反して呼ぶことを機械的に止めることは、この要件の範囲に入れない。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
+
+#### Scenario: 2 周キャップ超えで選び直しが要る
+
+- **WHEN** channel の本体で、仕様レビューの直し方の判定が「選び直しが要る」になる
+- **THEN** 本体は記録先に `needs-approval` を付けて経緯をコメントし、そのコメントの URL を添えた質問を依頼の届いたチャンネルに送ってターンを終え、AskUserQuestion を呼ばない
+
+#### Scenario: 引数なしの /develop をチャンネルで頼まれた
+
+- **WHEN** channel の本体が `commands/develop.md` の分岐 ⑤（引数なし）を処理する
+- **THEN** 開いている issue の一覧と 2 つの選択肢をチャンネルに送ってターンを終え、AskUserQuestion を呼ばない
+
+#### Scenario: AskUserQuestion の経路が残っていない
+
+- **WHEN** SKILL.md と `commands/develop.md` で `AskUserQuestion` を含む行を読む
+- **THEN** その行か、`references/channel.md` の読み替えの規則によって、channel では AskUserQuestion を呼ばないことが読み取れる
+
+#### Scenario: AskUserQuestion に触れるファイルが列挙から漏れていない
+
+- **WHEN** bats が `plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で `AskUserQuestion` を含むファイルを集める
+- **THEN** SKILL.md と `skills/develop/references/channel.md` 以外のすべてのファイルの `plugins/dev-workflow/` からの相対パスが、バッククォートで囲んだ形で `references/channel.md` の読み替えの対象の列挙に載っている
