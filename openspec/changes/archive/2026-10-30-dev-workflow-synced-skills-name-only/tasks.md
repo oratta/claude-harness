@@ -14,6 +14,6 @@
 
 ## 4. 予算と記録
 
-- [x] 4.1 `tests/injection-budget.bats` の実測と予算の差を測る。超えるなら W は予算ファイルを動かさず本体に知らせる  触る範囲: tests/injection-budget.txt:1
+- [x] 4.1 `tests/injection-budget.bats` の実測と予算の差を測る。超えるなら W は予算ファイルを動かさず本体に知らせる  触る範囲: tests/injection-budget.txt:1、plugins/dev-workflow/commands/work-issue.md:3
 - [x] 4.2 PR 本文に、同期スキルの名前の取り方の根拠（design の 2 つ）と実測した Claude Code の版（2.1.314）を書く（PR を作る段で行う）
 - [x] 4.3 変更の記録 `plugins/dev-workflow/changes/1470.md` を書く  触る範囲: plugins/dev-workflow/changes/1470.md（新規）

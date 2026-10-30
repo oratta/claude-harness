@@ -23,5 +23,5 @@ claude.ai から同期されたスキル（`~/.claude/skills/synced/` に置か�
 
 - 新規: `plugins/dev-workflow/commands/synced-skills-slim.md`（`plugins/dev-workflow/.claude-plugin/plugin.json` の `commands` にも登録する。登録が無いと読み込まれない）、`plugins/dev-workflow/scripts/synced-skills-name-only.sh`、`plugins/dev-workflow/tests/synced-skills-name-only.bats`、`plugins/dev-workflow/changes/1470.md`
 - 既存の検査への追加: `tests/command-plugin-root.bats` の LOOPS、`plugins/dev-workflow/tests/command-search-zsh.bats` の DOCS と EXPECT_N に新しいコマンド文書を加える（コマンドの探索ループを検査対象にするため）
-- 常時注入の予算: 新しいコマンドの `description`（frontmatter）が `tests/injection-budget.bats` の「plugins command description」に加わる。現状の実測は予算 40905 バイトとほぼ同じで余裕が約 1 バイトしかないため、`tests/injection-budget.txt`（聖域）を動かす必要が出る見込み。値を動かす前に本体に知らせ、PR 本文に理由を書く
+- 常時注入の予算: 新しいコマンドの `description`（frontmatter）が `tests/injection-budget.bats` の「plugins command description」に加わる。現状の実測は予算 40905 バイトとほぼ同じで余裕が約 1 バイトしかないため、`tests/injection-budget.txt`（聖域）を動かす必要が出る見込み。値を動かす前に本体に知らせ、PR 本文に理由を書く。実際は `plugins/dev-workflow/commands/work-issue.md` の `description` を縮めて相殺し、予算は動かさなかった
 - `~/.claude/settings.json` は、利用者がコマンドを実行して確認したときにだけ書き換わる

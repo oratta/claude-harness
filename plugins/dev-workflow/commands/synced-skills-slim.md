@@ -31,7 +31,7 @@ unset DW_NG
 bash "<プラグインルート>/scripts/synced-skills-name-only.sh" --dry-run
 ```
 
-出力をそのまま利用者に見せる。「同期スキルが無い」「足すキーは無い」と出たら、そのことを伝えて終了する（何も書いていない）。非 0 で終わったら、標準エラーの理由を伝えて終了する。
+出力をそのまま利用者に見せる。「同期スキルが無い」「足すキーは無い」と出たら、そのことを伝えて終了する（何も書いていない）。非 0 で終わったら、標準エラーの理由を伝えて終了する。引数に `--dry-run` があれば、ここで終了する（確認も適用もしない）。
 
 ### 3. 書いてよいか AskUserQuestion で確認する
 
@@ -43,12 +43,18 @@ bash "<プラグインルート>/scripts/synced-skills-name-only.sh" --dry-run
 bash "<プラグインルート>/scripts/synced-skills-name-only.sh"
 ```
 
-足したキーとバックアップのファイル名（`settings.json.bak-<日時>`）を報告する。既にあるキーの値は変えない。同期スキルが後から増えたら、もう一度実行すると増えた分だけ足される。
+足したキーと、出力の `バックアップ:` の行に出たファイルの絶対パス（`settings.json` の隣の `settings.json.bak-<日時>`）を報告する。既にあるキーの値は変えない。同期スキルが後から増えたら、もう一度実行すると増えた分だけ足される。
 
 ## 元に戻す
 
-- バックアップを戻す: `cp ~/.claude/settings.json.bak-<日時> ~/.claude/settings.json`（その後に入れた他の設定変更も戻る）
-- 足したキーだけを消す: `jq 'del(.skillOverrides["anthropic-skills:<名>"])' ~/.claude/settings.json`（出力を一時ファイルに書いてから置き換える）。キーは手順 4 の出力に出ている
+どちらも、まず設定ディレクトリを変数に入れる。
+
+```bash
+CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+```
+
+- バックアップを戻す: 手順 4 の出力の `バックアップ:` の行に出た絶対パスから `cp <バックアップの絶対パス> "$CONFIG_DIR/settings.json"` で戻す（`settings.json.bak-<日時>` の形。その後に入れた他の設定変更も戻る）
+- 足したキーだけを消す: `jq 'del(.skillOverrides["anthropic-skills:<名>"])' "$CONFIG_DIR/settings.json"`（出力を一時ファイルに書いてから置き換える。`settings.json` が symlink なら、symlink を置き換えず指す先のファイルを書き換える）。キーは手順 4 の出力に出ている
 
 ## 注意
 

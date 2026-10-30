@@ -131,6 +131,7 @@ Codex を使わない期間は、`accounts.json` のトップレベル（`accoun
 |---|---|
 | `/develop [issue番号\|URL\|自然文]` | develop スキルを interactive モードで起動する（issue が無ければ Draft PR を記録先にする） |
 | `/work-issue [issue番号\|URL\|自然文]` | `/develop` のエイリアス（旧名） |
+| `/dev-workflow:synced-skills-slim` | 同期スキルを `skillOverrides` で `name-only` にする |
 
 ## loop-dev-agent との関係
 
