@@ -11,13 +11,26 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  DECLARATIONS="$BATS_TEST_TMPDIR/declarations-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/declarations.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$DECLARATIONS"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
   REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  SUMMARY="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-summary.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
-  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
+  HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD="$BATS_TEST_TMPDIR/hold-all.md"
+  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-categories.md" > "$HOLD"
+  CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
+  CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated-first.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
   GATE="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   DEVELOP="${PLUGIN_DIR}/skills/develop/SKILL.md"
   CODEX_DEVELOP="${PLUGIN_DIR}/references/codex-develop.md"
@@ -50,7 +63,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "review (#405): both G instructions record requested to resolved in the existing reviewer line" {
-  for file in "$TRIAGE" "$REVIEW_RUN"; do
+  for file in "$SUMMARY" "$REVIEW_RUN"; do
     grep -qF 'レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）' "$file"
     grep -qF 'execution.model_resolution.requested' "$file"
     grep -qF 'execution.model_resolution.resolved' "$file"
@@ -69,7 +82,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#385): has a route-detection section that names both values and treats a missing line as the legacy route" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   [ -n "$s" ] || { echo "no レビュー経路の判別 section"; return 1; }
   echo "$s" | grep -qF '`レビュー経路: adapter`'
   echo "$s" | grep -qF '`レビュー経路: 従来`'
@@ -79,33 +92,33 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#554): every stage G decides the route from its own launch line, with no same-G sticky rule" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF 'どの段の G も自分の起動指示の行だけで判別する'
   ! echo "$s" | grep -qF '起動済みの同一 G' || return 1
 }
 
 @test "gate-runner (#391): a missing route selects legacy only when starting a new G, including a handoff successor" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF '新しい G の起動指示（手渡しで起こされた後任 G を含む）'
   echo "$s" | grep -qF '行が無い場合だけ従来経路'
 }
 
 @test "gate-runner (#385): route-detection section comes before the reviewer table" {
   # 表は段のファイルへ移ったので、経路の判別の節が表の置き場（review-run.md）を指すことで順序を見る
-  grep -q '^## レビュー経路の判別' "$GATE"
+  grep -q '^## レビュー経路の判別' "$PREPARE"
   grep -q '^### レビューの実行者' "$REVIEW_RUN"
-  section "$GATE" 'レビュー経路の判別' | grep -qF 'stages/review-run.md'
+  section "$PREPARE" 'レビュー経路の判別' | grep -qF 'stages/review-run.md'
 }
 
 @test "gate-runner (#385): adapter route covers every adapter configuration and the legacy table applies only to the legacy value or no line" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF '新 Codex モードを含む adapter 解決の全構成'
   echo "$s" | grep -qF '`claude-default`'
   echo "$s" | grep -qE '従来モードのレビュー実行者の表.*は.*`レビュー経路: 従来`.*行が無い.*ときだけ'
 }
 
 @test "gate-runner (#385): adapter route never calls Codex/companion/reviewer itself, even for full, and returns needs-reviewer" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF 'full でも'
   echo "$s" | grep -qF '`codex exec`'
   echo "$s" | grep -qF '`codex-companion.mjs`'
@@ -115,7 +128,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#396): adapter route checks for another G on the same PR and HEAD before needs-reviewer" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   line="$(echo "$s" | grep -F '| `レビュー経路: adapter` |')"
   echo "$line" | grep -qF '手順 1 と手順 2-0 まで済ませ'
   echo "$line" | grep -qF '同一 PR/HEAD で他の G が着手済みでないことを確認してから'
@@ -123,7 +136,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "gate-runner (#385): the adapter rule is limited to G and excluded for the phase review reviewer" {
-  s="$(section "$GATE" 'レビュー経路の判別')"
+  s="$(section "$PREPARE" 'レビュー経路の判別')"
   echo "$s" | grep -qF 'phase `gate`'
   echo "$s" | grep -qE 'phase `review` のレビュアー.*適用しない'
 }
@@ -239,7 +252,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
   form='（adapter 経路・<light|full>・dispatch 記録:'
-  grep -qF "$form" "${TRIAGE}"
+  grep -qF "$form" "${SUMMARY}"
   # review-run は書き分けの段落と PR コメント雛形の両方に持つ
   [ "$(grep -cF "$form" "${REVIEW_RUN}")" -ge 2 ]
 }

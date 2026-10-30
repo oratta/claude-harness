@@ -9,13 +9,25 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  DECLARATIONS="$BATS_TEST_TMPDIR/declarations-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/declarations.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$DECLARATIONS"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
   REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
-  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
+  HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD="$BATS_TEST_TMPDIR/hold-all.md"
+  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-categories.md" > "$HOLD"
+  CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
+  CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated-first.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
   CANON="${PLUGIN_DIR}/references/subagent-waiting.md"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   GATE="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
@@ -30,7 +42,7 @@ setup() {
   # pr-review-gate は索引と段のファイルに分かれているので、1 つの文書として連結して検査する
   # （背景起動を書いた段と前景ポーリングを書いた段が別でも、スキル全体で併記されていればよい）。
   GATE_ALL="${BATS_TEST_TMPDIR}/pr-review-gate-all.md"
-  cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" > "$GATE_ALL"
+  cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$CARRYOVER" "$AUTH" > "$GATE_ALL"
   # W の禁止語の検査は、索引・worker/ の 4 本・事前分類表の全部を連結して見る
   WORKER_ALL="${BATS_TEST_TMPDIR}/worker-all.md"
   cat "${ROLES}/worker.md" "${ROLES}/worker/common.md" "${ROLES}/worker/spec.md" "${ROLES}/worker/implement.md" "${ROLES}/worker/finish.md" "${PLUGIN_DIR}/skills/develop/references/pre-classification.md" > "$WORKER_ALL"
@@ -377,7 +389,7 @@ PY
 @test "gate-runner names both codex launch paths and defers the wait to the canonical contract" {
   # 起動の事実（どのコマンドをどう呼ぶか）は G の指示書に残す
   grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium' "${REVIEW_RUN}"
-  grep -qF 'codex-companion.mjs' "$RUNNER"
+  grep -qF 'codex-companion.mjs' "${REVIEW_RUN}"
   # 待ち方は正本に委ね、上限に達したときの G 固有の分岐だけを持つ
   grep -qF 'references/subagent-waiting.md' "${REVIEW_RUN}"
   grep -qE 'ターンを終え(ない|てはならない)' "${REVIEW_RUN}"

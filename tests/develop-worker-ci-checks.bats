@@ -7,6 +7,7 @@ setup() {
   WORKER="$REPO_ROOT/plugins/dev-workflow/skills/develop/references/roles/worker/implement.md"
   REVIEWER_BRIEF="$REPO_ROOT/plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md"
   PASS="$REPO_ROOT/plugins/dev-workflow/skills/pr-review-gate/stages/pass.md"
+  PASS_VERIFY="$REPO_ROOT/plugins/dev-workflow/skills/pr-review-gate/stages/pass-verify.md"
 }
 
 common_principles() {
@@ -22,7 +23,7 @@ reviewer_stance() {
 }
 
 pass_step4() {
-  awk '/^### 4\. 動作確認/ {printing=1; next} /^### 5\. / {printing=0} printing' "$PASS"
+  awk '/^### 4\. 動作確認/ {printing=1; next} /^## G として/ {printing=0} printing' "$PASS_VERIFY"
 }
 
 human_merge_paragraph() {

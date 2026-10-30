@@ -11,13 +11,28 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  DECLARATIONS="$BATS_TEST_TMPDIR/declarations-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/declarations.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$DECLARATIONS"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
   REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
-  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
+  HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD="$BATS_TEST_TMPDIR/hold-all.md"
+  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-categories.md" > "$HOLD"
+  CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
+  CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated-first.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
+  SD="${PLUGIN_DIR}/skills/pr-review-gate/stages"
+  TRIAGE_ALL="${BATS_TEST_TMPDIR}/triage-all.md"
+  cat "$TRIAGE" "$SD/triage-summary.md" "$SD/triage-row3.md" "$SD/triage-nonblocking.md" "$SD/triage-failed.md" "$SD/triage-escalation.md" "$SD/convergence.md" > "$TRIAGE_ALL"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   DEV_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
@@ -91,13 +106,13 @@ setup() {
 
 @test "escalation: fix-cycle model section lives in step 2 of the gate" {
   # 手順 2 の中の 2-2 として triage.md にあり、索引の対応表もそこを指す
-  grep -qE '^#### 2-2\. 修正サイクルのモデル昇格' "$TRIAGE"
+  grep -qE '^#### 2-2\. 修正サイクルのモデル昇格' "$TRIAGE_ALL"
   grep -qF '| 2-2 | 2-2. 修正サイクルのモデル昇格' "$GATE_SKILL"
   grep -F '| 2-2 |' "$GATE_SKILL" | grep -qF 'stages/triage.md'
 }
 
 @test "escalation: implementation-quality failures raise the decider or the executor, never both" {
-  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$TRIAGE_ALL")"
   echo "$sec" | grep -qF '実装品質起因'
   echo "$sec" | grep -qF '決める役'
   echo "$sec" | grep -qF '実行役'
@@ -108,17 +123,17 @@ setup() {
   # 旧ラダーの表記「...で spawn する」だけを拒否する。現行文は同じ語順で
   # 「...で spawn しない」と続くため、"する" まで含めないと現行文自体に誤爆する。
   ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn する' || return 1
-  grep -qF '昇格は実装品質起因のときだけ' "${TRIAGE}"
+  grep -qF '昇格は実装品質起因のときだけ' "$TRIAGE_ALL"
 }
 
 @test "escalation: the executor is capped at opus and never spawned as fable" {
-  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$TRIAGE_ALL")"
   echo "$sec" | grep -qF '実行役の上限は `opus`'
   echo "$sec" | grep -qF 'agent-model-guard.sh'
 }
 
 @test "escalation: the two-round cap is given as the reason for raising on the first failed" {
-  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "$TRIAGE_ALL")"
   echo "$sec" | grep -qF '2 周キャップ'
   echo "$sec" | grep -qF '既定の最終周'
   echo "$sec" | grep -qF '1 回目の failed'
@@ -126,25 +141,25 @@ setup() {
 }
 
 @test "escalation: ambiguous spec and reviewer false positives are not escalated" {
-  grep -q '仕様が曖昧' "${TRIAGE}"
-  grep -q '誤検出' "${TRIAGE}"
-  grep -q '反証' "${TRIAGE}"
+  grep -q '仕様が曖昧' "$TRIAGE_ALL"
+  grep -q '誤検出' "$TRIAGE_ALL"
+  grep -q '反証' "$TRIAGE_ALL"
 }
 
 # --- ルール3: フォールバック（Fable が使えないとき） ---
 
 @test "fallback: falls back to the previous model and records one PR comment line" {
-  grep -qF 'Fable が使えないときのフォールバック' "${TRIAGE}"
-  grep -qF '決める役モデル: opus' "${TRIAGE}"
-  grep -qF 'dev-workflow:decider のまま' "${TRIAGE}"
-  grep -qF 'レート制限' "${TRIAGE}"
+  grep -qF 'Fable のレート制限・週次枠切れ' "$TRIAGE_ALL"
+  grep -qF '決める役モデル: opus' "$TRIAGE_ALL"
+  grep -qF '種別固定で `model: opus` にフォールバック' "$TRIAGE_ALL"
+  grep -qF 'レート制限' "$TRIAGE_ALL"
 }
 
 # --- ルール4: 2周キャップ（収束ルール）との関係 ---
 
 @test "convergence: relation to the two-round cap is stated" {
-  grep -qF '2周キャップ' "${TRIAGE}"
-  grep -qF '最終周' "${TRIAGE}"
+  grep -qF '2周キャップ' "$TRIAGE_ALL"
+  grep -qF '最終周' "$TRIAGE_ALL"
 }
 
 # --- 重複を作らない: 正本はどちらか一方、他方は参照 ---
@@ -152,13 +167,13 @@ setup() {
 @test "single source: the 4-category table is not duplicated into the gate skill" {
   # pr-review-gate は分類名を1行で挙げるだけで、分類表の中身（判定材料）は再掲せず
   # develop の pre-classification.md を正本として参照する
-  grep -qF 'develop スキルの references/pre-classification.md が正本' "${TRIAGE}"
-  for f in "$GATE_SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; do
+  grep -qF 'develop スキルの references/pre-classification.md が正本' "$TRIAGE_ALL"
+  for f in "$GATE_SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE_ALL" "$PASS_STAGE" "$HOLD" "$CARRYOVER" "$AUTH"; do
     ! grep -q 'github-''issue' "$f" || return 1
   done
   # 4分類の名前が出るのは正本を指す1行だけ（表として再掲していない）
-  [ "$(grep -cF '層間契約' "${TRIAGE}")" -eq 1 ]
-  [ "$(grep -cF '聖域パス・マージ権限' "${TRIAGE}")" -eq 1 ]
+  [ "$(grep -cF '層間契約' "$TRIAGE_ALL")" -eq 1 ]
+  [ "$(grep -cF '聖域パス・マージ権限' "$TRIAGE_ALL")" -eq 1 ]
 }
 
 @test "single source: the fallback record format points back to pr-review-gate" {

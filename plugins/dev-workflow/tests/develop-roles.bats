@@ -12,13 +12,25 @@
 setup() {
   export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  DECLARATIONS="$BATS_TEST_TMPDIR/declarations-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/declarations.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$DECLARATIONS"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
   REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
-  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
+  HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD="$BATS_TEST_TMPDIR/hold-all.md"
+  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-categories.md" > "$HOLD"
+  CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
+  CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated-first.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   WORKER="${ROLES}/worker.md"
   W_COMMON="${ROLES}/worker/common.md"
@@ -28,10 +40,19 @@ setup() {
   PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
   REVIEWER="${ROLES}/spec-reviewer.md"
   GATE="${ROLES}/gate-runner.md"
+  GATE_BODY="${ROLES}/gate-runner-body.md"
+  GATE_TRIAGE="${ROLES}/gate-runner-triage.md"
+  SD="${PLUGIN_DIR}/skills/pr-review-gate/stages"
+  TRIAGE_ALL="${BATS_TEST_TMPDIR}/triage-all.md"
+  PREPARE_ALL="${BATS_TEST_TMPDIR}/prepare-all.md"
+  GATE_ALL="${BATS_TEST_TMPDIR}/gate-all.md"
+  cat "$TRIAGE" "$SD/triage-summary.md" "$SD/triage-row3.md" "$SD/row3-list-format.md" "$SD/triage-nonblocking.md" "$SD/triage-failed.md" "$SD/triage-escalation.md" "$SD/convergence.md" > "$TRIAGE_ALL"
+  cat "$PREPARE" "$SD/prepare-step1.md" "$SD/convergence.md" > "$PREPARE_ALL"
+  cat "$GATE" "$GATE_BODY" "$GATE_TRIAGE" "$TRIAGE_ALL" "$PREPARE_ALL" "$SD/pass-verify.md" "$SD/pass.md" "$SD/hold.md" > "$GATE_ALL"
 }
 
-# G の否定の検査（その文言が G の読むどこにも無いこと）は gate-runner.md と段のファイル全部で見る
-gate_all() { cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
+# G の否定の検査は旧 role の分割先（本体向けを含む）と段のファイル全部で見る
+gate_all() { cat "$GATE" "$GATE_BODY" "$GATE_TRIAGE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" "$CARRYOVER" "$AUTH"; }
 # W の否定の検査（その文言が W の指示書のどこにも無いこと）は索引・worker/ の 4 本・pre-classification.md の全部で見る（#556）
 worker_all() { cat "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "$PRE"; }
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
@@ -296,7 +317,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 # ===== gate-runner.md =====
 
 @test "gate-runner (#576): skips the pr-review-gate index and never instructs G to read SKILL.md" {
-  grep -qF '索引 `skills/pr-review-gate/SKILL.md` は読まない' "$GATE"
+  grep -qF '索引 `skills/pr-review-gate/SKILL.md` は読まない' "$GATE_ALL"
   # パスと Markdown の閉じバッククォートを許容し、「読んでから」「も読む」「開く」も拾う。
   # 「読まない」「読まず」を含む行（否定の明示）と索引の所在説明は拾わない。
   local hits
@@ -313,16 +334,16 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner: reads pr-review-gate and runs steps 1-5" {
-  grep -q 'pr-review-gate' "$GATE"
+  grep -q 'pr-review-gate' "$GATE_ALL"
   grep -qE '手順 ?1 ?〜 ?5|1〜5' "$GATE"
 }
 
 @test "gate-runner: Codex is invoked from Bash (codex exec with flags or codex-companion.mjs), not via slash/subagent" {
   grep -qF 'codex exec -c approval_policy=never -c model_reasoning_effort=medium' "${REVIEW_RUN}"
-  grep -qF 'codex-companion.mjs' "$GATE"
+  grep -qF 'codex-companion.mjs' "$GATE_ALL"
   grep -q '/codex:adversarial-review' "${REVIEW_RUN}"
   grep -q 'codex:codex-rescue' "${REVIEW_RUN}"
-  grep -qE '(使えない|使わない|呼べない)' "$GATE"
+  grep -qE '(使えない|使わない|呼べない)' "$REVIEW_RUN"
 }
 
 @test "gate-runner: needs-reviewer return payload (light/full + reason, PR + HEAD SHA, model + reason, acceptance criteria location)" {
@@ -337,16 +358,16 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner: spawned by name per stage, and the triage G posts the reviewer line (#554)" {
-  grep -q '名前付き' "$GATE"
-  grep -qF '段ごとに新しい G を起こす' "$GATE"
-  grep -qF 'レビュー実行者:' "$GATE"
-  grep -qE 'レビュー実行者:.*G が|G が.*レビュー実行者:' "${TRIAGE}"
+  grep -q '名前付き' "$GATE_ALL"
+  grep -qF '段ごとに新しい G を起こす' "$GATE_ALL"
+  grep -qF 'レビュー実行者:' "$TRIAGE_ALL"
+  grep -qE 'レビュー実行者:.*G が|G が.*レビュー実行者:' "$TRIAGE_ALL"
 }
 
 @test "gate-runner: failed return carries the step 2-2 cause classification" {
-  grep -q '実装品質起因' "${TRIAGE}"
-  grep -q '仕様が曖昧' "${TRIAGE}"
-  grep -q '誤検出' "${TRIAGE}"
+  grep -q '実装品質起因' "$TRIAGE_ALL"
+  grep -q '仕様が曖昧' "$TRIAGE_ALL"
+  grep -q '誤検出' "$TRIAGE_ALL"
 }
 
 @test "gate-runner: step 5 summary includes Ready (only when Draft) and the passed return has a Ready result field" {
@@ -357,20 +378,20 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner (#281): round-2 return sorts findings by quote or follow-up issue URL" {
-  grep -q '仕分け' "$GATE"
+  grep -q '仕分け' "$GATE_ALL"
   grep -q '引用' "${REVIEWER_BRIEF}"
-  grep -q 'follow-up issue' "$GATE"
+  grep -q 'follow-up issue' "$TRIAGE_ALL"
 }
 
 @test "gate-runner (#354): row-5 findings return as on-hold for split-off confirmation, not proposing a third round" {
-  grep -q '切り出しの確認' "$GATE"
+  grep -q '切り出しの確認' "$GATE_ALL"
   grep -q '3周目を提案しない' "${HOLD}"
   ! gate_all | grep -qF '2周目キャップ' || return 1
 }
 
 @test "gate-runner (#281): round field covers round 3+ after owner go-ahead and full review line counts" {
-  grep -qE '周回: .*3以降（直し方の判定・主の回答・決める役の裁定のどれかあり）' "$GATE"
-  grep -q '全体レビュー' "$GATE"
+  grep -qE '周回: .*3以降（直し方の判定・主の回答・決める役の裁定のどれかあり）' "$GATE_ALL"
+  grep -q '全体レビュー' "$GATE_ALL"
 }
 
 @test "gate-runner (#281): no high-severity-only third round permission remains" {
@@ -394,38 +415,38 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner (#354): resuming with the reviewer's summary branches by triage row, not by round" {
-  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  line="$(grep -F 'レビュアーの要約受領' "$TRIAGE_ALL" | grep -v '「レビュアーの要約受領」')"
   [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
   echo "$line" | grep -qF '周の数に関係なく'
   echo "$line" | grep -qF '仕分け表'
   echo "$line" | grep -qF '順 2〜4 は `agent-review:failed`'
   echo "$line" | grep -qF '順 5 は保留'
   echo "$line" | grep -qF '順 6 は `needs-decider`'
-  run sh -c "grep -F 'レビュアーの要約受領' '$GATE' | grep -E '1周目は|2周目と'"
+  run sh -c "grep -F 'レビュアーの要約受領' '$GATE_TRIAGE' | grep -E '1周目は|2周目と'"
   [ "$status" -ne 0 ]
 }
 
 @test "gate-runner: return formats cover passed / failed / on-hold" {
-  grep -q 'passed' "$GATE"
-  grep -q 'failed' "$GATE"
-  grep -q '保留' "$GATE"
+  grep -q 'passed' "$GATE_ALL"
+  grep -q 'failed' "$GATE_ALL"
+  grep -q '保留' "$GATE_ALL"
 }
 
 @test "gate-runner: G itself defaults to sonnet; the reviewer is opus or the decider type for merge conditions / cross-layer contracts" {
-  grep -q 'G の既定は `sonnet`' "$GATE"
-  grep -q '`opus`' "$GATE"
+  grep -q 'G の既定は `sonnet`' "$GATE_BODY"
+  grep -q '`opus`' "$GATE_BODY"
   ! gate_all | grep -q 'マージ条件・聖域・層間契約' || return 1
   ! gate_all | grep -q '聖域・層間契約による' || return 1
   ! gate_all | grep -qE '実装品質起因なら.*`model: fable`' || return 1
   # 旧ラダー（実行役を 1 段ずつ上げる）は残さず、決める役の種別で上げる
   ! gate_all | grep -q '1 段上' || return 1
-  grep -qF 'dev-workflow:decider' "$GATE"
-  grep -qF '一方だけ' "${TRIAGE}"
-  grep -qF 'W を `fable` にはしない' "${TRIAGE}"
+  grep -qF 'dev-workflow:decider' "$GATE_BODY"
+  grep -qF '一方だけ' "$TRIAGE_ALL"
+  grep -qF 'W を `fable` にはしない' "$TRIAGE_ALL"
   grep -qF '`general-purpose` に `model: fable` は付けない' "${PREPARE}"
-  grep -q 'マージ条件' "$GATE"
-  grep -q '聖域' "$GATE"
-  grep -q '層間契約' "$GATE"
+  grep -q 'マージ条件' "$GATE_BODY"
+  grep -q '聖域' "$GATE_BODY"
+  grep -q '層間契約' "$GATE_BODY"
 }
 
 # 上のテストは新文言の存在と一部の旧文言の不在しか見ておらず、同じ文書の別の段落
@@ -433,7 +454,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 # という旧案内が残っていても緑になっていた（PR #252 の agent-review:failed の指摘）。
 # 文書全体を行単位で走査し、Fable に触れる行が決める役の種別を伴うことを要求する。
 @test "gate-runner: every line that mentions Fable also names the decider type" {
-  offenders="$(grep -in 'fable' "$GATE" | grep -iv 'decider' || true)"
+  offenders="$(grep -in 'fable' "$GATE_BODY" | grep -iv 'decider' || true)"
   if [ -n "$offenders" ]; then
     echo "決める役の種別を伴わない Fable の言及が残っている:"
     echo "$offenders"
@@ -553,7 +574,7 @@ extract_context_cap_section() {
   done
   # 「レビュー実行者:」コメントの段落は照合と振り分けの段にある（#554）
   for token in '架空の終了コード' 'light 判定のため' 'full・実測した Codex 不可' '同じ証拠'; do
-    grep -qF "$token" "${TRIAGE}" || { echo "missing in triage.md: $token"; return 1; }
+    grep -qF "$token" "$TRIAGE_ALL" || { echo "missing in triage.md: $token"; return 1; }
   done
 }
 
@@ -578,11 +599,11 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#985): non-stopping findings go through the triage table, and the session that gets a condition answer re-sorts" {
-  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  line="$(grep -F 'レビュアーの要約受領' "$TRIAGE_ALL" | grep -v '「レビュアーの要約受領」')"
   echo "$line" | grep -qF '止めない指摘の振り分け表'
   echo "$line" | grep -qF '段 A'
   ! echo "$line" | grep -qF '順 1 だけなら follow-up issue に切って' || return 1
-  sec="$(awk '/^## 段ごとの起動と入力/{f=1;next} /^## /{f=0} f' "$GATE")"
+  sec="$(section "$GATE_BODY" '段ごとの起動と入力')"
   ans="$(echo "$sec" | grep -F '条件の答えを受け取ったとき')"
   [ -n "$ans" ] || { echo "no condition-answer duty in gate-runner.md"; return 1; }
   for t in '`## 条件の答え`' '`条件の確認待ち`' '段 B の表から当て直す' 'マージ済みでも' 'G を起こさない'; do
@@ -594,14 +615,14 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#349): the reviewer-summary resume branches through the all-round verdict" {
-  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  line="$(grep -F 'レビュアーの要約受領' "$TRIAGE_ALL" | grep -v '「レビュアーの要約受領」')"
   [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
   echo "$line" | grep -qF '全周共通の判定'
   echo "$line" | grep -qF '止める指摘'
   echo "$line" | grep -qF 'follow-up issue'
   echo "$line" | grep -q 'failed'
   echo "$line" | grep -q '仕分け'
-  run sh -c "grep -F 'レビュアーの要約受領' '$GATE' | grep -F '一般則'"
+  run sh -c "grep -F 'レビュアーの要約受領' '$GATE_TRIAGE' | grep -F '一般則'"
   [ "$status" -ne 0 ]
 }
 
@@ -636,9 +657,9 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#354): Status has needs-decider and a section says what the main session receives" {
-  grep -E '^- Status: ' "$GATE" | grep -qF 'needs-decider'
-  grep -E '^- Status: ' "$GATE" | grep -qF 'needs-fix-check'
-  nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "${TRIAGE}")"
+  grep -E '^- Status: ' "$GATE_ALL" | grep -qF 'needs-decider'
+  grep -E '^- Status: ' "$GATE_ALL" | grep -qF 'needs-fix-check'
+  nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "$SD/triage-escalation.md")"
   [ -n "$nd" ] || { echo "no needs-decider section"; return 1; }
   echo "$nd" | grep -qF '同じ型の指摘'
   echo "$nd" | grep -qF '前の周の指摘'
@@ -657,13 +678,13 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#354): resume has a line for the decider ruling that records it and counts from PR comments" {
-  line="$(grep -F '決める役の裁定受領' "${TRIAGE}")"
+  line="$(grep -F '決める役の裁定受領' "$TRIAGE_ALL")"
   [ -n "$line" ] || { echo "no decider-ruling resume line"; return 1; }
   echo "$line" | grep -qF '決める役の裁定:'
   echo "$line" | grep -qF 'PR コメント'
   echo "$line" | grep -qF '全部列挙してから直す'
   echo "$line" | grep -qF '切り出す'
-  grep -E 'W の修正後の再レビュー' "${TRIAGE}" | grep -qF '直し方の判定・主の回答・決める役の裁定のどれか'
+  grep -E 'W の修正後の再レビュー' "$PREPARE_ALL" | grep -qF '直し方の判定・主の回答・決める役の裁定のどれか'
 }
 
 @test "worker (#354): W posts the row-3 table with the search command before pushing, and records row-4 fixes" {
@@ -696,7 +717,7 @@ extract_context_cap_section() {
 # ===== 一周目レビューの機械照合と補足上限（issue #355） =====
 
 @test "gate-runner (#355): first-pass tables are mechanically checked before triage" {
-  first="$(section "$GATE" '一周目の三表を機械照合する')"
+  first="$(section "$GATE_TRIAGE" '一周目の三表を機械照合する')"
   [ -n "$first" ] || { echo 'no first-pass reconciliation section'; return 1; }
   for token in '受け入れ条件' '変更点 ID' 'review-hit-set.py' '全ヒット集合' '固定した PR diff' '全ハンク' '指摘の仕分け前'; do
     echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
@@ -704,21 +725,21 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#514): partitioned first pass reconciles union and routes residuals" {
-  first="$(section "$GATE" '一周目の三表を機械照合する')"
+  first="$(section "$GATE_TRIAGE" '一周目の三表を機械照合する')"
   for token in 'レビュー重量:' '区画の数' '和集合' 'review-hit-set.py' 'P<k>-' '区画 1' '補足済み回数' 'レビュー三表:' '一周目の区画:' '区画に分けなかった'; do
     echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
   for token in '足りない区画' 'ハンク' '照合表' '受け入れ条件'; do
     echo "$first" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
-  supplement="$(section "$GATE" '補足レビュー結果の受領')"
+  supplement="$(section "$GATE_TRIAGE" '補足レビュー結果の受領')"
   echo "$supplement" | grep -qF '一周目の区画:'
   echo "$supplement" | grep -qF '和集合'
   echo "$supplement" | grep -qF '計算し直さない'
 }
 
 @test "gate-runner (#355): a no-findings summary cannot reach passing steps without all three tables" {
-  line="$(grep -F '**レビュアーの要約受領**' "$GATE")"
+  line="$(grep -F '**レビュアーの要約受領**' "$TRIAGE_ALL")"
   for token in '変更点の一覧' '照合表' 'ハンク被覆' '最初に' '照合が完了したあと' '不足' 'needs-reviewer' 'review-incomplete'; do
     echo "$line" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
@@ -732,7 +753,7 @@ extract_context_cap_section() {
   done
   common="$(awk '/^## Gate Result/{f=1} f&&/^### /{exit} f' "$GATE")"
   echo "$common" | grep -qF 'review-incomplete'
-  residual="$(section "$GATE" '補足レビュー結果の受領')"
+  residual="$(section "$GATE_TRIAGE" '補足レビュー結果の受領')"
   echo "$residual" | grep -qF '補足済み回数: 1'
   echo "$residual" | grep -qF 'review-incomplete'
   echo "$residual" | grep -qF '2 回目の `needs-reviewer` を返さない'
@@ -777,28 +798,28 @@ extract_context_cap_section() {
 @test "gate-runner (#359): on-hold lists unprocessed row 6, and needs-decider also covers the return after the owner's answer" {
   hold="$(awk '/^### 保留のとき/{f=1;next} /^### /{f=0} f' "${HOLD}")"
   echo "$hold" | grep -qF '順 6・未裁定'
-  nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "${TRIAGE}")"
+  nd="$(awk '/^### needs-decider のとき/{f=1;next} /^### |^```$/{f=0} f' "$SD/triage-escalation.md")"
   echo "$nd" | grep -qF '主の回答のあとに未処理の順 6'
 }
 
 @test "gate-runner (#359): owner-answer and decider-ruling resumes refer to the mixed paragraph and do not go to failed early" {
   for key in '保留の解除' '決める役の裁定受領'; do
-    line="$(grep -F -- "**$key**" "$HOLD" "$TRIAGE" | cut -d: -f2-)"
+    line="$(grep -F -- "**$key**" "$HOLD" "$TRIAGE_ALL" | cut -d: -f2-)"
     [ -n "$line" ] || { echo "no line: $key"; return 1; }
     echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の混在の段落' || { echo "$key lacks mixed ref"; return 1; }
     echo "$line" | grep -qF 'failed に進まない' || { echo "$key lacks guard"; return 1; }
   done
-  grep -F '**決める役の裁定受領**' "$TRIAGE" | grep -qF '裁定なし（入力不足）'
+  grep -F '**決める役の裁定受領**' "$TRIAGE_ALL" | grep -qF '裁定なし（入力不足）'
 }
 
 @test "gate-runner (#357): the post-fix re-review matches row 3 in two stages, pre-fix SHA and HEAD" {
-  line="$(grep -F '**W の修正後の再レビュー**' "${TRIAGE}")"
+  line="$(grep -F '**戻した指摘が順 3 だけの修正のあと**' "$SD/triage-row3.md")"
   echo "$line" | grep -qF '修正前 SHA と HEAD の 2 段'
-  echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の仕分け表の順 3'
+  grep -qF '次の 2 段で照合する' "$SD/triage-row3.md"
 }
 
 @test "gate-runner (#359): the reviewer-summary resume returns only the hold when row 5 mixes with rows 2-4 or row 6" {
-  line="$(grep -F '**レビュアーの要約受領**' "$GATE")"
+  line="$(grep -F '**レビュアーの要約受領**' "$TRIAGE_ALL")"
   echo "$line" | grep -qF '順 5 と順 2〜4、または順 5 と順 6 が混ざれば保留だけを先に返す'
   echo "$line" | grep -qF '保留と `needs-decider` を同じ return で指示しない'
 }
@@ -822,15 +843,14 @@ extract_context_cap_section() {
 }
 
 @test "gate-runner (#377): the row-3 second stage runs review-hit-set.py with --head and the fetched 40-digit HEAD" {
-  line="$(grep -F '**W の修正後の再レビュー**' "${TRIAGE}")"
+  line="$(grep -F '**順 3（一覧の一致で閉じる）**' "$SD/triage-row3.md")"
   echo "$line" | grep -qF 'review-hit-set.py'
   echo "$line" | grep -qF -- '--head <HEAD の 40 桁 SHA>'
   echo "$line" | grep -qF 'git fetch'
-  echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の仕分け表の順 3'
 }
 
 @test "gate-runner (#441): when HEAD moves on an accepted PR, try pr-review-gate step 3-c before asking the owner" {
-  line="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$HOLD" | grep -F '許容済みの PR で HEAD が動いた')"
+  line="$(grep -F '許容済みの PR で HEAD が動いた' "$CARRYOVER")"
   echo "$line" | grep -qF '主に聞く前に'
   echo "$line" | grep -qF 'pr-review-gate 手順 3-c'
 }
@@ -845,10 +865,10 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   [ -n "$s" ] || { echo "no step (4) block"; return 1; }
   echo "$s" | grep -qF '段ごとに新しい G を起こす'
   echo "$s" | grep -qF '`段: <段の名前>`'
-  grep -qF '段ごとに新しい G を起こす' "$GATE"
-  grep -qF '`段: <段の名前>`' "$GATE"
+  grep -qF '段ごとに新しい G を起こす' "$GATE_ALL"
+  grep -qF '`段: <段の名前>`' "$GATE_ALL"
   for st in '前提確認と重さ判定' '照合と振り分け' '合格処理' '保留の解除'; do
-    section "$GATE" '段ごとの起動と入力' | grep -qF "$st" || { echo "missing stage: $st"; return 1; }
+    section "$GATE_BODY" '段ごとの起動と入力' | grep -qF "$st" || { echo "missing stage: $st"; return 1; }
   done
 }
 
@@ -857,7 +877,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   [ -n "$s" ] || { echo "no step (4) block"; return 1; }
   for w in 'SendMessage' 'G を再開'; do
     if echo "$s" | grep -qF "$w"; then echo "(4) has: $w"; return 1; fi
-    if grep -qF "$w" "$GATE"; then echo "gate-runner.md has: $w"; return 1; fi
+    if grep -qF "$w" "$GATE_ALL"; then echo "gate-runner.md has: $w"; return 1; fi
   done
 }
 
@@ -884,7 +904,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
 
 @test "gate-runner (#554): G name and description name the stage and keep the G: prefix" {
   s="$(step4_554)"
-  for f in "$GATE"; do
+  for f in "$GATE_BODY"; do
     grep -qF 'G-<PR>-<prepare|triage|pass|hold>-<n>' "$f"
     grep -qF 'G: <段> for PR #N (#issue)' "$f"
   done
@@ -893,25 +913,26 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
 }
 
 @test "gate-runner (#554): neither gate-runner.md nor SKILL.md (4) measures G with subagent-context.sh" {
-  ! grep -qF 'subagent-context.sh' "$GATE" || return 1
+  ! grep -qF 'subagent-context.sh' "$GATE_ALL" || return 1
   ! step4_554 | grep -qF 'subagent-context.sh' || return 1
 }
 
 @test "gate-runner (#554): the handoff between stages goes through PR comments" {
-  s="$(section "$GATE" '段ごとの起動と入力')"
+  s="$(section "$GATE" '段ごとの入力')
+$(section "$GATE_BODY" '段ごとの起動と入力')"
   echo "$s" | grep -qF '固定 HEAD: <SHA>'
   echo "$s" | grep -qF 'レビュー三表:'
   echo "$s" | grep -qF '補足済み回数:'
   echo "$s" | grep -qF 'PR コメントを正とする'
   echo "$s" | grep -qF '`## Gate Result` ブロックを要約し直さずそのまま'
   grep -qF '`固定 HEAD: <SHA>`' "$PREPARE"
-  grep -qF '`レビュー三表:`' "$TRIAGE"
+  grep -qF '`レビュー三表:`' "$TRIAGE_ALL"
   # 固定した HEAD の行は auto-merge が照合する `対象 HEAD:` と別の文字列にする
   ! grep -F '固定 HEAD: <SHA>' "$PREPARE" | grep -qF '対象 HEAD: <SHA>' || return 1
 }
 
 @test "gate-runner (#554): the reviewer-line paragraph lives only in stages/triage.md" {
-  grep -qF 'レビュー実行者: Task サブエージェント（light 判定のため）' "$TRIAGE"
+  grep -qF 'レビュー実行者: Task サブエージェント（light 判定のため）' "$TRIAGE_ALL"
   ! grep -qF 'レビュー実行者:' "$PREPARE" || return 1
 }
 
@@ -931,8 +952,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
 }
 
 @test "gate-runner (#554): the legacy route runs steps 1-5 in one G and says so in the stage lines" {  # 従来経路は `段: 一括（従来経路）` と `次の段: なし`
-  grep -qF '`段: 一括（従来経路）`' "$GATE"
-  grep -qF '`次の段: なし`' "$GATE"
+  grep -qF '`段: 一括（従来経路）`' "$GATE_ALL"
+  grep -qF '`次の段: なし`' "$GATE_ALL"
 }
 
 @test "gate-runner (#554): each stage's develop section describes the input for a fresh G of that stage" {
@@ -977,18 +998,18 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
 }
 
 @test "gate-runner (#583): after a row-3-only fix, the triage G fixes the new HEAD via prepare.md step 1 and posts it" {
-  grep -E '^\| 照合と振り分け' "$GATE" | grep -qF '`stages/prepare.md` の手順 1'
-  rr="$(grep -F '**W の修正後の再レビュー**' "$TRIAGE")"
-  echo "$rr" | grep -qF '`stages/prepare.md` の手順 1'
+  grep -E '^\| 照合と振り分け' "$GATE" | grep -qF '`stages/prepare-step1.md`'
+  rr="$(grep -F '**戻した指摘が順 3 だけの修正のあと**' "$SD/triage-row3.md")"
+  echo "$rr" | grep -qF '`stages/prepare-step1.md`'
   echo "$rr" | grep -qF '`固定 HEAD: <新しい HEAD>`'
   sp="${PLUGIN_DIR}/../../openspec/specs/dev-workflow-develop/spec.md"
   grep -F '固定 HEAD: <新しい HEAD>' "$sp" | grep -qF 'stages/prepare.md'
 }
 
 @test "gate-runner (#584): the review-tables comment posted before the supplemental needs-reviewer records the count as 1" {
-  s="$(section "$GATE" '一周目の三表を機械照合する')"
+  s="$(section "$GATE_TRIAGE" '一周目の三表を機械照合する')"
   echo "$s" | grep -F 'レビュー三表:' | grep -qF '`補足済み回数: 1`'
-  line="$(grep -F '**レビュアーの要約受領**' "$TRIAGE")"
+  line="$(grep -F '**レビュアーの要約受領**' "$TRIAGE_ALL")"
   echo "$line" | grep -qF '`補足済み回数: 1`'
   if echo "$line" | grep -qF '`補足済み回数: 0` の行を持つ'; then echo "posts 0"; return 1; fi
   if echo "$line" | grep -qF '記録も同じ形で投稿する'; then echo "second post remains"; return 1; fi
@@ -1004,7 +1025,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:worker'
   section "$skill" '1 ループ' | grep -qF 'subagent_type: dev-workflow:gate-runner'
   grep -m1 'subagent_type: dev-workflow:worker' "$W_COMMON"
-  grep -m1 'subagent_type: dev-workflow:gate-runner' "$GATE"
+  grep -m1 'subagent_type: dev-workflow:gate-runner' "$GATE_ALL"
   ! worker_all | grep -q 'W が `/wt-setup`' || return 1
   section "$skill" 'worktree の用意' | grep -qF '/wt-setup'
   grep -qF 'openspec new change' "$W_SPEC"
@@ -1085,22 +1106,22 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
 
 @test "gate-runner (#722): needs-fix-check routes to triage and the triage row of the stage table takes the fix-check" {
   grep -E '^\| needs-reviewer / needs-decider / needs-fix-check \|' "$GATE" | grep -qF '`照合と振り分け`'
-  row="$(grep -E '^\| 照合と振り分け \|' "$GATE")"
+  row="$(grep -E '^\| 照合と振り分け \|' "$GATE_BODY")"
   [ -n "$row" ] || { echo "no triage row in the stage table"; return 1; }
   echo "$row" | grep -qF '直し方の判定を受け取ったとき'
   echo "$row" | grep -qF '直し方の判定と判定の記録の URL'
   echo "$row" | grep -qF '`needs-fix-check`'
-  grep -F 'Status ごとの欄の書式は' "$GATE" | grep -qF '`needs-fix-check`'
+  grep -F 'Status ごとの欄の書式は' "$GATE_ALL" | grep -qF '`needs-fix-check`'
 }
 
 @test "gate-runner (#722): the reviewer-summary branch sends end-of-round leftovers to the fix-check and never pairs it with needs-decider" {
-  line="$(grep -F 'レビュアーの要約受領' "$GATE" | grep -v '「レビュアーの要約受領」')"
+  line="$(grep -F 'レビュアーの要約受領' "$TRIAGE_ALL" | grep -v '「レビュアーの要約受領」')"
   [ -n "$line" ] || { echo "no reviewer-summary resume line"; return 1; }
   echo "$line" | grep -qF '判定に回す条件に当たれば `needs-fix-check`'
   echo "$line" | grep -qF '`needs-fix-check` と `needs-decider` を同じ return で指示しない'
   echo "$line" | grep -qF '順 2〜4 をそのまま使わない'
   # 段ごとの入力の文に直し方の判定の受領がある
-  grep -F '段ごとの入力のうち' "$GATE" | grep -qF '直し方の判定の受領'
+  grep -F '段ごとの入力のうち' "$GATE_ALL" | grep -qF '直し方の判定の受領'
 }
 
 # ===== 許容の引き継ぎの判定役（issue #1238）=====
@@ -1109,11 +1130,11 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   common="$(awk '/^## Gate Result/{f=1} f&&/^```$/{exit} f' "$GATE")"
   echo "$common" | grep -E '^- Status: ' | grep -qF 'needs-carryover-judge'
   grep -qxF '| needs-carryover-judge | `合格処理` |' "$GATE"
-  grep -F 'Status ごとの欄の書式は' "$GATE" | grep -qF '`needs-carryover-judge` は `stages/hold.md`'
+  grep -F 'Status ごとの欄の書式は' "$GATE_ALL" | grep -qF '`needs-carryover-judge` は `stages/carryover-judge.md`'
 }
 
 @test "gate-runner (#1238): the pass row of the stage table takes the carryover judgment" {
-  row="$(grep -E '^\| 合格処理 \|' "$GATE")"
+  row="$(grep -E '^\| 合格処理 \|' "$GATE_BODY")"
   [ -n "$row" ] || { echo "no pass row in the stage table"; return 1; }
   echo "$row" | grep -qF '引き継ぎの判定を受け取ったとき'
   echo "$row" | grep -qF '引き継ぎの判定と判定の記録の URL'

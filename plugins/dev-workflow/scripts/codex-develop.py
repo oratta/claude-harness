@@ -501,7 +501,7 @@ def prompt(phase, instructions, state):
         docs.insert(0, 'skills/develop/references/roles/worker/common.md')
     if phase == 'gate':
         docs += ['skills/pr-review-gate/SKILL.md', 'skills/pr-review-gate/declarations.md'] + [
-            f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold')]
+            f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'triage-summary', 'triage-row3', 'row3-list-format', 'triage-nonblocking', 'triage-failed', 'triage-escalation', 'convergence', 'prepare-step1', 'pass', 'authenticity', 'hold', 'carryover')]
     elif phase == 'review':
         docs.append('skills/pr-review-gate/stages/reviewer-brief.md')
     text = f'''Codex delegated develop phase: {phase}. Role: {role}.

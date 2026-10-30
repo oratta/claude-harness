@@ -7,13 +7,25 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  DECLARATIONS="$BATS_TEST_TMPDIR/declarations-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/declarations.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$DECLARATIONS"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
   REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
-  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
+  HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  HOLD="$BATS_TEST_TMPDIR/hold-all.md"
+  cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-categories.md" > "$HOLD"
+  CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
+  CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
+  CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated-first.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
@@ -125,7 +137,7 @@ fixture_pages() {
 # 手順 1 と手順 5 のコマンド例そのものが分岐を実装していることを、偽の gh で実行して確かめる。
 # 偽の gh は呼び出しを $GH_LOG に記録し、path に応じて fixture を返す。
 
-step1() { awk '/^### 1\. /{f=1} /^### 2\. /{f=0} f' "$PREPARE"; }
+step1() { cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare-step1.md"; }
 
 # 指定した手順の fenced bash ブロックのうち ISSUE= を含むものから、実行対象の行だけを抜く
 # （説明コメント行と <plugin> プレースホルダを含む spec-touch-check 行は除く）
@@ -205,8 +217,9 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
 # --- 既存件数固定アサーションを壊さない ---
 
 @test "keeps single occurrence of the cross-layer-contract and sanctuary/merge-permission phrases" {
-  [ "$(grep -cF '層間契約' "${TRIAGE}")" -eq 1 ]
-  [ "$(grep -cF '聖域パス・マージ権限' "${TRIAGE}")" -eq 1 ]
+  tr_all="$(cat "${TRIAGE}" "${PLUGIN_DIR}"/skills/pr-review-gate/stages/triage-*.md)"
+  [ "$(printf '%s\n' "$tr_all" | grep -cF '層間契約')" -eq 1 ]
+  [ "$(printf '%s\n' "$tr_all" | grep -cF '聖域パス・マージ権限')" -eq 1 ]
 }
 
 # --- 配布 ---
