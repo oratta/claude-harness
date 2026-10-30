@@ -25,11 +25,11 @@ version: 2.1.0
 
 profile と旧 account/model のどちらも明示しない場合、各 canonical phase の開始時に adapter で再評価する。登録 Codex accounts の週次 snapshot の実効値（取得からの経過時間で捨てず、リセット時刻で読み替えた値）と Claude 起動 account の実効値（セッション記録と snapshot をリセット時刻で読み替えた値）から構成を選ぶ（margin の求め方と構成の選び方は `references/codex-develop.md`「起動と role 解決」が正本）。開始済み role は工程途中で切り替えない。adapter が返す構成（`claude-write-codex-review`・`codex-standard`・Claude 既定構成のどれか）、reason、両 provider の margin / fetched_at、代表 Codex account を、最初の develop 開始コメントと後続 phase の dispatch 記録へ残す。値が無ければ `missing` と記録する。develop 開始コメントには、あわせて「実行モード」の節の `実行モード:` の行と、channel のときは `references/channel.md` の「channel のリスク許容」で決める `チャンネルの返事の確認:` の行を残す。
 
-`--profile NAME [--profile-file PATH]` または旧形式の Codex account/model を明示したときは、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこの SKILL.md から `../../references/codex-develop.md`）を絶対パスに解決して Read する。各委譲の直前に adapter から canonical role の per-role execution result を取得し、provider 操作は同 reference の「role 解決直後の一度だけの分岐」に従う。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の entry ではなく profile の `decider` entry（executor/account/model）を使い、`subagent_type: dev-workflow:decider` として起動する。この SKILL.md はその分岐を再掲せず、工程順、role、review 条件、return 契約、次工程の判断だけを正本として維持する。
+新しい role を起動する直前に、Claude 既定の経路を含む全経路で、本体は `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこの SKILL.md から `../../references/codex-develop.md`）を絶対パスに解決して Read し、`codex-develop.py request` に `--phase` と格の入力を渡して canonical role の per-role execution result を取得する。格の入力は、当たる事前分類の `--pre-class sacred|merge|contract|billing`（繰り返し可。順に聖域パス・マージ権限・層間契約・課金/法務。判定の正本は `references/pre-classification.md`）、記録先が設計判断を含むときの `--design-judgment`、失敗のラダーの段を示す `--failure first|executor|judgment`、自動実行のときの `--unmanned` である。`--profile NAME [--profile-file PATH]` または旧形式の Codex account/model を明示したときも同じ `request` に渡す。provider 操作は同 reference の「role 解決直後の一度だけの分岐」に従う。事前分類に当たる R1 または G が要求したレビュアーは `request` が `role: decider` と構成の `decider` entry の投げ先/account を返すので、`subagent_type: dev-workflow:decider` として起動する。本体は返った `model` を使い、新しい起動の `model` を文章の規則で計算し直さない。この SKILL.md はその分岐を再掲せず、工程順、role、review 条件、return 契約、次工程の判断だけを正本として維持する。
 
 G の起動指示（段ごとに新しく起こす G と、手渡しで起こす後任 G のすべて）には、起動形を問わず常に `レビュー経路: adapter` の 1 行を書く（自動選択・明示 profile・旧形式のどれも adapter で解決するので、今が adapter 経路かを評価しない）。Codex の G では request の instructions（`--input` の指示ファイル）にも書く。develop の本体は `レビュー経路: 従来` を書かない（develop の本体以外の呼び出し元のための値）。G は再開せず段ごとに新しく起こすので、起動指示に行が無い G は従来経路（full は G が Codex を直接呼ぶ）として動く。どの段の起動指示でも行を省略しない（`references/roles/gate-runner.md`「レビュー経路の判別」）。
 
-本体は、名前付き profile（自動選択が profile 構成を返した場合を含む）で起こすたびに thread と requested tuple / applied model / reason を記録し、同じ Claude profile role を再開する直前に毎回 `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` の上限を再確認して、上限内のときだけ SendMessage する（上限を超えるなら SendMessage せず、工程完了か停止確認の条件を満たしてから requested tuple を変えずに capped model の fresh thread へ手渡す）。fresh thread にする境界を含め、細目は `references/codex-develop.md`「本体が行う操作」が正本（その操作を行う前に Read する）。以下の spawn / SendMessage 表記は、profile 利用時にはこの規則を適用した provider 操作を意味する。
+本体は、起こすたびに thread と requested tuple / applied model / reason（`requested_model`・`model`・`tier_reason`）を記録し、dispatch 記録には `tier`・`executed_tier`・`tier_cap` も残す。`tier_reason` は `tier` の変化だけを表すので、`tier_cap` で値が変わった起動は `executed_tier` と `tier_cap` の記録で見分ける。同じ Claude role を再開する直前には毎回、同じ phase と入力で `request` を呼び直し、返った `tier`（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` の上限を適用済み）と thread の格（起動時に記録した `tier`）を比べて、thread の格より低くないときだけ SendMessage する（低ければ SendMessage せず、工程完了か停止確認の条件を満たしてから requested tuple を変えずに上限内の model の fresh thread へ手渡す）。呼び直しの結果は `tier` だけを読み、executor・account・構成の選び直しには使わない。`tier` は構成によらないので、役の途中切り替えにはならない。fresh thread にする境界を含め、細目は `references/codex-develop.md`「本体が行う操作」が正本（その操作を行う前に Read する）。以下の spawn / SendMessage 表記は、この規則を適用した provider 操作を意味する。
 
 ## いつ使うか
 
@@ -103,13 +103,13 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 
 ```
 (0) 記録先を確定する（入口 0）。worktree を用意する
-(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: references/pre-classification.md の事前分類表の「1 周目」列に当たればその値、それ以外 sonnet。上限は「モデル」節の表の W の行、残量の効き方は同節の残量モードの段落）:
+(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: `request` が返した `model`。入力は「Role profile の選択」節、既定と上限は「モデル」節の表の W の行）:
       記録先の用意（Draft PR 経路）→ 仕様化判断の記録 → 分割判定 → openspec new change → return「仕様できた」
       仕様化しない判定なら → (3) へ直行（TDD → PR）
       文言合わせの通し方（既存の仕様の文言を実装に合わせて直すだけの変更。判定基準は `references/decision-criteria.md` Step B）なら → W は仕様の差分 1 ファイルだけを書いて return する。
            本体は W の return の文面ではなく、記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があることを確かめ、あれば次の R1 の工程を飛ばして W を `段: implement` で再開する。
            行が無ければ W を実装に進めず、`段: spec` で再開して仕様化判断を投稿し直させる（そのあとは R1 の工程を通す）
-(2) R1 を spawn（model: 既定 opus。マージ条件・層間契約・課金/法務に触れれば subagent_type: dev-workflow:decider で spawn する。聖域パスだけでは上げない）:
+(2) R1 を spawn（model: `request` が返した `model`。既定 opus。マージ条件・層間契約・課金/法務に触れれば `--pre-class` を渡し、返った `role: decider` で subagent_type: dev-workflow:decider として spawn する。聖域パスだけでは上げない）:
       references/roles/spec-reviewer.md に従って別コンテキストで仕様レビュー → 結果を記録先にコメント → return
       dev-workflow:decider で起こした R1 は gh を実行できないので投稿せず return し、本体が同じ書式で代理投稿する
       （記録先の本文と関連コメントは本体が入力文に貼って渡す）
@@ -134,7 +134,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            この固定分は工程の大きさに依存しないので、区切りを増やすほど 1 区切りあたりの実質作業比が下がる。
            また区切りが実装の途中に落ちると、後任は Red のまま止まったテストから再出発することになり、前任の設計意図を再発明する危険が最も高い地点で交代することになる
       本体は次に指示する工程を、自分が (3a) を指示したか (3b) を指示したかで決め、工程名の文字列照合では決めない。
-(4) G を `subagent_type: dev-workflow:gate-runner` で段ごとに名前付き spawn（model: 既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は needs-reviewer で本体が起こすレビュアー（従来経路では Codex）が担う）:
+(4) G を `subagent_type: dev-workflow:gate-runner` で段ごとに名前付き spawn（model: `request` が返した `model`。既定 sonnet。G の仕事は照合・ラベル操作で、欠陥探索は needs-reviewer で本体が起こすレビュアー（従来経路では Codex）が担う）:
       文言合わせの通し方では、本体は G を起こす前に、記録先の最新の仕様化判断のコメントの `直す文:` の行が archive 済みの差分の要件名と一致することを確かめる
            （1 つの記録先を複数の change が共有すると、最新の仕様化判断が別の change のものになることがある。一致しなければ G を起こさず、W を `段: spec` で再開してその change の仕様化判断を投稿し直させる）
       段ごとに新しい G を起こす（段は 前提確認と重さ判定・照合と振り分け・合格処理・保留の解除 の 4 つ。1 体は 1 段だけを担当する。
@@ -158,11 +158,11 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            `ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、
            G が再び passed を返したら見張りの続き（reference の「`ready` を受けたあと」）に進む。合格するまでマージ待ち・マージ依頼に進まない。unmanned は (4) を回さないので対象外
       needs-reviewer → adapter 経路では G は full でも light でもこれを返す。本体は次の順で進む:
-           ① codex-develop.py request --phase review で投げ先を選び直す（実行先オプションはこの develop 開始時と同じ。自動選択なら無指定）
-           ② 返った選択（構成・reason・両 provider の margin・各 fetched_at・代表 Codex account。欠測は missing）と解決した executor / model を
+           ① codex-develop.py request --phase review で投げ先を選び直す（実行先オプションはこの develop 開始時と同じ。自動選択なら無指定。レビュー対象が事前分類に当たれば `--pre-class` を渡す）
+           ② 返った選択（構成・reason・両 provider の margin・各 fetched_at・代表 Codex account。欠測は missing）と解決した executor / `requested_model` / `model` / `tier_reason` / `tier` / `executed_tier` / `tier_cap` を
               記録先に dispatch 記録として投稿する。投稿に成功するまでレビュアーを起動しない
-           ③ 選ばれた投げ先でレビュアーを起動する（executor が claude なら Agent ツールで `subagent_type: dev-workflow:reviewer` として、model は adapter の値に残量上限を適用したもの。
-              事前分類に当たれば profile の decider entry で dev-workflow:decider。codex なら request を実行する）
+           ③ 選ばれた投げ先でレビュアーを起動する（executor が claude なら Agent ツールで `subagent_type: dev-workflow:reviewer` として、model は `request` が返した `model`。
+              返った role が decider なら dev-workflow:decider。codex なら request を実行する）
               一周目で payload に区画があり executor が claude なら、区画ごとに 1 体ずつ並列に起こす。description は
               `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` とする。executor が codex なら区画を使わず差分全体を 1 つの request に渡す。
            ④ レビュー要約と、選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。review phase の executor が codex なら、worker の結果 JSON の `execution.model_resolution.requested` / `execution.model_resolution.resolved` も G に渡す。resolved が未観測なら null をそのまま渡し、要求値や dispatch 時の model で補完しない。Claude の G は照合と振り分けの G を新しく起こし、前の Gate Result ブロックと一緒に起動指示で渡す
@@ -196,7 +196,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            本体は判定を受けて自分で宣言を投稿せず、ラベルを付けず、主に聞かない（引き継ぐか主に聞くかは合格処理の G が決める）。
            ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び needs-carryover-judge を返したときは、
            判定役を起こし直さず、投稿した記録の URL を添えて主に聞く（G 側の止めが外れたときに opus の判定役を繰り返し起こさないため）
-      needs-decider → 仕分け表の順 6（同じ型の再発）。本体が subagent_type: dev-workflow:decider を残量モードどおりのモデルで起こし、
+      needs-decider → 仕分け表の順 6（同じ型の再発）。本体が subagent_type: dev-workflow:decider を `request --phase decider` が返した `model` で起こし、
            入力に decider.md の入力契約どおり、記録先の本文・判断に必要な関連コメント（`仕様化判断:` の記録・G の仕分けの PR コメント・順 3 の一覧表の
            PR コメントがあればそれ）・同じ型の指摘と前の周の指摘の原文・対象ファイルのパス・G の仕分け欄・W の直近の return を貼って、「この PR の中で
            同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」を問う（順 6 の依頼はマージ可否と同じ可否と根拠の形で問う。decider.md は変えない）。
@@ -280,20 +280,20 @@ PR トークン上限: <権限>
 
 ## モデル
 
-役割ごとのモデルは事前分類と残量モードで決める。判断は「どの役割をどのモデルで起こすか」だけ。
+役割ごとのモデルは、`codex-develop.py request` が役割と入力（事前分類・設計判断・失敗・自動実行かどうか）と残量モードから格（最安・中位・上位・最上位）を決めて返す。格は提供元と構成によらず同じで、格からモデル名への対応は `references/model-tier-map.json` の 1 か所にある（下の表の括弧内は Claude での値）。本体の判断は `request` に渡す入力（「Role profile の選択」節）だけで、返った `model` を使い、新しい起動の `model` を文章の規則で計算し直さない。V と引き継ぎの判定役だけは `request` を通らず、表の値を明示する。
 
-| 役割 | 既定 | 上げる条件 |
+| 役割 | 既定の格 | 上げる条件 |
 |---|---|---|
-| W（実行役。`dev-workflow:worker`） | `sonnet` | `opus`: 記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含む、実行側が原因の失敗ループでの昇格、または事前分類の 4 分類（聖域パス・マージ権限・層間契約・課金/法務。正本は `references/pre-classification.md`、ここに再掲しない）に当たる。**W の上限は `opus` で、`model: fable` の W は `scripts/agent-model-guard.sh` に拒否される** |
-| R1（読んで判断する役） | `opus` | 仕様の対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` を付けない。聖域パスだけでは上げない） |
-| G（`dev-workflow:gate-runner`） | `sonnet` | 上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う |
-| V（画面確認役。`general-purpose`） | `sonnet` | 上げない |
-| 引き継ぎの判定役（`needs-carryover-judge` を受けて本体が起こす） | `opus` | 上げも下げもしない（種別は `dev-workflow:decider`。残量モードによらず `opus` を明示する）。`SHARED_BUDGET_MODE=depleted` のときは起こさない（「判断できない」の記録を投稿して主に聞く側に倒す。(4) の needs-carryover-judge） |
-| G が要求するレビュアー（読んで判断する役） | `opus` | 既定の種別は `dev-workflow:reviewer`。レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `subagent_type: dev-workflow:decider`（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では adapter が返した model に残量上限を適用した値を使い、推奨モデルは参考値。(4) の ③） |
+| W（実行役。`dev-workflow:worker`） | 中位（`sonnet`） | 上位（`opus`）: 記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含む、実行側が原因の失敗ループでの昇格、または事前分類の 4 分類（聖域パス・マージ権限・層間契約・課金/法務。正本は `references/pre-classification.md`、ここに再掲しない）に当たる。**W の上限は `opus` で、`model: fable` の W は `scripts/agent-model-guard.sh` に拒否される** |
+| R1（読んで判断する役） | 上位（`opus`） | 仕様の対象がマージ条件・層間契約・課金/法務に触れるときは `--pre-class` を渡し、返った `role: decider` で `subagent_type: dev-workflow:decider` として spawn する（`general-purpose` に `model: fable` を付けない。聖域パスだけでは上げない） |
+| G（`dev-workflow:gate-runner`） | 中位（`sonnet`） | 上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う |
+| V（画面確認役。`general-purpose`） | 中位（`sonnet`） | 上げない。`request` を通らない |
+| 引き継ぎの判定役（`needs-carryover-judge` を受けて本体が起こす） | 上位（`opus`） | 上げも下げもしない（種別は `dev-workflow:decider`。`request` を通らず、残量モードによらず `opus` を明示する）。起こさない条件は (4) の needs-carryover-judge |
+| G が要求するレビュアー（読んで判断する役） | 上位（`opus`） | 既定の種別は `dev-workflow:reviewer`。レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `--pre-class` を渡し、返った `role: decider` で `subagent_type: dev-workflow:decider` として起動する（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では `request` が返した `model` を使い、推奨モデルは参考値。(4) の ③） |
 
 W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 本も無く、昇格ラダーの Sonnet 段が構造的に通っていなかったため。W は事前分類と失敗ループで `opus` まで上がる。W の上限を `opus` にしたのは、Fable が消費するのはターン数（会話履歴の cache 読込）で、実装・修正ループは 1 件で数十〜数百ターン回るため。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担う。読んで判断する役（R1・レビュアー）が Fable に当たるときは `dev-workflow:decider` で起こす — Fable を渡せる `subagent_type` はこれだけで、判定は `scripts/agent-model-guard.sh` が行う。
 
-残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が、上の表の既定と昇格の上限を決める。値ごとの効果と両者が食い違ったときの扱いは `references/decision-criteria.md` の残量モードと共有枠モードの表が正本で、ここに再掲しない。
+残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が、上の表の既定と昇格の上限を決める（新しい起動への適用は `request` が行う）。値ごとの効果と両者が食い違ったときの扱いは `references/decision-criteria.md` の残量モードと共有枠モードの表が正本で、ここに再掲しない。
 
 昇格トリップワイヤーは失敗の原因側だけを上げるラダーとして残す（ラダーの正本は `templates/escalation-tripwires.md`）: 同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直したと W が return したら、本体は失敗の原因が判断側（指示を解釈できなかった・指示自体が外れていた）か実行側（指示どおりやって結果が違う）かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。decider の `model` の段（1 回目の失敗は `opus`、2 回目で判断側の失敗なら `fable`）は `templates/escalation-tripwires.md` を Read して従う。判断側なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせ、実行側なら W を `opus` で再開する（W の上限は「モデル」節の表の W の行（`opus`））。残量モードと共有枠モードの上限が先に効く。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格の理由にはならず、モデルは変えない（そのあとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本）。規模超過（編集対象 5 ファイル超・作業項目が 2 回増えた）を W が return したら、本体が change / 子 issue（エピック化）に分割する。
 

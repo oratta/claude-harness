@@ -150,7 +150,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
   row="$(grep -F '| G が要求するレビュアー（読んで判断する役） |' "$DEVELOP")"
   [ -n "$row" ] || { echo "reviewer model row missing"; return 1; }
   echo "$row" | grep -qF '従来経路では G の `needs-reviewer` の推奨モデルに従う'
-  echo "$row" | grep -qF 'adapter 経路では adapter が返した model に残量上限を適用した値を使い'
+  echo "$row" | grep -qF 'adapter 経路では `request` が返した `model` を使い'
   echo "$row" | grep -qF '推奨モデルは参考値'
 }
 

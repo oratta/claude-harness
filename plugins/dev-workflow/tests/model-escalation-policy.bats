@@ -170,6 +170,66 @@ setup() {
   awk 'index($0,"## モデル")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL" | grep -q 'pre-classification.md'
 }
 
+# --- develop の「モデル」節は規則の説明と request への参照（model-tier-resolution, #614） ---
+
+model_section() {
+  awk 'index($0,"## モデル")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL"
+}
+
+@test "model section: the role table states tiers with the Claude value in parentheses" {
+  sec="$(model_section)"
+  echo "$sec" | grep -F '| W（実行役。' | grep -qF '| 中位（`sonnet`） | 上位（`opus`）:'
+  echo "$sec" | grep -F '| R1（読んで判断する役） |' | grep -qF '| 上位（`opus`） |'
+  echo "$sec" | grep -F '| G（`dev-workflow:gate-runner`） |' | grep -qF '| 中位（`sonnet`） |'
+  echo "$sec" | grep -F '| G が要求するレビュアー' | grep -qF '| 上位（`opus`） |'
+  echo "$sec" | grep -qF 'W の上限は `opus`'
+  echo "$sec" | grep -F '| R1（読んで判断する役） |' | grep -qF 'dev-workflow:decider'
+  echo "$sec" | grep -F '| G が要求するレビュアー' | grep -qF 'dev-workflow:decider'
+}
+
+@test "model section: V and the carryover judge do not go through request" {
+  sec="$(model_section)"
+  echo "$sec" | grep -F '| V（画面確認役。' | grep -F '中位（`sonnet`）' | grep -qF '`request` を通らない'
+  echo "$sec" | grep -F '| 引き継ぎの判定役' | grep -F '上位（`opus`）' | grep -qF '`request` を通らず'
+}
+
+@test "model section: new spawns use the model request returned and are not recalculated" {
+  sec="$(model_section)"
+  echo "$sec" | grep -qF 'codex-develop.py request'
+  echo "$sec" | grep -qF '新しい起動の `model` を文章の規則で計算し直さない'
+}
+
+@test "model section: budget modes are named but their value-by-value effects stay in decision-criteria" {
+  sec="$(model_section)"
+  echo "$sec" | grep -qF 'FABLE_BUDGET_MODE'
+  echo "$sec" | grep -qF 'SHARED_BUDGET_MODE'
+  echo "$sec" | grep -qF 'references/decision-criteria.md'
+  ! echo "$sec" | grep -qE 'abundant|reserve|exhausted|throttled|depleted' || return 1
+}
+
+@test "model section: no route-by-route model names per configuration" {
+  [ "$(model_section | grep -cE 'claude-write-codex-review|codex-standard')" -eq 0 ]
+}
+
+@test "role profile section: request gets the tier inputs on every route, including Claude default" {
+  sec="$(awk 'index($0,"## Role profile の選択")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL")"
+  echo "$sec" | grep -qF 'Claude 既定の経路を含む全経路'
+  for flag in '--pre-class' '--design-judgment' '--failure' '--unmanned'; do
+    echo "$sec" | grep -qF -- "$flag" || { echo "missing $flag"; return 1; }
+  done
+  echo "$sec" | grep -qF '`role: decider`'
+  for field in requested_model tier_reason executed_tier tier_cap; do
+    echo "$sec" | grep -qF "\`$field\`" || { echo "missing $field"; return 1; }
+  done
+}
+
+@test "role profile section: a resume calls request again and compares tiers without reselecting" {
+  sec="$(awk 'index($0,"## Role profile の選択")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL")"
+  echo "$sec" | grep -qF '同じ phase と入力で `request` を呼び直し'
+  echo "$sec" | grep -qF 'thread の格'
+  echo "$sec" | grep -qF '選び直しには使わない'
+}
+
 # --- バージョン ---
 
 @test "skills: develop SKILL.md is at least 2.0.0 and gate SKILL.md is above 1.4.0" {
