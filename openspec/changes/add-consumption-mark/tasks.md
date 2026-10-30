@@ -13,7 +13,7 @@
 
 ## 3. 実機確認（マージ前）
 
-- [ ] 3.1 `claude --plugin-dir <この worktree の plugins/dev-workflow>` で、小さな検証用 issue を記録先に develop を 1 回回し、flatmate の `scripts/burn_consumption.py <記録先>`（flatmate main に入っている）の出力に `stage`・`attempt`・`account` が欠測でない行が 1 行以上あることを確かめ、結果を PR の動作確認ポイントと #1158 に書く。既定の W の行は工程・試行が欠測になるのが正しい。確認できない事情があるときだけ、理由と実行する人・時期を PR 本文に書いて後ろ倒しにする
+- [x] 3.1 `claude --plugin-dir <この worktree の plugins/dev-workflow>` で、小さな検証用 issue を記録先に develop を 1 回回し、flatmate の `scripts/burn_consumption.py <記録先>`（flatmate main に入っている）の出力に `stage`・`attempt`・`account` が欠測でない行が 1 行以上あることを確かめ、結果を PR の動作確認ポイントと #1158 に書く。既定の W の行は工程・試行が欠測になるのが正しい。確認できない事情があるときだけ、理由と実行する人・時期を PR 本文に書いて後ろ倒しにする。結果（2026-10-31）: `claude --plugin-dir` では起動していない。本体がこのブランチの SKILL.md の規約を読んで印を書いた実行で確かめた。この worktree で `python3 /Users/oratta/orca/workspaces/flatmate/epic-codex/scripts/burn_consumption.py 1158` を実行し、`claude_work` の行 `consumer=W-1158-finish stage=finish attempt=1 account=claude:default`（ほか `W-1158-spec-split` は spec/3/claude:default、`R1-1158-3` は spec-review/3/claude:default）に欠測が無いことを確かめた。Codex の 2 行（印を足す前の記録）と `claude_manage` の 1 行は `account` が欠測のまま
 
 ## 4. 変更の記録
 
