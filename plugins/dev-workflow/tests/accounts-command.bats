@@ -251,3 +251,53 @@ assert s["enabled"] is False and s["securestorage"]==sys.argv[2], s
 ' "$CLAUDE_ACCOUNTS_FILE" "${WORK}/other"
   [ "$status" -eq 0 ]
 }
+
+# 全角の id は UTF-8 ロケールの bash 3.2（macOS の /bin/bash）では照合順で [!A-Za-z0-9-] をすり抜ける。
+# ロケールを明示して /bin/bash で走らせ、LC_ALL=C のテスト環境でも修正前に落ちるようにする。
+@test "add: a full-width id is rejected under a UTF-8 locale, ascii ids still pass" {
+  printf '{"schema":1,"accounts":[]}\n' > "$CLAUDE_ACCOUNTS_FILE"
+  LC_ALL=en_US.UTF-8 run /bin/bash "$CMD" add ｂ
+  [ "$status" -eq 2 ]
+  [ ! -e "${CLAUDE_ACCOUNTS_HOME}/ｂ" ]
+  LC_ALL=en_US.UTF-8 run /bin/bash "$CMD" add b
+  [ "$status" -eq 0 ]
+  LC_ALL=en_US.UTF-8 run /bin/bash "$CMD" add work-2
+  [ "$status" -eq 0 ]
+  LC_ALL=en_US.UTF-8 run /bin/bash "$CMD" off ｂ
+  [ "$status" -eq 2 ]
+}
+
+@test "add: --help and -h print usage on stdout, exit 0, and change nothing" {
+  printf '{"schema":1,"accounts":[]}\n' > "$CLAUDE_ACCOUNTS_FILE"
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  for opt in --help -h; do
+    run --separate-stderr "$CMD" add "$opt"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"usage: accounts.sh"* ]]
+    [ -z "$stderr" ]
+  done
+  cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  [ ! -e "${CLAUDE_ACCOUNTS_HOME}" ]
+}
+
+@test "add: --label in the id position exits 2 and changes nothing" {
+  printf '{"schema":1,"accounts":[]}\n' > "$CLAUDE_ACCOUNTS_FILE"
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  run "$CMD" add --label
+  [ "$status" -eq 2 ]
+  run "$CMD" add --label X
+  [ "$status" -eq 2 ]
+  cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/before"
+  [ ! -e "${CLAUDE_ACCOUNTS_HOME}" ]
+}
+
+@test "top-level --help prints usage on stdout; usage errors still go to stderr" {
+  run --separate-stderr "$CMD" --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"usage: accounts.sh"* ]]
+  [ -z "$stderr" ]
+  run --separate-stderr "$CMD" frobnicate
+  [ "$status" -eq 2 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"usage: accounts.sh"* ]]
+}
