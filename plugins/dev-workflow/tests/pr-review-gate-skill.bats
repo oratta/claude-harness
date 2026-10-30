@@ -662,7 +662,7 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
 @test "nonblocking triage (#985): stage A goes back to W only in round 1 and never opens another round" {
   a="$(nonblocking_para '段 A（')"
   [ -n "$a" ] || { echo "no stage A paragraph"; return 1; }
-  has_all "$a" 'この PR の diff が触れたファイルの中に収まる' '`agent-review:failed`' '段 A・この PR で直す' \
+  has_all "$a" '直さないと受け入れ条件' '`agent-review:failed`' '段 A・この PR で直す' \
     '順 2〜4 の指摘と同じに扱う' '次の周を開けず' '段 B から当てる'
   # 段 A だけで戻した failed ではモデルを上げない（手順 2-2）
   s22="$(awk '/^#### 2-2\. /{f=1} f&&/^## /{exit} f' "$TRIAGE")"
@@ -670,6 +670,66 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   # 段 A だけの failed も、W の修正後は前提確認と重さ判定から
   inp="$(awk '/^### この段で起こされたときの入力/{f=1;next} /^##/{f=0} f' "$TRIAGE")"
   echo "$inp" | grep -F 'failed の `次の段:`' | grep -qF '段 A だけ'
+}
+
+@test "acceptance scope (#1389): stage A takes only findings the acceptance criteria need, or the three exceptions" {
+  row="$(grep -E '^\| A \|' "$TRIAGE")"
+  has_all "$row" '直さないと受け入れ条件を満たせないか' '例外 3 種に当たるか'
+  a="$(nonblocking_para '段 A（')"
+  # 受け入れ条件の範囲は順 2 と同じ
+  has_all "$a" '直さないと受け入れ条件（記録先の受け入れ条件、またはこの PR の change の delta spec' \
+    '順 2 と同じ範囲' '安全機構の穴' 'データ破壊' '無言の機能不全' \
+    '今の PR で直さず段 B から当てる'
+  # 古い定義（触ったファイルの中で直せるなら直す）が残っていない
+  ! grep -nE '触れたファイルの中に収まる|変えたファイルの中で直せる|受け入れ条件の外でも' "$TRIAGE" || return 1
+}
+
+@test "acceptance scope (#1389): proposals for new parts are out of scope at any size, except the three exceptions" {
+  a="$(nonblocking_para '段 A（')"
+  has_all "$a" '受け入れ条件も delta spec も求めていない新しい部品・機能を足す提案は、行数によらず範囲外' \
+    '今の PR で直せるのは例外 3 種に当たるときだけ'
+}
+
+@test "acceptance scope (#1389): the mark is only a reference, G decides, and a missing mark gets no supplement" {
+  a="$(nonblocking_para '段 A（')"
+  has_all "$a" '`受け入れ条件の要否`' '参考にとどめ' 'G の照合' '印が無い指摘は G が' '補足を頼まず' \
+    '三表の機械照合の対象にも足さない' 'マージを止めるかの判定（全周共通）を変えない'
+}
+
+@test "acceptance scope (#1389): stage-A-only failed explains itself without the old touched-files reason" {
+  s22="$(awk '/^#### 2-2\. /{f=1} f&&/^## /{exit} f' "$TRIAGE")"
+  ! echo "$s22" | grep -qF 'その PR の範囲で直せる止めない指摘' || return 1
+  echo "$s22" | grep -qF '戻す中身が止めない指摘で'
+}
+
+@test "acceptance scope (#1389): records name the acceptance criterion or the exception for stages A and row 4" {
+  a="$(nonblocking_para '段 A（')"
+  r="$(nonblocking_para '振り分けの記録')"
+  has_all "$a" '要る受け入れ条件の ID か delta spec の要件名、または当たる例外 3 種のどれか'
+  has_all "$r" '要る受け入れ条件の ID か delta spec の要件名、または当たる例外 3 種のどれか'
+  ret="$(grep -F '仕分け（指摘を受け取ったすべての周の return で必須' "$TRIAGE")"
+  has_all "$ret" '段 A は「この PR で直す」と、要る受け入れ条件の ID か delta spec の要件名、または当たる例外 3 種のどれか' \
+    '順 4 は W の記録「受け入れ条件の外・その場で直した・直し方 N 行」と当たる例外 3 種のどれか'
+  row4="$(triage_row_section 4)"
+  has_all "$row4" 'G は仕分け欄に、当てた例外 3 種のどれかもあわせて書く'
+}
+
+@test "acceptance scope (#1389): the brief hands over the full criteria and the block asks for the mark on every finding" {
+  entry="$(awk '/^## 入口/{f=1;next} /^## /{f=0} f' "$REVIEWER_BRIEF")"
+  has_all "$entry" '区画の有無によらず' '記録先の受け入れ条件の全文'
+  blk="$(reviewer_block)"
+  has_all "$blk" '受け入れ条件の要否: `要る: <受け入れ条件 ID または delta spec の要件名>`' '`要らない`' \
+    '行数によらず `要らない` にする' '`要らない` の指摘も省かない' \
+    '例外 3 種に当たることは根拠の欄に書く'
+  # 根拠は引用か例外 3 種のどれかで、引用できても例外 3 種なら併記する
+  echo "$blk" | grep -E '^- 根拠:' | grep -qF '引用できる指摘でも例外 3 種に当たれば併記する'
+  # 書式の順: 根拠の次に要否を置く
+  echo "$blk" | grep -E '^- ' | grep -A1 -E '^- 根拠:' | grep -qE '^- 受け入れ条件の要否:'
+  # Codex の読み替え表と README の列挙
+  s="$(awk '/^#### 2-1\. /{f=1} f&&/^## /{exit} f' "$REVIEWER_BRIEF")"
+  row="$(echo "$s" | grep -E '^\| （対応する欄が無い） \| 受け入れ条件の要否 \|')"
+  has_all "$row" '書式ブロックを貼った指示文で書かせる' '欠けていれば G が決める'
+  grep -qF '固定書式（深刻度・検証・根拠・受け入れ条件の要否・場所' "${PLUGIN_DIR}/README.md"
 }
 
 @test "nonblocking triage (#985): stage B sorts by when the condition holds and asks the owner only about the condition" {
@@ -805,6 +865,7 @@ triage_row_section() {
   echo "$t" | grep -E '^\| 2 \|' | grep -qF '受け入れ条件の中'
   echo "$t" | grep -E '^\| 3 \|' | grep -qF '一覧の一致'
   echo "$t" | grep -E '^\| 4 \|' | grep -qF '今直す 3 条件'
+  echo "$t" | grep -E '^\| 4 \|' | grep -qF '根拠が例外 3 種'
   echo "$t" | grep -E '^\| 5 \|' | grep -qF '主に'
   echo "$t" | grep -E '^\| 6 \|' | grep -qF '決める役'
 }
@@ -854,6 +915,16 @@ triage_row_section() {
   echo "$r" | grep -qF '受け入れ条件の外・その場で直した・直し方 N 行'
   other="$(echo "$r" | grep -oE '[0-9]+ 行' | grep -v '^30 行$' || true)"
   [ -z "$other" ] || { echo "other thresholds: $other"; return 1; }
+}
+
+@test "acceptance scope (#1389): row 4 is limited to the three exceptions and G decides them regardless of the evidence field" {
+  r="$(triage_row_section 4)"
+  has_all "$r" '止める判定の根拠が例外 3 種（安全機構の穴・データ破壊・無言の機能不全）に当たる指摘だけ' \
+    '例外 3 種に当たるかは、根拠欄の書き方によらず G が決める' \
+    '直し方の行数によらず順 4 に当てず' '順 2・順 3 に当たらなければ順 5 に当てる' \
+    '今直す 3 条件'
+  # 30 行の語は順 4 の節だけに出る
+  [ "$(grep -c '30 行' "$TRIAGE")" -eq "$(echo "$r" | grep -c '30 行')" ]
 }
 
 @test "triage (#354): row 5 asks the owner in the same round with the four points" {
@@ -1176,7 +1247,8 @@ step3c_body() {
   line="$(step3c_body | grep -F '唯一の例外')"
   echo "$line" | grep -qF '主への質問だけ'
   echo "$line" | grep -qF '前回の合格部分を流用しない'
-  echo "$line" | grep -qF 'gate-runner.md'
+  echo "$line" | grep -qF 'stages/triage.md'
+  echo "$line" | grep -qF 'W の修正後の再レビュー'
   for w in '手順 2 のレビュー' '手順 4 の証拠' '仕様宣言'; do
     echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
   done
