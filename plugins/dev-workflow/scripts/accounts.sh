@@ -28,7 +28,7 @@ ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accou
 ACCOUNTS_HOME="${CLAUDE_ACCOUNTS_HOME:-$HOME/.claude-accounts}"
 
 usage() {
-  cat >&2 <<'USAGE'
+  cat <<'USAGE'
 usage: accounts.sh list
        accounts.sh add <id> [--label <label>]
        accounts.sh off <id>
@@ -39,16 +39,18 @@ usage: accounts.sh list
 USAGE
 }
 
-die_usage() { printf '%s\n' "$1" >&2; usage; exit 2; }
+die_usage() { printf '%s\n' "$1" >&2; usage >&2; exit 2; }
 
 check_id() {
+  # bash 3.2 + UTF-8 ロケールでは [!A-Za-z0-9-] が照合順で評価され、全角の英数字が通る。
+  local LC_ALL=C
   case "$1" in
     ""|*[!A-Za-z0-9-]*) die_usage "invalid id: $1" ;;
   esac
   [ "${#1}" -le 32 ] || die_usage "id is too long (max 32)"
 }
 
-[ $# -ge 1 ] || { usage; exit 2; }
+[ $# -ge 1 ] || { usage >&2; exit 2; }
 CMD="$1"; shift
 ID=""
 LABEL=""
@@ -65,6 +67,10 @@ case "$CMD" in
     ;;
   add)
     [ $# -ge 1 ] || die_usage "add requires <id>"
+    case "$1" in
+      -h|--help) usage; exit 0 ;;
+      --label) die_usage "add requires <id> before --label" ;;
+    esac
     ID="$1"; shift
     while [ $# -gt 0 ]; do
       case "$1" in
