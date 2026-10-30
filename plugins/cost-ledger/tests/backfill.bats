@@ -1207,6 +1207,35 @@ MERGE=(--pr 300 --branch feat/a --trigger マージ)
   cmp "$IN" "$OUT"
 }
 
+@test "timeline --backfill: an existing issue close row is not stacked again by a trigger carrying a failure mark" {  # 既存行 issue クローズ（T+5 秒）に、照会失敗印つきの trigger（後追いが渡す形）を渡しても本文はそのまま（#982）
+  add_a r1 00:40:00 1000000
+  one_row_body "issue クローズ" $((T + 5)) > "$IN"
+  tl --issue 12 --trigger "issue クローズ+PR 照会失敗" --at "$T" --backfill --repo "$CWD" < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
+@test "timeline --backfill: an existing close row marked PR query failed is not stacked again by a marked trigger" {  # 既存行 issue クローズ+PR 照会失敗 に、同じ印つきの trigger を渡しても本文はそのまま（#982）
+  add_a r1 00:40:00 1000000
+  one_row_body "issue クローズ+PR 照会失敗" $((T + 5)) > "$IN"
+  tl --issue 12 --trigger "issue クローズ+PR 照会失敗" --at "$T" --backfill --repo "$CWD" < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
+@test "timeline --backfill: an existing close row marked child query failed is not stacked again by a marked trigger" {  # 既存行 issue クローズ+子 issue 照会失敗 に、印つきの trigger を渡しても本文はそのまま（#982）
+  add_a r1 00:40:00 1000000
+  one_row_body "issue クローズ+子 issue 照会失敗" $((T + 5)) > "$IN"
+  tl --issue 12 --trigger "issue クローズ+子 issue 照会失敗" --at "$T" --backfill --repo "$CWD" < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
+@test "timeline --backfill: an existing merge row is not stacked again by a trigger carrying a failure mark" {  # 既存行 マージ（T+5 秒）に、印つきの trigger を渡しても本文はそのまま（#982）
+  add_a r1 00:40:00 1000000
+  add_a r2 00:55:00 1000000
+  one_row_body マージ $((T + 5)) > "$IN"
+  tl --pr 300 --branch feat/a --trigger "マージ+PR 照会失敗" --at "$T" --backfill < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
 @test "timeline --backfill: without a row of the same trigger the row is added" {  # PR コメント（T−600 秒・$1.00）だけの本文に、T 以前の累計 $3.00 で積むと 2 行目が マージ・$3.00 (+2.00)
   add_a r1 00:30:00 1000000
   add_a r2 00:40:00 1000000

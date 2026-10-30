@@ -2845,7 +2845,9 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
         return 3
     if args.backfill:
         # 後追いだけの 2 つの判定（spec cost-ledger-timeline）。行を足す前に見る
-        if timeline_has_trigger_near(parse_timeline(body), args.trigger, at_ms):
+        # 後追いの --trigger には照会失敗の印が付くことがある（例: issue クローズ+PR 照会失敗）。
+        # 既存の行と照らすのは先頭の呼び名（マージ / issue クローズ）だけ
+        if timeline_has_trigger_near(parse_timeline(body), args.trigger.split("+")[0], at_ms):
             sys.stdout.write(body)  # 同じ出来事の行が既にある。合計の行も足さない
             return 0
         if nothing:
