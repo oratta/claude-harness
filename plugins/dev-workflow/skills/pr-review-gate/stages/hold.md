@@ -1,10 +1,10 @@
 # 保留 — pr-review-gate
 
-`$R` = `<owner>/<repo>`、`$N` = PR 番号。他の手順（パスは pr-review-gate の直下から）: `stages/prepare.md`（1・2・2-0）、`stages/triage.md`（2-1・2-2）、`declarations.md`（3・3-b）、`stages/carryover.md`（3-c）、`stages/pass.md`（4・5）。
+`$R` = `<owner>/<repo>`、`$N` = PR 番号。他の手順（パスは pr-review-gate の直下から）: `stages/prepare.md`（1・2・2-0）、`stages/triage.md`（2-1・2-2）、`declarations.md`（3・3-b）、`stages/carryover.md`（3-c）、`stages/pass-verify.md`（4）、`stages/pass.md`（5）。
 
 ## 入口
 
-手順 3 で「主のリスク許容が必要」と判定し 3-c の引き継ぎが成り立たなかったとき、手順 4 で主に動作確認を依頼したとき、仕分け表の順 5 に当たったとき、保留中の PR を再開するときに読む。手順 3 の issue で承認済みを当てた宣言はこの段に来ない（`stages/pass.md` の手順 4・5 へ進む）。
+手順 3 で「主のリスク許容が必要」と判定し 3-c の引き継ぎが成り立たなかったとき、手順 4 で主に動作確認を依頼したとき、仕分け表の順 5 に当たったとき、保留中の PR を再開するときに読む。手順 3 の issue で承認済みを当てた宣言はこの段に来ない（手順 4・5 へ進む）。
 
 ## 手順
 

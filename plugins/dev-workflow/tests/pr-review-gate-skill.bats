@@ -12,21 +12,26 @@
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  DECLARATIONS="$BATS_TEST_TMPDIR/declarations-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/declarations.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$DECLARATIONS"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
   REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
   HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   HOLD="$BATS_TEST_TMPDIR/hold-all.md"
   cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" > "$HOLD"
   CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
   CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
   CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  d_stages="${PLUGIN_DIR}/skills/pr-review-gate/stages"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
   CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
-  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
-  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
   PASS_AUTH="${BATS_TEST_TMPDIR}/pass-auth.md"
   cat "$PASS_STAGE" "$AUTH" > "$PASS_AUTH"
   TRIAGE_ALL="${BATS_TEST_TMPDIR}/triage-all.md"
@@ -1168,6 +1173,13 @@ step3c_body() {
   awk '/^#### 3-c\./{f=1} /^## G として/{f=0} f' "$CARRYOVER"
 }
 
+# 条件 3 の本文。元の回答が会話・親経由のときの確かめ直しは carryover-origin.md と形別のファイルにある
+cond3_all() {
+  step3c_body | grep '^3\. '
+  awk '/^## 条件 3 の確かめ直し/{f=1} /^## 4 行/{f=0} f' "$CARRYOVER_ORIGIN"
+  grep -hF '**引き継ぎのとき**' "$d_stages/authenticity-relayed.md" "$d_stages/authenticity-delegated.md"
+}
+
 @test "carryover (#441): the approval-needed template lists evidence files" {
   step3_body | grep -qF -- '- 根拠ファイル: <パス>, <パス>'
 }
@@ -1617,7 +1629,7 @@ step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_AUTH}"; }
 }
 
 @test "conversation reply (#721): 3-c condition 3 accepts a conversation reply and rechecks with the script" {
-  cond3="$(step3c_body | grep '^3\. ')"
+  cond3="$(cond3_all)"
   echo "$cond3" | grep -qF '会話で受領'
   echo "$cond3" | grep -qF 'owner-reply-check.sh'
   echo "$cond3" | grep -F '終了コード 0 でも' | grep -qF '同じ timestamp'
@@ -1635,7 +1647,7 @@ step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_AUTH}"; }
 }
 
 @test "conversation reply (#721): 3-c condition 3 rechecks the binding against the first declaration" {
-  cond3="$(step3c_body | grep '^3\. ')"
+  cond3="$(cond3_all)"
   echo "$cond3" | grep -F '最初の宣言' | grep -qF 'より後'
 }
 
@@ -1653,8 +1665,8 @@ issue_approved_section() { awk '/^#### issue で承認済み/{f=1} /^#### 3-b\./
   [ "$(grep -c 'issue で承認済み' "$DECLARATIONS")" -ge 1 ]
   sec="$(issue_approved_section)"
   [ -n "$sec" ] || { echo "section not found"; return 1; }
-  # 手順 3 の本文（step3_body）の中に置かれている
-  step3_body | grep -q '^#### issue で承認済み'
+  # 手順 3 の本文（step3_body）が節のファイルを指している
+  step3_body | grep -qF 'stages/issue-approved.md'
   echo "$sec" | grep -qF '資格情報への接触・安全ゲートの弱体化・エージェント権限の拡張の 3 分類だけ'
 }
 
@@ -1879,7 +1891,7 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
 }
 
 @test "relayed reply (#1059): 3-c condition 3 accepts a relayed record and rechecks with --relayed" {
-  cond3="$(step3c_body | grep '^3\. ')"
+  cond3="$(cond3_all)"
   echo "$cond3" | grep -qF '親経由で受領'
   echo "$cond3" | grep -qF 'owner-reply-check.sh --relayed'
   echo "$cond3" | grep -qF '真正性確認」の 1〜3'
@@ -1984,7 +1996,7 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
 }
 
 @test "delegated reply (#1293): 3-c condition 3 rechecks the delegated form with --delegated, not --relayed" {
-  cond3="$(step3c_body | grep '^3\. ')"
+  cond3="$(cond3_all)"
   echo "$cond3" | grep -qF '親経由で受領（委任）'
   echo "$cond3" | grep -qF 'owner-reply-check.sh --delegated'
   echo "$cond3" | grep -qF -- '`--relayed` で確かめ直さない'

@@ -23,7 +23,7 @@ version: 1.7.0
 | レビューの起動 | レビュー実行者（Codex / Task サブエージェント）を選び、起動して完了を確かめる | `stages/review-run.md` | 2-0 のあと、レビューを自分で起こす側（develop 以外の本体、従来経路の G） | レビュー結果を受け取ったら、指摘が残れば照合と指摘の振り分けの段、無ければ `declarations.md` |
 | レビュー担当向けの指示 | レビュアーに渡す指示ブロック・共通一覧契約・Codex の読み替え | `stages/reviewer-brief.md` | レビュアーを起こす側が指示を組み立てるとき | レビュアーが三表と指摘の一覧を返したら、起こした側はレビューの起動の段と同じ出口へ |
 | 照合と指摘の振り分け | マージを止めるかの判定・仕分け表・収束ルール・修正サイクルのモデル昇格 | `stages/triage.md`（develop の G は加えて `../develop/references/roles/gate-runner-triage.md`） | レビュー結果に指摘が残っているとき。W の修正後の再レビュー、決める役の裁定を受け取ったとき | 止める指摘が無くなれば `declarations.md`。修正サイクルは前提確認の段から、切り出しの確認は保留の段へ |
-| 合格処理 | 動作確認と、必須 4 点の API 実測・`agent-review:passed` の付与 | `stages/pass.md` | `declarations.md` の手順 3・3-b を投稿したあと | passed を付けたら終わり。主への依頼や許容待ちが残れば保留の段へ |
+| 合格処理 | 動作確認と、必須 4 点の API 実測・`agent-review:passed` の付与 | `stages/pass-verify.md` | `declarations.md` の手順 3・3-b を投稿したあと | passed を付けたら終わり。主への依頼や許容待ちが残れば保留の段へ |
 | 前の HEAD の許容の引き継ぎ | 手順 3-c。前の HEAD の許容を新しい HEAD に引き継げるかの判定 | `stages/carryover.md` | 手順 3 で許容が必要と判定し、前の HEAD の許容が記録済みのとき | 引き継げたら合格処理、引き継げなければ保留 |
 | 保留 | 主への保留依頼・復帰手順 | `stages/hold.md` | 主のリスク許容・動作確認・切り出しの確認が要るとき。保留中の PR を再開するとき | 復帰手順の表が指す段（合格処理・前提確認・宣言の書式・照合と指摘の振り分けのどれか） |
 
@@ -46,7 +46,7 @@ version: 1.7.0
 | 3 | 3. リスク宣言（positive affirmation・必須） | `declarations.md` |
 | 3-b | 3-b. 仕様宣言（positive affirmation・必須） | `declarations.md` |
 | 3-c | 3-c. 前の HEAD の許容の引き継ぎ | `stages/carryover.md` |
-| 4 | 4. 動作確認 | `stages/pass.md` |
+| 4 | 4. 動作確認 | `stages/pass-verify.md` |
 | 5 | 5. 合格処理 | `stages/pass.md` |
 | 6 | 6. 保留処理（リスク許容待ち / 動作確認依頼 / 切り出しの確認） | `stages/hold.md` |
 

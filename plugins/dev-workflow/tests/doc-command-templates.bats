@@ -222,7 +222,7 @@ install_fixture() {
 }
 
 @test "pass head block retrieves comments for the fixed SHA" {
-  pass_block 3
+  pass_block 1
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   [ "$output" = 'review: fixed HEAD' ]
@@ -230,7 +230,7 @@ install_fixture() {
 }
 
 @test "pass label block makes a draft ready before adding passed" {
-  pass_block 5
+  pass_block 3
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   ready="$(grep -n '^pr ready ' "$CALLS" | cut -d: -f1)"
@@ -240,7 +240,7 @@ install_fixture() {
 }
 
 @test "pass label block refuses an invalid draft response" {
-  pass_block 5
+  pass_block 3
   GH_DRAFT=unknown run bash "$SNIP"
   [ "$status" -eq 1 ]
   [[ "$output" == *'draft を取得できない'* ]] || return 1
@@ -248,7 +248,7 @@ install_fixture() {
 }
 
 @test "pass label block stops when ready fails" {
-  pass_block 5
+  pass_block 3
   GH_FAIL_READY=1 run bash "$SNIP"
   [ "$status" -eq 1 ]
   [[ "$output" == *'gh pr ready に失敗'* ]] || return 1

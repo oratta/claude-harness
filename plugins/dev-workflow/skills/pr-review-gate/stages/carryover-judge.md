@@ -15,7 +15,7 @@
 
 `gate-runner.md`「return の書式」の共通欄のうしろに続ける。
 
-- **許容済みの PR で HEAD が動いたとき**: 取り直しの手順 3 で再び「主のリスク許容が必要」になったら、主に聞く前に手順 3-c を試す。終了コード 4 で回す条件を満たし、使える判定の記録が無いときは、Status `needs-carryover-judge` で返す
+- **許容済みの PR で HEAD が動いたとき**: 取り直しの手順 3 で再び「主のリスク許容が必要」になったら、主に聞く前に pr-review-gate 手順 3-c を試す。終了コード 4 で回す条件を満たし、使える判定の記録が無いときは、Status `needs-carryover-judge` で返す
 
 ```markdown
 ### needs-carryover-judge のとき

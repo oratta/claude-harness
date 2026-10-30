@@ -15,8 +15,11 @@ setup() {
   W_COMMON="${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md"
   W_IMPL="${PLUGIN_DIR}/skills/develop/references/roles/worker/implement.md"
   W_FINISH="${PLUGIN_DIR}/skills/develop/references/roles/worker/finish.md"
-  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  DECLARATIONS="$BATS_TEST_TMPDIR/declarations-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/declarations.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$DECLARATIONS"
+  PASS_WORDING="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
 }
 
 # 「## <見出し>」で始まる節を、次の「## 」の手前まで切り出す（多バイトの見出しは index で比べる）
@@ -199,7 +202,10 @@ table5() { step5 | grep '^| '; }
 }
 
 @test "step 5: wording-sync row skips the review comment and measures four points" {
+  # 行は pass-wording.md を指し、4 点の本文はそのファイルの実測の文にある
   row="$(table5 | grep '^| `仕様化判断: する`＋`通し方: 文言合わせ` の行あり |')"
+  echo "$row" | grep -qF 'stages/pass-wording.md'
+  row="$(grep -F 'のコメントは照合しない。実測:' "$PASS_WORDING")"
   echo "$row" | grep -qE '仕様レビュー:` のコメントは照合しない'
   echo "$row" | grep -q '仕様レビュー: 省いた（文言合わせ。'
   echo "$row" | grep -q 'openspec/changes/archive/\*-<change-name>/specs/\*/spec.md'
@@ -234,10 +240,11 @@ table5() { step5 | grep '^| '; }
   [ "$first" -lt "$dec" ] && [ "$rev" -lt "$dec" ]
 }
 
-# 手順 5 に書かれた照合のコマンド（DEC= の行から、要件名の突き合わせの行まで）を抜き出して fixture で実行する。
+# 手順 5 の DEC= / WAY= の行と、pass-wording.md の FIXES= から要件名の突き合わせの行までを抜き出して fixture で実行する。
 # gh は fixture を返す偽物に差し替え、archive 済みの差分は一時ディレクトリに置く。
 light_cmds() {
-  step5 | LC_ALL=C awk '/^DEC=/{f=1} f{print} f && /^grep -h .*Requirement: /{exit}'
+  step5 | LC_ALL=C awk '/^(DEC|WAY)=/ || /^echo "\$WAY"$/'
+  LC_ALL=C awk '/^FIXES=/{f=1} f{print} f && /^grep -h .*Requirement: /{exit}' "$PASS_WORDING"
 }
 
 install_fake_gh() {

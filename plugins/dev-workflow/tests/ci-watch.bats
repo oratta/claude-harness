@@ -20,16 +20,19 @@ setup() {
   SCRIPT="${PLUGIN_DIR}/scripts/ci-watch.sh"
   REF="${PLUGIN_DIR}/references/ci-watch.md"
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
   HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   HOLD="$BATS_TEST_TMPDIR/hold-all.md"
   cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" > "$HOLD"
   CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
   CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
   CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
   CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
-  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
-  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
   DEVELOP="${PLUGIN_DIR}/skills/develop/SKILL.md"
   GATE_RUNNER="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   WORK="$(cd "$(mktemp -d)" && pwd -P)"
@@ -575,10 +578,11 @@ resume_section() {
   # 手順 5 は stages/pass.md、手順 6 は stages/hold.md に分かれた。pass.md の中で手順 5 の実測確認より後、
   # 手順 5 の後ろの節（G として動くとき）より前にあること、手順 6 の見出しが hold.md にあることで見る
   grep -q '^### 6\. 保留処理' "$HOLD"
-  after="$(grep -n '最後の実測確認は次の' "$PASS_STAGE" | head -1 | cut -d: -f1)"
-  before="$(grep -n '^## G として動くとき' "$PASS_STAGE" | head -1 | cut -d: -f1)"
+  local pass_core="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  after="$(grep -n '最後の実測確認は次の' "$pass_core" | head -1 | cut -d: -f1)"
+  before="$(grep -n '^## G として動くとき' "$pass_core" | head -1 | cut -d: -f1)"
   [ -n "$after" ] && [ -n "$before" ]
-  lines="$(grep -n 'run_in_background' "$PASS_STAGE" | cut -d: -f1)"
+  lines="$(grep -n 'run_in_background' "$pass_core" | cut -d: -f1)"
   [ -n "$lines" ]
   for l in $lines; do
     [ "$l" -gt "$after" ] && [ "$l" -lt "$before" ] || { echo "line $l out of range ($after, $before)"; return 1; }

@@ -20,9 +20,11 @@ setup() {
   CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
   CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
   CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
   CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
-  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
-  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
 }
 
 # 引き継ぎの節（見出し「## 保留で止まるときの引き継ぎ」から次の ## まで）

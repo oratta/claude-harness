@@ -12,21 +12,25 @@
 setup() {
   export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  DECLARATIONS="$BATS_TEST_TMPDIR/declarations-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/declarations.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$DECLARATIONS"
   PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
   REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
   REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
   TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
-  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  PASS_STAGE="$BATS_TEST_TMPDIR/pass-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-verify.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass-wording.md" > "$PASS_STAGE"
   HOLD_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   HOLD="$BATS_TEST_TMPDIR/hold-all.md"
   cat "$HOLD_CORE" "${PLUGIN_DIR}/skills/pr-review-gate/stages/hold-resume.md" > "$HOLD"
   CARRYOVER_CORE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md"
   CARRYOVER_JUDGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
   CARRYOVER_ORIGIN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-origin.md"
+  CARRYOVER_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge-run.md"
   CARRYOVER="$BATS_TEST_TMPDIR/carryover-all.md"
-  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
-  AUTH="${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md"
+  cat "$CARRYOVER_CORE" "$CARRYOVER_ORIGIN" "$CARRYOVER_RUN" "$CARRYOVER_JUDGE" > "$CARRYOVER"
+  AUTH="$BATS_TEST_TMPDIR/authenticity-all.md"
+  cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-relayed.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/authenticity-delegated.md" "${PLUGIN_DIR}/skills/pr-review-gate/stages/issue-approved.md" > "$AUTH"
   ROLES="${PLUGIN_DIR}/skills/develop/references/roles"
   WORKER="${ROLES}/worker.md"
   W_COMMON="${ROLES}/worker/common.md"
@@ -44,7 +48,7 @@ setup() {
   GATE_ALL="${BATS_TEST_TMPDIR}/gate-all.md"
   cat "$TRIAGE" "$SD/triage-summary.md" "$SD/triage-row3.md" "$SD/row3-list-format.md" "$SD/triage-nonblocking.md" "$SD/triage-failed.md" "$SD/triage-escalation.md" "$SD/convergence.md" > "$TRIAGE_ALL"
   cat "$PREPARE" "$SD/prepare-step1.md" "$SD/convergence.md" > "$PREPARE_ALL"
-  cat "$GATE" "$GATE_BODY" "$GATE_TRIAGE" "$TRIAGE_ALL" "$PREPARE_ALL" "$SD/pass.md" "$SD/hold.md" > "$GATE_ALL"
+  cat "$GATE" "$GATE_BODY" "$GATE_TRIAGE" "$TRIAGE_ALL" "$PREPARE_ALL" "$SD/pass-verify.md" "$SD/pass.md" "$SD/hold.md" > "$GATE_ALL"
 }
 
 # G の否定の検査は旧 role の分割先（本体向けを含む）と段のファイル全部で見る

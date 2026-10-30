@@ -1,6 +1,6 @@
 # 文言合わせの通し方（`stages/pass.md` の WAY が 1 以上）— pr-review-gate
 
-最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があるときに読む。`$DEC` は pass.md の値。
+最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があるときに読む。`$DEC` は `stages/pass.md` の値。
 
 ```bash
 FIXES=$(printf '%s\n' "$DEC" | grep '^直す文: ')             # 直す要件ごとに 1 行

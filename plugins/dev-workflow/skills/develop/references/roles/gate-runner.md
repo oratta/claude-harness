@@ -18,7 +18,7 @@ develop の本体が `subagent_type: dev-workflow:gate-runner` で名前付き�
 |---|---|
 | 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare.md` と `stages/prepare-step1.md`（adapter 経路はここで `needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/convergence.md`。入力は `stages/prepare.md` の「W の修正後の再レビュー」） |
 | 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md` と、その冒頭の表で当たる条件のファイル（`stages/triage-summary.md`・`stages/triage-row3.md`・`stages/triage-nonblocking.md`・`stages/triage-failed.md`・`stages/triage-escalation.md`）。一周目の要約と補足の結果は加えて `skills/develop/references/roles/gate-runner-triage.md`。戻した指摘が順 3 だけの修正のあとは加えて `stages/prepare-step1.md` |
-| 合格処理（手順 3・3-b・4・5。引き継ぎの判定の受領を含む） | `declarations.md` と `stages/pass.md`。条件で加える: 真正性確認に入るときは宣言の形のファイル（`stages/authenticity.md`、親経由は `stages/authenticity-relayed.md`、委任は `stages/authenticity-delegated.md`）、issue で承認済みを試すときは `stages/issue-approved.md`、文言合わせの通し方は `stages/pass-wording.md`、前の HEAD の許容があるときは `stages/carryover.md`（終了コード 4 で `needs-carryover-judge` を返すときは `stages/carryover-judge.md`、元の回答が会話・親経由なら `stages/carryover-origin.md`）、保留を返すときは `stages/hold.md` |
+| 合格処理（手順 3・3-b・4・5。引き継ぎの判定の受領を含む） | `declarations.md` と `stages/pass-verify.md`。手順 5 に進むときは `stages/pass.md`。条件で加える: 真正性確認に入るときは宣言の形のファイル（`stages/authenticity.md`、親経由は `stages/authenticity-relayed.md`、委任は `stages/authenticity-delegated.md`）、issue で承認済みを試すときは `stages/issue-approved.md`、文言合わせの通し方は `stages/pass-wording.md`、前の HEAD の許容があるときは `stages/carryover.md`（終了コード 4 で `needs-carryover-judge` を返すときは `stages/carryover-judge.md`、元の回答が会話・親経由なら `stages/carryover-origin.md`）、保留を返すときは `stages/hold.md` |
 | 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md` と `stages/hold-resume.md` |
 | 一括（従来経路）でレビューを自分で起こすとき | 上の表の全部と、`stages/review-run.md` とレビュアーに渡す `stages/reviewer-brief.md` |
 
@@ -62,7 +62,7 @@ G は前の段の会話を持たない。段の間で渡すものは次の PR �
 | レビューの三表と補足済み回数（補足を頼んだ時点で 1。コメントが無ければ 0） | 1 行目 `レビュー三表:` のコメント（`一周目の区画:` と `補足済み回数:` の行を持つ。補足の `needs-reviewer` を返す前に投稿する） | 照合と振り分け |
 | 振り分けの結果 | 既存の仕分けコメント | 照合と振り分け |
 
-段ごとの入力は、W の修正後の再レビューは `stages/prepare.md`、裁定・直し方の判定の受領と順 3 だけの修正のあとは `stages/triage.md`、保留の解除は `stages/hold-resume.md`、保留の解除のあとの合格処理は `stages/pass.md` の「G として動くとき（develop）」節の「この段で起こされたときの入力」に従う。レビュアーの要約か補足レビューの結果の受領は `skills/develop/references/roles/gate-runner-triage.md` の「レビュー要約の入力」に従う。
+段ごとの入力のうち、W の修正後の再レビューは `stages/prepare.md`、裁定・直し方の判定の受領と順 3 だけの修正のあとは `stages/triage.md`、保留の解除は `stages/hold-resume.md`、保留の解除のあとの合格処理は `stages/pass.md` の「G として動くとき（develop）」節の「この段で起こされたときの入力」に従う。レビュアーの要約か補足レビューの結果の受領は `skills/develop/references/roles/gate-runner-triage.md` の「レビュー要約の入力」に従う。
 
 従来経路（`レビュー経路: 従来`、または起動指示に行が無い）の G は手順 1〜5 と保留までを 1 体で続けてよい。Gate Result は `段: 一括（従来経路）`、`次の段: なし`。
 
