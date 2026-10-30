@@ -104,6 +104,62 @@ setup() {
   [[ "$output" == *":4:"* ]] || return 1
 }
 
+@test "guard: detects a plain run: value starting on the next line" {
+  fixture="${BATS_TEST_TMPDIR}/bad-next-line.yml"
+  {
+    echo 'steps:'
+    echo '  - run:'
+    printf '      echo "完了（sha=%sHEAD_SHA）"\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HEAD_SHA"* ]] || return 1
+  [[ "$output" == *":3:"* ]] || return 1
+}
+
+@test "guard: detects a bare expansion in a quoted run: continuation" {
+  fixture="${BATS_TEST_TMPDIR}/bad-quoted-continuation.yml"
+  {
+    echo 'steps:'
+    echo '  - run: "echo start;'
+    printf '      echo 完了（sha=%sHEAD_SHA）"\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HEAD_SHA"* ]] || return 1
+  [[ "$output" == *":3:"* ]] || return 1
+}
+
+@test "guard: detects a bare expansion in a plain run: continuation" {
+  fixture="${BATS_TEST_TMPDIR}/bad-plain-continuation.yml"
+  {
+    echo 'steps:'
+    echo '  - run: echo start;'
+    printf '      echo 完了（sha=%sHEAD_SHA）\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"HEAD_SHA"* ]] || return 1
+  [[ "$output" == *":3:"* ]] || return 1
+}
+
+@test "guard: ignores a sibling env: key after a list-item run: value" {
+  fixture="${BATS_TEST_TMPDIR}/sibling-env.yml"
+  {
+    echo 'steps:'
+    echo '  - run: echo ok'
+    echo '    env:'
+    printf '      MESSAGE: "完了（sha=%sHEAD_SHA）"\n' '$'
+  } > "$fixture"
+
+  run python3 "$SCANNER" "$fixture"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "guard: accepts the braced form inside a workflow run: block" {
   fixture="${BATS_TEST_TMPDIR}/good.yml"
   {
