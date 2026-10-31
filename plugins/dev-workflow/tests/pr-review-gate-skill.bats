@@ -2177,8 +2177,8 @@ triage_line() {
   has_all "$(grep -E '^\| A \|' "$TRIAGE")" '| この PR で直す |'
   has_all "$(grep -E '^\| B \|' "$TRIAGE")" '| 下の段 B の表 |'
   has_all "$(grep -E '^\| C \|' "$TRIAGE")" '| 下の段 C の表 |'
-  has_all "$(grep -E '^\| D \|' "$TRIAGE")" '| その issue に、受け入れ条件に足さない参考としてコメントで入れる |'
-  has_all "$(grep -E '^\| E \|' "$TRIAGE")" '| 見合えばエピックの外の新しい issue、見合わなければ捨てる |'
+  has_all "$(grep -E '^\| D \|' "$TRIAGE")" '| その issue に、受け入れ条件に足さない参考としてコメントで入れる。'
+  has_all "$(grep -E '^\| E \|' "$TRIAGE")" '| 見合えばエピックの外の新しい issue、見合わなければ捨てる。'
   has_all "$(grep -E '^\| — \|' "$TRIAGE")" '| 結果を段 C と段 D で使う |'
   # 段 E の本文: 見合えば issue、見合わなければ捨てる
   e="$(nonblocking_para '段 E（')"
