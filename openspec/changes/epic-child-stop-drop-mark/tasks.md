@@ -15,13 +15,13 @@
 
 ## 3. スクリプト
 
-- [ ] 3.1 `stop-judge.sh`: 止まりの JSON の `.text` に行頭 `止まった理由: ` の行があるのに `判断: 問いではない` を出したら、形の崩れとして exit 1 にする。触る範囲: plugins/dev-workflow/scripts/stop-judge.sh:202-206
+- [x] 3.1 `stop-judge.sh`: 止まりの JSON の `.text` に行頭 `止まった理由: ` の行があるのに `判断: 問いではない` を出したら、形の崩れとして exit 1 にする。触る範囲: plugins/dev-workflow/scripts/stop-judge.sh:202-206
 - [ ] 3.2 `epic-dispatch.sh`: ヘッダーのコメントに `stopped` / `resumed` が子の義務でないことを書く。動作は変えない。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:10、plugins/dev-workflow/scripts/epic-dispatch.sh:147-150、plugins/dev-workflow/scripts/epic-dispatch.sh:171
 
 ## 4. テスト
 
 - [ ] 4.1 手順書の文言の検査を更新する（`mark stopped` / `mark resumed` が無いこと、定型の行があること。`# spec:` のコメントの要件名も新しい名前に直す）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:3780-3799、plugins/dev-workflow/tests/epic-dispatch.bats:3856-3879（CI の HEAD の行。移すと必ず落ちる）、plugins/dev-workflow/tests/epic-dispatch.bats:3886、plugins/dev-workflow/tests/epic-dispatch.bats:3968、plugins/dev-workflow/tests/epic-dispatch.bats:4017（見込みの行）、plugins/dev-workflow/tests/epic-dispatch.bats:4102-4103（対象の文）、plugins/dev-workflow/tests/epic-dispatch.bats:4129（`理由:` の取り元）、plugins/dev-workflow/tests/epic-dispatch.bats:6768、plugins/dev-workflow/tests/ci-watch.bats:477、plugins/dev-workflow/tests/ci-watch.bats:488、plugins/dev-workflow/tests/develop-skill.bats:541、plugins/dev-workflow/tests/develop-skill.bats:1220、plugins/dev-workflow/tests/develop-skill.bats:1526、plugins/dev-workflow/tests/develop-skill.bats:1669-1674、plugins/dev-workflow/tests/parent-merge.bats:69、plugins/dev-workflow/tests/parent-merge.bats:114
-- [ ] 4.2 `stop-judge.bats` に `問いではない` の 2 シナリオを足す（`止まった理由:` の行があると exit 1、行が無ければ今どおり）。触る範囲: plugins/dev-workflow/tests/stop-judge.bats（節は `問いではない` の検査）
+- [x] 4.2 `stop-judge.bats` に `問いではない` の 2 シナリオを足す（`止まった理由:` の行があると exit 1、行が無ければ今どおり）。触る範囲: plugins/dev-workflow/tests/stop-judge.bats（節は `問いではない` の検査）
 
 ## 5. 記録と受け入れの確認
 

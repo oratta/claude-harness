@@ -474,3 +474,21 @@ not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の
   run judge 400 11
   [ "$status" -eq 1 ]; [ -z "$output" ]
 }
+
+# spec: dev-workflow-develop（`止まった理由:` の行がある止まりを問いでないとして落とさない）
+
+@test "stop-judge json: not-a-question is malformed when the statement ends with a stop-reason line" {
+  not_a_question
+  printf '[]' > "$STUB_CFG/comments_11"
+  run judge 400 11 "$(stop_json '{text: "マージを待つ。\n止まった理由: PR のマージ待ち（human-merge）: https://github.com/o/r/pull/9"}')"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+}
+
+@test "stop-judge json: not-a-question stays accepted when the statement has no stop-reason line at the head of a line" {
+  not_a_question
+  printf '[]' > "$STUB_CFG/comments_11"
+  run judge 400 11 "$(stop_json '{text: "完了の報告。文中の 止まった理由: は行頭ではない"}')"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = '判断: 問いではない' ]
+  [ "${lines[3]}" = '記録: なし' ]
+}
