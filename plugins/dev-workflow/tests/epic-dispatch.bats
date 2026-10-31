@@ -4016,7 +4016,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -F '照らす前に' | grep -qF '既定値で投稿'
   printf '%s\n' "$p" | grep -F 'OWNER・MEMBER・COLLABORATOR' | grep -qF '最新の 1 件'
   printf '%s\n' "$p" | grep -qF '(a) 合計の見込みが権限以下'
-  printf '%s\n' "$p" | grep -qF '(b) 記録の上限が権限より小さい'
+  printf '%s\n' "$p" | grep -qF '(b) 今回の止まった理由の上限が権限より小さい'
   printf '%s\n' "$p" | grep -F '数字として読めない' | grep -qF '主に上げる'
   printf '%s\n' "$p" | grep -qF '続ける。新しい上限 <権限>（親の権限。<権限のコメントの URL>）'
   printf '%s\n' "$p" | grep -qF 'reply --as parent'
@@ -5541,7 +5541,7 @@ resolve_pass() {
   p="$(run_section | grep -E '^\*\*子の状態の正本\*\*')"
   printf '%s\n' "$p" | grep -qF 'Orca のボードの列とコメント欄は、記録を書いたあとに写したもの'
   printf '%s\n' "$p" | grep -qF 'Orca の画面で印を手で変えても、親の見張り'
-  section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP" | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
+  ! section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP" | grep -qF -- '- **印**' || return 1
 }
 
 @test "skill: step 3 no longer names not-child and keeps state-unreadable without checking" {
