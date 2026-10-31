@@ -241,6 +241,6 @@ issue1209_terms() {
   local c="${REPO_ROOT}/plugins/dev-workflow/references/ci-watch.md"
   ! grep -qF '親経由のリスク許容の依頼' "$e" || return 1
   grep -E '^8\. ' "$e" | grep -qF '論点'
-  grep -F '`主に聞く理由:`' "$c" | grep -qF '論点なし'
-  grep -F '`受け入れるリスク:`' "$c" | grep -qF '新たに生じる'
+  grep -F '主に聞く理由:' "$c" | grep -qF '論点なし'
+  grep -F 'マージで新たに生じるリスク:' "$c" | grep -qF '新たに生じるもの'
 }
