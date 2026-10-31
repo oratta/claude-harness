@@ -2732,6 +2732,10 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
 
     金額は、ブランチごと・(issue, ブランチ) ごとにマイクロドルの整数へ丸めてから足し、ドルへの
     変換は最後に行う（割り当てた額の和と合計が、浮動小数の誤差なしで一致するように）。
+
+    返す ``children_usd`` と、エピックの直下の子の ``usd`` を浮動小数で足した値は、最後の桁が
+    ずれうる（0.1 + 0.2 は 0.30000000000000004）。一致するのは小数 6 桁に丸めた値（マイクロ
+    ドルの整数どうしでは一致する）。
     """
     owner = {}
     for row in issues:
@@ -2805,8 +2809,11 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
     標準入力で既存のコメント本文（無ければ空）を受け、節目の行を 1 行足した本文を標準出力に
     返す。``--issue`` に ``--closing-pr`` が 1 つ以上あれば、続けて issue の合計の行を 1 行足す。
     PR か issue か、issue を閉じた PR はどれかは呼ぶ側が調べて渡すので、ここでは ``gh`` を
-    呼ばない。1 行目の対象の表記と帰属の種別は、最後の行が合計の行でなければ ``cmd_cost`` が
-    同じ番号に対して作るものと同じ。積むものが無いとき、``--target-repo`` が ``--repo`` の
+    呼ばない。1 行目の対象の表記と帰属の種別は、最後の行が合計の行でなければ、``--child-issue``
+    を渡した回と子 issue を持たない issue では ``cmd_cost`` が同じ番号に対して作るものと同じ。
+    ``--child-issue`` を渡さない回の子 issue を持つ issue では ``cmd_issue`` のもの（種別は
+    ``区間``）と同じ。合計の行のときの種別は ``--child-issue`` があれば ``子 issue 込み``、
+    無ければ ``区間+閉じた PR``。積むものが無いとき、``--target-repo`` が ``--repo`` の
     場所のリポジトリと違うとき（PR でも issue でも）は、何も出さずに終了コード 3。
     """
     if args.closing_pr and args.issue is None:
