@@ -394,3 +394,83 @@ EOT
   run grep -iw orca "$SCRIPT"
   [ "$status" -eq 1 ]
 }
+
+# --- 止まりの JSON ---
+# 止まりの JSON を置いてパスを出す（[jq の式で足す項目]）
+stop_json() {
+  local extra="${1-}"
+  [ -n "$extra" ] || extra='{}'
+  jq -n "{uuid: \"u1\", at: \"2026-10-26T06:00:00.000Z\", text: \"子の最後の発言の全文\", questions: [], turn_ended: true,
+    bg_running: false, last_input_at: \"2026-10-26T05:00:00.500Z\", marked: false} + ($extra)" > "$BATS_TEST_TMPDIR/stop.json"
+  printf '%s' "$BATS_TEST_TMPDIR/stop.json"
+}
+# 子 11 の停止の記録を 1 件にする（<created_at>）
+one_record() {
+  jq -cn --arg t "$1" '[{body: "子の停止: 主の返事待ち\n古いリスク許容の本文", author_association: "OWNER",
+    html_url: "https://github.com/o/r/issues/11#issuecomment-9", created_at: $t}]' > "$STUB_CFG/comments_11"
+}
+not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の報告' '返事:' > "$STUB_CFG/model_out"; }
+
+@test "stop-judge json: a record older than the last input is not passed, the statement is, and line 4 is none" {
+  one_record 2026-10-26T04:00:00Z
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  [ "${lines[3]}" = '記録: なし' ]
+  ! grep -q '古いリスク許容の本文' "$STUB_CFG/model_in" || return 1
+  grep -q '子の最後の発言の全文' "$STUB_CFG/model_in"
+  grep -q '最後の入力の時刻: 2026-10-26T05:00:00.500Z' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: the model gets the questions, the background task and the mark" {
+  run judge 400 11 "$(stop_json '{questions: ["どちらですか"], bg_running: true, marked: true}')"
+  [ "$status" -eq 0 ]
+  grep -qF '未回答の問い: どちらですか' "$STUB_CFG/model_in"
+  grep -qF '背景のタスク: 実行中' "$STUB_CFG/model_in"
+  grep -qF '止まった印: あり' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: without them the model is told there are none" {
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  grep -qF '未回答の問い: なし' "$STUB_CFG/model_in"
+  grep -qF '背景のタスク: なし' "$STUB_CFG/model_in"
+  grep -qF '止まった印: なし' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: a record in the same second as the last input is this stop's record" {
+  one_record 2026-10-26T05:00:00Z
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  [ "${lines[3]}" = '記録: https://github.com/o/r/issues/11#issuecomment-9' ]
+  grep -q '古いリスク許容の本文' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: no json and no record does not call the model, and an unreadable json is an error" {
+  printf '[]' > "$STUB_CFG/comments_11"
+  run judge 400 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ ! -e "$STUB_CFG/model_in" ]
+  printf 'not json' > "$BATS_TEST_TMPDIR/bad.json"
+  run judge 400 11 "$BATS_TEST_TMPDIR/bad.json"
+  [ "$status" -eq 1 ]
+  [ ! -e "$STUB_CFG/model_in" ]
+}
+
+@test "stop-judge json: not-a-question is accepted only with json, no record, no question and no mark" {
+  not_a_question
+  printf '[]' > "$STUB_CFG/comments_11"
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = '判断: 問いではない' ]
+  [ "${lines[3]}" = '記録: なし' ]
+  run judge 400 11 "$(stop_json '{questions: ["どちらですか"]}')"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  run judge 400 11 "$(stop_json '{marked: true}')"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  one_record 2026-10-26T06:00:00Z
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  run judge 400 11
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+}
