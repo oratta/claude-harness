@@ -895,14 +895,16 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
 
 @test "verdict (#354): step 5 excludes findings the owner split off and findings closed by the row-3 set match" {
   s5="$(awk '/^### 5\. /{f=1} /^### 6\. /{exit} f' "${PASS_STAGE}")"
-  echo "$s5" | grep -qF '主が切り出すと答えて follow-up issue に切ったものと、G が順 3 の集合一致で閉じたもの（閉じた PR コメント URL を仕分け欄に残す）以外が 0 件'
+  echo "$s5" | grep -qF '主が切り出すと答えて follow-up issue に切ったものと、G が順 3 の集合一致で閉じたもの（閉じた PR コメント URL を仕分け欄に残す）と、G が周の終わりの止める指摘の条件で閉じたもの（閉じた PR コメント URL を仕分け欄に残す）以外が 0 件'
+  echo "$s5" | grep -qF '段落「周の終わりの止める指摘の条件」'
   echo "$s5" | grep -qF '「切り出しの確認」行'
   # archive 前は change の delta spec、archive 後は main spec を読む
-  spec="${PLUGIN_ROOT}/openspec/changes/pr-review-gate-triage-table/specs/dev-workflow-pr-review-gate/spec.md"
+  spec="${PLUGIN_ROOT}/openspec/changes/pr-review-end-of-round-condition/specs/dev-workflow-pr-review-gate/spec.md"
   [ -f "$spec" ] || spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
   req="$(awk '/^### Requirement: 合格条件に判定を明記する/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
   [ "$(echo "$req" | grep -cF '主が切り出すと答えて follow-up issue に切ったもの')" -eq 2 ]
   [ "$(echo "$req" | grep -cF '順 3 の集合一致で閉じたもの')" -eq 2 ]
+  [ "$(echo "$req" | grep -cF '周の終わりの止める指摘の条件で閉じたもの')" -eq 2 ]
   ! gate_all | grep -qF '範囲外として閉じ' || return 1
 }
 
@@ -2139,6 +2141,61 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
   echo "$body" | grep -F '1 行目' | grep -qF '親経由で受領（委任）（親セッション'
   echo "$body" | grep -qF '主の回答: 許容（引き継ぎ） — 親経由で受領（委任）（親セッション … / 委任の確認 … / …）委任の記録: … 停止の記録: … 原文: …'
   echo "$body" | grep -qF '4 つ'
+}
+
+# ===== 周の終わりに残った止める指摘の条件を先に確かめる（issue #1486）=====
+
+# 段落「周の終わりの止める指摘の条件」の 1 行（見出しを含む段落の本文）
+end_cond_para() { grep -F '**周の終わりの止める指摘の条件**' "$TRIAGE"; }
+
+@test "end-of-round condition (#1486): the paragraph is one, right after the end-of-round paragraph" {
+  [ "$(grep -cF '**周の終わりの止める指摘の条件**' "$TRIAGE")" -eq 1 ]
+  prev="$(grep -B2 -F '**周の終わりの止める指摘の条件**' "$TRIAGE" | head -1)"
+  echo "$prev" | grep -qF '2 周目以降の周の終わり'
+  echo "$prev" | grep -qF '段落「周の終わりの止める指摘の条件」を通したあとに止める指摘が残っていれば'
+}
+
+@test "end-of-round condition (#1486): it runs before rows 5, 6 and the fix-check without changing the verdict" {
+  p="$(end_cond_para)"
+  echo "$p" | grep -qF '順 6・直し方の判定・順 5 の振り分けより先に'
+  echo "$p" | grep -qF '止めるかどうかの判定は変えない'
+  grep -F '止める指摘が1件でも残ったら' "$TRIAGE" | grep -qF '段落「周の終わりの止める指摘の条件」'
+}
+
+@test "end-of-round condition (#1486): only the no-plan row closes; the phrase is outside the section B table too" {
+  p="$(end_cond_para)"
+  echo "$p" | grep -qF '`成り立つ予定が無い`'
+  echo "$p" | grep -qF '`条件を書けない`'
+  echo "$p" | grep -qF '閉じず'
+  [ "$(grep -cF '成り立つ予定が無い' "$TRIAGE")" -ge 2 ]
+}
+
+@test "end-of-round condition (#1486): the three guards are written" {
+  p="$(end_cond_para)"
+  for k in 'この PR が触れる openspec の spec（change の delta spec を含む）の文がその場面の振る舞いを求めている' '主が順 5 で「この PR で直す」と答えた指摘' '`## 条件の答え`' 'change の artifact に書かれた想定は根拠にしない'; do
+    echo "$p" | grep -qF "$k" || { echo "lacks: $k"; return 1; }
+  done
+}
+
+@test "end-of-round condition (#1486): when G cannot decide it adds no question and no hold" {
+  p="$(end_cond_para)"
+  for k in '根拠から言い切れなければ' '閉じずに既存の仕分けへ進める' '新しい質問も保留も足さない' '`条件の確認待ち`' '`needs-approval`'; do
+    echo "$p" | grep -qF "$k" || { echo "lacks: $k"; return 1; }
+  done
+}
+
+@test "end-of-round condition (#1486): the record, the all-closed case and the excluded inputs are written" {
+  p="$(end_cond_para)"
+  for k in '仕分けの PR コメントに条件と理由を 1 行残し' '仕分け欄' '全件を閉じたら「止める指摘が残らなかったとき」と同じ' '1 周目' '順 3・順 4 からの落とし込み'; do
+    echo "$p" | grep -qF "$k" || { echo "lacks: $k"; return 1; }
+  done
+}
+
+@test "end-of-round condition (#1486): the scope sentence is written" {
+  p="$(end_cond_para)"
+  for k in 'この段の守備範囲は' '想定する入力の出どころは' '拾いたい誤りは' '通ることを許す入力の例として' '判定の誤りが 1 件も無いことをこの段の完了条件にしない'; do
+    echo "$p" | grep -qF "$k" || { echo "lacks: $k"; return 1; }
+  done
 }
 
 # --- 止めない指摘の行き先を行ごとに固定する検査（#1017。#1002 の P4-F4・P4-F5・P4-F6） ---
