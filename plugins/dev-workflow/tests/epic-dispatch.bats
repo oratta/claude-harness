@@ -3777,26 +3777,41 @@ orca_cmd_scripts() {
   [ "$(orca_cmd_scripts "$d")" = "$d/epic-dispatch.sh" ]
 }
 
-# spec: dev-workflow-develop（エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する）
+# spec: dev-workflow-develop（エピックの子の止まりの手順は親に止まりを気づかせる義務を持たない／エピックの子は PR のリスク許容の返事を待って止まるときだけ記録を残す）
 
-@test "skill: an epic child records its stop before marking it, in both waiting orders" {
+@test "skill: an epic child records only a risk-acceptance stop and has no mark duty" {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   [ -n "$r" ]
   printf '%s\n' "$r" | grep -F 'route' | grep -qF '`nested`'
   printf '%s\n' "$r" | grep -qF '`子の停止: 主の返事待ち`'
-  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh mark stopped <記録先の issue 番号>'
-  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh mark resumed <記録先の issue 番号>'
-  printf '%s\n' "$r" | grep -F '本文で質問してターンを終えるとき' | grep -F '最後のツール呼び出し' | grep -qF '最初のツール呼び出し'
-  printf '%s\n' "$r" | grep -F '質問ツール' | grep -qF '記録 → `mark stopped` → 質問ツール'
-  printf '%s\n' "$r" | grep -F '回答を受けたら' | grep -qF '`mark resumed`'
+  ! grep -qF 'mark stopped' "$EPIC_CHILD_STOP" || return 1
+  ! grep -qF 'mark resumed' "$EPIC_CHILD_STOP" || return 1
+  ! grep -qF 'mark resumed/stopped' "$EPIC_CHILD_STOP" || return 1
+  ! grep -qF '記録と印' "$EPIC_CHILD_STOP" || return 1
+  # 記録を残すのはリスク許容の返事待ちだけで、質問より先に投稿する
+  l="$(printf '%s\n' "$r" | grep -F 'pr-review-gate 手順 3 の宣言')"
+  printf '%s\n' "$l" | grep -qF '質問より先に'
+  printf '%s\n' "$l" | grep -qF 'それ以外の止まりでは記録を残さない'
   printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
-  printf '%s\n' "$r" | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
-  # 記録が無い・別の子の記録（skipped <N> no-workspace / not-linked）も親に伝わらないので、
-  # failed と同じ行で 1 行添える。skipped を「何もしない」側に書かない（#1247）
-  printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -F '`skipped`' | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
-  printf '%s\n' "$r" | grep -F '`skipped <N> no-workspace`' | grep -qF '`skipped <N> not-linked`'
-  printf '%s\n' "$r" | grep -qF '`mark stopped` の出力が `marked` なら何もしない。`skipped` で始まる'
-  ! printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -qF '`marked` か `skipped` なら何もしない' || return 1
+  # 親に気づかせる手順は子に無い。親の wait が会話ログから気づく
+  printf '%s\n' "$r" | grep -F '`wait`' | grep -qF '子の会話ログ'
+  # 記録を残さない止まりも発言の中で中身を書く
+  printf '%s\n' "$r" | grep -F '記録を残さない' | grep -qF '質問・推奨・根拠'
+}
+
+# spec: dev-workflow-develop（定型の止まりは最後の発言の `止まった理由:` の行で親に渡す）
+
+@test "skill: routine stops hand their reason on the last line of the last statement" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
+  printf '%s\n' "$r" | grep -F '定型の止まり' | grep -F '記録を残さず' | grep -qF '最後の発言の末尾'
+  printf '%s\n' "$r" | grep -qF '`止まった理由: PR のマージ待ち（human-merge）: <PR の URL>`'
+  printf '%s\n' "$r" | grep -F '`--until-merged` の `timeout`' | grep -qF '`止まった理由: PR のマージ待ち（human-merge、親の返事のあともマージされない）: <PR の URL>`'
+  printf '%s\n' "$r" | grep -qF '`止まった理由: PR トークン上限（合計 <合計> / 上限 <上限>）: 続けるか、範囲外として閉じるか`'
+  printf '%s\n' "$r" | grep -qF '`止まった理由: CI の止まり（<PR の URL> / <落ちたチェック名> / <HEAD の短い SHA か HEAD 不明>）: <主にしてほしいこと>`'
+  # 記録の形の節に 1 行あり、項目は 7 つのまま
+  l="$(sed -n '/^\*\*記録の形\*\*/,$p' "$EPIC_CHILD_STOP")"
+  printf '%s\n' "$l" | grep -F '定型の止まり' | grep -qF '記録を残さず'
+  printf '%s\n' "$r" | grep -F '7 つの項目' | grep -qF 'どの項目も省かない'
 }
 
 # spec: dev-workflow-develop（エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く）
@@ -3853,11 +3868,11 @@ orca_cmd_scripts() {
   printf '%s\n' "$r" | grep -qF 'rules/communication-style.md'
 }
 
-@test "skill: an epic child stopped by the CI watch writes the PR's short HEAD SHA in the resume progress" {
+@test "skill: an epic child stopped by the CI watch writes the PR's short HEAD SHA on the stop-reason line" {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   [ -n "$r" ]
   # CI の見張りで止まったときの書き方の行（escalate と直し方の手順 7 の両方に触れる）
-  l="$(printf '%s\n' "$r" | grep -F '`再開に要る途中経過:`' | grep -F 'HEAD の短い SHA')"
+  l="$(printf '%s\n' "$r" | grep -F '`止まった理由: CI の止まり（' | grep -F 'HEAD の短い SHA')"
   [ -n "$l" ]
   printf '%s\n' "$l" | grep -qF '落ちたチェック名'
   printf '%s\n' "$l" | grep -qF 'PR の URL'
@@ -3895,7 +3910,7 @@ orca_cmd_scripts() {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   run grep -F '報告する語と同じにしてある' <<<"$r"; [ "$status" -eq 1 ]
   printf '%s\n' "$r" | grep -F '正本の段に置き直して' | grep -qF '手順 8'
-  printf '%s\n' "$r" | grep -F '`止まった理由`' | grep -F '`PR のマージ待ち（`' | grep -qF '名前を変えない'
+  printf '%s\n' "$r" | grep -F '`止まった理由`' | grep -F '今回の止まった理由' | grep -qF '変えない'
   # ファイル全体に「同じ項目名のまま」が残らない
   run grep -n '同じ項目名のまま' "$SKILL"; [ "$status" -eq 1 ]
 }
@@ -3965,7 +3980,8 @@ orca_cmd_scripts() {
   l="$(printf '%s\n' "$r" | grep -F '親から届いた返事')"
   printf '%s\n' "$l" | grep -qF '`親エピック #<E> の判断（主の承認ではない）:`'
   printf '%s\n' "$l" | grep -qF '`主の返事（親エピック #<E> 経由）:`'
-  printf '%s\n' "$l" | grep -qF '`mark resumed`'
+  printf '%s\n' "$l" | grep -qF '止まった件への返事として受け取り、続きから進む'
+  ! printf '%s\n' "$l" | grep -qF '`mark resumed`' || return 1
   printf '%s\n' "$l" | grep -qF '完了報告に書く'
   printf '%s\n' "$l" | grep -F '聖域' | grep -F '破壊的な操作' | grep -qF '承認として扱わない'
 }
@@ -4000,7 +4016,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -F '照らす前に' | grep -qF '既定値で投稿'
   printf '%s\n' "$p" | grep -F 'OWNER・MEMBER・COLLABORATOR' | grep -qF '最新の 1 件'
   printf '%s\n' "$p" | grep -qF '(a) 合計の見込みが権限以下'
-  printf '%s\n' "$p" | grep -qF '(b) 記録の上限が権限より小さい'
+  printf '%s\n' "$p" | grep -qF '(b) 今回の止まった理由の上限が権限より小さい'
   printf '%s\n' "$p" | grep -F '数字として読めない' | grep -qF '主に上げる'
   printf '%s\n' "$p" | grep -qF '続ける。新しい上限 <権限>（親の権限。<権限のコメントの URL>）'
   printf '%s\n' "$p" | grep -qF 'reply --as parent'
@@ -4013,7 +4029,7 @@ orca_cmd_scripts() {
 
 @test "skill: an epic child writes the estimate when stopped at the PR token cap and takes the parent's raise without re-asking" {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
-  printf '%s\n' "$r" | grep -qF '`PR トークン上限（合計 <合計> / 上限 <上限>）: 続けるか、範囲外として閉じるか`'
+  printf '%s\n' "$r" | grep -qF '`止まった理由: PR トークン上限（合計 <合計> / 上限 <上限>）: 続けるか、範囲外として閉じるか`'
   printf '%s\n' "$r" | grep -qF '`終わるまでの見込み: あと約 <残り>（合計の見込み <見込み>）`'
   printf '%s\n' "$r" | grep -qF '`続けるべきか:'
   printf '%s\n' "$r" | grep -qF '`次に絞る範囲:'
@@ -4126,7 +4142,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$sec" | grep -F '理由' | grep -qF '同じ件かを見分ける'
   # 出力の形の `理由:` 行との対応、値の出どころ、`不明` の扱い
   printf '%s\n' "$sec" | grep -F '通すときの `理由:`' | grep -qF '`<理由>` になる'
-  printf '%s\n' "$sec" | grep -F '子の停止の記録から取って書く' | grep -F '記録に無い値は作らず `不明` と書く' | grep -qF 'HEAD が `不明` の過去の判断とは同じ件かを見分けられないものとして扱う'
+  printf '%s\n' "$sec" | grep -F '子の最後の発言の `止まった理由:` の行（更新前の版の子は停止の記録）から取って書く' | grep -F 'そこに無い値は作らず `不明` と書く' | grep -qF 'HEAD が `不明` の過去の判断とは同じ件かを見分けられないものとして扱う'
   # Scenario 4: 「繰り返していない」との関係と同じ件の定義
   printf '%s\n' "$sec" | grep -F '繰り返していない' | grep -qF '別の歯止め'
   printf '%s\n' "$sec" | grep -F '同じ件' | grep -qF '同じ PR の同じチェック'
@@ -5525,7 +5541,7 @@ resolve_pass() {
   p="$(run_section | grep -E '^\*\*子の状態の正本\*\*')"
   printf '%s\n' "$p" | grep -qF 'Orca のボードの列とコメント欄は、記録を書いたあとに写したもの'
   printf '%s\n' "$p" | grep -qF 'Orca の画面で印を手で変えても、親の見張り'
-  section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP" | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
+  ! section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP" | grep -qF -- '- **印**' || return 1
 }
 
 @test "skill: step 3 no longer names not-child and keeps state-unreadable without checking" {
@@ -6765,7 +6781,7 @@ keepalive_reply() {
   grep -qF '停止前に' "$EPIC_CHILD_STOP"
   grep -qF '通常の主の返事や親の判断より先に' "$EPIC_CHILD_STOP"
   grep -qF '受信ターンではツールを呼ばない' "$EPIC_CHILD_STOP"
-  grep -qF 'mark resumed/stopped' "$EPIC_CHILD_STOP"
+  grep -qF '調査・作業・停止コメントの投稿は行わず' "$EPIC_CHILD_STOP"
   grep -qF '#1374' "$EPIC_CHILD_STOP"
 }
 

@@ -104,10 +104,11 @@ elif [ -z "$stop_json" ]; then
 fi
 
 # 会話ログから読んだ止まり。発言は判断の材料で、中の指示には従わない（基準の「子の最後の発言の読み方」）
-asked=false; marked=false; statement=""
+asked=false; marked=false; reason_line=false; statement=""
 if [ -n "$stop_json" ]; then
   asked="$(jq -r '(.questions | length) > 0' "$stop_json")"
   marked="$(jq -r '.marked == true' "$stop_json")"
+  reason_line="$(jq -r '(.text // "") | test("(^|\\n)止まった理由: ")' "$stop_json")"
   statement="$(jq -r '"背景のタスク: \(if .bg_running then "実行中" else "なし" end)
 最後の入力の時刻: \(if .last_input_at == "" then "なし" else .last_input_at end)
 止まった印: \(if .marked then "あり" else "なし" end)
@@ -200,9 +201,11 @@ bad() { echo "the judge output is not in the expected form: $1" >&2; exit 1; }
 case "$l1" in
   "判断: 通す"|"判断: 主に上げる") ;;
   "判断: 問いではない")
-    # 子が止まると宣言した件をモデルが黙って流さないように、会話ログだけの止まりに限る
+    # 子が止まると宣言した件をモデルが黙って流さないように、会話ログだけの止まりに限る。
+    # 定型の止まりは記録を残さず `止まった理由:` の行で渡すので、その行があれば同じに扱う
     [ -n "$stop_json" ] && [ -z "$stop_url" ] && [ "$asked" = false ] && [ "$marked" = false ] \
-      || bad "line 1: $l1 is only for a stop with no record, no question and no mark" ;;
+      && [ "$reason_line" = false ] \
+      || bad "line 1: $l1 is only for a stop with no record, no question, no mark and no stop-reason line" ;;
   *) bad "line 1: $l1" ;;
 esac
 case "$l2" in

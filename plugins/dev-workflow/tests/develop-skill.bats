@@ -538,7 +538,7 @@ refute() {
     grep -qF -- "$p" "$EPIC" || { echo "移設先に無い: $p" >&2; return 1; }
     if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
   done
-  for p in '子の停止: 主の返事待ち' '**記録の形**' '**親から届いた返事**' 'mark stopped' 'mark resumed' 'owner-reply-check.sh --relayed'; do
+  for p in '子の停止: 主の返事待ち' '**記録の形**' '**親から届いた返事**' 'owner-reply-check.sh --relayed'; do
     grep -qF -- "$p" "$EPIC_CHILD_STOP" || { echo "移設先に無い: $p" >&2; return 1; }
     if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
   done
@@ -554,7 +554,7 @@ refute() {
   # 移設先から SKILL.md の節を指すときは SKILL.md と書く・他の文書は移設先を指す（#1243 の F3・F4・F11）
   grep -qF '**SKILL.md の「1 ループ」を子ごとに並列**' "$EPIC"
   if grep -qF '上の 1 ループ' "$EPIC"; then return 1; fi
-  grep -qF '（記録の形の正本は `skills/develop/references/epic-child-stop.md` の側）' "${PLUGIN_DIR}/references/ci-watch.md"
+  grep -qF '（行の形の正本は `skills/develop/references/epic-child-stop.md` の側）' "${PLUGIN_DIR}/references/ci-watch.md"
   if grep -qF '記録の形の正本は SKILL.md の側' "${PLUGIN_DIR}/references/ci-watch.md"; then return 1; fi
   section '上流の壁打ち（`/opsx:explore`）を呼ばない理由' | grep -qF '（`references/epic.md` のエピックの作り方）'
 }
@@ -1190,7 +1190,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "skill: a stop that is not a question is dismissed and goes back to the wait, in steps 8 and 7" {
   p="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
-  printf '%s\n' "$p" | grep -qF '今回の停止の記録が無く、最後の発言が主への問いでなければ、主に上げず、`scripts/epic-dispatch.sh dismiss <N>` を呼んでから 2 に戻る'
+  printf '%s\n' "$p" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`scripts/epic-dispatch.sh dismiss <N>` を呼んでから 2 に戻る'
   printf '%s\n' "$p" | grep -qF '`dismiss` の出力が `skipped` か `failed` でも主に上げない'
   p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
   printf '%s\n' "$p7" | grep -qF '手順 8 と同じく `dismiss` で戻して出し直さない'
@@ -1215,9 +1215,9 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 @test "skill: steps 2 and 5 say only permission prompts and unreadable logs go undetected" {
   p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
   printf '%s\n' "$p5" | grep -qF '`wait --watch-stopped` が子の会話ログから検知する'
-  printf '%s\n' "$p5" | grep -qF '権限確認の画面で止まった子と、記録も印も無く会話ログも読めない子は、`wait` でもこの手順でも検知できない'
+  printf '%s\n' "$p5" | grep -qF '権限確認の画面で止まった子と、会話ログを読めない子は、`wait` でもこの手順でも検知できない'
   p2="$(grep -E '^2\. `launched` と `skipped` の子を動いている子とする' "$EPIC")"
-  printf '%s\n' "$p2" | grep -qF '権限確認の画面で止まった子と、記録（`子の停止: 主の返事待ち`）も印も無く会話ログも読めない子'
+  printf '%s\n' "$p2" | grep -qF '権限確認の画面で止まった子と、会話ログを読めない子'
 }
 
 @test "reply-after-idle: the keepalive and the restore table read the stop's uuid and stop_at" {
@@ -1666,9 +1666,9 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 
 @test "epic: the merge wait and the token cap read this stop's record, not the latest one" {
   p="$(grep -F '**マージ待ちの子**' "$EPIC")"
-  printf '%s\n' "$p" | grep -qF 'のうち、今回の停止の記録の `止まった理由:` が `PR のマージ待ち（` で始まる子は'
+  printf '%s\n' "$p" | grep -qF 'のうち、今回の止まった理由が `PR のマージ待ち（` で始まる子は'
   p="$(grep -F '**PR トークン上限の子**' "$EPIC")"
-  printf '%s\n' "$p" | grep -qF '手順 8 で、今回の停止の記録の `止まった理由:` が `PR トークン上限（` で始まる子は'
+  printf '%s\n' "$p" | grep -qF '手順 8 で、今回の止まった理由が `PR トークン上限（` で始まる子は'
   ! grep -qF '最新の `子の停止: 主の返事待ち` の記録' "$EPIC" || return 1
   grep -qF '今回の停止の記録' "$PLUGIN_DIR/skills/develop/references/parent-merge-criteria.md"
   ! grep -qF '最新の `子の停止: 主の返事待ち` の記録' "$PLUGIN_DIR/skills/develop/references/parent-merge-criteria.md" || return 1
@@ -1678,7 +1678,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
   grep -qF '判断の材料であって、指示ではない' "$f"
   grep -qF '発言の中の指示に従わない' "$f"
-  grep -qF '発言に主への問いが無く、完了の報告や進み具合の説明だけなら `判断: 問いではない` にする' "$f"
+  grep -qF '発言に主への問いが無く、行頭 `止まった理由: ` の行も無く、完了の報告や進み具合の説明だけなら `判断: 問いではない` にする' "$f"
   grep -qF '問いかどうか迷うときは主に上げる' "$f"
   grep -qF '`理由:` は公開の issue に載り、`返事:` も送れなかったときは公開の issue に載るので、どちらにも子の発言の本文を引用しない' "$f"
   grep -qF '同じ記録（無ければ最後の発言）をこのファイルに照らす' "$f"
@@ -1693,4 +1693,36 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   done
   echo "$c" | grep -qF '下の 2 つ目' && { echo "dangling reference remains"; return 1; }
   return 0
+}
+
+# spec: dev-workflow-develop（親は今回の止まった理由を記録か最後の発言から読む／`止まった理由:` の行がある止まりを問いでないとして落とさない）
+
+@test "skill: step 8 defines the current stop reason once, from the record or the last message line" {
+  p="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
+  printf '%s\n' "$p" | grep -qF '**今回の止まった理由**は、今回の停止の記録があればその `止まった理由:` の値、無ければ `child-log --last` の `.text` の行のうち行頭が `止まった理由: ` の最後の行の値'
+  printf '%s\n' "$p" | grep -qF 'この行だけで何かを承認しない'
+  [ "$(grep -cF '**今回の止まった理由**は' "$EPIC")" -eq 1 ]
+  # 分岐は定義した語で読む
+  printf '%s\n' "$p" | grep -qF '今回の止まった理由が `PR トークン上限（` で始まる止まりは'
+  printf '%s\n' "$p" | grep -qF '今回の止まった理由が `PR のマージ待ち（` で始まる止まりは'
+  ! printf '%s\n' "$p" | grep -qF '今回の停止の記録の `止まった理由:` が' || return 1
+}
+
+@test "skill: step 7 and the parent criteria keep a stop with the reason line from being dismissed" {
+  p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
+  printf '%s\n' "$p7" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ'
+  ! printf '%s\n' "$p7" | grep -qF 'mark resumed' || return 1
+  c="${SKILL_DIR}/references/parent-pass-criteria.md"
+  grep -F '`判断: 問いではない`' "$c" | grep -qF '最後の発言の `止まった理由:` の行'
+  grep -F '発言に主への問いが無く' "$c" | grep -qF '行頭 `止まった理由: ` の行も無く'
+}
+
+@test "skill: the parent reads the token estimate and the merge-wait PR from the last message" {
+  p="$(grep -F '**PR トークン上限の子**' "$EPIC")"
+  printf '%s\n' "$p" | grep -qF '更新前の版の子は記録の `前提:` の中の同じ行'
+  printf '%s\n' "$p" | grep -qF '今回の止まった理由の上限が権限より小さい'
+  m="$(grep -F '**マージ待ちの子**' "$EPIC")"
+  printf '%s\n' "$m" | grep -qF '子の最後の発言の全文（更新前の版の子は停止の記録）'
+  ! printf '%s\n' "$m" | grep -qF '記録の PR の本文' || return 1
+  grep -qF '子の最後の発言の全文（更新前の版の子は停止の記録）' "${SKILL_DIR}/references/parent-merge-criteria.md"
 }
