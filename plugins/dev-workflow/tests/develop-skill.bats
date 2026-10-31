@@ -538,7 +538,7 @@ refute() {
     grep -qF -- "$p" "$EPIC" || { echo "移設先に無い: $p" >&2; return 1; }
     if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
   done
-  for p in '子の停止: 主の返事待ち' '**記録の形**' '**親から届いた返事**' 'mark stopped' 'mark resumed' 'owner-reply-check.sh --relayed'; do
+  for p in '子の停止: 主の返事待ち' '**記録の形**' '**親から届いた返事**' 'owner-reply-check.sh --relayed'; do
     grep -qF -- "$p" "$EPIC_CHILD_STOP" || { echo "移設先に無い: $p" >&2; return 1; }
     if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
   done

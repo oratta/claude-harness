@@ -474,7 +474,7 @@ pr_view_calls() {
   row="$(grep -F '| `escalate` |' "$REF")"
   [ -n "$row" ]
   grep -qF 'エピックの子' <<<"$row"
-  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり記録を残して `mark stopped` で止まる' <<<"$row"
+  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり最後の発言の末尾に `止まった理由:` の行を書いて止まる' <<<"$row"
   ! grep -qF '先頭 7 文字' <<<"$row" || return 1
   ! grep -qF 'obs.head' <<<"$row" || return 1
   ! grep -qF 'headRefOid' <<<"$row" || return 1
@@ -485,7 +485,7 @@ pr_view_calls() {
   row="$(grep -F '| `none` |' "$REF")"
   [ -n "$row" ]
   grep -qF 'エピックの子' <<<"$row"
-  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり記録を残して `mark stopped` で止まる' <<<"$row"
+  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり最後の発言の末尾に `止まった理由:` の行を書いて止まる' <<<"$row"
   ! grep -qF '先頭 7 文字' <<<"$row" || return 1
   ! grep -qF 'obs.head' <<<"$row" || return 1
   ! grep -qF 'headRefOid' <<<"$row" || return 1

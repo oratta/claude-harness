@@ -4,8 +4,8 @@
 
 ## 1. 子の手順
 
-- [ ] 1.1 `epic-child-stop.md` を書き換える: `mark` の語を全部消し（声かけの段落の `mark resumed` / `mark stopped` を含む）、親からの返事を受けるときの `mark resumed` もなくし、記録を残す場面を PR のリスク許容だけにする。16 行の「止まる前の記録と印」は止まった件で分ける: リスク許容の返事待ちは「止まる前の記録」にし、リスク許容の返事待ちでない止まりに委任の返事が届いたときは記録を残さず、最後の発言で主に子のタブでの返事を理由付きで頼む。`--relayed` / `--delegated` と委任の 6 条件・4 条件の文は変えない（`develop-skill.bats` と `pr-review-gate-skill.bats` が同じ文字列を検査する）。触る範囲: plugins/dev-workflow/skills/develop/references/epic-child-stop.md:7-37、plugins/dev-workflow/skills/develop/references/epic-child-stop.md:16
-- [ ] 1.2 同じファイルに定型の止まりの節を足す（`止まった理由:` の行を最後の発言の末尾に書く 3 種）。「記録の形」に、定型の止まりは記録を残さず行で渡す旨の 1 行を足す。記録を残さない止まりでも発言の中で質問・推奨・根拠を中身で書く 1 文を足す。触る範囲: plugins/dev-workflow/skills/develop/references/epic-child-stop.md:7-37（節「記録の形」を含む）
+- [x] 1.1 `epic-child-stop.md` を書き換える: `mark` の語を全部消し（声かけの段落の `mark resumed` / `mark stopped` を含む）、親からの返事を受けるときの `mark resumed` もなくし、記録を残す場面を PR のリスク許容だけにする。16 行の「止まる前の記録と印」は止まった件で分ける: リスク許容の返事待ちは「止まる前の記録」にし、リスク許容の返事待ちでない止まりに委任の返事が届いたときは記録を残さず、最後の発言で主に子のタブでの返事を理由付きで頼む。`--relayed` / `--delegated` と委任の 6 条件・4 条件の文は変えない（`develop-skill.bats` と `pr-review-gate-skill.bats` が同じ文字列を検査する）。触る範囲: plugins/dev-workflow/skills/develop/references/epic-child-stop.md:7-37、plugins/dev-workflow/skills/develop/references/epic-child-stop.md:16
+- [x] 1.2 同じファイルに定型の止まりの節を足す（`止まった理由:` の行を最後の発言の末尾に書く 3 種）。「記録の形」に、定型の止まりは記録を残さず行で渡す旨の 1 行を足す。記録を残さない止まりでも発言の中で質問・推奨・根拠を中身で書く 1 文を足す。触る範囲: plugins/dev-workflow/skills/develop/references/epic-child-stop.md:7-37（節「記録の形」を含む）
 
 ## 2. 親の手順と基準
 
