@@ -8,6 +8,7 @@
 #   epic-dispatch.sh notify-closed [--relaunch] <epic> <child>
 #   epic-dispatch.sh wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
 #   epic-dispatch.sh mark <done|waiting|stopped|resumed> <issue>
+#     （stopped / resumed は更新前の版の子のために受け続けるだけで、子の義務ではない）
 #   epic-dispatch.sh reap <child>...
 #   epic-dispatch.sh pending-owner <child>...
 #   epic-dispatch.sh dismiss <child>...
@@ -144,7 +145,8 @@
 #   `親の判断: 子 #<child> 通した — 記録先が completed で閉じたので、完了報告と mark done を促した <URL>`（記録に stop_uuid があれば URL の前に `発言 <uuid> ` を足す）を投稿して
 #   `notified <child>`（投稿に失敗したら `unrecorded <child>` と stderr に投稿し直しのコマンド）。skipped / notified /
 #   unrecorded は exit 0、送信の失敗は `failed <child> <段>` で exit 1。skipped のときはどこにも投稿しない
-# mark: 今のワークツリーを worktree に持つ自分の記録の number（<owner>/<repo>#<N> なら repo も）が <issue> の
+# mark: stopped / resumed は更新前の版の子のために受け続けるだけで、子の義務ではない（止まりは wait が会話ログで検知する）。
+#   今のワークツリーを worktree に持つ自分の記録の number（<owner>/<repo>#<N> なら repo も）が <issue> の
 #   ときだけ、排他つきで done / waiting は status を done / waiting に、stopped は stop を stopped に、resumed は
 #   stop が stopped / stopped-seen のときだけ resumed に書き換え（それ以外は `skipped <issue> not-stopped`）、
 #   書けたら Orca の印（--workspace-status completed / in-review、--comment epic-stopped / epic-resumed）へ写す。
@@ -168,7 +170,7 @@
 #   `reaped <N>` / `reaped <N> branch-kept` / `gone <N>` / `kept <N> <理由>` の 1 行で exit 0。reaped の子は記録を消す。
 #   orca・jq が無い・今のワークツリーを読めなければ何も消さず stdout 空で exit 1。EPIC_DISPATCH_PARENT_EPIC は見ない
 # pending-owner: 読み取り専用。子ごとに、今のワークツリーを parent_worktree に持つ記録の stop が stopped-seen
-#   （親が受けたまま、子が mark resumed を付けていない）なら `pending <N>`（stop_uuid があれば `pending <N> <uuid>`）を
+#   （親が受けたまま、会話ログが進んでいない）なら `pending <N>`（stop_uuid があれば `pending <N> <uuid>`）を
 #   1 行ずつ出して exit 0（記録も Orca の印も書かない）。stop_uuid のある子は、会話ログが stop_uuid の発言より進んで
 #   いれば出さない（会話ログを読めなければ出す）。読めない記録の子は飛ばす。起動し直した親が、主の返事待ちの子を出し直す対象を集める。
 #   jq が無い・今のワークツリーを読めなければ stdout 空で exit 1
