@@ -26,4 +26,4 @@
 ## 5. 記録と受け入れの確認
 
 - [x] 5.1 変更の記録を書く。`plugins/dev-workflow/changes/1382.md` は 1 本目の記録として main にあるので、この PR の番号のファイルにする。触る範囲: plugins/dev-workflow/changes/<PR 番号>.md（新規）
-- [ ] 5.2 受け入れを確かめる: `scripts/test.sh owner-reply-check`、`pr-review-gate-skill`、`epic-stop-from-log-scenario` が通ること（#1382 の受け入れ条件の 1 件目と 3 件目）、`epic-child-stop.md` に `mark stopped` / `mark resumed` が無いこと（2 件目）、`openspec validate epic-child-stop-drop-mark --type change --strict` が exit 0 のこと。触る範囲: なし（確認のみ）
+- [x] 5.2 受け入れを確かめる: `scripts/test.sh owner-reply-check`、`pr-review-gate-skill`、`epic-stop-from-log-scenario` が通ること（#1382 の受け入れ条件の 1 件目と 3 件目）、`epic-child-stop.md` に `mark stopped` / `mark resumed` が無いこと（2 件目）、`openspec validate epic-child-stop-drop-mark --type change --strict` が exit 0 のこと。触る範囲: なし（確認のみ）
