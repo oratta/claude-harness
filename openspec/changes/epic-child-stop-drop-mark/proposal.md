@@ -33,6 +33,7 @@
 - `dev-workflow-develop`: 子の止まりの手順、親からの返事の受け方、記録を残す場面、手順 8 の定型の止まりの読み方、マージ待ち・PR トークン上限・CI の上限の入力、`問いではない` の条件、`mark` の位置づけを変える
 - `dev-workflow-ci-watch`: エピックの子が CI の見張りとマージ待ちで止まるときの渡し方を変える
 - `dev-workflow-pr-token-budget`: 別セッション方式の子が見込みを書く場所を変える
+- `dev-workflow-epic-state`: 止まった理由の本文の正本に、記録を持たない止まりの子の最後の発言を足す
 
 ## Impact
 
