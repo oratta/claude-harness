@@ -68,14 +68,14 @@
 ### Requirement: 5 時間枠が null の値を欠測として読む
 セッション記録または usage snapshot の `five_hour_pct` が `null` のとき、harness の読み手（`usage_view.py` と、それを使う `headroom.py`・`select-account.sh`、statusline の非 active スロットの値の選択）はその情報源の 5 時間枠を欠測として扱い、同じ情報源の週次の値を通常どおり読まなければならない（SHALL）。`null` を 0 として扱ってはならず（MUST NOT）、異常終了してはならない（MUST NOT）。`usage-probe.sh` は使用量 API の応答の `five_hour` が `null` でも週次の値があれば取得成功として扱い、snapshot の `five_hour_pct` を `null` で書かなければならない（SHALL）。
 
-**守備範囲**: 判定する入力は、このマシンの statusline と usage-probe が書いた記録と snapshot の `five_hour_pct` だけである。拾いたい誤りは、`null` を 0 と読むこと、`null` で読み手が落ちて週次の値まで失うことである。リポジトリの外の読み手の `null` の扱いは、この要件の完了条件にしない。
+**守備範囲**: ①入力の出どころは、このマシンの statusline と usage-probe が書いた記録と snapshot の `five_hour_pct`、および使用量 API の応答の `five_hour` である。②拾いたい誤りは、`null` を 0 と読むこと、`null` で読み手が落ちて週次の値まで失うことである。③`five_hour` のキーが無い応答、未知のキーを持つ応答・記録、`five_hour_pct` が `null` でリセット時刻だけに値がある記録は通す。④未知の穴が見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 週次だけの記録を実効値にする
-- **WHEN** 既定アカウントのセッション記録の `five_hour_pct` が `null` で `weekly_all_pct` が 12 であり、snapshot にそのスロットの値が無い状態で実効値を求める
+- **WHEN** 既定アカウントのセッション記録の `five_hour_pct` が `null`、`weekly_all_pct` が 12、`weekly_resets_epoch` が現在より後で、snapshot にそのスロットの値が無い状態で実効値を求める
 - **THEN** 実効値の `weekly_all_pct` は 12、`five_hour_pct` は `null` である
 
 #### Scenario: 5 時間枠が欠測でも選択の候補に残る
-- **WHEN** どのスロットの実効値の `five_hour_pct` も `null` で、週次の値は揃っている状態で headroom を求める
+- **WHEN** どのスロットの実効値の `five_hour_pct` も `null` で、週次の値とリセット前のリセット時刻は揃っている状態で headroom を求める
 - **THEN** 週次の余りで `best` が決まり、5 時間枠を理由に候補から外されない
 
 ### Requirement: 片方の情報源に残る 5 時間枠の値は規則どおり使う

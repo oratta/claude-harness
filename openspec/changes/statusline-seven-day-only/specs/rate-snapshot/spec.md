@@ -62,3 +62,13 @@ writer はこれから書く 5h 使用率・5h リセット・7d 使用率・7d 
 - **WHEN** 枠値、保存先印、`session_id` のいずれかが変わるか、前回ファイルに必要な帰属がない
 - **THEN** `observed_at` と `ts` は現在の観測時刻になる
 
+## ADDED Requirements
+
+### Requirement: snapshot の 5h 枠の null は欠測を表す
+ローカルと共有先の snapshot の `five_hour_pct` と `five_hour_resets_at` の `null` は、その観測に 5h 枠が無かったこと（欠測）を表し、使用率 0 を表さない。snapshot の読み手は、この `null` を判定・表示・記録のどれでも使用率 0 として扱ってはならない（MUST NOT）。5h 枠が欠測でも、同じ snapshot の 7d の値は読まなければならない（SHALL）。
+
+**守備範囲**: ①入力の出どころは writer が書くローカルと共有先の snapshot である。②拾いたい誤りは、`null` を 0 と読むことと、5h 枠の欠測で 7d の値まで捨てることである。③未知のキーを持つ snapshot、`five_hour_pct` が `null` で `five_hour_resets_at` だけに値がある snapshot は通す。④このリポジトリで検証するのは writer が `null` を書き `0` を書かないことまでで、連携先の読み手の追従は連携先の issue で行う。未知の穴が見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
+
+#### Scenario: 週次だけの snapshot の読まれ方
+- **WHEN** `five_hour_pct` が `null` で `seven_day_pct` が 12 の共有 snapshot を読み手が読む
+- **THEN** 5h 枠は欠測として扱われ、使用率 0 にならず、7d の使用率は 12 として読まれる

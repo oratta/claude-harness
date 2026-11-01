@@ -57,11 +57,15 @@
 ### Requirement: 5 時間枠が無いスロットは 7d の行だけを描く
 7d 消化率が得られ 5h 消化率が得られないスロットは、`5h` の行を出さず、`7d All` の行だけを描かなければならない（SHALL）。`7d All` の行は 5h 消化率があるときと同じ規則で描き、`Fable` の区画・残り時間・分母表示・`.headroom.json` のロケットモードとリセット権の表示を省いてはならない（MUST NOT）。経過時間とリセット権の区画は `7d All` の行に付ける。使用率 `0%` の `5h` の行を補ってはならない（MUST NOT）。要件「`.headroom.json` の値を使えるアカウントを決める」の判定は、5h 消化率の有無に左右されてはならない（MUST NOT）。
 
-**守備範囲**: 判定する入力はスロットごとの 5h と 7d の消化率の有無である。拾いたい誤りは、7d の値があるのに行が消えること、5h が無いのに 0% と描くこと、`取得待ち` と 7d の行を同時に出すことである。非 active の情報源に残る古い 5h の値で `5h` の行が出ることは通す。
+**守備範囲**: 判定する入力はスロットごとの 5h と 7d の消化率の有無である。拾いたい誤りは、7d の値があるのに行が消えること、5h が無いのに 0% と描くこと、`取得待ち` と 7d の行を同時に出すことである。非 active の情報源に残る古い 5h の値で `5h` の行が出ることは通す。未知の穴が見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 1 スロットで 7d だけがある
-- **WHEN** レジストリが無く、stdin の `rate_limits` に `seven_day` だけがある状態で statusline を実行する
+- **WHEN** レジストリが無く、Codex の行が出ない状態で、stdin の `rate_limits` に `seven_day` だけがあり、その `resets_at` が現在より後で 7 日以内である状態で statusline を実行する
 - **THEN** `7d All` の行が残り時間つきで出て、`5h` の行は出ない。`label` 列も active の目印も出ない
+
+#### Scenario: 1 スロットで 7d だけがあり Codex の行も出る
+- **WHEN** Claude のスロットが 1 つで Codex の行が出る状態で、stdin の `rate_limits` に `seven_day` だけがある状態で statusline を実行する
+- **THEN** Claude の `7d All` の行は要件「Codex の行の名前は Codex とアカウント名にする」の名前の列つきで出て、`5h` の行も active の目印も出ない
 
 #### Scenario: Fable の区画も出る
 - **WHEN** stdin の `rate_limits` に `seven_day` だけがあり、snapshot に鮮度ゲートを通る Fable 週次の値がある状態で statusline を実行する
@@ -72,19 +76,23 @@
 - **THEN** active の `7d All` の行が `▸ ` と名前つきで出て、active の `5h` の行と `取得待ち` の行は出ない
 
 #### Scenario: 非 active スロットに 7d だけがある
-- **WHEN** 2 スロットのレジストリで、非 active スロットの 5 時間枠が snapshot とセッション記録のどちらでも `null` で、週次の値がある状態で statusline を実行する
+- **WHEN** 2 スロットのレジストリで、非 active スロットの 5 時間枠が snapshot とセッション記録のどちらでも `null` で、週次の値と取得時刻がある状態で statusline を実行する
 - **THEN** そのスロットは `7d All` の行だけを、最後の行の経過時間つきで出す
 
 #### Scenario: 7d だけのスロットでロケットモードを描く
-- **WHEN** stdin の `rate_limits` に `seven_day` だけがあり、`.headroom.json` のそのアカウントの要素が値を使える条件をすべて満たし、`rocket` が null でない
+- **WHEN** stdin の `rate_limits` に `seven_day` だけがあり、`.headroom.json` のそのアカウントの要素が値を使える条件をすべて満たし、`rocket` が null でなく、`tickets.count` が 0 より大きい
 - **THEN** `7d All` の行がロケットモードで描かれ、リセット権の区画はその行の末尾に出る
 
 #### Scenario: 7d だけのスロットでリセット権の区画を描く
-- **WHEN** stdin の `rate_limits` に `seven_day` だけがあり、snapshot の `reset_grants` が読める状態で statusline を実行する
+- **WHEN** stdin の `rate_limits` に `seven_day` だけがあり、`.headroom.json` の値を使えず、snapshot の `reset_grants` が読める状態で statusline を実行する
 - **THEN** リセット権の区画が `7d All` の行の末尾に出る
 
-### Requirement: 変更前の出力との同一性は 7d だけのスロットを除いて保つ
-要件「スロットが 1 つのときは現行と同一の出力にする」などのバイト単位の同一性の規定は、7d 消化率だけが得られるスロットを除いて維持しなければならない（SHALL）。そのスロットの行は要件「5 時間枠が無いスロットは 7d の行だけを描く」に従う。要件「active スロットの行を視覚的に示す」の「active スロットの値が欠測」は、5h 消化率も 7d 消化率も得られない状態を指す。
+### Requirement: 変更前の出力との同一性は 7d だけのスロットの影響を除いて保つ
+要件「スロットが 1 つのときは現行と同一の出力にする」などのバイト単位の同一性の規定は、次の 2 つを除いて維持しなければならない（SHALL）。7d 消化率だけが得られるスロットの行（要件「5 時間枠が無いスロットは 7d の行だけを描く」に従う）と、そのスロットの `.headroom.json` の値を使えることで要件「ロケットモードのための列を空ける」が他の Claude の行と Codex の行に足す列の幅と空白である。要件「active スロットの行を視覚的に示す」の「active スロットの値が欠測」は、5h 消化率も 7d 消化率も得られない状態を指す。
+
+#### Scenario: 7d だけのスロットだけが値を使えると他の行にも列が空く
+- **WHEN** 2 スロットのレジストリと Codex の行があり、7d だけの active スロットだけが `.headroom.json` の値を使え、非 active スロットには 5h と 7d の値があって `.headroom.json` の値を使えない状態で statusline を実行する
+- **THEN** 非 active スロットの行と Codex の行にも要件「ロケットモードのための列を空ける」の列が空き、バーの左端は全行で揃う。それらの行の変更前との差は列の幅と空白だけである
 
 #### Scenario: 値が全く無ければ取得待ちのまま
 - **WHEN** 2 スロットのレジストリで、stdin に `rate_limits` が無い状態で statusline を実行する
