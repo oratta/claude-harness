@@ -136,6 +136,7 @@ mk_seven_only() {
     "$SESSIONS/default.json"
   [ "$status" -eq 0 ]
   [ "$output" = "[null,null,12,$((BASE + 172800)),true,true]" ]
+  [ "$(cat "$SESSIONS"/.sessions/*)" = "null|null|12|$((BASE + 172800))" ]
 }
 
 @test "record: a redraw of the same seven_day-only value does not write" {
@@ -156,6 +157,7 @@ mk_seven_only() {
 
 @test "record: five_hour coming back with the same seven_day value writes" {
   mk_seven_only 12 | bash "$SL" > /dev/null
+  [ "$(jq -r .five_hour_pct "$SESSIONS/default.json")" = null ]
   NOW=$((NOW + 60))
   mk_input 7 12 14000 172800 | bash "$SL" > /dev/null
   run jq -c '[.five_hour_pct, .weekly_all_pct, .observed_at]' "$SESSIONS/default.json"
