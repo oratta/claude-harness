@@ -30,7 +30,7 @@ else:
   run bash -c "python3 '$CL' facts | head -1 | python3 -c '
 import json, sys
 d = json.loads(sys.stdin.read())
-expected = {\"request_id\", \"timestamp\", \"session_id\", \"is_sidechain\", \"repo_id\",
+expected = {\"request_id\", \"uuid\", \"timestamp\", \"session_id\", \"is_sidechain\", \"repo_id\",
             \"branch\", \"model\", \"input_tokens\", \"output_tokens\",
             \"cache_write_5m_tokens\", \"cache_write_1h_tokens\", \"cache_read_tokens\",
             \"issues\", \"post_marker\"}
@@ -93,7 +93,9 @@ print(\"ok\")
 
 @test "facts: the log root comes from CLAUDE_CONFIG_DIR with no hardcoded path" {  # ログのルートは CLAUDE_CONFIG_DIR から解決され、リポジトリ内に固定パスが無い
   # 実装とコマンド定義に、利用者のホームを焼き込んだ絶対パスが無い
-  run grep -rnE '/Users/[a-z]|/home/[a-z]' "$PLUGIN_DIR/scripts" "$PLUGIN_DIR/commands"
+  # gitignore 済みの __pycache__ / *.pyc にはコンパイル時のソース絶対パスが入るので、検査の対象から外す
+  # （追跡の有無や拡張子では絞らない。未追跡の新規ファイルも見る）
+  run grep -rnE --exclude-dir=__pycache__ --exclude='*.pyc' '/Users/[a-z]|/home/[a-z]' "$PLUGIN_DIR/scripts" "$PLUGIN_DIR/commands"
   [ "$status" -ne 0 ]
   # ~/.claude を直書きせず CLAUDE_CONFIG_DIR を読む
   run grep -rn 'CLAUDE_CONFIG_DIR' "$PLUGIN_DIR/scripts"

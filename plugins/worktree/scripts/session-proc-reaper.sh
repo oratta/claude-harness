@@ -160,8 +160,13 @@ srp_select_targets() { # <mark> <exclude_pids>
   envf=$(mktemp "${TMPDIR:-/tmp}/srp-env.XXXXXX") || { rm -f "$commf"; return 1; }
   srp_ps_comm_list >"$commf"
   srp_ps_env_list >"$envf"
+  if [ ! -s "$commf" ]; then
+    srp_log "none mark=$1 trigger=- reason=ps-comm-empty"
+    rm -f "$commf" "$envf"
+    return 1
+  fi
   awk -v want="${SRP_MARK_VAR}=$1" -v excl=" $2 " '
-    FNR == NR {
+    FILENAME == ARGV[1] {
       p = $1; sub(/^[ \t]*[0-9]+[ \t]+/, ""); comm[p] = $0; next
     }
     {

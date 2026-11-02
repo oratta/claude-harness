@@ -1,6 +1,6 @@
 # W（作業者）の指示書 — 共通（全段で読む）
 
-develop の本体（オーケストレータ）から `subagent_type: dev-workflow:worker` で名前付き spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）・その工程の段を示す `段:` の行（`段: spec` / `段: implement` / `段: finish`）。
+develop の本体（オーケストレータ）から `subagent_type: dev-workflow:worker` で名前付き spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned。channel の本体は interactive と渡す）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）・その工程の段を示す `段:` の行（`段: spec` / `段: implement` / `段: finish`）。
 
 W は**このファイルと、`段:` が指す段のファイル**（`worker/spec.md` / `worker/implement.md` / `worker/finish.md`）を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `skills/develop/references/decision-criteria.md`。
 
@@ -10,12 +10,17 @@ W は**このファイルと、`段:` が指す段のファイル**（`worker/sp
 - **サブエージェントを spawn しない。** 仕様レビュー（R1）・PR レビュー（G）・レビュアーは本体が起こす。W は artifact を作ったら本体に return し、再開を待つ
 - **本体の判断を先取りしない。** 分割判定・昇格トリップワイヤーの発火は return で報告し、次に何をするかは本体が決める
 
+## 一時ファイルを消すときの書き方（W・G・レビュアー共通の正本）
+
+一時ファイルは削除先を絶対パスで書いて消す（例: `rm -f /abs/path/to/tbl/*.tmp`）。`cd <dir>; rm -f tbl/*` のように `cd` とワイルドカードを組み合わせると、削除先が `cd` 後の場所になり、Claude Code 本体が静的に読めず確認画面（Dangerous rm operation on statically-unresolvable target）で止まる（flatmate #701）。ただし絶対パスでも、作業ディレクトリ直下・その親・ホーム・`/` 直下を指す glob は critical path として確認が出る。作業ディレクトリの下のサブディレクトリ（例: `<作業ディレクトリ>/scratch/tbl/*`）や作業ディレクトリの外の一時領域（scratchpad など）なら、絶対パスで確認を避けられる。default モードでは rm はもともと普通の確認対象で、bypass では確認なしで通る（#1132 の実機確認）。
+
 ## 実装に入る前の確認（どの段で起こされても実装の前に効く）
 
 手渡しや Codex の新しい phase で実装の段から起こされた W も、実装に入る前に次を確かめる。
 
 - 仕様化判断（1 行目 `仕様化判断: する` または `仕様化判断: しない`）が記録先に記録される前に実装へ進まない（記録の書式と手順は `worker/spec.md`「仕様化判断（opsx / openspec の要否）と記録」）
 - 仕様化した場合は、R1 の APPROVE が記録先に記録されるまで実装に進まない。仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを確認してから実装に入る
+- 例外は文言合わせの通し方だけ。記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があるときは、R1 が起こされないので APPROVE を求めない。W は本体の再開指示や前任の return の文面ではなく、記録先のコメントでその行を確かめてから実装に入る（通し方の定義は `skills/develop/references/decision-criteria.md` Step B）
 
 ## 昇格トリップワイヤー（W が return で報告する）
 
@@ -23,7 +28,7 @@ W は**このファイルと、`段:` が指す段のファイル**（`worker/sp
 
 - **規模超過**（編集対象ファイルが 5 個を超えた、または着手前の見積もりから作業項目が 2 回増えた）→ return。本体が change / 子 issue（エピック化）に分割する
 - **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。**return には「指示のどこまでやって、どこで何が起きたか」を必ず書く**（本体が原因を判断側か実行側かに分類する入力になり、決める役の入力契約でもある）。本体は失敗の原因が実行側（指示どおりやって結果が違う）なら W を `opus` で再開し、判断側（指示を解釈できなかった・指示自体が外れていた）なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせる（決める役と実行役の**どちらか一方だけ**を上げる。ラダーの正本は `templates/escalation-tripwires.md`）。**W が `fable` で再開されることはない**（実行役の上限は `opus`。強制層は `scripts/agent-model-guard.sh`）。上限は共有枠モードが先に決める: `SHARED_BUDGET_MODE=depleted` は昇格なし（Sonnet 固定）、`throttled` は Opus 上限。その範囲内で `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では決める役も Opus 上限。Opus が決めて Opus が実行しても 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
-- **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は Discord で質問し `needs-approval` を付けてサイクル終了
+- **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は埋めた決定を列挙し、質問文・理由と `needs-approval` を return に含める。記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return する。W は Discord（MCP・CLI とも）へ直接送信しない。本体の代理送信手順は SKILL.md「実行モード」を参照
 - 昇格・乗り換え時は成果を破棄せず引き継ぐ（再開時に前回の return を前提に続ける）
 
 ## コンテキスト上限と手渡し（本体が測る。W は工程ごとに return する）

@@ -111,3 +111,23 @@ setup() {
   [ "$(jq -r --arg n "$first" '.plugins[] | select(.name==$n) | .description' "${scratch}/marketplace.json")" = "edited by ${first}" ]
   [ "$(jq -r --arg n "$last"  '.plugins[] | select(.name==$n) | .description' "${scratch}/marketplace.json")" = "edited by ${last}" ]
 }
+
+# --- S140: bundles "all" lists every plugin (issue #708) ---
+# 説明は「全プラグインをインストール」。件数は固定せず集合で縛る（新しいプラグインを足し忘れても気づける）。
+# bot トークンの設定が要る telegram だけを外していたが、telegram は解散した（PR #841）ので除外はない。
+@test "S140: bundles all equals plugins[]" {
+  all="$(jq -r '.bundles[] | select(.name=="all") | .plugins[]' "$MARKETPLACE" | sort)"
+  expected="$(jq -r '.plugins[].name' "$MARKETPLACE" | sort)"
+  if [ "$all" != "$expected" ]; then
+    echo "bundles all and plugins[] differ:"
+    diff <(echo "$all") <(echo "$expected") || true
+    return 1
+  fi
+}
+
+@test "S140b: bundles all includes capability-registry, casting and cost-ledger" {
+  for n in capability-registry casting cost-ledger; do
+    jq -e --arg n "$n" '.bundles[] | select(.name=="all") | .plugins | index($n) != null' "$MARKETPLACE" >/dev/null \
+      || { echo "bundles all lacks ${n}"; return 1; }
+  done
+}

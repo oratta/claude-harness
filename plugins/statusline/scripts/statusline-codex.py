@@ -172,7 +172,31 @@ def refresh(cache, binary, key):
         atomic(cache, doc)
 
 
+def codex_enabled():
+    """False only when accounts.json has the JSON false at "codex"."enabled".
+
+    Same rule as dev-workflow's usage_view.read_codex_enabled, kept here because the
+    statusline never loads another plugin's script: a missing or broken registry, a
+    missing key and every other value mean on.
+    """
+    base = os.environ.get('CLAUDE_CONFIG_DIR') or str(Path.home() / '.claude')
+    path = os.environ.get('CLAUDE_ACCOUNTS_FILE') or os.path.join(base, 'accounts.json')
+    try:
+        with open(path, encoding='utf-8') as handle:
+            document = json.load(handle)
+    except (OSError, ValueError):
+        return True
+    setting = document.get('codex') if isinstance(document, dict) else None
+    return not (isinstance(setting, dict) and setting.get('enabled') is False)
+
+
 def main():
+    # Off comes first: no auth read, no binary lookup, no cache access, no refresh child.
+    # The row still says off without a Codex login; --refresh has no rendering output.
+    if not codex_enabled():
+        if '--refresh' not in sys.argv:
+            print('off')
+        return
     key = identity()
     binary = shutil.which(os.environ.get('STATUSLINE_CODEX_BIN', 'codex'))
     if not key or not binary:

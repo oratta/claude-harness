@@ -124,6 +124,46 @@ JSON
   [ "$output" = "[4.5,null,null]" ]
 }
 
+# 週次だけの描画（#1547）。5 時間枠のキーは残し、値は null にする
+
+mk_seven_only() {
+  mk_input 0 "$1" 14000 "${2:-172800}" | jq -c 'del(.rate_limits.five_hour)'
+}
+
+@test "record: seven_day only is valid JSON with null five_hour fields" {
+  mk_seven_only 12 | bash "$SL" > /dev/null
+  run jq -c '[.five_hour_pct, .five_hour_resets_epoch, .weekly_all_pct, .weekly_resets_epoch, has("five_hour_pct"), has("five_hour_resets_epoch")]' \
+    "$SESSIONS/default.json"
+  [ "$status" -eq 0 ]
+  [ "$output" = "[null,null,12,$((BASE + 172800)),true,true]" ]
+  [ "$(cat "$SESSIONS"/.sessions/*)" = "null|null|12|$((BASE + 172800))" ]
+}
+
+@test "record: a redraw of the same seven_day-only value does not write" {
+  mk_seven_only 12 | bash "$SL" > /dev/null
+  local first
+  first="$(jq -r .observed_at "$SESSIONS/default.json")"
+  NOW=$((NOW + 60))
+  mk_seven_only 12 | bash "$SL" > /dev/null
+  [ "$(jq -r .observed_at "$SESSIONS/default.json")" = "$first" ]
+}
+
+@test "record: a seven_day-only redraw without a session_id still writes every time" {
+  mk_input 0 12 14000 172800 '' | jq -c 'del(.rate_limits.five_hour)' | bash "$SL" > /dev/null
+  NOW=$((NOW + 60))
+  mk_input 0 12 14000 172800 '' | jq -c 'del(.rate_limits.five_hour)' | bash "$SL" > /dev/null
+  [ "$(jq -r .observed_at "$SESSIONS/default.json")" = "$NOW" ]
+}
+
+@test "record: five_hour coming back with the same seven_day value writes" {
+  mk_seven_only 12 | bash "$SL" > /dev/null
+  [ "$(jq -r .five_hour_pct "$SESSIONS/default.json")" = null ]
+  NOW=$((NOW + 60))
+  mk_input 7 12 14000 172800 | bash "$SL" > /dev/null
+  run jq -c '[.five_hour_pct, .weekly_all_pct, .observed_at]' "$SESSIONS/default.json"
+  [ "$output" = "[7,12,$NOW]" ]
+}
+
 @test "record: USAGE_SESSIONS_DIR overrides the directory and no temp file is left" {
   export USAGE_SESSIONS_DIR="${WORK}/elsewhere"
   mk_input 3 69 14000 172800 | bash "$SL" > /dev/null
@@ -228,4 +268,33 @@ JSON
   mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
   [ ! -e "$SESSIONS/.sessions/0000000000000000" ]
   [ -e "$SESSIONS/.sessions/1111111111111111" ]
+}
+
+# ---------- 使わないハッシュを取らない（#648） ----------
+# shasum と sha256sum を、呼ばれたことを記録して失敗するスタブに差し替えて起動の有無を見る。
+# スタブは失敗するので覚えのファイルは作られない（ハッシュが取れないときは毎回書く経路）。
+
+# → PATH の先頭にスタブを置く。呼び出しは $WORK/hash-calls.log に 1 行ずつ残る
+stub_hash_commands() {
+  local c
+  mkdir -p "$WORK/stub"
+  for c in shasum sha256sum; do
+    printf '#!/bin/sh\necho "%s" >> "%s"\nexit 1\n' "$c" "$WORK/hash-calls.log" > "$WORK/stub/$c"
+    chmod +x "$WORK/stub/$c"
+  done
+  PATH="$WORK/stub:$PATH"
+}
+
+@test "hash: a render without rate_limits and with session_id starts neither shasum nor sha256sum" {
+  stub_hash_commands
+  printf '{"session_id":"session-x","workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"}}' "$WORK" | bash "$SL" > /dev/null
+  [ ! -e "$WORK/hash-calls.log" ]
+  [ ! -e "$SESSIONS" ] || [ -z "$(ls -A "$SESSIONS")" ]
+}
+
+@test "hash: a render with rate_limits and session_id still starts the hash command" {
+  stub_hash_commands
+  mk_input 3 40 14000 172800 session-x | bash "$SL" > /dev/null
+  [ -s "$WORK/hash-calls.log" ]
+  [ "$(weekly_and_observed)" = "40 $NOW" ]
 }
