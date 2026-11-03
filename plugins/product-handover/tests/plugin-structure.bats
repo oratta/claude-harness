@@ -47,13 +47,94 @@ setup() {
 }
 
 @test "legal drafts are marked as pre-review drafts" {
-  for f in terms privacy-policy refund-policy; do
+  for f in terms privacy-policy refund-policy tokushoho; do
     grep -q "ドラフト" "${TPL}/legal/${f}.md"
   done
 }
 
 @test "support desk template exists" {
   [ -f "${TPL}/support-desk.md" ]
+}
+
+# --- (b') issue #214 で足した2雛形: 特商法表記とインシデント対応手順書 ---
+
+@test "tokushoho template exists and is a pre-review draft" {
+  [ -f "${TPL}/legal/tokushoho.md" ]
+  head -1 "${TPL}/legal/tokushoho.md" | grep -q "ドラフト"
+  grep -q "レビュー前" "${TPL}/legal/tokushoho.md"
+}
+
+@test "tokushoho forbids the LLM from guessing operator details" {
+  grep -q "推測で埋めてはならない" "${TPL}/legal/tokushoho.md"
+  grep -q "<!-- 人間が穴埋め" "${TPL}/legal/tokushoho.md"
+}
+
+@test "tokushoho has the article 11 disclosure sections" {
+  local f="${TPL}/legal/tokushoho.md"
+  for h in 事業者名 所在地 電話番号 メールアドレス 販売責任者 販売価格 商品代金以外の必要料金 支払方法 支払時期 引渡時期 返品 動作環境; do
+    grep -Eq "^## [0-9]+\. .*${h}" "$f"
+  done
+}
+
+@test "tokushoho defers refund conditions to refund-policy" {
+  grep -q "refund-policy.md" "${TPL}/legal/tokushoho.md"
+  grep -q "tokushoho.md" "${TPL}/legal/refund-policy.md"
+}
+
+@test "incident runbook template exists and is a pre-review draft" {
+  [ -f "${TPL}/ops/incident-runbook.md" ]
+  head -1 "${TPL}/ops/incident-runbook.md" | grep -q "ドラフト"
+  grep -q "レビュー前" "${TPL}/ops/incident-runbook.md"
+}
+
+@test "incident runbook states the PPC reporting deadlines and user notification" {
+  local f="${TPL}/ops/incident-runbook.md"
+  grep -q "個人情報保護委員会" "$f"
+  grep -Eq "3〜5 ?日" "$f"
+  grep -Eq "30 ?日" "$f"
+  grep -Eq "60 ?日" "$f"
+  grep -q "本人への通知" "$f"
+}
+
+@test "incident runbook has the required sections" {
+  local f="${TPL}/ops/incident-runbook.md"
+  for h in 検知 初動 影響範囲の特定 報告と通知 事後対応と再発防止 連絡先一覧; do
+    grep -Eq "^## [0-9]+\. .*${h}" "$f"
+  done
+}
+
+@test "incident runbook is reachable from privacy policy and support desk" {
+  grep -q "incident-runbook.md" "${TPL}/legal/privacy-policy.md"
+  grep -q "incident-runbook.md" "${TPL}/support-desk.md"
+}
+
+@test "incident runbook covers pre-acquisition leaks in both detection and 4.1 (issue #628)" {
+  local f="${PLUGIN_DIR}/templates/ops/incident-runbook.md"
+  # 検知節の切り分け（4.1 より前）と 4.1 以降の両方に入っていること
+  local detect report
+  detect="$(sed -n '/^## 1\./,/^## 2\./p' "$f")"
+  report="$(sed -n '/^### 4\.1/,/^### 4\.2/p' "$f")"
+  echo "$detect" | grep -qE '取得しようとしている|取得予定|取得前'
+  echo "$report" | grep -qE '取得しようとしている|取得予定|取得前'
+  grep -q '該当性の判断は人間と専門家が行う' "$f"
+}
+
+@test "tokushoho address is the actually-active address only (issue #628)" {
+  local f="${PLUGIN_DIR}/templates/legal/tokushoho.md"
+  [ "$(grep -c '登記上または' "$f")" -eq 0 ]
+  grep -q '現に活動している住所' "$f"
+  grep -q '活動実態と一致' "$f"
+  grep -q '専門家レビュー' "$f"
+}
+
+@test "plugin README explains replacing relative references on deployment (issue #628)" {
+  grep -q 'incident-runbook.md' "${PLUGIN_DIR}/README.md"
+  grep -q '相対参照' "${PLUGIN_DIR}/README.md"
+}
+
+@test "top-level README counts four templates (issue #628)" {
+  [ "$(grep -c '雛形3種' "${REPO_ROOT}/README.md")" -eq 0 ]
+  grep -q '雛形4種だけ' "${REPO_ROOT}/README.md"
 }
 
 @test "autonomy lessons template exists" {

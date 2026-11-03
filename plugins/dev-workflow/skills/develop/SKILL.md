@@ -141,14 +141,14 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            （1 つの記録先を複数の change が共有すると、最新の仕様化判断が別の change のものになることがある。一致しなければ G を起こさず、W を `段: spec` で再開してその change の仕様化判断を投稿し直させる）
       段ごとに新しい G を起こす（段は 前提確認と重さ判定・照合と振り分け・合格処理・保留の解除 の 4 つ。1 体は 1 段だけを担当する。
            起こす時点と渡すものの表は gate-runner.md「段ごとの起動と入力」）。名前は `G-<PR>-<prepare|triage|pass|hold>-<n>`（n はその PR・その段で
-           起こした回数）、description は `G: <段> for PR #N (#issue)`（先頭の `G:` を残す。役割別集計がこの接頭辞で G と判定する）
+           起こした回数）、description は `G: <段> for PR #N (#issue)`（先頭の `G:` を残す。役割別集計がこの接頭辞で判定する）
       G の起動指示には常に `レビュー経路: adapter` の 1 行と `段: <段の名前>` の 1 行を書き（`レビュー経路: 従来` は書かない。
            詳細は「Role profile の選択」節の、`レビュー経路` の行の書き方（`レビュー経路: 従来` を書かない規則と Codex の G への書き方）、2 つ目以降の段では前の段の `## Gate Result` ブロックを要約し直さずそのまま貼る。
            channel のときは `実行モード: channel` の行と、develop 開始コメントと同じ値の `チャンネルの返事の確認:` の行（`可` / `不可`）も書く（G が hold.md 手順 6-3 の依頼文を書き分ける入力。`references/channel.md` の「channel のリスク許容」）
       次に起こす段は Gate Result の Status と `次の段:` だけで決める（止める指摘が残っているか・戻した指摘の仕分け・復帰手順の行き先を本体は判断しない）。
            G が `工程中断:` で返したら同じ段の新しい G を起こし、前任の return 全文と前任の起動指示に書いた入力を渡す
            （起こしてよい条件は references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」の「手渡しの許可」）
-      4 つの段で pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / needs-fix-check / review-incomplete / needs-carryover-judge / 次の段へ」
+      4 つの段で pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / needs-fix-check / review-incomplete / needs-carryover-judge / 重複で降りた / 次の段へ」
       次の段へ → `次の段:` の G を新しく起こす（照合と振り分けが止める指摘なしで終われば合格処理。保留の解除は合格処理か前提確認と重さ判定）
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
       passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
@@ -179,6 +179,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            一周目に区画が無く executor が claude なら補足レビュアーを 1 体だけ起こし、1 組の三表と残差を接頭辞の無い ID で補わせる。
            一周目に区画が無く executor が codex なら今までどおり 1 つの補足 request にする。補足済み回数は PR で 1 つだけ数える。
            develop の本体以外から G を起こす従来経路の手順（呼び出し元がレビュアーを起こす）は gate-runner.md のまま
+      重複で降りた → 取り直さず主に報告
       review-incomplete → reviewer を再起動しない。`agent-review:pending` のまま Gate Result の残差を報告して工程を止め、合格処理へ進まない
       failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、上げるのは決める役と実行役の一方だけ（実行側が原因なら W を `opus` まで（`fable` にしない。上限の正本は「モデル」節の表の W の行）、判断側が原因なら dev-workflow:decider。判断側・実行側の定義と decider の model の段は「モデル」節の昇格トリップワイヤーの段落）。
            仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）。段 A だけなら W を据え置きで再開する

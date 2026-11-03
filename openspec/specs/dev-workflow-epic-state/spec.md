@@ -53,11 +53,12 @@
 | `stop` | 文字列 | 空・`stopped`・`stopped-seen`・`resumed` のどれか |
 | `stop_uuid` | 文字列 | 親の `wait` が止まりとして受けた最後の子の発言の uuid（任意。無ければ空として読む） |
 | `stop_at` | 文字列 | 親の `wait` が止まりとして受けた UTC の時刻（任意。無ければ空として読む） |
+| `keepalive` | 文字列 | 親の `wait` が止まった子へ出すキャッシュの声かけの、最後の判定の結果 `<UTC の時刻> <結果>`（任意。無ければ空として読む。結果は要件「声かけの判定結果は子の記録の keepalive に残す」の語彙） |
 | `created_at` / `updated_at` | 文字列 | UTC の `YYYY-MM-DDTHH:MM:SSZ` |
 
-`status` は今のボードの列（`running` は印なし、`waiting` は `in-review`、`done` は `completed`）に、`stop` は今のコメント欄（`stopped` は `epic-stopped`、`stopped-seen` は `epic-stopped-seen`、`resumed` は `epic-resumed`）に当たり、値の遷移は今の印と同じにしなければならない（MUST）。ただし `stop` は子の `mark` に加えて親の `wait` と `dismiss` も書き（`wait` は空・`resumed` から `stopped-seen`、`stopped-seen` から `resumed`。`dismiss` は `stopped-seen` から `resumed`）、`resumed` への書き換えも Orca の印へ写す（MUST）。`stop_uuid` と `stop_at` は親の `wait` だけが書き（MUST）、子の `mark` と `dismiss` は変えない（MUST NOT）。止まった理由の本文は記録に持たず、子 issue の `子の停止: 主の返事待ち` のコメントを正本のままにする。そのコメントを持たない止まりでは、子の最後の発言を正本とする。`session` はこの版では Orca の `launch` と、起動し直した `reply`（`notify-closed`・`wait --resolve` の起動し直しを含む）が端末のハンドルを書き、`adopt` は空のまま書く（見張りの判定には使わない）。
+`status` は今のボードの列（`running` は印なし、`waiting` は `in-review`、`done` は `completed`）に、`stop` は今のコメント欄（`stopped` は `epic-stopped`、`stopped-seen` は `epic-stopped-seen`、`resumed` は `epic-resumed`）に当たり、値の遷移は今の印と同じにしなければならない（MUST）。ただし `stop` は子の `mark` に加えて親の `wait` と `dismiss` も書き（`wait` は空・`resumed` から `stopped-seen`、`stopped-seen` から `resumed`。`dismiss` は `stopped-seen` から `resumed`）、`resumed` への書き換えも Orca の印へ写す（MUST）。`keepalive` は親の `wait` だけが書く（MUST）。`stop_uuid` と `stop_at` は親の `wait` だけが書き（MUST）、子の `mark` と `dismiss` は変えない（MUST NOT）。止まった理由の本文は記録に持たず、子 issue の `子の停止: 主の返事待ち` のコメントを正本のままにする。そのコメントを持たない止まりでは、子の最後の発言を正本とする。`session` はこの版では Orca の `launch` と、起動し直した `reply`（`notify-closed`・`wait --resolve` の起動し直しを含む）が端末のハンドルを書き、`adopt` は空のまま書く（見張りの判定には使わない。子の会話ログのファイル名とも一致しないので、会話ログを選ぶ根拠にしてはならない（MUST NOT））。
 
-次のどれかに当たる記録は「読めない記録」とする: JSON のオブジェクトとして読めない／`schema` が `1` でない／`status` か `stop` が上の表に無い値／`epic`・`child`・`repo`・`number`・`parent_worktree`・`worktree` のどれかが無いか型が違う／`stop_uuid`・`stop_at` があって文字列でない。読めない記録は書き換えも削除もしてはならず（MUST NOT）、サブコマンドごとに次のとおり扱わなければならない（MUST）。どの場合も stderr にその記録のパスを出す。
+次のどれかに当たる記録は「読めない記録」とする: JSON のオブジェクトとして読めない／`schema` が `1` でない／`status` か `stop` が上の表に無い値／`epic`・`child`・`repo`・`number`・`parent_worktree`・`worktree` のどれかが無いか型が違う／`stop_uuid`・`stop_at`・`keepalive` があって文字列でない。読めない記録は書き換えも削除もしてはならず（MUST NOT）、サブコマンドごとに次のとおり扱わなければならない（MUST）。どの場合も stderr にその記録のパスを出す。
 
 | サブコマンド | 読めない記録の扱い |
 |---|---|
@@ -91,6 +92,14 @@
 #### Scenario: 止まりの項目が無い記録も読める
 - **WHEN** `stop_uuid` と `stop_at` の無い以前の記録を `wait` と `pending-owner` が読む
 - **THEN** 読めない記録にならず、どちらも空として扱う
+
+#### Scenario: keepalive の項目が無い記録も読める
+- **WHEN** `keepalive` の無い以前の記録を `wait` と `pending-owner` が読む
+- **THEN** 読めない記録にならず、空として扱う
+
+#### Scenario: keepalive が文字列でない記録は読めない記録
+- **WHEN** 記録の `keepalive` が数で `epic-dispatch.sh reap 12` を実行する
+- **THEN** stdout は `kept 12 state-unreadable` で、記録は変わらない
 
 ### Requirement: 記録は一時ファイルから置き換え、親と子の書き込みを排他する
 
@@ -687,3 +696,99 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 #### Scenario: Orca の部品の子は completed の印へ写す
 - **WHEN** 記録の `launcher` が `orca` の子 11 の完了を推定する
 - **THEN** `orca worktree set --worktree path:<子のワークツリー> --workspace-status completed` が 1 回呼ばれる（`epic-dispatch.sh` からは Orca の部品の `mirror` を通す）
+
+### Requirement: 止まった子への声かけは本体の会話ログ 1 本で判定する
+
+親の `wait` が止まった子（`stop` が `stopped-seen`）へ出すキャッシュの声かけの可否は、子の会話ログの置き場に複数の `.jsonl` があっても、本体の会話のログ 1 本だけで判定しなければならない（MUST）。本体のログは次の順で 1 本に決める（MUST）。(1) 置き場の直下の `*.jsonl` のうち、`entrypoint` が `cli` ちょうどで `isSidechain` が true でない assistant の行を持つファイルを候補にする。(2) 候補のうち、全行の `timestamp` の最大値が最も新しい 1 本を選ぶ。最大値が最も新しいファイルが 2 本以上あるとき、または最大値を決められないときは決めない。(3) 記録の `stop_uuid` が空のときは決めない。空でないときは、選んだファイルがその uuid の行を持たなければ決めない。
+
+#### Scenario: 置き場に複数のログがあっても本体のログで送る
+- **WHEN** 子の会話ログの置き場に、`entrypoint` が `cli` の本体のログ、`entrypoint` が `sdk-py` の短いログ、古い `cli` の過去のセッションのログがあり、本体のログが最も新しく、ほかの送る条件を満たす
+- **THEN** 起動部品の `keepalive` が 1 回呼ばれ、記録の `keepalive` は `<時刻> sent` になる
+
+#### Scenario: 最終活動が同時刻の候補は決めない
+- **WHEN** 2 本の `cli` のログの `timestamp` の最大値が同じで、どちらも記録の `stop_uuid` を持つ
+- **THEN** 起動部品の `keepalive` は呼ばれず、`skipped no-transcript` になる
+
+### Requirement: 本体のログを決められないときは声かけを送らない
+
+本体の会話のログを決められないときは本体のログなしとし、声かけを送ってはならない（MUST NOT）。本体が書けなくなって過去の `cli` のログだけが残る場合も、`stop_uuid` の確認で本体のログなしになる。記録の `session` は端末のハンドルなので、会話ログの選択に使ってはならない（MUST NOT）。
+
+#### Scenario: 本体のログが無く過去の cli のログだけ残るときは送らない
+- **WHEN** 置き場に過去の `cli` のログだけがあり、記録の `stop_uuid` がそのログに無い
+- **THEN** 起動部品の `keepalive` は呼ばれず、記録の `keepalive` は `<時刻> skipped no-transcript` になる
+
+#### Scenario: stop_uuid が空の記録には送らない
+- **WHEN** 本体のログが欠けて過去の `cli` のログが 1 本だけ残り、記録の `stop_uuid` が空である
+- **THEN** 起動部品の `keepalive` は呼ばれず、`skipped no-transcript` になる
+
+#### Scenario: 本体のログが無ければ送らない
+- **WHEN** 置き場の `*.jsonl` が `entrypoint` が `sdk-py` のものだけ、または 0 本である
+- **THEN** 起動部品の `keepalive` は呼ばれず、記録の `keepalive` は `<時刻> skipped no-transcript` になる
+
+### Requirement: 声かけの判定は選んだ 1 本のログだけから読む
+
+声かけの判定に使う会話ログの読み取り（最後のキャッシュの書き込みの時刻と枠の長さ、質問、主の答え、最後のリクエスト）は、選んだ 1 本だけから行わなければならない（MUST）。ほかのログのキャッシュの書き込みを採用してはならない（MUST NOT）。`wait` の待ち時間の上限の既定を決める読み取りは対象外で、今までどおり置き場の全ログを読む。
+
+#### Scenario: キャッシュの書き込みは選んだログのものだけを使う
+- **WHEN** 本体のログの最後のキャッシュの書き込みは 5 分の枠で、過去の `cli` のログに 1 時間の枠の書き込みがある
+- **THEN** 起動部品の `keepalive` は呼ばれず、`skipped cache-unknown` になる
+
+### Requirement: wait --resolve の起動し直しの判定も同じ本体のログを使う
+
+`wait --resolve` の起動し直しの判定（会話量と経過時間）も、同じ選び方で本体のログを決めなければならない（MUST。詳細は dev-workflow-develop の「wait --resolve は通す返事を送る前に起動し直すかを表で決める」）。ログが複数あることだけを理由に「起動し直さない」へ倒してはならない（MUST NOT）。
+
+#### Scenario: 複数のログがあっても起動し直しの判定は本体のログを使う
+- **WHEN** 置き場に本体のログと `sdk-py` の短いログがあり、本体のログが 90 分前で会話量が閾値以上である
+- **THEN** `wait --resolve` は起動し直す
+
+### Requirement: 声かけの判定結果は子の記録の keepalive に残す
+
+声かけの判定をしたとき、`wait` はその結果を子の記録の `keepalive` に `<UTC の時刻> <結果>` で書かなければならない（MUST）。結果は `sent`、`skipped <理由>`、`failed <理由>` の形とし、語彙に無い理由を書いてはならない（MUST NOT）。直前の結果が時刻を除いて同じときは書き直してはならない（MUST NOT。ポーリングごとの書き込みを避ける）。
+
+#### Scenario: 同じ結果は書き直さない
+- **WHEN** 同じ理由で続けて 2 回ポーリングする
+- **THEN** 2 回目は記録の `keepalive` の時刻が変わらない
+
+### Requirement: 判定より前に外れる skipped の理由は次の語に限る
+
+判定より前に外れるときの `skipped` の理由は次の語に限る（MUST）。`not-stopped`（`stop` が `stopped-seen` でないか `status` が `done`）・`no-session`（`session` が空）・`launch-failed`・`no-worktree`・`unsupported-launcher`（`launcher` が `orca`・`tmux` でない）・`gh-failed`（子かエピックのコメントを読めない）。
+
+#### Scenario: 止まっていない子には not-stopped が 1 回だけ書かれる
+- **WHEN** `stop` が `stopped-seen` でない子を 2 回続けてポーリングする
+- **THEN** 記録の `keepalive` は `<時刻> skipped not-stopped` で、2 回目は時刻が変わらない
+
+### Requirement: 会話ログによる skipped の理由は次の語に限る
+
+会話ログによって送らないときの `skipped` の理由は次の語に限る（MUST）。`no-transcript`（本体のログなし）・`cache-unknown`（選んだログの最後のキャッシュの書き込みが 1 時間の枠でないか読めない）・`cache-future`（その時刻が今より未来）・`expired`（止まりから `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200）以上、または基点を読めない）・`answered`（親が通した判断がある、または主が答えた）・`no-question`・`out-of-window`（最後のリクエストからの経過が送る範囲にない）・`too-large`（会話量が起動し直しの閾値以上）・`pending`（前の声かけに返事が来ていない）。
+
+#### Scenario: 送らなかった理由が記録から読める
+- **WHEN** 起動部品が `skipped dialog` を返す、止まりから 43200 秒を過ぎている、画面は送れるが親が通した判断が既にある、をそれぞれ用意する
+- **THEN** 記録の `keepalive` はそれぞれ `skipped dialog`、`skipped expired`、`skipped answered` で終わる
+
+### Requirement: 起動部品の結果も keepalive に残す
+
+起動部品が `skipped` を返したときは起動部品の理由（`no-terminal`・`ambiguous-terminal`・`busy`・`dialog`・`input-not-empty`・`unknown-state`）を `skipped <理由>` に、`failed` を返したときはその語を `failed <理由>` に入れなければならない（MUST）。
+
+#### Scenario: 起動部品が skipped を返すと理由が残る
+- **WHEN** 起動部品が `skipped dialog` を返す
+- **THEN** 記録の `keepalive` は `<時刻> skipped dialog` で終わる
+
+### Requirement: 記録の書き込みは wait の出力を変えない
+
+記録を書けなくても、`wait` の判定・送信・stdout の行・exit code を変えてはならない（MUST NOT）。stderr の出力も、記録を書けなかった旨の 1 行を除いて変えない（MUST NOT）。
+
+#### Scenario: wait の stdout と exit code は変わらない
+- **WHEN** 声かけの判定が `sent`・`skipped`・`failed` のそれぞれになる状況で `wait` を実行する
+- **THEN** stdout の行と exit code は、この変更の前と同じである
+
+### Requirement: 記録は主に伝えた止まりを told_uuid に持つ
+
+子の記録は、親が `told` で書く任意の文字列の項目 `told_uuid`（主に伝えた止まりの uuid）と `told_at`（書いた UTC の時刻 `YYYY-MM-DDTHH:MM:SSZ`）を持ってよい（MAY）。`told` 以外のサブコマンドはこの 2 つを書いてはならない（MUST NOT）。記録の `schema` は `1` のままとし、要件「子 1 ファイルの記録は決まった項目を持つ」の「読めない記録」の判定にこの 2 つの有無や形を加えてはならない（MUST NOT）。`told_uuid` が無い・文字列でない記録は、伝え済みでないとして読まなければならない（MUST）。
+
+#### Scenario: told の項目が無い記録も読める
+- **WHEN** `told_uuid` と `told_at` の無い以前の記録を `wait` と `pending-owner` が読む
+- **THEN** 読めない記録にならず、伝え済みでない止まりとして扱う
+
+#### Scenario: told_uuid が文字列でない記録は伝え済みでない
+- **WHEN** 子 11 の記録が `stop` `stopped-seen`・`stop_uuid` `d1`・`told_uuid` が数の `1` で、`wait --interval 1 --timeout 2 --watch-stopped 11` を実行する
+- **THEN** 読めない記録にならず、上限 2 秒で stdout は `timeout 11` の 1 行で exit 2

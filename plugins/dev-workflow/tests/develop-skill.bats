@@ -1223,7 +1223,8 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 @test "reply-after-idle: the keepalive and the restore table read the stop's uuid and stop_at" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -qF '止まった発言の uuid（`stop_uuid`）か主の返事待ちの停止記録があり未回答' "$f"
-  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から 86400 秒未満' "$f"
+  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200 秒。' "$f"
+  run grep -E '86400|24 時間' "$f"; [ "$status" -eq 1 ]
   grep -E '^\| 親が通した判断 \|' "$f" | grep -qF '`発言 <uuid>`'
   grep -E '^\| 主の返事待ちの子 \|' "$f" | grep -qF '`stop_uuid` に対応する `親の判断:`'
 }
@@ -1655,11 +1656,13 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   local epic="$PLUGIN_DIR/skills/develop/references/epic.md"
   grep -qF '正常な一行の往復だけ' "$epic"
   grep -qF '予約文' "$epic"
-  grep -qF '24 時間の基点' "$epic"
+  grep -qF '声かけの期限の基点' "$epic"
+  grep -qF '停止から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200＝12 時間。手順 5 の長い待ちと同じ値）未満' "$epic"
+  run grep -F '24 時間' "$epic"; [ "$status" -eq 1 ]
   grep -qF 'keepalive' "$epic"
   local idle="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -qF '3000 秒以上 3600 秒未満' "$idle"
-  grep -qF '86400 秒未満' "$idle"
+  grep -qF '既定 43200 秒' "$idle"
   grep -qF '切替を観測するまで' "$idle"
 
 }
@@ -1725,4 +1728,22 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$m" | grep -qF '子の最後の発言の全文（更新前の版の子は停止の記録）'
   ! printf '%s\n' "$m" | grep -qF '記録の PR の本文' || return 1
   grep -qF '子の最後の発言の全文（更新前の版の子は停止の記録）' "${SKILL_DIR}/references/parent-merge-criteria.md"
+}
+
+# spec: dev-workflow-develop（主に上げた止まりは told で記録し、伝え済みの止まりだけなら wait は expired で返る）
+@test "epic: escalated stops are recorded with told, and wait's expired ends the watch with a restart note" {
+  p8="$(grep -E '^8\. `stopped <N>...`' "$EPIC")"
+  printf '%s\n' "$p8" | grep -qF '上げた子ごとに `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ'
+  printf '%s\n' "$p8" | grep -qF '**マージ待ちの子** と **PR トークン上限の子** の手順で主に上げた場合を含む'
+  printf '%s\n' "$p8" | grep -qF '`skipped <N> ...`・`failed <N> ...` は主に上げずに 2 に戻る'
+  p7="$(grep -E '^7\. ' "$EPIC")"
+  printf '%s\n' "$p7" | grep -qF '報告を出し直した子には、待ちに入る前に手順 8 と同じく `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ。'
+  p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
+  printf '%s\n' "$p5" | grep -qF '`EPIC_DISPATCH_OWNER_WAIT_SEC`（秒。既定 43200＝12 時間）たつと `expired <N>...` で返る'
+  p9="$(grep -E '^9\. `expired <N>...`' "$EPIC")"
+  printf '%s\n' "$p9" | grep -qF '`wait` を掛けない'
+  printf '%s\n' "$p9" | grep -qF '`/develop <エピック番号>` で親を再開する'
+  printf '%s\n' "$p9" | grep -qF '時間分類の 60 分以上と同じ項目の再開の記録'
+  grep -F '**待ちをやめてよい条件**' "$EPIC" \
+    | grep -qF '(f) `wait` が `expired <N>...` で返り、手順 9 を済ませたとき（伝え済みの止まりだけが残っているので、下のやめる直前の (1)(2) の確認は要らない）'
 }
