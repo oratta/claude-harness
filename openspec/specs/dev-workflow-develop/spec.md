@@ -2689,9 +2689,9 @@ develop の `references/epic.md`「エピックの扱い」→「回し方」の
 - **THEN** stdout は `pending 12 d2` の 1 行で、記録は書き換えられない
 
 ### Requirement: wait --resolve は通す返事を送る前に起動し直すかを表で決める
-`epic-dispatch.sh wait --resolve` の `resolve_stopped` は、判断が `通す` のとき、`reply-after-idle.md` の子の表に従って `deliver_reply` の `relaunch` を決めなければならない（MUST）。子の会話量 `context_tokens` が `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS`（既定 150000）以上なら、経過時間と `compact_boundary` の有無によらず起動し直す（`relaunched`）。子の最後のリクエスト（トランスクリプトの最後の assistant の行の `timestamp`）から `EPIC_DISPATCH_RELAUNCH_IDLE_SEC`（既定 3600）秒以上の場合も、会話量と `compact_boundary` の有無によらず起動し直す。2 条件は OR とし、どちらも真と確認できなければ今までどおり送る（`sent`）。トランスクリプトは、状態の記録の `worktree` のパスの英数字以外を `-` に置換した名前の `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}` 直下のディレクトリの `*.jsonl` で、ちょうど 1 本のときだけ使う（MUST）。0 本・2 本以上・ファイルを読めないときはそのまま送る（端末が無いときの起動し直しは既存の送信処理に従う）。会話量は同じトランスクリプトを `plugins/dev-workflow/scripts/subagent-context.sh --file <file>` で測った `context_tokens` を使う（MUST）。exit 0 と 2 の JSON の値を比較し、`over_cap` やサブエージェント用の閾値で代用してはならない（MUST NOT）。会話量を読めなくても時間条件が真なら起動し直し、時刻を読めなくても会話量条件が真なら起動し直す（MUST）。新しい閾値と既存の時間閾値は未設定のときだけ既定を使い、数字だけの非負整数を受け付け、空か数字だけでない値なら、有効な `--resolve` の待ち受けに入る前に変数名と使い方を出して exit 1 で終わる（MUST）。`EPIC_DISPATCH_RELAUNCH_MIN_TOKENS` は読まない（SHALL。設定されていても値を検査しない）。`tests/epic-dispatch.bats` は偽の `orca`・`gh`・トランスクリプトで次の Scenario を確かめなければならない（MUST）。
+`epic-dispatch.sh wait --resolve` の `resolve_stopped` は、判断が `通す` のとき、`reply-after-idle.md` の子の表に従って `deliver_reply` の `relaunch` を決めなければならない（MUST）。子の会話量 `context_tokens` が `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS`（既定 150000）以上なら、経過時間と `compact_boundary` の有無によらず起動し直す（`relaunched`）。子の最後のリクエスト（トランスクリプトの最後の assistant の行の `timestamp`）から `EPIC_DISPATCH_RELAUNCH_IDLE_SEC`（既定 3600）秒以上の場合も、会話量と `compact_boundary` の有無によらず起動し直す。2 条件は OR とし、どちらも真と確認できなければ今までどおり送る（`sent`）。トランスクリプトは、状態の記録の `worktree` のパスの英数字以外を `-` に置換した名前の `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}` 直下のディレクトリの `*.jsonl` のうち、本体の会話のログ 1 本だけを使う（MUST）。本体のログは、`entrypoint` が `cli` ちょうどで sidechain でない assistant の行を持つファイルを候補にし、全行の `timestamp` の最大値が最も新しい 1 本とする。最大値が最も新しいファイルが 2 本以上あるとき、記録の `stop_uuid` が空でないのに選んだファイルがその uuid の行を持たないとき、`stop_uuid` が空のときは、本体のログを決めない（dev-workflow-epic-state の要件「止まった子への声かけは本体の会話ログ 1 本で判定する」と同じ選び方で、選ぶ処理は 1 つの関数を共有する）。`sdk-py` などの別のセッションのログが同じ置き場にあっても、それだけを理由にそのまま送ってはならない（MUST NOT）。本体のログを決められない・ファイルを読めないときは従来どおりそのまま送る（端末が無いときの起動し直しは既存の送信処理に従う）。会話量は同じトランスクリプトを `plugins/dev-workflow/scripts/subagent-context.sh --file <file>` で測った `context_tokens` を使う（MUST）。exit 0 と 2 の JSON の値を比較し、`over_cap` やサブエージェント用の閾値で代用してはならない（MUST NOT）。会話量を読めなくても時間条件が真なら起動し直し、時刻を読めなくても会話量条件が真なら起動し直す（MUST）。新しい閾値と既存の時間閾値は未設定のときだけ既定を使い、数字だけの非負整数を受け付け、空か数字だけでない値なら、有効な `--resolve` の待ち受けに入る前に変数名と使い方を出して exit 1 で終わる（MUST）。`EPIC_DISPATCH_RELAUNCH_MIN_TOKENS` は読まない（SHALL。設定されていても値を検査しない）。`tests/epic-dispatch.bats` は偽の `orca`・`gh`・トランスクリプトで次の Scenario を確かめなければならない（MUST）。
 
-この要件の入力は、状態の記録の `worktree`、一意に選ばれたトランスクリプトの `timestamp`・`type` と会話量の計測値、上の環境変数である。拾いたい誤りは、大きい会話の子へ 60 分未満だからとそのまま送り続けること、60 分以上止まった子（コンパクトされて `SKILL.md` の中身を持たない子を含む）へそのまま送ること、会話量が閾値未満かつ 60 分未満の子を不要に起動し直すことである。次は通してよく、この要件では止めない: 経過時間が 60 分前後で時刻の読み方により扱いが分かれる子／トランスクリプトが複数あり、そのまま送った子／PC が寝ていて、60 分未満と読め、会話量条件も真と確認できなかった子／計測に必要な情報が欠けて両方の条件を真と確認できなかった子。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。送れたあとのエピックの記録と、成功した子を待ち受けの出力から外す契約は維持する（MUST）。以下の `sent` / `relaunched` は送信処理の結果であり、`wait` の stdout にその行を追加する要件ではない。
+この要件の入力は、状態の記録の `worktree`、本体のログとして選ばれたトランスクリプトの `timestamp`・`type` と会話量の計測値、上の環境変数である。拾いたい誤りは、大きい会話の子へ 60 分未満だからとそのまま送り続けること、60 分以上止まった子（コンパクトされて `SKILL.md` の中身を持たない子を含む）へそのまま送ること、会話量が閾値未満かつ 60 分未満の子を不要に起動し直すことである。次は通してよく、この要件では止めない: 経過時間が 60 分前後で時刻の読み方により扱いが分かれる子／本体のログを決められずそのまま送った子（過去の `cli` のログだけが残る子、最終活動が同時刻の候補がある子を含む）／PC が寝ていて、60 分未満と読め、会話量条件も真と確認できなかった子／計測に必要な情報が欠けて両方の条件を真と確認できなかった子。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。送れたあとのエピックの記録と、成功した子を待ち受けの出力から外す契約は維持する（MUST）。以下の `sent` / `relaunched` は送信処理の結果であり、`wait` の stdout にその行を追加する要件ではない。
 
 #### Scenario: 60 分以上・コンパクトなし・150,000 以上なら起動し直す
 - **WHEN** 通す判断の子のトランスクリプトの最後のリクエストが 60 分以上前で、`compact_boundary` が無く、会話量が 150,000 以上で `wait --resolve` を実行する
@@ -2710,8 +2710,12 @@ develop の `references/epic.md`「エピックの扱い」→「回し方」の
 - **THEN** 返事は `sent` で届く
 
 #### Scenario: 事実を読めなければそのまま送る
-- **WHEN** トランスクリプトが無い、または 2 本ある
+- **WHEN** トランスクリプトが無い、または記録の `stop_uuid` を持つ `cli` のログが無い（過去の `cli` のログだけがある）、または最終活動が同時刻の `cli` のログが 2 本ある
 - **THEN** 返事は `sent` で届く
+
+#### Scenario: 別のセッションのログが混ざっていても本体のログで決める
+- **WHEN** 置き場に `entrypoint` が `sdk-py` のログと、最後のリクエストが 60 分以上前で記録の `stop_uuid` を持つ本体のログがある
+- **THEN** 返事は `relaunched` で届く
 
 #### Scenario: 閾値の環境変数が数字でなければ起動しない
 - **WHEN** `EPIC_DISPATCH_RELAUNCH_IDLE_SEC=1h` で `wait --resolve` を実行する
@@ -2738,11 +2742,11 @@ develop の `references/epic.md`「エピックの扱い」→「回し方」の
 - **THEN** `subagent-context.sh --file` の会話量 150000 を使い、返事は `relaunched` で届く
 
 #### Scenario: 会話量を読めなくても時間条件で起動し直す
-- **WHEN** 一意で読めるトランスクリプトに有効な usage が無い、または会話量の計測が失敗したが、最後の assistant が 60 分以上前の状態で実行する
+- **WHEN** 本体のログとして選べて読めるトランスクリプトに有効な usage が無い、または会話量の計測が失敗したが、最後の assistant が 60 分以上前の状態で実行する
 - **THEN** 返事は `relaunched` で届く
 
 #### Scenario: 時刻を読めなくても会話量条件で起動し直す
-- **WHEN** 一意で読めるトランスクリプトから時刻を読めないが、会話量が 150000 の状態で既定値で実行する
+- **WHEN** 本体のログとして選べて読めるトランスクリプトから時刻を読めないが、会話量が 150000 の状態で既定値で実行する
 - **THEN** 返事は `relaunched` で届く
 
 #### Scenario: 両条件とも真と確認できなければそのまま送る
@@ -3340,7 +3344,7 @@ develop の既存要件のうち見出しや本文が「Orca 経路」「`回し
 
 1. 親の見張りの照合で子の記録がちょうど 1 件読め、`status` が `running` である（`waiting`・`done` は推定しない）
 2. 記録の `stop` が `stopped` でも `stopped-seen` でもない
-3. 記録の `worktree` が空でなく、子のトランスクリプト（`${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<worktree の英数字以外を - にした名前>/*.jsonl`。置き場のディレクトリは `wait --resolve` の起動し直しの判定と同じ求め方で、置き場を求める処理は 1 つの関数を共有する（既定の置き場の変更は起動し直しの判定にも掛かる）。起動し直しの判定の「ちょうど 1 本」はその判定の側に残す）が 1 本以上ある
+3. 記録の `worktree` が空でなく、子のトランスクリプト（`${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<worktree の英数字以外を - にした名前>/*.jsonl`。置き場のディレクトリは `wait --resolve` の起動し直しの判定と同じ求め方で、置き場を求める処理は 1 つの関数を共有する（既定の置き場の変更は起動し直しの判定にも掛かる）。起動し直しの判定が使う本体のログの選び方はその判定の側に残し、ここでは置き場の全部の `.jsonl` を読む）が 1 本以上ある
 4. 置き場の全部の `.jsonl` と、そのセッションのサブエージェントのトランスクリプト（`<置き場>/<セッション>/subagents/*.jsonl`）を通して、`timestamp` を持つ行（種類を問わない）の最大値を最後の活動とし、今の時刻との差が `EPIC_DISPATCH_DONE_IDLE_SEC`（秒・既定 1800）以上である。`timestamp` を持つ行が 1 つも無い・読めない・`python3` が無いときは満たさない
 5. 子 issue を、位置引数の子と同じ `gh` の呼び出しの形（記録の `repo` で決まる `issue_api`）で 1 回読み、`state` が `closed` で `state_reason` が `completed` である
 6. 5 と同じ 1 回の `gh` で読んだ `closed_at` と今の時刻との差が `EPIC_DISPATCH_DONE_IDLE_SEC` 以上である。`closed_at` が無いときは満たさない（記録先が閉じた直後に、閉じる前から長く動いている背景のコマンドだけを走らせている子を完了としないため）
