@@ -66,7 +66,7 @@ grep だけで数えていた頃は、行頭コメント行しか落とせず、
                              さらにその単語がコマンド位置（先頭の予約語 `if` `{` `!`
                              などの直後を含む）か前置き代入の連なり（`x=1 a[…]=3 cmd`）
                              か複合代入 `=( … )` の中にあるもの。予約語の直後には
-                             `time -p` の `-p` の直後も含み、前置き代入の連なりは
+                             `time -p` `time --` `time -p --` の直後も含み、前置き代入の連なりは
                              先行する語の添字を `]` まで 1 単語として読む
                              （`a[1<<2]=3 b[1<<2]=4`）。`: foo[bar <<EOF ]=3`
                              のようなコマンドの引数は代入語ではない（PR #635 指摘）
@@ -472,8 +472,14 @@ class _Scanner:
             return True
         k = 0
         while k < len(words):
-            if words[k] == "time" and k + 1 < len(words) and words[k + 1] == "-p":
-                k += 2  # `time -p` の `-p` は `time` の続き（PR #635 指摘）
+            if words[k] == "time":
+                # `time` の直後の `-p` と `--` は `time` の続き（PR #635 指摘）。
+                # 順序は `-p` が先、`--` が後（`time -- -p` の `-p` はコマンド）。
+                k += 1
+                if k < len(words) and words[k] == "-p":
+                    k += 1
+                if k < len(words) and words[k] == "--":
+                    k += 1
             elif words[k] in _LEADING_RESERVED:
                 k += 1
             elif words[k] == "function" and k + 2 < len(words) and words[k + 2] == "{":

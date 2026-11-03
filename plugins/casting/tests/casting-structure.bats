@@ -516,18 +516,41 @@ SH
 report() { printf "[%s] %s\n" "$1" "$2"; }
 time -p a[1<<2]=3
 report "after-time-p" "a"
-! time -p x=1 b[1<<2]=4
+@NOT@ time -p x=1 b[1<<2]=4
 report "after-negated-time-p" "b"
-! -p foo[bar <<EOF ]=3
+@NOT@ -p foo[bar <<EOF ]=3
 don't report "in-heredoc-negated-p" "x"
 EOF
 report "after-negated-p-heredoc" "c"
 SH
+  # 行頭の否定 `!` はソース上に書かず（tests/bats-assertion-guard.bats が行頭 `! ` を禁じる）、
+  # 目印 @NOT@ を書き出し後に `!` へ置き換える。スキャナが読む入力は `!` つきの行のまま。
+  sed -i.bak 's/^@NOT@/!/' "$synthetic"
 
   bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
   [ "$(count_report_calls "$synthetic")" = "3" ]
   [ "$(count_literal_report_calls "$synthetic")" = "3" ]
   [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-negated-p-heredoc after-negated-time-p after-time-p " ]
+}
+
+# `time` の直後の `--` も `-p` と同じく `time` の続き（bash の `time [-p] [--] cmd`）。
+# 読み落とすと `time -- a[1<<2]=3` の `a[` が開かず、以降の呼び出しが全消滅する。
+@test "check: time -- and time -p -- keep the command position for an assignment subscript" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-time-dashdash.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+time -- a[1<<2]=3
+report "after-time-dd" "a"
+time -p -- a[1<<2]=3
+report "after-time-p-dd" "b"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-time-dd after-time-p-dd " ]
 }
 
 # 添字判定を bash の位置規則に揃えた副作用で、添字でない `[` の扱いが変わっていないことの
