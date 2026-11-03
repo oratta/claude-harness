@@ -1033,6 +1033,44 @@ PY
   ! grep -qE "repos/acme/cwd-repo/issues/12( |\$)" "$GH_LOG" || return 1   # 対象の確認の問い合わせを足さない
 }
 
+@test "backfill: a failed closing-PR query does not stack an existing issue close row again" {  # 既存行 issue クローズ（クローズの 5 秒後）があり、閉じた PR の問い合わせが失敗する（nodes: [null]）とき、書き込みは 0 回（#982）
+  log_issue_12
+  set_seen "$SEEN0"
+  set_list "issue,12,$M"
+  seed_comment 12 "issue クローズ" $((M_EPOCH + 5))
+  FAKE_CLOSING_PRS='[null]'; export FAKE_CLOSING_PRS
+  log_timeline_args
+  run_backfill
+  [ -s "$GH_LOG.graphql" ]
+  grep -qE -- "^args=timeline --issue 12 --trigger issue クローズ\+PR 照会失敗 --at $M_EPOCH\.000 --repo $CWD --target-repo acme/cwd-repo --backfill\$" "$COST_LOG"
+  no_write
+}
+
+@test "backfill: a failed closing-PR query does not stack an existing close row marked PR query failed again" {  # 既存行 issue クローズ+PR 照会失敗 があり、また閉じた PR の問い合わせが失敗するとき、書き込みは 0 回（#982）
+  log_issue_12
+  set_seen "$SEEN0"
+  set_list "issue,12,$M"
+  seed_comment 12 "issue クローズ+PR 照会失敗" $((M_EPOCH + 5))
+  FAKE_CLOSING_PRS='[null]'; export FAKE_CLOSING_PRS
+  log_timeline_args
+  run_backfill
+  [ -s "$GH_LOG.graphql" ]
+  grep -qE -- "^args=timeline --issue 12 --trigger issue クローズ\+PR 照会失敗 " "$COST_LOG"
+  no_write
+}
+
+@test "backfill: a failed child query does not stack an existing close row marked child query failed again" {  # 子を持つ issue で子孫の問い合わせが失敗し、既存行 issue クローズ+子 issue 照会失敗 があるとき、書き込みは 0 回（#982）
+  log_issue_12
+  set_seen "$SEEN0"
+  FAKE_LIST="$("$REAL_PYTHON" -c 'import json, sys; d = json.loads(sys.argv[1]); d[0]["sub_issues_summary"] = {"total": 1}; print(json.dumps(d))' "$(list_json "issue,12,$M")")"; export FAKE_LIST
+  seed_comment 12 "issue クローズ+子 issue 照会失敗" $((M_EPOCH + 5))
+  log_timeline_args
+  run_backfill
+  [ -s "$GH_LOG.graphql" ]   # stub の応答に subIssues が無いので子孫の問い合わせは失敗する
+  grep -qE -- "^args=timeline --issue 12 --trigger issue クローズ\+子 issue 照会失敗 " "$COST_LOG"
+  no_write
+}
+
 @test "backfill: a pull request from a fork is not stacked" {  # ヘッドのリポジトリがベースと違う PR では、既存コメントの取得も書き込みもしない
   one_pr_candidate
   export FAKE_HEAD_REPO=someone/cwd-repo
