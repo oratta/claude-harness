@@ -19,7 +19,7 @@ The `## Skill 命名規則リファクタリング` section of `openspec/backlog
 
 ### Requirement: `post-merge-steps.md` MUST contain user-facing cleanup instructions
 
-`{longrun-dir}/post-merge-steps.md` SHALL instruct the user to run `/plugin uninstall obsidian-llm-session-rules@oratta-claude-harness`, `/plugin uninstall skill-aware-workflow@oratta-claude-harness`, and `/reload-plugins`, and SHALL instruct the user to remove both plugins' keys from the `enabledPlugins` object of each affected project's `settings.local.json` (referencing the skill-pack plugin's `enabledPlugins`-editing convention).
+`{longrun-dir}/post-merge-steps.md` SHALL instruct the user to run `/plugin uninstall obsidian-llm-session-rules@oratta-claude-harness`, `/plugin uninstall skill-aware-workflow@oratta-claude-harness`, and `/reload-plugins`, and SHALL instruct the user to remove both plugins' keys from the `enabledPlugins` object of each affected project's `settings.local.json`.
 
 #### Scenario: Uninstall and reload commands present
 

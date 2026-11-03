@@ -28,7 +28,7 @@ Draft PR は早い段階で作る。目的は作業のバックアップでは�
 **LLM 会話ログはこのリポジトリの配下に置かない**（`./LLM/` を含む。marketplace dir 側・開発用 clone 側とも）。marketplace dir は自動更新で再 clone されると untracked ファイルごと消えるし、開発用 clone でもログは tracked の対象ではない。
 
 - 保存先は環境変数 **`LLM_LOG_DIR`** を参照する。未設定なら **ユーザーに保存先を確認する**（デフォルトパスを勝手に決めて書き込まない。個人のディレクトリ構成を git に残さないため）
-- `daily-report` / `weekly-report` など LLM ログを扱う skill を呼び出すときも、この優先順位でパスを解決する
+- 日報・週報など LLM ログを扱う skill を呼び出すときも、この優先順位でパスを解決する
 
 CI を将来追加する場合の設計指針（Draft PR では skip するパターン）は `docs/ci-design.md` を参照。
 
@@ -40,4 +40,4 @@ CI を将来追加する場合の設計指針（Draft PR では skip するパ�
 
 この開発場所と PR 運用のルールは **「Claude Code プラグインの配布元リポジトリ（install 先が自動更新される）」** だから必要なもので、一般の作業 repo には適用しない。
 
-関連: `~/.claude/rules/git-commit-policy.md`（細かい commit 推奨、main 直 push 禁止）、`~/.claude/rules/plugin-editing.md`（プラグインをどこで編集するか・変更の記録）。
+関連: `~/.claude/rules/git-commit-policy.md`（細かい commit 推奨、main 直 push 禁止）、`~/.claude/rules/plugin-editing.md`（プラグインをどこで編集するか）。

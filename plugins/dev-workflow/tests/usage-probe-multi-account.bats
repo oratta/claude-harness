@@ -20,6 +20,11 @@ setup() {
   export USAGE_SESSIONS_DIR="${WORK}/sessions"
   export USAGE_PROBE_STATE="${WORK}/probe-state.json"
   export USAGE_PROBE_LOCK="${WORK}/probe.lock"
+  # 本番経路のテスト（curl・security の差し替え）は snapshot を書いたあと headroom.py を呼ぶ。
+  # その書き先（.headroom.json と codex-usage）と Codex の home を作業用ディレクトリに向け、
+  # 本物の ~/.claude と ~/.codex に触れない（CODEX_HOME は存在しないディレクトリにして Codex を取りに行かせない）
+  export CLAUDE_CONFIG_DIR="${WORK}/claude-config"
+  export CODEX_HOME="${WORK}/no-codex-home"
 }
 
 teardown() {
@@ -561,11 +566,18 @@ PY
 @test "test mode: an empty USAGE_PROBE_RESPONSE_FILE does not force the test path" {
   # 空文字は main と同じく本番経路。テスト経路に入ると無言で exit 0 してしまう。
   # 本番経路では Keychain / curl に進むが、認証が取れなければ fail-open で snapshot を書かない。
-  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
+  # HOME と PATH の security は足場で隔離する（本物の認証情報と Keychain を読まない）。
+  # 代役の security は何も返さない（認証なし）ので、本番経路に進んでも snapshot は書かれない。
+  setup_keychain_stubs
+  printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >> "%s/security-calls"\nexit 44\n' "$WORK" > "${STUB}/security"
+  run env PATH="${STUB}:${PATH}" HOME="${WORK}/home" \
+      USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="${WORK}/absent.json" \
       USAGE_PROBE_RESPONSE_FILE="" USAGE_PROBE_ENDPOINT="http://127.0.0.1:9/none" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
   [ ! -f "$SNAP" ]
+  # 本番経路に入った証拠: 足場の security が引かれている
+  [ -s "${WORK}/security-calls" ]
 }
 
 @test "test mode: a per-slot response file alone still selects the test path" {
@@ -591,8 +603,8 @@ PY
 }
 
 # ---------- 本番経路の User-Agent ----------
-# 使用量 API は User-Agent が claude-code/<版> でないリクエストを厳しい別枠で数え、
-# 429 を返し続ける。curl と claude を差し替え、実際に送られる見出しを記録して確かめる。
+# 使用量 API は Claude Code の User-Agent を名乗らないリクエストを厳しい別枠で数え、
+# 429 を返し続ける。リセット権は claude-cli/<版> (external, cli) の形でないと対象外になる。curl と claude を差し替え、実際に送られる見出しを記録して確かめる。
 
 # $1=claude --version の出力（空なら非 0 で終わる claude を置く）
 setup_production_stubs() {
@@ -620,21 +632,23 @@ SH
   chmod +x "${STUB}/curl" "${STUB}/claude"
 }
 
-@test "user-agent: production fetch names the installed claude-code version" {
+@test "user-agent: production fetch names the installed version in the claude-cli form" {
   setup_production_stubs "2.1.280 (Claude Code)"
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.280' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
   [ "$(jq -r '.accounts.x.five_hour_pct' "$SNAP")" = "10" ]
+  # 本番経路でも headroom の書き先は setup の CLAUDE_CONFIG_DIR（作業用ディレクトリ）
+  [ "$(jq -r '.schema' "${WORK}/claude-config/.headroom.json")" = "1" ]
 }
 
-@test "user-agent: falls back to a fixed claude-code version when claude is unavailable" {
+@test "user-agent: falls back to a fixed version in the claude-cli form when claude is unavailable" {
   setup_production_stubs ""
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
 }
 
 @test "user-agent: an unexpected claude --version output falls back to the fixed version" {
@@ -642,7 +656,61 @@ SH
   run env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
       USAGE_PROBE_NOW="$NOW" "$PROBE"
   [ "$status" -eq 0 ]
-  grep -qxF 'User-Agent: claude-code/2.1.0' "${WORK}/curl-args"
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
+}
+
+bats_require_minimum_version 1.5.0
+
+# PATH に claude が無い環境（cron・hook・launchd 等）の再現。claude を置かない STUB と最小の PATH を使う
+setup_no_path_claude() {
+  setup_production_stubs ""
+  rm -f "${STUB:?}/claude"
+  NOCLAUDE_PATH="${STUB}:/usr/bin:/bin"
+  if PATH="$NOCLAUDE_PATH" command -v claude >/dev/null 2>&1; then
+    skip "claude is on the minimal PATH of this machine"
+  fi
+  FAKE_HOME="${WORK}/home"
+  mkdir -p "${FAKE_HOME}/.local/bin"
+}
+
+@test "user-agent: finds claude in \$HOME/.local/bin when PATH has none" {
+  setup_no_path_claude
+  printf '#!/usr/bin/env bash\necho "2.1.280 (Claude Code)"\n' > "${FAKE_HOME}/.local/bin/claude"
+  chmod +x "${FAKE_HOME}/.local/bin/claude"
+  run env HOME="$FAKE_HOME" PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.280 (external, cli)' "${WORK}/curl-args"
+  [[ "$output" != *"2.1.0"* ]] || return 1
+}
+
+@test "user-agent: warns on stderr when no claude is found and the fixed version is used" {
+  setup_no_path_claude
+  run --separate-stderr env HOME="$FAKE_HOME" PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
+  [[ "$stderr" == *"claude"*"2.1.0"* ]] || return 1
+  [ "$(printf '%s\n' "$stderr" | grep -c 'usage-probe')" -eq 1 ]
+}
+
+@test "user-agent: HOME unset and no claude on PATH still falls back to the fixed version with a warning" {
+  setup_no_path_claude
+  run --separate-stderr env -u HOME PATH="$NOCLAUDE_PATH" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_STATE="$USAGE_PROBE_STATE" \
+      USAGE_PROBE_LOCK="$USAGE_PROBE_LOCK" USAGE_SESSIONS_DIR="$USAGE_SESSIONS_DIR" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qxF 'User-Agent: claude-cli/2.1.0 (external, cli)' "${WORK}/curl-args"
+  [[ "$stderr" == *"2.1.0"* ]] || return 1
+}
+
+@test "user-agent: no warning when the version is found" {
+  setup_production_stubs "2.1.280 (Claude Code)"
+  run --separate-stderr env PATH="${STUB}:${PATH}" USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  [[ "$stderr" != *"2.1.0"* ]] || return 1
 }
 
 @test "user-agent: USAGE_PROBE_USER_AGENT overrides the header" {
@@ -1054,4 +1122,207 @@ run_production_probe() {
   [ "$(printf '%s\n' "$output" | sed -n 2p | cut -f1)" = "b" ]
   [ "$(printf '%s\n' "$output" | sed -n 1p | cut -f4)" = "Claude Code-credentials" ]
   [ "$(printf '%s\n' "$output" | sed -n 2p | cut -f4 | cut -c1-24)" = "Claude Code-credentials-" ]
+}
+
+# ---------- --refresh: 429 の待ちを残して鮮度と間隔だけを外す（#1256） ----------
+# spec: dev-workflow-escalation-tripwires「usage-probe と snapshot 契約」の手動の取り直し
+
+# $1=a の試行時刻 $2=a の連続 429 回数 $3=b の試行時刻 $4=b の連続 429 回数
+write_two_slot_state() {
+  printf '{"slots":{"a":{"last_attempt":%s,"consecutive_429":%s},"b":{"last_attempt":%s,"consecutive_429":%s}}}\n' \
+    "$1" "$2" "$3" "$4" >| "$USAGE_PROBE_STATE"
+}
+
+run_two_slot_probe() {
+  run env USAGE_SNAPSHOT="$SNAP" CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" \
+      USAGE_PROBE_RESPONSE_FILE_A="${WORK}/ra.json" USAGE_PROBE_RESPONSE_FILE_B="${WORK}/rb.json" \
+      USAGE_PROBE_NOW="$NOW" "$PROBE" "$@"
+}
+
+@test "refresh: slots not waiting on a 429 are fetched again inside the freshness and interval windows" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  write_two_slot_state "$((NOW - 3600))" 0 "$((NOW - 3600))" 0
+  # 対照: 引数なしでは鮮度と間隔の内側なので叩かない
+  run_two_slot_probe
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(state_of a .last_attempt)" = "$((NOW - 3600))" ]
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "96" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "8" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: a slot waiting on a 429 is not fetched and its attempt and count stay unchanged" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  # a: 連続 2 回で前回の試行が間隔（10800）の 1.5 倍前 → 待ちは 2 倍なので待ち中
+  write_two_slot_state "$((NOW - 16200))" 2 "$((NOW - 3600))" 0
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(jq -r '.accounts.a.fable_weekly_pct' "$SNAP")" = "94" ]
+  [ "$(state_of a .last_attempt)" = "$((NOW - 16200))" ]
+  [ "$(state_of a .consecutive_429)" = "2" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "8" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: a slot whose 429 wait has ended is fetched inside the freshness window" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  # a: 連続 2 回で前回の試行が間隔の 2 倍前 → 待ちが明けている
+  write_two_slot_state "$((NOW - 21600))" 2 "$((NOW - 3600))" 0
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of a .consecutive_429)" = "0" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of b .last_attempt)" = "$NOW" ]
+}
+
+@test "refresh: an off slot is not fetched and no attempt is recorded for it" {
+  seed_two_slot_snapshot "$((NOW - 600))"
+  write_record "" "$((NOW - 600))"
+  write_record "${WORK}/claude-b" "$((NOW - 600))"
+  write_two_slot_registry_enabled "" false
+  run_two_slot_probe --refresh
+  [ "$status" -eq 0 ]
+  [ "$(jq -r '.accounts.a.fetched_at' "$SNAP")" = "$NOW" ]
+  [ "$(state_of a .last_attempt)" = "$NOW" ]
+  [ "$(state_of b '')" = "null" ]
+  [ "$(jq -r '.accounts.b.fetched_at' "$SNAP")" = "$((NOW - 600))" ]
+  [ "$(jq -r '.accounts.b.fable_weekly_pct' "$SNAP")" = "7" ]
+}
+
+# ---------- 期限切れの平文 credentials と Keychain（#1396） ----------
+# 平文の expiresAt が過去なら、Keychain からトークンが取れたときだけ Keychain を使う。
+# 取れない（security が無い・Keychain が空）ときは、従来どおり切れた平文のトークンのまま。
+# security と curl は差し替え、HOME と securestorage は作業用ディレクトリ配下（実環境に触れない）。
+
+# $1=expiresAt の JSON 値（空なら書かない）
+write_plain_x() {
+  mkdir -p "${WORK}/claude-x"
+  local exp="${1:+, \"expiresAt\": $1}"
+  printf '{"claudeAiOauth":{"accessToken":"plain-x"%s}}' "$exp" > "${WORK}/claude-x/.credentials.json"
+}
+
+@test "stale plaintext: expired expiresAt in epoch seconds falls through to the keychain token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  grep -qF "Bearer tok-${SERVICE_X}\"" "${WORK}/curl-calls"
+  ! grep -qF "plain-x" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: expired expiresAt in epoch milliseconds falls through to the keychain token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$(( (NOW - 3600) * 1000 ))"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  grep -qF "Bearer tok-${SERVICE_X}\"" "${WORK}/curl-calls"
+  ! grep -qF "plain-x" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: a future expiresAt (seconds or milliseconds) keeps the plaintext token and skips the keychain" {
+  local exp
+  for exp in "$((NOW + 3600))" "$(( (NOW + 3600) * 1000 ))"; do
+    # 前回の試行状態が残ると 2 周目は取得を飛ばすので消す
+    rm -f "$USAGE_PROBE_STATE" "$SNAP"
+    setup_keychain_stubs "" false
+    write_plain_x "$exp"
+    run_production_probe
+    [ "$status" -eq 0 ]
+    grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+    [ "$(grep -cxF "$SERVICE_X" "${WORK}/security-calls")" = "0" ]
+  done
+}
+
+@test "stale plaintext: a plaintext file without expiresAt, or with a non-numeric, negative or boolean one, keeps the plaintext token as before" {
+  local exp
+  for exp in "" '"123"' -1 true; do
+    rm -f "$USAGE_PROBE_STATE" "$SNAP"
+    setup_keychain_stubs "" false
+    write_plain_x "$exp"
+    run_production_probe
+    [ "$status" -eq 0 ]
+    grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+    [ "$(grep -cxF "$SERVICE_X" "${WORK}/security-calls")" = "0" ]
+  done
+}
+
+@test "stale plaintext: the default slot reads ~/.claude/.credentials.json and falls through to the default keychain service" {
+  setup_keychain_stubs
+  cat > "$ACCOUNTS" <<JSON
+{ "schema": 1, "accounts": [
+  { "id": "d", "label": "D", "securestorage": null }
+] }
+JSON
+  mkdir -p "${WORK}/home/.claude"
+  printf '{"claudeAiOauth":{"accessToken":"plain-d","expiresAt":%s}}' "$((NOW - 3600))" > "${WORK}/home/.claude/.credentials.json"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  grep -qF "Bearer tok-Claude Code-credentials\"" "${WORK}/curl-calls"
+  ! grep -qF "plain-d" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: expired plaintext and a keychain entry whose accessToken is null keeps the plaintext token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  cat > "${STUB}/security" <<SH
+#!/usr/bin/env bash
+printf 'called\n' >> "${WORK}/security-calls"
+printf '{"claudeAiOauth":{"accessToken":null}}\n'
+SH
+  chmod +x "${STUB}/security"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "${WORK}/security-calls" | tr -d ' ')" -ge 1 ]
+  grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+  ! grep -qF "Bearer None" "${WORK}/curl-calls" || return 1
+}
+
+@test "stale plaintext: expired plaintext and no security command keeps the plaintext token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  # security だけを持たない PATH（curl・claude は差し替え、他は本物へのリンク）
+  local nosec="${WORK}/nosec-bin" t p
+  mkdir -p "$nosec"
+  cp "${STUB}/curl" "${STUB}/claude" "$nosec/"
+  for t in bash sh env mktemp awk sed seq tr cut cat date rm mv cp mkdir ls wc grep head tail sort uniq python3 jq shasum dirname basename touch chmod sleep find readlink ln id uname stat tee xargs expr; do
+    p="$(command -v "$t" 2>/dev/null || true)"
+    [ -n "$p" ] && [ ! -e "$nosec/$t" ] && ln -s "$p" "$nosec/$t"
+  done
+  [ ! -e "$nosec/security" ]
+  run env PATH="$nosec" HOME="${WORK}/home" USAGE_SNAPSHOT="$SNAP" \
+      CLAUDE_ACCOUNTS_FILE="$ACCOUNTS" USAGE_PROBE_NOW="$NOW" "$PROBE"
+  [ "$status" -eq 0 ]
+  grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
+  [ "$(wc -l < "${WORK}/security-calls" | tr -d ' ')" = "0" ]
+}
+
+@test "stale plaintext: expired plaintext and an empty keychain keeps the plaintext token" {
+  setup_keychain_stubs "" false
+  write_plain_x "$((NOW - 3600))"
+  cat > "${STUB}/security" <<SH
+#!/usr/bin/env bash
+printf 'called\n' >> "${WORK}/security-calls"
+exit 44
+SH
+  chmod +x "${STUB}/security"
+  run_production_probe
+  [ "$status" -eq 0 ]
+  [ "$(wc -l < "${WORK}/security-calls" | tr -d ' ')" -ge 1 ]
+  grep -qF "Bearer plain-x\"" "${WORK}/curl-calls"
 }

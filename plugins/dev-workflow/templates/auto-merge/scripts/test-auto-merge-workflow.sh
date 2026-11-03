@@ -84,7 +84,7 @@ else
     ".github/workflows/evil.yml" \
     ".github/workflows/nested/deploy.yml" \
     "CLAUDE.md" \
-    "workspace/moko/CLAUDE.md" \
+    "workspace/example/CLAUDE.md" \
     ".claude/skills/cron-triggers/SKILL.md" \
     ".claude/settings.json" \
     "docs/agent-loop.md" \
@@ -145,7 +145,7 @@ else
   # 一致してはならないパス（聖域でも、親の判断で human-merge を外してよいもの）
   for p in \
     "CLAUDE.md" \
-    "workspace/moko/CLAUDE.md" \
+    "workspace/example/CLAUDE.md" \
     ".claude/settings.json" \
     "docs/agent-loop.md" \
     "rules/example.md" \

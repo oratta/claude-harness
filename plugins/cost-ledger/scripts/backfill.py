@@ -32,6 +32,7 @@ SKIP_SOURCES = ("clear", "compact")  # 同じセッションの続き。matcher 
 # 一覧の要素を 1 件 1 行にする。--paginate の出力は複数ページだと配列が連結されるので、全体を
 # 1 つの JSON として読まない（gate_report.existing_comment と同じ読み方）。使う項目だけを取り出す
 LIST_JQ = ('.[] | {number, state, updated_at, closed_at, is_pr: has("pull_request"), '
+           'repo: (.repository_url // null), '
            'merged_at: (.pull_request.merged_at // null), '
            'children: (.sub_issues_summary.total // 0)} | tojson')
 ISO = "%Y-%m-%dT%H:%M:%SZ"
@@ -114,7 +115,8 @@ def write_seen(path, key, value):
 
 def list_closed(gate_report, repo, since):
     """クローズ済みの issue / PR のうち since 以降に更新されたものの一覧（gh api を 1 回）。
-    呼び出しの失敗・1 行でも読めない・形が崩れているときは None（読めたページまでで進めない）。"""
+    呼び出しの失敗・1 行でも読めない・形が崩れているとき・要素のリポジトリ名が repo と違う（改名・
+    移管で GitHub が転送先を答えた）ときは None（読めたページまでで進めない）。"""
     p = gate_report.gh_api([
         "--paginate",
         "repos/%s/issues?state=closed&since=%s&sort=updated&direction=asc&per_page=100" % (repo, iso(since)),
@@ -128,6 +130,10 @@ def list_closed(gate_report, repo, since):
         try:
             item = json.loads(line)
             if not isinstance(item, dict) or type(item.get("number")) is not int or item["number"] < 1:
+                return None
+            # 転送先の一覧を旧名のパスで引き続けない。名前を確かめられない要素も一覧の失敗と同じ扱い
+            name = gate_report.full_name(item.get("repo"))
+            if name is None or name.lower() != repo.lower():
                 return None
             items.append({
                 "number": item["number"],
@@ -202,9 +208,9 @@ def stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind, children=0)
     try:
         # 行の時刻と累計を切る時刻は、GitHub が記録した出来事の時刻（セッションを始めた時刻ではない）
         gate_report.stack(kind, repo, number, branch, names, "%.3f" % at, cwd, scripts_dir,
-                          extra=["--backfill"], children=children if kind == "issue" else 0)
+                          extra=["--backfill"], children=children if kind == "issue" else 0, cache_lock=fd)
     finally:
-        os.close(fd)  # 閉じるとロックも外れる
+        gate_report.unlock(fd)  # 検査済みの置き場も対象のロックと同時に解放
 
 
 def sweep(gate_report, ledger, cwd, scripts_dir):

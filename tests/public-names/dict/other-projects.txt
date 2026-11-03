@@ -1,0 +1,5 @@
+# 公開済みの語だけ。新しい固有名は書かない
+suimei
+uranai
+shukan
+sns-autopilot

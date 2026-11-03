@@ -8,14 +8,18 @@
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
+  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   CRITERIA="${PLUGIN_DIR}/skills/develop/references/parent-merge-criteria.md"
   PASS_CRITERIA="${PLUGIN_DIR}/skills/develop/references/parent-pass-criteria.md"
   CI_WATCH="${PLUGIN_DIR}/references/ci-watch.md"
   OPS="${PLUGIN_DIR}/references/commit-and-pr-operations.md"
 }
 
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$SKILL"; }
-run_section() { section 'エピックの扱い' | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
+# 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
+section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
+run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
 # 「回し方」の中の、マージ待ちの子の段落（`**マージ待ちの子**` で始まる段落から次の空行まで）
 merge_para() { run_section | awk '/^\*\*マージ待ちの子\*\*/{f=1} f && /^$/{exit} f'; }
 # ci-watch.md の「`ready` を受けたあと」の節
@@ -62,7 +66,7 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
 @test "skill: the merge-wait paragraph sits in the Orca procedure and runs before step 8 escalates" {
   p="$(merge_para)"
   [ -n "$p" ]
-  printf '%s\n' "$p" | grep -qF '`止まった理由:` が `PR のマージ待ち（` で始まる'
+  printf '%s\n' "$p" | grep -qF '今回の止まった理由が `PR のマージ待ち（` で始まる'
   printf '%s\n' "$p" | grep -qF '一致する `親の判断:` が無い'
   printf '%s\n' "$p" | grep -qF '手順 8'
 }
@@ -109,9 +113,11 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
   printf '%s\n' "$r" | grep -qF '`nested`'
   printf '%s\n' "$r" | grep -qF '止まった理由: PR のマージ待ち（human-merge）: <PR の URL>'
   printf '%s\n' "$r" | grep -qF 'contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>'
-  for k in '前提:' '推奨:' '推奨の根拠:' '受け入れるリスク:' '再開に要る途中経過:'; do
-    printf '%s\n' "$r" | grep -qF -- "$k" || { echo "missing example item: $k"; return 1; }
+  for k in '聖域のどのパス' 'ゲートの合格の HEAD' '親の判断で自動マージの処理に回す' '今の HEAD の SHA'; do
+    printf '%s\n' "$r" | grep -qF -- "$k" || { echo "missing content: $k"; return 1; }
   done
+  ! printf '%s\n' "$r" | grep -qF '残りの 6 項目' || return 1
+  printf '%s\n' "$r" | grep -F '決まりで主の承認が要る' | grep -qF '聖域のファイルに触れた PR'
   # 従来のオーナーへの依頼の文は残る（ci-watch.bats が見ている）
   printf '%s\n' "$r" | grep -qF '待たずに PR の URL を添えてオーナーにマージを頼み'
 }

@@ -13,7 +13,7 @@
   「プラグインが前回注入時から更新されたとき（CLAUDE_PLUGIN_ROOT が変わったとき）」だけ同じ本文を再注入する。
   CLAUDE_PLUGIN_ROOT が同じ間は毎プロンプト無出力で、文脈を食わない。
 - unmanned（loop-dev-agent）で使う場合: 各リポに配備済みの憲法ファイル（docs/agent-loop.md。
-  flatmate が保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
+  それを配るリポジトリが保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
   組み込んでいる。手動コピーは不要。
 - develop スキルの W（サブエージェント）は hook 注入を受けないため、W の指示書
   （skills/develop/references/roles/worker/common.md「昇格トリップワイヤー」）が同じ条件を return の契機として持つ。
