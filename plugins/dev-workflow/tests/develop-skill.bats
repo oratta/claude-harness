@@ -1737,7 +1737,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$p8" | grep -qF '**マージ待ちの子** と **PR トークン上限の子** の手順で主に上げた場合を含む'
   printf '%s\n' "$p8" | grep -qF '`skipped <N> ...`・`failed <N> ...` は主に上げずに 2 に戻る'
   p7="$(grep -E '^7\. ' "$EPIC")"
-  printf '%s\n' "$p7" | grep -qF '出し直した子には手順 8 と同じく `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼んで、待ちに入る'
+  printf '%s\n' "$p7" | grep -qF '報告を出し直した子には、待ちに入る前に手順 8 と同じく `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ。'
   p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
   printf '%s\n' "$p5" | grep -qF '`EPIC_DISPATCH_OWNER_WAIT_SEC`（秒。既定 43200＝12 時間）たつと `expired <N>...` で返る'
   p9="$(grep -E '^9\. `expired <N>...`' "$EPIC")"

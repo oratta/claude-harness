@@ -24,4 +24,4 @@
 
 ## 6. 仕上げ
 
-- [ ] 6.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/epic-launch-tmux.bats plugins/dev-workflow/tests/develop-skill.bats` と `bats tests/injection-budget.bats` が通り、`openspec validate epic-wait-owner-told --type change --strict` が通る
+- [x] 6.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/epic-launch-tmux.bats plugins/dev-workflow/tests/develop-skill.bats` と `bats tests/injection-budget.bats` が通り、`openspec validate epic-wait-owner-told --type change --strict` が通る
