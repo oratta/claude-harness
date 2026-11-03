@@ -15,7 +15,7 @@
 #
 # 紐付けの規約（正本は openspec の dev-workflow-pr-token-budget と skills/develop/SKILL.md）:
 # - Claude 分: develop の本体は spawn 時の Agent ツールの description に記録先番号を `#N` で入れる。
-#   ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/agent-*.meta.json の description に
+#   ${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/*/*/subagents/agent-*.meta.json の description に
 #   渡した番号のどれかが `#N`（直後が数字でない）で現れ、作業ディレクトリ（meta の worktreePath、
 #   無ければトランスクリプトの最初の cwd）が実行時のリポジトリと同じもの（git common dir で比較。
 #   worktree は親に畳む）を数える。識別子が求まらないものは unresolved に数える。
@@ -30,7 +30,7 @@ set -uo pipefail
 
 records=()
 cap="${DEV_WORKFLOW_PR_TOKEN_CAP:-30000000}"
-projects="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
+projects="${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
 codex_records=""
 codex_homes=()
 usage='usage: pr-token-budget.sh <番号>... [--cap N] [--projects DIR] [--codex-records FILE] [--codex-home DIR]...'
