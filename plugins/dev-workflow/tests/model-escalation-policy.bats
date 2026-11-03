@@ -120,8 +120,9 @@ setup() {
 @test "escalation: the two-round cap is given as the reason for raising on the first failed" {
   sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
   echo "$sec" | grep -qF '2 周キャップ'
-  echo "$sec" | grep -qF '最終周'
+  echo "$sec" | grep -qF '既定の最終周'
   echo "$sec" | grep -qF '1 回目の failed'
+  echo "$sec" | grep -qF '直し方の判定'
 }
 
 @test "escalation: ambiguous spec and reviewer false positives are not escalated" {
@@ -133,7 +134,7 @@ setup() {
 # --- ルール3: フォールバック（Fable が使えないとき） ---
 
 @test "fallback: falls back to the previous model and records one PR comment line" {
-  grep -qF 'フォールバック' "${REVIEW_RUN}"
+  grep -qF 'Fable が使えないときのフォールバック' "${TRIAGE}"
   grep -qF '決める役モデル: opus' "${TRIAGE}"
   grep -qF 'dev-workflow:decider のまま' "${TRIAGE}"
   grep -qF 'レート制限' "${TRIAGE}"

@@ -67,7 +67,7 @@ run_smoke_with_code() { # $1=HTTP code $2=body
 }
 
 @test "markers: auto-merge.yml has all replacement/extraction marker pairs" {
-  for m in sacred-paths sacred-paths-jq required-checks labeled-target passed-head-binding pre-merge-recheck automerge-script; do
+  for m in sacred-paths sacred-paths-jq merge-condition-paths parent-merge-judgment required-checks labeled-target passed-head-binding pre-merge-recheck automerge-script; do
     grep -qF "# >>> $m" "$WF"
     grep -qF "# <<< $m" "$WF"
   done
@@ -85,6 +85,7 @@ run_smoke_with_code() { # $1=HTTP code $2=body
   grep -qF 'AUTOMERGE_PAUSED' "$README"
   grep -qF 'revert-pr.yml' "$README"
   grep -qF 'docs/auto-merge.md' "$README"
+  grep -qF 'merge-condition-paths' "$README"
 }
 
 # --- Requirement: テンプレートは flatmate で実証済みの安全不変条件を維持する ---
@@ -411,6 +412,303 @@ EOF
   [ "$status" -eq 0 ]
   grep -q '^pr create' "$CALLS"
   ! grep -q '^issue create' "$CALLS" || return 1
+}
+
+# --- Requirement: 自動マージの処理は親の判断の印を受け取り、聖域接触だけで付いた human-merge を見送りの理由から外す（issue #1030） ---
+
+PJ_HEAD=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+PJ_OLD=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+
+# 印のコメント 1 件の JSON。$1=author_association $2=親が見た HEAD $3=改行（既定 \n）
+pj_mark() {
+  local nl="${3:-\\n}"
+  printf '{"author_association":"%s","html_url":"https://example.test/o/r/pull/7#issuecomment-1","body":"親のマージ判断: 可%s親が見た HEAD: %s%s理由: テスト"}' "$1" "$nl" "$2" "$nl"
+}
+pj_passed() {
+  printf '{"author_association":"OWNER","html_url":"https://example.test/o/r/pull/7#issuecomment-0","body":"対象 HEAD: %s\\n合格"}' "$PJ_HEAD"
+}
+
+# parent-merge-judgment の関数を、ワークフローの SACRED / MERGE_CONDITION / BLOCKING_LABELS と
+# いっしょに取り出し、記録用 gh スタブで 1 回呼ぶ。
+# $1=シナリオ名 $2=ラベル（改行区切り） $3=変更ファイル（改行区切り） $4=コメントの JSON 配列
+# 環境変数 FAIL_COMMENTS=1 でコメント取得を失敗させる、PJ_HEAD_IN で判定時の HEAD を差し替える、PJ_WF で対象のワークフローを差し替える
+run_parent_judgment() {
+  local d="$BATS_TEST_TMPDIR/pj-$1" wf="${PJ_WF:-$WF}"
+  mkdir -p "$d/bin"
+  printf '%s' "$4" > "$d/comments.json"
+  cat > "$d/bin/gh" <<EOF
+#!/bin/bash
+[ "\${FAIL_COMMENTS:-0}" = 1 ] && exit 1
+case "\$*" in
+  *--slurp*) printf '[%s]' "\$(cat "$d/comments.json")" ;;
+  *) cat "$d/comments.json" ;;
+esac
+EOF
+  chmod +x "$d/bin/gh"
+  {
+    sed -n '/# >>> sacred-paths$/,/# <<< sacred-paths$/p' "$wf" | sed 's/^          //'
+    sed -n '/# >>> merge-condition-paths/,/# <<< merge-condition-paths/p' "$wf" | sed 's/^          //'
+    sed -n "/BLOCKING_LABELS='/,/'\$/p" "$wf" | sed 's/^          //'
+    sed -n '/# >>> parent-merge-judgment/,/# <<< parent-merge-judgment/p' "$wf" | sed 's/^          //'
+    cat <<'EOF'
+parent_merge_judgment "$PJ_N" "$PJ_HEAD_IN" "$PJ_LABELS" "$PJ_FILES"
+echo "PARENT_OK=$PARENT_OK"
+echo "URL=$PARENT_COMMENT_URL"
+EOF
+  } > "$d/driver.sh"
+  run env PATH="$d/bin:$PATH" REPO=o/r PJ_N=7 PJ_HEAD_IN="${PJ_HEAD_IN:-$PJ_HEAD}" PJ_LABELS="$2" PJ_FILES="$3" bash -euo pipefail "$d/driver.sh"
+}
+
+LBL_OK='agent-review:passed
+human-merge
+parent-merge-approved'
+
+@test "parent judgment: sacred-only PR with label and OWNER mark -> PARENT_OK true with the mark URL" {
+  run_parent_judgment ok "$LBL_OK" "CLAUDE.md" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=true'
+  printf '%s\n' "$output" | grep -qx 'URL=https://example.test/o/r/pull/7#issuecomment-1'
+}
+
+@test "parent judgment: MEMBER and COLLABORATOR marks are accepted" {
+  for a in MEMBER COLLABORATOR; do
+    run_parent_judgment "assoc-$a" "$LBL_OK" "CLAUDE.md" "[$(pj_mark "$a" "$PJ_HEAD")]"
+    printf '%s\n' "$output" | grep -qx 'PARENT_OK=true'
+  done
+}
+
+@test "parent judgment: a mark posted from the Web UI (CRLF line breaks) still counts" {
+  run_parent_judgment crlf "$LBL_OK" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_HEAD" '\r\n')]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=true'
+}
+
+@test "parent judgment: touching the merge condition itself (incl. rename source) -> false" {
+  run_parent_judgment mc1 "$LBL_OK" "$(printf 'CLAUDE.md\n.github/workflows/ci.yml')" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+  # rename 元も含む一覧として渡されれば止まる（一覧に rename 元が入ることは e2e mc-rename と test script 1-b が確かめる）
+  run_parent_judgment mc2 "$LBL_OK" "$(printf 'docs/new.yml\n.github/workflows/old.yml')" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+}
+
+@test "parent judgment: deployed workflow treats pr-review-gate as the merge condition" {
+  local dep="$PLUGIN_DIR/../../.github/workflows/auto-merge.yml"
+  [ -f "$dep" ] || skip "not in the claude-harness tree"
+  PJ_WF="$dep" run_parent_judgment dep-ok "$LBL_OK" "rules/example.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=true'
+  PJ_WF="$dep" run_parent_judgment dep-mc "$LBL_OK" "plugins/dev-workflow/skills/pr-review-gate/SKILL.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+  PJ_WF="$dep" run_parent_judgment dep-ib "$LBL_OK" "tests/injection-budget.txt" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=true'
+}
+
+@test "parent judgment: mark for an older HEAD -> false" {
+  run_parent_judgment stale "$LBL_OK" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_OLD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+}
+
+@test "parent judgment: other blocking labels are never lifted" {
+  local blk
+  blk="$(sed -n "/BLOCKING_LABELS='/,/'\$/p" "$WF" | sed "s/^ *BLOCKING_LABELS='//; s/'\$//; s/^ *//" | grep -v '^$' | grep -vx human-merge)"
+  [ "$(printf '%s\n' "$blk" | wc -l)" -ge 3 ]
+  for L in $blk; do
+    run_parent_judgment "blk-$L" "$(printf '%s\n%s' "$LBL_OK" "$L")" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
+    printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+  done
+}
+
+@test "parent judgment: human-merge on a PR that touches no sacred path stays" {
+  run_parent_judgment nosacred "$LBL_OK" "src/app.js" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+}
+
+@test "parent judgment: label only / comment only / outside author -> false" {
+  run_parent_judgment labelonly "$LBL_OK" "CLAUDE.md" "[$(pj_passed)]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+  run_parent_judgment commentonly "$(printf 'agent-review:passed\nhuman-merge')" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+  for a in NONE CONTRIBUTOR; do
+    run_parent_judgment "outside-$a" "$LBL_OK" "CLAUDE.md" "[$(pj_mark "$a" "$PJ_HEAD")]"
+    printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+  done
+}
+
+@test "parent judgment: first line must be exactly the mark" {
+  local c
+  c='{"author_association":"OWNER","html_url":"u","body":"前置き\n親のマージ判断: 可\n親が見た HEAD: '"$PJ_HEAD"'"}'
+  run_parent_judgment firstline "$LBL_OK" "CLAUDE.md" "[$c]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+}
+
+@test "parent judgment: mark before human-merge -> false first, true once human-merge is on" {
+  run_parent_judgment early1 "$(printf 'agent-review:passed\nparent-merge-approved')" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+  run_parent_judgment early2 "$LBL_OK" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=true'
+}
+
+@test "parent judgment: comment fetch failure or malformed HEAD -> false (fail-closed)" {
+  FAIL_COMMENTS=1 run_parent_judgment fetchfail "$LBL_OK" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+  PJ_HEAD_IN=abc123 run_parent_judgment badhead "$LBL_OK" "CLAUDE.md" "[$(pj_mark OWNER abc123)]"
+  printf '%s\n' "$output" | grep -qx 'PARENT_OK=false'
+}
+
+@test "parent judgment: the mark never satisfies the passed-HEAD binding" {
+  block="$(sed -n '/# >>> passed-head-binding/,/# <<< passed-head-binding/p' "$WF")"
+  printf '%s\n' "$block" | grep -qF 'grep -qF "対象 HEAD: $HEAD_SHA"'
+  ! pj_mark OWNER "$PJ_HEAD" | grep -qF "対象 HEAD: $PJ_HEAD" || return 1
+}
+
+# automerge-script 全体を、エンドポイントごとに fixture を返す gh スタブ（--jq は本物の jq で適用）で動かす。
+# $1=シナリオ名 $2=1 回目のラベル $3=2 回目以降のラベル（マージ直前の取り直し） $4=変更ファイル $5=コメントの JSON 配列
+# $6=マージ直前の取り直し（ラベルを 2 回目に取ったあと）で返すコメントの JSON 配列（省略時は $5）。E2E_FILES_JSON を渡すと変更ファイルの JSON をそのまま使う（rename 元の再現用）
+run_automerge_e2e() {
+  local d="$BATS_TEST_TMPDIR/e2e-$1" checks
+  mkdir -p "$d/bin"
+  printf '%s' "$5" > "$d/comments.json"
+  printf '%s' "${6:-$5}" > "$d/comments2.json"
+  printf '%s\n' "$2" | jq -R . | jq -s 'map(select(length>0)) | map({name:.})' > "$d/labels1.json"
+  printf '%s\n' "$3" | jq -R . | jq -s 'map(select(length>0)) | map({name:.})' > "$d/labels2.json"
+  if [ -n "${E2E_FILES_JSON:-}" ]; then
+    printf '%s' "$E2E_FILES_JSON" > "$d/files.json"
+  else
+    printf '%s\n' "$4" | jq -R . | jq -s 'map(select(length>0)) | map({filename:.})' > "$d/files.json"
+  fi
+  printf '{"draft":false,"head":{"sha":"%s"},"base":{"ref":"main"},"merged":false}' "$PJ_HEAD" > "$d/pr.json"
+  sed -n "/REQUIRED_CHECKS='/,/'\$/p" "$WF" | sed "s/^ *//; s/^REQUIRED_CHECKS='//; s/'\$//" | grep -v '^$' \
+    | jq -R . | jq -s '{check_runs: map({name:., conclusion:"success", started_at:"2026-01-01T00:00:00Z"})}' > "$d/checks.json"
+  cat > "$d/bin/gh" <<EOF
+#!/bin/bash
+F="$d"
+echo "\$*" >> "\$F/calls.log"
+[ "\$1" = label ] && exit 0
+if [ "\$1" = pr ] && [ "\$2" = comment ]; then printf '%s\n' "\$*" >> "\$F/pr-comments.log"; exit 0; fi
+[ "\$1" = api ] || exit 0
+shift
+method=GET; jqexpr=""; slurp=0; ep=""; hasf=0
+while [ \$# -gt 0 ]; do
+  case "\$1" in
+    -X) method="\$2"; shift 2 ;;
+    --jq) jqexpr="\$2"; shift 2 ;;
+    --slurp) slurp=1; shift ;;
+    --paginate) shift ;;
+    -f|-F) hasf=1; shift 2 ;;
+    *) ep="\$1"; shift ;;
+  esac
+done
+[ "\$method" = GET ] && [ "\$hasf" = 1 ] && method=POST
+case "\$method \$ep" in
+  "PUT "*/merge) touch "\$F/merged"; exit 0 ;;
+  "POST "*/labels) touch "\$F/human-merge-added"; exit 0 ;;
+esac
+case "\$ep" in
+  */issues/*/comments*) n=\$(cat "\$F/labels-count" 2>/dev/null || echo 0); echo "\$n" >> "\$F/comments-phase.log"
+    if [ "\$n" -ge 2 ]; then body=\$(cat "\$F/comments2.json"); else body=\$(cat "\$F/comments.json"); fi ;;
+  */issues/*/labels) n=\$(cat "\$F/labels-count" 2>/dev/null || echo 0); n=\$((n+1)); echo "\$n" > "\$F/labels-count"
+    if [ "\$n" -ge 2 ]; then body=\$(cat "\$F/labels2.json"); else body=\$(cat "\$F/labels1.json"); fi ;;
+  */pulls/*/files*) body=\$(cat "\$F/files.json") ;;
+  */check-runs*) body=\$(cat "\$F/checks.json") ;;
+  */pulls/*) body=\$(cat "\$F/pr.json") ;;
+  *) body='[]' ;;
+esac
+[ "\$slurp" = 1 ] && body="[\$body]"
+if [ -n "\$jqexpr" ]; then printf '%s' "\$body" | jq -r "\$jqexpr"; else printf '%s' "\$body"; fi
+EOF
+  chmod +x "$d/bin/gh"
+  sed -n '/# >>> automerge-script/,/# <<< automerge-script/p' "$WF" | sed 's/^          //' > "$d/am.sh"
+  run env PATH="$d/bin:$PATH" GH_TOKEN=x MERGE_TOKEN=y REPO=o/r BASE_BRANCH=main AUTOMERGE_PAUSED= DRY_RUN=false \
+    ONLY_PR=7 EVENT_NAME=workflow_dispatch EVENT_PR= RUN_URL=https://example.test/run bash "$d/am.sh"
+  E2E_DIR="$d"
+}
+
+@test "e2e: sacred-only PR with the parent mark merges, and the merge comment names the mark" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e merge "$LBL_OK" "$LBL_OK" "CLAUDE.md" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ -f "$E2E_DIR/merged" ]
+  [ ! -f "$E2E_DIR/human-merge-added" ]
+  grep -qF 'issuecomment-1' "$E2E_DIR/pr-comments.log"
+  grep -qF 'human-merge' "$E2E_DIR/pr-comments.log"
+  printf '%s\n' "$output" | grep -qF '親の判断'
+}
+
+@test "e2e: without the mark a sacred PR gets human-merge and does not merge" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e nomark "agent-review:passed" "agent-review:passed" "CLAUDE.md" "[$(pj_passed)]"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+  [ -f "$E2E_DIR/human-merge-added" ]
+}
+
+@test "e2e: merge-condition PR with the mark does not merge" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e mc "$LBL_OK" "$LBL_OK" "$(printf 'CLAUDE.md\n.github/workflows/ci.yml')" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+}
+
+@test "e2e: the mark label removed before the pre-merge recheck -> no merge" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e recheck "$LBL_OK" "$(printf 'agent-review:passed\nhuman-merge')" "CLAUDE.md" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+}
+
+@test "e2e: rename source in the merge condition blocks the parent mark (files list carries previous_filename)" {
+  command -v jq >/dev/null || skip "jq not installed"
+  # rename 先だけを見ると聖域に当たらず、そのままマージされてしまう
+  E2E_FILES_JSON='[{"filename":"docs/new.yml","previous_filename":".github/workflows/old.yml","status":"renamed"}]' \
+    run_automerge_e2e mc-rename "$LBL_OK" "$LBL_OK" "" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+  # 聖域に触れていても、判定の関数に渡る一覧に rename 元が無ければ親の印でマージされてしまう
+  E2E_FILES_JSON='[{"filename":"CLAUDE.md","status":"modified"},{"filename":"docs/new.yml","previous_filename":".github/workflows/old.yml","status":"renamed"}]' \
+    run_automerge_e2e mc-rename2 "$LBL_OK" "$LBL_OK" "" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+}
+
+@test "e2e: the mark comment deleted before the pre-merge recheck -> no merge" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e recheck3 "$LBL_OK" "$LBL_OK" "CLAUDE.md" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]" "[$(pj_passed)]"
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+  # 1 回目の判定では印のあるコメントを返し、取り直しで初めて消えている
+  grep -qx 1 "$E2E_DIR/comments-phase.log"
+  grep -qx 2 "$E2E_DIR/comments-phase.log"
+  printf '%s\n' "$output" | grep -qF '親の判断の印があるため'
+}
+
+@test "e2e: human-merge removed by hand before the recheck still blocks a sacred PR" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e recheck2 "$LBL_OK" "$(printf 'agent-review:passed\nparent-merge-approved')" "CLAUDE.md" "[$(pj_passed),$(pj_mark OWNER "$PJ_HEAD")]"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+}
+
+@test "e2e: mark alone is not the passed-HEAD binding" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e nobinding "$LBL_OK" "$LBL_OK" "CLAUDE.md" "[$(pj_mark OWNER "$PJ_HEAD")]"
+  [ "$status" -eq 0 ]
+  [ ! -f "$E2E_DIR/merged" ]
+  printf '%s\n' "$output" | grep -qF '対象 HEAD'
+}
+
+@test "e2e: plain non-sacred PR still merges exactly as before" {
+  command -v jq >/dev/null || skip "jq not installed"
+  run_automerge_e2e plain "agent-review:passed" "agent-review:passed" "src/app.js" "[$(pj_passed)]"
+  [ "$status" -eq 0 ]
+  [ -f "$E2E_DIR/merged" ]
+  ! grep -qF '親の判断' "$E2E_DIR/pr-comments.log" || return 1
+}
+
+@test "invariant: job if: runs on parent-merge-approved, trigger stays labeled-only" {
+  grep -qE "^ *if: .*github\.event\.label\.name == 'parent-merge-approved'" "$WF"
+  grep -qE "^ *if: .*github\.event\.label\.name == 'agent-review:passed'" "$WF"
+  [ "$(awk '/^  pull_request_target:/{f=1;next} /^  [a-z_]/{f=0} f' "$WF" | grep -E '^ *types:' | sed 's/^ *//')" = "types: [labeled]" ]
 }
 
 # --- Requirement: 運用ガイドはリポ非依存の記述で提供される ---

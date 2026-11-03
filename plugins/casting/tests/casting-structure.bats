@@ -71,6 +71,18 @@ lint_template_paths() {
   LC_ALL=C grep -qF -- "catalog/catalog.md" "$SKILL"
 }
 
+@test "rule (#1035): step 1 treats reverting own unique mistakes as recoverable, except git and the sanctuary" {
+  RULE="${REPO_ROOT}/rules/perspective-casting.md"
+  SKILL="${PLUGIN_DIR}/skills/casting/SKILL.md"
+  for f in "$RULE" "$SKILL"; do
+    step1="$(grep -E '^1\. \*\*聖域か\*\*' "$f")"
+    [ -n "$step1" ] || { echo "no step 1 in $f"; return 1; }
+    for token in "戻し先が差分から一意" "git の破壊的操作と聖域への変更を戻す操作は除く" "回復不能側に倒す"; do
+      echo "$step1" | grep -qF -- "$token" || { echo "$f step 1 lacks: $token"; return 1; }
+    done
+  done
+}
+
 @test "rule: listed in rules/README.md" {
   LC_ALL=C grep -qF -- "perspective-casting.md" "${REPO_ROOT}/rules/README.md"
 }
@@ -400,6 +412,147 @@ SH
   [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-continued-subscript after-plus-assign " ]
 }
 
+# `]` と `=` の間に行継続 `\` が挟まる代入語（#244）。bash は継続を除いてから読むので
+# `a[1<<2]\` + `=3` は添字つき代入だが、`]` の直後の文字だけを見ると添字として開かず、
+# `<<` がヒアドキュメント開始と誤認されて以降の呼び出しが全消滅していた（無言経路）。
+@test "check: array assignment split between bracket and equals stays arithmetic" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-split-assign.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+a[1<<2]\
+=3
+report "after-split-assign" "m"
+b[1<<2]\
++=4
+report "after-split-plus-assign" "n"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-split-assign after-split-plus-assign " ]
+}
+
+# 上の修正（#244）に対する PR #635 レビュー指摘 F1 の退行ガード。代入語として読むのは
+# コマンド位置（`if` `{` の直後・`"$(` の中・`function g {` の本体の先頭を含む）か
+# 前置き代入の連なり（`x=1 a[…]=3 cmd`）の中だけで、
+# `: foo[bar <<EOF ]=3` のようなコマンドの引数は代入語ではない。引数の `foo[` を添字と
+# して開くと本物の `<<EOF` を読み飛ばし、本文の偽の report を数え、本文のアポストロフィ
+# で以降の本物の呼び出しを数え落とす。行継続で `]` と `=` を分けた形も同じ。
+@test "check: a bracket in a command argument is not an assignment subscript" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-arg-subscript.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+: foo[bar <<EOF ]=3
+don't report "in-heredoc-arg" "x"
+EOF
+report "after-arg-heredoc" "a"
+: foo[bar <<EOF ]\
+=3
+don't report "in-heredoc-split-arg" "x"
+EOF
+report "after-split-arg-heredoc" "b"
+x=1 a[1<<2]=3 true
+report "after-prefix-assign" "c"
+if b[1<<2]=3; then { c[1<<2]=4; }; fi
+report "after-reserved-word-assign" "d"
+echo "$(e[1<<2]=5; echo x)"
+report "after-dquote-subst-assign" "e"
+function g { h[1<<2]=6; }
+report "after-function-body-assign" "f"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "6" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "6" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-arg-heredoc after-dquote-subst-assign after-function-body-assign after-prefix-assign after-reserved-word-assign after-split-arg-heredoc " ]
+}
+
+# PR #635 レビュー指摘 B1 の退行ガード。位置判定は先行する単語を読み直すので、前の代入語の
+# 添字の中の `<` `;` `(` や空白で単語を切ると、前置き代入の連なりの 2 語目以降が代入語の
+# 位置に見えなくなる。`a[1<<2]=3 b[1<<2]=4` の `b[` が開かず、`<<` がヒアドキュメント開始と
+# 誤認されて以降の呼び出しが全消滅していた（無言経路）。一方、`]` の直後が `=` でない語は
+# 代入語ではないので、その後ろの `foo[bar` は引き続きコマンドの引数として読む。
+@test "check: a chain of prefix assignments keeps later subscripts arithmetic" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-prefix-chain.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+a[1<<2]=3 b[1<<2]=4
+report "after-chain-shift" "a"
+a[1 + 2]=3 b[(1<<2)]+=4 c[1<<2]=5
+report "after-chain-spaces" "b"
+a[i;j]=3 b[1<<2]=4
+report "after-chain-separator" "c"
+a[1<<2]=3 \
+b[1<<2]=4
+report "after-chain-continued" "d"
+foo[1] bar[baz <<EOF ]=3
+don't report "in-heredoc-after-glob" "x"
+EOF
+report "after-glob-heredoc" "e"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "5" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "5" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-chain-continued after-chain-separator after-chain-shift after-chain-spaces after-glob-heredoc " ]
+}
+
+# PR #635 レビュー指摘 B2 の退行ガード。`time -p` の `-p` は `time` の続きで、後ろはまだ
+# コマンド位置。`-p` を単語として数えると `time -p a[1<<2]=3` の `a[` が開かず、以降の
+# 呼び出しが全消滅していた（無言経路）。`time` の直後でない `-p` はコマンドやその引数で、
+# 後ろの `foo[bar` は引き続きコマンドの引数として読む。
+@test "check: time -p keeps the command position for an assignment subscript" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-time-p.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+time -p a[1<<2]=3
+report "after-time-p" "a"
+@NOT@ time -p x=1 b[1<<2]=4
+report "after-negated-time-p" "b"
+@NOT@ -p foo[bar <<EOF ]=3
+don't report "in-heredoc-negated-p" "x"
+EOF
+report "after-negated-p-heredoc" "c"
+SH
+  # 行頭の否定 `!` はソース上に書かず（tests/bats-assertion-guard.bats が行頭 `! ` を禁じる）、
+  # 目印 @NOT@ を書き出し後に `!` へ置き換える。スキャナが読む入力は `!` つきの行のまま。
+  sed -i.bak 's/^@NOT@/!/' "$synthetic"
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "3" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "3" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-negated-p-heredoc after-negated-time-p after-time-p " ]
+}
+
+# `time` の直後の `--` も `-p` と同じく `time` の続き（bash の `time [-p] [--] cmd`）。
+# 読み落とすと `time -- a[1<<2]=3` の `a[` が開かず、以降の呼び出しが全消滅する。
+@test "check: time -- and time -p -- keep the command position for an assignment subscript" {
+  local synthetic="${BATS_TEST_TMPDIR}/casting-check-time-dashdash.sh"
+
+  cat > "$synthetic" <<'SH'
+#!/usr/bin/env bash
+report() { printf "[%s] %s\n" "$1" "$2"; }
+time -- a[1<<2]=3
+report "after-time-dd" "a"
+time -p -- a[1<<2]=3
+report "after-time-p-dd" "b"
+SH
+
+  bash -n "$synthetic"   # 前提確認: 有効な bash 構文である
+  [ "$(count_report_calls "$synthetic")" = "2" ]
+  [ "$(count_literal_report_calls "$synthetic")" = "2" ]
+  [ "$(detection_categories "$synthetic" | tr '\n' ' ')" = "after-time-dd after-time-p-dd " ]
+}
+
 # 添字判定を bash の位置規則に揃えた副作用で、添字でない `[` の扱いが変わっていないことの
 # 確認。test コマンド `[ -f x ]`・`[[ … ]]`・連想配列の `${m[key]}` `${#m[@]}` `${!m[@]}`・
 # glob の文字クラス `file[a-z].txt` のどれも、直後のヒアドキュメント本文を本文のまま扱い、
@@ -476,7 +629,7 @@ SH
 # 「N項目」と書いている全文書を、出現ごとに実装のカテゴリ数と突き合わせる。
 # 全角数字（「５項目」）も半角に正規化してから比較するので、片側だけ全角で
 # 残した状態も落ちる。失敗時は実装側の数と文書側の表記の両方を出す。
-@test "docs: item-count wording in README, SKILL, script, plugin.json, marketplace.json and the spec matches the implementation" {
+@test "docs: item-count wording in README, SKILL, script, the spec and (when present) the manifest descriptions matches the implementation" {
   local n
   n="$(detection_category_count)"
   [ "$n" -ge 1 ]
@@ -489,17 +642,23 @@ plugin_dir, marketplace_path, spec_path = sys.argv[2], sys.argv[3], sys.argv[4]
 
 targets = {}
 for rel in ("README.md", "skills/casting/SKILL.md",
-            "scripts/casting-check.sh", ".claude-plugin/plugin.json"):
+            "scripts/casting-check.sh"):
     with open(f"{plugin_dir}/{rel}", encoding="utf-8") as fh:
         targets[rel] = fh.read()
 
+# manifest の description は /plugin メニュー用に 1 文へ短縮したので「N項目」の記載は必須にしない。
+# ただし spec は両 manifest も突き合わせ対象に挙げているので、書かれていれば件数を実装と照合する
+# （短縮後の説明文に誤った件数が再混入しても落ちる）。
+optional = {}
+with open(f"{plugin_dir}/.claude-plugin/plugin.json", encoding="utf-8") as fh:
+    optional["plugin.json (description)"] = json.load(fh).get("description", "")
 with open(marketplace_path, encoding="utf-8") as fh:
     entries = json.load(fh)["plugins"]
 desc = next((e["description"] for e in entries if e.get("name") == "casting"), None)
 if desc is None:
     print("marketplace.json に casting エントリが無い")
     raise SystemExit(1)
-targets["marketplace.json (casting description)"] = desc
+optional["marketplace.json (casting description)"] = desc
 
 # 規範の正本。実装とプラグイン文書だけを揃えても spec が取り残されると、
 # 「何項目を検査しなければならないか」の MUST が実装と食い違ったまま残る。
@@ -517,6 +676,14 @@ for name, text in targets.items():
     if stale:
         failures.append(
             f"{name}: 実装の検出カテゴリ数は {n} だが文書の表記は {stale}（全角も半角に正規化して比較）"
+        )
+
+for name, text in optional.items():
+    found = [int(unicodedata.normalize("NFKC", m)) for m in pattern.findall(text)]
+    stale = sorted({v for v in found if v != n})
+    if stale:
+        failures.append(
+            f"{name}: 実装の検出カテゴリ数は {n} だが説明文の表記は {stale}（全角も半角に正規化して比較）"
         )
 
 for line in failures:

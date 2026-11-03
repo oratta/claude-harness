@@ -4,7 +4,7 @@
 TBD - created by archiving change fable-decider-only. Update Purpose after archive.
 ## Requirements
 ### Requirement: 決める役の種別 dev-workflow:decider
-dev-workflow プラグインは決める役のエージェント定義 `agents/decider.md` を配布しなければならない（MUST）。frontmatter は `name: decider`・`description`・`model: fable`・`tools: Read, Grep, Glob` を持ち、`tools` に Edit / Write / NotebookEdit / Bash を含めてはならない（MUST NOT。編集できないことが「Fable は実行役にならない」の機械的な保証であり、この定義は `plugins/casting/agents/casting-arbiter.md` の書式に倣う）。
+dev-workflow プラグインは決める役のエージェント定義 `agents/decider.md` を配布しなければならない（MUST）。frontmatter は `name: decider`・`description`・`model: fable`・`effort: high`・`tools: Read, Grep, Glob` を持ち、`tools` に Edit / Write / NotebookEdit / Bash を含めてはならない（MUST NOT。編集できないことが「Fable は実行役にならない」の機械的な保証であり、この定義は `plugins/casting/agents/casting-arbiter.md` の書式に倣う）。
 
 プラグインは `.claude-plugin/plugin.json` の `agents` 配列で `./agents/decider.md` を宣言しなければならない（MUST。casting プラグインが `casting-specialist` / `casting-arbiter` を宣言しているのと同じ規約）。
 
@@ -20,7 +20,7 @@ verify・マージ可否で呼ばれたときは可否と根拠を返す（SHALL
 
 #### Scenario: 定義が読み取り専用ツールだけを持つ
 - **WHEN** `plugins/dev-workflow/agents/decider.md` の frontmatter を読む
-- **THEN** `model: fable` と `tools: Read, Grep, Glob` があり、Edit / Write / NotebookEdit / Bash は含まれない
+- **THEN** `model: fable`・`effort: high` と `tools: Read, Grep, Glob` があり、Edit / Write / NotebookEdit / Bash は含まれない
 
 #### Scenario: 入出力契約が本文にある
 - **WHEN** `plugins/dev-workflow/agents/decider.md` の本文を読む

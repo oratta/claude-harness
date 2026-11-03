@@ -60,12 +60,12 @@ PR #268 は 12 体のサブエージェントで 122,955,450 トークンを使�
 - **codex-develop.md / commands/develop.md**: model に系統名と完全 ID のどちらも書けること、記録先に要求値と解決後の ID を両方書くこと、新しいモデルが一覧に出るには Codex CLI の更新が要ることを書いた
 - **テスト**: Codex worker の Python テストに系統名の解決・非一意・hidden・版の数値比較・effort・解決結果の記録のテストを、develop 側の Python テストに役割表にモデル ID が無いことと系統名/完全 ID がそのまま request に写ることのテストを足した
 
-## 2.13.31 — 2026-09-23: 単独文の bats アサーションに `|| return 1` を義務付ける
+## 2.13.31 — 2026-09-23: 単独文の bats の `[[ ]]` アサーションに `|| return 1` を義務付ける
 
-`[[ ... ]]` や `[ ... ]` を単独文として書くと、bats のヘルパ関数内では失敗しても関数を抜けずに後続行が実行され、アサーションが効かないまま green になっていた（#284）。2.13.30 は先行して main に入った #416 が使用したため、この変更は 2.13.31 とした。
+bash 4.1 未満（macOS 標準の /bin/bash 3.2 など）では、bats のテスト本文に単独文として置いた `[[ ... ]]` が偽でも errexit で止まらず、アサーションが効かないまま green になっていた（#284）。2.13.30 は先行して main に入った #416 が使用したため、この変更は 2.13.31 とした。
 
-- `tests/bats-assertion-guard.bats` を新設し、ガードの無い単独文 `[[ ]]` / `[ ]` を全プラグイン横断で検出する
-- 対象だった 24 本の単独文アサーションに `|| return 1` を付与（`memory-refresh-skill.bats` / `memory-tripwire.bats` / `push-guard-setup.bats` / `review-hit-set.bats` ほか）
+- `tests/bats-assertion-guard.bats` を新設し、ガードの無い単独文 `[[ ]]` を全プラグイン横断で検出する
+- 対象だった 24 ファイル・378 箇所の単独文 `[[ ]]` アサーションに `|| return 1` を付与（`memory-refresh-skill.bats` / `memory-tripwire.bats` / `push-guard-setup.bats` / `review-hit-set.bats` ほか）
 
 ## 2.13.30 — 2026-09-23: usage-probe が User-Agent に claude-code を名乗る
 

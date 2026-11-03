@@ -51,6 +51,13 @@ gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由
 gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: 受け入れ条件が PR 本文に明記された機械的な振る舞い変更（設計判断なし）')"
 ```
 
+**仕様化すると判定したら、続けて文言合わせの通し方を当てるかを判定する**（対象・当てる条件・省くものの正本は `skills/develop/references/decision-criteria.md` Step B「仕様化するが軽く通す（仕様の文言合わせ）」。ここは要約）。対象は、既存の要件の文を実装に合わせて直すだけで、差分が `## MODIFIED Requirements` だけで書け、設計の選択が無く、1 つの capability の spec に収まる変更。当てる条件は、記録先の受け入れ条件に「どの仕様のどの文をどう直すか」（直す要件ごとに spec のパスか capability 名・要件名・直し方）が書けていること。迷ったら当てない（interactive でも主に聞かず、通常の「する」として進める。unmanned も同じ）。当てるときは、同じコメントの 2 行目以降に `通し方: 文言合わせ` の行（この文字列ちょうどの 1 行）と、直す要件ごとの `直す文:` の行を書く（1 行目は変えない。行の書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）:
+
+```bash
+# 文言合わせの通し方を当てる（issue が記録先）
+gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由: 既存 capability の要件の文言を実装に合わせて直すだけ（新しい要件なし・設計の選択なし）\n通し方: 文言合わせ\n直す文: openspec/specs/<capability>/spec.md「<要件名>」— <どう直すか>')"
+```
+
 判定をやり直したら同じ書式で投稿し直す（照合側は最新 1 件を正とする。契約の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）。**記録する前に分割判定へ進まない**（実装へ進まない規則は `worker/common.md`「実装に入る前の確認」）。
 
 仕様化しないと判定した場合は分割判定と `openspec new change` を飛ばし、本体に「仕様化しない」と return する（本体は (3a) の実装から W を再開する。同じコンテキストなのでそのまま続けてよいと本体が指示することもある）。本体が同じコンテキストのまま (3a) へ進むよう指示したら、`worker/implement.md` を読んでから進む。この return には作業項目ごとに `触る範囲: <パス>:<開始行>-<終了行>` を書く（書き方は下の「仕様化する場合（(1) の終わり）」の `tasks.md` と同じ。`tasks.md` が無いので return が置き場になる）。
@@ -72,7 +79,7 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
   gh api -X POST repos/<owner>/<repo>/issues/<後続>/dependencies/blocked_by -F issue_id=<前提の issue id>
   ```
   元 issue に「N 個の change に分割した（#a → #b → #c）」とコメントし、各子 issue に `agent-ready` を付け、「分割した」と return する（本体はこのサイクルを終える）
-- **割り方が判断できないほど曖昧**: interactive は return で本体に聞いてもらう。unmanned は Discord でユーザーに質問し、記録先に `needs-approval` を付けて経緯をコメントし、「needs-approval」と return する
+- **割り方が判断できないほど曖昧**: interactive は return で本体に聞いてもらう。unmanned は子 issue を作らず、質問文・理由と `needs-approval` を return に含め、記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return する。W は Discord（MCP・CLI とも）へ直接送信しない。本体の代理送信手順は SKILL.md「実行モード」を参照
 
 ## 仕様化する場合（(1) の終わり）
 
@@ -80,4 +87,6 @@ gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: �
 
 openspec CLI で artifact を作る場合は `openspec new change <change-name>` を実行し、`openspec status --change <change-name>` で依存順を確認する。`openspec instructions <artifact> --change <change-name>` で各 artifact の指示を得て、proposal / design / tasks / specs を直書きする。`tasks.md` の各タスクの末尾には `触る範囲: <パス>:<開始行>-<終了行>` を書く（複数なら読点で並べる。新しく作るファイルは `<パス>（新規）`。節の見出しや関数名が分かるときは添える）。行番号は仕様づくりの時点の値で、前のタスクの編集でずれうる。実装の担い手はこれを案内にして、編集前に該当範囲を読む。揃ったら本体に return し、同じ仕様レビューを受ける。R1 の APPROVE を確認してから実装に入る規則は `worker/common.md`「実装に入る前の確認」。
 
-R1 が記録先にコメントした仕様レビュー結果（書式は `worker/common.md`「実装に入る前の確認」）が `REQUEST_CHANGES` なら、本体からの再開指示を受けて artifact を直し、修正箇所を列挙して return する（再レビューは差分限定、2 周キャップ）。
+R1 が記録先にコメントした仕様レビュー結果（書式は `worker/common.md`「実装に入る前の確認」）が `REQUEST_CHANGES` なら、本体からの再開指示を受けて artifact を直し、修正箇所を列挙して return する（再レビューは差分限定。周回と続行は本体が develop の `references/fix-check.md` の節「レビューの周を主に聞かずに続ける（直し方の判定）」で決める）。
+
+**文言合わせの通し方を当てた場合**（仕様化判断のコメントに `通し方: 文言合わせ` の行を書いた場合）は、上の 2 段落の代わりに次のとおり進める。分割判定は行わない（対象が 1 つの capability の 1 ファイルに限られる）。`openspec new change <change-name>` のあと `openspec/changes/<change-name>/specs/<capability>/spec.md` の 1 ファイルだけを書き（中身は `## MODIFIED Requirements` だけ。見出しは既存の要件名と一致させる）、proposal・design・tasks を作らない（`openspec new change` が作る `.openspec.yaml` は成果物に数えない）。`openspec validate <change-name> --type change --strict` を通す（`--type change` を付けない形の結果は openspec の版で変わり、change を見つけられず `Unknown item` で終了コード 1 になる版もある。付ければ版によらず change として検証される）。`tasks.md` が無いので、文言合わせの通し方では作業項目と項目ごとの `触る範囲: <パス>:<開始行>-<終了行>` を return に書く（「仕様化しない」と判定したときと同じ置き場）。R1 のレビューは受けず、本体の再開指示を待つ（本体は記録先のコメントで `通し方: 文言合わせ` の行を確かめてから W を再開する）。書く途中で対象から外れると分かったら（新しい要件が要る・設計の選択が出た・2 つ以上の capability に広がった）、手を止めて return し、`通し方:` の行の無い仕様化判断を投稿し直してから artifact 一式を作り、R1 のレビューを受ける。R1 を一度起こした change は、あとから文言合わせの通し方に切り替えない。

@@ -5,7 +5,7 @@
 # spec: skill-verification-sections, dev-workflow-shared-references
 #
 # 旧 plugins/loops/tests/{self-verification-reference,skill-verification-sections}.bats
-# （S36〜S50）を loops の解散（issue #205）に伴い移したもの。対象は 7 スキル（longrun-plan は解散、
+# （S36〜S50）を loops の解散（issue #205）に伴い移したもの。対象は 6 スキル（longrun-plan・experience-to-skill は解散、
 # push-guard-setup は #218 の再棚卸しで編入）。S51 は棚卸しリストの網羅性（#218）。
 # テスト名は ASCII のみ。
 
@@ -17,10 +17,7 @@ setup() {
   TARGETS=(
     "plugins/worktree/skills/wt-setup/SKILL.md"
     "plugins/worktree/skills/wt-clean/SKILL.md"
-    "plugins/daily-report/skills/daily-report/SKILL.md"
-    "plugins/weekly-report/skills/weekly-report/SKILL.md"
     "plugins/infra/skills/infra-setup/SKILL.md"
-    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"
     "plugins/dev-workflow/skills/push-guard-setup/SKILL.md"
   )
 }
@@ -37,10 +34,7 @@ _artifact_kw() {
   case "$1" in
     *wt-setup*)     echo "worktree" ;;
     *wt-clean*)     echo "worktree" ;;
-    *daily-report*) echo "diary" ;;
-    *weekly-report*) echo "weekly" ;;
     *infra-setup*)  echo "infra" ;;
-    *experience-to-skill*) echo "SKILL.md" ;;
     *push-guard-setup*) echo "pre-push" ;;
   esac
 }
@@ -73,16 +67,11 @@ _artifact_kw() {
   [ "$output" = "0" ]
 }
 
-@test "S40: the audit list records the real paths of the 7 target skills" {
+@test "S40: the audit list records the real paths of the 6 target skills" {
   grep -q "対象スキル一覧" "$REF"
   for p in "${TARGETS[@]}"; do
     grep -qF "$p" "$REF" || { echo "missing ${p}"; return 1; }
   done
-}
-
-@test "S40b: no bogus path containing e2s-distill as a skill directory" {
-  run bash -c "grep -E 'skills/e2s-distill/' '${REF}' | wc -l | tr -d ' '"
-  [ "$output" = "0" ]
 }
 
 @test "S41: out-of-scope skills each carry a judgment reason" {

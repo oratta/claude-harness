@@ -42,16 +42,33 @@
 `observe` は失敗したチェックごとに `checks` の要素 `{name, run, job, cause}` を出さなければならない（MUST）。`job` は `detailsUrl` の `/job/<数字>` から取った ID（無ければ `null`）。`cause` は次の順で最初に当たったものとする（MUST）:
 
 1. `runner-lost`: そのチェックの `job` があり、`--hints <file>` の JSON の `annotations_by_job.<job>`（文字列の配列）のいずれかが `The self-hosted runner lost communication with the server` を含む。鍵はジョブ ID で、チェック名では引かない（別ワークフローの同名ジョブの通信切れを、もう片方の本当の失敗に移さないため）
-2. `unrelated`: `--unrelated <チェック名>` で渡された名前（複数回指定できる）に一致する
-3. `real`: それ以外
+2. `job-timeout`: そのチェックの `job` があり、`--hints <file>` の JSON の `annotations_by_job.<job>` のいずれかが `maximum execution time` を含む（ジョブが上限時間で打ち切られたときに GitHub が付ける annotation。ランナー名と分数が入るので、変わらない部分だけを部分一致で見る）。鍵は `runner-lost` と同じくジョブ ID。`--unrelated` で同じチェック名が渡されていても `job-timeout` とする
+3. `unrelated`: `--unrelated <チェック名>` で渡された名前（複数回指定できる）に一致する
+4. `real`: それ以外
 
 `retry` は、`state` が `ci-fail` で、失敗したチェックが 1 件以上あり、そのすべての `cause` が `real` でなく、すべてに run ID があるときだけ `true`、それ以外は `false` としなければならない（MUST）。`--hints` も `--unrelated` も無ければ、すべての失敗は `real` になる（MUST）。`--hints` のファイルが読めない・JSON でないときは非 0 で終わる（MUST）。
 
-守備範囲: この仕分けが受け取る入力は、`gh pr view` の JSON（GitHub が返す PR の状態）、`annotations` の出力（GitHub のジョブの annotation）、呼び出し側が渡す `--unrelated` のチェック名の 3 つに限る。拾いたい誤りは、本当の失敗をやり直して CI 1 周分待つこと、やり直せば通る失敗（実行マシンの通信切れ・PR に関わらない失敗）を直しに回すこと、状態が読めない回（`UNKNOWN`）を挟むと修正回数が増えること（flatmate#899）の 3 つ。次の入力は誤った一手のまま通ることを許す: GitHub が通信切れの文言を変えたときは `real` になり直しに回る／PR に関わる失敗を呼び出し側が `--unrelated` で渡すと、やり直しで CI 1 周分を失う（同じ HEAD では 1 回だけなので損失はそこで止まる）／Actions 以外の失敗は手がかりがあってもやり直さない／`annotations` が取れなかったジョブは `real` になり直しに回る／ジョブ ID を持たない失敗（`detailsUrl` に `/job/<数字>` が無い）は通信切れと判定できない。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
+守備範囲: この仕分けが受け取る入力は、`gh pr view` の JSON（GitHub が返す PR の状態）、`annotations` の出力（GitHub のジョブの annotation）、呼び出し側が渡す `--unrelated` のチェック名の 3 つに限る。拾いたい誤りは、本当の失敗をやり直して CI 1 周分待つこと、やり直せば通る失敗（実行マシンの通信切れ・PR に関わらない失敗）を直しに回すこと、状態が読めない回（`UNKNOWN`）を挟むと修正回数が増えること（flatmate#899）、ジョブの上限時間での打ち切りを PR が原因の失敗として直しに回すこと（genetta-inc/flatmate#1563）の 4 つ。次の入力は誤った一手のまま通ることを許す: GitHub が通信切れや上限時間の文言を変えたときは `real` になり直しに回る／PR に関わる失敗を呼び出し側が `--unrelated` で渡すと、やり直しで CI 1 周分を失う（同じ HEAD では 1 回だけなので損失はそこで止まる）／Actions 以外の失敗は手がかりがあってもやり直さない／`annotations` が取れなかったジョブは `real` になり直しに回る／ジョブ ID を持たない失敗（`detailsUrl` に `/job/<数字>` が無い）は通信切れとも上限時間の打ち切りとも判定できない／PR 自身がテストを遅くして上限時間に達したジョブも `job-timeout` になり、やり直しで CI 1 周分を失う／ステップ単位の上限での打ち切り（annotation に `maximum execution time` を含まない）は `job-timeout` にならない／1 つのジョブに通信切れと上限時間の両方の annotation があれば `runner-lost` になる。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
 
 #### Scenario: 通信切れの annotation はやり直しに当たる
 - **WHEN** 落ちたチェック `build`（job 77）が 1 件で run ID があり、`--hints` の `annotations_by_job."77"` に `The self-hosted runner lost communication with the server.` を含む文字列を渡す
 - **THEN** `build` の `cause` は `runner-lost`、`retry` は `true`
+
+#### Scenario: 上限時間で打ち切られたジョブは job-timeout
+- **WHEN** 落ちたチェック `test`（`conclusion: CANCELLED`、job 77）が 1 件で run ID があり、`--hints` の `annotations_by_job."77"` に `The job running on runner mac-1 has exceeded the maximum execution time of 40 minutes.` を渡す
+- **THEN** `.checks[0].cause` は `job-timeout`、`retry` は `true`
+
+#### Scenario: 上限時間の annotation が無い取り消しは今までどおり
+- **WHEN** 落ちたチェック `test`（`conclusion: CANCELLED`、job 77）が 1 件で、`--hints` の `annotations_by_job."77"` が `The operation was canceled.` だけを持つ
+- **THEN** `test` の `cause` は `real`、`retry` は `false`
+
+#### Scenario: 上限時間の打ち切りは --unrelated より先に決まる
+- **WHEN** 落ちたチェック `test`（job 77）の annotation に `maximum execution time` を含む文字列があり、`--unrelated test` も渡す
+- **THEN** `test` の `cause` は `job-timeout`
+
+#### Scenario: 上限時間の打ち切りを別のジョブに移さない
+- **WHEN** 別のワークフローの同名チェック `test` が job 77 と job 88 で落ち、`--hints` の `annotations_by_job` には job 77 の上限時間の annotation だけがある
+- **THEN** job 77 の `cause` は `job-timeout`、job 88 の `cause` は `real`、`retry` は `false`
 
 #### Scenario: 変更に関わらないと渡した失敗はやり直しに当たる
 - **WHEN** 落ちたチェック `e2e` が 1 件で run ID があり、`--unrelated e2e` を渡す
@@ -74,7 +91,7 @@
 - **THEN** `cause` は `unrelated` だが `retry` は `false`
 
 ### Requirement: decide は観測と前回の状態から次の一手と次の状態を決める
-`pr-state.sh decide [<前回の状態の JSON>]` は、標準入力の `observe` の出力と引数の前回の状態から、1 行の JSON `{act, next, obs}` を標準出力に出さなければならない（MUST）。`gh` を呼んではならない（MUST NOT）。前回の状態が省略・`null`・`{}` のときは初見として扱う（MUST）。状態は `{state, head, reran_head, fixes, raised}` を持ち、`next` は前回の状態の知らないキーを消さずに引き継がなければならない（MUST）。`obs` は標準入力の観測をそのまま返す。
+`pr-state.sh decide [<前回の状態の JSON>]` は、標準入力の `observe` の出力と引数の前回の状態から、1 行の JSON `{act, next, obs}` を標準出力に出さなければならない（MUST）。`gh` を呼んではならない（MUST NOT）。前回の状態が省略・`null`・`{}` のときは初見として扱う（MUST）。状態は `{state, head, reran_head, reran_jobs, fixes, raised}` を持ち、`next` は前回の状態の知らないキーを消さずに引き継がなければならない（MUST）。`obs` は標準入力の観測をそのまま返す。
 
 `act` と `next` は次の順で最初に当たったもので決める（MUST）。以下「見た状態」は前回の状態に `{state: <観測の state>, head: <観測の head>}` を重ねたもの。
 
@@ -82,15 +99,49 @@
 2. 観測が `ready`: `act` は `ready`、`next` は見た状態
 3. 前回の `state` と `head` が観測と同じ: `act` は `none`、`next` は見た状態
 4. 前回の `raised` が `true`: `act` は `none`、`next` は見た状態
-5. 観測が `ci-fail` で `retry` が `true` で、前回の `reran_head` が観測の `head` と違う: `act` は `rerun`、`next` は見た状態に `{state: "wait", reran_head: <観測の head>}` を重ねたもの
-6. 前回の `fixes`（無ければ 0）が 2 以上: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの
-7. それ以外: `act` は `fix`、`next` は見た状態に `{fixes: <前回の fixes + 1>}` を重ねたもの
+5. 観測が `ci-fail` で、前回の `reran_head` が観測の `head` と同じで、前回の `reran_jobs` が空でも `null` を含むものでもなく、観測の `checks` のジョブ ID が 1 件以上あり、そのすべてが `reran_jobs` に含まれる: `act` は `none`、`next` は前回の状態そのまま（やり直した直後で、新しいジョブがまだ反映されず古い失敗を読んでいる）
+6. 観測が `ci-fail` で `retry` が `true` で、前回の `reran_head` が観測の `head` と違う: `act` は `rerun`、`next` は見た状態に `{state: "wait", reran_head: <観測の head>, reran_jobs: <観測の checks のジョブ ID の並び>}` を重ねたもの
+7. 観測が `ci-fail` で `retry` が `true` で、観測の `checks` に `cause` が `job-timeout` の要素が 1 件以上ある（6 に当たらなかったので、この HEAD のやり直しは使い切っている）: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの。`fixes` は変えない
+8. 前回の `fixes`（無ければ 0）が 2 以上: `act` は `escalate`、`next` は見た状態に `{raised: true}` を重ねたもの
+9. それ以外: `act` は `fix`、`next` は見た状態に `{fixes: <前回の fixes + 1>}` を重ねたもの
+
+7 は、その HEAD のやり直しを使い切ったあとに打ち切りを見たときに、実装者の直しに回さずオーナーに上げるための規則である。前回の原因が `job-timeout` だったかは見ない（状態に `cause` を持たないため）。1 回はやり直すのは、`real` でない原因は同じ HEAD で 1 回だけやり直すという既存の規則（6）に揃えたもので、失うのは CI 1 周分で止まる。観測が `checks` を持たないとき、7 は当たらない（MUST）。
 
 前回の状態の引数や標準入力が JSON として読めないときは、非 0 で終わらなければならない（MUST）。
 
+守備範囲: この判定が受け取る入力は、`observe` の出力と、呼び出し側が保存して引数に渡す前回の状態に限る。拾いたい誤りは、`rerun` の直後に新しいジョブがまだ反映されず古い失敗を読み、`fix` に回して修正回数を増やすことと、古い打ち切りを `escalate` に回すことである。次の入力は誤った一手のまま通ることを許す: ジョブ ID がすべて `reran_jobs` に含まれたまま実際には新しい失敗になっていたときは、`none` で待ち続け、CI 1 周分以上その失敗を見逃す／保存済み状態に `reran_jobs` が無いときや、配列でないとき・空・`null` を含む並びのときは、古い失敗でも待たずに従来の判定に進む。これらの穴を塞ぎ切ることはこの要件の完了条件にしない。
+
 #### Scenario: 同じ HEAD で 2 回落ちてもやり直しは 1 回
-- **WHEN** HEAD `e1` で `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測をもう一度渡す
+- **WHEN** HEAD `e1` で、`checks` が空の `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測をもう一度渡す
 - **THEN** 1 回目は `rerun`（`next.state` は `wait`、`next.reran_head` は `e1`）、2 回目は `fix`（`next.fixes` は 1）
+
+#### Scenario: やり直した直後に同じジョブ ID の古い失敗を読んでも何もしない
+- **WHEN** HEAD `e1` で、ジョブ ID `1` の失敗を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして同じ観測（同じジョブ ID）をもう一度渡す
+- **THEN** 1 回目は `rerun`（`next.reran_jobs` は `["1"]`）、2 回目は `none` で、`next` は前回の状態のまま（`fixes` は増えない）
+
+#### Scenario: 2 件やり直したあと古いジョブ ID が 1 件だけ残っても何もしない
+- **WHEN** HEAD `e1` で、ジョブ ID `1` と `2` の失敗を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして、ジョブ ID `2` だけの失敗を持つ同じ HEAD の観測を渡す
+- **THEN** 1 回目は `rerun`、2 回目は `none` で、`next` は前回の状態のまま（`fixes` は増えない）
+
+#### Scenario: やり直しのあとの別のジョブ ID の失敗は直しに回す
+- **WHEN** HEAD `e1` で、ジョブ ID `1` の失敗 1 件を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして、同じ HEAD `e1` で、ジョブ ID `2`・`cause: unrelated` のチェック 1 件を持つ `retry: true` の `ci-fail` を渡す
+- **THEN** `act` は `fix`、`next.fixes` は 1
+
+#### Scenario: 上限時間の打ち切りは 1 回やり直し、やり直しを使い切った HEAD で打ち切りを見たらオーナーに上げる
+- **WHEN** HEAD `t1` で、ジョブ ID `1`・`cause` が `job-timeout` のチェック 1 件を持つ `retry: true` の `ci-fail` を初見で渡し、その `next` を前回の状態にして、別のジョブ ID `2` の打ち切り（`cause` が `job-timeout` のチェック 1 件を持つ `retry: true` の `ci-fail`）を渡す
+- **THEN** 1 回目は `rerun`（`next.reran_head` は `t1`）、2 回目は `escalate`（`next.raised` は `true`）で、`next` に `fixes` は無い
+
+#### Scenario: 打ち切りでオーナーに上げても修正回数は増えない
+- **WHEN** `{state: "wait", head: "t1", reran_head: "t1", fixes: 1}` を前回の状態にして、HEAD `t1` の `cause` が `job-timeout` のチェックを持つ `retry: true` の `ci-fail` を渡す
+- **THEN** `act` は `escalate`、`next.fixes` は 1 のまま
+
+#### Scenario: 本当の失敗が混ざった打ち切りは直しに回す
+- **WHEN** `{state: "wait", head: "t1", reran_head: "t1"}` を前回の状態にして、`cause` が `job-timeout` のチェックと `real` のチェックを持つ `retry: false` の `ci-fail`（HEAD `t1`）を渡す
+- **THEN** `act` は `fix`
+
+#### Scenario: 上げたあとの打ち切りは何もしない
+- **WHEN** 打ち切りで `escalate` になった `next` を前回の状態にして、HEAD が変わった `job-timeout` の `retry: true` の `ci-fail` を渡す
+- **THEN** `act` は `none`
 
 #### Scenario: HEAD が変わればやり直しの権利が戻る
 - **WHEN** `reran_head: e1`・`fixes: 1` の状態に、HEAD `e2` で `retry: true` の `ci-fail` を渡す

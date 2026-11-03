@@ -7,7 +7,7 @@ set -uo pipefail
 
 INPUT="$(cat 2>/dev/null || true)"
 
-SESSION_ID="$(printf '%s' "$INPUT" | python3 -c '
+SESSION_ID="$(printf '%s' "$INPUT" | python3 -I -c '
 import json, sys
 try:
     print(json.load(sys.stdin).get("session_id") or "")
@@ -23,13 +23,13 @@ MARKER="${TMPDIR:-/tmp}/capability-registry-warned-${SESSION_ID}"
 [ -e "$MARKER" ] && exit 0
 touch "$MARKER" 2>/dev/null || exit 0
 
-python3 <<'PY'
+python3 -I <<'PY'
 import json
 ctx = (
     "ブラウザツールを使おうとしています。実行前に capability-registry スキルの索引で確認してください: "
     "(1) この操作に CLI 代替は無いか（索引に無いサービスならネガティブエントリも見る）、"
-    "(2) 認証・トークンは ${CLAUDE_PLUGIN_ROOT}/scripts/fmtoken.sh <service> で取れないか"
-    "（未登録は exit 44 → ブラウザに行かず主に登録を依頼）、"
+    "(2) 認証・トークンの在処はオーナーの環境の索引があればそちらで確かめたか"
+    "（無ければブラウザに行かず主に尋ねる）、"
     "(3) それでもブラウザが必要なら『CLI で不可能な理由』を一言明示してから進むこと。"
     "索引のブラウザ必須例外に該当する操作なら、そのまま進んで構いません。"
 )
