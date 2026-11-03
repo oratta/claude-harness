@@ -28,7 +28,7 @@ W は**このファイルと、`段:` が指す段のファイル**（`worker/sp
 
 - **規模超過**（編集対象ファイルが 5 個を超えた、または着手前の見積もりから作業項目が 2 回増えた）→ return。本体が change / 子 issue（エピック化）に分割する
 - **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。**return には「指示のどこまでやって、どこで何が起きたか」を必ず書く**（本体が原因を判断側か実行側かに分類する入力になり、決める役の入力契約でもある）。本体は失敗の原因が実行側（指示どおりやって結果が違う）なら W を `opus` で再開し、判断側（指示を解釈できなかった・指示自体が外れていた）なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせる（決める役と実行役の**どちらか一方だけ**を上げる。ラダーの正本は `templates/escalation-tripwires.md`）。**W が `fable` で再開されることはない**（実行役の上限は `opus`。強制層は `scripts/agent-model-guard.sh`）。上限は共有枠モードが先に決める: `SHARED_BUDGET_MODE=depleted` は昇格なし（Sonnet 固定）、`throttled` は Opus 上限。その範囲内で `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では決める役も Opus 上限。Opus が決めて Opus が実行しても 2 連続失敗が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
-- **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は Discord で質問し `needs-approval` を付けてサイクル終了
+- **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は埋めた決定を列挙し、質問文・理由と `needs-approval` を return に含める。記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return する。W は Discord（MCP・CLI とも）へ直接送信しない。本体の代理送信手順は SKILL.md「実行モード」を参照
 - 昇格・乗り換え時は成果を破棄せず引き継ぐ（再開時に前回の return を前提に続ける）
 
 ## コンテキスト上限と手渡し（本体が測る。W は工程ごとに return する）

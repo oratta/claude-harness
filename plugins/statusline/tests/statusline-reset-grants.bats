@@ -250,8 +250,9 @@ sp=importlib.util.spec_from_file_location('c','${PLUGIN_DIR}/scripts/statusline-
  "resets":{"availableCount":$cnt,"credits":[{"status":"available","expiresAt":$exp}]}}
 JSON
     [ "$delta" = 0 ] && sed -i.bak 's/"expiresAt":0/"expiresAt":-1/' "$WORK/.statusline-codex"
-    mk_input 55 82 14000 172800 | bash "$SL" > "$WORK/new.txt"
-    mk_input 55 82 14000 172800 | bash "$WORK/old/statusline.sh" > "$WORK/oldout.txt"
+    # 比べるのは Codex の行だけ（1 スロットで Codex の行が出ると、Claude の行には名前の列が付くようになった）
+    mk_input 55 82 14000 172800 | bash "$SL" | grep 'Codex' > "$WORK/new.txt"
+    mk_input 55 82 14000 172800 | bash "$WORK/old/statusline.sh" | grep 'Codex' > "$WORK/oldout.txt"
     grep -q 'リセット' "$WORK/new.txt" || { echo "no codex reset row: $delta"; cat "$WORK/new.txt"; cat "$WORK/.statusline-codex"; return 1; }
     cmp -s "$WORK/new.txt" "$WORK/oldout.txt" || { echo "differs: $delta"; return 1; }
   done
