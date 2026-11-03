@@ -7638,7 +7638,7 @@ user@host work %'
 keepalive_wait_setup() {
   keepalive_orca_setup
   set_current 400
-  put_record 11 stop=stopped-seen session=term-11
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
   export KEEPALIVE_TEST_NOW=2000000000
   cat > "$STUB_BIN/date" <<'DATE'
@@ -7663,14 +7663,14 @@ keepalive_chat() {
   local age="$1" tokens="${2-100}" ttl="${3-1h}"
   local dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$dir"
-  python3 - "$dir/s.jsonl" "$KEEPALIVE_TEST_NOW" "$age" "$tokens" "$ttl" <<'PYCODE'
+  python3 - "$dir/s.jsonl" "$KEEPALIVE_TEST_NOW" "$age" "$tokens" "$ttl" "$MAIN_UUID" <<'PYCODE'
 import datetime, json, sys
-p, now, age, tokens, ttl = sys.argv[1:]
+p, now, age, tokens, ttl, uid = sys.argv[1:]
 now, age, tokens = int(now), int(age), int(tokens)
 def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
 rows = [dict(type='user', timestamp=stamp(now-100000), message=dict(content='依頼')),
         dict(type='assistant', timestamp=stamp(now-99999), message=dict(content='元の質問？')),
-        dict(type='assistant', entrypoint='cli', timestamp=stamp(now-4000), message=dict(usage=dict(input_tokens=10,cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens':100}))),
+        dict(type='assistant', entrypoint='cli', uuid=uid, timestamp=stamp(now-4000), message=dict(usage=dict(input_tokens=10,cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens':100}))),
         dict(type='assistant', entrypoint='cli', timestamp=stamp(now-age), message=dict(usage=dict(input_tokens=0,cache_read_input_tokens=tokens)))]
 with open(p, 'w') as f:
     for row in rows: f.write(json.dumps(row, ensure_ascii=False)+'\n')
@@ -7774,20 +7774,20 @@ reset_keepalive_poll() {
     [ "$(calls '^orca terminal send ')" -eq "$1" ]
   }
   at() { jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - $1))" '$t | todate'; }
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 86399)"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 86399)"
   send_count 1
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 86400)"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 86400)"
   send_count 0
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
   send_count 0
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 3600)"
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d0"}]' > "$STUB_CFG/comments_1122"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 3600)"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 bbbbbbbb-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
   send_count 1
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
   send_count 0
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1 https://example/stop"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111 https://example/stop"}]' > "$STUB_CFG/comments_1122"
   send_count 0
-  echo '[{"author_association":"NONE","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"NONE","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
   send_count 1
 }
 
@@ -7824,11 +7824,12 @@ reset_keepalive_poll() {
         "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
         "$(chat_line assistant 2033-05-18T03:33:20Z "$response" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl"
     } > "$STUB_CFG/hook_send_term-11"
-    before="$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")"
+    before="$(jq -c 'del(.keepalive)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")"
     run dispatch wait --watch-stopped --interval 1 --timeout 4 11
     [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
     [ "$(calls '^orca terminal send ')" -eq 1 ]
-    [ "$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")" = "$before" ]
+    # 声かけの結果（keepalive）だけが記録に増え、止まりの印などは変わらない
+    [ "$(jq -c 'del(.keepalive)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")" = "$before" ]
     run dispatch child-log 11
     [ "$status" -eq 0 ]
     if [ "$response" = "$(keepalive_reply)" ]; then
