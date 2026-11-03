@@ -172,7 +172,7 @@ SH
 @test "--help does not print the set line" {
   run "$SCRIPT" --help
   [ "$status" -eq 0 ]
-  ! echo "$output" | grep -q '^set '
+  ! echo "$output" | grep -q '^set ' || return 1
 }
 
 @test "collect && budget: a fetch failure never yields a within-cap JSON" {
