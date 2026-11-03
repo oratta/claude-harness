@@ -7999,7 +7999,7 @@ keepalive_wait_run() {
   keepalive_wait_run
   [ "$(calls '^orca terminal send ')" -eq 1 ]
   keepalive_note_is sent
-  [[ "$(jq -r .keepalive "$(rec_of 1122 11)")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z\ sent$ ]]
+  [[ "$(jq -r .keepalive "$(rec_of 1122 11)")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z\ sent$ ]] || return 1
 }
 
 @test "keepalive wait: no main log (past cli only, sdk-py only, none) sends nothing and records no-transcript" {
