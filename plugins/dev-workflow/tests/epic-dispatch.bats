@@ -5149,7 +5149,7 @@ put_transcript() {
   mkdir -p "$dir"
   ts="$(python3 -c "import datetime,sys;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
   {
-    printf '{"type":"assistant","timestamp":"%s","message":{"usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$ts" "$ctx"
+    printf '{"type":"assistant","entrypoint":"cli","uuid":"u1","timestamp":"%s","message":{"content":"q","usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$ts" "$ctx"
     [ "$compact" = 1 ] && printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s"}\n' "$ts"
   } > "$dir/$name.jsonl"
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
@@ -5163,6 +5163,8 @@ resolve_pass() {
   printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
   : > "$STUB_LOG"
   resolve_ready
+  # 起動し直しの判定は本体の会話ログを記録の stop_uuid（put_transcript のログの u1）で決める
+  put_record 11 status=waiting stop=stopped-seen stop_uuid=u1 stop_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
   judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
   # 子の判断の既定の subagent-context.sh は plugin のものを使う
 }

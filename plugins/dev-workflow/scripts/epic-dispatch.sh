@@ -1077,18 +1077,24 @@ transcript_dir() {
 # 判定できたら stdout に「<1h|5m> <その行の timestamp の epoch 秒>」を出して 0（1h の書き込みが正なら 1h、0 なら 5m）。
 # epoch 秒は最後にキャッシュを書いた行の時刻で、最後のリクエストの時刻ではない（それが要るなら last_activity を使う）。
 # 引数が空（置き場を求めると projects の直下を指す）・*.jsonl が無い・python3 が無い・使う行が無いときは何も出さずに 1。
+# 第 2 引数に会話ログのファイルを渡すと、そのファイル 1 本だけを読む（止まった子への声かけの判定が本体のログだけを読むため）。
+# 渡さないときは置き場の全ログを読む（wait の上限の既定が使う）。
 # gh も LLM も呼ばず、stderr にも出さない。wait の上限の既定が使い、順番 2 の change が子のワークツリーに使う
 cache_ttl_of() {
   [ -n "${1-}" ] || return 1
   local dir; dir="$(transcript_dir "$1")"
-  ls "$dir"/*.jsonl >/dev/null 2>&1 || return 1
+  if [ -n "${2-}" ]; then
+    [ -f "$2" ] || return 1
+  else
+    ls "$dir"/*.jsonl >/dev/null 2>&1 || return 1
+  fi
   command -v python3 >/dev/null 2>&1 || return 1
-  DIR="$dir" python3 - <<'PY' 2>/dev/null
+  DIR="$dir" ONLY_FILE="${2-}" python3 - <<'PY' 2>/dev/null
 import datetime, glob, json, os
 def num(v):
     return v if isinstance(v, (int, float)) and not isinstance(v, bool) and v > 0 else 0
 best = None
-for p in glob.glob(os.path.join(os.environ["DIR"], "*.jsonl")):
+for p in ([os.environ["ONLY_FILE"]] if os.environ.get("ONLY_FILE") else glob.glob(os.path.join(os.environ["DIR"], "*.jsonl"))):
     try:
         f = open(p, encoding="utf-8", errors="replace")
     except OSError:
@@ -1127,19 +1133,23 @@ print(best[1], int(best[0]))
 PY
 }
 
-# 通す返事を起動し直して送るかを決める（<子のワークツリーのパス>）。起動し直すなら 1、そのまま送るなら 0 を出す。
+# 本体の会話のログ 1 本のパスを出す（<置き場> <stop_uuid>）。決められなければ何も出さずに 1。
+# 選び方（cli の assistant 行を持つ最新の 1 本。同時刻・stop_uuid が空・その uuid を持たないときは決めない）は
+# child-log-read.py --main-log が持つ。声かけの判定と起動し直しの判定が使う
+main_transcript() {
+  command -v python3 >/dev/null 2>&1 || return 1
+  python3 "$LAUNCHER_DIR/child-log-read.py" --main-log "$1" "${2-}" 2>/dev/null
+}
+
+# 通す返事を起動し直して送るかを決める（<子のワークツリーのパス> [<stop_uuid>]）。起動し直すなら 1、そのまま送るなら 0 を出す。
 # 子の表（references/reply-after-idle.md）のとおり、会話量 >= 閾値 OR 経過時間 >= 閾値で起動し直す。
 # compact_boundary の有無によらず、片方の計測失敗は他方を妨げない。両条件とも真と確認できなければ 0。
 decide_relaunch() {
-  local path="$1" dir files count file last now measurement rc tokens
+  local path="$1" uuid="${2-}" dir file last now measurement rc tokens
   local idle="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}"
   local force="${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}"
   dir="$(transcript_dir "$path")"
-  files="$(ls -1 "$dir"/*.jsonl 2>/dev/null)"
-  [ -n "$files" ] || { echo 0; return 0; }
-  count="$(printf '%s\n' "$files" | wc -l | tr -d ' ')"
-  [ "$count" -eq 1 ] || { echo 0; return 0; }
-  file="$files"
+  file="$(main_transcript "$dir" "$uuid")" || { echo 0; return 0; }
   measurement="$("${BASH_SOURCE[0]%/*}/subagent-context.sh" --file "$file" 2>/dev/null)"; rc=$?
   # exit 2 はサブエージェント用の上限超過。>= の判定には JSON の実測値を使う。
   if [ "$rc" -eq 0 ] || [ "$rc" -eq 2 ]; then
@@ -1295,7 +1305,7 @@ resolve_stopped() {
     # 子のワークツリーのパスは記録の worktree から読む（読めなければそのまま送る）
     wpath=""
     [ -z "$rec" ] || wpath="$(es_get "$rec" worktree)"
-    [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath")"
+    [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath" "$su")"
     res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply")"
     case "$res" in
       "sent $n"|"relaunched $n")
@@ -1325,19 +1335,23 @@ resolve_stopped() {
 # matched by that uuid; a stop without one is matched by the stop comment's URL.
 # Missing/ambiguous measurements fail closed without changing wait's exit reason.
 keepalive_candidate() {
-  local rec="$1" childcomments="$2" epiccomments="$3" now="$4" text="$5" wt ttl
+  local rec="$1" childcomments="$2" epiccomments="$3" now="$4" text="$5" wt ttl main
   wt="$(es_get "$rec" worktree)"
-  [ -d "$wt" ] || return 1
-  ttl="$(cache_ttl_of "$wt")" || return 1
-  [ "${ttl%% *}" = 1h ] || return 1
-  [ "${ttl#* }" -le "$now" ] 2>/dev/null || return 1
+  [ -d "$wt" ] || { echo no-worktree; return 1; }
+  # 本体の会話のログ 1 本だけで判定する（記録の session は端末のハンドルなのでログの選択に使わない）
+  main="$(main_transcript "$(transcript_dir "$wt")" "$(es_get "$rec" stop_uuid)")" || { echo no-transcript; return 1; }
+  ttl="$(cache_ttl_of "$wt" "$main")" || { echo cache-unknown; return 1; }
+  [ "${ttl%% *}" = 1h ] || { echo cache-unknown; return 1; }
+  [ "${ttl#* }" -le "$now" ] 2>/dev/null || { echo cache-future; return 1; }
   REC="$rec" CHILD_COMMENTS="$childcomments" EPIC_COMMENTS="$epiccomments" \
-    DIR="$(transcript_dir "$wt")" NOW="$now" KEEPALIVE_TEXT="$text" \
+    MAIN_LOG="$main" NOW="$now" KEEPALIVE_TEXT="$text" \
     FORCE="${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" IDLE="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" \
     python3 - <<'PY' 2>/dev/null
 import datetime, glob, json, math, os, re, sys
 
-def reject():
+def reject(reason="no-transcript"):
+    # The reason word goes to stdout; the caller records it (spec: 声かけの判定結果は子の記録の keepalive に残す).
+    print(reason)
     raise SystemExit(1)
 def stamp(value):
     try:
@@ -1359,7 +1373,7 @@ def pages(raw):
     decoder = json.JSONDecoder()
     while raw.strip():
         page, end = decoder.raw_decode(raw.lstrip())
-        if not isinstance(page, list): reject()
+        if not isinstance(page, list): reject("gh-failed")
         result.extend(page)
         raw = raw.lstrip()[end:]
     return result
@@ -1367,18 +1381,20 @@ def pages(raw):
 try:
     now = int(os.environ["NOW"])
     force, idle = os.environ["FORCE"], os.environ["IDLE"]
-    if not force.isdecimal() or not idle.isdecimal(): reject()
+    if not force.isdecimal() or not idle.isdecimal(): reject("out-of-window")
     rec = json.load(open(os.environ["REC"]))
-    if rec.get("stop") != "stopped-seen" or rec.get("status") == "done" or rec.get("launch_failed") or not rec.get("session"): reject()
+    if rec.get("stop") != "stopped-seen" or rec.get("status") == "done": reject("not-stopped")
+    if rec.get("launch_failed"): reject("launch-failed")
+    if not rec.get("session"): reject("no-session")
     child = pages(os.environ["CHILD_COMMENTS"])
     stops = [c for c in child if trusted(c) and c.get("body", "").splitlines()[:1] == ["子の停止: 主の返事待ち"]]
     stop = stops[-1] if stops else None
     uuid = rec.get("stop_uuid") or ""
-    if not uuid and stop is None: reject()
+    if not uuid and stop is None: reject("expired")
     url = stop.get("html_url") if stop else None
-    if not uuid and not url: reject()
+    if not uuid and not url: reject("expired")
     stopped_at = stamp(rec.get("stop_at") or (stop or {}).get("created_at"))
-    if stopped_at is None or not 0 <= now-stopped_at < 86400: reject()
+    if stopped_at is None or not 0 <= now-stopped_at < 86400: reject("expired")
     epic = pages(os.environ["EPIC_COMMENTS"])
     label = "#" + str(rec["number"]) if rec["repo"] == rec["epic"].split("#")[0] else rec["child"]
     for c in child + epic:
@@ -1386,11 +1402,10 @@ try:
         body = c.get("body", "")
         lines = [line for line in body.splitlines() if line.startswith("親の判断: 子 " + label + " 通した")]
         if uuid:
-            if any(re.search(" 発言 " + re.escape(uuid) + r"( |$)", line) for line in lines): reject()
-        elif url in body and (lines or (c in child and body.startswith("親の判断: 通した"))): reject()
-    files = glob.glob(os.path.join(os.environ["DIR"], "*.jsonl"))
-    # Same conservative selection as decide_relaunch: do not guess among sessions.
-    if len(files) != 1: reject()
+            if any(re.search(" 発言 " + re.escape(uuid) + r"( |$)", line) for line in lines): reject("answered")
+        elif url in body and (lines or (c in child and body.startswith("親の判断: 通した"))): reject("answered")
+    # The main conversation's log was chosen by the caller (main_transcript); only that file is read.
+    files = [os.environ["MAIN_LOG"]]
     last_request = None
     owner = question = None
     pending = False
@@ -1408,7 +1423,7 @@ try:
             else:
                 # Parent judgments count even though child-log's owner column
                 # does not display them. A real answer must stop keepalives.
-                if t is None: reject()
+                if t is None: reject("answered")
                 owner = t
                 pending = False
         elif d.get("type") == "assistant":
@@ -1423,12 +1438,15 @@ try:
             if d.get("entrypoint") != "cli" or d.get("isApiErrorMessage") or d.get("error") is not None or not isinstance(u, dict): continue
             tokens = sum(num(u.get(k)) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens"))
             if tokens <= 0: continue
-            if t is None or t > now: reject()
+            if t is None or t > now: reject("out-of-window")
             if last_request is None or t >= last_request[0]: last_request = (t, tokens)
-    if pending or question is None or (owner is not None and (owner > question or owner > stopped_at)): reject()
-    if last_request is None: reject()
+    if pending: reject("pending")
+    if question is None: reject("no-question")
+    if owner is not None and (owner > question or owner > stopped_at): reject("answered")
+    if last_request is None: reject("out-of-window")
     t, tokens = last_request
-    if not 3000 <= now-t < min(3600, int(idle)) or tokens >= int(force): reject()
+    if tokens >= int(force): reject("too-large")
+    if not 3000 <= now-t < min(3600, int(idle)): reject("out-of-window")
 except (OSError, ValueError, KeyError, TypeError):
     reject()
 PY
@@ -1437,32 +1455,47 @@ PY
 # Only a normal continuing poll calls this. Recheck local state and substantive
 # input after remote reads, then use the launcher's own screen reobservation.
 keepalive_child() {
-  local n="$1" f wt name childcomments epiccomments epic repo enum text now out
+  local n="$1" f wt name childcomments epiccomments epic repo enum text now out why
   child_record "$PARENT_TOP" "$n" || return 0
   f="$ES_HIT"
-  [ "$(es_get "$f" stop)" = stopped-seen ] || return 0
-  [ "$(es_get "$f" status)" != "done" ] || return 0
-  [ -z "$(es_get "$f" launch_failed)" ] || return 0
-  [ -n "$(es_get "$f" session)" ] || return 0
-  wt="$(es_get "$f" worktree)"; [ -d "$wt" ] || return 0
+  [ "$(es_get "$f" stop)" = stopped-seen ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
+  [ "$(es_get "$f" status)" != "done" ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
+  [ -z "$(es_get "$f" launch_failed)" ] || { keepalive_note "$f" "skipped launch-failed"; return 0; }
+  [ -n "$(es_get "$f" session)" ] || { keepalive_note "$f" "skipped no-session"; return 0; }
+  wt="$(es_get "$f" worktree)"; [ -d "$wt" ] || { keepalive_note "$f" "skipped no-worktree"; return 0; }
   name="$(es_get "$f" launcher)"
-  case "$name" in orca|tmux) ;; *) return 0 ;; esac
-  childcomments="$(gh api "$(issue_api "$n" "$f")/comments" --paginate)" || return 0
+  case "$name" in orca|tmux) ;; *) keepalive_note "$f" "skipped unsupported-launcher"; return 0 ;; esac
+  childcomments="$(gh api "$(issue_api "$n" "$f")/comments" --paginate)" || { keepalive_note "$f" "skipped gh-failed"; return 0; }
   epic="$(es_get "$f" epic)"; repo="${epic%#*}"; enum="${epic##*#}"
-  epiccomments="$(gh api "repos/$repo/issues/$enum/comments" --paginate)" || return 0
+  epiccomments="$(gh api "repos/$repo/issues/$enum/comments" --paginate)" || { keepalive_note "$f" "skipped gh-failed"; return 0; }
   text="$(keepalive_text)" || return 0
   now="$(date +%s)"
-  keepalive_candidate "$f" "$childcomments" "$epiccomments" "$now" "$text" || return 0
+  why="$(keepalive_candidate "$f" "$childcomments" "$epiccomments" "$now" "$text")" \
+    || { keepalive_note "$f" "skipped ${why:-no-transcript}"; return 0; }
   child_record "$PARENT_TOP" "$n" || return 0
   [ "$ES_HIT" = "$f" ] || return 0
   [ "$(es_get "$f" worktree)" = "$wt" ] || return 0
   [ "$(es_get "$f" launcher)" = "$name" ] || return 0
-  keepalive_candidate "$f" "$childcomments" "$epiccomments" "$(date +%s)" "$text" || return 0
+  why="$(keepalive_candidate "$f" "$childcomments" "$epiccomments" "$(date +%s)" "$text")" \
+    || { keepalive_note "$f" "skipped ${why:-no-transcript}"; return 0; }
   out="$(launcher_run "$name" keepalive "$wt" "$text")"
   case "$out" in
-    sent|skipped\ *) ;;
-    *) echo "keepalive $n: ${out:-failed send}" >&2 ;;
+    sent) keepalive_note "$f" "sent" ;;
+    skipped\ *) keepalive_note "$f" "$out" ;;
+    *) echo "keepalive $n: ${out:-failed send}" >&2
+       case "$out" in failed\ *) keepalive_note "$f" "$out" ;; *) keepalive_note "$f" "failed send" ;; esac ;;
   esac
+  return 0
+}
+
+# 声かけの判定結果（<記録> <結果>）を記録の keepalive に `<UTC の時刻> <結果>` で書く。結果が前回と同じなら書き直さない。
+# 書けなくても判定・送信・wait の stdout と exit code は変えない（stderr に 1 行だけ出す）
+keepalive_note() {
+  local f="$1" result="$2" cur
+  cur="$(es_get "$f" keepalive)"
+  [ "${cur#* }" != "$result" ] || return 0
+  es_modify "$f" '.keepalive = $v' --arg v "$(date -u +%Y-%m-%dT%H:%M:%SZ) $result" >/dev/null 2>&1 \
+    || echo "could not write the keepalive result to the state record: $f" >&2
   return 0
 }
 
