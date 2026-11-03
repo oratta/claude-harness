@@ -7824,12 +7824,12 @@ reset_keepalive_poll() {
         "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
         "$(chat_line assistant 2033-05-18T03:33:20Z "$response" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl"
     } > "$STUB_CFG/hook_send_term-11"
-    before="$(jq -c 'del(.keepalive)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")"
+    before="$(jq -c 'del(.keepalive, .updated_at)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")"
     run dispatch wait --watch-stopped --interval 1 --timeout 4 11
     [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
     [ "$(calls '^orca terminal send ')" -eq 1 ]
-    # 声かけの結果（keepalive）だけが記録に増え、止まりの印などは変わらない
-    [ "$(jq -c 'del(.keepalive)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")" = "$before" ]
+    # 声かけの結果（keepalive）と更新時刻だけが記録で変わり、止まりの印などは変わらない
+    [ "$(jq -c 'del(.keepalive, .updated_at)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")" = "$before" ]
     run dispatch child-log 11
     [ "$status" -eq 0 ]
     if [ "$response" = "$(keepalive_reply)" ]; then
