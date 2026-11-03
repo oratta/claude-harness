@@ -96,11 +96,11 @@ is_claude_pane() {
 }
 
 # 送った文が会話ログに現れたか（<ワークツリー> <この時刻より後> <送った文>）。ログは
-# ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<パスの英数字以外を - にした名前>/*.jsonl で、送る直前に控えた時刻より後の
+# ${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<パスの英数字以外を - にした名前>/*.jsonl で、送る直前に控えた時刻より後の
 # user の行の本文が、送った文の先頭 40 文字（短ければ全体）を含むこと
 log_has_prompt() {
   local wt="$1" since="$2" text="$3" root key d phys
-  root="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
+  root="${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
   phys="$(cd "$wt" 2>/dev/null && pwd -P)" || phys=""
   for d in "$wt" "$phys"; do
     [ -n "$d" ] || continue

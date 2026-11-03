@@ -132,7 +132,7 @@ plugins/dev-workflow/scripts/subagent-context-audit.sh --by-role --refresh
 |---|---|
 | `decider` | `agent-<id>.meta.json` の `agentType` が `dev-workflow:decider`（`description` の見た目より優先） |
 | `Reviewer`（種別） | `agentType` が `dev-workflow:reviewer`（decider の次に見る。`description` の見た目より優先） |
-| `W` / `R1` / `G` / `Reviewer` | `agentType` が上の 2 つでないとき、`description` の先頭コロン区切りトークンがこれらに完全一致 |
+| `W` / `R1` / `G` / `Reviewer` | `agentType` が上の 2 つでないとき、`description` の先頭コロン区切りトークンが、これらの担当名に任意の手渡し番号（数字）を付けた形に完全一致（`W2` は `W`、`R12` は `R1`、`G3` は `G`、`Reviewer1` は `Reviewer` に数える） |
 | `unknown` | どれにも当たらない（`description` 無し・コロン無し・未知のトークン・meta.json 欠損/壊れ） |
 
 G が要求するレビュアーは `dev-workflow:reviewer` で起こすので、`description` が `Reviewer:` で始まっていなくても
@@ -147,8 +147,9 @@ G が要求するレビュアーは `dev-workflow:reviewer` で起こすので�
   `Read`、または `Skill` 呼び出しを含むホップの `usage` 差分を、まず個体（1
   トランスクリプト）ごとに合計し、その合計値を担当内で中央値に取ったもの。1 ホップ
   ずつ担当内で中央値を取るのではない点に注意する
-- `reread_pct`: `W` にだけ付く。`description` の `#N`（記録先番号。複数出現時は最も左を
-  使う）で同じ記録先の `W` を時系列でグループ化し、各グループの 2 番目以降について
+- `reread_pct`: `W` にだけ付く。トランスクリプトパスのプロジェクト識別子（slug）と
+  `description` の `#N`（記録先番号。複数出現時は最も左を使う）の組が同じ `W` を時系列で
+  グループ化し（別の slug の同じ番号は別グループ）、各グループの 2 番目以降について
   「先行する全 `W` が読んだファイルのうち自分が読み直した割合」を担当内の中央値として
   出す。**ファイル一致はベースネーム一致**（フルパス一致ではない。worktree ごとに
   絶対パスの先頭が変わるため）。「読んだファイル」は `Read` の `file_path` に加え、`Bash` の `sed -n` / `cat` /
