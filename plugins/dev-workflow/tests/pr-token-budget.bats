@@ -297,3 +297,49 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
   run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/nope.txt"
   [ "$status" -eq 1 ]
 }
+
+# 探索先の決まり方（#1231）。実行者の環境に左右されないよう、HOME を一時ディレクトリにして環境変数を外して起動する
+@test "search root: without CLAUDE_PROJECTS_DIR the usage under CLAUDE_CONFIG_DIR is counted" {
+  PROJECTS="${WORK}/cfg/projects"
+  arec r1 m1 u1 100 20 3 4 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  mkdir -p "${WORK}/home"
+  cd "$REPO"
+  run env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 127 ]
+  [ "$(j 'd["agent_count"]')" = 1 ]
+}
+
+@test "search root: CLAUDE_PROJECTS_DIR wins over CLAUDE_CONFIG_DIR" {
+  PROJECTS="${WORK}/cfg/projects"
+  arec r1 m1 u1 1 0 0 0 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  PROJECTS="${WORK}/explicit"
+  arec r2 m2 u2 2 0 0 0 | make_agent a2 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  mkdir -p "${WORK}/home"
+  cd "$REPO"
+  run env HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" CLAUDE_PROJECTS_DIR="$PROJECTS" "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 2 ]
+}
+
+@test "search root: with neither variable set, \$HOME/.claude/projects is counted" {
+  PROJECTS="${WORK}/home/.claude/projects"
+  arec r1 m1 u1 5 0 0 0 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  cd "$REPO"
+  run env -u CLAUDE_PROJECTS_DIR -u CLAUDE_CONFIG_DIR HOME="${WORK}/home" "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 5 ]
+}
+
+@test "search root: an empty CLAUDE_CONFIG_DIR falls back to \$HOME/.claude/projects" {
+  PROJECTS="${WORK}/home/.claude/projects"
+  arec r1 m1 u1 7 0 0 0 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  cd "$REPO"
+  run env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR= "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 7 ]
+}
