@@ -600,7 +600,7 @@ def build_request(args):
                  resolve_execution(state, entry_role))
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
-        result = {'status': 'agent-required', 'phase': args.phase, 'role': role,
+        result = {'status': 'agent-required', 'phase': args.phase, 'role': role, 'entry_role': entry_role,
                 'executor': execution['executor'], 'account': execution['account'],
                 'model': execution['model'], 'effort': execution.get('effort'),
                 'head': head, 'selection': selection}
@@ -619,7 +619,7 @@ def build_request(args):
     out = Path(args.out).expanduser().resolve()
     write(out, request)
     result = {'status': 'request-written', 'request': str(out), 'request_id': request['request_id'],
-            'phase': args.phase, 'role': role, 'executor': execution['executor'],
+            'phase': args.phase, 'role': role, 'entry_role': entry_role, 'executor': execution['executor'],
             'account': execution['account'],
             'codex_home': request['codex_home'], 'model': execution['model'],
             'effort': execution.get('effort'), 'head': head, 'selection': selection}

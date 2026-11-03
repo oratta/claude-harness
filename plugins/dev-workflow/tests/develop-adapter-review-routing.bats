@@ -275,7 +275,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 @test "needs-reviewer の codex request は phase review のまま decider entry を使い、テストは本体が先に走らせる (#1119)" {
   run grep -n -- '--entry-role decider' "$BATS_TEST_DIRNAME/../skills/develop/SKILL.md" "$BATS_TEST_DIRNAME/../references/codex-develop.md"
   [ "$status" -eq 0 ]
-  run grep -c '本体が固定 HEAD で必須テストを走らせ' "$BATS_TEST_DIRNAME/../skills/develop/SKILL.md"
+  run grep -c '本体が固定 HEAD で reviewer-brief 2-1 の再実行の範囲' "$BATS_TEST_DIRNAME/../skills/develop/SKILL.md"
   [ "$output" -ge 1 ]
   run grep -c '再実行できないことを理由に中断しない' "$BATS_TEST_DIRNAME/../skills/pr-review-gate/stages/reviewer-brief.md"
   [ "$output" -ge 1 ]
