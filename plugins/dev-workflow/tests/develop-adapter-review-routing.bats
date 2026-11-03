@@ -5,7 +5,7 @@
 #   gate-runner.md          G: `レビュー経路:` の 1 行で経路を判別し、adapter 経路では needs-reviewer を返す
 #   develop SKILL.md        本体: G の起動指示に常に `レビュー経路: adapter` を書き、phase review を選び直して記録する
 #   codex-develop.md        G の規則が `レビュー経路: adapter` の明示に触れる
-#   pr-review-gate SKILL.md 「レビュー実行者:」の adapter 経路の形
+#   pr-review-gate stages/triage.md・stages/review-run.md 「レビュー実行者:」の adapter 経路の形
 #
 # spec: dev-workflow-develop
 
@@ -130,10 +130,22 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "gate-runner (#385): needs-reviewer payload has the adapter full verdict and the adapter not-run value for every evidence field" {
   n="$(section "${PREPARE}" 'needs-reviewer')"
-  echo "$n" | grep -qF -- '- 判定: light | full（Codex 不可） | full（adapter 経路）'
+  echo "$n" | grep -qF -- '- 判定: light | full（Codex 不可） | full（Codex オフ） | full（adapter 経路）'
   for field in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:'; do
     echo "$n" | grep -F -- "- ${field}" | grep -qF '未実行（adapter 経路）' || { echo "missing adapter value in ${field}"; return 1; }
   done
+}
+
+@test "gate-runner (#1019): needs-reviewer payload has the Codex off reason and evidence values" {
+  n="$(section "${PREPARE}" 'needs-reviewer')"
+  echo "$n" | grep -F -- '- 根拠:' | grep -qF 'Codex オフ（設定）'
+  for field in '選んだ経路:' '終了コード:' '実待ち時間:'; do
+    echo "$n" | grep -F -- "- ${field}" | grep -qF '未実行（Codex オフ）' || { echo "missing off value in ${field}"; return 1; }
+  done
+  echo "$n" | grep -F -- '- 実行コマンド:' | grep -qF 'usage_view.py --codex-enabled → off'
+  echo "$n" | grep -F -- '- 出力の要点:' | grep -qF 'Codex オフの設定により Codex を試していない'
+  # 通常の初回レビュー依頼の対象にオフも入る
+  grep -F '基本 payload を使う' "${PREPARE}" | grep -qF 'Codex オフ'
 }
 
 # ===== gate-runner.md: 従来経路の full を保つ（1.2） =====
@@ -237,7 +249,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 # ===== レビュー実行者: の adapter 経路の形（1.5） =====
 
-@test "gate-runner and pr-review-gate (#385): both carry the adapter form of the reviewer line" {
+@test "triage and review-run (#385): both carry the adapter form of the reviewer line" {
   form='（adapter 経路・<light|full>・dispatch 記録:'
   grep -qF "$form" "${TRIAGE}"
   # review-run は書き分けの段落と PR コメント雛形の両方に持つ

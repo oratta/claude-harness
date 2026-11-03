@@ -23,7 +23,7 @@
 # skills/develop/references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」。
 # このスクリプトには書かない。正本を読むまで手渡さない。
 #
-# 探索: ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/*/*/subagents/ 内の metadata の name 完全一致と従来の名前 glob。
+# 探索: ${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/*/*/subagents/ 内の metadata の name 完全一致と従来の名前 glob。
 # `agent-*.meta.json` に対応する実在の .jsonl を候補に加える。`--file <path>` はそのファイルを直接測る。
 # 同名が複数あれば、cwd が現在のディレクトリと一致するものを優先し、次に更新時刻が新しいもの。
 set -uo pipefail
@@ -34,7 +34,7 @@ cap="${DEV_WORKFLOW_CONTEXT_CAP:-150000}"
 stop_since=""
 stop_timeout="${DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT:-1800}"
 stop_stall="${DEV_WORKFLOW_STOP_CONFIRM_STALL:-600}"
-projects="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
+projects="${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
 while [ $# -gt 0 ]; do
   case "$1" in
     --cap)

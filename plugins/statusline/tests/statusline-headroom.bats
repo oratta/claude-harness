@@ -498,6 +498,50 @@ SH
   [ "$(bar_cols < "$WORK/out.txt" | sort -u | wc -l | tr -d ' ')" -eq 1 ] || { bar_cols < "$WORK/out.txt"; cat "$WORK/out.txt"; return 1; }
 }
 
+# ---------- 5 時間枠が返らないスロット（#1547） ----------
+
+# $1=7d消化率 $2=7d残り秒 → rate_limits に seven_day だけを持つ stdin JSON
+mk_seven_only() {
+  mk_input 0 "${1:-20}" 14000 "${2:-$W59}" | jq -c 'del(.rate_limits.five_hour)'
+}
+
+@test "seven-only: rocket mode and the tickets are drawn on 7d All, with no 5h row" {
+  write_one_slot_snapshot ''
+  write_hr "$(el claude default ok $((NOW + W59)) "$(rk 1 $((NOW + 172800)))" "$(rk 2 $((NOW + 86400)))" 200)"
+  mk_seven_only | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep '7d All' "$WORK/out.txt" | grep -q '🚀' || { cat "$WORK/out.txt"; return 1; }
+  grep '7d All' "$WORK/out.txt" | grep -q '20/200%' || { cat "$WORK/out.txt"; return 1; }
+  grep '7d All' "$WORK/out.txt" | grep -q '│' || { cat "$WORK/out.txt"; return 1; }
+  ! tail -n +2 "$WORK/out.txt" | grep -qE '(^| )5h ' || return 1
+}
+
+@test "seven-only: without a weekly reset time .headroom.json stays unused" {
+  write_one_slot_snapshot ''
+  write_hr "$(el claude default ok $((NOW + W59)) "$(rk 1 $((NOW + 172800)))" "$(rk 2 $((NOW + 86400)))" 200)"
+  mk_seven_only | jq -c 'del(.rate_limits.seven_day.resets_at)' | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep -q '7d All' "$WORK/out.txt" || { cat "$WORK/out.txt"; return 1; }
+  ! grep -q '🚀' "$WORK/out.txt" || return 1
+}
+
+@test "seven-only: an active that alone can use the values opens the column on every row" {
+  codex_env 42 540000
+  write_two_slot_registry; write_two_slot_snapshot ''
+  # b の週次のリセット時刻は要素と 3600 秒より離す（b は値を使えない）。Codex にも要素を置かない
+  write_hr "$(el claude a ok $((NOW + W59)) "$(rk 1 $((NOW + 172800)))" null 200)"
+  mk_seven_only | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep -E '^▸ Claude A +7d All' "$WORK/out.txt" | grep -q '🚀' || { cat "$WORK/out.txt"; return 1; }
+  ! grep -qE '^▸ Claude A +5h' "$WORK/out.txt" || return 1
+  [ "$(bar_cols < "$WORK/out.txt" | wc -l | tr -d ' ')" -eq 4 ] || { cat "$WORK/out.txt"; return 1; }
+  [ "$(bar_cols < "$WORK/out.txt" | sort -u | wc -l | tr -d ' ')" -eq 1 ] || { bar_cols < "$WORK/out.txt"; cat "$WORK/out.txt"; return 1; }
+  grep -E 'Claude B +7d All' "$WORK/out.txt" | grep -qE '▂ {9}    1%/' || { cat "$WORK/out.txt"; return 1; }
+  # 他の行の差は空白だけ（.headroom.json が無いときの同じ行と、空白を詰めて比べる）
+  rm -f "$HR"
+  mk_seven_only | bash "$SL" | strip_ansi > "$WORK/base.txt"
+  [ "$(grep -E 'Claude B|Codex' "$WORK/out.txt" | squeeze)" = "$(grep -E 'Claude B|Codex' "$WORK/base.txt" | squeeze)" ] \
+    || { diff "$WORK/base.txt" "$WORK/out.txt"; return 1; }
+  ! diff -q <(grep -E 'Claude B' "$WORK/base.txt") <(grep -E 'Claude B' "$WORK/out.txt") >/dev/null || return 1
+}
+
 # ---------- 1 スロットで Codex の行が出るときの名前の列（受け入れ条件 4） ----------
 
 @test "one slot with Codex: Claude rows carry the name column without the active mark" {

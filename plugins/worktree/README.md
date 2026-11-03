@@ -15,6 +15,7 @@ plugin.json の `description` は /plugin メニューに出るため 1 文に�
 - `--worktree` / Agent の isolation:"worktree" / background session が対象で、並列サブエージェントが worktree で走る場合も取りこぼさない。
 - 既定の配置規約（`.claude/worktrees/<name>`・branch `worktree-<name>`・locked）は踏襲する。
 - SessionStart（wt-setup-guard）は手で `git worktree add` した worktree の取りこぼしを初回だけ拾い、済みマーカー（`<gitdir>/wt-setup-done`）以降とメインリポ・git 外では完全に無出力。
+- SessionStart（dev-dir-env-check）は harness のリポジトリで `CLAUDE_HARNESS_DEV_DIR` が未設定か空のときだけ 1 行警告し、ほかは無出力。
 - wt-setup: .claude/ symlink、.worktreeinclude生成、envコピー、引数で後続作業指示を受け取り可能。
 - `--with-pr` で空 commit → push → Draft PR を自動作成し、作業を早い段階から remote 側に見える状態にする運用に切替可能（PR 経由のマージを必須にしている repo 向け）。
 - wt-setup の .worktreeinclude は既定パターンをスクリプトが出力し（`--print-default-worktreeinclude`）、バックアップ・エディタ残骸（`*.bak` / `*.bak-*` / `*.old` / `*.orig` / `*~` 等）を常に除外、`.vercel` は既定に含めずオプトイン、コピー対象に本番値（sk_live_ / service_role / 本番 DB ホスト / AWS キー）を検出したら値を出さずに警告して続行する（issue #55）。
