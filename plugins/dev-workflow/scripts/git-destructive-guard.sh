@@ -317,6 +317,10 @@ def read_heredocs(s, i, pending, subs, cmds, in_subst):
             # 区切り語の行が無い。算術の << などをヒアドキュメントと読み違えた可能性があるので、末尾まで
             # 本文として捨てず、本文の開始位置に戻して後ろの行を通常のコマンドとして読む
             charge(n - start)
+            if not quoted:
+                # 本物の終端なしヒアドキュメントなら bash は末尾までを本文として置換を実行するので、
+                # 本文の置換の判定は残す（# の後ろの $(...) を通常のコマンドの読みで落とさない）
+                yield double_quoted(s[start:n], 0, subs, cmds, term=None)
             pending.clear()
             return start
         # 本文の終わりを探した分も仕事量に数える（本文の $(...) の中にヒアドキュメントを何重にも入れると、

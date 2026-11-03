@@ -269,6 +269,8 @@ NINE_KINDS=(
   expect_stopped "echo \$'it\\'s'; git reset --hard"
   # 区切り語の行がある本物のヒアドキュメントの本文は今までどおり止めない
   expect_silent $'cat <<EOF\ngit reset --hard\nEOF'
+  # 終端のないヒアドキュメントでも、本文の置換の中は判定する（# の後ろでも bash は置換を実行する）
+  expect_stopped $'cat <<EOF\n# $(git reset --hard)'
 }
 
 @test "shell syntax: substitutions in a quoted heredoc body are not judged (F10)" {
