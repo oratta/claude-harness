@@ -70,9 +70,9 @@ human_merge_paragraph() {
 @test "worker states the scope and its known limits" {
   section="$(common_principles)"
   [[ "$section" == *'PR #489'* && "$section" == *'shellcheck'* ]] || return 1
-  [[ "$section" == *'matrix'* && "$section" == *'services'* && "$section" == *'env'* && "$section" == *'if:'* ]] || return 1
+  [[ "$section" == *'matrix'* && "$section" == *'services'* && "$section" == *'`env`'* && "$section" == *'if:'* ]] || return 1
   [[ "$section" == *'ランナー依存'* && "$section" == *'誤実行'* ]] || return 1
-  [[ "$section" == *'完了条件にしない'* && "$section" == *'G'* ]] || return 1
+  [[ "$section" == *'完了条件にしない'* && "$section" == *'G が pr-review-gate 手順 4 で対象 HEAD の CI の結果'* ]] || return 1
   [[ "$section" == *'変えたファイルの一覧'* ]] || return 1
   [[ "$section" == *'間接的に読むテスト'* ]] || return 1
   [[ "$section" == *'CI の見張り'* && "$section" == *'ci-watch.md'* ]] || return 1

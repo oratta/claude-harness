@@ -295,6 +295,23 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # ===== gate-runner.md =====
 
+@test "gate-runner (#576): skips the pr-review-gate index and never instructs G to read SKILL.md" {
+  grep -qF '索引 `skills/pr-review-gate/SKILL.md` は読まない' "$GATE"
+  # パスと Markdown の閉じバッククォートを許容し、「読んでから」「も読む」「開く」も拾う。
+  # 「読まない」「読まず」を含む行（否定の明示）と索引の所在説明は拾わない。
+  local hits
+  hits=$(gate_all | grep -E 'SKILL\.md`?[[:space:]]*(を|も)[[:space:]]*(Read|読|開)' | grep -vE '読ま(ない|ず)' || true)
+  if [ -n "$hits" ]; then
+    echo "G の指示書に SKILL.md を読む肯定の指示がある: $hits" >&2
+    return 1
+  fi
+}
+
+@test "worker (#576): spec declaration points to declarations.md as the source of truth" {
+  worker_all | grep -qF 'skills/pr-review-gate/declarations.md'
+  grep -F '仕様宣言' "$W_FINISH" | grep -F '正本' | grep -qF 'skills/pr-review-gate/declarations.md'
+}
+
 @test "gate-runner: reads pr-review-gate and runs steps 1-5" {
   grep -q 'pr-review-gate' "$GATE"
   grep -qE '手順 ?1 ?〜 ?5|1〜5' "$GATE"
@@ -678,6 +695,14 @@ extract_context_cap_section() {
 
 # ===== 一周目レビューの機械照合と補足上限（issue #355） =====
 
+@test "gate-runner (#1457): a summary table goes through the same check and is not a missing table" {
+  step="$(section "$GATE" '一周目の三表を機械照合する' | grep -F 'review-hit-set.py --repo <repo> <table-file>')"
+  for token in '`全ヒット要約:` の行を持つ表も同じコマンドに渡す' '全行の本文が無いことを表の欠落として扱わない' '`summary:` / `extra:`' \
+    '`contract:`（標準エラー出力）も残差にし' '10 行以下の語は全行の表で出し直す'; do
+    echo "$step" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
 @test "gate-runner (#355): first-pass tables are mechanically checked before triage" {
   first="$(section "$GATE" '一周目の三表を機械照合する')"
   [ -n "$first" ] || { echo 'no first-pass reconciliation section'; return 1; }
@@ -863,6 +888,14 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -E '^\| 保留 \|' "$GATE" | grep -qF '`保留の解除`'
   grep -E '^\| passed / review-incomplete \|' "$GATE" | grep -qF '`なし`'
   grep -E '^\| needs-reviewer / needs-decider / needs-fix-check \|' "$GATE" | grep -qF '`照合と振り分け`'
+}
+
+@test "gate-runner (#1016): the hold-release row also reads triage.md when the owner answers split off" {
+  row="$(grep -E '^\| 保留の解除（' "$GATE")"
+  [ -n "$row" ] || { echo "no hold-release row"; return 1; }
+  echo "$row" | grep -qF '`stages/hold.md`'
+  echo "$row" | grep -qF '切り出しの確認に「切り出す」と答えられたときは加えて'
+  echo "$row" | grep -qF '`stages/triage.md` の置き場所の段落・候補探し・段 C の節'
 }
 
 @test "gate-runner (#554): G name and description name the stage and keep the G: prefix" {
