@@ -2318,11 +2318,14 @@ triage_line() {
   done
 }
 
-@test "dup-check: step 1 starts with a same-HEAD duplicate check that retakes and explicit retakes bypass (#249)" {
+@test "dup-check: step 1 stops on a same-HEAD weight comment from another session; retakes and explicit retakes bypass (#249)" {
   flat="$(step 1 | tr '\n' ' ')"
   echo "$flat" | grep -qE '着手前の重複チェック'
-  echo "$flat" | grep -qE '固定 HEAD:.*比べる'
+  echo "$flat" | grep -qE '固定 HEAD:.*担当セッション:.*を見る'
   echo "$flat" | grep -qE '重複で降りた'
-  echo "$flat" | grep -qE 'Gate Result.*引き継ぐ起動'
+  echo "$flat" | grep -qE '担当セッション:.*自分のセッション ID'
+  echo "$flat" | grep -qE 'Gate Result.*を貼って起こされた起動'
   echo "$flat" | grep -qE '取り直し: 明示'
+  echo "$flat" | grep -qE '取り直さずに主に報告'
+  grep -qF '担当セッション: %s' "$(step_file 2-0)"
 }

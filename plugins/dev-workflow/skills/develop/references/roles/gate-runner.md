@@ -79,17 +79,17 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 | needs-reviewer / needs-decider / needs-fix-check | `照合と振り分け` |
 | needs-carryover-judge | `合格処理` |
 | 保留 | `保留の解除` |
-| passed / review-incomplete | `なし` |
+| passed / review-incomplete / 重複で降りた | `なし` |
 
 この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: `needs-reviewer` は `stages/prepare.md`、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`。
 
 ## 段ごとの起動と入力
 
-本体は**段ごとに新しい G を起こす**。起動指示には `段: <段の名前>` の 1 行と `レビュー経路:` の 1 行を書き（前の担当の続きを取り直すときは `取り直し: 明示（理由）` の 1 行も書く。pr-review-gate の着手前の重複チェックを免れる行）、2 つ目以降の段では前の段の `## Gate Result` ブロックを要約し直さずそのまま貼り、下の表の「本体が渡すもの」を足す。名前は `G-<PR>-<prepare|triage|pass|hold>-<n>`（`n` はその PR・その段で起こした回数）、description は `G: <段> for PR #N (#issue)` の形にし、先頭の `G:` を残す（`scripts/subagent-context-audit.sh --by-role` がこの接頭辞で G と判定する）。
+本体は**段ごとに新しい G を起こす**。起動指示には `段: <段の名前>` の 1 行と `レビュー経路:` の 1 行を書き（主から前の担当は止まっていると聞いて同じ HEAD のゲートを取り直すときは `取り直し: 明示（理由）` の 1 行も書く。pr-review-gate の着手前の重複チェックで降りずに進ませる行）、2 つ目以降の段では前の段の `## Gate Result` ブロックを要約し直さずそのまま貼り、下の表の「本体が渡すもの」を足す。名前は `G-<PR>-<prepare|triage|pass|hold>-<n>`（`n` はその PR・その段で起こした回数）、description は `G: <段> for PR #N (#issue)` の形にし、先頭の `G:` を残す（`scripts/subagent-context-audit.sh --by-role` がこの接頭辞で G と判定する）。
 
 | 段 | 本体が起こす時点 | 本体が渡すもの | 返しうる Status |
 |---|---|---|---|
-| 前提確認と重さ判定 | ゲートの開始、W の修正後の再レビュー（failed の `次の段: 前提確認と重さ判定`）、保留の解除が `次の段: 前提確認と重さ判定` を返したとき、CI の見張りで `ready` になったあとの取り直し | W の修正内容の要約（再レビューのとき） | `needs-reviewer` / 保留 / `重複で降りた`（`次の段: なし`。本体は `ListAgents` で前の担当を確かめ、生きていれば完了を待ち、生きていなければ `取り直し: 明示（理由）` の行を添えて前提確認の G を起こし直す） |
+| 前提確認と重さ判定 | ゲートの開始、W の修正後の再レビュー（failed の `次の段: 前提確認と重さ判定`）、保留の解除が `次の段: 前提確認と重さ判定` を返したとき、CI の見張りで `ready` になったあとの取り直し | W の修正内容の要約（再レビューのとき） | `needs-reviewer` / 保留 / `重複で降りた`（`次の段: なし`。同じ HEAD の `レビュー重量:` コメントを別のセッションの担当が投稿している。本体は取り直さず、着手済みコメントの URL と、別のセッションの担当が生きているかはこのセッションから確かめられないことを主に報告して止まる（channel ではチャンネルに送る）。主から前の担当は止まっていると返事が来たら、`取り直し: 明示（主の確認: 前の担当は止まっている）` の行を添えて前提確認の G を起こし直す） |
 | 照合と振り分け | レビュー要約・補足レビューの結果・決める役の裁定を受け取ったとき、直し方の判定を受け取ったとき、戻した指摘が順 3 だけの修正のあと（failed の `次の段: 照合と振り分け`） | レビュアーの要約・補足レビューの結果・決める役の裁定・直し方の判定と判定の記録の URL・W の修正内容の要約のうち、その時点のもの | `次の段へ` / failed / 保留 / `needs-reviewer`（補足） / `needs-decider` / `needs-fix-check` / `review-incomplete` |
 | 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと） | 前の段の Gate Result ブロック（引き継ぎの判定のあとは加えて引き継ぎの判定と判定の記録の URL） | passed / 保留 / `needs-carryover-judge` |
 | 保留の解除 | 主の回答が届いたとき | 主の回答 | `次の段へ` / failed / needs-decider / 保留 |
