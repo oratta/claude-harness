@@ -73,13 +73,13 @@ DEV_WORKFLOW_MEMORY_DIR="$M" <dev-workflow のディレクトリ>/scripts/memory
 |---|---|---|
 | 削除 | feedback_decide-dont-delegate-judgment | `rules/communication-style.md` の「推奨まで出す」が同じ内容 |
 | 削除 | feedback_fable-judges-delegate-work | `rules/subagent-model-selection.md` の「最上位は判断に温存」が同じ内容 |
-| 削除 | project_agent-loop-deploy-map | テンプレ廃止済みで、正本は flatmate 側 |
+| 削除 | project_agent-loop-deploy-map | テンプレ廃止済みで、正本は配布元のリポジトリ側 |
 | 削除 | project_agent-runtime-3layers | 配布層とする loops プラグインが解散済みで、中身が矛盾 |
 | 削除 | project_capability-registry-not-installed | install 済みで名前が逆。版数も現行と乖離 |
 | 削除 | project_casting-injection-design | 正本の場所は `rules/perspective-casting.md` にあり、着手順の issue は解決済み |
 | 削除 | project_cost-effective-harness-issue26 | issue と PR がすべて完了 |
 | 削除 | project_dev-workflow-develop-skill | repo の現状がそのまま示す。follow-up も完了 |
-| 削除 | project_harness-dev-clone-location | `CLAUDE_HARNESS_DEV_DIR` が設定済みで、CLAUDE.md がその方式を明記 |
+| 削除 | project_harness-dev-clone-location | 開発用 clone の場所は環境変数で解決する方式が決まり、CLAUDE.md がその方式を明記 |
 | 削除 | 旧プラグイン 3 本の解散記録（project_ で始まる 1 件） | 解散は repo の現状が示し、残件は GitHub にある |
 | 削除 | project_one-off-no-script-rule | 対象の PR はマージ済み。予算残量はテストで測れる |
 | 削除 | project_pr-review-gate-promoted | repo の現状が示す。版数も現行と乖離 |
@@ -91,4 +91,4 @@ DEV_WORKFLOW_MEMORY_DIR="$M" <dev-workflow のディレクトリ>/scripts/memory
 | 短縮 | feedback_wt-setup_autonomous | 中身は維持し、旧形式の frontmatter だけ直す |
 | 維持 | 残り 8 件 | repo に無い環境固有の事実（シェルの noclobber、codex の node など）か、有効な指摘 |
 
-削除した 3 件は flatmate 側の事実を含んでいたが、このメモリディレクトリは harness プロジェクト専用で flatmate のセッションからは読まれないので、消しても失うものは無いと判断した。
+削除した 3 件は別リポジトリ側の事実を含んでいたが、このメモリディレクトリは harness プロジェクト専用で別リポジトリのセッションからは読まれないので、消しても失うものは無いと判断した。

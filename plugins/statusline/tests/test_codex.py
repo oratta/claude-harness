@@ -178,11 +178,22 @@ class RenderTests(unittest.TestCase):
     def test_weekly_only_appends_exactly_one_row_and_pending_claude(self):
         lines = self.render().splitlines()
         self.assertIn('取得待ち', lines[-2])
-        self.assertTrue(lines[-1].startswith('  Codex  7d All'))
+        self.assertTrue(lines[-1].startswith('  Codex A'))
         self.assertIn('46%', lines[-1])
         self.assertIn('~', lines[-1])
         self.assertIn('0m前', lines[-1])
         self.assertNotIn('Codex', self.render(False))
+
+    def test_row_name_is_codex_plus_the_registry_label(self):
+        path = self.folder / 'accounts.json'
+        document = json.loads(path.read_text())
+        row = lambda: [l for l in self.render().splitlines() if 'Codex' in l][0]
+        self.assertTrue(row().startswith('  Codex A '))
+        for label, name in [('X', 'Codex X'), ('', 'Codex A'), (3, 'Codex A'),
+                            ('a\tb', 'Codex A'), ('abcdefghijkl', 'Codex abcdefgh')]:
+            document['codex'] = {'label': label}
+            path.write_text(json.dumps(document))
+            self.assertTrue(row().startswith('  ' + name + ' '), (label, row()))
 
     def test_both_windows_on_one_line(self):
         self.write_cache([{'pct': 0, 'minutes': 300, 'reset': self.now + 18000},
@@ -230,7 +241,7 @@ class RenderTests(unittest.TestCase):
         document['codex'] = value
         path.write_text(json.dumps(document))
 
-    def test_off_row_is_label_and_off_only_even_with_a_fetched_cache(self):
+    def test_off_shows_no_row_even_with_a_fetched_cache(self):
         cache = self.folder / '.statusline-codex'
         doc = codex.read_json(cache)
         doc['resets'] = {'availableCount': 3, 'credits': [
@@ -238,9 +249,10 @@ class RenderTests(unittest.TestCase):
         codex.atomic(cache, doc)
         before = cache.read_bytes()
         self.set_codex({'enabled': False})
-        lines = [line for line in self.render().splitlines() if 'Codex' in line]
-        self.assertEqual(lines, ['  Codex  off'])
-        self.assertIn('\x1b[2moff\x1b[0m', self.render(raw=True))
+        shown = self.render()
+        self.assertNotIn('Codex', shown)
+        self.assertNotIn('off', shown)
+        self.assertNotIn('リセット', shown)
         self.assertEqual(cache.read_bytes(), before)
 
     def test_statusline_codex_zero_wins_over_the_off_setting(self):
@@ -252,13 +264,13 @@ class RenderTests(unittest.TestCase):
         self.set_codex({'enabled': True})
         enabled = [line for line in self.render().splitlines() if 'Codex' in line]
         self.assertEqual(len(absent), 1)
-        self.assertTrue(absent[0].startswith('  Codex  7d All'))
+        self.assertTrue(absent[0].startswith('  Codex A'))
         self.assertNotIn('off', absent[0])
         self.assertEqual(enabled[0].split('  ')[:4], absent[0].split('  ')[:4])
 
 
 class CodexOffTests(unittest.TestCase):
-    # statusline-multi-account-usage "Codex がオフのとき Codex 行は off を出し、取得しない".
+    # statusline-multi-account-usage "Codex がオフのとき表示行を出さず、取得しない".
     # The helper reads "codex"."enabled" itself (it never imports dev-workflow's usage_view).
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

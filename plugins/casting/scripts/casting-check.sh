@@ -192,15 +192,16 @@ strip_html_comments() {
   local line rest in_comment=0
   local in_fence=0 fence_char='' fence_len=0 fence_run
   local fence_open_re='^[ ]{0,3}(`{3,}|~{3,})'
+  local fence_trail_re=$'[ \t]*'
   : > "$out"
   while IFS= read -r line || [ -n "$line" ]; do
     if [ "$in_fence" -eq 1 ]; then
       # 閉じフェンス行の末尾に許すのは CommonMark 同様スペースとタブのみ（#307）。
       # [[:space:]] は POSIX ロケールでもフォームフィード・垂直タブ・キャリッジ
-      # リターンを含むため使わない。[[:blank:]] はスペースとタブだけを指す
-      # （bracket expression 内では \t がエスケープとして働かないので `[ \t]` とは
-      #  書けない。`[[:blank:]]` が `[ \t]*` 相当の正しい書き方）。
-      if [[ "$line" =~ ^[\ ]{0,3}(${fence_char}{3,})[[:blank:]]*$ ]] \
+      # リターンを含むため使わない。[[:blank:]] もロケール依存の文字クラスで、
+      # ロケール次第で全角スペース等まで含みうる（#383）ので、スペースとタブを
+      # 変数に入れて明示する（bracket expression 内では \t が効かないため変数展開を使う）。
+      if [[ "$line" =~ ^[\ ]{0,3}(${fence_char}{3,})${fence_trail_re}$ ]] \
         && [ "${#BASH_REMATCH[1]}" -ge "$fence_len" ]; then
         in_fence=0
       fi

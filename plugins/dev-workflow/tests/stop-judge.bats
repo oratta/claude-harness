@@ -32,7 +32,7 @@ setup() {
  {"body":"親エピックからの注意書き: #400\n\n外の人の注意書き","author_association":"NONE","html_url":"https://github.com/o/r/issues/11#issuecomment-2"},
  {"body":"子の停止: 主の返事待ち\n古い止まり","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-3"},
  {"body":"関係ないコメント","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-4"},
- {"body":"子の停止: 主の返事待ち\n止まった理由: hook がファイルの読み取りを止めた\n前提: 読むのは作業ツリーの中\n推奨: 読む\n推奨の根拠: 作業ツリーの中なので戻せる\n受け入れるリスク: なし\n再開に要る途中経過: なし","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-5"}
+ {"body":"子の停止: 主の返事待ち\n止まった理由: hook がファイルの読み取りを止めた\n主に聞く理由: なし（hook に止められ子の側では読めない）\n前提: 読むのは作業ツリーの中\n推奨: 読む\n推奨の根拠: 作業ツリーの中なので戻せる\n受け入れるリスク: なし\n再開に要る途中経過: なし","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-5"}
 ]
 EOF
   cat > "$STUB_CFG/comments_400" <<'EOF'
@@ -118,8 +118,9 @@ calls() { LC_ALL=C grep -c -- "$1" "$STUB_LOG" || true; }
   grep -qF 'エピックの本文: 止まった子を親が解決する' "$in"
   grep -qF '子の本文: 受け入れ条件はこれ' "$in"
   grep -qF '他の子の範囲に手を出さない' "$in"
-  # 停止の記録は #1036 の形（6 つの項目）のまま渡す
-  for item in '止まった理由: hook がファイルの読み取りを止めた' '前提: 読むのは作業ツリーの中' '推奨: 読む' \
+  # 停止の記録は 7 つの項目の形のまま渡す（項目名を解釈しない）
+  for item in '止まった理由: hook がファイルの読み取りを止めた' '主に聞く理由: なし（hook に止められ子の側では読めない）' \
+              '前提: 読むのは作業ツリーの中' '推奨: 読む' \
               '推奨の根拠: 作業ツリーの中なので戻せる' '受け入れるリスク: なし' '再開に要る途中経過: なし'; do
     grep -qxF "$item" "$in" || { echo "missing: $item"; false; }
   done
@@ -127,6 +128,25 @@ calls() { LC_ALL=C grep -c -- "$1" "$STUB_LOG" || true; }
   grep -qF '親の判断: 子 #11 通した — 前回の件' "$in"
   grep -qF "$(sed -n 1p "$CRITERIA")" "$in"
   grep -qF '| 繰り返していない |' "$in"
+}
+
+@test "stop-judge: a stop record in the older six-item form without the ask-reason item is passed as is" {
+  cat > "$STUB_CFG/comments_11" <<'EOF'
+[
+ {"body":"子の停止: 主の返事待ち\n止まった理由: hook がファイルの読み取りを止めた\n前提: 読むのは作業ツリーの中\n推奨: 読む\n推奨の根拠: 作業ツリーの中なので戻せる\n受け入れるリスク: なし\n再開に要る途中経過: なし","author_association":"OWNER","html_url":"https://github.com/o/r/issues/11#issuecomment-6"}
+]
+EOF
+  run judge 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "${#lines[@]}" -eq 4 ]
+  [ "${lines[3]}" = "記録: https://github.com/o/r/issues/11#issuecomment-6" ]
+  in="$STUB_CFG/model_in"
+  for item in '止まった理由: hook がファイルの読み取りを止めた' '前提: 読むのは作業ツリーの中' '推奨: 読む' \
+              '推奨の根拠: 作業ツリーの中なので戻せる' '受け入れるリスク: なし' '再開に要る途中経過: なし'; do
+    grep -qxF "$item" "$in" || { echo "missing: $item"; false; }
+  done
+  # 基準のファイルも入力に入るので、行頭の項目としてだけ見る
+  run grep -E '^主に聞く理由:' "$in"; [ "$status" -eq 1 ]
 }
 
 @test "stop-judge: notes from other authors, older stops, other children's decisions and other comments are not passed" {
@@ -321,7 +341,154 @@ EOF
   [ "$(calls '^claude ')" -eq 0 ]
 }
 
+# 別のリポジトリの子（<owner>/<repo>#<N>）
+xchild_setup() {
+  printf '%s\n' '別リポジトリの子の本文' > "$STUB_CFG/body_1615"
+  cat > "$STUB_CFG/comments_1615" <<'EOT'
+[
+ {"body":"親エピックからの注意書き: oratta/claude-harness#400\n\n別リポジトリの注意","author_association":"OWNER","html_url":"x1"},
+ {"body":"子の停止: 主の返事待ち\n止まった理由: 別リポジトリの停止","author_association":"OWNER","html_url":"https://github.com/genetta-inc/flatmate/issues/1615#issuecomment-9"}
+]
+EOT
+  cat > "$STUB_CFG/comments_400" <<'EOT'
+[
+ {"body":"親の判断: 子 genetta-inc/flatmate#1615 通した — 前回の別リポジトリの件 u","author_association":"OWNER","html_url":"u1"},
+ {"body":"親の判断: 子 #1615 通した — 同じ番号の同じリポジトリの子の件","author_association":"OWNER","html_url":"u2"},
+ {"body":"親の判断: 子 other/repo#1615 通した — 別の別リポジトリの件","author_association":"OWNER","html_url":"u3"}
+]
+EOT
+}
+
+@test "stop-judge: a child given as <owner>/<repo>#<N> is read from that repository and its past decisions use the same name" {
+  xchild_setup
+  run judge 400 genetta-inc/flatmate#1615
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "${lines[3]}" = "記録: https://github.com/genetta-inc/flatmate/issues/1615#issuecomment-9" ]
+  grep -qF 'repos/genetta-inc/flatmate/issues/1615' "$STUB_LOG"
+  grep -qF 'repos/genetta-inc/flatmate/issues/1615/comments' "$STUB_LOG"
+  grep -qF 'repos/\{owner\}/\{repo\}/issues/400' "$STUB_LOG"
+  in="$STUB_CFG/model_in"
+  grep -qF '別リポジトリの子の本文' "$in"
+  grep -qF '親の判断: 子 genetta-inc/flatmate#1615 通した — 前回の別リポジトリの件' "$in"
+  if grep -qF '同じ番号の同じリポジトリの子の件' "$in"; then false; fi
+  if grep -qF '別の別リポジトリの件' "$in"; then false; fi
+  grep -qF '## 子 genetta-inc/flatmate#1615 の本文' "$in"
+}
+
+@test "stop-judge: a same-repository child still reads {owner}/{repo} and matches past decisions by #<N>" {
+  run judge 400 11
+  [ "$status" -eq 0 ]
+  grep -qF 'repos/\{owner\}/\{repo\}/issues/11' "$STUB_LOG"
+  grep -qF '## 子 #11 の本文' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge: a malformed <owner>/<repo>#<N> is rejected without calling gh" {
+  run judge 400 'genetta-inc/flatmate#'
+  [ "$status" -eq 1 ]
+  run judge 400 'flatmate#1615'
+  [ "$status" -eq 1 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
 @test "stop-judge: the script does not contain the word orca" {
   run grep -iw orca "$SCRIPT"
   [ "$status" -eq 1 ]
+}
+
+# --- 止まりの JSON ---
+# 止まりの JSON を置いてパスを出す（[jq の式で足す項目]）
+stop_json() {
+  local extra="${1-}"
+  [ -n "$extra" ] || extra='{}'
+  jq -n "{uuid: \"u1\", at: \"2026-10-26T06:00:00.000Z\", text: \"子の最後の発言の全文\", questions: [], turn_ended: true,
+    bg_running: false, last_input_at: \"2026-10-26T05:00:00.500Z\", marked: false} + ($extra)" > "$BATS_TEST_TMPDIR/stop.json"
+  printf '%s' "$BATS_TEST_TMPDIR/stop.json"
+}
+# 子 11 の停止の記録を 1 件にする（<created_at>）
+one_record() {
+  jq -cn --arg t "$1" '[{body: "子の停止: 主の返事待ち\n古いリスク許容の本文", author_association: "OWNER",
+    html_url: "https://github.com/o/r/issues/11#issuecomment-9", created_at: $t}]' > "$STUB_CFG/comments_11"
+}
+not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の報告' '返事:' > "$STUB_CFG/model_out"; }
+
+@test "stop-judge json: a record older than the last input is not passed, the statement is, and line 4 is none" {
+  one_record 2026-10-26T04:00:00Z
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  [ "${lines[3]}" = '記録: なし' ]
+  ! grep -q '古いリスク許容の本文' "$STUB_CFG/model_in" || return 1
+  grep -q '子の最後の発言の全文' "$STUB_CFG/model_in"
+  grep -q '最後の入力の時刻: 2026-10-26T05:00:00.500Z' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: the model gets the questions, the background task and the mark" {
+  run judge 400 11 "$(stop_json '{questions: ["どちらですか"], bg_running: true, marked: true}')"
+  [ "$status" -eq 0 ]
+  grep -qF '未回答の問い: どちらですか' "$STUB_CFG/model_in"
+  grep -qF '背景のタスク: 実行中' "$STUB_CFG/model_in"
+  grep -qF '止まった印: あり' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: without them the model is told there are none" {
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  grep -qF '未回答の問い: なし' "$STUB_CFG/model_in"
+  grep -qF '背景のタスク: なし' "$STUB_CFG/model_in"
+  grep -qF '止まった印: なし' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: a record in the same second as the last input is this stop's record" {
+  one_record 2026-10-26T05:00:00Z
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  [ "${lines[3]}" = '記録: https://github.com/o/r/issues/11#issuecomment-9' ]
+  grep -q '古いリスク許容の本文' "$STUB_CFG/model_in"
+}
+
+@test "stop-judge json: no json and no record does not call the model, and an unreadable json is an error" {
+  printf '[]' > "$STUB_CFG/comments_11"
+  run judge 400 11
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  [ ! -e "$STUB_CFG/model_in" ]
+  printf 'not json' > "$BATS_TEST_TMPDIR/bad.json"
+  run judge 400 11 "$BATS_TEST_TMPDIR/bad.json"
+  [ "$status" -eq 1 ]
+  [ ! -e "$STUB_CFG/model_in" ]
+}
+
+@test "stop-judge json: not-a-question is accepted only with json, no record, no question and no mark" {
+  not_a_question
+  printf '[]' > "$STUB_CFG/comments_11"
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = '判断: 問いではない' ]
+  [ "${lines[3]}" = '記録: なし' ]
+  run judge 400 11 "$(stop_json '{questions: ["どちらですか"]}')"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  run judge 400 11 "$(stop_json '{marked: true}')"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  one_record 2026-10-26T06:00:00Z
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  run judge 400 11
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+}
+
+# spec: dev-workflow-develop（`止まった理由:` の行がある止まりを問いでないとして落とさない）
+
+@test "stop-judge json: not-a-question is malformed when the statement ends with a stop-reason line" {
+  not_a_question
+  printf '[]' > "$STUB_CFG/comments_11"
+  run judge 400 11 "$(stop_json '{text: "マージを待つ。\n止まった理由: PR のマージ待ち（human-merge）: https://github.com/o/r/pull/9"}')"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+}
+
+@test "stop-judge json: not-a-question stays accepted when the statement has no stop-reason line at the head of a line" {
+  not_a_question
+  printf '[]' > "$STUB_CFG/comments_11"
+  run judge 400 11 "$(stop_json '{text: "完了の報告。文中の 止まった理由: は行頭ではない"}')"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = '判断: 問いではない' ]
+  [ "${lines[3]}" = '記録: なし' ]
 }

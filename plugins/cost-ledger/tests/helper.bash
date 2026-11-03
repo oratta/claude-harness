@@ -130,3 +130,8 @@ print(json.dumps({
     ensure_ascii=False))
 PY
 }
+
+# cl_row と同じ形で、モデルが料金表に無い claude-nope-9 の行を組み立てる（未知モデルの検査用）
+cl_row_unknown() {  # 引数は cl_row と同じ
+  cl_row "$@" | sed 's/claude-haiku-4-5/claude-nope-9/'
+}
