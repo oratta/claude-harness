@@ -3,11 +3,18 @@
 
   child-log-read.py <dir>            print one JSON object, or exit 1 when no log is readable
   child-log-read.py --keepalive-text print the fixed keepalive request
+  child-log-read.py --main-log <dir> <stop_uuid>
+                                     print the path of the main conversation's log, or exit 1
 
 <dir> is the child worktree's transcript directory. Only *.jsonl directly under it that
 have a line with entrypoint == "cli" are logs; the newest by last timestamp is read
 (hook-started sessions share the directory). Subagent logs under <dir>/<session>/subagents/
 count for the last activity only. Nothing is written and no model is called.
+
+--main-log is the keepalive and relaunch judgment's choice (dev-workflow-epic-state "止まった子への声かけは
+本体の会話ログ 1 本で判定する"): among the logs with a non-sidechain assistant line of entrypoint cli, the one
+with the newest last timestamp, only when no other log ties it and it holds a line with <stop_uuid>. An empty
+<stop_uuid> never decides. Anything else is "no main log" (exit 1), so nothing is guessed.
 
 The format is Claude Code's private one, so lines are picked by kind, never by position:
 a turn ends at a system/turn_duration line, a background task starts at
@@ -122,6 +129,33 @@ def newest_log(directory):
         if cli and last is not None and (best is None or last > best[0]):
             best = (last, p, rows)
     return best
+
+
+def main_log(directory, stop_uuid):
+    """Path of the main conversation's log, or None when it cannot be decided (see the module doc)."""
+    stop_uuid = safe_uuid(stop_uuid)
+    if not stop_uuid:
+        return None
+    found = []
+    for p in glob.glob(os.path.join(directory, "*.jsonl")):
+        try:
+            last, _cli, rows = read_rows(p)
+        except OSError:
+            continue
+        main = any(
+            d.get("type") == "assistant" and d.get("entrypoint") == "cli" and d.get("isSidechain") is not True
+            for _t, d in rows
+        )
+        if main and last is not None:
+            found.append((last, p, rows))
+    if not found:
+        return None
+    found.sort(key=lambda x: x[0], reverse=True)
+    if len(found) > 1 and found[1][0] == found[0][0]:
+        return None
+    if not any(d.get("uuid") == stop_uuid for _t, d in found[0][2]):
+        return None
+    return found[0][1]
 
 
 def subagent_activity(directory, session):
@@ -283,6 +317,12 @@ def walk(rows, definition):
 
 
 def main(argv):
+    if len(argv) == 4 and argv[1] == "--main-log":
+        path = main_log(argv[2], argv[3])
+        if path is None:
+            return 1
+        print(path)
+        return 0
     if len(argv) != 2:
         print(__doc__, file=sys.stderr)
         return 1

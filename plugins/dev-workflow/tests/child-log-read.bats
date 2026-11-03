@@ -249,3 +249,47 @@ field() { read_log | jq -r "$1"; }
   [ "$(cat "$LOG")" = "$before" ]
   [ "$(ls "$DIR")" = s1.jsonl ]
 }
+
+# --- --main-log: 声かけと起動し直しの判定に使う本体の会話ログの選び方 ---
+# spec: dev-workflow-epic-state（止まった子への声かけは本体の会話ログ 1 本で判定する）
+MAINU=aaaaaaaa-1111-4111-8111-111111111111
+
+main_row() { # <ファイル> <uuid> <時刻> [<entrypoint>] [<isSidechain>]
+  jq -cn --arg u "$2" --arg t "$3" --arg e "${4-cli}" --argjson s "${5-false}" \
+    '{type: "assistant", entrypoint: $e, isSidechain: $s, uuid: $u, timestamp: $t, message: {role: "assistant", content: "x"}}' >> "$1"
+}
+
+@test "main-log: the newest cli log that holds the stop uuid is the main log" {
+  main_row "$DIR/old.jsonl" bbbbbbbb-1111-4111-8111-111111111111 2026-01-01T00:00:00Z
+  main_row "$DIR/main.jsonl" "$MAINU" 2026-01-02T00:00:00Z
+  main_row "$DIR/sdk.jsonl" cccccccc-1111-4111-8111-111111111111 2026-01-03T00:00:00Z sdk-py
+  run python3 "$READER" --main-log "$DIR" "$MAINU"
+  [ "$status" -eq 0 ]; [ "$output" = "$DIR/main.jsonl" ]
+}
+
+@test "main-log: an empty or malformed stop uuid never decides, even with one candidate" {
+  main_row "$DIR/main.jsonl" "$MAINU" 2026-01-02T00:00:00Z
+  run python3 "$READER" --main-log "$DIR" ""
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  run python3 "$READER" --main-log "$DIR" "u1"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+}
+
+@test "main-log: a newest log without the stop uuid, or a tie on the last activity, decides nothing" {
+  main_row "$DIR/old.jsonl" "$MAINU" 2026-01-01T00:00:00Z
+  main_row "$DIR/past.jsonl" bbbbbbbb-1111-4111-8111-111111111111 2026-01-02T00:00:00Z
+  run python3 "$READER" --main-log "$DIR" "$MAINU"
+  [ "$status" -eq 1 ]
+  main_row "$DIR/twin.jsonl" "$MAINU" 2026-01-02T00:00:00Z
+  run python3 "$READER" --main-log "$DIR" "$MAINU"
+  [ "$status" -eq 1 ]
+}
+
+@test "main-log: sidechain-only, sdk-only and empty directories have no main log" {
+  main_row "$DIR/side.jsonl" "$MAINU" 2026-01-02T00:00:00Z cli true
+  main_row "$DIR/sdk.jsonl" "$MAINU" 2026-01-02T00:00:00Z sdk-py
+  run python3 "$READER" --main-log "$DIR" "$MAINU"
+  [ "$status" -eq 1 ]
+  run python3 "$READER" --main-log "$BATS_TEST_TMPDIR/none" "$MAINU"
+  [ "$status" -eq 1 ]
+}

@@ -5197,6 +5197,8 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
 # spec: dev-workflow-develop（wait --resolve は通す返事を送る前に起動し直すかを表で決める）
 
+MAIN_UUID=aaaaaaaa-1111-4111-8111-111111111111
+
 # 子 11 のトランスクリプトを置く（<何分前の最後のリクエスト> <会話量> [compact 1] [ファイル名]）
 put_transcript() {
   local ago="$1" ctx="$2" compact="${3-0}" name="${4-s1}"
@@ -5205,7 +5207,8 @@ put_transcript() {
   mkdir -p "$dir"
   ts="$(python3 -c "import datetime,sys;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
   {
-    printf '{"type":"assistant","timestamp":"%s","message":{"usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$ts" "$ctx"
+    printf '{"type":"assistant","entrypoint":"cli","uuid":"%s","timestamp":"%s","message":{"content":"q","usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$MAIN_UUID" "$ts" "$ctx"
+    printf '{"type":"system","subtype":"turn_duration","timestamp":"%s"}\n' "$ts"
     [ "$compact" = 1 ] && printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s"}\n' "$ts"
   } > "$dir/$name.jsonl"
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
@@ -5219,6 +5222,8 @@ resolve_pass() {
   printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
   : > "$STUB_LOG"
   resolve_ready
+  # 起動し直しの判定は本体の会話ログを記録の stop_uuid（put_transcript のログの uuid）で決める
+  put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
   judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
   # 子の判断の既定の subagent-context.sh は plugin のものを使う
 }
@@ -5231,7 +5236,7 @@ resolve_pass() {
   [ "$(calls '^orca terminal create')" -eq 1 ]
   [ "$(calls '^orca terminal send')" -ge 1 ]
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 $MAIN_UUID $STOP_URL" ]
 }
 
 @test "wait --resolve relaunch: under 60 minutes sends as is" {
@@ -5261,19 +5266,72 @@ resolve_pass() {
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
 }
 
-@test "wait --resolve relaunch: no transcript or two transcripts sends as is" {
+# 子 11 の置き場に別の会話ログを足す（<ファイル名> <entrypoint> <何分前> <uuid>）
+put_other_log() {
+  local name="$1" entry="$2" ago="$3" uid="$4"
+  local dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir"
+  python3 - "$dir/$name.jsonl" "$entry" "$ago" "$uid" <<'PYCODE'
+import datetime, json, sys
+p, entry, ago, uid = sys.argv[1:]
+t = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=int(ago))).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+row = dict(type='assistant', entrypoint=entry, uuid=uid, timestamp=t,
+           message=dict(content='q', usage=dict(input_tokens=160000, cache_creation_input_tokens=0, cache_read_input_tokens=0)))
+open(p, 'w').write(json.dumps(row) + '\n')
+PYCODE
+}
+
+resolve_relaunch_count() {
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "$output"; cat "$BATS_TEST_TMPDIR/stderr"; return 1; }
+  calls '^orca terminal create'
+}
+
+@test "wait --resolve relaunch: no transcript sends as is" {
   resolve_pass
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
-  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
-  [ "$status" -eq 0 ]
-  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(resolve_relaunch_count)" -eq 0 ]
   [ -e "$STUB_CFG/sent_term-a-11" ]
+}
+
+@test "wait --resolve relaunch: transcripts tied on the last activity send as is" {
   resolve_pass
   put_transcript 90 160000 0 s1
-  put_transcript 90 160000 0 s2
-  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  cp "$CLAUDE_PROJECTS_DIR"/*/s1.jsonl "$(dirname "$(ls "$CLAUDE_PROJECTS_DIR"/*/s1.jsonl)")/s2.jsonl"
+  [ "$(resolve_relaunch_count)" -eq 0 ]
+  [ -e "$STUB_CFG/sent_term-a-11" ]
+}
+
+@test "wait --resolve relaunch: only a past cli session without the stop_uuid sends as is" {
+  resolve_pass
+  put_other_log past cli 90 bbbbbbbb-1111-4111-8111-111111111111
+  [ "$(resolve_relaunch_count)" -eq 0 ]
+  [ -e "$STUB_CFG/sent_term-a-11" ]
+}
+
+@test "wait --resolve relaunch: an empty stop_uuid decides no main transcript (one past cli log included)" {
+  put_transcript 90 160000
+  dir="$(dirname "$(ls "$CLAUDE_PROJECTS_DIR"/*/s1.jsonl)")"
+  run python3 "${SCRIPT%/*}/child-log-read.py" --main-log "$dir" ""
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run python3 "${SCRIPT%/*}/child-log-read.py" --main-log "$dir" "$MAIN_UUID"
   [ "$status" -eq 0 ]
-  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$output" = "$dir/s1.jsonl" ]
+}
+
+@test "wait --resolve relaunch: an sdk-py log beside the main log still relaunches" {
+  resolve_pass
+  put_transcript 90 160000
+  put_other_log sdk sdk-py 1 cccccccc-1111-4111-8111-111111111111
+  [ "$(resolve_relaunch_count)" -eq 1 ]
+}
+
+@test "wait --resolve relaunch: an older cli session beside the main log still relaunches" {
+  resolve_pass
+  put_transcript 90 160000
+  put_other_log past cli 600 dddddddd-1111-4111-8111-111111111111
+  [ "$(resolve_relaunch_count)" -eq 1 ]
 }
 
 @test "wait --resolve relaunch: the idle threshold can be overridden and a bad value is refused" {
@@ -6654,7 +6712,7 @@ assert_resolve_delivery() {
   else
     [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
   fi
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 $MAIN_UUID $STOP_URL" ]
 }
 
 @test "wait --resolve relaunch: short idle size boundary and context exit 0 or 2" {
@@ -6735,9 +6793,10 @@ JSON
   for ctx in 150000 0; do
     resolve_pass
     : > "$STUB_LOG"
-    put_transcript 5 "$ctx"
+    # 本体のログは有効な時刻の行で決まり、使用量の行だけが時刻不明
+    put_transcript 5 0
     file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
-    printf '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":%s}}}\n' "$ctx" > "$file"
+    printf '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":%s}}}\n' "$ctx" >> "$file"
     expected=0
     [ "$ctx" -lt 150000 ] || expected=1
     assert_resolve_delivery "$expected"
@@ -7688,7 +7747,7 @@ user@host work %'
 keepalive_wait_setup() {
   keepalive_orca_setup
   set_current 400
-  put_record 11 stop=stopped-seen session=term-11
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
   export KEEPALIVE_TEST_NOW=2000000000
   cat > "$STUB_BIN/date" <<'DATE'
@@ -7713,14 +7772,14 @@ keepalive_chat() {
   local age="$1" tokens="${2-100}" ttl="${3-1h}"
   local dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$dir"
-  python3 - "$dir/s.jsonl" "$KEEPALIVE_TEST_NOW" "$age" "$tokens" "$ttl" <<'PYCODE'
+  python3 - "$dir/s.jsonl" "$KEEPALIVE_TEST_NOW" "$age" "$tokens" "$ttl" "$MAIN_UUID" <<'PYCODE'
 import datetime, json, sys
-p, now, age, tokens, ttl = sys.argv[1:]
+p, now, age, tokens, ttl, uid = sys.argv[1:]
 now, age, tokens = int(now), int(age), int(tokens)
 def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
 rows = [dict(type='user', timestamp=stamp(now-100000), message=dict(content='依頼')),
         dict(type='assistant', timestamp=stamp(now-99999), message=dict(content='元の質問？')),
-        dict(type='assistant', entrypoint='cli', timestamp=stamp(now-4000), message=dict(usage=dict(input_tokens=10,cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens':100}))),
+        dict(type='assistant', entrypoint='cli', uuid=uid, timestamp=stamp(now-4000), message=dict(usage=dict(input_tokens=10,cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens':100}))),
         dict(type='assistant', entrypoint='cli', timestamp=stamp(now-age), message=dict(usage=dict(input_tokens=0,cache_read_input_tokens=tokens)))]
 with open(p, 'w') as f:
     for row in rows: f.write(json.dumps(row, ensure_ascii=False)+'\n')
@@ -7824,20 +7883,20 @@ reset_keepalive_poll() {
     [ "$(calls '^orca terminal send ')" -eq "$1" ]
   }
   at() { jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - $1))" '$t | todate'; }
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 86399)"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 86399)"
   send_count 1
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 86400)"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 86400)"
   send_count 0
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
   send_count 0
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=d1 "stop_at=$(at 3600)"
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d0"}]' > "$STUB_CFG/comments_1122"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 3600)"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 bbbbbbbb-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
   send_count 1
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
   send_count 0
-  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1 https://example/stop"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111 https://example/stop"}]' > "$STUB_CFG/comments_1122"
   send_count 0
-  echo '[{"author_association":"NONE","body":"親の判断: 子 #11 通した — 範囲の内側 発言 d1"}]' > "$STUB_CFG/comments_1122"
+  echo '[{"author_association":"NONE","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
   send_count 1
 }
 
@@ -7874,11 +7933,12 @@ reset_keepalive_poll() {
         "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
         "$(chat_line assistant 2033-05-18T03:33:20Z "$response" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl"
     } > "$STUB_CFG/hook_send_term-11"
-    before="$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")"
+    before="$(jq -c 'del(.keepalive, .updated_at)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")"
     run dispatch wait --watch-stopped --interval 1 --timeout 4 11
     [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
     [ "$(calls '^orca terminal send ')" -eq 1 ]
-    [ "$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")" = "$before" ]
+    # 声かけの結果（keepalive）と更新時刻だけが記録で変わり、止まりの印などは変わらない
+    [ "$(jq -c 'del(.keepalive, .updated_at)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")" = "$before" ]
     run dispatch child-log 11
     [ "$status" -eq 0 ]
     if [ "$response" = "$(keepalive_reply)" ]; then
@@ -7898,6 +7958,166 @@ reset_keepalive_poll() {
   [ "$status" -eq 0 ]; [ "$output" = 'done 11' ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
   grep -qF 'keepalive 11: failed send' "$BATS_TEST_TMPDIR/stderr"
+}
+
+# --- 声かけの本体ログ選択と結果の記録（keepalive-main-transcript-and-reason） ---
+keepalive_dir() { printf '%s/%s' "$CLAUDE_PROJECTS_DIR" "$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"; }
+
+# keepalive_extra_log <ファイル名> <entrypoint> <最後の行の何秒前> <uuid> [<キャッシュの枠> [<キャッシュ書き込みの何秒前>]]
+keepalive_extra_log() {
+  mkdir -p "$(keepalive_dir)"
+  python3 - "$(keepalive_dir)/$1.jsonl" "$KEEPALIVE_TEST_NOW" "$2" "$3" "$4" "${5-}" "${6-4000}" <<'PYCODE'
+import datetime, json, sys
+p, now, entry, age, uid, ttl, wage = sys.argv[1:]
+now, age, wage = int(now), int(age), int(wage)
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+rows = []
+if ttl:
+    rows.append(dict(type='assistant', entrypoint=entry, uuid=uid, timestamp=stamp(now-wage),
+        message=dict(content='x', usage=dict(input_tokens=10, cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens': 100}))))
+rows.append(dict(type='assistant', entrypoint=entry, uuid=uid, timestamp=stamp(now-age), message=dict(content='x', usage=dict(input_tokens=0, cache_read_input_tokens=5))))
+with open(p, 'w') as f:
+    for row in rows: f.write(json.dumps(row)+'\n')
+PYCODE
+}
+
+keepalive_note_is() {
+  [ "$(jq -r .keepalive "$(rec_of 1122 11)" | cut -d' ' -f2-)" = "$1" ]
+}
+
+keepalive_wait_run() {
+  reset_keepalive_poll
+  gh_seq 11 open closed
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+}
+
+@test "keepalive wait: an sdk-py log and an older cli session beside the main log still send, and the record says sent" {
+  keepalive_wait_setup
+  keepalive_extra_log sdk sdk-py 10 cccccccc-1111-4111-8111-111111111111
+  keepalive_extra_log past cli 90000 dddddddd-1111-4111-8111-111111111111 1h 90100
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  keepalive_note_is sent
+  [[ "$(jq -r .keepalive "$(rec_of 1122 11)")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z\ sent$ ]] || return 1
+}
+
+@test "keepalive wait: no main log (past cli only, sdk-py only, none) sends nothing and records no-transcript" {
+  keepalive_wait_setup
+  rm -f "$(keepalive_dir)"/*.jsonl
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
+  keepalive_extra_log sdk sdk-py 3000 cccccccc-1111-4111-8111-111111111111 1h
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+  # 過去の cli だけが残り、記録の stop_uuid がそのログに無い
+  rm -f "$(keepalive_dir)"/*.jsonl
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
+  # uuid の無い行だけのログ（wait が止まりの後の進みと読まない形）
+  keepalive_extra_log past cli 3000 "" 1h
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+}
+
+@test "keepalive wait: an empty stop_uuid sends nothing even when one cli log is the only candidate" {
+  keepalive_wait_setup
+  put_record 11 stop=stopped-seen session=term-11
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+}
+
+@test "keepalive wait: cli logs tied on the last activity are not decided" {
+  keepalive_wait_setup
+  keepalive_extra_log twin cli 3000 "$MAIN_UUID" 1h
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+}
+
+@test "keepalive wait: only the selected log's cache write counts (an older log with a 1h write does not)" {
+  keepalive_wait_setup
+  keepalive_chat 3000 100 5m
+  keepalive_extra_log past cli 3500 dddddddd-1111-4111-8111-111111111111 1h 3500
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped cache-unknown"
+}
+
+@test "keepalive wait: a cache write later than now is cache-future" {
+  keepalive_wait_setup
+  python3 - "$(keepalive_dir)/s.jsonl" "$KEEPALIVE_TEST_NOW" "$MAIN_UUID" <<'PYCODE'
+import datetime, json, sys
+p, now, uid = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+rows = [dict(type='assistant', entrypoint='cli', uuid=uid, timestamp=stamp(now+500),
+             message=dict(content='x', usage=dict(input_tokens=10, cache_creation_input_tokens=100, cache_creation={'ephemeral_1h_input_tokens': 100})))]
+open(p, 'w').write(''.join(json.dumps(r)+'\n' for r in rows))
+PYCODE
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped cache-future"
+}
+
+@test "keepalive wait: the record carries why nothing was sent (dialog, expired, answered, not-stopped, no-session)" {
+  keepalive_wait_setup
+  orca_screen '────────────────
+Do you want to proceed?
+❯ 1. Yes
+  2. No'
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped dialog"
+  orca_screen '────────────────
+❯
+────────────────
+? for shortcuts'
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 86400))" '$t | todate')"
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped expired"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 3600))" '$t | todate')"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped answered"
+  echo '[]' > "$STUB_CFG/comments_1122"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
+  put_record 11 stop=stopped-seen session= stop_uuid=$MAIN_UUID
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-session"
+  # 止まっていない子には 1 回だけ not-stopped が書かれる
+  put_record 11 session=term-11
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped not-stopped"
+}
+
+@test "keepalive wait: the same result is not written again, a different one is" {
+  keepalive_wait_setup
+  rm -f "$(keepalive_dir)"/*.jsonl
+  local old='2020-01-01T00:00:00Z skipped no-transcript'
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "keepalive=$old"
+  keepalive_wait_run
+  [ "$(jq -r .keepalive "$(rec_of 1122 11)")" = "$old" ]
+  [ "$(jq -r .updated_at "$(rec_of 1122 11)")" = "2026-01-01T00:00:00Z" ]
+  # 同じ結果の書き直しは、1 回の wait の複数のポーリングでも起きない
+  gh_seq 11 open open open closed
+  reset_keepalive_poll
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(jq -r .keepalive "$(rec_of 1122 11)")" = "$old" ]
+  # 結果が変われば書く
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "keepalive=2020-01-01T00:00:00Z skipped dialog"
+  keepalive_wait_run
+  [ "$(jq -r .keepalive "$(rec_of 1122 11)")" != "2020-01-01T00:00:00Z skipped dialog" ]
+  keepalive_note_is "skipped no-transcript"
+}
+
+@test "keepalive wait: a record that cannot be written changes neither stdout nor the exit code" {
+  keepalive_wait_setup
+  rm -f "$(keepalive_dir)"/*.jsonl
+  # 記録の置き場を書き込み不可にして、キャッシュの判定の結果を書けなくする
+  local f; f="$(rec_of 1122 11)"
+  chmod 0555 "$(dirname "$f")"
+  reset_keepalive_poll
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  chmod 0755 "$(dirname "$f")"
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
 }
 
 @test "wait limit timestamp regression: offset and invalid time cannot override newest 5m; naive time is UTC" {
