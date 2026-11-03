@@ -271,6 +271,8 @@ NINE_KINDS=(
   expect_silent $'cat <<EOF\ngit reset --hard\nEOF'
   # 終端のないヒアドキュメントでも、本文の置換の中は判定する（# の後ろでも bash は置換を実行する）
   expect_stopped $'cat <<EOF\n# $(git reset --hard)'
+  # 本文が閉じていなくても（読めた置換は判定し、通常の読みは止めない）
+  expect_stopped $'cat <<EOF\n# $(git reset --hard)\n$(echo'
 }
 
 @test "shell syntax: substitutions in a quoted heredoc body are not judged (F10)" {

@@ -319,8 +319,13 @@ def read_heredocs(s, i, pending, subs, cmds, in_subst):
             charge(n - start)
             if not quoted:
                 # 本物の終端なしヒアドキュメントなら bash は末尾までを本文として置換を実行するので、
-                # 本文の置換の判定は残す（# の後ろの $(...) を通常のコマンドの読みで落とさない）
-                yield double_quoted(s[start:n], 0, subs, cmds, term=None)
+                # 本文の置換の判定は残す（# の後ろの $(...) を通常のコマンドの読みで落とさない）。
+                # 本文が閉じていなくても、ここまでに読めた置換は cmds / subs に入っているのでそのまま使い、
+                # 例外で通常の読み全体を止めない（止めると粗い読みに落ちて # をコメントと読めない）
+                try:
+                    yield double_quoted(s[start:n], 0, subs, cmds, term=None)
+                except Unclosed:
+                    pass
             pending.clear()
             return start
         # 本文の終わりを探した分も仕事量に数える（本文の $(...) の中にヒアドキュメントを何重にも入れると、
