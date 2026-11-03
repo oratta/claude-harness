@@ -24,7 +24,7 @@ Claude Code が実行時に読むのは `~/.claude/plugins/cache/<marketplace>/<
 echo "${CLAUDE_HARNESS_DEV_DIR:?未設定}"
 ```
 
-未設定なら **主に置き場所を聞く**。デフォルトパスを勝手に決めない。`find ~ -name claude-harness` のような探索で当てにいくのも禁止（marketplace dir や過去の残骸を拾う）。
+未設定なら **主に置き場所を聞く**。デフォルトパスを勝手に決めない。`find ~ -name claude-harness` のような探索で当てにいくのも禁止（marketplace dir や過去の残骸を拾う）。変数の意味と入れ方は README の「開発用 clone の場所（`CLAUDE_HARNESS_DEV_DIR`）」の節にある。
 
 解決できたら、そこから worktree を切って直す。作業中のプロジェクトのセッションから直接 harness を編集しにいかず、worktree を作ってそこで別セッションを立てるか、その worktree を作業ディレクトリに指定したサブエージェントに任せる。
 
