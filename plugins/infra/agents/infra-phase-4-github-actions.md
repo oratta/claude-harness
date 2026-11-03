@@ -46,7 +46,7 @@ ${CLAUDE_PLUGIN_ROOT}/templates/workflows/
 `CLAUDE_PLUGIN_ROOT` が取れない環境では:
 ```bash
 # プラグインの一般的な配置場所を探索
-INFRA_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; INFRA_NG=1; fi
+INFRA_NG=; if [ -n "${ZSH_VERSION:-}" ] && command -v setopt >/dev/null 2>&1 && [[ ! -o nullglob ]]; then setopt nullglob; INFRA_NG=1; fi
 for dir in \
   ~/.claude/plugins/marketplaces/*/plugins/infra/templates/workflows \
   ~/.claude/plugins/installed/*/infra/templates/workflows; do
