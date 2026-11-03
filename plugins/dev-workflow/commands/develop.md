@@ -24,6 +24,7 @@ plugin_root="${CLAUDE_PLUGIN_ROOT}"
 DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
 for dir in \
   "${plugin_root:+$plugin_root/skills/develop}" \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/develop \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/develop \
   ~/.claude/plugins/installed/*/dev-workflow/skills/develop; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
@@ -59,6 +60,7 @@ unset DW_NG
    DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
    for dir in \
      "${plugin_root:+$plugin_root/skills/issueify}" \
+     ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/issueify \
      ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify \
      ~/.claude/plugins/installed/*/dev-workflow/skills/issueify; do
      [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
