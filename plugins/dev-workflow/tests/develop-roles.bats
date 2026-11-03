@@ -886,7 +886,7 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   echo "$row" | grep -qF '`前提確認と重さ判定`'
   grep -E '^\| `次の段へ` \|' "$GATE" | grep -qF '`合格処理`'
   grep -E '^\| 保留 \|' "$GATE" | grep -qF '`保留の解除`'
-  grep -E '^\| passed / review-incomplete \|' "$GATE" | grep -qF '`なし`'
+  grep -E '^\| passed / review-incomplete / 重複で降りた \|' "$GATE" | grep -qF '`なし`'
   grep -E '^\| needs-reviewer / needs-decider / needs-fix-check \|' "$GATE" | grep -qF '`照合と振り分け`'
 }
 
