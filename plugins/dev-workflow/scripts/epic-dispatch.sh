@@ -1672,27 +1672,30 @@ rj_snapshot() {
 rj_key() { printf '%s/%s' "$RJ_DIR" "$(var_key "$1")"; }
 # 基準と処理済みの版を控える（<epic|子の引数> <updated_at> <版>）
 rj_store() { printf '%s %s\n' "$2" "$3" > "$(rj_key "$1")"; }
-# 長い待ちに入ったポーリングで、エピックと各子の基準と処理済みの版を読み直す（<epic の番号> <子>...）。読めなかったものは控えない
+# 長い待ちに入ったポーリングで、エピックと各子の基準と処理済みの版を読み直す（<epic の番号> <子>...）。
+# 版を読めなかったものは処理済みの版を「-」（未判断）にして控え、読めるようになった版を判断にかける。そのとき
+# updated_at だけ読めていれば基準に控え、それが動かないあいだ（材料が変わっていない）は判断しない
 rejudge_init() {
-  local epic="$1" k snap
+  local epic="$1" k api snap ua
   shift
   [ -n "$RJ_DIR" ] || RJ_DIR="$(mktemp -d)"
   rm -f "$RJ_DIR"/*
   for k in epic "$@"; do
-    snap="$(rj_snapshot "$(rj_api "$k" "$epic")")" || continue
-    rj_store "$k" ${snap}
+    api="$(rj_api "$k" "$epic")"
+    if snap="$(rj_snapshot "$api")"; then
+      rj_store "$k" ${snap}
+    else
+      ua="$(rj_updated "$api")" || ua=-
+      rj_store "$k" "$ua" -
+    fi
   done
 }
 # 材料が変わったか（<epic|子の引数> <epic の番号>）。変わっていれば「<updated_at> <版>」を出して 0、変わっていない・
-# 読めなければ 1。基準が無ければ読めたときに控えるだけ。版が同じなら前段の基準だけ進める
+# 読めなければ 1。基準が無ければ未判断（基準も版も「-」）として扱う。版が同じなら前段の基準だけ進める
 rj_changed() {
-  local k="$1" api ua base ver snap
+  local k="$1" api ua base=- ver=- snap
   api="$(rj_api "$k" "$2")"
-  if [ ! -e "$(rj_key "$k")" ]; then
-    snap="$(rj_snapshot "$api")" && rj_store "$k" ${snap}
-    return 1
-  fi
-  read -r base ver < "$(rj_key "$k")"
+  [ ! -e "$(rj_key "$k")" ] || read -r base ver < "$(rj_key "$k")"
   ua="$(rj_updated "$api")" || return 1
   [ "$ua" != "$base" ] || return 1
   snap="$(rj_snapshot "$api")" || return 1

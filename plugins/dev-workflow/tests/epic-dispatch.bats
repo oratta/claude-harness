@@ -8625,6 +8625,32 @@ rejudge_ready() {
   [ "$(calls '^gh api .*/issues/11/comments')" -eq 2 ]
 }
 
+@test "wait owner-wait --resolve: an owner edit made while the first read failed is judged once when the read recovers" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  # 長い待ちに入るポーリング（1 回目）では子の issue が読めず、基準を控えられない
+  : > "$STUB_CFG/issue_fail_11"
+  # 読めないあいだに主がコメントし、2 回目のポーリングで読めるようになる
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'B は？')]"
+  printf 'rm -f %q\n' "$STUB_CFG/issue_fail_11" >> "$STUB_CFG/hook_11_2"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge 400 11')" -eq 1 ] || { cat "$STUB_LOG"; false; }
+}
+
+@test "wait owner-wait --resolve: when only the comments failed on the first read, an unchanged issue is not judged after recovery" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  # 1 回目のポーリングではコメントだけが読めない（本文と updated_at は読める）。2 回目で読めるようになり、材料は変わらない
+  echo 1 > "$STUB_CFG/comments_exit"
+  printf 'rm -f %q\n' "$STUB_CFG/comments_exit" > "$STUB_CFG/hook_11_2"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=5 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge ')" -eq 0 ]
+}
+
 @test "wait owner-wait --resolve: a failed read of the issue is not an error and is judged when it can be read" {
   rejudge_ready 11
   judge_says judge_out 主に上げる 主の好みが要る ''
