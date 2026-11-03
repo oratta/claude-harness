@@ -94,7 +94,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 ### 割り方が判断できないほど曖昧な場合
 
 - **interactive モード**: W は本体に return し、本体が AskUserQuestion で聞く（例: 「issue に書かれている内容は、A と B の2つの独立した変更に見えます。分けて進めてよいですか、それとも1つの change として扱いますか？」）。
-- **unmanned モード**: Discord でユーザーに同様の質問を送る。返信を待つ間は `needs-approval` ラベルを付けて経緯を記録先にコメントし、そのサイクルは終了する。
+- **unmanned モード**: W は子 issue を作らず、質問文・理由と `needs-approval` を return に含め、記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return する。W は Discord（MCP・CLI とも）へ直接送信しない。本体が代理送信してサイクルを終了する手順は SKILL.md「実行モード」を参照。
 
 ## 残量モード `FABLE_BUDGET_MODE`
 
