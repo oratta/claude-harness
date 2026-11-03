@@ -870,7 +870,7 @@ cmd_launch() {
 # 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する
 deliver_reply() {
   local relaunch="$1" as="$2" epic="$3" n="$4" text="$5"
-  local msg rec path res prompt erefs=" " xrepo_epic=""
+  local msg rec path res prompt json erefs=" " xrepo_epic=""
   child_record "$PARENT_TOP" "$n"
   case $? in
     0) ;;
@@ -881,6 +881,20 @@ deliver_reply() {
   rec="$ES_HIT"
   path="$(es_get "$rec" worktree)"
   [ -n "$path" ] || { echo "failed $n no-worktree"; return 1; }
+  # 送る直前に、子がまだ止まっているかを確かめる（主が子のタブで答えて再開済みなら、重ねて送らない）。
+  # 止まっていなければ送らず `skipped <child> not-stopped` を出して 2 を返す
+  case "$(es_get "$rec" stop)" in
+    stopped|stopped-seen) ;;
+    *) echo "skipped $n not-stopped"; return 2 ;;
+  esac
+  # 記録がまだ stopped-seen でも、子が mark resumed を呼ばず会話ログだけで先へ進んでいる（止まりの発言より新しい発言か
+  # 入力がある）ことがある。会話ログを読めたときだけ、その子も再開済みとして送らない（読めなければ今までどおり送る）
+  if [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ]; then
+    json="$(record_log_json "$rec")" || json=""
+    if [ -n "$json" ] && log_moved "$json" "$(es_get "$rec" stop_uuid)"; then
+      echo "skipped $n not-stopped"; return 2
+    fi
+  fi
   # 返事は記録の launcher の部品で届ける。その部品が使えない子だけ launcher-unavailable
   LAUNCHER_NAME="$(es_get "$rec" launcher)"
   launcher_usable "$LAUNCHER_NAME" || { echo "failed $n launcher-unavailable"; return 1; }
@@ -933,8 +947,8 @@ cmd_reply() {
   agent_setup "$1" || usage
   need_parent
   launchers_gate "$2"
-  deliver_reply "$relaunch" "$as" "$1" "$2" "$3" || exit 1
-  exit 0
+  deliver_reply "$relaunch" "$as" "$1" "$2" "$3"
+  case $? in 0|2) exit 0 ;; *) exit 1 ;; esac
 }
 
 # 止まった印のまま completed で閉じた子に、完了報告と mark done を促す返事を送り、エピックに 1 行残す。
@@ -995,6 +1009,7 @@ cmd_notify_closed() {
   res="$(deliver_reply "$relaunch" parent "$epic" "$n" "$text")"
   case "$res" in
     "sent $n"|"relaunched $n") ;;
+    "skipped $n not-stopped") echo "$res"; exit 0 ;;
     *) echo "$res"; exit 1 ;;
   esac
   # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに送っていない判断が残る）
@@ -1308,6 +1323,8 @@ resolve_stopped() {
     [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath" "$su")"
     res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply")"
     case "$res" in
+      # 送る直前に子が再開済みだった（主が子のタブで答えた）。送らず、エピックにも残さない
+      "skipped $n not-stopped") return 0 ;;
       "sent $n"|"relaunched $n")
         # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに通していない判断が残る）
         line="親の判断: 子 $(child_label "$n") 通した — $reason 発言 ${su:-不明}"
