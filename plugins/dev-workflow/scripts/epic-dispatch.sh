@@ -162,7 +162,8 @@
 #   unmerged-commits / git-failed）、
 #   の順に確かめ、全部通れば `orca terminal close --all`（失敗したら `orca terminal list` を stderr に出し
 #   EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT 秒・既定 10 待って 1 回だけ閉じ直す。それでも失敗なら rm せず
-#   `kept <N> close-failed` と stderr に主がする操作）→ `orca worktree rm`（--force なし・再試行なし。
+#   `kept <N> close-failed` と stderr に主がする操作）→ 閉じたあとに <子のパス>/LLM があれば rm せず
+#   `kept <N> llm-logs` → `orca worktree rm`（--force なし・再試行なし。
 #   stderr に `terminal sweep failed` を含む失敗は `kept <N> rm-failed-terminal-sweep`）→
 #   残ったローカルブランチは先端が HEAD と同じときだけ、ワークツリーが `git worktree list` から外れるのを
 #   上限つきで待って（EPIC_DISPATCH_REAP_DETACH_TIMEOUT 秒・既定 30、_INTERVAL 秒・既定 1）
@@ -2018,6 +2019,9 @@ cmd_reap() {
       fi
       echo "kept $n close-failed"; continue
     fi
+    # 端末を閉じている間に子が gitignore 対象の LLM/ を作ることがあり、--force なしの rm でも ignored のログは
+    # 守られない。rm の直前に LLM/ の有無を読み直す（端末は閉じ済みで、ワークツリーは残す）
+    [ ! -e "$path/LLM" ] || { echo "kept $n llm-logs"; continue; }
     # ワークツリーを消す（部品は --force を付けない。確認のあとに増えた未コミットの変更があれば rm が止まる）。
     # 消せなければ部品が出した理由の語（rm-failed / rm-failed-terminal-sweep）を付けて残す。再試行もしない
     # rm の通常の stdout は切り出す前と同じく reap の stdout に出す（部品の stdout は理由の語だけ）。
