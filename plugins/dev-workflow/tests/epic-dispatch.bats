@@ -5141,6 +5141,8 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
 # spec: dev-workflow-develop（wait --resolve は通す返事を送る前に起動し直すかを表で決める）
 
+MAIN_UUID=aaaaaaaa-1111-4111-8111-111111111111
+
 # 子 11 のトランスクリプトを置く（<何分前の最後のリクエスト> <会話量> [compact 1] [ファイル名]）
 put_transcript() {
   local ago="$1" ctx="$2" compact="${3-0}" name="${4-s1}"
@@ -5149,7 +5151,8 @@ put_transcript() {
   mkdir -p "$dir"
   ts="$(python3 -c "import datetime,sys;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
   {
-    printf '{"type":"assistant","entrypoint":"cli","uuid":"u1","timestamp":"%s","message":{"content":"q","usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$ts" "$ctx"
+    printf '{"type":"assistant","entrypoint":"cli","uuid":"%s","timestamp":"%s","message":{"content":"q","usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$MAIN_UUID" "$ts" "$ctx"
+    printf '{"type":"system","subtype":"turn_duration","timestamp":"%s"}\n' "$ts"
     [ "$compact" = 1 ] && printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s"}\n' "$ts"
   } > "$dir/$name.jsonl"
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
@@ -5163,8 +5166,8 @@ resolve_pass() {
   printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
   : > "$STUB_LOG"
   resolve_ready
-  # 起動し直しの判定は本体の会話ログを記録の stop_uuid（put_transcript のログの u1）で決める
-  put_record 11 status=waiting stop=stopped-seen stop_uuid=u1 stop_at="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+  # 起動し直しの判定は本体の会話ログを記録の stop_uuid（put_transcript のログの uuid）で決める
+  put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
   judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
   # 子の判断の既定の subagent-context.sh は plugin のものを使う
 }
@@ -5177,7 +5180,7 @@ resolve_pass() {
   [ "$(calls '^orca terminal create')" -eq 1 ]
   [ "$(calls '^orca terminal send')" -ge 1 ]
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 $MAIN_UUID $STOP_URL" ]
 }
 
 @test "wait --resolve relaunch: under 60 minutes sends as is" {
@@ -6600,7 +6603,7 @@ assert_resolve_delivery() {
   else
     [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
   fi
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 $MAIN_UUID $STOP_URL" ]
 }
 
 @test "wait --resolve relaunch: short idle size boundary and context exit 0 or 2" {
@@ -6681,9 +6684,10 @@ JSON
   for ctx in 150000 0; do
     resolve_pass
     : > "$STUB_LOG"
-    put_transcript 5 "$ctx"
+    # 本体のログは有効な時刻の行で決まり、使用量の行だけが時刻不明
+    put_transcript 5 0
     file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
-    printf '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":%s}}}\n' "$ctx" > "$file"
+    printf '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":%s}}}\n' "$ctx" >> "$file"
     expected=0
     [ "$ctx" -lt 150000 ] || expected=1
     assert_resolve_delivery "$expected"
