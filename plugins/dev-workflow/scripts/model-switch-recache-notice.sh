@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreModelSwitch hook: モデル切替の直前に、会話を切替先のモデルで読み直すトークン数と、
+# PreModelSwitch hook: モデルを切り替えるときに、会話を切替先のモデルで読み直すトークン数と、
 # キャッシュ書き込みの推定費用を systemMessage で知らせる（issue #714）。
 #
 # 返すのは {"systemMessage": "..."} だけ。decision・hookSpecificOutput（permissionDecision）・
@@ -13,6 +13,10 @@
 # hook_event_name が PreModelSwitch でない／入力が読めない／python3 が無い。
 # 仕様: openspec の dev-workflow-model-switch-recache-notice
 set -uo pipefail
+
+# ファイルサイズ上限（ulimit -f）が小さい環境では、ヒアドキュメントの一時ファイルへの書き込みで SIGXFSZ が飛び、
+# シェルごと signal 終了（exit 153）になる。無視して書き込みの失敗（エラー）に落とし、下の空チェックで exit 0 にする。
+trap '' XFSZ
 
 command -v python3 >/dev/null 2>&1 || exit 0
 

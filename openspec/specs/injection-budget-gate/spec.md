@@ -159,6 +159,7 @@
    - 並び項目行: `^  - ` または `^    - ` で始まる行
    - 空行
    - `^#` で始まるコメント行
+   - ただし入れ子キー行のうち `description:` で始まるもの（`^  description:`）は違反とする。frontmatter 全体を字下げすると YAML ではトップレベルの `description` と読まれるのに、集計は `^description:` だけを数えて 0 バイトにするため（MUST NOT accept）。入れ子の `description` はこのゲートの注入対象ではないので許可する理由がない
 3. frontmatter 内のどこにも `&` と `<<` を含んではならない（MUST NOT）。アンカー（`&`）を一律で禁じることで、エイリアス（`*name`）は定義済みの解決先を持たない
 4. トップレベルの `description:` は 0 個か 1 個でなければならない（MUST）。2 個以上は違反とする（値が両方とも単一行であっても違反とする）
 5. `description` の値の先頭 1 バイトは、ASCII 英数字・`/`・`"`・`'`・および 0x80 以上のバイト（マルチバイト文字の先頭）のいずれかでなければならない（MUST）。YAML の折りたたみ・リテラル記法（`>` `|` `>-` `|-` 等）を含む他の先頭バイトは、この許可リストに無いことをもって違反とする。値が空（`description:` だけの行、および値が半角空白のみの行）の場合は先頭バイトが存在せずこの条件を満たしようがないため、違反としなければならない（MUST。空値を例外として検査を飛ばしてはならない）
@@ -178,6 +179,11 @@
 
 - **WHEN** 一時ディレクトリに `description` の値の先頭が NUL バイト（0x00）のファイルを置き、検査ヘルパに渡す
 - **THEN** 違反として検出され、該当ファイル名が出力される（判定は awk に渡す前に行うため、awk 実装によらず同じ結果になる）
+
+#### Scenario: 字下げした description を落とす
+
+- **WHEN** 一時ディレクトリに frontmatter 全体を半角空白 2 個で字下げしたファイル（`  description: <長文>`、または `  name:` と `  description:` の両方）を置き、検査ヘルパに渡す
+- **THEN** 違反として検出され、該当ファイル名が出力される。`metadata:` の下の入れ子キー（`description` 以外）は引き続き受理される
 
 #### Scenario: 値が空の description を落とす
 
@@ -298,7 +304,7 @@
 
 ### Requirement: 思考の深さを文で指示する言い回しを置かない
 
-`rules/*.md`・`CLAUDE.md`・`output-styles/*.md`・`plugins/*/skills/*/SKILL.md`（本文を含む）・`.claude/commands/` 配下・`.claude/skills/` 配下のファイルは、思考の深さを文で指示する言い回しを含んではならない（MUST NOT）。対象の句は `よく考え`・`think deeply`・`think hard`・`think carefully`・`think step by step` とし、英語の句は大文字小文字を区別しない。
+`rules/*.md`（README.md を除く）・`CLAUDE.md`・`output-styles/*.md`（README.md を除く）・`plugins/*/skills/*/SKILL.md`（本文を含む）・`.claude/commands/` 配下・`.claude/skills/` 配下・`.agents/skills/` 配下のファイルは、思考の深さを文で指示する言い回しを含んではならない（MUST NOT）。対象の句は `よく考え`・`think deeply`・`think hard`・`think carefully`・`think step by step` とし、英語の句は大文字小文字を区別しない。
 
 `scripts/test.sh` の全件実行に、この条件を確かめるテストが含まれなければならない（MUST）。テストが落ちたときの出力は、該当したファイルと行、および `docs/injection-budget-review.md` を示さなければならない（MUST）。
 
@@ -306,7 +312,7 @@
 
 `plugins/` 配下のうち対象にするのは `plugins/*/skills/*/SKILL.md` だけとする。スキルの `references/` などそれ以外のファイルは対象にしない（必要なときだけ読まれる文書で、issue #712 が名指しした「rules とスキル」の外にある）。
 
-**守備範囲**: 違反が入ってくる経路は 2 つで、openspec CLI が `.claude/` 配下を再生成したときと、対象ファイルを手で編集したときである。拾うのは上の 5 つの句が 1 行の中にそのまま現れた場合だけとする。5 つの句に当たらない言い換え（`じっくり考えて`・`深く考えて`・`ultrathink`・`think thoroughly` など）と、改行をまたぐ形（`Think` の次の行に `deeply`）は通る。逆に `think hard-coded` のように思考の深さと無関係な英文にも当たりうる。見つかるたびに句を足したり例外を足したりして、取りこぼしと誤検出を塞ぎ切ることを完了条件にしない。言い換えを見つける役は診断コマンド `/doctor prompt-audit` が担う。
+**守備範囲**: 違反が入ってくる経路は 2 つで、openspec CLI が `.claude/`・`.agents/` 配下を再生成したときと、対象ファイルを手で編集したときである。拾うのは上の 5 つの句が 1 行の中にそのまま現れた場合だけとする。5 つの句に当たらない言い換え（`じっくり考えて`・`深く考えて`・`ultrathink`・`think thoroughly` など）と、改行をまたぐ形（`Think` の次の行に `deeply`）は通る。逆に `think hard-coded` のように思考の深さと無関係な英文にも当たりうる。見つかるたびに句を足したり例外を足したりして、取りこぼしと誤検出を塞ぎ切ることを完了条件にしない。言い換えを見つける役は診断コマンド `/doctor prompt-audit` が担う。
 
 #### Scenario: rules に「よく考え」が無い
 
