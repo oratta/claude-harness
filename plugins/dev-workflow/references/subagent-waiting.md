@@ -102,7 +102,7 @@ timeout: 540000
 
 ### (b) `codex-companion.mjs` 経由
 
-`task … --effort medium` でジョブを投げ、`status <job-id> --wait --timeout-ms 540000` で待つ。`--timeout-ms` の既定は 4 分しかないので必ず明示する。
+`task … --effort medium --background --json` でジョブを投げ、起動 JSON の `.jobId` を取得して、`status <job-id> --wait --timeout-ms 540000` で待つ。`--timeout-ms` の既定は 4 分しかないので必ず明示する。
 
 **exit code ではタイムアウトと完了を区別できない。** companion の `handleStatus` は結果を出力して return するだけで `process.exitCode` を設定しないため、**タイムアウトでも完了でも 0 で返る**（2026-09-09 に実測。`process.exitCode` を設定するのは `exec` 経路とエラー経路だけ）。区別は **`--json` を付けて出力の `waitTimedOut` を見る**。
 
@@ -115,6 +115,10 @@ timeout: 540000
 |---|---|
 | `.waitTimedOut` | `true` = まだ動いている（もう一度待つ）。`false` = 決着した |
 | `.job.status` | `completed` / `failed` などの結末。`running` / `queued` のままなら未決着 |
+
+**起動結果の `.jobId` にある完全な job id を、待ちの `status <job-id> --wait --json` と結果取得の `result <job-id>` の両方へ渡し、切り詰めない。job id を省略した `result` は使わない。** 完了判定は上表の `.job.status` と `.waitTimedOut` で行う。`status --wait` は同じ ID で再取得し、ジョブの検索は完全一致を優先し、完全一致が無い場合の前方一致は 1 件だけを採用する（複数一致・未一致は例外）。job id が一意に保持される前提で、起動時の完全な ID を使うこの経路では別ジョブの結果を自分のものとして読む誤成立は起きない。`generateJobId` は prefix・ミリ秒の時刻・最大 6 桁の base36 乱数だけで作り、重複検査がなく、衝突すると上書きされうる。乱数部分を一様な 6 桁と近似した場合、同じ prefix・同じミリ秒の 2 ジョブの衝突確率は約 1/36^6（約 4.6×10^-10）であり、実測や一意性の保証ではないが、通常の起動頻度ではこの残余リスクのためにジョブ同一性を検査する追加の nonce は不要と判断する。一方、切り詰めた ID の前方一致では別ジョブを選びうるし、ID を省略した `result` は `CODEX_COMPANION_SESSION_ID` 設定時はそのセッション、未設定時はリポジトリ全体の最新の終了ジョブを返すため、これらの経路へ置き換えてはならない。
+
+根拠（外部コード。codex プラグイン **1.0.6** をルートとする相対パス。版が変わると行番号は動く）: `task` の background 分岐は `scripts/codex-companion.mjs:788-804`、起動 JSON の `.jobId` は同 `:700-707`（前景の同 `:658-664` は `.jobId` を返さない）。`handleStatus` は `scripts/codex-companion.mjs:883-904`（ID なしの `--wait` は拒否）、`waitForSingleJobSnapshot` は同 `scripts/codex-companion.mjs:318-334`（同じ reference で再取得し、状態から `waitTimedOut` を返す）。`buildSingleJobSnapshot` は `scripts/lib/job-control.mjs:242-253`、`matchJobReference` は `scripts/lib/job-control.mjs:191-211`（完全一致優先・前方一致・例外）。結果取得の `handleResult` は `scripts/codex-companion.mjs:910-925`、`resolveResultJob` は `scripts/lib/job-control.mjs:256-278`とセッション絞り込みの同 `:15-24`（ID 省略時は `CODEX_COMPANION_SESSION_ID` 設定時はそのセッション、未設定時はリポジトリ全体の最新の終了ジョブ）。`generateJobId` は `scripts/lib/state.mjs:124-127`（prefix・時刻・乱数で ID を生成、重複検査なし）、`upsertJob` は `scripts/lib/state.mjs:129-145`（同じ ID のレコードを上書き）。
 
 出力ファイルの中身を推測しない。exit code だけを見て「完了した」と判定しない。
 
