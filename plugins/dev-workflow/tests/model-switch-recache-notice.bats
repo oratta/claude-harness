@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 #
-# PreModelSwitch hook: モデル切替の直前に、読み直すトークン数とキャッシュ書き込みの推定費用を
+# PreModelSwitch hook: モデルを切り替えるときに、読み直すトークン数とキャッシュ書き込みの推定費用を
 # systemMessage だけで知らせる（issue #714）。切替は止めない（どの失敗でも無出力・exit 0）。
 #
 # spec: dev-workflow-model-switch-recache-notice

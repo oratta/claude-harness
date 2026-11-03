@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreModelSwitch hook: モデル切替の直前に、会話を切替先のモデルで読み直すトークン数と、
+# PreModelSwitch hook: モデルを切り替えるときに、会話を切替先のモデルで読み直すトークン数と、
 # キャッシュ書き込みの推定費用を systemMessage で知らせる（issue #714）。
 #
 # 返すのは {"systemMessage": "..."} だけ。decision・hookSpecificOutput（permissionDecision）・
