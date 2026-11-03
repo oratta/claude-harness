@@ -5,6 +5,7 @@
 ## What Changes
 
 - 本体の会話のログを「`entrypoint` が `cli` の assistant 行を持つファイルのうち、最終活動が最も新しい 1 本」で選ぶ共有の選び方を作り、声かけの判定と起動し直しの判定の両方に使う。候補が無ければ送らない
+- 選んだログが本体であることを記録の `stop_uuid` で確かめ、特定できなければ送らない。キャッシュの書き込みの読み取りも選んだログに限る
 - 声かけの判定結果（送った・送らなかった理由）を子の記録に任意の文字列 1 項目 `keepalive` として残す。同じ結果は書き直さない
 - `wait` の stdout の行と exit code は変えない
 
@@ -13,6 +14,7 @@ issue #1554 の案は記録の `session` を会話ログのファイル名に使
 ## Capabilities
 
 ### Modified Capabilities
+- `dev-workflow-develop`: `wait --resolve` の起動し直しの判定の「ちょうど 1 本」を同じ本体のログの選び方に直す。完了推定の要件の参照文も合わせる
 - `dev-workflow-epic-state`: 子の記録に `keepalive` 項目を足す。声かけと起動し直しが本体の会話ログを選ぶ規則と、結果の語彙を足す
 
 ## Impact
