@@ -29,7 +29,7 @@ setup() {
   export USAGE_PROBE_RESPONSE_FILE="${WORK}/nonexistent.json"
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR FABLE_BUDGET_MODE SHARED_BUDGET_MODE TRIPWIRES_SCOPE
   unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE
-  unset PYTHONPATH
+  unset PYTHONPATH CAPABILITY_REGISTRY_SECRET_GUARD
 
   # 偽のモジュール: 読み込まれたら FAKE_MARKER に 1 行足す（読まれたことを出力の差に頼らず検出する）
   FAKE="${WORK}/fake"
@@ -207,7 +207,7 @@ cost_ledger_fake_env() {
   [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
 }
 
-# body_hook_payload <hook> — Python 本体を -c で渡す 5 本が python3 の起動まで進む最小の payload
+# body_hook_payload <hook> — Python 本体を -c で渡す hook が python3 の起動まで進む最小の payload
 body_hook_payload() {
   case "$1" in
     git-destructive-guard) printf '%s' '{"tool_name":"Bash","tool_input":{"command":"git reset --hard"},"hook_event_name":"PreToolUse","permission_mode":"default"}' ;;
@@ -215,13 +215,14 @@ body_hook_payload() {
     context-tripwire) printf '%s' '{"agent_id":"x","hook_event_name":"PostToolUse"}' ;;
     subagent-stop-guard) printf '%s' '{"agent_id":"x","hook_event_name":"SubagentStop"}' ;;
     model-switch-recache-notice) printf '%s' '{"hook_event_name":"PreModelSwitch"}' ;;
+    owner-message-number-check) printf '%s' '{"hook_event_name":"Stop","stop_hook_active":false,"last_assistant_message":"PR #1712 を許容しますか？"}' ;;
   esac
 }
 
-@test "#847: the five hooks that pass their body with -c do not load json.py from the cwd or PYTHONPATH" {
-  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_UNATTENDED
+@test "#847: the hooks that pass their body with -c do not load json.py from the cwd or PYTHONPATH" {
+  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_UNATTENDED DEV_WORKFLOW_OWNER_NUMBER_CHECK
   local h copy
-  for h in git-destructive-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice; do
+  for h in git-destructive-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice owner-message-number-check; do
     body_hook_payload "$h" > "${WORK}/payload.json"
     # 対照: -I を外した複製は偽の json.py を読む（＝この payload で python3 まで進んでいる）
     copy="$(unisolated_copy "${DW}/scripts/${h}.sh")"
@@ -241,6 +242,11 @@ body_hook_payload() {
       agent-model-guard)
         [ "$status" -eq 0 ] || { echo "$h: status=$status"; return 1; }
         [[ "$output" == *'"permissionDecision": "deny"'* ]] || { echo "$h: $output"; return 1; }
+        ;;
+      owner-message-number-check)
+        [ "$status" -eq 0 ] || { echo "$h: status=$status"; return 1; }
+        [[ "$output" == *'"decision"'* ]] || { echo "$h: $output"; return 1; }
+        [[ "$output" == *'"block"'* ]] || { echo "$h: $output"; return 1; }
         ;;
     esac
   done
@@ -274,6 +280,26 @@ body_hook_payload() {
   export TMPDIR="${WORK}/tmp-b"
   mkdir -p "$TMPDIR"
   run in_fake bash -c "printf '{\"session_id\":\"iso-b\"}' | '$guard'"
+  [ "$status" -eq 0 ]
+  [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
+  [ "$output" = "$clean" ]
+}
+
+@test "#1233: capability-registry secret-guard does not load fake modules" {
+  local plugin="${REPO_ROOT}/plugins/capability-registry"
+  local guard="${plugin}/scripts/secret-guard.sh"
+  printf '%s' '{"tool_name":"Bash","tool_input":{"command":"echo \"$GH_TOKEN\""}}' > "${WORK}/payload.json"
+  run bash -c "'$guard' < '${WORK}/payload.json'"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"permissionDecision"'* ]] || return 1
+  local clean="$output"
+
+  # 対照: -I なしの python3 なら偽物が読まれる（unisolated_copy は隣の .py を複製しないので本体を直に実行する）
+  run in_fake bash -c "python3 '${plugin}/scripts/secret-guard.py' < '${WORK}/payload.json'"
+  [ -s "$FAKE_MARKER" ] || { echo "対照で偽のモジュールが読まれない"; return 1; }
+  rm -f "$FAKE_MARKER"
+
+  run in_fake bash -c "'$guard' < '${WORK}/payload.json'"
   [ "$status" -eq 0 ]
   [ ! -e "$FAKE_MARKER" ] || { cat "$FAKE_MARKER"; return 1; }
   [ "$output" = "$clean" ]
