@@ -10,4 +10,4 @@
 2. 本体から V の `画面確認結果: 合格` が渡されたら開いた URL・見た要素・観測値を動作確認証拠の入力にする。`画面確認結果: 実行不能` なら理由を引き継ぎ、画面確認の証拠は書かない。
 3. PR を **Draft のまま**用意する: 記録先が Draft PR ならそのまま使う。issue が記録先なら `gh pr create --draft` で作成する（本文に `Closes #<issue>`。unmanned では `plugins/dev-workflow/references/pr-body-format.md` の型に従い `agent-review:pending` を付ける — 憲法 Step 3 の 5〜6 に相当）。W は Draft を外さない（Ready 化は G が pr-review-gate 手順 5 で `agent-review:passed` の直前に行う。CI を Draft で止めるリポで、レビューと修正の周回ごとに CI を走らせないため）
 4. **仕様宣言**を PR コメントに書く（書式・`対象 HEAD:` 規約の正本は `skills/pr-review-gate/declarations.md`（pr-review-gate 手順 3・3-b）。(3b) ではこのファイルだけを読む。`仕様: 更新した`＋archive 済み・`仕様レビュー: APPROVE`、または `仕様: 変更なし`＋理由。文言合わせの通し方では `仕様: 更新した`＋archive 済み・`仕様レビュー: 省いた（文言合わせ。<仕様化判断のコメントの URL>）` の形を使う）
-5. return（1 行目は `工程完了: archive＋PR＋仕様宣言`）: **PR #N（HEAD SHA）と仕様宣言のコメント URL**、(3a) から引き継いだテストコマンドと exit code、埋めた決定の列挙、昇格トリップワイヤーの発火有無
+5. return（1 行目は `工程完了: archive＋PR＋仕様宣言`）: **PR #N（HEAD SHA）と仕様宣言のコメント URL**、(3a) から引き継いだ検査コマンドと各 exit code（未導入の明記を含む）、埋めた決定の列挙、昇格トリップワイヤーの発火有無
