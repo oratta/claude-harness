@@ -273,6 +273,14 @@ NINE_KINDS=(
   expect_stopped $'cat <<EOF\n# $(git reset --hard)'
   # 本文が閉じていなくても（読めた置換は判定し、通常の読みは止めない）
   expect_stopped $'cat <<EOF\n# $(git reset --hard)\n$(echo'
+  expect_stopped $'cat <<EOF\n$(echo "a\n$(git reset --hard)'
+  expect_stopped $'(( x << 2 ))\n# $(\')\ngit reset --hard'
+  # 本文の置換が閉じずに、読みかけの単純コマンドが判定されないまま終わるとき（粗い読みの結果も合わせる）
+  expect_stopped $'cat <<EOF\n# $(git reset --hard $(echo $\''
+  # 本文を通常のコマンドとして読み直すと ' で止まるとき（本文の中で見つけた判定を捨てない）
+  expect_stopped $'cat <<EOF\n\' ; x $(git reset --hard'
+  # $'...' の \' を飛ばす読み方で引用が閉じなくなるとき（以前の読み方でも読んで合わせる）
+  expect_stopped "\$(echo \$'\\'\$'}\$'(( x << 2 ))git reset --hard"
 }
 
 @test "shell syntax: substitutions in a quoted heredoc body are not judged (F10)" {

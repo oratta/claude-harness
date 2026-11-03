@@ -159,6 +159,9 @@ def join_words(words):
 # 200 万文字は 1 秒弱）。
 WORK = [0]
 WORK_LIMIT = max(2000000, 32 * len(command))
+# $'...' の \' を引用の終わりとみなさないか。False は \ を飛ばさずに次の ' で閉じる以前の読み方で、
+# 引用が閉じずに読めなかったときの読み直しに使う（judge_uncached）
+DOLLAR_QUOTE_ESCAPES = [True]
 HEREDOCS = [0]  # 読んだヒアドキュメントの数（置換の中にヒアドキュメントがあったかを前後の差で見る）
 
 
@@ -325,7 +328,10 @@ def read_heredocs(s, i, pending, subs, cmds, in_subst):
                 try:
                     yield double_quoted(s[start:n], 0, subs, cmds, term=None)
                 except Unclosed:
-                    pass
+                    # 読めなかった本文の残りは判定されていないので、judge に粗い読みも走らせて結果を合わせる
+                    # （精度の高い読みの結果だけを残すと、本文に隠れた破壊的操作を見逃す）
+                    if isinstance(cmds, Judged):
+                        cmds.needs_fallback = True
             pending.clear()
             return start
         # 本文の終わりを探した分も仕事量に数える（本文の $(...) の中にヒアドキュメントを何重にも入れると、
@@ -409,7 +415,7 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
             continue
         if ch == "'" or (ch == "$" and s.startswith("$'", i)):
             j = i + 1 if ch == "'" else i + 2
-            if ch == "'":
+            if ch == "'" or not DOLLAR_QUOTE_ESCAPES[0]:
                 k = s.find("'", j)
             else:
                 # $'...' は \ とその次の 1 文字を飛ばして次の ' を探す（\' は引用の終わりではない）
@@ -575,6 +581,7 @@ class Judged:
 
     def __init__(self, depth):
         self.kinds, self.depth = set(), depth
+        self.needs_fallback = False  # 本文が閉じていないヒアドキュメントがあり、粗い読みの結果も要る
 
     def append(self, cmd):
         self.kinds |= judge_simple(cmd, self.depth)
@@ -595,7 +602,8 @@ def judge(s, depth=0):
         # 語そのものは $( で始まるので git でも bash -c でも eval でもない。
         return set()
     # 控えの鍵に範囲を入れる（同じ文字列でも、範囲が付いていない呼び出しは置換の中を自分で読む）
-    key = (depth, s, tuple(sorted(spans.items())))
+    # 読み直しの間の $'...' の読み方も鍵に入れる（読み方の違う結果を使い回さない）
+    key = (depth, s, tuple(sorted(spans.items())), DOLLAR_QUOTE_ESCAPES[0])
     if key not in JUDGE_MEMO:
         JUDGE_MEMO[key] = judge_uncached(s, depth)
     return JUDGE_MEMO[key]
@@ -603,12 +611,36 @@ def judge(s, depth=0):
 
 def judge_uncached(s, depth):
     charge(len(s))
-    read = Judged(depth)
+    read, read_subs = Judged(depth), []
     try:
-        _, subs, _, _ = run(lex(s, cmds=read))
-        kinds = read.kinds
-    except Unclosed:  # 途中まで読めた分の判定は使わず、粗い読みの結果だけを使う
-        kinds, subs = split_fallback(s, depth)
+        run(lex(s, cmds=read, subs=read_subs))
+        kinds, subs = read.kinds, read_subs
+        if read.needs_fallback:
+            more_kinds, more_subs = split_fallback(s, depth)
+            kinds = kinds | more_kinds
+            subs = list(subs) + list(more_subs)
+    except Unclosed:
+        # 粗い読みの結果に、途中まで読めた分の判定も合わせる（止める側にしか倒れない）。終端のない
+        # ヒアドキュメントの本文は、置換を判定したあと通常のコマンドとしても読み直すので、本文の ' で
+        # 読み直しが止まったとき、本文の中で見つけた破壊的操作を捨てると見逃す（cat <<EOF の次の行が
+        # ' ; x $(git reset --hard のとき）
+        more_kinds, more_subs = split_fallback(s, depth)
+        kinds = read.kinds | more_kinds
+        subs = list(read_subs) + list(more_subs)
+        if "$'" in s and DOLLAR_QUOTE_ESCAPES[0]:
+            # $'...' の \' を飛ばす読み方のせいで閉じの ' がずれて読めなかったのかもしれない。粗い読みは
+            # $'...' を知らずに見逃すことがあるので、以前の読み方（\ を飛ばさない）でも読んで結果を合わせる
+            # （$'it\'s' と ' の数が合わない入力は bash では構文エラーで、どちらの読み方でも実行されない）
+            again, again_subs = Judged(depth), []
+            DOLLAR_QUOTE_ESCAPES[0] = False
+            try:
+                run(lex(s, cmds=again, subs=again_subs))
+            except Unclosed:
+                pass  # 読めた分は again に入っている
+            finally:
+                DOLLAR_QUOTE_ESCAPES[0] = True
+            kinds |= again.kinds
+            subs += again_subs
     for inner in subs:
         kinds |= judge(inner, depth + 1)
     return kinds
