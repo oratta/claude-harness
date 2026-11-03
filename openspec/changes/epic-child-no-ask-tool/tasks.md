@@ -5,7 +5,9 @@
 
 ## 2. テスト
 
-- [ ] 2.1 新規 bats `tests/epic-child-no-ask-tool.bats`: epic-child-stop.md に「質問ツールの中で待つ」が無く本文で質問してターンを終える旨があること、develop の手順書のうちエピックの子に向けた箇所（epic-child-stop.md）に質問ツールで聞く指示が残っていないこと、既存の `develop-channel-mode.bats` が通ることを確かめる 触る範囲: plugins/dev-workflow/tests/epic-child-no-ask-tool.bats（新規）、plugins/dev-workflow/tests/develop-channel-mode.bats:106-120
+- [ ] 2.1 新規 bats `tests/epic-child-no-ask-tool.bats` の (a): `epic-child-stop.md` に「質問ツールの中で待つ」を認める文が無いこと、本文で質問してターンを終える旨と、読み替えの規則（対象は `route` が `nested` のエピックの子、「interactive は AskUserQuestion で聞く」をこの聞き方に読む）があることを文言で確かめる 触る範囲: plugins/dev-workflow/tests/epic-child-no-ask-tool.bats（新規）
+- [ ] 2.2 同 bats の (b): 検査範囲は develop の手順書の全部（`skills/develop/SKILL.md`・`skills/develop/references/*.md`・`skills/develop/references/roles/**/*.md`）。`AskUserQuestion` を含む各行は、`interactive は`・`**interactive**` の条件つき、`AskUserQuestion は使わない／を呼ばない` の否定、のどちらかであることを grep で確かめる（通常の interactive 向けの指示は許容し、条件なしでエピックの子に質問ツールを使わせる指示を検出する）。`epic-child-stop.md` の行は否定の形に限る。既存の `develop-channel-mode.bats:106` は SKILL.md しか読まないので補わず、この (b) が範囲を担う 触る範囲: plugins/dev-workflow/tests/epic-child-no-ask-tool.bats（新規）、plugins/dev-workflow/tests/develop-channel-mode.bats:106-120（通ることの確認のみ）
+- [ ] 2.3 エピックの子でないセッションの質問ツールの扱いが変わっていないことは、既存の bats（`develop-channel-mode.bats`・`develop-skill.bats` など）が通ることで確かめる
 
 ## 3. 記録
 

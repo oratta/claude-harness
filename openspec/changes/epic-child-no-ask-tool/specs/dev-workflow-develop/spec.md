@@ -15,3 +15,7 @@
 #### Scenario: エピックの子は質問ツールで待たず本文で質問する
 - **WHEN** `references/epic-child-stop.md` のエピックの子が止まるときの手順を読む
 - **THEN** 本文で質問してターンを終えること、選択肢は本文に番号つきで書くこと、「interactive は AskUserQuestion で聞く」をエピックの子ではこの聞き方に読むことが書かれ、質問ツールの中で待つことを認める文が無い
+
+#### Scenario: 子に質問ツールで聞かせる指示が develop の手順書に残っていない
+- **WHEN** bats が `skills/develop/SKILL.md`・`skills/develop/references/*.md`・`skills/develop/references/roles/**/*.md` の `AskUserQuestion` を含む行を集める
+- **THEN** 各行は `interactive は` か `**interactive**` の条件つきか、質問ツールを呼ばない旨の否定の形であり、`epic-child-stop.md` の行は否定の形に限られる。条件なしでエピックの子に質問ツールを使わせる指示は無い

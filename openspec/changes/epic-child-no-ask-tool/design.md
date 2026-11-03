@@ -9,6 +9,8 @@
 - **選択肢は本文に番号つきで書く。** 主は子のタブで文字で答えても、親のタブで答えて親が `reply --as owner` で届けてもよい。
 - 子でないセッションの文面と、channel の読み替え（`channel.md`）には触らない。`tests/develop-channel-mode.bats` の AskUserQuestion の行の検査が通る形を保つ（`epic-child-stop.md` の節内の行は許容される）。新しい文面は AskUserQuestion の語を使うため、同 bats の対象行の判定に合う書き方にする。
 
+- **検査は develop の手順書の全部を対象にする。** 読み替えが 1 か所でも、他の文書に子へ質問ツールを使わせる指示が足されたら落ちるように、新規 bats は SKILL.md・references/*.md・roles/ の `AskUserQuestion` の行を grep し、interactive の条件つきか否定の形だけを許す。既存の `develop-channel-mode.bats` は SKILL.md だけなので補わない。
+
 ## Risks
 
 - 読み替えを知らずに他の手順書だけを読んだ子が質問ツールを呼ぶ余地は残る。`epic-child-stop.md` は子が止まる前に読む文書として SKILL.md が案内しており、この残りは許容する（機械的に止める検査は範囲外）。
