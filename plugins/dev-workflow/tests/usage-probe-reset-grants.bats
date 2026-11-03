@@ -185,6 +185,14 @@ JSON
   [ "$(grants_of a)" = '[]' ]
 }
 
+@test "a response with an explicit null five_hour is a success: five_hour_pct null, weekly set" {
+  registry a
+  printf '{"five_hour":null,"seven_day":{"utilization":33,"resets_at":"2026-09-06T00:00:00+00:00"},"cedar_ember":{"eligible":true,"grants":[]}}' > "${WORK}/r.json"
+  USAGE_PROBE_RESPONSE_FILE="${WORK}/r.json" run "$PROBE"
+  [ "$status" -eq 0 ]
+  [ "$(jq -c '[.accounts.a.five_hour_pct,.accounts.a.weekly_all_pct]' "$SNAP")" = "[null,33]" ]
+}
+
 @test "the default endpoint carries the cedar_ember query" {
   run grep -F 'ENDPOINT="${USAGE_PROBE_ENDPOINT:-https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1}"' "$PROBE"
   [ "$status" -eq 0 ]
