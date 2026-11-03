@@ -24,7 +24,7 @@ extract_blocks() {
 @test "every ZSH_VERSION line guards setopt with command -v" {
   run git -C "$ROOT" grep -n 'ZSH_VERSION' -- plugins ':!*/changes/*'
   [ "$status" -eq 0 ] || return 1
-  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 10 ] || { echo "$output"; return 1; }
+  [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 11 ] || { echo "$output"; return 1; }
   run bash -c 'printf "%s\n" "$1" | grep -vc "command -v setopt >/dev/null 2>&1 && \[\[ ! -o nullglob \]\]"' _ "$output"
   [ "$output" = "0" ] || return 1
 }
@@ -37,7 +37,7 @@ extract_blocks() {
     run bash -c 'ZSH_VERSION=5.9 HOME="$2" bash "$1" 2>"$2/err"; echo "exit=$?"; cat "$2/err"' _ "$b" "$BATS_TEST_TMPDIR"
     [ "$output" = "exit=0" ] || { echo "$b: $output"; return 1; }
   done
-  [ "$count" -eq 10 ] || { echo "blocks: $count"; return 1; }
+  [ "$count" -eq 11 ] || { echo "blocks: $count"; return 1; }
 }
 
 @test "under zsh the extracted blocks still set nullglob and restore it afterwards" {
