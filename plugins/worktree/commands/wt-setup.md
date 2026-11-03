@@ -18,6 +18,7 @@ plugin_root="${CLAUDE_PLUGIN_ROOT}"
 WT_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; WT_NG=1; fi
 for dir in \
   "${plugin_root:+$plugin_root/skills/wt-setup}" \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/skills/wt-setup \
   ~/.claude/plugins/marketplaces/*/plugins/worktree/skills/wt-setup \
   ~/.claude/plugins/installed/*/worktree/skills/wt-setup; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break

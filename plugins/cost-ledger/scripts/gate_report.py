@@ -757,6 +757,85 @@ def resolve(target, cwd, at):
     return ("pr", repo, number, branch, names, 0) if names else None
 
 
+class TargetLock(int):
+    """ロック fd と、検査した置き場の fd を同じ区間だけ保持する。"""
+    def __new__(cls, fd, dir_fd):
+        value = int.__new__(cls, fd)
+        value.dir_fd = dir_fd
+        return value
+
+
+def unlock(fd):
+    try:
+        os.close(fd)
+    finally:
+        os.close(fd.dir_fd)
+
+
+def _cache_name(repo, number):
+    return "%s__%d.json" % (repo.lower().replace("/", "__"), number)
+
+
+def _private_file(fd):
+    st = os.fstat(fd)
+    return stat.S_ISREG(st.st_mode) and st.st_uid == os.getuid() and not st.st_mode & 0o077
+
+
+def cache_read(lock_fd, repo, number):
+    if lock_fd is None:
+        return None
+    try:
+        fd = os.open(_cache_name(repo, number), os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK,
+                     dir_fd=lock_fd.dir_fd)
+        with os.fdopen(fd, encoding="utf-8") as f:
+            if not _private_file(f.fileno()):
+                return None
+            data = json.load(f)
+        if (isinstance(data, dict) and data.get("version") == 1
+                and data.get("repo") == repo.lower() and data.get("number") == number
+                and type(data.get("checked_at")) in (int, float)
+                and isinstance(data.get("tree"), dict)):
+            return data["tree"]
+    except (OSError, ValueError, TypeError):
+        pass
+    return None
+
+
+def cache_write(lock_fd, repo, number, tree):
+    if lock_fd is None:
+        return
+    name = _cache_name(repo, number)
+    tmp = None
+    try:
+        # 既存の不安全なファイルは読みも上書きもしない。
+        try:
+            fd = os.open(name, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK, dir_fd=lock_fd.dir_fd)
+        except FileNotFoundError:
+            pass
+        else:
+            try:
+                if not _private_file(fd):
+                    return
+            finally:
+                os.close(fd)
+        import secrets
+        tmp = name + "." + secrets.token_hex(12)
+        fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW,
+                     0o600, dir_fd=lock_fd.dir_fd)
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "repo": repo.lower(), "number": number,
+                       "checked_at": time.time(), "tree": tree}, f)
+        os.replace(tmp, name, src_dir_fd=lock_fd.dir_fd, dst_dir_fd=lock_fd.dir_fd)
+    except (OSError, ValueError, TypeError):
+        pass  # 保存だけの失敗で正常な取得結果を捨てない
+    finally:
+        if tmp is not None:
+            try:
+                os.unlink(tmp, dir_fd=lock_fd.dir_fd)
+            except OSError:
+                pass
+
+
 def lock(repo, number):
     """対象ごとの排他ロックを取る。取れなければ None（読んでから書くまでを直列にできないので書かない）。"""
     try:
@@ -769,6 +848,7 @@ def lock(repo, number):
         try:
             st = os.fstat(dir_fd)
             if not stat.S_ISDIR(st.st_mode) or st.st_uid != os.getuid() or st.st_mode & 0o022:
+                os.close(dir_fd)
                 return None
             name = "%s__%d.lock" % (repo.lower().replace("/", "__"), number)
             flags = os.O_RDWR | os.O_CREAT | getattr(os, "O_NOFOLLOW", 0)
@@ -787,10 +867,20 @@ def lock(repo, number):
                     if attempt == 4:
                         raise
                     time.sleep(0.02)
-        finally:
+        except BaseException:
             os.close(dir_fd)
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        return fd
+            raise
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX)
+            retained_dir_fd = os.dup(dir_fd)
+        except OSError:
+            os.close(fd)
+            os.close(dir_fd)
+            raise
+        # 既存の lock() の契約どおり検査用 fd は閉じる。同じ開いたディレクトリを指す
+        # 複製を保存完了まで保持し、パスを解決し直さない。unlock() はこの複製も閉じる。
+        os.close(dir_fd)
+        return TargetLock(fd, retained_dir_fd)
     except OSError:
         return None
 
@@ -861,7 +951,7 @@ def closing_prs(repo, number):
 
 
 # 子孫を辿る深さの上限（エピックから数えた段数。cost_ledger.EPIC_MAX_DEPTH と同じ）と、1 行につき
-# 呼ぶ GraphQL の回数の上限（子を持つ issue の数に比例する。超えたら失敗として扱う）
+# 呼ぶ GraphQL の回数の上限（保存で省いた問い合わせは数えない。超えたら失敗として扱う）
 EPIC_MAX_DEPTH = 8
 EPIC_MAX_QUERIES = 5
 _CLOSING_FIELDS = (
@@ -876,7 +966,7 @@ SUB_ISSUES_QUERY = (
     " repository(owner: $owner, name: $name) { nameWithOwner issue(number: $number) {"
     " number title state " + _CLOSING_FIELDS +
     " subIssues(first: 100) {"
-    " nodes { number title state repository { nameWithOwner } subIssuesSummary { total } "
+    " nodes { number title state repository { nameWithOwner } updatedAt subIssuesSummary { total completed } "
     + _CLOSING_FIELDS + " }"
     " pageInfo { hasNextPage } } } } }"
 )
@@ -891,7 +981,8 @@ def _closing_refs(refs, repo):
     （ベースが repo で fork でないものだけ。同じブランチは番号の小さい方）。崩れていれば TreeError。"""
     if not isinstance(refs, dict) or not isinstance(refs.get("pageInfo"), dict):
         raise TreeError("closing prs")
-    if refs["pageInfo"].get("hasNextPage") is not False or not isinstance(refs.get("nodes"), list):
+    if (refs["pageInfo"].get("hasNextPage") is not False
+            or not isinstance(refs.get("nodes"), list) or len(refs["nodes"]) > 100):
         raise TreeError("closing prs")
     by_branch = {}
     for node in refs["nodes"]:
@@ -921,17 +1012,72 @@ def _issue_head(node):
     return number
 
 
-def epic_tree(repo, number):
-    """子を持つ issue の子孫と、数える PR を ``([子孫の番号], [(PR 番号, ヘッドブランチ)])`` で返す。
+def _child_signal(node, repo):
+    _issue_head(node)
+    summary, updated = node.get("subIssuesSummary"), node.get("updatedAt")
+    owner_repo = node.get("repository")
+    owner_repo = owner_repo.get("nameWithOwner") if isinstance(owner_repo, dict) else None
+    if (not isinstance(owner_repo, str) or not owner_repo or not isinstance(summary, dict)
+            or type(summary.get("total")) is not int or summary["total"] < 0
+            or type(summary.get("completed")) is not int
+            or not 0 <= summary["completed"] <= summary["total"]
+            or not isinstance(updated, str) or not updated):
+        raise TreeError("signal")
+    refs = node.get("closedByPullRequestsReferences")
+    _closing_refs(refs, repo)
+    # 比較には除外する PR も含める。応答の順番だけの差は無視する。
+    prs = sorted((p["number"], p["headRefName"], p["baseRepository"]["nameWithOwner"].lower(),
+                  p["isCrossRepository"]) for p in refs["nodes"])
+    return [updated, summary["total"], summary["completed"], [list(p) for p in prs]]
 
-    PR は対象の issue 自身と子孫を閉じたもの（番号の昇順、同じヘッドブランチは番号の小さい方だけ）。
-    gh api graphql を、子を持つ issue（対象を含む）1 件につき 1 回呼び、1 行につき EPIC_MAX_QUERIES
-    回まで。数えるのは対象と同じリポジトリの子だけ（別のリポジトリの子は数えず辿らない）。失敗・
-    JSON でない・形の崩れ・100 件超・EPIC_MAX_DEPTH 段超・回数の上限を超えるときは None（呼ぶ側が
-    一部しか読めていない結果を使わない）。``cost_ledger.fetch_epic_tree()`` と同じ集合になる。"""
+
+def _tree_issue(issue, target, repo):
+    if _issue_head(issue) != target:
+        raise TreeError("target")
+    _closing_refs(issue.get("closedByPullRequestsReferences"), repo)
+    subs = issue.get("subIssues")
+    if (not isinstance(subs, dict) or not isinstance(subs.get("pageInfo"), dict)
+            or subs["pageInfo"].get("hasNextPage") is not False
+            or not isinstance(subs.get("nodes"), list) or len(subs["nodes"]) > 100):
+        raise TreeError("shape")
+    for node in subs["nodes"]:
+        _child_signal(node, repo)
+    return subs["nodes"]
+
+
+def _cached_nodes(tree, number, repo):
+    """保存全体が完全なグラフのときだけ使う。全体の重複排除前の応答を保持する。"""
+    try:
+        nodes = tree["nodes"]
+        if not isinstance(nodes, dict) or str(number) not in nodes:
+            raise TreeError("cache")
+        for key, row in nodes.items():
+            if (not isinstance(row, dict) or "signal" not in row
+                    or (key == str(number) and row["signal"] is not None)
+                    or (key != str(number) and (not isinstance(row["signal"], list)
+                                               or len(row["signal"]) != 4))):
+                raise TreeError("cache")
+            for node in _tree_issue(row.get("issue"), int(key), repo):
+                if (node["repository"]["nameWithOwner"].lower() == repo.lower()
+                        and node["subIssuesSummary"]["total"] > 0
+                        and str(node["number"]) not in nodes):
+                    raise TreeError("incomplete cache")
+        return nodes
+    except (KeyError, TypeError, ValueError, TreeError):
+        return {}
+
+
+def epic_tree(repo, number, cache_lock=None):
+    """ルートは毎回取得し、変更信号の一致する完全な子木を再利用する。
+
+    保存するのは関連だけ。金額は timeline で毎回再計算する。実問い合わせ 5 回・深さ 8 段の
+    上限と、取得失敗時の None を維持する。深い変更が親の信号に出ない場合は検知しない。
+    """
     owner, _, name = repo.partition("/")
-    state = {"repo": None, "queries": 0}
+    state = {"queries": 0}
     seen, descendants, branches = {number}, [], {}
+    cached = _cached_nodes(cache_read(cache_lock, repo, number), number, repo)
+    current = {}
 
     def query(target):
         if state["queries"] >= EPIC_MAX_QUERIES:
@@ -944,54 +1090,63 @@ def epic_tree(repo, number):
         try:
             repository = json.loads(p.stdout)["data"]["repository"]
             found, issue = repository["nameWithOwner"], repository["issue"]
-            subs = issue["subIssues"]
-            nodes, more = subs["nodes"], subs["pageInfo"]["hasNextPage"]
         except (ValueError, KeyError, TypeError):
             raise TreeError("shape")
-        if not isinstance(found, str) or not found or not isinstance(nodes, list) or more is not False:
-            raise TreeError("shape")
-        if state["repo"] is None:
-            state["repo"] = found
-        return issue, nodes
+        if not isinstance(found, str) or found.lower() != repo.lower():
+            raise TreeError("repository")
+        _tree_issue(issue, target, found)
+        return issue
 
     def add_branches(by_branch):
         for head, pr in by_branch.items():
             if head not in branches or pr < branches[head]:
                 branches[head] = pr
 
-    def walk(target, depth, top):
-        issue, nodes = query(target)
-        if top:
-            _issue_head(issue)
-            add_branches(_closing_refs(issue.get("closedByPullRequestsReferences"), state["repo"]))
-        for node in nodes:
-            child = _issue_head(node)
-            owner_repo = node.get("repository")
-            owner_repo = owner_repo.get("nameWithOwner") if isinstance(owner_repo, dict) else None
-            summary = node.get("subIssuesSummary")
-            total = summary.get("total") if isinstance(summary, dict) else None
-            if not isinstance(owner_repo, str) or not owner_repo or type(total) is not int or total < 0:
-                raise TreeError("shape")
-            if owner_repo.lower() != state["repo"].lower():
-                continue  # 別のリポジトリの子は数えず、その子も辿らない
+    def walk(target, depth, signal=None):
+        old = cached.get(str(target))
+        issue = (old["issue"] if target != number and old is not None
+                 and old["signal"] == signal else query(target))
+        current[str(target)] = {"signal": signal, "issue": issue}
+        if target == number:
+            add_branches(_closing_refs(issue.get("closedByPullRequestsReferences"), repo))
+        subtrees = []
+        # 直接の子を先に確保し、旧部分木の孫以下による seen の先取りを防ぐ。
+        for node in _tree_issue(issue, target, repo):
+            child = node["number"]
+            if node["repository"]["nameWithOwner"].lower() != repo.lower():
+                continue
             if child in seen:
                 continue
             seen.add(child)
             descendants.append(child)
-            add_branches(_closing_refs(node.get("closedByPullRequestsReferences"), state["repo"]))
-            if total > 0:
+            add_branches(_closing_refs(node.get("closedByPullRequestsReferences"), repo))
+            if node["subIssuesSummary"]["total"] > 0:
                 if depth + 1 >= EPIC_MAX_DEPTH:
                     raise TreeError("too deep")
-                walk(child, depth + 1, False)
+                subtrees.append((child, _child_signal(node, repo)))
+        for child, child_signal in subtrees:
+            walk(child, depth + 1, child_signal)
 
     try:
-        walk(number, 0, True)
+        walk(number, 0)
     except TreeError:
         return None
+    # 重複で今回は辿らなかった経路の応答も残す（付け替え時の部分木の欠落を防ぐ）。
+    pending = list(current)
+    while pending:
+        key = pending.pop()
+        for node in current[key]["issue"]["subIssues"]["nodes"]:
+            child = str(node["number"])
+            if (node["repository"]["nameWithOwner"].lower() == repo.lower()
+                    and node["subIssuesSummary"]["total"] > 0
+                    and child not in current and child in cached):
+                current[child] = cached[child]
+                pending.append(child)
+    cache_write(cache_lock, repo, number, {"nodes": current})
     return sorted(descendants), sorted((pr, head) for head, pr in branches.items())
 
 
-def stack(kind, repo, number, branch, names, at, cwd, scripts_dir, extra=(), children=0):
+def stack(kind, repo, number, branch, names, at, cwd, scripts_dir, extra=(), children=0, cache_lock=None):
     """1 行積む。ロックを持ったまま、読み取り・（issue のクローズなら閉じた PR の問い合わせ）・
     timeline・書き込みを行う。``extra`` は timeline のコマンドの末尾に足す引数（後追いの
     ``--backfill``。既定は空で、PostToolUse の hook からは渡さない）。"""
@@ -1003,10 +1158,10 @@ def stack(kind, repo, number, branch, names, at, cwd, scripts_dir, extra=(), chi
     cmd += ["--pr", str(number), "--branch", branch] if kind == "pr" else ["--issue", str(number)]
     closing, child_issues, child_prs = [], [], []
     if kind == "issue" and children > 0:
-        # 子を持つ issue（対象の確認の応答で分かっている）だけ、子孫と閉じた PR を 1 回の GraphQL
-        # （子を持つ issue ごと）で取る。子を持たない issue と PR は、この分岐に入らず gh も増えない。
+        # 子を持つ issue だけ、ルートと変更された子木を GraphQL で取得する。
+        # 子を持たない issue と PR は、この分岐に入らず gh も増えない。
         # 失敗したときは子なしの引数で積み、印を足す（一部しか読めていない結果は使わない）
-        tree = epic_tree(repo, number)
+        tree = epic_tree(repo, number, cache_lock)
         if tree is None:
             names = names + [CHILD_FAILED]
         else:
@@ -1081,11 +1236,11 @@ def work(job):
         if fd is None:
             continue
         try:
-            stack(kind, repo, number, branch, names, at, cwd, scripts_dir, children=children)
+            stack(kind, repo, number, branch, names, at, cwd, scripts_dir, children=children, cache_lock=fd)
         except Exception:
             pass
         finally:
-            os.close(fd)  # 閉じるとロックも外れる
+            unlock(fd)  # 置き場と対象のロックを一緒に解放
 
 
 if __name__ == "__main__":
