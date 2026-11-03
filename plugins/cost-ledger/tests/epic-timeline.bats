@@ -65,7 +65,7 @@ prs() {
   printf '{"nodes": [%s], "pageInfo": {"hasNextPage": %s}}' "$*" "${PR_MORE:-false}"
 }
 child() {  # $1=番号 $2=題名 $3=状態 $4=子の数 $5=prs の出力 $6=リポジトリ
-  printf '{"number": %s, "title": "%s", "state": "%s", "repository": {"nameWithOwner": "%s"}, "subIssuesSummary": {"total": %s}, "closedByPullRequestsReferences": %s}' \
+  printf '{"number": %s, "title": "%s", "state": "%s", "repository": {"nameWithOwner": "%s"}, "updatedAt": "2026-09-01T00:00:00Z", "subIssuesSummary": {"total": %s, "completed": 0}, "closedByPullRequestsReferences": %s}' \
     "$1" "$2" "$3" "${6:-acme/ra}" "$4" "${5:-$(prs)}"
 }
 gql() {  # $1=番号 $2=題名 $3=状態 $4=自身の prs $5..=child

@@ -8,6 +8,7 @@ shell-multibyte-expansion.bats の下請け。検出ロジックを bats のヒ�
 
   *.sh / *.bash / *.bats          ファイル全体（コメント行も含む。コピペ元になるため）
   *.yml / *.yaml                  `run:` の値（＝ workflow YAML に埋め込まれたシェル）だけ
+  *.yml.template / *.yaml.template 同上（配布用 workflow テンプレート）
 
 YAML を全文走査しない理由は、GitHub Actions の式やジョブ名など**シェルではない**行まで
 巻き込んで偽陽性を出すため。逆に `run:` だけに絞れば、`# >>> … <<< …` マーカーで囲まれた
@@ -25,7 +26,7 @@ import sys
 PATTERN = re.compile(r"\$[A-Za-z_][A-Za-z0-9_]*(?=[^\x00-\x7f])")
 
 SHELL_SUFFIXES = (".sh", ".bash", ".bats")
-YAML_SUFFIXES = (".yml", ".yaml")
+YAML_SUFFIXES = (".yml", ".yaml", ".yml.template", ".yaml.template")
 
 # `run:` キーの行。`- run: |` のようにリスト要素を兼ねる形も拾う。
 RUN_KEY = re.compile(r"^(?P<lead>\s*(?:-\s+)*)run:(?P<rest>.*)$")
@@ -35,7 +36,9 @@ def embedded_shell_lines(text):
     """workflow YAML から `run:` の値を (行番号, 行) で返す。
 
     ブロックスカラー（`run: |`）は、キーより深くインデントされた行と空行が本文。
-    1 行形式（`run: echo x`）は値そのものが本文。完全な YAML パーサではないが、
+    プレーン値・引用値は同じ行の値と、キーより深くインデントされた継続行・空行が本文。
+    `- run:` のキー位置は `run` の桁なので、同じステップの兄弟キーは含めない。
+    完全な YAML パーサではないが、
     用途が「埋め込みシェルの行を漏れなく拾う」ことなので、判断に迷う形は
     **対象に含める側**（偽陽性）に倒してある。
     """
@@ -62,6 +65,12 @@ def embedded_shell_lines(text):
             if rest:
                 out.append((i + 1, rest))
             i += 1
+            while i < len(lines):
+                line = lines[i]
+                if line.strip() and (len(line) - len(line.lstrip())) <= key_col:
+                    break
+                out.append((i + 1, line))
+                i += 1
     return out
 
 
@@ -71,7 +80,7 @@ def scan(path):
     text = p.read_text(errors="replace")
     suffix = p.suffix
 
-    if suffix in YAML_SUFFIXES:
+    if p.name.endswith(YAML_SUFFIXES):
         numbered = embedded_shell_lines(text)
     elif suffix in SHELL_SUFFIXES:
         numbered = list(enumerate(text.splitlines(), 1))

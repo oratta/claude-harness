@@ -63,7 +63,7 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 - **推論の深さを中に落とす。** `config.toml` の既定 `high` はレビューには過剰で、実行時間が 10 分を超える一因。`codex exec` 直叩きなら `-c model_reasoning_effort=medium`、`codex:codex-rescue` サブエージェント（companion の `task`）なら `--effort medium`。**`/codex:adversarial-review` に付けてはいけない** — review 系は `-c` も `--effort` も受け取らず、渡した文字列は黙って**レビューの focus text に混ざる**（`--base` / `--scope` / `--model` のみ有効）。
 - **`--effort minimal` を使わない。** 無効値で **400 エラー**になることを実測済み。companion 側のバリデーションは通ってしまい API で落ちるので、失敗が呼び出し側から見えにくい。API の有効値は `none` / `low` / `medium` / `high` / `xhigh` / `max`（companion の `--effort` が受理する集合とはずれている。実務では `medium` を使う）。
 - **`codex exec` を直叩きするときは `-c approval_policy=never` を必ず付ける。** config の「承認を求める」設定を継承すると、無人実行では誰も承認できずハングする穴がある（companion 経由なら既定で `never` なので不要）。
-- **exec のレビュー指示はファイルに保存して標準入力から渡す。** 固定した HEAD・diff 範囲・受け入れ条件と`stages/reviewer-brief.md` のレビュアー向け指示ブロックを含め、起動・完了シグナル・結果の読み方は待ち方の正本に従う。
+- **exec のレビュー指示はファイルに保存して標準入力から渡す。** 固定した HEAD・diff 範囲・受け入れ条件と `stages/reviewer-brief.md` のレビュアー向け指示ブロックを含め、起動・完了シグナル・結果の読み方は待ち方の正本に従う。
 - **Codex の出力全文を本体セッションに流し込まない。** `変更点の一覧`・`照合表`・`ハンク被覆` と構造化された指摘一覧だけをサブエージェント側で読み、本体には要約だけ返す（レビュー出力は 1 ターンでコンテキストを食い潰す量になる）。
 
 ##### 各 PC の確認（従来モード・実測は別運用）
