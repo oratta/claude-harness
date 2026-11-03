@@ -2317,3 +2317,12 @@ triage_line() {
     grep -qF -- "$opt" "$script" || { echo "script lacks $opt"; return 1; }
   done
 }
+
+@test "dup-check: step 1 starts with a same-HEAD duplicate check that retakes and explicit retakes bypass (#249)" {
+  flat="$(step 1 | tr '\n' ' ')"
+  echo "$flat" | grep -qE '着手前の重複チェック'
+  echo "$flat" | grep -qE '固定 HEAD:.*比べる'
+  echo "$flat" | grep -qE '重複で降りた'
+  echo "$flat" | grep -qE 'Gate Result.*引き継ぐ起動'
+  echo "$flat" | grep -qE '取り直し: 明示'
+}
