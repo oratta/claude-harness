@@ -5,7 +5,7 @@ TBD - created by archiving change ci-bats-shards. Update Purpose after archive.
 ## Requirements
 ### Requirement: scripts/test.sh は TEST_SHARD で全体を分けた 1 組だけを実行できる
 
-`scripts/test.sh` は、環境変数 `TEST_SHARD=k/N`（k と N は 1 以上の整数で k ≦ N）が与えられたとき、`git ls-files -- '*.bats' ':(exclude)_longruns/'` の一覧のスイートを次の規則で N 個の組に分け、k 番目の組のスイートだけを対象にしなければならない（MUST）。規則は、スイートごとの `@test` の件数（行頭が `@test` の行の数）を重みとし、重い順（重みが同じものは一覧の順）に並べて、その時点で重みの合計がいちばん小さい組（同点なら番号の小さい組）へ順に配ることである。割り当ては一覧のパスとファイルの中身だけで決まり、どの組のジョブでも同じになる。組の割り当ては、位置引数のフィルタと `TEST_EXCLUDE` を当てる前の一覧に対して決めなければならない（MUST）。割り当てのあとの対象には、既存のフィルタと `TEST_EXCLUDE` をそのまま当てる。
+`scripts/test.sh` は、環境変数 `TEST_SHARD=k/N`（k と N は 1 以上の整数で k ≦ N）が与えられたとき、`git ls-files -- '*.bats' ':(exclude)_longruns/'` の一覧のスイートを次の規則で N 個の組に分け、k 番目の組のスイートだけを対象にしなければならない（MUST）。規則は、スイートごとの `@test` の件数（行頭が `@test` の行の数）に 1 を足した値を重み（`@test` が 0 件のスイートも 1 と数える）とし、重い順（重みが同じものは一覧の順）に並べて、その時点で重みの合計がいちばん小さい組（同点なら番号の小さい組）へ順に配ることである。割り当ては一覧のパスとファイルの中身だけで決まり、どの組のジョブでも同じになる。組の割り当ては、位置引数のフィルタと `TEST_EXCLUDE` を当てる前の一覧に対して決めなければならない（MUST）。割り当てのあとの対象には、既存のフィルタと `TEST_EXCLUDE` をそのまま当てる。
 
 `TEST_SHARD` が未設定か空文字のとき、`scripts/test.sh` は分割せず、この変更の前と同じ対象を実行しなければならない（MUST）。
 

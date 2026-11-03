@@ -290,6 +290,29 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   done
 }
 
+@test "shard: weight is the @test count plus one, so 4,2,1,1 tests split as {s1,s4} and {s2,s3}" {
+  make_repo 4
+  local n i k want
+  for n in 1:4 2:2 3:1 4:1; do
+    i=${n%%:*}; : >"$REPO/t/s$i.bats"
+    for k in $(seq 1 "${n##*:}"); do
+      printf '%s "s%s case %s" {\n  true\n}\n' '@test' "$i" "$k" >>"$REPO/t/s$i.bats"
+    done
+  done
+  git -C "$REPO" add -A
+  for k in 1 2; do
+    case "$k" in
+      1) want="t/s1.bats t/s4.bats " ;;
+      2) want="t/s2.bats t/s3.bats " ;;
+    esac
+    run shard_run "$REPO" "$k/2" ""
+    [ "$status" -eq 0 ] || { echo "$output"; cat "$ERR"; return 1; }
+    [ "$(printf '%s\n' "$output" | listed_suites | tr '\n' ' ')" = "$want" ] || {
+      echo "shard $k/2: expected '$want'"; echo "$output"; return 1
+    }
+  done
+}
+
 @test "shard: without TEST_SHARD every suite runs and no shard line is printed" {
   make_repo 7
   run shard_run "$REPO" "" ""
