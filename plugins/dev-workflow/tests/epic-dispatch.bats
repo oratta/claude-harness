@@ -4396,6 +4396,28 @@ reply_ready() {
   [ "$(calls '^orca terminal create')" -eq 0 ]
 }
 
+@test "reply: a stopped-seen child whose log moved past the stop gets nothing and reports not-stopped" {
+  reply_ready term-a-11
+  old="$(jq -rn '(now - 900) | floor | todate')"
+  newer="$(jq -rn '(now - 300) | floor | todate')"
+  put_record 11 status=waiting stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d1"}')" "$(chat_line user "$newer" 'こちらで' '{"uuid":"i1"}')"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 not-stopped" ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+}
+
+@test "reply: a stopped-seen child whose log stays at the stop still gets the answer" {
+  reply_ready term-a-11
+  old="$(jq -rn '(now - 900) | floor | todate')"
+  put_record 11 status=waiting stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d1"}')"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sent 11" ]
+}
+
 @test "reply: the parent's decision is headed as not the owner's approval" {
   reply_ready term-a-11
   run dispatch reply --as parent 400 11 '推奨どおり'

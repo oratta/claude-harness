@@ -870,7 +870,7 @@ cmd_launch() {
 # 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する
 deliver_reply() {
   local relaunch="$1" as="$2" epic="$3" n="$4" text="$5"
-  local msg rec path res prompt erefs=" " xrepo_epic=""
+  local msg rec path res prompt json erefs=" " xrepo_epic=""
   child_record "$PARENT_TOP" "$n"
   case $? in
     0) ;;
@@ -887,6 +887,14 @@ deliver_reply() {
     stopped|stopped-seen) ;;
     *) echo "skipped $n not-stopped"; return 2 ;;
   esac
+  # 記録がまだ stopped-seen でも、子が mark resumed を呼ばず会話ログだけで先へ進んでいる（止まりの発言より新しい発言か
+  # 入力がある）ことがある。会話ログを読めたときだけ、その子も再開済みとして送らない（読めなければ今までどおり送る）
+  if [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ]; then
+    json="$(record_log_json "$rec")" || json=""
+    if [ -n "$json" ] && log_moved "$json" "$(es_get "$rec" stop_uuid)"; then
+      echo "skipped $n not-stopped"; return 2
+    fi
+  fi
   # 返事は記録の launcher の部品で届ける。その部品が使えない子だけ launcher-unavailable
   LAUNCHER_NAME="$(es_get "$rec" launcher)"
   launcher_usable "$LAUNCHER_NAME" || { echo "failed $n launcher-unavailable"; return 1; }
