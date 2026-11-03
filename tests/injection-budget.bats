@@ -338,6 +338,8 @@ verdict() { # <budget> <total> → over | under | ok
 # 推奨予算 = 実測 + 約 5%（整数演算）。
 recommended_budget() { printf '%s\n' "$(( $1 + $1 / 20 ))"; }
 
+REVIEW_DOC='docs/injection-budget-review.md'
+
 # ── 失敗時の出力（予算・実測・差分量／どちら側か／8 種の内訳／取るべき行動）──
 report() { # <verdict> <budget> <total> <内訳テキスト>
   local v="$1" budget="$2" total="$3" lines="$4" name bytes
@@ -429,6 +431,12 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
                 ok = 0
               }
 
+              # 字下げした description:（frontmatter 全体を字下げした形を含む）は YAML では
+              # トップレベルの description と読まれるが、集計は ^description: だけを数えるので
+              # 0 バイトになる（issue #282）。入れ子の description はこのゲートの注入対象外
+              # なので許可しておく理由がなく、一律で違反にする。
+              if (line ~ /^  description:/) ok = 0
+
               if (is_top && line ~ /^description:/) {
                 desc_count++
                 val = line
@@ -478,8 +486,6 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
 check_frontmatter_shape() { emit_z "$@" | check_frontmatter_shape_z; }
 check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_shape_z; }
 
-# ══ 1. 集計ヘルパ ══════════════════════════════════════════
-
 # ── 思考の深さを文で指示する言い回しの検査（issue #712）──────────
 # 「よく考えて」「Think deeply.」の類は、現行モデルでは効かないか余計な長考を招く
 # （/doctor prompt-audit の指摘）。一度消した句が戻るのを止めるための検査である。
@@ -492,7 +498,6 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
 # 「必ず」「絶対」「MUST」「IMPORTANT」などの強調語は対象にしない（破壊的操作の防止に
 # 理由つきで使われているものが大半で、一律に禁じると必要な制約まで落ちる）。
 THINKING_PHRASE_RE='よく考え|think deeply|think hard|think carefully|think step by step'
-REVIEW_DOC='docs/injection-budget-review.md'
 
 # check_thinking_phrases_z — stdin: NUL 区切りの一覧。該当行を「ファイル:行番号:本文」で
 # 出力し、1 件でもあれば 1 を返す。英語の句は大文字小文字を区別しない。
@@ -519,6 +524,8 @@ list_thinking_phrase_targets() {
   list_dir_files "$REPO_ROOT/.claude/skills" '*'
   list_dir_files "$REPO_ROOT/.agents/skills" '*'
 }
+
+# ══ 1. 集計ヘルパ ══════════════════════════════════════════
 
 @test "sum_files adds up the byte counts of the given list" {
   printf '12345' > "$TMPD/a.md"      # 5 bytes
@@ -1072,6 +1079,28 @@ EOF
   run check_frontmatter_shape "$TMPD/tab-indent.md"
   [ "$status" -ne 0 ]
   [[ "$output" == *"tab-indent.md"* ]] || return 1
+}
+
+@test "a fully indented frontmatter with description is detected" {
+  # frontmatter 全体を 2 スペース字下げすると YAML としてはトップレベルの description になるが、
+  # 集計（sum_descriptions）は ^description: だけを数えて 0 バイトになる（issue #282）。
+  printf -- '---\n  description: %s\n---\nbody\n' "$(head -c 3000 /dev/zero | tr '\0' x)" > "$TMPD/indented.md"
+  run check_frontmatter_shape "$TMPD/indented.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"indented.md"* ]] || return 1
+}
+
+@test "a fully indented frontmatter with name and description is detected" {
+  printf -- '---\n  name: x\n  description: hi\n---\nbody\n' > "$TMPD/indented-both.md"
+  run check_frontmatter_shape "$TMPD/indented-both.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"indented-both.md"* ]] || return 1
+}
+
+@test "a genuine nested key other than description is still accepted" {
+  printf -- '---\nmetadata:\n  version: 1\ndescription: hi\n---\n' > "$TMPD/nested-ok.md"
+  run check_frontmatter_shape "$TMPD/nested-ok.md"
+  [ "$status" -eq 0 ]
 }
 
 @test "an anchor inside a flow sequence is detected" {

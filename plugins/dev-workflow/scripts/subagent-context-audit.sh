@@ -28,7 +28,7 @@
 # 初回はファイル先頭から最初の usage 付き assistant レコード、最終は末尾から
 # 256 KiB の窓を後ろ向きに探索（見つからなければ 4 MiB まで倍加）。全文は読まない。
 #
-# キャッシュ: 結果は --cache（既定 ${SUBAGENT_CONTEXT_AUDIT_CACHE:-~/.claude/.subagent-context-audit}）
+# キャッシュ: 結果は --cache（既定 ${SUBAGENT_CONTEXT_AUDIT_CACHE:-${CLAUDE_CONFIG_DIR:-~/.claude}/.subagent-context-audit}）
 # に 1 行 JSON で残す。mtime が SUBAGENT_CONTEXT_AUDIT_TTL（秒、既定 21600）以内なら
 # 走査せずその内容を返す。--refresh で TTL を無視して再走査する。走査できなかった結果
 # （projects ディレクトリが無い / 読めないディレクトリがあった / python3 が無い）は
@@ -59,8 +59,8 @@ set -uo pipefail
 
 days=14
 cap="${DEV_WORKFLOW_CONTEXT_CAP:-150000}"
-projects="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
-cache="${SUBAGENT_CONTEXT_AUDIT_CACHE:-$HOME/.claude/.subagent-context-audit}"
+projects="${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
+cache="${SUBAGENT_CONTEXT_AUDIT_CACHE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.subagent-context-audit}"
 ttl="${SUBAGENT_CONTEXT_AUDIT_TTL:-21600}"
 refresh=0
 by_role=0

@@ -66,7 +66,7 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
 @test "skill: the merge-wait paragraph sits in the Orca procedure and runs before step 8 escalates" {
   p="$(merge_para)"
   [ -n "$p" ]
-  printf '%s\n' "$p" | grep -qF '`止まった理由:` が `PR のマージ待ち（` で始まる'
+  printf '%s\n' "$p" | grep -qF '今回の止まった理由が `PR のマージ待ち（` で始まる'
   printf '%s\n' "$p" | grep -qF '一致する `親の判断:` が無い'
   printf '%s\n' "$p" | grep -qF '手順 8'
 }
@@ -113,11 +113,11 @@ ready_section() { awk '/^### `ready` を受けたあと/{f=1; print; next} /^#+ 
   printf '%s\n' "$r" | grep -qF '`nested`'
   printf '%s\n' "$r" | grep -qF '止まった理由: PR のマージ待ち（human-merge）: <PR の URL>'
   printf '%s\n' "$r" | grep -qF 'contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>'
-  for k in '主に聞く理由:' '前提:' '推奨:' '推奨の根拠:' '受け入れるリスク:' '再開に要る途中経過:'; do
-    printf '%s\n' "$r" | grep -qF -- "$k" || { echo "missing example item: $k"; return 1; }
+  for k in '聖域のどのパス' 'ゲートの合格の HEAD' '親の判断で自動マージの処理に回す' '今の HEAD の SHA'; do
+    printf '%s\n' "$r" | grep -qF -- "$k" || { echo "missing content: $k"; return 1; }
   done
-  printf '%s\n' "$r" | grep -qF '残りの 6 項目'
-  printf '%s\n' "$r" | grep -F '`主に聞く理由:`' | grep -F '決まりで主の承認が要る' | grep -qF '聖域のファイルに触れた PR'
+  ! printf '%s\n' "$r" | grep -qF '残りの 6 項目' || return 1
+  printf '%s\n' "$r" | grep -F '決まりで主の承認が要る' | grep -qF '聖域のファイルに触れた PR'
   # 従来のオーナーへの依頼の文は残る（ci-watch.bats が見ている）
   printf '%s\n' "$r" | grep -qF '待たずに PR の URL を添えてオーナーにマージを頼み'
 }
