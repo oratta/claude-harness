@@ -4,7 +4,8 @@
 # 記録は ${EPIC_STATE_ROOT:-$HOME/.claude/epic-state}/<エピックの owner>.<repo>-<エピック番号>/<子の owner>.<repo>-<子の番号>.json
 # に子ごと 1 ファイル。項目は schema(1)・epic・child・repo・number・launcher・parent_worktree・worktree・branch・
 # base・session・launch_failed・status(running|waiting|done)・stop(""|stopped|stopped-seen|resumed)・
-# created_at・updated_at。親の wait --watch-done が完了を推定したときだけ done_inferred_at・
+# created_at・updated_at。親の wait が止まりとして受けた発言を stop_uuid・stop_at に書く（任意。無い記録は空として読む）。
+# 親の wait --watch-done が完了を推定したときだけ done_inferred_at・
 # done_inferred_last_activity を足す（schema は 1 のまま）。知らない項目は残す。書き込みは同じディレクトリの一時ファイルから mv で置き換え、
 # 読んで書き換えるときは <記録>.lock を mkdir して排他する。残ったロックは消さない。
 # このファイルは起動部品の名前を書かない（起動部品のコマンドを呼ぶのは epic-dispatch.sh だけ）。
@@ -85,7 +86,9 @@ ES_VALID='type == "object" and .schema == 1
   and ((.stop | type) == "string") and (.stop == "" or .stop == "stopped" or .stop == "stopped-seen" or .stop == "resumed")
   and ((.epic | type) == "string") and ((.child | type) == "string") and ((.repo | type) == "string")
   and ((.launcher | type) == "string") and (.launcher == "orca" or .launcher == "tmux")
-  and ((.number | type) == "number") and ((.parent_worktree | type) == "string") and ((.worktree | type) == "string")'
+  and ((.number | type) == "number") and ((.parent_worktree | type) == "string") and ((.worktree | type) == "string")
+  and ((has("stop_uuid") | not) or (.stop_uuid | type) == "string")
+  and ((has("stop_at") | not) or (.stop_at | type) == "string")'
 
 # 記録を読んで 1 行の JSON で出す。読めない記録（JSON でない・schema が 1 でない・表に無い値・必須の項目が無い）は 1
 es_read() {

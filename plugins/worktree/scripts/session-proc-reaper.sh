@@ -147,10 +147,7 @@ srp_owner_alive() { # <mark>
 
 # --- 止める対象の決定 ---
 
-# 「環境変数が読めない」= `[A-Za-z_][A-Za-z0-9_]*=` の形の語が 1 つも無い。読めるなら真。
-srp_env_readable() { # <command+env>
-  printf '%s\n' "$1" | awk '{ for (i = 1; i <= NF; i++) if ($i ~ /^[A-Za-z_][A-Za-z0-9_]*=/) { f = 1; exit } } END { exit(f ? 0 : 1) }'
-}
+# 「環境変数が読めない」= `[A-Za-z_][A-Za-z0-9_]*=` の形の語が 1 つも無い（srp_select_targets の awk が判定する）。
 
 # 目印 $1 の対象を「pid kind ppid comm」で 1 行ずつ出す（kind は mark か desc）。子を親より先の順に出す。
 # $2 は除く PID の空白区切り（自分自身とその祖先）。除いた PID の配下にも降りない。
@@ -160,8 +157,13 @@ srp_select_targets() { # <mark> <exclude_pids>
   envf=$(mktemp "${TMPDIR:-/tmp}/srp-env.XXXXXX") || { rm -f "$commf"; return 1; }
   srp_ps_comm_list >"$commf"
   srp_ps_env_list >"$envf"
+  if [ ! -s "$commf" ]; then
+    srp_log "none mark=$1 trigger=- reason=ps-comm-empty"
+    rm -f "$commf" "$envf"
+    return 1
+  fi
   awk -v want="${SRP_MARK_VAR}=$1" -v excl=" $2 " '
-    FNR == NR {
+    FILENAME == ARGV[1] {
       p = $1; sub(/^[ \t]*[0-9]+[ \t]+/, ""); comm[p] = $0; next
     }
     {
