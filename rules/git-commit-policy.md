@@ -6,4 +6,6 @@ worktree セットアップ済み / `gh pr list` で過去 PR あり / PR テン
 
 PR を作ったら `dev-workflow:pr-review-gate` スキルのゲートを必ず通す。ゲートを通っていない PR を主の承認なしにマージしない。ゲート通過後に commit を積んだら取り直す。
 
+既存 issue の受け入れ条件を足す前（足してよいかを主に聞くならその前）に、`gh issue view <番号> -R <owner/repo> --json comments` の `develop 開始` か `実行モード:` の行があるコメントと、`gh pr list -R <owner/repo> --state open --search "<番号> in:body" --json url,body` の PR のうち本文に `Closes` / `Fixes` / `Refs #<番号>`（大文字小文字不問）があるものを確かめる（issue の本文だけでは分からない）。どちらかがあれば作業中で、新しい issue に切り出す。同じ issue に足すなら、作業中であること（PR があればその URL）を書いて主に聞く。ゲート役（G）がレビュー指摘の振り分けで足す場合は `dev-workflow:pr-review-gate` に従う。
+
 運用の判定の詳細（迷ったときの記録先・auto-merge 配備リポでのマージ経路）は `~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/references/commit-and-pr-operations.md`。
