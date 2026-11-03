@@ -2947,6 +2947,22 @@ infer_ready() {
   [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
+@test "reap: LLM/ created by the close that succeeds only on the retry also keeps the worktree" {
+  reap_ready
+  p="$BATS_TEST_TMPDIR/work/issue-11"
+  echo "$p/LLM" > "$STUB_CFG/close_mkdir"
+  echo 1 > "$STUB_CFG/close_exit_1"
+  echo 0 > "$STUB_CFG/close_exit_2"
+  export EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT=0
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  run dispatch reap 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "kept 11 llm-logs" ]
+  [ "$(calls '^orca terminal close')" -eq 2 ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
+}
+
 @test "reap: a failing git status and a record without a branch are kept" {
   reap_ready
   echo 128 > "$STUB_CFG/status_exit"
