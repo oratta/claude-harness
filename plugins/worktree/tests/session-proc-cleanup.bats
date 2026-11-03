@@ -387,6 +387,15 @@ fresh_stamp() {
   grep -Eq ' none .*trigger=sweep' "$LOG"
 }
 
+@test "sweep: empty ps comm list -> 'none' with reason=ps-comm-empty (not read env list as comm)" {
+  make_fixture
+  : >"$FIX/ps-comm.txt"
+  printf '  100 Sat Sep 26 08:00:00 2026\n' >"$FIX/lstart.txt"
+  run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" "$REAPER" --sweep
+  [ "$status" -eq 0 ]
+  grep -Eq 'none .*reason=ps-comm-empty' "$LOG"
+}
+
 @test "session-end (fixture): owner alive after the wait -> nothing stopped, 'none' logged" {
   make_fixture
   run env SESSION_REAPER_PS_FIXTURE_DIR="$FIX" SESSION_REAPER_OWNER_WAIT_SECS=0 \

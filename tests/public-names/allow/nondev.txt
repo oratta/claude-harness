@@ -29,8 +29,6 @@ plugins/statusline/scripts/statusline.sh:flatmate:="${FLATMATE_RATE_SHARE_CONF:-
 # 出典
 plugins/statusline/scripts/statusline.sh:flatmate:=flatmate#605 と同じ誤り
 # 出典
-plugins/worktree/.claude-plugin/plugin.json:flatmate:=flatmate#320: find -path
-# 出典
 plugins/worktree/references/wt-clean-orphan-detection.md:flatmate:=2026-08-10 に flatmate リポで全件実行したとき
 # 出典
 plugins/worktree/references/wt-clean-verification.md:flatmate:=2026-08-10 に flatmate で、PR が OPEN
