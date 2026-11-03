@@ -4,7 +4,7 @@
 #
 # spec: dev-workflow-subagent-waiting, dev-workflow-develop, dev-workflow-pr-review-gate
 #
-# この change の成果物は手順書の文言なので、退行検出も文言に対して grep で行う。
+# 手順書の契約は文言と、正本から抽出した雛形の実行の両方で検査する。
 # テスト名は ASCII のみ。
 
 setup() {
@@ -200,6 +200,23 @@ PY
   fi
 }
 
+@test "companion identity relies on the full launch job id for waiting and results" {
+  # (a) の nonce の説明を拾わず、companion 経路の契約だけを検査する。
+  section="$(sed -n '/^### (b) /,/^## /p' "$CANON")"
+  for pat in '.jobId' '完全な job id' '切り詰めない' '省略した `result` は使わない' \
+    '完全一致を優先' '複数一致・未一致は例外' '追加の nonce は不要' \
+    'scripts/lib/job-control.mjs:191-211' \
+    'task … --effort medium --background --json' \
+    'job id が一意に保持される前提' '重複検査がなく、衝突すると上書きされうる' \
+    '36^6' '同じ prefix・同じミリ秒' 'scripts/lib/state.mjs:129-145'; do
+    printf '%s\n' "$section" | grep -qF "$pat" || return 1
+  done
+  # 説明とコード根拠の両方で、ID 省略時の範囲を明記する。
+  scope='CODEX_COMPANION_SESSION_ID` 設定時はそのセッション、未設定時はリポジトリ全体の最新の終了ジョブ'
+  [ "$(printf '%s\n' "$section" | grep -cF "$scope")" -eq 2 ]
+  if printf '%s\n' "$section" | grep -qF '現セッションの最新の終了ジョブ'; then return 1; fi
+}
+
 # --- nonce の作り方（衝突・正規表現の誤マッチ・無言の縮退をまとめて止めること） ---
 #
 # 2 周目のゲート指摘: `date +%s` は秒精度なので、G / W / R1 が並行して走ると同じ秒に衝突し、
@@ -289,6 +306,19 @@ PY
       return 1
     }
   done
+}
+
+@test "step 1 template uses the exclusively created directory name as its nonce" {
+  TMPDIR="$BATS_TEST_TMPDIR" run sh "$SNIP"
+  [ "$status" -eq 0 ]
+  d="$(printf '%s\n' "$output" | sed -n 's/^dir=//p')"
+  n="$(printf '%s\n' "$output" | sed -n 's/^nonce=//p')"
+  [ -d "$d" ]
+  base="${d##*/}"
+  [ "$n" = "${base#codex-}" ] || {
+    echo "hint: nonce must come from the exclusively created directory: nonce=${n} dir=${d}"
+    return 1
+  }
 }
 
 @test "step 1 template fails loudly instead of degrading when the temp dir cannot be created" {
@@ -386,4 +416,25 @@ PY
   [ "$status" -ne 0 ]
   run grep -E '`plausible`|`unresolved`|`wontfix`' "$CANON"
   [ "$status" -ne 0 ]
+}
+
+# 手順 2 は bash ブロック、手順 3 は command: 行を実行する。
+# Python 側が子プロセスの上限・同期・後始末を担当し、置き場はテストごとに分ける。
+@test "step 2 and 3 emit exactly one marker after newline terminated stdout" {
+  python3 "${PLUGIN_DIR}/tests/subagent-waiting-runtime.py" "$CANON" "$BATS_TEST_TMPDIR" newline 0
+}
+
+@test "step 2 and 3 put the marker at line start after unterminated stdout and preserve rc" {
+  python3 "${PLUGIN_DIR}/tests/subagent-waiting-runtime.py" "$CANON" "$BATS_TEST_TMPDIR" no-newline 7
+}
+
+@test "step 3 rejects another nonce until the actual codex process finishes" {
+  python3 "${PLUGIN_DIR}/tests/subagent-waiting-runtime.py" "$CANON" "$BATS_TEST_TMPDIR" other-nonce 0
+}
+
+@test "step 3 rejects body mentions and malformed markers until codex finishes" {
+  for decoy in prefix missing-rc suffix fixed longer-nonce; do
+    mkdir "${BATS_TEST_TMPDIR}/${decoy}"
+    python3 "${PLUGIN_DIR}/tests/subagent-waiting-runtime.py" "$CANON" "${BATS_TEST_TMPDIR}/${decoy}" "$decoy" 7
+  done
 }
