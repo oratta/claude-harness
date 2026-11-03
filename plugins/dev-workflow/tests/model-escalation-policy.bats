@@ -134,7 +134,7 @@ setup() {
 # --- ルール3: フォールバック（Fable が使えないとき） ---
 
 @test "fallback: falls back to the previous model and records one PR comment line" {
-  grep -qF 'フォールバック' "${REVIEW_RUN}"
+  grep -qF 'Fable が使えないときのフォールバック' "${TRIAGE}"
   grep -qF '決める役モデル: opus' "${TRIAGE}"
   grep -qF 'dev-workflow:decider のまま' "${TRIAGE}"
   grep -qF 'レート制限' "${TRIAGE}"

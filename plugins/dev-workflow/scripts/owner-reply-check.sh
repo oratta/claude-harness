@@ -1,16 +1,18 @@
 #!/usr/bin/env bash
 # owner-reply-check.sh — 主が会話で返した許容の発言が、そのセッションの会話ログに主の発言として実在するかを確かめる。
 #
-# 使い方（3 つ）:
+# 使い方（4 つ）:
 #   owner-reply-check.sh <セッション ID> <原文>                 既定の使い方（引数がちょうど 2 個でなければ exit 2）
 #   owner-reply-check.sh --locate <セッション ID> <原文>        主の発言の場所（uuid）を引く（エピックの親が使う。issue #1059）
 #   owner-reply-check.sh --relayed <セッション ID> <uuid> <停止の記録の作成日時> <停止の記録の URL>
 #                                                              親経由の返事を親の会話ログの場所で確かめる（エピックの子と G が使う）
-#   --locate と --relayed の引数の数は各自のもの（2 個 / 4 個）で、違えば exit 2。
+#   owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時>
+#                                                              主の委任の確認を親の会話ログの場所で確かめる（エピックの子と G が使う。issue #1293）
+#   --locate・--relayed・--delegated の引数の数は各自のもの（2 個 / 4 個 / 5 個）で、違えば exit 2。
 #   読むのは ${OWNER_REPLY_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}/*/<セッション ID>.jsonl だけ
 #   （<セッション ID>/subagents/ の下は読まない）。OWNER_REPLY_PROJECTS_DIR はテスト用の差し替え口。
 # 比べ方: 原文と各発言の本文の連続する空白（改行を含む）を 1 個の空白にまとめ、前後の空白を落として部分一致。
-# 主の発言として数える行（すべて満たすもの。3 つの使い方で同じ）:
+# 主の発言として数える行（すべて満たすもの。4 つの使い方で同じ）:
 #   1. type が "user"            2. isSidechain が true でない
 #   3. isMeta が true でない（4 のチャンネルの行は除かない。実物は isMeta: true で残る）
 #   4. origin のキーがあるなら（null を含む）origin.kind が "human"、または "channel" で次のすべてを満たす（issue #1125）:
@@ -42,9 +44,15 @@
 #              → not-after（その行の timestamp が停止の記録の作成日時より後でない）→ not-asked（作成日時より後でその行より前の
 #              親の発言（type:"assistant"・isSidechain が true でない）の text の本文に停止の記録の URL が無い）
 #              → not-direct（URL を書いた最後の親の発言とその行のあいだに、別の主の発言がある）
-# 終了コード: 0 = 一致（--relayed は通った）/ 1 = 一致なし（--relayed は REASON の付く落ち）/
+#   --delegated: 出力は --relayed と同じ形。理由は次の順に確かめる: not-found → not-owner（--relayed と同じ）
+#              → not-after（その行の timestamp が委任の記録の作成日時より後でない）→ not-asked（委任の記録の作成日時より後で
+#              その行より前の親の発言の text の本文に委任の記録の URL が無い。URL の境界の判定は --relayed と同じ）
+#              → not-direct（--relayed と同じ）→ not-before（その行の timestamp が停止の記録の作成日時より前でない）
+#              GitHub は読まない。委任の意思（MATCH 行の全文）・委任の記録の書式・投稿者・最新か・編集の有無・エピックが開いているか・
+#              子の所属・停止の記録の推奨は呼び出し側（エピックの子と pr-review-gate 手順 5）が確かめる。
+# 終了コード: 0 = 一致（--relayed / --delegated は通った）/ 1 = 一致なし（--relayed / --delegated は REASON の付く落ち）/
 #   2 = 引数の不備・UUID でない ID・空の原文・日時を読めない・https で始まらない URL・会話ログなし・python3 なし・
-#       空白をまとめると空になる原文・会話ログを読めない・--relayed で指した行の timestamp を読めない・
+#       空白をまとめると空になる原文・会話ログを読めない・--relayed / --delegated で指した行の timestamp を読めない・
 #       OWNER_REPLY_CHANNEL_SENDERS に <server>=<ID> の形でない項目がある（空の項目は数えない）
 #   （2 は「確かめられない」。呼び出し側は 1 と同じく通さない側に倒す）
 #
@@ -58,9 +66,10 @@ mode="default"
 case "${1:-}" in
   --locate) mode="locate"; shift ;;
   --relayed) mode="relayed"; shift ;;
+  --delegated) mode="delegated"; shift ;;
 esac
 
-excerpt=""; target_uuid=""; stop_at=""; stop_url=""
+excerpt=""; target_uuid=""; stop_at=""; stop_url=""; deleg_at=""; deleg_url=""
 case "$mode" in
   default|locate)
     if [ "$#" -ne 2 ]; then
@@ -76,6 +85,13 @@ case "$mode" in
     fi
     session_id="$1"; target_uuid="$2"; stop_at="$3"; stop_url="$4"
     ;;
+  delegated)
+    if [ "$#" -ne 5 ]; then
+      echo "usage: $0 --delegated <session-id> <uuid> <delegation-record-created-at> <delegation-record-url> <stop-record-created-at>" >&2
+      exit 2
+    fi
+    session_id="$1"; target_uuid="$2"; deleg_at="$3"; deleg_url="$4"; stop_at="$5"
+    ;;
 esac
 
 if ! [[ "$session_id" =~ $UUID_RE ]]; then
@@ -83,15 +99,22 @@ if ! [[ "$session_id" =~ $UUID_RE ]]; then
   exit 2
 fi
 
-if [ "$mode" = "relayed" ]; then
+if [ "$mode" = "relayed" ] || [ "$mode" = "delegated" ]; then
   if ! [[ "$target_uuid" =~ $UUID_RE ]]; then
     echo "owner-reply-check: uuid is not a UUID: $target_uuid" >&2
     exit 2
   fi
-  case "$stop_url" in
-    https://?*) ;;
-    *) echo "owner-reply-check: stop record URL does not start with https://: $stop_url" >&2; exit 2 ;;
-  esac
+  if [ "$mode" = "relayed" ]; then
+    case "$stop_url" in
+      https://?*) ;;
+      *) echo "owner-reply-check: stop record URL does not start with https://: $stop_url" >&2; exit 2 ;;
+    esac
+  else
+    case "$deleg_url" in
+      https://?*) ;;
+      *) echo "owner-reply-check: delegation record URL does not start with https://: $deleg_url" >&2; exit 2 ;;
+    esac
+  fi
 elif [ -z "${excerpt//[[:space:]]/}" ]; then
   echo "owner-reply-check: excerpt is blank" >&2
   exit 2
@@ -113,7 +136,7 @@ if [ "${#logs[@]}" -eq 0 ]; then
   exit 2
 fi
 
-PYTHONDONTWRITEBYTECODE=1 python3 -I - "$mode" "$excerpt" "$target_uuid" "$stop_at" "$stop_url" "${logs[@]}" <<'PY'
+PYTHONDONTWRITEBYTECODE=1 python3 -I - "$mode" "$excerpt" "$target_uuid" "$stop_at" "$stop_url" "$deleg_at" "$deleg_url" "${logs[@]}" <<'PY'
 import datetime
 import json
 import os
@@ -288,12 +311,16 @@ def fail(reason):
     sys.exit(1)
 
 
-def relayed(target_uuid, stop_at_text, stop_url, paths):
-    stop_at = parse_time(stop_at_text)
-    if stop_at is None:
-        sys.stderr.write("owner-reply-check: cannot read the stop record time: %s\n" % stop_at_text)
+def read_time_arg(value, what):
+    when = parse_time(value)
+    if when is None:
+        sys.stderr.write("owner-reply-check: cannot read the %s time: %s\n" % (what, value))
         sys.exit(2)
-    records = [rec for rec in read_records(paths) if isinstance(rec, dict)]
+    return when
+
+
+def pointed_owner_line(records, target_uuid):
+    """指した uuid の行が主の発言なら (行, 本文, timestamp) を返す。無ければ not-found、主の発言でなければ not-owner で落とす。"""
     target = next((rec for rec in records if rec.get("uuid") == target_uuid), None)
     if target is None:
         fail("not-found")
@@ -304,11 +331,15 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
     if said_at is None:
         sys.stderr.write("owner-reply-check: cannot read the timestamp of %s\n" % target_uuid)
         sys.exit(2)
-    if not said_at > stop_at:
-        fail("not-after")
-    # 停止の記録の URL は完全一致で探す。前後が URL を続ける文字のときは別の URL の一部なので数えない
+    return target, text, said_at
+
+
+def check_asked_directly(records, url, since, said_at):
+    """since より後で said_at より前の親の発言に url があり、URL を書いた最後の親の発言から said_at までに別の主の発言が無いことを確かめる。
+    無ければ not-asked、挟まっていれば not-direct で落とす（--relayed と --delegated で同じ判定）。"""
+    # URL は完全一致で探す。前後が URL を続ける文字のときは別の URL の一部なので数えない
     # （…#issuecomment-123 が …#issuecomment-1234 に部分一致しないように）。文末の . や括弧・句読点は URL を続けない文字として扱う
-    url_re = re.compile(r"(?<![A-Za-z0-9_\-.~/:%%?#&=+@])%s(?![A-Za-z0-9_\-~/%%?#&=+@])" % re.escape(stop_url))
+    url_re = re.compile(r"(?<![A-Za-z0-9_\-.~/:%%?#&=+@])%s(?![A-Za-z0-9_\-~/%%?#&=+@])" % re.escape(url))
     # 結び付けは URL を書いた最後の親の発言の時刻で取り、そこから主の発言までに別の主の発言があれば落とす
     # （親が報告したあとに主が別の件へ返した名指しの無い答えを、この止まりへの返事として通さないため）
     asked_at = None
@@ -316,7 +347,7 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
         if rec.get("type") != "assistant" or rec.get("isSidechain") is True:
             continue
         when = parse_time(rec.get("timestamp"))
-        if when is None or not (stop_at < when < said_at):
+        if when is None or not (since < when < said_at):
             continue
         if any(url_re.search(part) for part in assistant_texts(rec)):
             asked_at = when if asked_at is None else max(asked_at, when)
@@ -326,15 +357,44 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
         when = parse_time(rec.get("timestamp"))
         if when is not None and asked_at < when < said_at and owner_text(rec) is not None:
             fail("not-direct")
+
+
+def passed(target, text):
     print("MATCH: %s %s" % (target.get("timestamp", ""), norm(text)))
     print("MATCHES=1")
     sys.exit(0)
 
 
-mode, raw_excerpt, target_uuid, stop_at_text, stop_url = sys.argv[1:6]
-paths = sys.argv[6:]
+def relayed(target_uuid, stop_at_text, stop_url, paths):
+    stop_at = read_time_arg(stop_at_text, "stop record")
+    records = [rec for rec in read_records(paths) if isinstance(rec, dict)]
+    target, text, said_at = pointed_owner_line(records, target_uuid)
+    if not said_at > stop_at:
+        fail("not-after")
+    check_asked_directly(records, stop_url, stop_at, said_at)
+    passed(target, text)
+
+
+def delegated(target_uuid, deleg_at_text, deleg_url, stop_at_text, paths):
+    """主の委任の確認（issue #1293）。委任の記録を示した親の問いへの直接の答えで、停止の記録より前であることを確かめる。"""
+    deleg_at = read_time_arg(deleg_at_text, "delegation record")
+    stop_at = read_time_arg(stop_at_text, "stop record")
+    records = [rec for rec in read_records(paths) if isinstance(rec, dict)]
+    target, text, said_at = pointed_owner_line(records, target_uuid)
+    if not said_at > deleg_at:
+        fail("not-after")
+    check_asked_directly(records, deleg_url, deleg_at, said_at)
+    if not said_at < stop_at:
+        fail("not-before")
+    passed(target, text)
+
+
+mode, raw_excerpt, target_uuid, stop_at_text, stop_url, deleg_at_text, deleg_url = sys.argv[1:8]
+paths = sys.argv[8:]
 if mode == "relayed":
     relayed(target_uuid, stop_at_text, stop_url, paths)
+if mode == "delegated":
+    delegated(target_uuid, deleg_at_text, deleg_url, stop_at_text, paths)
 
 excerpt = norm(raw_excerpt)
 if not excerpt:

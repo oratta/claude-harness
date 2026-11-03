@@ -211,8 +211,9 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
 
 # --- 配布 ---
 
-@test "manifest: description mentions the spec declaration" {
-  jq -r '.description' "$MANIFEST" | grep -q '仕様宣言'
+@test "pr-review-gate skill: the pass conditions name the spec declaration" {
+  # plugin.json の description は /plugin メニュー用に 1 文へ短縮したので、スキル本文の通過条件で確かめる
+  grep -q '②仕様宣言' "${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
 }
 
 @test "skill frontmatter: version above 1.3.0" {
