@@ -18,4 +18,6 @@
 
 #### Scenario: 子に質問ツールで聞かせる指示が develop の手順書に残っていない
 - **WHEN** bats が `skills/develop/SKILL.md`・`skills/develop/references/*.md`・`skills/develop/references/roles/**/*.md` の `AskUserQuestion` を含む行を集める
-- **THEN** 各行は `interactive は` か `**interactive**` の条件つきか、質問ツールを呼ばない旨の否定の形であり、`epic-child-stop.md` の行は否定の形に限られる。条件なしでエピックの子に質問ツールを使わせる指示は無い
+- **THEN** 各行は `interactive は`・`**interactive**`・`**interactive モード**`・`interactive モードでは` のどれかの条件つきか、質問ツールを呼ばない旨の否定の形であり、`epic-child-stop.md` の行は否定の形に限られる。条件なしでエピックの子に質問ツールを使わせる指示は無い
+
+この文書検査の守備範囲: 入力元は上の文書群の `AskUserQuestion` を含む行である。拾いたい誤りは、条件なしでエピックの子に質問ツールを使わせる指示が手順書に足されること。通してよいのは、`interactive は`・`**interactive**`・`**interactive モード**`・`interactive モードでは` の条件つきの行と、呼び出しを否定する行（`AskUserQuestion は使わない`・`を呼ばない`・`を呼ばず`・`を使わず`）である。語を含まない言い換えや、実行時に読み替えを忘れることまでは保証せず、穴を塞ぎ切ることをこの要件の完了条件にしない。
