@@ -903,7 +903,7 @@ W の修正後の再レビューで起こされた前提確認と重さ判定の
 
 ### Requirement: Gate Result は段と次の段を持つ
 
-`gate-runner.md` の Gate Result の共通欄は、`段: <前提確認と重さ判定|照合と振り分け|合格処理|保留の解除|一括（従来経路）>` と `次の段: <段の名前|なし>` を持たなければならない（MUST）。Status には `次の段へ` と `needs-fix-check`（直し方の判定の依頼）と `needs-carryover-judge`（許容の引き継ぎの判定の依頼）を足す（MUST）。`次の段:` の値は G が次の表どおりに決めて書く（MUST）。
+`gate-runner.md` の Gate Result の共通欄は、`段: <前提確認と重さ判定|照合と振り分け|合格処理|保留の解除|一括（従来経路）>` と `次の段: <段の名前|なし>` を持たなければならない（MUST）。Status には `次の段へ` と `needs-fix-check`（直し方の判定の依頼）と `needs-carryover-judge`（許容の引き継ぎの判定の依頼）と `重複で降りた`（前提確認と重さ判定の G が、同じ HEAD に別の担当が着手済みと見て降りたとき）を足す（MUST）。`次の段:` の値は G が次の表どおりに決めて書く（MUST）。
 
 | Status | `次の段:` |
 |---|---|
@@ -912,9 +912,14 @@ W の修正後の再レビューで起こされた前提確認と重さ判定の
 | needs-reviewer / needs-decider / needs-fix-check | `照合と振り分け` |
 | needs-carryover-judge | `合格処理` |
 | 保留 | `保留の解除` |
-| passed / review-incomplete | `なし` |
+| passed / review-incomplete / 重複で降りた | `なし` |
 
 本体は Status と `次の段:` だけを見て次に起こす G の段を決め、段についての判断（止める指摘が残っているか、戻した指摘の仕分け、復帰手順がどこへ進むか）をしてはならない（MUST NOT）。failed のときは W の修正のあと、failed の Gate Result の `次の段:` どおりに起こす（MUST）。戻した指摘が順 3 だけの修正のあとに起こされた照合と振り分けの G は、`stages/prepare.md` の手順 1 で新しい HEAD を固め、前の重さ判定を写した `レビュー重量:` コメントを `固定 HEAD: <新しい HEAD>` 付きで投稿してから 2 段の照合に入らなければならない（MUST）。
+
+#### Scenario: 重複で降りた
+
+- **WHEN** 前提確認と重さ判定の G が、最新の `レビュー重量:` コメントの `固定 HEAD:` が現在の HEAD と一致し、起動指示に `取り直し: 明示（理由）` の行も無いため降りる
+- **THEN** Gate Result は Status `重複で降りた`・`次の段: なし` を持ち、本体は `ListAgents` で前の担当を確かめ、生きていれば完了を待ち、生きていなければ `取り直し: 明示（理由）` を添えて起こし直す
 
 #### Scenario: 順 3 だけの failed
 
