@@ -1,6 +1,6 @@
 ---
 name: work-issue
-description: /develop のエイリアス（旧名）。引数をそのまま develop の手順に渡す
+description: /develop のエイリアス（旧名）
 argument-hint: "[issue番号|issueURL|自然文の依頼]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ---

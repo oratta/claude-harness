@@ -15,7 +15,7 @@
 
 ### New Capabilities
 
-- `dev-workflow-model-switch-recache-notice`: モデル切替の直前に、再キャッシュの推定トークン数と推定費用を表示する hook の入出力契約
+- `dev-workflow-model-switch-recache-notice`: モデルを切り替えるときに、再キャッシュの推定トークン数と推定費用を表示する hook の入出力契約
 
 ### Modified Capabilities
 
