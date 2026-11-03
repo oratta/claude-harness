@@ -43,7 +43,7 @@
 
 1. `runner-lost`: そのチェックの `job` があり、`--hints <file>` の JSON の `annotations_by_job.<job>`（文字列の配列）のいずれかが `The self-hosted runner lost communication with the server` を含む。鍵はジョブ ID で、チェック名では引かない（別ワークフローの同名ジョブの通信切れを、もう片方の本当の失敗に移さないため）
 2. `job-timeout`: そのチェックの `job` があり、`--hints <file>` の JSON の `annotations_by_job.<job>` のいずれかが `maximum execution time` を含む（ジョブが上限時間で打ち切られたときに GitHub が付ける annotation。ランナー名と分数が入るので、変わらない部分だけを部分一致で見る）。鍵は `runner-lost` と同じくジョブ ID。`--unrelated` で同じチェック名が渡されていても `job-timeout` とする
-3. `unrelated`: `--unrelated <チェック名>` で渡された名前（複数回指定できる）に一致する
+3. `unrelated`: `--unrelated <チェック名>` で渡された名前（複数回指定できる）に一致する。チェック名と同じ置き換え（タブ・改行・カンマを空白にする）をしてから比べる（マトリクスのジョブ名のようにカンマを含む名前を渡せるようにするため）
 4. `real`: それ以外
 
 `retry` は、`state` が `ci-fail` で、失敗したチェックが 1 件以上あり、そのすべての `cause` が `real` でなく、すべてに run ID があるときだけ `true`、それ以外は `false` としなければならない（MUST）。`--hints` も `--unrelated` も無ければ、すべての失敗は `real` になる（MUST）。`--hints` のファイルが読めない・JSON でないときは非 0 で終わる（MUST）。
@@ -53,6 +53,10 @@
 #### Scenario: 通信切れの annotation はやり直しに当たる
 - **WHEN** 落ちたチェック `build`（job 77）が 1 件で run ID があり、`--hints` の `annotations_by_job."77"` に `The self-hosted runner lost communication with the server.` を含む文字列を渡す
 - **THEN** `build` の `cause` は `runner-lost`、`retry` は `true`
+
+#### Scenario: カンマを含む名前も --unrelated で一致する
+- **WHEN** 落ちたチェック `test (ubuntu, 3.11)`（run ID あり）が 1 件で、`--unrelated 'test (ubuntu, 3.11)'` を渡す
+- **THEN** `.checks[0].cause` は `unrelated`、`retry` は `true`
 
 #### Scenario: 上限時間で打ち切られたジョブは job-timeout
 - **WHEN** 落ちたチェック `test`（`conclusion: CANCELLED`、job 77）が 1 件で run ID があり、`--hints` の `annotations_by_job."77"` に `The job running on runner mac-1 has exceeded the maximum execution time of 40 minutes.` を渡す
