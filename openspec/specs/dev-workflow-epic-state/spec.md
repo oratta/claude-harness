@@ -51,24 +51,27 @@
 | `launch_failed` | 文字列 | `launch` が記録を書いたあとで失敗した段（`create`: 作成の呼び出しは成功したが path を読めない／`terminal`／`ready`／`send`。成功なら空） |
 | `status` | 文字列 | `running`・`waiting`・`done` のどれか |
 | `stop` | 文字列 | 空・`stopped`・`stopped-seen`・`resumed` のどれか |
+| `stop_uuid` | 文字列 | 親の `wait` が止まりとして受けた最後の子の発言の uuid（任意。無ければ空として読む） |
+| `stop_at` | 文字列 | 親の `wait` が止まりとして受けた UTC の時刻（任意。無ければ空として読む） |
+| `keepalive` | 文字列 | 親の `wait` が止まった子へ出すキャッシュの声かけの、最後の判定の結果 `<UTC の時刻> <結果>`（任意。無ければ空として読む。結果は要件「声かけの判定結果は子の記録の keepalive に残す」の語彙） |
 | `created_at` / `updated_at` | 文字列 | UTC の `YYYY-MM-DDTHH:MM:SSZ` |
 
-`status` は今のボードの列（`running` は印なし、`waiting` は `in-review`、`done` は `completed`）に、`stop` は今のコメント欄（`stopped` は `epic-stopped`、`stopped-seen` は `epic-stopped-seen`、`resumed` は `epic-resumed`）に当たり、値の遷移は今の印と同じにしなければならない（MUST）。止まった理由の本文は記録に持たず、子 issue の `子の停止: 主の返事待ち` のコメントを正本のままにする。`session` はこの版では Orca の `launch` と、起動し直した `reply`（`notify-closed`・`wait --resolve` の起動し直しを含む）が端末のハンドルを書き、`adopt` は空のまま書く（見張りの判定には使わない）。
+`status` は今のボードの列（`running` は印なし、`waiting` は `in-review`、`done` は `completed`）に、`stop` は今のコメント欄（`stopped` は `epic-stopped`、`stopped-seen` は `epic-stopped-seen`、`resumed` は `epic-resumed`）に当たり、値の遷移は今の印と同じにしなければならない（MUST）。ただし `stop` は子の `mark` に加えて親の `wait` と `dismiss` も書き（`wait` は空・`resumed` から `stopped-seen`、`stopped-seen` から `resumed`。`dismiss` は `stopped-seen` から `resumed`）、`resumed` への書き換えも Orca の印へ写す（MUST）。`keepalive` は親の `wait` だけが書く（MUST）。`stop_uuid` と `stop_at` は親の `wait` だけが書き（MUST）、子の `mark` と `dismiss` は変えない（MUST NOT）。止まった理由の本文は記録に持たず、子 issue の `子の停止: 主の返事待ち` のコメントを正本のままにする。そのコメントを持たない止まりでは、子の最後の発言を正本とする。`session` はこの版では Orca の `launch` と、起動し直した `reply`（`notify-closed`・`wait --resolve` の起動し直しを含む）が端末のハンドルを書き、`adopt` は空のまま書く（見張りの判定には使わない。子の会話ログのファイル名とも一致しないので、会話ログを選ぶ根拠にしてはならない（MUST NOT））。
 
-次のどれかに当たる記録は「読めない記録」とする: JSON のオブジェクトとして読めない／`schema` が `1` でない／`status` か `stop` が上の表に無い値／`epic`・`child`・`repo`・`number`・`parent_worktree`・`worktree` のどれかが無いか型が違う。読めない記録は書き換えも削除もしてはならず（MUST NOT）、サブコマンドごとに次のとおり扱わなければならない（MUST）。どの場合も stderr にその記録のパスを出す。
+次のどれかに当たる記録は「読めない記録」とする: JSON のオブジェクトとして読めない／`schema` が `1` でない／`status` か `stop` が上の表に無い値／`epic`・`child`・`repo`・`number`・`parent_worktree`・`worktree` のどれかが無いか型が違う／`stop_uuid`・`stop_at`・`keepalive` があって文字列でない。読めない記録は書き換えも削除もしてはならず（MUST NOT）、サブコマンドごとに次のとおり扱わなければならない（MUST）。どの場合も stderr にその記録のパスを出す。
 
 | サブコマンド | 読めない記録の扱い |
 |---|---|
 | `wait` | その子の印を読めなかったポーリングとして、今の「一覧を読めない」と同じく失敗したポーリングに数える（3 回続けば `gh` で失敗した子がいなければ `error workspaces`） |
 | `reap` | `kept <N> state-unreadable`（何も消さない） |
 | `pending-owner` | その子を飛ばす（`pending` を出さない） |
-| `notify-closed`・`reply` | `failed <N> state-unreadable` |
+| `notify-closed`・`reply`・`dismiss` | `failed <N> state-unreadable` |
 | `launch` | その子自身の記録なら `failed <N> state-unreadable`（作り直さない）。枠の数では、ほかの子の読めない記録を使用中の 1 枠に数える |
 | `adopt` | `failed <N> state-unreadable` |
 | `clear` | 消す対象のエピックのディレクトリにある読めない記録は、stderr に `remaining state record: unreadable (<パス>)` と出してからディレクトリごと消す（ディレクトリ単位の削除で、個別の書き換え・削除はしない） |
 | `mark`・`route`（今のワークツリーのパスで探すとき） | その記録を候補から外す |
 
-この要件の守備範囲で入力として扱うのは、`launch`・`adopt`・`mark`・`wait` 自身が書いた記録のファイルで、人が手で書く想定はしない。拾いたい誤りは、書き込みの途中で殺されたプロセスや版の違うスクリプトが残した記録を、正しい状態として読んで子を片付けたり見張りから落としたりすることである。次は通してよく、この要件では止めない: 項目の値どうしの矛盾（`child` の番号と `number` が違う・`worktree` が別のリポジトリを指す）／`created_at` と `updated_at` の形の崩れ／`mark`・`route` が読めない記録を候補から外したために、その子が自分を `no-workspace` と判定すること（一時ファイルからの置き換えで途中まで書かれた記録は生じないので、起きるのは人が手で壊したときだけ）。壊れ方を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、`launch`・`adopt`・`mark`・`wait`・`dismiss` 自身が書いた記録のファイルで、人が手で書く想定はしない。拾いたい誤りは、書き込みの途中で殺されたプロセスや版の違うスクリプトが残した記録を、正しい状態として読んで子を片付けたり見張りから落としたりすることである。次は通してよく、この要件では止めない: 項目の値どうしの矛盾（`child` の番号と `number` が違う・`worktree` が別のリポジトリを指す）／`created_at` と `updated_at` の形の崩れ／`mark`・`route` が読めない記録を候補から外したために、その子が自分を `no-workspace` と判定すること（一時ファイルからの置き換えで途中まで書かれた記録は生じないので、起きるのは人が手で壊したときだけ）。壊れ方を見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 壊れた記録の子は reap で残す
 - **WHEN** 子 12 の記録の中身が `{` だけの状態で `epic-dispatch.sh reap 12` を実行する
@@ -85,6 +88,18 @@
 #### Scenario: 知らない項目があっても読める
 - **WHEN** 記録に `extra: 1` の項目を足してから `epic-dispatch.sh mark done 1123` を子のワークツリーで実行する
 - **THEN** `status` が `done` になり、`extra` は残っている
+
+#### Scenario: 止まりの項目が無い記録も読める
+- **WHEN** `stop_uuid` と `stop_at` の無い以前の記録を `wait` と `pending-owner` が読む
+- **THEN** 読めない記録にならず、どちらも空として扱う
+
+#### Scenario: keepalive の項目が無い記録も読める
+- **WHEN** `keepalive` の無い以前の記録を `wait` と `pending-owner` が読む
+- **THEN** 読めない記録にならず、空として扱う
+
+#### Scenario: keepalive が文字列でない記録は読めない記録
+- **WHEN** 記録の `keepalive` が数で `epic-dispatch.sh reap 12` を実行する
+- **THEN** stdout は `kept 12 state-unreadable` で、記録は変わらない
 
 ### Requirement: 記録は一時ファイルから置き換え、親と子の書き込みを排他する
 
@@ -156,13 +171,14 @@
 
 ### Requirement: 親の見張りは記録だけで子の状態を判定する
 
-`wait`・`pending-owner`・`reap`・`notify-closed`・`reply` は、子の状態（完了の印・止まった印・受けた印）を記録の `status` と `stop` から読まなければならず、Orca のワークツリーの `workspaceStatus` と `comment` を判定に使ってはならない（MUST NOT）。子の記録は、要件「子を owner/repo#番号 で識別し、同じリポジトリの子は番号だけで書く」の親の見張りの照合で探す（MUST）。2 件以上なら、今の「同じ linkedIssue のワークツリーが 2 つ以上」と同じ扱い（`reap` は `kept <N> ambiguous`、`reply` / `notify-closed` は `failed <N> ambiguous-worktree`、`wait` はその子の印を見ない）にする（MUST）。子 issue の state・`state_reason`・コメントを読む先も、同じ要件の `gh` の呼び出しの形に従う（MUST）。
+`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`・`dismiss` は、子の状態（完了の印・止まった印・受けた印）を記録の `status` と `stop` から読まなければならず、Orca のワークツリーの `workspaceStatus` と `comment` を判定に使ってはならない（MUST NOT）。例外として、`wait --watch-stopped` の止まりの検知と `wait`・`pending-owner` の再開の確かめは、記録の `worktree` の会話ログも読む（要件「wait は子の会話ログから止まった子を検知する」ほか。capability `dev-workflow-develop`）。子の記録は、要件「子を owner/repo#番号 で識別し、同じリポジトリの子は番号だけで書く」の親の見張りの照合で探す（MUST）。2 件以上なら、今の「同じ linkedIssue のワークツリーが 2 つ以上」と同じ扱い（`reap` は `kept <N> ambiguous`、`reply` / `notify-closed` / `dismiss` は `failed <N> ambiguous-worktree`、`wait` はその子の印を見ない）にする（MUST）。子 issue の state・`state_reason`・コメントを読む先も、同じ要件の `gh` の呼び出しの形に従う（MUST）。
 
 - `wait --watch-done <N>`: 記録の `status` が `done` なら印が付いた子とする
-- `wait --watch-stopped`: 閉じていない位置引数の子の記録の `stop` が `stopped` なら、排他を取って `stopped-seen` に書き換え、書けたら止まった子とする。書けなければそのポーリングを失敗したポーリングに数える
-- `pending-owner`: 記録の `stop` が `stopped-seen` の子を `pending <N>` で出す
+- `wait --watch-stopped`: 閉じていない位置引数の子の記録の `stop` が `stopped`（会話ログを読めるときは要件「wait は印の付いた子をターンの終わりまで待って返す」の条件も満たす）か、会話ログの検知の条件を満たすなら、排他を取って `stopped-seen` に書き換え（`stop_uuid`・`stop_at` も同じ書き込みで書く）、書けたら止まった子とする。書けなければそのポーリングを失敗したポーリングに数える
+- `pending-owner`: 記録の `stop` が `stopped-seen` の子を `pending <N>` で出す（`stop_uuid` があれば `pending <N> <uuid>`。会話ログが進んだ子は出さない）
 - `notify-closed`: 記録が無ければ `skipped <N> no-worktree`、`status` が `done` なら `skipped <N> already-done`、`stop` が `stopped` / `stopped-seen` でなければ `skipped <N> not-stopped`
-- `reap`: 記録が無い子と、記録の `worktree` のディレクトリが無い（`[ -d <worktree> ]` が偽）子は `gone <N>`（後者は記録を消す）。`status` が `done` でなければ `kept <N> not-done`。それ以外の安全確認の中身は今と同じにする。`gh pr list`・`git ls-remote`・`git fetch` などの呼び出しの形は、記録の `repo` が記録の `epic` のリポジトリと同じ子は今と同じにし（MUST）、違う子は次のとおりにする（MUST）。PR の照会に `-R <記録の repo>` を付ける。base の名前は記録の `base` を使う（同じリポジトリの子は今のまま `${EPIC_DISPATCH_BASE:-main}`）。base の照会（`git ls-remote origin refs/heads/<base>`・`git fetch origin <base>`）を子のワークツリーの origin（`git -C <記録の worktree> ...`）に向け、base の先端はリポジトリと base の組ごとに 1 回読む（同じリポジトリの子の照会は今のまま 1 回で、別のリポジトリの子の先端を使い回さない。混ぜて渡した `reap` で同じリポジトリの子が `kept <N> base-lookup-failed` に落ちない）。`git cat-file -e` は `git -C <記録の worktree>` で行う。ブランチの片付け（`git rev-parse refs/heads/<branch>`・`git worktree list --porcelain`・`git branch -D`）は子の clone に向け、`orca worktree rm` の前に `git -C <記録の worktree> rev-parse --path-format=absolute --git-common-dir` で clone を控えておき、rm のあとはそれを `git -C` に使う（rm のあとはワークツリーのディレクトリが無い）。`kept <N> not-child` は出さない
+- `dismiss`: 記録の `stop` が `stopped-seen` で `stop_uuid` が空でない子を、排他を取って `resumed` に書き換える（`stop_uuid`・`stop_at` は変えない）。それ以外は `skipped <N> not-stopped`（要件「親は問いでない止まりを dismiss で再開に戻す」。capability `dev-workflow-develop`）
+- `reap`: 記録が無い子と、記録の `worktree` のディレクトリが無い（`[ -d <worktree> ]` が偽）子は `gone <N>`（後者は記録を消す）。`status` が `done` でなければ `kept <N> not-done`。それ以外の安全確認の中身は今と同じにする。`gh pr list`・`git ls-remote`・`git fetch` などの呼び出しの形は、記録の `repo` が記録の `epic` のリポジトリと同じ子は今と同じにし（MUST）、違う子は次のとおりにする（MUST）。PR の照会に `-R <記録の repo>` を付ける。base の名前は記録の `base` を使う（同じリポジトリの子は今のまま `${EPIC_DISPATCH_BASE:-main}`）。base の照会（`git ls-remote origin refs/heads/<base>`・`git fetch origin <base>`）を子のワークツリーの origin（`git -C <記録の worktree> ...`）に向け、base の先端はリポジトリと base の組ごとに 1 回読む（同じリポジトリの子の照会は今のまま 1 回で、別のリポジトリの子の先端を使い回さない。混ぜて渡した `reap` で同じリポジトリの子が `kept <N> base-lookup-failed` に落ちない）。`git cat-file -e` は `git -C <記録の worktree>` で行う。ブランチの片付け（`git rev-parse refs/heads/<branch>`・`git worktree list --porcelain`・`git update-ref -d`）は子の clone に向け、`orca worktree rm` の前に `git -C <記録の worktree> rev-parse --path-format=absolute --git-common-dir` で clone を控えておき、rm のあとはそれを `git -C` に使う（rm のあとはワークツリーのディレクトリが無い）。`kept <N> not-child` は出さない
 - 出力の行・exit code・失敗したポーリングの数え方・`--resolve` の判断と送り方は、上の読み替えのほかは今の要件のまま
 
 #### Scenario: 記録の done で wait が起きる
@@ -199,7 +215,7 @@
 
 #### Scenario: 同じリポジトリの子と混ぜても照会は混ざらない
 - **WHEN** 別のリポジトリの子 `genetta-inc/flatmate#1615` と同じリポジトリの子 12（どちらも `done`）を `epic-dispatch.sh reap genetta-inc/flatmate#1615 12` で渡す
-- **THEN** 子 12 の base の照会は今と同じ `git ls-remote origin refs/heads/main` で、子 12 が `kept 12 base-lookup-failed` にならず、`git branch -D` は子 `genetta-inc/flatmate#1615` については子の clone（rm の前に控えた git-common-dir）に対して呼ばれる
+- **THEN** 子 12 の base の照会は今と同じ `git ls-remote origin refs/heads/main` で、子 12 が `kept 12 base-lookup-failed` にならず、`git update-ref -d` は子 `genetta-inc/flatmate#1615` については子の clone（rm の前に控えた git-common-dir）に対して呼ばれる
 
 #### Scenario: 別の親の記録は見ない
 - **WHEN** 子 12 の記録の `parent_worktree` が今のワークツリーと違い、`status` が `done` の状態で `epic-dispatch.sh reap 12` を実行する
@@ -576,7 +592,7 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 | `list`・`repos` | 何も出さず exit 0（記録が正本で、部品は子を知らない） |
 | `unregistered` | stdout に `ok` |
 | `create` | `repo_id` は読まない。ワークツリーは `git -C <clone か親のワークツリー> worktree add -b worktree-issue-<N> <リポジトリの最上位>/.claude/worktrees/issue-<N> origin/<起点>`（worktree プラグインの置き場と名前の決まり `<repo>/.claude/worktrees/<name>`・`worktree-<name>` に合わせる）。同じ名前のブランチかワークツリーが既にあれば作らず exit 1。作れたら `{"path","branch"}` の 1 行 |
-| `start` | 同じ tmux サーバーに `tmux new-window -d -P -F '#{pane_id}' -c <ワークツリー>` でシェルを開き（起動コマンドを `new-window` に直接渡さない。対話でないシェルでは `cld` のシェル関数が解けないため）、起動コマンドを `send-keys -l` で打ち込んで Enter を送る。画面（`capture-pane`）の最下部（空行を除いた末尾の数行。行数は部品の先頭の定数）に Claude Code の入力待ちの印が出て、同じ最下部に許可・選択・信頼の確認画面の印が出ていない状態になるまで `EPIC_DISPATCH_READY_TIMEOUT_MS` を上限に待ち、最初の指示を `send-keys -l` で送って Enter（`send-keys` の `C-m`）を送る。起動して間もない Claude Code は最初の Enter を取りこぼすことがあるので、届くまで 4 秒ごとに Enter だけを重ねる（文は打ち直さない）。重ねる前に毎回画面の最下部を読み、入力待ちの印があり、確認画面の印が無く、送った文の先頭がまだ入力欄に残っているときだけ重ね、一度でも満たさなければ重ね送りをやめる（会話ログの確認は続ける。確認画面に Enter が選択として届くのを避けるため）。最初の指示を打つ前にも、最下部が入力待ちで確認画面が出ていないことを確かめ、そうでなければ何も打たずに `failed send` とする。印の文言（入力待ち・確認画面とも）は Claude Code 2.1.305 の画面で決めた定数で、版で変わると、入力待ちの印が当たらず `failed ready` で止まる（誤送信しない側）か、確認画面の印を見逃す（守る範囲の外）。送信が届いたかは、子のワークツリーの会話ログ（`${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<パスの英数字以外を - にした名前>/*.jsonl`）に、送る直前に控えた時刻より後の user の行が現れ、その本文が送った文の先頭 40 文字（40 文字に満たなければ全体。送った文が `/<コマンド>` で始まるときは、会話ログでコマンド名が `<command-name>` に展開されるので、コマンド名のうしろの引数の先頭 40 文字）を含むことを `EPIC_DISPATCH_SUBMIT_WAIT` 秒を上限に確かめる（時刻だけでなく本文と照合するので、別のセッションが同じログに書いた入力とは区別できる。検出できないのは、先頭 40 文字より後ろの欠けと、送った文と同じ先頭を持つ別の入力が同時に入ったときである）。届けば `started <ペイン ID>`、段ごとの失敗は `failed terminal|ready|send <ペイン ID>`（exit 1） |
+| `start` | 同じ tmux サーバーに `tmux new-window -d -P -F '#{pane_id}' -c <ワークツリー>` でシェルを開き（起動コマンドを `new-window` に直接渡さない。対話でないシェルでは `cld` のシェル関数が解けないため）、起動コマンドを `send-keys -l` で打ち込んで Enter を送る。画面（`capture-pane`）の最下部（空行を除いた末尾の数行。行数は部品の先頭の定数）に Claude Code の入力待ちの印が出て、同じ最下部に許可・選択・信頼の確認画面の印が出ていない状態になるまで `EPIC_DISPATCH_READY_TIMEOUT_MS` を上限に待ち、最初の指示を `send-keys -l` で送って Enter（`send-keys` の `C-m`）を送る。起動して間もない Claude Code は最初の Enter を取りこぼすことがあるので、届くまで 4 秒ごとに Enter だけを重ねる（文は打ち直さない）。重ねる前に毎回画面の最下部を読み、入力待ちの印があり、確認画面の印が無く、送った文の先頭がまだ入力欄に残っているときだけ重ね、一度でも満たさなければ重ね送りをやめる（会話ログの確認は続ける。確認画面に Enter が選択として届くのを避けるため）。最初の指示を打つ前にも、最下部が入力待ちで確認画面が出ていないことを確かめ、そうでなければ何も打たずに `failed send` とする。印の文言（入力待ち・確認画面とも）は Claude Code 2.1.305 の画面で決めた定数で、版で変わると、入力待ちの印が当たらず `failed ready` で止まる（誤送信しない側）か、確認画面の印を見逃す（守る範囲の外）。送信が届いたかは、子のワークツリーの会話ログ（`${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<パスの英数字以外を - にした名前>/*.jsonl`）に、送る直前に控えた時刻より後の user の行が現れ、その本文が送った文の先頭 40 文字（40 文字に満たなければ全体。送った文が `/<コマンド>` で始まるときは、会話ログでコマンド名が `<command-name>` に展開されるので、コマンド名のうしろの引数の先頭 40 文字）を含むことを `EPIC_DISPATCH_SUBMIT_WAIT` 秒を上限に確かめる（時刻だけでなく本文と照合するので、別のセッションが同じログに書いた入力とは区別できる。検出できないのは、先頭 40 文字より後ろの欠けと、送った文と同じ先頭を持つ別の入力が同時に入ったときである）。届けば `started <ペイン ID>`、段ごとの失敗は `failed terminal|ready|send <ペイン ID>`（exit 1） |
 | `deliver` | ウィンドウ（ペイン）の一覧を `tmux list-panes -a` で 1 回だけ読み、`#{pane_current_path}` が子のワークツリーのペインを探す。Claude Code が動いていること（`#{pane_current_command}` と画面の入力待ち）を確かめたペインがちょうど 1 つなら、同じ送り方で文を送り、会話ログで（`start` と同じ本文の照合で）届いたことを確かめて `sent`。ペインが無い、または `relaunch` が 1 なら、あるペインを `kill-pane` してから `start` と同じ手順で起動し直し、`relaunched <ペイン ID>`。シェルだけのペインしか無い・候補が 2 つ以上のときは `relaunch` が 0 なら `failed ambiguous-terminal` |
 | `keepalive` | 引数・stdout/exit は共通の契約に従う。`tmux list-panes -a` の `pane_current_path`・`pane_current_command` と `tmux capture-pane -p -e -t <ペイン ID>` で既存の一意の Claude Code のペイン、前景の入力待ち、空欄、選択画面でないことを共通の画面判定に従って観測し、送信直前にも再確認する。`pane_current_command` が `bash` 等でも Claude Code の画面を確認できれば候補とし、シェル名だけでは除外しない。文字列は `tmux send-keys -t <ペイン ID> -l -- <text>`、Enter は `tmux send-keys -t <ペイン ID> C-m` で一度だけ送る。子の会話ログで `start` と同じ時刻・本文照合を `EPIC_DISPATCH_SUBMIT_WAIT` 秒の範囲で行い、到達すれば `sent`、未確認は `failed send`。観測は list-panes/capture-pane と会話ログの読み取りだけ、変更操作は既存ペインへのこの文字列と Enter の送信だけとし、new-window/kill-pane/git worktree/入力消去/Enter の再送は行わない |
 | `close` | 子のワークツリーのペインを `tmux kill-pane` で閉じる。ペインが無ければ成功。閉じられなければ 1 回だけ閉じ直して、駄目なら exit 1 |
@@ -637,6 +653,11 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 - **WHEN** 初回は入力待ち・空欄だったが、送信直前の再観測では入力済みまたは選択画面になっている
 - **THEN** `skipped input-not-empty` または `skipped dialog`（exit 0）となり、文字列も Enter も送らず入力を保持する
 
+#### Scenario: CLAUDE_CONFIG_DIR の下の会話ログで送信を確かめる
+- **GIVEN** `CLAUDE_PROJECTS_DIR` が未設定で、`CLAUDE_CONFIG_DIR` が一時ディレクトリを指す。tmux のスタブは `new-window`・`send-keys` を受け付け、`capture-pane` が入力待ちの印を返す。送る直前に控えた時刻より後に、`CLAUDE_CONFIG_DIR` の下の `projects/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl` へ、本文が送った文の先頭を含む user の行が書かれる。`HOME` の下には会話ログが無い
+- **WHEN** `epic-launch-tmux.sh start <ワークツリー> <起動コマンド> <最初の指示> <子の呼び方>` を実行する
+- **THEN** 会話ログに届いたと判定し、`started <ペイン ID>` を出して exit 0 で終わる（`failed send` にならない）
+
 ### Requirement: サブエージェント方式は状態の記録を書かない
 
 サブエージェント方式（本体が W を `isolation: "worktree"` で起こして回す方式）は、状態の記録（`epic-state.sh` の書き込みと `epic-dispatch.sh` の `launch`・`mark`・`adopt`・`clear`）を使ってはならない（MUST NOT）。子の結果は本体が W の return で受ける。理由: W は親のセッションが終わると一緒に消えるので、記録があっても再開に使えず、独立したセッションを見張る目的（記録を読んで止まった子・終わった子を拾う）に当たらない。channel の挙動もこの要件では変えない。
@@ -675,3 +696,87 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 #### Scenario: Orca の部品の子は completed の印へ写す
 - **WHEN** 記録の `launcher` が `orca` の子 11 の完了を推定する
 - **THEN** `orca worktree set --worktree path:<子のワークツリー> --workspace-status completed` が 1 回呼ばれる（`epic-dispatch.sh` からは Orca の部品の `mirror` を通す）
+
+### Requirement: 止まった子への声かけは本体の会話ログ 1 本で判定する
+
+親の `wait` が止まった子（`stop` が `stopped-seen`）へ出すキャッシュの声かけの可否は、子の会話ログの置き場に複数の `.jsonl` があっても、本体の会話のログ 1 本だけで判定しなければならない（MUST）。本体のログは次の順で 1 本に決める（MUST）。(1) 置き場の直下の `*.jsonl` のうち、`entrypoint` が `cli` ちょうどで `isSidechain` が true でない assistant の行を持つファイルを候補にする。(2) 候補のうち、全行の `timestamp` の最大値が最も新しい 1 本を選ぶ。最大値が最も新しいファイルが 2 本以上あるとき、または最大値を決められないときは決めない。(3) 記録の `stop_uuid` が空のときは決めない。空でないときは、選んだファイルがその uuid の行を持たなければ決めない。
+
+#### Scenario: 置き場に複数のログがあっても本体のログで送る
+- **WHEN** 子の会話ログの置き場に、`entrypoint` が `cli` の本体のログ、`entrypoint` が `sdk-py` の短いログ、古い `cli` の過去のセッションのログがあり、本体のログが最も新しく、ほかの送る条件を満たす
+- **THEN** 起動部品の `keepalive` が 1 回呼ばれ、記録の `keepalive` は `<時刻> sent` になる
+
+#### Scenario: 最終活動が同時刻の候補は決めない
+- **WHEN** 2 本の `cli` のログの `timestamp` の最大値が同じで、どちらも記録の `stop_uuid` を持つ
+- **THEN** 起動部品の `keepalive` は呼ばれず、`skipped no-transcript` になる
+
+### Requirement: 本体のログを決められないときは声かけを送らない
+
+本体の会話のログを決められないときは本体のログなしとし、声かけを送ってはならない（MUST NOT）。本体が書けなくなって過去の `cli` のログだけが残る場合も、`stop_uuid` の確認で本体のログなしになる。記録の `session` は端末のハンドルなので、会話ログの選択に使ってはならない（MUST NOT）。
+
+#### Scenario: 本体のログが無く過去の cli のログだけ残るときは送らない
+- **WHEN** 置き場に過去の `cli` のログだけがあり、記録の `stop_uuid` がそのログに無い
+- **THEN** 起動部品の `keepalive` は呼ばれず、記録の `keepalive` は `<時刻> skipped no-transcript` になる
+
+#### Scenario: stop_uuid が空の記録には送らない
+- **WHEN** 本体のログが欠けて過去の `cli` のログが 1 本だけ残り、記録の `stop_uuid` が空である
+- **THEN** 起動部品の `keepalive` は呼ばれず、`skipped no-transcript` になる
+
+#### Scenario: 本体のログが無ければ送らない
+- **WHEN** 置き場の `*.jsonl` が `entrypoint` が `sdk-py` のものだけ、または 0 本である
+- **THEN** 起動部品の `keepalive` は呼ばれず、記録の `keepalive` は `<時刻> skipped no-transcript` になる
+
+### Requirement: 声かけの判定は選んだ 1 本のログだけから読む
+
+声かけの判定に使う会話ログの読み取り（最後のキャッシュの書き込みの時刻と枠の長さ、質問、主の答え、最後のリクエスト）は、選んだ 1 本だけから行わなければならない（MUST）。ほかのログのキャッシュの書き込みを採用してはならない（MUST NOT）。`wait` の待ち時間の上限の既定を決める読み取りは対象外で、今までどおり置き場の全ログを読む。
+
+#### Scenario: キャッシュの書き込みは選んだログのものだけを使う
+- **WHEN** 本体のログの最後のキャッシュの書き込みは 5 分の枠で、過去の `cli` のログに 1 時間の枠の書き込みがある
+- **THEN** 起動部品の `keepalive` は呼ばれず、`skipped cache-unknown` になる
+
+### Requirement: wait --resolve の起動し直しの判定も同じ本体のログを使う
+
+`wait --resolve` の起動し直しの判定（会話量と経過時間）も、同じ選び方で本体のログを決めなければならない（MUST。詳細は dev-workflow-develop の「wait --resolve は通す返事を送る前に起動し直すかを表で決める」）。ログが複数あることだけを理由に「起動し直さない」へ倒してはならない（MUST NOT）。
+
+#### Scenario: 複数のログがあっても起動し直しの判定は本体のログを使う
+- **WHEN** 置き場に本体のログと `sdk-py` の短いログがあり、本体のログが 90 分前で会話量が閾値以上である
+- **THEN** `wait --resolve` は起動し直す
+
+### Requirement: 声かけの判定結果は子の記録の keepalive に残す
+
+声かけの判定をしたとき、`wait` はその結果を子の記録の `keepalive` に `<UTC の時刻> <結果>` で書かなければならない（MUST）。結果は `sent`、`skipped <理由>`、`failed <理由>` の形とし、語彙に無い理由を書いてはならない（MUST NOT）。直前の結果が時刻を除いて同じときは書き直してはならない（MUST NOT。ポーリングごとの書き込みを避ける）。
+
+#### Scenario: 同じ結果は書き直さない
+- **WHEN** 同じ理由で続けて 2 回ポーリングする
+- **THEN** 2 回目は記録の `keepalive` の時刻が変わらない
+
+### Requirement: 判定より前に外れる skipped の理由は次の語に限る
+
+判定より前に外れるときの `skipped` の理由は次の語に限る（MUST）。`not-stopped`（`stop` が `stopped-seen` でないか `status` が `done`）・`no-session`（`session` が空）・`launch-failed`・`no-worktree`・`unsupported-launcher`（`launcher` が `orca`・`tmux` でない）・`gh-failed`（子かエピックのコメントを読めない）。
+
+#### Scenario: 止まっていない子には not-stopped が 1 回だけ書かれる
+- **WHEN** `stop` が `stopped-seen` でない子を 2 回続けてポーリングする
+- **THEN** 記録の `keepalive` は `<時刻> skipped not-stopped` で、2 回目は時刻が変わらない
+
+### Requirement: 会話ログによる skipped の理由は次の語に限る
+
+会話ログによって送らないときの `skipped` の理由は次の語に限る（MUST）。`no-transcript`（本体のログなし）・`cache-unknown`（選んだログの最後のキャッシュの書き込みが 1 時間の枠でないか読めない）・`cache-future`（その時刻が今より未来）・`expired`（止まりから 24 時間以上、または基点を読めない）・`answered`（親が通した判断がある、または主が答えた）・`no-question`・`out-of-window`（最後のリクエストからの経過が送る範囲にない）・`too-large`（会話量が起動し直しの閾値以上）・`pending`（前の声かけに返事が来ていない）。
+
+#### Scenario: 送らなかった理由が記録から読める
+- **WHEN** 起動部品が `skipped dialog` を返す、止まりから 24 時間を過ぎている、画面は送れるが親が通した判断が既にある、をそれぞれ用意する
+- **THEN** 記録の `keepalive` はそれぞれ `skipped dialog`、`skipped expired`、`skipped answered` で終わる
+
+### Requirement: 起動部品の結果も keepalive に残す
+
+起動部品が `skipped` を返したときは起動部品の理由（`no-terminal`・`ambiguous-terminal`・`busy`・`dialog`・`input-not-empty`・`unknown-state`）を `skipped <理由>` に、`failed` を返したときはその語を `failed <理由>` に入れなければならない（MUST）。
+
+#### Scenario: 起動部品が skipped を返すと理由が残る
+- **WHEN** 起動部品が `skipped dialog` を返す
+- **THEN** 記録の `keepalive` は `<時刻> skipped dialog` で終わる
+
+### Requirement: 記録の書き込みは wait の出力を変えない
+
+記録を書けなくても、`wait` の判定・送信・stdout の行・exit code を変えてはならない（MUST NOT）。stderr の出力も、記録を書けなかった旨の 1 行を除いて変えない（MUST NOT）。
+
+#### Scenario: wait の stdout と exit code は変わらない
+- **WHEN** 声かけの判定が `sent`・`skipped`・`failed` のそれぞれになる状況で `wait` を実行する
+- **THEN** stdout の行と exit code は、この変更の前と同じである
