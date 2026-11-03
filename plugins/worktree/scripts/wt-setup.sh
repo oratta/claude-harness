@@ -120,7 +120,7 @@ PATTERNS
 # グロブは `*` が `/` にも一致するため、`*.local.json` のようなパターンが実際には
 # リポジトリ全体に再帰マッチしていた（「直下限定」という意図コメントと実挙動が乖離）。
 # さらに find はパターンに関係なく全ツリーを走査するため、`.claude/worktrees/` 配下に
-# 入れ子 worktree 残骸が大量にあるリポ（例: flatmate の workspace/*/.claude/worktrees/）
+# 入れ子 worktree 残骸が大量にあるリポ（例: workspace/*/.claude/worktrees/ を持つリポ）
 # では走査だけで WorktreeCreate フックがタイムアウトし、加えて作成中の worktree 自身が
 # コピー対象に入って自己参照コピーが増殖していた。対策:
 #   - `/` を含まないパターンはリポジトリ直下のみに一致させる（-maxdepth 1。

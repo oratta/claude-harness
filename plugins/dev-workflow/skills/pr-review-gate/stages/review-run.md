@@ -19,7 +19,7 @@
 | **既定** | Codex CLI | `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` 直叩き、または companion 経由（`/codex:adversarial-review --background --base origin/main` / `codex:codex-rescue` サブエージェント） | **full** と判定し、Codex がオンのとき（full ではまずここから試す。オフのときは表の下の「Codex がオフのとき」） |
 | フォールバック | Task サブエージェント | Agent ツール（`subagent_type: dev-workflow:reviewer`）に受け入れ条件＋diff 範囲＋`stages/reviewer-brief.md` のレビュアー向け指示ブロックを渡す。差分が 600 行を超えた一周目は `stages/prepare.md` 2-0 の区画ごとに起こす | ① **light** と判定したとき（最初からこれ）② full だが Codex CLI が使えないとき（実測したバイナリ無し・認証切れ・タイムアウト）③ full で Codex がオフのとき（設定） |
 
-**Codex がオフのとき**: full と判定したあと、Codex を試す前に最初の 1 手として `python3 <plugin>/scripts/usage_view.py --codex-enabled` を実行する（`on` か `off` を 1 行出し、常に exit 0。`accounts.json` の `codex.enabled` が `false` のときだけ `off`）。`off` なら、バイナリ探索（`command -v codex`）も Codex の呼び出しもしないで、Task サブエージェント（`subagent_type: dev-workflow:reviewer`）でレビューする。`on` なら表の既定どおり Codex から試す。設定ファイルを自分で読まず、このコマンドの出力だけで分岐する。オフは利用者が明示した設定で、下の三条件の実測ではない（未試行の Codex を不可と推測することの禁止には当たらない）。変わるのはレビュー実行者だけで、light の判定・手順 3 のリスク宣言・手順 4 の動作確認・fail-closed の判定順序は変わらない。新 Codex モードと develop の adapter 経路には適用しない。
+**Codex がオフのとき**: full と判定したあと、Codex を試す前に最初の 1 手として `python3 <plugin>/scripts/usage_view.py --codex-enabled` を実行する（`on` か `off` を 1 行出し、常に exit 0。`accounts.json` の `codex.enabled` が `false` のときだけ `off`）。`off` なら、バイナリ探索（`command -v codex`）も Codex の呼び出しもしないで、Task サブエージェント（`subagent_type: dev-workflow:reviewer`）でレビューする。`on` なら表の既定どおり Codex から試す。出力が `on` でも `off` でもない（コマンドが失敗した）ときは `on` と同じに扱い、その出力を `実行コマンド` の証拠に書く。設定ファイルを自分で読まず、このコマンドの出力だけで分岐する。オフは利用者が明示した設定で、下の三条件の実測ではない（未試行の Codex を不可と推測することの禁止には当たらない）。変わるのはレビュー実行者だけで、light の判定・手順 3 のリスク宣言・手順 4 の動作確認・fail-closed の判定順序は変わらない。新 Codex モードと develop の adapter 経路には適用しない。
 
 Codex CLI は区画に分けず差分全体を渡す。150,000 トークンの上限は Claude のサブエージェントの hook の上限で Codex には掛からず、三表が欠けた場合は G の機械照合が fail-closed で止める。
 
@@ -63,7 +63,7 @@ Codex を full の既定にする理由: **実装者と別モデル系列で読�
 - **推論の深さを中に落とす。** `config.toml` の既定 `high` はレビューには過剰で、実行時間が 10 分を超える一因。`codex exec` 直叩きなら `-c model_reasoning_effort=medium`、`codex:codex-rescue` サブエージェント（companion の `task`）なら `--effort medium`。**`/codex:adversarial-review` に付けてはいけない** — review 系は `-c` も `--effort` も受け取らず、渡した文字列は黙って**レビューの focus text に混ざる**（`--base` / `--scope` / `--model` のみ有効）。
 - **`--effort minimal` を使わない。** 無効値で **400 エラー**になることを実測済み。companion 側のバリデーションは通ってしまい API で落ちるので、失敗が呼び出し側から見えにくい。API の有効値は `none` / `low` / `medium` / `high` / `xhigh` / `max`（companion の `--effort` が受理する集合とはずれている。実務では `medium` を使う）。
 - **`codex exec` を直叩きするときは `-c approval_policy=never` を必ず付ける。** config の「承認を求める」設定を継承すると、無人実行では誰も承認できずハングする穴がある（companion 経由なら既定で `never` なので不要）。
-- **exec のレビュー指示はファイルに保存して標準入力から渡す。** 固定した HEAD・diff 範囲・受け入れ条件と`stages/reviewer-brief.md` のレビュアー向け指示ブロックを含め、起動・完了シグナル・結果の読み方は待ち方の正本に従う。
+- **exec のレビュー指示はファイルに保存して標準入力から渡す。** 固定した HEAD・diff 範囲・受け入れ条件と `stages/reviewer-brief.md` のレビュアー向け指示ブロックを含め、起動・完了シグナル・結果の読み方は待ち方の正本に従う。
 - **Codex の出力全文を本体セッションに流し込まない。** `変更点の一覧`・`照合表`・`ハンク被覆` と構造化された指摘一覧だけをサブエージェント側で読み、本体には要約だけ返す（レビュー出力は 1 ターンでコンテキストを食い潰す量になる）。
 
 ##### 各 PC の確認（従来モード・実測は別運用）
