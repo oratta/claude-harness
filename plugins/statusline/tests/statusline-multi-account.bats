@@ -973,6 +973,99 @@ draw_b_with_null_reset_five_hour_record() {
   [[ "$(grep -E '^(▸ |  )Claude B +5h' "$WORK/out.txt")" =~ \ 0% ]] || return 1
 }
 
+# ---------- 5 時間枠が返らないスロット（#1547） ----------
+# spec: statusline-multi-account-usage「5 時間枠が無いスロットは 7d の行だけを描く」
+
+# $1=7d消化率 $2=7d残り秒 → rate_limits に seven_day だけを持つ stdin JSON
+mk_seven_only() {
+  mk_input 0 "$1" 14000 "${2:-172800}" | jq -c 'del(.rate_limits.five_hour)'
+}
+
+# 1 スロットで Codex の行を出す（キャッシュは statusline-codex.py の identity に合わせる）
+seven_only_codex_env() {
+  export STATUSLINE_CODEX=1 CODEX_HOME="$WORK/codex-home" STATUSLINE_CODEX_BIN="$WORK/codex-stub"
+  mkdir -p "$CODEX_HOME"
+  printf '#!/bin/sh\nexit 0\n' > "$STATUSLINE_CODEX_BIN"; chmod 700 "$STATUSLINE_CODEX_BIN"
+  echo '{"tokens":{"account_id":"test"}}' > "$CODEX_HOME/auth.json"
+  local key
+  key="$(python3 -c "
+import importlib.util
+sp=importlib.util.spec_from_file_location('c','${PLUGIN_DIR}/scripts/statusline-codex.py');m=importlib.util.module_from_spec(sp);sp.loader.exec_module(m);print(m.identity())")"
+  cat > "$WORK/.statusline-codex" <<JSON
+{"identity":"$key","windows":[{"pct":10,"minutes":300,"reset":$((NOW + 3600))},{"pct":42,"minutes":10080,"reset":$((NOW + 540000))}],
+ "fetched_at":$NOW,"next_attempt":$((NOW + 100))}
+JSON
+}
+
+@test "seven-only: one slot draws 7d All with the time left and no 5h row or 0%" {
+  mk_seven_only 12 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  line="$(grep -E '7d All' "$WORK/out.txt")"
+  [[ "$line" =~ ^7d\ All ]] || { cat "$WORK/out.txt"; return 1; }
+  [[ "$line" =~ 12%/ ]] || { cat "$WORK/out.txt"; return 1; }
+  [[ "$line" =~ ~2d ]] || { cat "$WORK/out.txt"; return 1; }
+  ! drop_cwd_line "$WORK/out.txt" | grep -qE '(^| )5h ' || return 1
+  ! drop_cwd_line "$WORK/out.txt" | grep -qE '(^| )0%' || return 1
+  ! grep -q '▸' "$WORK/out.txt" || return 1
+}
+
+@test "seven-only: one slot with a Codex row carries the name column without the mark" {
+  seven_only_codex_env
+  printf '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$ACCOUNTS"
+  mk_seven_only 12 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep -q '^  Claude A  7d All' "$WORK/out.txt" || { cat "$WORK/out.txt"; return 1; }
+  ! grep -qE '^  Claude A +5h' "$WORK/out.txt" || return 1
+  ! grep -q '▸' "$WORK/out.txt" || return 1
+  grep -qE '^  Codex ' "$WORK/out.txt" || { cat "$WORK/out.txt"; return 1; }
+}
+
+@test "seven-only: the Fable segment is drawn on the 7d All row" {
+  cat > "$SNAP" <<JSON
+{"schema":1,"fetched_at":$NOW,"fable_weekly_pct":7,"fable_active":true}
+JSON
+  mk_seven_only 12 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep '7d All' "$WORK/out.txt" | grep -qE 'Fable .* 7%' || { cat "$WORK/out.txt"; return 1; }
+}
+
+@test "seven-only: a non-active slot draws only 7d All with the age on it" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  jq '.accounts.b.five_hour_pct = null | .accounts.b.five_hour_resets_epoch = null' "$SNAP" > "$SNAP.tmp" \
+    && mv "$SNAP.tmp" "$SNAP"
+  write_b_record "$((NOW - 7200))" 1 "$((NOW + 172800))" null null
+  mk_input 55 82 14000 172800 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  [ "$(grep -cE '^  Claude B ' "$WORK/out.txt")" = "1" ] || { cat "$WORK/out.txt"; return 1; }
+  grep -E '^  Claude B +7d All' "$WORK/out.txt" | grep -q '2h前' || { cat "$WORK/out.txt"; return 1; }
+}
+
+@test "seven-only: a reset grant goes on the end of the 7d All row" {
+  cat > "$SNAP" <<JSON
+{ "schema": 2, "active": "default", "fetched_at": $NOW,
+  "accounts": { "default": { "label": "default", "securestorage": null, "fetched_at": $NOW,
+    "five_hour_pct": null, "weekly_all_pct": 12, "weekly_resets_epoch": $((NOW + 172800)),
+    "reset_grants": [{"resets_left":2,"ends_at":null,"paused":false}] } } }
+JSON
+  mk_seven_only 12 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep '7d All' "$WORK/out.txt" | grep -q '│' || { cat "$WORK/out.txt"; return 1; }
+}
+
+@test "seven-only: the multi-slot active draws 7d All, no 5h row and no waiting row" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  mk_seven_only 12 | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  grep -qE '^▸ Claude A +7d All' "$WORK/out.txt" || { cat "$WORK/out.txt"; return 1; }
+  ! grep -qE '^▸ Claude A +5h' "$WORK/out.txt" || return 1
+  ! grep -q '取得待ち' "$WORK/out.txt" || return 1
+}
+
+@test "seven-only: without rate_limits the multi-slot active keeps the waiting row" {
+  write_two_slot_registry
+  write_two_slot_snapshot "$NOW" "$((NOW - 7200))" "$((NOW + 172800))"
+  printf '{"workspace":{"current_dir":"%s"},"model":{"display_name":"Opus 5"},"context_window":{"remaining_percentage":91}}' "$WORK" \
+    | bash "$SL" | strip_ansi > "$WORK/out.txt"
+  [ "$(grep -cE '^▸ Claude A +取得待ち$' "$WORK/out.txt")" = "1" ] || { cat "$WORK/out.txt"; return 1; }
+  ! grep -qE '^▸ Claude A +7d All' "$WORK/out.txt" || return 1
+}
+
 # ---------- enabled が false のスロット（オフ）（#976, #1112） ----------
 # spec: statusline-multi-account-usage「オフのスロットは表示しない」
 #       usage-account-registry「スロットを enabled でオフにできる」

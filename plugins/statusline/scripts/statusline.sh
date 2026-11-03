@@ -121,15 +121,20 @@ write_rate_snapshot_atomic() {
     fi
 }
 
+# 5 時間枠か週次の使用率のどちらかがある描画だけ、snapshot と記録を書く。無い枠は null で書き、0 にしない（#1547）
+has_rate=""
+if [ -n "$five_h_pct" ] || [ -n "$seven_d_pct" ]; then has_rate=1; fi
+
 # The default account alone owns the local and shared rate snapshot.
-if [ -n "$five_h_pct" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
+if [ -n "$has_rate" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_CONFIG_DIR:-}" ]; then
     snap_local="$CONFIG_DIR/.rate-limit-snapshot"
     now_epoch=$(date +%s)
+    snap_5p="${five_h_pct:-null}"
     snap_5r="${five_h_resets:-null}"
     snap_7p="${seven_d_pct:-null}"
     snap_7r="${seven_d_resets:-null}"
     storage_binding="storage-v1:default"
-    obs_sig="${five_h_pct}|${snap_5r}|${snap_7p}|${snap_7r}"
+    obs_sig="${snap_5p}|${snap_5r}|${snap_7p}|${snap_7r}"
     observed_at="$now_epoch"
     if [ -f "$snap_local" ]; then
         prev_obs=$(jq -r --arg sig "$obs_sig" --arg binding "$storage_binding" \
@@ -156,7 +161,7 @@ if [ -n "$five_h_pct" ] && [ -n "$session_id" ] && [ -z "${CLAUDE_SECURESTORAGE_
         --argjson observed "$observed_at" --argjson written "$now_epoch" \
         --arg sig "$obs_sig" --arg host "$snap_host_key" \
         --arg binding "$storage_binding" --argjson session "$session_id" \
-        --argjson five_pct "$five_h_pct" --argjson five_resets "$snap_5r" \
+        --argjson five_pct "$snap_5p" --argjson five_resets "$snap_5r" \
         --argjson seven_pct "$snap_7p" --argjson seven_resets "$snap_7r" \
         '{ts:$observed,observed_at:$observed,written_at:$written,obs_sig:$sig,
           host:$host,storage_binding:$binding,session_id:$session,
@@ -194,9 +199,9 @@ sessions_dir="${USAGE_SESSIONS_DIR:-$CONFIG_DIR/.usage-sessions}"
 # 止まっていたセッションの古い値で潰さないため。.rate-limit-snapshot の obs_sig と同じ考え方）。
 # session_id が無い・ハッシュが取れないときは覚える先が無いので毎回書く。
 # rate_limits の無い描画は記録を書かないので、ハッシュも取らない（使わない shasum と cut を起動しない。#648）。
-_rec_sig="${five_h_pct}|${five_h_resets:-null}|${seven_d_pct:-null}|${seven_d_resets:-null}"
+_rec_sig="${five_h_pct:-null}|${five_h_resets:-null}|${seven_d_pct:-null}|${seven_d_resets:-null}"
 _rec_memo=""
-if [ -n "$five_h_pct" ] && [ -n "$session_id" ]; then
+if [ -n "$has_rate" ] && [ -n "$session_id" ]; then
     # ハッシュ対象は jq -c の引用符付き JSON 文字列のまま。python3 を起動しない
     _rec_sid_hash="$( { printf '%s' "$session_id" | shasum -a 256 2>/dev/null \
         || printf '%s' "$session_id" | sha256sum 2>/dev/null; } | cut -c1-16)"
@@ -206,13 +211,13 @@ _rec_unchanged=""
 if [ -n "$_rec_memo" ] && [ -f "$_rec_memo" ] && [ "$(cat "$_rec_memo" 2>/dev/null)" = "$_rec_sig" ]; then
     _rec_unchanged=1
 fi
-if [ -n "$five_h_pct" ] && [ -n "$session_key" ] && [ -z "$_rec_unchanged" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
+if [ -n "$has_rate" ] && [ -n "$session_key" ] && [ -z "$_rec_unchanged" ] && mkdir -p "$sessions_dir" 2>/dev/null; then
     # 一時ファイルに書いてから mv で置き換える（読み手に書きかけを見せない）。失敗は無視する
     _rec_tmp="$(mktemp "$sessions_dir/.${session_key}.XXXXXX" 2>/dev/null)"
     _rec_written=""
     if [ -n "$_rec_tmp" ]; then
         if printf '{"schema":1,"key":"%s","observed_at":%s,"five_hour_pct":%s,"five_hour_resets_epoch":%s,"weekly_all_pct":%s,"weekly_resets_epoch":%s}\n' \
-            "$session_key" "$(date +%s)" "$five_h_pct" "${five_h_resets:-null}" \
+            "$session_key" "$(date +%s)" "${five_h_pct:-null}" "${five_h_resets:-null}" \
             "${seven_d_pct:-null}" "${seven_d_resets:-null}" > "$_rec_tmp" 2>/dev/null \
             && mv -f "$_rec_tmp" "$sessions_dir/${session_key}.json" 2>/dev/null; then
             _rec_written=1
@@ -929,11 +934,11 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
     hr_use+=("")
     [ -n "${hr_found[$i]}" ] && [ "${slot_show[$i]}" = "1" ] || continue
     if [ "$i" -eq "$active_idx" ]; then
-        _fp="$five_h_pct"; _sp="$seven_d_pct"; _sr="$seven_d_resets"
+        _sp="$seven_d_pct"; _sr="$seven_d_resets"
     else
-        _fp="${snap_five_pct[$i]}"; _sp="${snap_seven_pct[$i]}"; _sr="${snap_seven_res[$i]}"
+        _sp="${snap_seven_pct[$i]}"; _sr="${snap_seven_res[$i]}"
     fi
-    [ -n "$_fp" ] && [ -n "$_sp" ] || continue
+    [ -n "$_sp" ] || continue
     _same_week "${hr_wr[$i]}" "$_sr" || continue
     hr_use[$i]=1; hr_gap=1
 done
@@ -967,29 +972,32 @@ render_slot() {
     elif [ -n "$rg_n" ]; then
         rg_seg="  ${DIM}│${RESET}  $(fmt_reset_credits "$rg_n" "${rg_e:-0}")"
     fi
-    [ -n "$f_pct" ] || return 0
+    [ -n "$f_pct" ] || [ -n "$s_pct" ] || return 0
 
-    local five_h_int five_h_elapsed="" five_h_left="" secs_left_5h
-    five_h_int=$(printf "%.0f" "$f_pct")
-    if [ -n "$f_res" ]; then
-        secs_left_5h=$(( f_res - now ))
-        if [ "$secs_left_5h" -gt 0 ] && [ "$secs_left_5h" -lt 18000 ]; then
-            five_h_left=$(fmt_left "$secs_left_5h")
-            five_h_elapsed=$(( (18000 - secs_left_5h) * 100 / 18000 ))
+    # 5h が無いスロットは 5h の行を出さず、7d の行だけを描く（0% の行を補わない）
+    if [ -n "$f_pct" ]; then
+        local five_h_int five_h_elapsed="" five_h_left="" secs_left_5h
+        five_h_int=$(printf "%.0f" "$f_pct")
+        if [ -n "$f_res" ]; then
+            secs_left_5h=$(( f_res - now ))
+            if [ "$secs_left_5h" -gt 0 ] && [ "$secs_left_5h" -lt 18000 ]; then
+                five_h_left=$(fmt_left "$secs_left_5h")
+                five_h_elapsed=$(( (18000 - secs_left_5h) * 100 / 18000 ))
+            fi
         fi
-    fi
-    local line_5h
-    line_5h="${prefix}$(bar_seg "5h" 9 "$five_h_int" "$five_h_elapsed" "" "$hr_gap")"
-    [ -n "$five_h_left" ] && line_5h+="  ${DIM}${five_h_left}${RESET}"
+        local line_5h
+        line_5h="${prefix}$(bar_seg "5h" 9 "$five_h_int" "$five_h_elapsed" "" "$hr_gap")"
+        [ -n "$five_h_left" ] && line_5h+="  ${DIM}${five_h_left}${RESET}"
 
-    if [ -z "$s_pct" ]; then
-        # 7d が無いスロットは 5h 行だけ。経過時間はそのスロットの最後の行に付ける
-        [ -n "$ago" ] && line_5h+="  ${DIM}${ago}${RESET}"
-        line_5h+="$rg_seg"
+        if [ -z "$s_pct" ]; then
+            # 7d が無いスロットは 5h 行だけ。経過時間はそのスロットの最後の行に付ける
+            [ -n "$ago" ] && line_5h+="  ${DIM}${ago}${RESET}"
+            line_5h+="$rg_seg"
+            usage_lines+=("$line_5h")
+            return 0
+        fi
         usage_lines+=("$line_5h")
-        return 0
     fi
-    usage_lines+=("$line_5h")
 
     local seven_d_int elapsed_pct="" seven_d_left="" secs_left_7d
     seven_d_int=$(printf "%.0f" "$s_pct")
@@ -1067,7 +1075,7 @@ for i in $(seq 0 $(( n_slots - 1 ))); do
                 fable_pct=""
             fi
         fi
-        if [ "$multi" -eq 1 ] && [ -z "$five_h_pct" ]; then
+        if [ "$multi" -eq 1 ] && [ -z "$has_rate" ]; then
             usage_lines+=("${prefix}${DIM}取得待ち${RESET}")
         fi
         render_slot "$prefix" "$five_h_pct" "$five_h_resets" "$seven_d_pct" "$seven_d_resets" \
