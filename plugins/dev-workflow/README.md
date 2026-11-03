@@ -12,7 +12,7 @@
 - **入口 0（記録先の決定）**: issue があればそれ、無ければ issue を切らず、worktree 直後の空 commit → push → Draft PR を記録先にする（受け入れ条件は PR 本文。PR 本文に issue 参照を書かない）
 - **1 ループ**: W（仕様化判断の記録 → 分割判定 → `openspec new change`）→ R1（別コンテキストの仕様レビュー・2 周キャップ）→ W 再開（(3a) TDD 実装 → verify で return。本体が計測してから (3b) archive → PR → 仕様宣言）→ G（pr-review-gate 手順 1〜5・2 周キャップ）
 - **モデル**: W（dev-workflow:worker）と G（dev-workflow:gate-runner）は既定 `sonnet`、R1 は既定 `opus`。G が要求するレビュアーは既定 `opus` で、編集の道具を持たない `dev-workflow:reviewer` で起こす。**W（実行役）の上限は `opus`** で、`skills/develop/references/pre-classification.md` の事前分類（聖域パス・マージ権限・層間契約・課金/法務）に当たってもそこ止まり。Fable を使うのは読んで判断する役（R1・G が要求するレビュアー）が事前分類に当たるときだけで、`subagent_type: dev-workflow:decider` で spawn する（`general-purpose` に `model: fable` は付けない。判定は `scripts/agent-model-guard.sh`）。共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が `throttled` / `depleted` なら全役割 `sonnet` 起点。W の SendMessage 再開は毎回 `scripts/subagent-context.sh` で測る（G は段ごとに新しく起こすので測らない）。上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、正本を読むまで手渡さない。残量モード（`FABLE_BUDGET_MODE`）は `skills/develop/references/decision-criteria.md`
-- **エピック**: 条件・作り方・回し方・完了条件を skills/develop/references/epic.md に規定。子 issue ごとに 1 ループを並列に回し（`orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリー、そうでなく本体が tmux の中にいれば tmux のウィンドウで独立した Claude Code セッションとして起動する。どちらでもないときと unmanned は `isolation: "worktree"` のサブエージェント。起動部品は `scripts/epic-launch-<名前>.sh` の差し替えで、`scripts/epic-dispatch.sh` が呼ぶ）、子が全部マージされただけでは閉じない。別セッション方式では、子がループの終わりに「用が済んだ」の印を付けたワークツリーを、親セッションが安全確認（マージ済み PR の最終コミットと HEAD の一致・作業ツリーがきれい・`LLM/` が無い）のうえで片付ける。Orca を使う場合の前提は、`orca` CLI があり本体が Orca 管理のワークツリーにいること。子セッションの起動コマンドは `EPIC_DISPATCH_CLAUDE_CMD` で決め、未設定なら `epic-dispatch.sh` の既定（`cld`。ログイン zsh で定義されている必要がある。定義は下の「Claude アカウントの起動時選択」）になる。Orca 側の Claude の起動コマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変える
+- **エピック**: 条件・作り方・回し方・完了条件を skills/develop/references/epic.md に規定。子 issue ごとに 1 ループを並列に回し（`orca` があり本体が Orca 管理のワークツリーにいれば Orca の子ワークツリー、そうでなく本体が tmux の中にいれば tmux のウィンドウで独立した Claude Code セッションとして起動する。どちらでもないときと unmanned は `isolation: "worktree"` のサブエージェント。起動部品は `scripts/epic-launch-<名前>.sh` の差し替えで、`scripts/epic-dispatch.sh` が呼ぶ）、子が全部マージされただけでは閉じない。別セッション方式では、子がループの終わりに「用が済んだ」の印を付けたワークツリーを、親セッションが安全確認（マージ済み PR の最終コミットと HEAD の一致・作業ツリーがきれい・`LLM/` が無い）のうえで片付ける。Orca を使う場合の前提は、`orca` CLI があり本体が Orca 管理のワークツリーにいること。子セッションの起動コマンドは `EPIC_DISPATCH_CLAUDE_CMD` で決め、未設定なら `epic-dispatch.sh` の既定（`bin/cld` の絶対パス。シェル関数には頼らず、非ログインのシェルでも起動できる。説明は下の「Claude アカウントの起動時選択」）になる。Orca 側の Claude の起動コマンドを変えたら `EPIC_DISPATCH_CLAUDE_CMD` も合わせて変える
 
 人間が `/develop` で直接依頼した場合でも、loop-dev-agent（各リポの憲法 `docs/agent-loop.md`）が無人サイクルの中から呼ぶ場合でも同じループを回す（`--unmanned` では憲法のメインが本体を務め、G は憲法 Step 1 に委ねる）。
 
@@ -36,48 +36,24 @@ PR を作成したら必ず通す品質ゲート。「PR を作った」「レ�
 
 ## Claude アカウントの起動時選択
 
-複数アカウントを `accounts.json` に登録済みなら、次の zsh function で週の進行に対する余裕が最大のアカウントを起動時に選べる。marketplace clone の場所は `CLAUDE_HARNESS_SCRIPTS` だけを変えれば差し替えられる。
+複数アカウントを `accounts.json` に登録済みなら、`bin/cld` が週の進行に対する余裕が最大のアカウントを起動時に選んで `claude` を起動する。`bin/cld-account <slot-id>` はアカウントを明示する。どちらも実行ファイルで、`~/.zshrc` に関数定義は要らない。`.zshrc` に書くのは次の 2 行だけ（marketplace clone の場所を変えたときだけ、PATH の行のパスを直す）。
 
 ```zsh
-export CLAUDE_HARNESS_SCRIPTS="${CLAUDE_HARNESS_SCRIPTS:-$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/scripts}"
-
-unalias cld cld-account 2>/dev/null
-
-cld() {
-  # probe は補助。実行条件を満たさない・取得に失敗したときも、selector はセッション記録と既存 snapshot の実効値で選ぶ。
-  "$CLAUDE_HARNESS_SCRIPTS/usage-probe.sh" >/dev/null 2>&1 || true
-
-  local selected selector_rc
-  selected="$("$CLAUDE_HARNESS_SCRIPTS/select-account.sh")"
-  selector_rc=$?
-  (( selector_rc == 0 )) || return "$selector_rc"
-
-  if [[ -z "$selected" ]]; then
-    env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"
-  else
-    env CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude "$@"
-  fi
-}
-
-cld-account() {
-  (( $# >= 1 )) || { print -u2 'usage: cld-account <slot-id> [claude-args...]'; return 2; }
-  local account_id="$1"
-  shift
-
-  local selected selector_rc
-  selected="$("$CLAUDE_HARNESS_SCRIPTS/select-account.sh" "$account_id")"
-  selector_rc=$?
-  (( selector_rc == 0 )) || return "$selector_rc"
-
-  if [[ -z "$selected" ]]; then
-    env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude "$@"
-  else
-    env CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude "$@"
-  fi
-}
+export PATH="$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/bin:$PATH"
+export CLD_DEFAULT_ARGS="--dangerously-skip-permissions --remote-control"   # 個人の既定フラグ。要らなければ書かない
 ```
 
-関数定義前の `unalias` は、旧設定の `cld` / `cld-account` alias をこの関数へ置き換えるために必要。`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら function も同じ status で終了し、Claude は起動しない。
+`CLD_DEFAULT_ARGS` の語は空白で区切られ、`claude` の引数の先頭に置かれる（`eval` はしないので、引用符や空白を含む引数は書けない）。個人の既定フラグはここに置き、実行ファイルには埋めていない。`CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` は `cld` が上書きも既定値の追加もしないので、要る人は `.zshrc` に `export` を書く。scripts の場所は `CLAUDE_HARNESS_SCRIPTS` で差し替えられる（未設定なら実行ファイル自身の位置から `../scripts`）。
+
+関数定義で入れていた端末は、`~/.zshrc` から次を消す（関数は PATH の実行ファイルより先に解決されるので、残ると古い挙動のまま動く）。
+
+- `cld()` と `cld-account()` の関数定義と、`unalias cld cld-account` の行
+- `CLAUDE_HARNESS_SCRIPTS` を `scripts` に向けるだけの `export`（実行ファイルが自分の位置から求める）
+- 関数の中に書いていた個人のフラグ（`--dangerously-skip-permissions` `--remote-control` など）は `CLD_DEFAULT_ARGS` に移す
+
+`cld` は probe を best-effort で実行してから自動選択し、`cld-account a --resume` のような明示選択では先頭の slot id を除いた引数をそのまま `claude` に渡す（slot id が無ければ usage を出して exit 2）。selector の理由行は stderr に残る。空の選択値は既定アカウントを意味するため環境変数を空文字で設定せず `env -u` で解除する。未登録 id などで selector が非 0 なら実行ファイルも同じ status で終了し、Claude は起動しない。
+
+エピックの子セッションは `epic-dispatch.sh launch` と、子の端末を作るすべての経路（`reply`・`notify-closed`・`wait --resolve` の起動し直し）が、親の環境の `CLD_DEFAULT_ARGS` を子の起動コマンドへ代入として渡す。子の `--dangerously-skip-permissions` もここから来るので、親の環境に `CLD_DEFAULT_ARGS` を置く（親に値が無ければ渡らず、子は許可の確認画面で止まる）。
 
 `usage-probe.sh` の取得先は `https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1` になった（非公開の呼び方で、予告なく変わりうる）。応答に含まれるリセット権を snapshot の `accounts.<id>.reset_grants` に書き、ステータスラインが表示する。取得に失敗したアカウントの `reset_grants` は消え、試みなかったアカウントの値は保つ。
 
