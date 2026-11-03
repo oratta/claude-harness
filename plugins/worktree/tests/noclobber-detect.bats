@@ -12,6 +12,7 @@ setup() {
     grep -E '^(ORPHAN_NOTE_TMP=|ACTIVE_PROCS=|STALE_ORPHANS=)' "$SKILL"
     echo 'echo "PROCS=$ACTIVE_PROCS"'
     echo 'echo "NOTE=$STALE_ORPHANS"'
+    echo 'rm -f "$ORPHAN_NOTE_TMP"'
   } >"$SNIP"
 }
 
@@ -23,16 +24,16 @@ setup() {
 @test "bash: detection result is kept under noclobber" {
   run bash -c 'set -o noclobber; . "$1"' _ "$SNIP"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"PROCS=4242(node)"* ]]
-  [[ "$output" == *"NOTE=居残りプロセス: x"* ]]
+  [[ "$output" == *"PROCS=4242(node)"* ]] || return 1
+  [[ "$output" == *"NOTE=居残りプロセス: x"* ]] || return 1
 }
 
 @test "zsh: detection result is kept under noclobber" {
   command -v zsh >/dev/null || skip "zsh が無い"
   run zsh -c 'setopt noclobber; . "$1"' _ "$SNIP"
   [ "$status" -eq 0 ]
-  [[ "$output" == *"PROCS=4242(node)"* ]]
-  [[ "$output" == *"NOTE=居残りプロセス: x"* ]]
+  [[ "$output" == *"PROCS=4242(node)"* ]] || return 1
+  [[ "$output" == *"NOTE=居残りプロセス: x"* ]] || return 1
 }
 
 @test "skill: documents the noclobber pitfall" {
