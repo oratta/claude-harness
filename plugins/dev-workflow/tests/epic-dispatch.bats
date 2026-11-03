@@ -7539,6 +7539,100 @@ log_resolve_ready() {
   [ "$(rec_get 11 status)" = done ]
 }
 
+# --- told ---
+# spec: dev-workflow-develop（親は主に上げた止まりを told で記録に書く / told は書けない子を理由つきで返す）
+
+@test "told: a received stop with the same uuid gets told_uuid and told_at, and nothing else changes" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1 stop_at=2026-10-26T00:00:00Z
+  run dispatch told 11 d1
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "told 11" ]
+  [ "$(rec_get 11 told_uuid)" = d1 ]
+  [[ "$(rec_get 11 told_at)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || false
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  [ "$(rec_get 11 stop_at)" = 2026-10-26T00:00:00Z ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "told: a different or empty stop uuid is skipped as uuid-mismatch and the record is unchanged" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d2
+  put_record 12 stop=stopped-seen stop_uuid=
+  before="$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")"
+  run dispatch told 11 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 uuid-mismatch" ]
+  run dispatch told 12 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 12 uuid-mismatch" ]
+  [ "$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")" = "$before" ]
+}
+
+@test "told: a resumed stop, a done child and a child with no record are skipped as not-stopped" {
+  make_stub orca
+  put_record 11 stop=resumed stop_uuid=d1
+  put_record 12 stop=stopped-seen stop_uuid=d1 status=done
+  before="$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")"
+  run dispatch told 11 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 not-stopped" ]
+  run dispatch told 12 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 12 not-stopped" ]
+  run dispatch told 13 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 13 not-stopped" ]
+  [ "$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")" = "$before" ]
+}
+
+@test "told: an unreadable record fails, two records are ambiguous, and a locked record fails" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  printf '{\n' > "$(rec_of 1122 11)"
+  run dispatch told 11 d1
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 state-unreadable" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "{" ]
+  put_record 12 stop=stopped-seen stop_uuid=d2
+  put_record 12 epic=oratta/claude-harness#1123 stop=stopped-seen stop_uuid=d2
+  run dispatch told 12 d2
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 12 ambiguous-worktree" ]
+  put_record 13 stop=stopped-seen stop_uuid=d3
+  mkdir "$(rec_of 1122 13).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch told 13 d3
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 13" ]
+  [ "$(rec_get 13 told_uuid)" = null ]
+}
+
+@test "told: a wrong number of arguments, a bad child and an empty uuid print usage" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  for args in "11" "11 d1 d2" "x d1"; do
+    # shellcheck disable=SC2086
+    run dispatch told $args
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+  done
+  run dispatch told 11 ""
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'epic-dispatch.sh told <child> <uuid>' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(rec_get 11 told_uuid)" = null ]
+}
+
+@test "told: no jq is an error with empty stdout" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  run dispatch_nojq told 11 d1
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
 @test "child-log: no children or no jq is an error with empty stdout" {
   make_stub orca
   set_current 400

@@ -12,6 +12,7 @@
 #   epic-dispatch.sh reap <child>...
 #   epic-dispatch.sh pending-owner <child>...
 #   epic-dispatch.sh dismiss <child>...
+#   epic-dispatch.sh told <child> <uuid>
 #   epic-dispatch.sh child-log [--last] <child>...
 #   epic-dispatch.sh adopt <epic> <child>...
 #   epic-dispatch.sh clear <epic>
@@ -181,6 +182,14 @@
 #   `failed <N> state-unreadable`、2 件以上は `failed <N> ambiguous-worktree`、書けなければ `failed <N>`。
 #   failed があれば exit 1、無ければ exit 0。子にも issue にも送らない。jq が無い・今のワークツリーを読めなければ
 #   stdout 空で exit 1
+# told: 親が主に上げた止まりを伝え済みとして記録に書く（<子> <止まりの uuid>）。今のワークツリーを parent_worktree に
+#   持つ記録を探し、排他の中で stop が stopped-seen・status が done でない・stop_uuid が空でなく引数と同じことを確かめて
+#   told_uuid（その uuid）と told_at（UTC）を書き、`told <N>` を出して exit 0（stop・stop_uuid・stop_at は変えず、
+#   Orca の印へも写さず、子にも issue にも送らない）。stop_uuid が違うか空なら `skipped <N> uuid-mismatch`、記録が無い・
+#   stop が stopped-seen でない・status が done なら `skipped <N> not-stopped`（どちらも exit 0）、読めない記録は
+#   `failed <N> state-unreadable`、2 件以上は `failed <N> ambiguous-worktree`、書けなければ `failed <N>`（exit 1）。
+#   引数が 2 つでない・子の形の誤り・空の uuid は使い方を出して exit 1。jq が無い・今のワークツリーを読めなければ
+#   stdout 空で exit 1。wait --watch-stopped は位置引数の子が全員この伝え済みの止まりのあいだ長い待ちに入る
 # adopt: 記録の無い子ごとに、`orca worktree list --json` の、repoId が今のワークツリーと同じ・linkedIssue が子・
 #   archive されていない・parentWorktreeId が今のワークツリーの id のワークツリーを探す。ちょうど 1 つなら path・
 #   branch と、workspaceStatus（completed → done、in-review → waiting、ほか → running）と comment（epic-stopped →
@@ -241,6 +250,7 @@ usage:
   epic-dispatch.sh reap <child>...
   epic-dispatch.sh pending-owner <child>...
   epic-dispatch.sh dismiss <child>...
+  epic-dispatch.sh told <child> <uuid>
   epic-dispatch.sh child-log [--last] <child>...
   epic-dispatch.sh adopt <epic> <child>...
   epic-dispatch.sh clear <epic>
@@ -1842,6 +1852,37 @@ cmd_dismiss() {
   exit "$fail"
 }
 
+# told: 親が主に上げた止まりを伝え済みとして記録に書く（<子> <止まりの uuid>）
+cmd_told() {
+  [ "$#" -eq 2 ] && [ -n "$2" ] || usage
+  check_children "$1"
+  need_parent
+  local n="$1" u="$2" rc
+  child_record "$PARENT_TOP" "$n"
+  case $? in
+    0) ;;
+    2) echo "failed $n ambiguous-worktree"; exit 1 ;;
+    3) echo "failed $n state-unreadable"; exit 1 ;;
+    *) echo "skipped $n not-stopped"; exit 0 ;;
+  esac
+  rc=0
+  es_modify "$ES_HIT" 'if .stop == "stopped-seen" and .status != "done" and (.stop_uuid // "") == $u and $u != ""
+    then .told_uuid = $u | .told_at = $now else empty end' --arg u "$u" >/dev/null || rc=$?
+  case "$rc" in
+    0) echo "told $n" ;;
+    2) echo "failed $n state-unreadable"; exit 1 ;;
+    4)
+      # 書かなかった理由を読み直して分ける（止まりのままなら uuid が違う）
+      if [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] && [ "$(es_get "$ES_HIT" status)" != done ]; then
+        echo "skipped $n uuid-mismatch"
+      else
+        echo "skipped $n not-stopped"
+      fi ;;
+    *) echo "failed $n"; exit 1 ;;
+  esac
+  exit 0
+}
+
 # 固定の声かけ文を共有定義から生成する。wait の送信と child-log の完全一致に同じ生成を使う。
 # 返事の欄の意味や真偽は検証しない（#1374）。受信手順も停止前にこの定義を読む。
 keepalive_text() {
@@ -2222,6 +2263,7 @@ case "$sub" in
   reap) cmd_reap "$@" ;;
   pending-owner) cmd_pending_owner "$@" ;;
   dismiss) cmd_dismiss "$@" ;;
+  told) cmd_told "$@" ;;
   child-log) cmd_child_log "$@" ;;
   adopt) cmd_adopt "$@" ;;
   clear) cmd_clear "$@" ;;
