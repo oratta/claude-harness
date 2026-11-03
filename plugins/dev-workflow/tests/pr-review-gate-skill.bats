@@ -1023,7 +1023,7 @@ triage_row_section() {
   echo "$weight" | grep -qF 'review-partitions.sh < "$f"'
   echo "$weight" | grep -qF "pulls/\$N --jq '.additions+.deletions'"
   echo "$weight" | grep -qF '合計 0 行'
-  ! grep -qF '| plugins/dev-workflow/scripts/review-partitions.sh' "$PREPARE"
+  ! grep -qF '| plugins/dev-workflow/scripts/review-partitions.sh' "$PREPARE" || return 1
 }
 
 @test "review partitions (#514): reviewer instructions scope every section" {
