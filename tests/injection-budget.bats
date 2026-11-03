@@ -429,6 +429,12 @@ check_frontmatter_shape_z() { # stdin: NUL 区切りの一覧
                 ok = 0
               }
 
+              # 字下げした description:（frontmatter 全体を字下げした形を含む）は YAML では
+              # トップレベルの description と読まれるが、集計は ^description: だけを数えるので
+              # 0 バイトになる（issue #282）。入れ子の description はこのゲートの注入対象外
+              # なので許可しておく理由がなく、一律で違反にする。
+              if (line ~ /^  description:/) ok = 0
+
               if (is_top && line ~ /^description:/) {
                 desc_count++
                 val = line
@@ -484,7 +490,7 @@ check_all_frontmatter_shapes() { list_all_description_files | check_frontmatter_
 # 「よく考えて」「Think deeply.」の類は、現行モデルでは効かないか余計な長考を招く
 # （/doctor prompt-audit の指摘）。一度消した句が戻るのを止めるための検査である。
 #
-# 守備範囲: 違反が入る経路は、openspec CLI が .claude/ 配下を再生成したときと、対象
+# 守備範囲: 違反が入る経路は、openspec CLI が .claude/・.agents/ 配下を再生成したときと、対象
 # ファイルを手で編集したときの 2 つ。拾うのは下の 5 つの句が 1 行にそのまま現れた場合だけ。
 # 言い換え（じっくり考えて・ultrathink 等）と改行またぎは通り、逆に think hard-coded の
 # ような無関係な英文にも当たりうる。句や例外を足して塞ぎ切ることは目指さない（言い換えを
@@ -508,7 +514,7 @@ check_thinking_phrases_z() {
 }
 check_thinking_phrases() { emit_z "$@" | check_thinking_phrases_z; }
 
-# 検査対象: 常時注入の文書（rules / CLAUDE.md / output-styles）と、プラグインと .claude/ の
+# 検査対象: 常時注入の文書（rules / CLAUDE.md / output-styles）と、プラグイン・.claude/・.agents/ の
 # スキル・コマンド（本文を含む）。plugins/ 配下は SKILL.md だけで、references/ 等は対象外。
 list_thinking_phrase_targets() {
   list_synced_md "$REPO_ROOT/rules"
@@ -517,6 +523,7 @@ list_thinking_phrase_targets() {
   list_plugin_skills
   list_dir_files "$REPO_ROOT/.claude/commands" '*'
   list_dir_files "$REPO_ROOT/.claude/skills" '*'
+  list_dir_files "$REPO_ROOT/.agents/skills" '*'
 }
 
 @test "sum_files adds up the byte counts of the given list" {
@@ -1073,6 +1080,28 @@ EOF
   [[ "$output" == *"tab-indent.md"* ]] || return 1
 }
 
+@test "a fully indented frontmatter with description is detected" {
+  # frontmatter 全体を 2 スペース字下げすると YAML としてはトップレベルの description になるが、
+  # 集計（sum_descriptions）は ^description: だけを数えて 0 バイトになる（issue #282）。
+  printf -- '---\n  description: %s\n---\nbody\n' "$(head -c 3000 /dev/zero | tr '\0' x)" > "$TMPD/indented.md"
+  run check_frontmatter_shape "$TMPD/indented.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"indented.md"* ]] || return 1
+}
+
+@test "a fully indented frontmatter with name and description is detected" {
+  printf -- '---\n  name: x\n  description: hi\n---\nbody\n' > "$TMPD/indented-both.md"
+  run check_frontmatter_shape "$TMPD/indented-both.md"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"indented-both.md"* ]] || return 1
+}
+
+@test "a genuine nested key other than description is still accepted" {
+  printf -- '---\nmetadata:\n  version: 1\ndescription: hi\n---\n' > "$TMPD/nested-ok.md"
+  run check_frontmatter_shape "$TMPD/nested-ok.md"
+  [ "$status" -eq 0 ]
+}
+
 @test "an anchor inside a flow sequence is detected" {
   printf -- '---\ntags: [&p this payload rides inside a flow sequence anchor]\ndescription: hi\n---\n' > "$TMPD/flow-anchor.md"
   run check_frontmatter_shape "$TMPD/flow-anchor.md"
@@ -1347,7 +1376,7 @@ read_first_byte_fixtures() {
   [ -z "$output" ]
 }
 
-@test "no depth-of-thinking phrase in rules, CLAUDE.md, output-styles, skills or .claude" {
+@test "no depth-of-thinking phrase in rules, CLAUDE.md, output-styles, skills, .claude or .agents" {
   local hits
   if ! hits=$(list_thinking_phrase_targets | check_thinking_phrases_z); then
     echo "思考の深さを文で指示する言い回しが見つかった（該当の文を削る）:"
@@ -1357,13 +1386,14 @@ read_first_byte_fixtures() {
   fi
 }
 
-@test "the phrase check covers plugin skills and the generated .claude files" {
+@test "the phrase check covers plugin skills and the generated .claude and .agents files" {
   run bash -c "$(declare -f list_thinking_phrase_targets list_synced_md list_plugin_skills list_plugin_category list_dir_files); REPO_ROOT='$REPO_ROOT'; list_thinking_phrase_targets | tr '\\000' '\\n'"
   [ "$status" -eq 0 ]
   [[ "$output" == *"/rules/communication-style.md"* ]] || return 1
   [[ "$output" == *"/plugins/dev-workflow/skills/develop/SKILL.md"* ]] || return 1
   [[ "$output" == *"/.claude/commands/opsx/explore.md"* ]] || return 1
   [[ "$output" == *"/.claude/skills/openspec-explore/SKILL.md"* ]] || return 1
+  [[ "$output" == *"/.agents/skills/openspec-explore/SKILL.md"* ]] || return 1
   [[ "$output" != *"/references/"* ]] || return 1
 }
 

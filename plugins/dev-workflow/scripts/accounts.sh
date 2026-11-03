@@ -13,6 +13,8 @@
 #   accounts-init.sh は「いま居るシェルの CLAUDE_SECURESTORAGE_CONFIG_DIR の実値を登録する」手段で、
 #   同じ id は上書きする。既定アカウント（securestorage が null）のスロットもこちらで作る。
 #   accounts.sh add は置き場所（<CLAUDE_ACCOUNTS_HOME>/<id>）を新しく作って登録し、同じ id は拒否する。
+#   add は id の位置のハイフン始まりの引数（--help / -h 以外）も拒否する（exit 2）。
+#   スロットは 8 個まで。登録簿の accounts が 8 要素以上のとき、add は新しい id を拒否する（exit 2）。
 #   accounts.sh は登録簿が読めない・accounts が配列でないときは何も書かず exit 1（accounts-init.sh は
 #   accounts が配列でないと空の登録簿として上書きする）。
 #
@@ -28,27 +30,30 @@ ACCOUNTS_FILE="${CLAUDE_ACCOUNTS_FILE:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accou
 ACCOUNTS_HOME="${CLAUDE_ACCOUNTS_HOME:-$HOME/.claude-accounts}"
 
 usage() {
-  cat >&2 <<'USAGE'
+  cat <<'USAGE'
 usage: accounts.sh list
        accounts.sh add <id> [--label <label>]
        accounts.sh off <id>
        accounts.sh on <id>
 
-  id     英数字とハイフン、1〜32 文字
+  id     英数字とハイフン、1〜32 文字（add ではハイフンで始められない）
+  スロットは 8 個まで（超える add は exit 2 で拒否）
   label  制御文字を含まない 16 文字以下（省略時は id）
 USAGE
 }
 
-die_usage() { printf '%s\n' "$1" >&2; usage; exit 2; }
+die_usage() { printf '%s\n' "$1" >&2; usage >&2; exit 2; }
 
 check_id() {
+  # bash 3.2 + UTF-8 ロケールでは [!A-Za-z0-9-] が照合順で評価され、全角の英数字が通る。
+  local LC_ALL=C
   case "$1" in
     ""|*[!A-Za-z0-9-]*) die_usage "invalid id: $1" ;;
   esac
   [ "${#1}" -le 32 ] || die_usage "id is too long (max 32)"
 }
 
-[ $# -ge 1 ] || { usage; exit 2; }
+[ $# -ge 1 ] || { usage >&2; exit 2; }
 CMD="$1"; shift
 ID=""
 LABEL=""
@@ -65,6 +70,10 @@ case "$CMD" in
     ;;
   add)
     [ $# -ge 1 ] || die_usage "add requires <id>"
+    case "$1" in
+      -h|--help) usage; exit 0 ;;
+      -*) die_usage "add requires <id> before options: $1" ;;
+    esac
     ID="$1"; shift
     while [ $# -gt 0 ]; do
       case "$1" in
@@ -159,6 +168,8 @@ elif cmd in ("on", "off"):
 elif cmd == "add":
     if find(sid) >= 0:
         err("id already registered: %s" % sid, 2)
+    if len(accounts) >= 8:
+        err("registry already has %d slots; the maximum is 8 (nothing added); turned-off slots count too; remove an entry from the registry by hand to free one" % len(accounts), 2)
     place = os.path.join(os.environ["ACCOUNTS_HOME"], sid)
     try:
         os.makedirs(place, exist_ok=True)
