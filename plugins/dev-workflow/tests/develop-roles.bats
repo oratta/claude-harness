@@ -295,6 +295,23 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 # ===== gate-runner.md =====
 
+@test "gate-runner (#576): skips the pr-review-gate index and never instructs G to read SKILL.md" {
+  grep -qF '索引 `skills/pr-review-gate/SKILL.md` は読まない' "$GATE"
+  # パスと Markdown の閉じバッククォートを許容し、「読んでから」「も読む」「開く」も拾う。
+  # 「読まない」「読まず」を含む行（否定の明示）と索引の所在説明は拾わない。
+  local hits
+  hits=$(gate_all | grep -E 'SKILL\.md`?[[:space:]]*(を|も)[[:space:]]*(Read|読|開)' | grep -vE '読ま(ない|ず)' || true)
+  if [ -n "$hits" ]; then
+    echo "G の指示書に SKILL.md を読む肯定の指示がある: $hits" >&2
+    return 1
+  fi
+}
+
+@test "worker (#576): spec declaration points to declarations.md as the source of truth" {
+  worker_all | grep -qF 'skills/pr-review-gate/declarations.md'
+  grep -F '仕様宣言' "$W_FINISH" | grep -F '正本' | grep -qF 'skills/pr-review-gate/declarations.md'
+}
+
 @test "gate-runner: reads pr-review-gate and runs steps 1-5" {
   grep -q 'pr-review-gate' "$GATE"
   grep -qE '手順 ?1 ?〜 ?5|1〜5' "$GATE"
@@ -678,6 +695,14 @@ extract_context_cap_section() {
 
 # ===== 一周目レビューの機械照合と補足上限（issue #355） =====
 
+@test "gate-runner (#1457): a summary table goes through the same check and is not a missing table" {
+  step="$(section "$GATE" '一周目の三表を機械照合する' | grep -F 'review-hit-set.py --repo <repo> <table-file>')"
+  for token in '`全ヒット要約:` の行を持つ表も同じコマンドに渡す' '全行の本文が無いことを表の欠落として扱わない' '`summary:` / `extra:`' \
+    '`contract:`（標準エラー出力）も残差にし' '10 行以下の語は全行の表で出し直す'; do
+    echo "$step" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+}
+
 @test "gate-runner (#355): first-pass tables are mechanically checked before triage" {
   first="$(section "$GATE" '一周目の三表を機械照合する')"
   [ -n "$first" ] || { echo 'no first-pass reconciliation section'; return 1; }
@@ -865,6 +890,14 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -E '^\| needs-reviewer / needs-decider / needs-fix-check \|' "$GATE" | grep -qF '`照合と振り分け`'
 }
 
+@test "gate-runner (#1016): the hold-release row also reads triage.md when the owner answers split off" {
+  row="$(grep -E '^\| 保留の解除（' "$GATE")"
+  [ -n "$row" ] || { echo "no hold-release row"; return 1; }
+  echo "$row" | grep -qF '`stages/hold.md`'
+  echo "$row" | grep -qF '切り出しの確認に「切り出す」と答えられたときは加えて'
+  echo "$row" | grep -qF '`stages/triage.md` の置き場所の段落・候補探し・段 C の節'
+}
+
 @test "gate-runner (#554): G name and description name the stage and keep the G: prefix" {
   s="$(step4_554)"
   for f in "$GATE"; do
@@ -907,6 +940,10 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   done
   # 常に `レビュー経路: adapter` を書く規則は残す
   grep -qF '常に `レビュー経路: adapter`' "$sk"
+  # codex-develop.md には義務の本文を書き戻さず、正本への参照だけを残す（#1307）
+  ! grep -qF '常に `レビュー経路: adapter`' "$cd_md" || return 1
+  grep -qF 'SKILL.md` の「Role profile の選択」節が' "$cd_md"
+  grep -qF 'gate-runner.md`「レビュー経路の判別」が正本' "$cd_md"
 }
 
 @test "gate-runner (#554): the legacy route runs steps 1-5 in one G and says so in the stage lines" {  # 従来経路は `段: 一括（従来経路）` と `次の段: なし`
@@ -1082,6 +1119,28 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -F '段ごとの入力のうち' "$GATE" | grep -qF '直し方の判定の受領'
 }
 
+# ===== 許容の引き継ぎの判定役（issue #1238）=====
+
+@test "gate-runner (#1238): Status list and next-stage table carry needs-carryover-judge routed to the pass stage" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^```$/{exit} f' "$GATE")"
+  echo "$common" | grep -E '^- Status: ' | grep -qF 'needs-carryover-judge'
+  grep -qxF '| needs-carryover-judge | `合格処理` |' "$GATE"
+  grep -F 'Status ごとの欄の書式は' "$GATE" | grep -qF '`needs-carryover-judge` は `stages/hold.md`'
+}
+
+@test "gate-runner (#1238): the pass row of the stage table takes the carryover judgment" {
+  row="$(grep -E '^\| 合格処理 \|' "$GATE")"
+  [ -n "$row" ] || { echo "no pass row in the stage table"; return 1; }
+  echo "$row" | grep -qF '引き継ぎの判定を受け取ったとき'
+  echo "$row" | grep -qF '引き継ぎの判定と判定の記録の URL'
+  echo "$row" | grep -qF '`needs-carryover-judge`'
+  # 時点ごとに読むファイルの合格処理の行
+  rf="$(grep -E '^\| 合格処理（手順 3' "$GATE")"
+  [ -n "$rf" ] || { echo "no pass row in the read-files table"; return 1; }
+  echo "$rf" | grep -qF '`needs-carryover-judge` を返すとき'
+  echo "$rf" | grep -qF '`stages/hold.md`'
+}
+
 # TTY の無い Bash ツールでは `openspec archive <change>` が確認プロンプトで exit 1 になる（#596）。
 # develop 配下で change 名を伴う archive の実行指示は、すべて --yes を付ける。
 @test "develop: every openspec archive <change> instruction carries --yes (#596)" {
@@ -1104,9 +1163,9 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -qF '`openspec/changes/archive/` へ移り、元の `openspec/changes/<change-name>/` が無いことを確かめ' "$F" || return 1
 }
 
-# W の指示書に旧規則の「2 周キャップ」を残さない。周回は develop SKILL.md の節が正本（#752）。
-@test "worker/spec.md points to the SKILL.md round rule, not a 2-round cap (#752)" {
+# W の指示書に旧規則の「2 周キャップ」を残さない。周回は develop の references/fix-check.md の節が正本（#752。#1222 で SKILL.md から移した）。
+@test "worker/spec.md points to the fix-check round rule, not a 2-round cap (#752, #1222)" {
   if grep -qF '2 周キャップ' "$W_SPEC"; then return 1; fi
-  grep -qF 'レビューの周を主に聞かずに続ける（直し方の判定）' "$W_SPEC" || return 1
-  grep -qxF '## レビューの周を主に聞かずに続ける（直し方の判定）' "${PLUGIN_DIR}/skills/develop/SKILL.md"
+  grep -F 'レビューの周を主に聞かずに続ける（直し方の判定）' "$W_SPEC" | grep -qF 'references/fix-check.md' || return 1
+  grep -qxF '## レビューの周を主に聞かずに続ける（直し方の判定）' "${PLUGIN_DIR}/skills/develop/references/fix-check.md"
 }
