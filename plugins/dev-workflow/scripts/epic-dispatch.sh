@@ -1621,6 +1621,18 @@ detect_stopped() {
   return 0
 }
 
+# wait の長い待ち: 位置引数の子の全員の記録が主に伝え済みの止まり（stop が stopped-seen・status が done でない・
+# stop_uuid が空でなく、文字列の told_uuid と同じ）か。記録の無い・読めない・2 件以上の子がいれば偽
+all_told() {
+  local n
+  for n in "$@"; do
+    child_record "$PARENT_TOP" "$n" 2>/dev/null || return 1
+    es_read "$ES_HIT" 2>/dev/null | jq -e '.stop == "stopped-seen" and .status != "done"
+      and ((.stop_uuid // "") | type == "string" and . != "")
+      and ((.told_uuid | type) == "string") and .told_uuid == .stop_uuid' >/dev/null 2>&1 || return 1
+  done
+}
+
 cmd_wait() {
   # 上限は --timeout か空でない EPIC_DISPATCH_TIMEOUT があればその値。どちらも無ければ（timeout が空のまま）、
   # 待つ前に親の会話キャッシュの有効期限で決める（下の SECONDS=0 の前）
@@ -1657,6 +1669,12 @@ cmd_wait() {
   fi
   # --watch-stopped は位置引数の子だけを見る（子が 0 件なら何も見ない）
   [ "$#" -ge 1 ] || watchstop=0
+  # 長い待ち（位置引数の子が全員主に伝え済みの止まり）の上限。--watch-stopped のときだけ使うので、そのときだけ待つ前に確かめる
+  local ownerwait="${EPIC_DISPATCH_OWNER_WAIT_SEC-43200}"
+  if [ "$watchstop" -eq 1 ]; then
+    is_num "$ownerwait" \
+      || { echo "EPIC_DISPATCH_OWNER_WAIT_SEC must be a non-negative integer: $ownerwait" >&2; usage; }
+  fi
   # --resolve は --watch-stopped（子 1 件以上）のときだけ働く。返事の送り方の設定は待つ前に確かめる
   [ "$watchstop" -eq 1 ] || resolve=""
   if [ -n "$resolve" ]; then
@@ -1676,6 +1694,8 @@ cmd_wait() {
   fi
 
   local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f seen
+  # 長い待ちに入った時刻（SECONDS）。空は入っていない
+  local lwstart="" pollfail
   # 止まりの JSON の置き場（子の引数を var_key にした名前で 1 ファイル。ポーリングごとに空にする）
   local errf; errf="$(mktemp)"; STOP_DIR="$(mktemp -d)"; trap 'rm -f "$errf"; rm -rf "$STOP_DIR"' EXIT
   # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
@@ -1776,7 +1796,9 @@ cmd_wait() {
       [ -n "$unrecorded" ] && echo "unrecorded${unrecorded}"
       exit 0
     fi
+    pollfail=0
     if [ -n "$failed" ] || [ "$wsfail" -eq 1 ]; then
+      pollfail=1
       fails=$((fails + 1))
       if [ "$fails" -ge 3 ]; then
         cat "$errf" >&2
@@ -1790,6 +1812,31 @@ cmd_wait() {
     else
       fails=0
     fi
+    # 長い待ち: 位置引数の子が全員主に伝え済みの止まりのあいだは、普通の上限で起こさず、入ってから
+    # ownerwait 秒で expired を返す。入ったあとの失敗したポーリングでは入った時刻を保ち、どの判定もしない
+    # （一時の失敗で普通の上限に戻って timeout で起こさないため。続く失敗は上の連続失敗の error で返る）
+    if [ -n "$lwstart" ] && [ "$pollfail" -eq 1 ]; then
+      sleep "$interval"
+      continue
+    fi
+    if [ "$watchstop" -eq 1 ] && [ "$interval" -gt 0 ] && [ "$timeout" -gt 0 ] && [ "$pollfail" -eq 0 ] \
+      && all_told "$@"; then
+      if [ -z "$lwstart" ]; then
+        lwstart="$SECONDS"
+        [ -z "$resolve" ] || rejudge_init "$resolve" "$@"
+      elif [ -n "$resolve" ]; then
+        unrecorded="$(rejudge_changed "$resolve" "$@")"
+        if [ -n "$unrecorded" ]; then echo "unrecorded${unrecorded}"; exit 0; fi
+      fi
+      if [ $((SECONDS - lwstart)) -ge "$ownerwait" ] || [ $((SECONDS - lwstart + interval)) -gt "$ownerwait" ]; then
+        echo "expired $*"
+        exit 0
+      fi
+      for n in "$@"; do keepalive_child "$n"; done
+      sleep "$interval"
+      continue
+    fi
+    lwstart=""
     # 閉じた子がいないので、開いている子とこのポーリングで失敗した子は引数の全部。
     # 経過が上限に達していれば間隔 0 でも終わる（--timeout 0 を 1 回の確認で終わらせるため）
     if [ "$SECONDS" -ge "$timeout" ] || [ $((SECONDS + interval)) -gt "$timeout" ]; then

@@ -8354,3 +8354,146 @@ PYCODE
   keepalive_matrix_orca draft
 
 }
+
+# --- wait の長い待ち（主に伝え済みの止まり） ---
+# spec: dev-workflow-develop（wait は主に伝え済みの止まりだけが残るあいだ上限で起きずに待つ / 長い待ちは止まりの変化で
+# 既存の行で返る / 長い待ちは上限を過ぎたら expired の行で返る / 声かけは wait を終了させず親の起床を増やさない）
+
+# sleep を実時間で眠らせる（SECONDS で測る上限と長い待ちの上限を進めるため）
+real_sleep() {
+  printf '%s\n' '#!/bin/bash' '{ printf sleep; printf " %q" "$@"; echo; } >> "$STUB_LOG"' '/bin/sleep "$1"' > "$STUB_BIN/sleep"
+  chmod +x "$STUB_BIN/sleep"
+}
+
+# 子 <N> が止まりの発言 d1 で主に伝え済み（told_uuid=d1）、issue は open のまま、会話ログは d1 から進まない環境
+told_ready() {
+  local n
+  make_stub orca
+  real_sleep
+  for n in "$@"; do
+    put_record "$n" stop=stopped-seen stop_uuid=d1 told_uuid=d1 stop_at=2026-01-01T00:00:00Z
+    put_chat "$n" s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+    gh_seq "$n" open
+  done
+}
+
+# 子 <N> の会話ログに行を足すフックを gh の <回数> 回目の呼び出しに置く（<N> <回数> <行>...）
+chat_on_poll() {
+  local n="$1" c="$2" dir
+  shift 2
+  dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-$n" | sed 's/[^A-Za-z0-9]/-/g')"
+  printf 'printf "%%s\\n" %s >> %q\n' "$(printf '%q ' "$@")" "$dir/s1.jsonl" > "$STUB_CFG/hook_${n}_$c"
+}
+
+@test "wait owner-wait: only told stops do not time out at the limit and end with expired" {
+  told_ready 11
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^gh api ')" -ge 4 ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait owner-wait: a child that is not told keeps the usual timeout" {
+  told_ready 11
+  put_record 12
+  gh_seq 12 open
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11 12
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11 12" ]
+}
+
+@test "wait owner-wait: a told uuid that differs from the stop, or is not a string, keeps the usual timeout" {
+  told_ready 11
+  put_record 11 stop=stopped-seen stop_uuid=d1 told_uuid=d0
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11" ]
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  f="$(rec_of 1122 11)"; jq -c '.told_uuid = 1' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11" ]
+  ! grep -q 'unreadable' "$BATS_TEST_TMPDIR/stderr" || return 1
+}
+
+@test "wait owner-wait: the one-shot check before stopping does not enter the long wait" {
+  told_ready 11
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ] || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+}
+
+@test "wait owner-wait: a closed issue during the long wait ends with closed" {
+  told_ready 11
+  gh_seq 11 open open open open closed
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+}
+
+@test "wait owner-wait: a new question during the long wait ends with stopped" {
+  told_ready 11
+  chat_on_poll 11 4 "$(said d2 "$(ago 1)")" "$(turn_end "$(ago 1)")"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop_uuid)" = d2 ]
+}
+
+@test "wait owner-wait: an owner reply after the usual limit ends with timeout" {
+  told_ready 11
+  chat_on_poll 11 4 "$(chat_line user "$(ago 1)" 'A でお願いします')"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11" ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(calls '^gh api ')" -eq 4 ]
+}
+
+@test "wait owner-wait: a bad EPIC_DISPATCH_OWNER_WAIT_SEC prints usage before calling gh" {
+  told_ready 11
+  for v in abc -1 ''; do
+    EPIC_DISPATCH_OWNER_WAIT_SEC="$v" run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+    grep -q 'EPIC_DISPATCH_OWNER_WAIT_SEC must be a non-negative integer' "$BATS_TEST_TMPDIR/stderr"
+  done
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait owner-wait: one failed fetch after the usual limit keeps the long wait and ends with expired" {
+  told_ready 11
+  gh_seq 11 open open open open FAIL open
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+}
+
+@test "wait owner-wait: failed fetches in a row end with error, not timeout or expired" {
+  told_ready 11
+  gh_seq 11 open open open FAIL FAIL FAIL open
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 1 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "error gh 11" ]
+}
+
+@test "keepalive wait: a told child that answers the keepalive is not woken at the limit and ends with expired" {
+  keepalive_wait_setup
+  real_sleep
+  gh_seq 11 open
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID told_uuid=$MAIN_UUID
+  reset_keepalive_poll
+  keepalive_chat 3000
+  dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  printf 'printf "%%s\\n" %q %q >> %q\n' \
+    "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
+    "$(chat_line assistant 2033-05-18T03:33:20Z "$(keepalive_reply)" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl" \
+    > "$STUB_CFG/hook_send_term-11"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=5 run dispatch wait --watch-stopped --interval 1 --timeout 2 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = 'expired 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
