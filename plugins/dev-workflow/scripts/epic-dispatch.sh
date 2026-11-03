@@ -124,6 +124,19 @@
 #   `stopped` に残す（投稿に失敗したら stderr に投稿し直しのコマンド）。出力は closed / done / stopped /
 #   unrecorded の順の 1〜4 行。--resolve が無ければ判断を呼ばず、unrecorded も出さない。
 #   --resolve の値が無い・数字でない、または返事の送り方の環境変数が誤っていれば使い方を出して exit 1
+#   長い待ち: --watch-stopped で間隔と上限が 0 より大きいとき、失敗の無いポーリングで位置引数の子の全員が
+#   主に伝え済みの止まり（記録の stop が stopped-seen・status が done でない・stop_uuid が空でなく、文字列の
+#   told_uuid と同じ。told サブコマンドが書く）なら、普通の上限で timeout を出さず、入ってから
+#   EPIC_DISPATCH_OWNER_WAIT_SEC（秒・既定 43200）で `expired <N>...` を出して exit 0（「経過 >= 上限」か
+#   「経過 + 間隔 > 上限」で眠らずに出す）。値が非負の整数でなければ（空も）gh を呼ぶ前に使い方を出して exit 1。
+#   成功したポーリングで外れたら（伝え済みでない子が混ざる・再開・新しい止まり）入った時刻を捨てて普通の判定に戻る。
+#   入ったあとの失敗したポーリングでは入った時刻を保ち、上限の判定をせずに次へ進む（連続 3 回の error は同じ）。
+#   声かけ（keepalive）は長い待ちのあいだも続け、声かけの期限も同じ EPIC_DISPATCH_OWNER_WAIT_SEC。
+#   --resolve があれば、入ったポーリングでエピックと各子の updated_at と材料の版（本文と、OWNER・MEMBER・
+#   COLLABORATOR で 1 行目が `親の判断: ` でないコメントの [id, updated_at] のハッシュ）を控え、以後は updated_at が
+#   変わったときだけ版を読み、版が変わった子（エピックなら全員）を上の --resolve と同じ判断に 1 回かける。
+#   判断の結果は出力に足さない（通して投稿できなかった子だけ `unrecorded <N>...` で exit 0）。読めなければ判断を
+#   次のポーリングに回し、失敗したポーリングには数えない
 #   jq が無い・今のワークツリーを読めない（rev-parse の失敗）なら stdout に何も出さず exit 1
 # reply: 今のワークツリーを parent_worktree に持つ <child> の記録が 1 件で（その worktree が子のワークツリー）、
 #   端末があり（--relaunch なし）、子のセッションの端末（agentIdentity が claude の端末、無ければタイトルに
@@ -1358,7 +1371,8 @@ resolve_stopped() {
 
 # Read-only eligibility check. TTL is the last write; request time includes cache
 # hits. stop_at, or the stop comment when it is empty (not updated_at or a keepalive),
-# anchors the 24h limit. A stop with stop_uuid needs no stop comment, and passes are
+# anchors the limit (EPIC_DISPATCH_OWNER_WAIT_SEC, default 43200 s, the same as
+# wait's long wait). A stop with stop_uuid needs no stop comment, and passes are
 # matched by that uuid; a stop without one is matched by the stop comment's URL.
 # Missing/ambiguous measurements fail closed without changing wait's exit reason.
 keepalive_candidate() {
@@ -1372,6 +1386,7 @@ keepalive_candidate() {
   [ "${ttl#* }" -le "$now" ] 2>/dev/null || { echo cache-future; return 1; }
   REC="$rec" CHILD_COMMENTS="$childcomments" EPIC_COMMENTS="$epiccomments" \
     MAIN_LOG="$main" NOW="$now" KEEPALIVE_TEXT="$text" \
+    OWNER_WAIT="$(num_or_default "${EPIC_DISPATCH_OWNER_WAIT_SEC-}" 43200)" \
     FORCE="${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" IDLE="${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" \
     python3 - <<'PY' 2>/dev/null
 import datetime, glob, json, math, os, re, sys
@@ -1421,7 +1436,7 @@ try:
     url = stop.get("html_url") if stop else None
     if not uuid and not url: reject("expired")
     stopped_at = stamp(rec.get("stop_at") or (stop or {}).get("created_at"))
-    if stopped_at is None or not 0 <= now-stopped_at < 86400: reject("expired")
+    if stopped_at is None or not 0 <= now-stopped_at < int(os.environ["OWNER_WAIT"]): reject("expired")
     epic = pages(os.environ["EPIC_COMMENTS"])
     label = "#" + str(rec["number"]) if rec["repo"] == rec["epic"].split("#")[0] else rec["child"]
     for c in child + epic:
@@ -1583,7 +1598,7 @@ detect_stopped() {
       [ -z "$su" ] && [ -n "$json" ] || return 1
       uuid="$(printf '%s' "$json" | jq -r .uuid)"
       [ -n "$uuid" ] || return 1
-      # stop_at は 24 時間の基点なので動かさない
+      # stop_at は声かけの期限（EPIC_DISPATCH_OWNER_WAIT_SEC）の基点なので動かさない
       es_modify "$f" 'if .stop == "stopped-seen" and (.stop_uuid // "") == "" then .stop_uuid = $uuid else empty end' \
         --arg uuid "$uuid" >/dev/null 2>>"$errf"
       case $? in
@@ -1614,11 +1629,106 @@ detect_stopped() {
     *) return 3 ;;
   esac
   mirror_state "$f" "$(es_get "$f" worktree)" stopped-seen
-  if [ -n "$json" ]; then
-    printf '%s' "$json" | jq -c --argjson max "$(stop_text_max)" --argjson marked "$marked" \
-      "$STOP_TEXT_CUT"' | .marked = $marked' > "$STOP_DIR/$(var_key "$n")"
-  fi
+  [ -z "$json" ] || write_stop_json "$n" "$json" "$marked"
   return 0
+}
+
+# 判断に渡す止まりの JSON を $STOP_DIR に書く（<子> <会話ログの JSON> <marked>）。detect_stopped と判断し直しが使う
+write_stop_json() {
+  printf '%s' "$2" | jq -c --argjson max "$(stop_text_max)" --argjson marked "$3" \
+    "$STOP_TEXT_CUT"' | .marked = $marked' > "$STOP_DIR/$(var_key "$1")"
+}
+
+# wait の長い待ちの判断し直し（--resolve）。基準と処理済みの版は、子の引数ごと（エピックは epic）に $RJ_DIR のファイルで持つ
+# （rejudge_changed はコマンド置換の中で呼ぶので、シェルの変数には残せない）。
+# 材料の版: issue の本文と、投稿者が OWNER・MEMBER・COLLABORATOR で 1 行目が「親の判断: 」で始まらないコメントの
+# [id, updated_at] の並びのハッシュ（stop-judge.sh の trusted の絞り込みにそろえ、親自身の投稿は入れない）
+RJ_DIR=""
+rj_api() { # <epic|子の引数> <epic の番号>
+  local rec=""
+  if [ "$1" = epic ]; then printf 'repos/{owner}/{repo}/issues/%s' "$2"; return 0; fi
+  if child_record "$PARENT_TOP" "$1" 2>/dev/null; then rec="$ES_HIT"; fi
+  issue_api "$1" "$rec"
+}
+# issue の updated_at（<api>）。読めなければ 1
+rj_updated() {
+  local ua
+  ua="$(gh api "$1" 2>/dev/null | jq -r '.updated_at // empty' 2>/dev/null)" && [ -n "$ua" ] || return 1
+  printf '%s' "$ua"
+}
+# issue の「<updated_at> <版>」（<api>）。updated_at は版の本文と同じ応答から取る。読めなければ 1
+rj_snapshot() {
+  local raw ua cm ver
+  raw="$(gh api "$1" 2>/dev/null)" || return 1
+  ua="$(printf '%s' "$raw" | jq -r '.updated_at // empty' 2>/dev/null)" && [ -n "$ua" ] || return 1
+  cm="$(gh api "$1/comments" --paginate 2>/dev/null)" || return 1
+  cm="$(printf '%s' "$cm" | jq -s 'add // []' 2>/dev/null)" || return 1
+  ver="$(jq -cn --argjson issue "$raw" --argjson cm "$cm" '{body: ($issue.body // ""),
+      comments: [$cm[] | select(.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
+        | select((.body // "") | split("\n")[0] | rtrimstr("\r") | startswith("親の判断: ") | not) | [.id, .updated_at]]}' \
+    2>/dev/null | cksum | tr -d ' \t')" && [ -n "$ver" ] || return 1
+  printf '%s %s' "$ua" "$ver"
+}
+rj_key() { printf '%s/%s' "$RJ_DIR" "$(var_key "$1")"; }
+# 基準と処理済みの版を控える（<epic|子の引数> <updated_at> <版>）
+rj_store() { printf '%s %s\n' "$2" "$3" > "$(rj_key "$1")"; }
+# 長い待ちに入ったポーリングで、エピックと各子の基準と処理済みの版を読み直す（<epic の番号> <子>...）。読めなかったものは控えない
+rejudge_init() {
+  local epic="$1" k snap
+  shift
+  [ -n "$RJ_DIR" ] || RJ_DIR="$(mktemp -d)"
+  rm -f "$RJ_DIR"/*
+  for k in epic "$@"; do
+    snap="$(rj_snapshot "$(rj_api "$k" "$epic")")" || continue
+    rj_store "$k" ${snap}
+  done
+}
+# 材料が変わったか（<epic|子の引数> <epic の番号>）。変わっていれば「<updated_at> <版>」を出して 0、変わっていない・
+# 読めなければ 1。基準が無ければ読めたときに控えるだけ。版が同じなら前段の基準だけ進める
+rj_changed() {
+  local k="$1" api ua base ver snap
+  api="$(rj_api "$k" "$2")"
+  if [ ! -e "$(rj_key "$k")" ]; then
+    snap="$(rj_snapshot "$api")" && rj_store "$k" ${snap}
+    return 1
+  fi
+  read -r base ver < "$(rj_key "$k")"
+  ua="$(rj_updated "$api")" || return 1
+  [ "$ua" != "$base" ] || return 1
+  snap="$(rj_snapshot "$api")" || return 1
+  if [ "${snap#* }" = "$ver" ]; then
+    rj_store "$k" "${snap%% *}" "$ver"
+    return 1
+  fi
+  printf '%s' "$snap"
+}
+# 長い待ちの以後のポーリングで、材料の変わった子（エピックが変われば全員）を 1 回ずつ判断にかける（<epic の番号> <子>...）。
+# 判断のあとの基準と処理済みの版は判断の直前に読んだ値にする。通して記録できなかった子を「 11 12」の形で出す
+rejudge_changed() {
+  local epic="$1" n snap esnap="" judge="" rec json out="" pend=""
+  shift
+  [ -n "$RJ_DIR" ] || return 0
+  # 判断の直前に読んだ子の値は「<子> <updated_at> <版>」の行で pend に溜め、判断のあとに控える
+  if esnap="$(rj_changed epic "$epic")"; then judge="$*"; fi
+  for n in "$@"; do
+    if snap="$(rj_changed "$n" "$epic")"; then
+      pend="$pend$n $snap
+"
+      case " $judge " in *" $n "*) ;; *) judge="$judge $n" ;; esac
+    fi
+  done
+  for n in $judge; do
+    rm -f "$STOP_DIR/$(var_key "$n")"
+    if child_record "$PARENT_TOP" "$n" 2>/dev/null; then
+      rec="$ES_HIT"
+      json="$(record_log_json "$rec")" && [ -n "$json" ] && write_stop_json "$n" "$json" false
+    fi
+    resolve_stopped "$epic" "$n" >/dev/null
+    [ "$?" -ne 2 ] || out="$out $n"
+  done
+  [ -z "$esnap" ] || rj_store epic ${esnap}
+  printf '%s' "$pend" | while read -r n snap; do [ -z "$n" ] || rj_store "$n" ${snap}; done
+  printf '%s' "$out"
 }
 
 # wait の長い待ち: 位置引数の子の全員の記録が主に伝え済みの止まり（stop が stopped-seen・status が done でない・
@@ -1697,7 +1807,7 @@ cmd_wait() {
   # 長い待ちに入った時刻（SECONDS）。空は入っていない
   local lwstart="" pollfail
   # 止まりの JSON の置き場（子の引数を var_key にした名前で 1 ファイル。ポーリングごとに空にする）
-  local errf; errf="$(mktemp)"; STOP_DIR="$(mktemp -d)"; trap 'rm -f "$errf"; rm -rf "$STOP_DIR"' EXIT
+  local errf; errf="$(mktemp)"; STOP_DIR="$(mktemp -d)"; trap 'rm -f "$errf"; rm -rf "$STOP_DIR" ${RJ_DIR:+"$RJ_DIR"}' EXIT
   # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
   # 1 時間か判定できなければ 3000（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
   # 起動の時点で 1 回だけ決める（待つ間は親がリクエストを出さないので変わらない）。references/reply-after-idle.md
@@ -1920,7 +2030,7 @@ cmd_told() {
     2) echo "failed $n state-unreadable"; exit 1 ;;
     4)
       # 書かなかった理由を読み直して分ける（止まりのままなら uuid が違う）
-      if [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] && [ "$(es_get "$ES_HIT" status)" != done ]; then
+      if [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] && [ "$(es_get "$ES_HIT" status)" != "done" ]; then
         echo "skipped $n uuid-mismatch"
       else
         echo "skipped $n not-stopped"

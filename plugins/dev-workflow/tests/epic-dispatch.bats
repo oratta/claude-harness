@@ -352,6 +352,16 @@ case "${2-}" in
       cat "$STUB_CFG/comments_$issue" 2>/dev/null || echo "[]"
       exit 0
     fi ;;
+  */issues/[0-9]*)
+    # wait の判断し直しが版を読む呼び出し（gh api <issue>、--jq なし）。issue_<N> を返し、
+    # issue_fail_<N> があれば失敗する。状態のポーリング（--jq .state）の並びは消費しない
+    if [ "$#" -eq 2 ] && [ "$1" = api ]; then
+      issue="${2##*/}"
+      [ ! -e "$STUB_CFG/issue_fail_$issue" ] || { echo "gh: mock failure for issue read $issue" >&2; exit 1; }
+      cat "$STUB_CFG/issue_$issue" 2>/dev/null \
+        || echo "{\"updated_at\":\"2026-01-01T00:00:00Z\",\"body\":\"\",\"author_association\":\"OWNER\"}"
+      exit 0
+    fi ;;
 esac
 n="${2##*/}"
 count=$(( $(cat "$STUB_CFG/ghcount_$n" 2>/dev/null || echo 0) + 1 ))
@@ -7885,7 +7895,7 @@ reset_keepalive_poll() {
   : > "$STUB_LOG"
 }
 
-@test "keepalive wait: request 2999/3000/3599/3600 and stop 86399/86400 boundaries" {
+@test "keepalive wait: request 2999/3000/3599/3600 and stop 43199/43200 boundaries" {
   keepalive_wait_setup
   for age in 2999 3000 3599 3600 7200 -1; do
     reset_keepalive_poll
@@ -7895,15 +7905,29 @@ reset_keepalive_poll() {
     expected=0; if [ "$age" -eq 3000 ] || [ "$age" -eq 3599 ]; then expected=1; fi
     [ "$(calls '^orca terminal send ')" -eq "$expected" ]
   done
-  for age in 86399 86400 -1; do
+  for age in 43199 43200 -1; do
     reset_keepalive_poll
     keepalive_chat 3000
     stop_fixture "$age"
     run dispatch wait --watch-stopped --interval 1 --timeout 100 11
     [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
-    expected=0; [ "$age" -ne 86399 ] || expected=1
+    expected=0; [ "$age" -ne 43199 ] || expected=1
     [ "$(calls '^orca terminal send ')" -eq "$expected" ]
   done
+}
+
+@test "keepalive wait: EPIC_DISPATCH_OWNER_WAIT_SEC sets the stop limit (86400: 43200 is sent, 86400 is expired)" {
+  keepalive_wait_setup
+  for age in 43200 86400; do
+    reset_keepalive_poll
+    keepalive_chat 3000
+    stop_fixture "$age"
+    EPIC_DISPATCH_OWNER_WAIT_SEC=86400 run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    expected=0; [ "$age" -ne 43200 ] || expected=1
+    [ "$(calls '^orca terminal send ')" -eq "$expected" ] || { echo "age=$age"; false; }
+  done
+  keepalive_note_is "skipped expired"
 }
 
 @test "keepalive wait: cache hits extend request age independently of cache write TTL" {
@@ -7958,7 +7982,7 @@ reset_keepalive_poll() {
       missing-stop) echo '[]' > "$STUB_CFG/comments_11" ;;
       untrusted) jq '.[0].author_association="NONE"' "$STUB_CFG/comments_11" > "$STUB_CFG/new"; mv "$STUB_CFG/new" "$STUB_CFG/comments_11" ;;
       passed) echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — https://example/stop"}]' > "$STUB_CFG/comments_1122" ;;
-      expired) stop_fixture 86400 ;;
+      expired) stop_fixture 43200 ;;
       missing-worktree) put_record 11 stop=stopped-seen session=term-11 worktree=/no-such-child ;;
     esac
     run dispatch wait --watch-stopped --interval 1 --timeout 100 11
@@ -7967,7 +7991,7 @@ reset_keepalive_poll() {
   done
 }
 
-@test "keepalive wait: a stop with a uuid needs no stop record, runs 24 hours from stop_at and matches passes by uuid" {
+@test "keepalive wait: a stop with a uuid needs no stop record, runs the owner wait (43200 s) from stop_at and matches passes by uuid" {
   keepalive_wait_setup
   echo '[]' > "$STUB_CFG/comments_11"
   send_count() {
@@ -7977,9 +8001,9 @@ reset_keepalive_poll() {
     [ "$(calls '^orca terminal send ')" -eq "$1" ]
   }
   at() { jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - $1))" '$t | todate'; }
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 86399)"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 43199)"
   send_count 1
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 86400)"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 43200)"
   send_count 0
   put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
   send_count 0
@@ -8162,7 +8186,7 @@ Do you want to proceed?
 ❯
 ────────────────
 ? for shortcuts'
-  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 86400))" '$t | todate')"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 43200))" '$t | todate')"
   keepalive_wait_run
   [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped expired"
   put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 3600))" '$t | todate')"
@@ -8435,7 +8459,7 @@ chat_on_poll() {
 
 @test "wait owner-wait: a new question during the long wait ends with stopped" {
   told_ready 11
-  chat_on_poll 11 4 "$(said d2 "$(ago 1)")" "$(turn_end "$(ago 1)")"
+  chat_on_poll 11 4 "$(asked d2 "$(ago 1)")"
   EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
@@ -8486,6 +8510,8 @@ chat_on_poll() {
   put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID told_uuid=$MAIN_UUID
   reset_keepalive_poll
   keepalive_chat 3000
+  # 声かけの期限も EPIC_DISPATCH_OWNER_WAIT_SEC（下の 5 秒）なので、止まりは 1 秒前にする
+  stop_fixture 1
   dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
   printf 'printf "%%s\\n" %q %q >> %q\n' \
     "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
@@ -8496,4 +8522,118 @@ chat_on_poll() {
   [ "$output" = 'expired 11' ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
   [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+# --- wait の長い待ちのあいだの判断し直し（--resolve） ---
+# spec: dev-workflow-develop（長い待ちのあいだに判断の材料が変わったら 1 回だけ判断し直す）
+
+# issue <N> の応答を置く（<N> <updated_at> [<本文>]）
+put_issue() {
+  jq -cn --arg u "$2" --arg b "${3-}" '{updated_at: $u, body: $b, author_association: "OWNER"}' > "$STUB_CFG/issue_$1"
+}
+# コメント 1 件の JSON（<id> <updated_at> <本文> [<author_association>]）
+cmt() { jq -cn --argjson id "$1" --arg u "$2" --arg b "$3" --arg a "${4-OWNER}" '{id: $id, updated_at: $u, body: $b, author_association: $a}'; }
+# gh の状態のポーリングの <回数> 回目に、issue <N> の応答とコメントを置き換えるフックを足す（<N> <回数> <updated_at> <本文> <コメントの JSON 配列>）
+change_on_poll() {
+  local n="$1" c="$2"
+  printf 'jq -cn --arg u %q --arg b %q %q > %q\nprintf %%s %q > %q\n' "$3" "$4" \
+    '{updated_at: $u, body: $b, author_association: "OWNER"}' "$STUB_CFG/issue_$n" "$5" "$STUB_CFG/comments_$n" \
+    >> "$STUB_CFG/hook_${n}_$c"
+}
+
+# 子 <N>... が伝え済みの止まりで、親 400 が --resolve で待つ環境
+rejudge_ready() {
+  told_ready "$@"
+  make_judge
+  set_current 400
+  for n in "$@"; do set_terms "$n" "term-a-$n"; done
+}
+
+@test "wait owner-wait --resolve: an owner comment on the child is judged once and a pass is sent and recorded" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'A でお願いします')]"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=5 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(calls '^judge 400 11')" -eq 1 ] || { cat "$STUB_LOG"; false; }
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
+  starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した — 範囲の内側 発言 d1"
+  # 判断には記録の会話ログから作った止まりの JSON を渡す
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d1 ]
+  [ "$(jq -r .marked "$STUB_CFG/judge_json")" = false ]
+}
+
+@test "wait owner-wait --resolve: nothing changed means no judge" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge ')" -eq 0 ]
+}
+
+@test "wait owner-wait --resolve: an owner comment on the epic judges every child once" {
+  rejudge_ready 11 12
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  printf 'jq -cn %q > %q\nprintf %%s %q > %q\n' '{updated_at: "2026-02-01T00:00:00Z", body: "", author_association: "OWNER"}' \
+    "$STUB_CFG/issue_400" "[$(cmt 9 2026-02-01T00:00:00Z '方針を変える')]" "$STUB_CFG/comments_400" > "$STUB_CFG/hook_11_2"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=5 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11 12
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11 12" ]
+  [ "$(calls '^judge 400 11')" -eq 1 ]
+  [ "$(calls '^judge 400 12')" -eq 1 ]
+}
+
+@test "wait owner-wait --resolve: an escalation is posted on the child, wakes no one, and its own post is not judged again" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'B は？')]"
+  # 親自身の投稿（1 行目が「親の判断: 」）で updated_at だけが進む
+  change_on_poll 11 3 2026-02-02T00:00:00Z '' \
+    "[$(cmt 7 2026-02-01T00:00:00Z 'B は？'),$(cmt 8 2026-02-02T00:00:00Z "$(printf '親の判断: 主に上げる\n止まりの発言: d1')")]"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge 400 11')" -eq 1 ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait owner-wait --resolve: an owner edit during the judgement is judged once more, then no more" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'B は？')]"
+  # 1 回目の判断のあいだに主が本文を書き換える（2 回目の判断では何もしない）
+  printf '[ -e %q ] && exit 0\n: > %q\njq -cn %q > %q\n' "$STUB_CFG/edited" "$STUB_CFG/edited" \
+    '{updated_at: "2026-02-01T00:00:30Z", body: "本文を直した", author_association: "OWNER"}' "$STUB_CFG/issue_11" \
+    > "$STUB_CFG/judge_hook"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge 400 11')" -eq 2 ] || { cat "$STUB_LOG"; false; }
+}
+
+@test "wait owner-wait --resolve: a label-only change that moves updated_at is not judged" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[]"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  # updated_at は読む（前段）が、版（コメント）は変わったときだけ読む
+  [ "$(calls '^gh api .*/issues/11/comments')" -eq 2 ]
+}
+
+@test "wait owner-wait --resolve: a failed read of the issue is not an error and is judged when it can be read" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'B は？')]"
+  printf ': > %q\n' "$STUB_CFG/issue_fail_11" >> "$STUB_CFG/hook_11_2"
+  printf 'rm -f %q\n' "$STUB_CFG/issue_fail_11" > "$STUB_CFG/hook_11_3"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge 400 11')" -eq 1 ]
+  [ "$(cat "$STUB_CFG/ghcount_11")" -ge 4 ]
 }
