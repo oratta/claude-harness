@@ -12,7 +12,8 @@
     "token",
     "1password",
     "discovery",
-    "browser-guard"
+    "browser-guard",
+    "secret-guard"
   ],
   "skills": [
     "./skills/capability-registry"
