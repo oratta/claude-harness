@@ -111,7 +111,7 @@ G が自分で決めるときの根拠は、エピックと記録先の本文、
 | エピックの外の issue に当たるが、満たされない項目が 1 つでも残る。または受け入れ条件が書かれていない | この指摘だけの新しい子 issue を作る。外の issue には「この部分は子 issue で直す」と番号を書き、エピックには足さない |
 | 当たる issue が無い | 新しい子 issue を作る |
 
-子の行で受け入れ条件に足す前に、その子 issue が作業中かを確かめる（`develop 開始` か `実行モード:` の行があるコメントと、本文に `Closes` / `Fixes` / `Refs #<番号>`（大文字小文字不問）のある open の PR のどちらか。判定の正本は `openspec/specs/in-progress-issue-scope/spec.md`）。`gh issue view <番号> -R $R --json comments` と `gh pr list -R $R --state open --search "<番号> in:body" --json url,body` の 2 回で足り、issue の本文だけで作業中でないと判断しない。作業中なら足さず、この指摘だけの新しい子 issue を同じエピックの子として作り、本文に作業中の子の番号を書く。主に聞かない。判定のスクリプトは作らない。
+子の行で受け入れ条件に足す前に、その子 issue が作業中かを確かめる（`develop 開始` か `実行モード:` の行があるコメントと、本文に `Closes` / `Fixes` / `Refs #<番号>`（大文字小文字不問）のある open の PR のどちらか。判定の正本は `openspec/specs/in-progress-issue-scope/spec.md`）。`gh issue view <番号> -R $R --json comments` と `gh pr list -R $R --state open --search "<番号> in:body" --json url,body` の 2 回で足り、issue の本文だけで作業中でないと判断しない。作業中なら足さず、この指摘だけの新しい子 issue を同じエピックの子として作り、本文に作業中の子の番号と「作業中の子の PR のマージ後に着手」を書き、作業中の子には新しい子の番号をコメントで書く（受け入れ条件は編集しない）。主に聞かない。どちらかの呼び出しが 0 以外で終わったら 1 回だけやり直し、それでも取れなければ作業中と同じに扱って新しい子 issue を作る。判定のスクリプトは作らない。
 
 3 列目が `other` の候補（`--epic` を付けない実行ではすべての候補）に対して、コメント以外の操作（本文を読んで受け入れ条件が全部満たされるかを判定する・エピックの子に足す・受け入れ条件に足す）をする前に、`gh api repos/$R/issues/<番号> --jq .author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれかであることを確かめる。それ以外の値のとき、または取得に失敗したときは、その候補を「当たる issue が無い」と同じに扱う（本文を読まない）。外の issue に open の PR が付いているときは、新しい子 issue に「外の PR のマージ後に着手」と書く。エピックの中と外に同じファイルを直す issue が並ぶときは、互いの番号を書く。
 
