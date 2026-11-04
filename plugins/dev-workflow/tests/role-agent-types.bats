@@ -34,6 +34,8 @@ setup() {
   grep -qF 'ファイルは編集しない' "$file"
   grep -qF 'サブエージェントを起こさない' "$file"
   grep -qF 'コメントを投稿せず' "$file"
+  grep -qF '探さず' "$file"
+  grep -qF '読めなかったことを返して止まる' "$file"
 }
 
 @test "plugin manifest registers all four role types" {

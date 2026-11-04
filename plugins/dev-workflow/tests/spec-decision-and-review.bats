@@ -303,7 +303,12 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
 
 @test "condition check (#1121): not applied to G needs-fix-check and the scope is written" {
   s="$(fix_cond_sec)"
-  echo "$s" | grep -qF '`needs-fix-check` には当てない'
+  pr="$(echo "$s" | grep -F '**PR のレビュー**')"
+  echo "$pr" | grep -qF 'この節の本体の手順は G の `needs-fix-check` には当てない'
+  echo "$pr" | grep -qF '`stages/triage.md`'
+  echo "$pr" | grep -qF '段落「周の終わりの止める指摘の条件」'
+  echo "$pr" | grep -qF '本体は判定しない'
+  echo "$pr" | grep -qF '決める役に渡すのは `needs-fix-check` で渡された指摘に限る'
   line="$(echo "$s" | grep -F 'この手順の守備範囲は')"
   [ -n "$line" ]
   for k in 'R1 の結果の BLOCKER' '「どの直し方か」の問いに回してしまうこと' '本体が疑わずに判定へ回す' '判定の誤りが 1 件も無いことをこの手順の完了条件にしない'; do
