@@ -78,7 +78,7 @@ gh api -X POST repos/$R/issues/$N/comments \
   -f body="$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\n固定 HEAD: %s\n合計: 12 行\n区画: なし\n担当セッション: %s' "$HEAD" "${CLAUDE_CODE_SESSION_ID:-不明}")"
 ```
 
-`レビュー重量:` コメントの 3 行目から `担当セッション:` の行の前までに `review-partitions.sh` の出力（`合計:` と `区画:`、区画がある場合は一覧）をそのまま載せる。あとの G は最新コメントの区画を正とする。
+`レビュー重量:` コメントの 3 行目から `担当セッション:` の行の前までに `review-partitions.sh` の出力（`合計:` と `区画:`、区画がある場合は一覧）をそのまま載せる。あとの G は最新コメントの区画を正とする。二周目以降（差分限定・全体レビューの周）は区画に分けないので、`区画: なし` を載せる。
 
 ## G として動くとき（develop）
 
@@ -94,7 +94,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 - 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由、Codex オフなら `Codex オフ（設定）`>
 - PR 番号: #<N>
 - HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
-- 区画: <なし | review-partitions.sh の出力の区画の一覧>
+- 区画: <なし（二周目以降・差分限定・全体レビューの周は常に なし） | review-partitions.sh の出力の区画の一覧>
 - 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）、Codex オフ: 未実行（Codex オフ）>
 - 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）、Codex オフ: python3 <plugin>/scripts/usage_view.py --codex-enabled → off>
 - 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路） | 未実行（Codex オフ）>
