@@ -2143,6 +2143,32 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
   echo "$body" | grep -qF '4 つ'
 }
 
+@test "nonblocking triage (#1498): stage C checks whether the child is in progress before adding, and splits off a new child if so" {
+  c="$(nonblocking_para '段 C（')"
+  has_all "$c" '足す前に、その子 issue が作業中か' '`develop 開始`' '`実行モード:`' \
+    '--json comments' 'gh pr list' '--state open' 'in:body' '`Closes` / `Fixes` / `Refs #<番号>`' \
+    '足さず' '新しい子 issue' '作業中の子の番号' '主に聞かない' 'スクリプトは作らない'
+  k="$(nonblocking_para '主が切り出すと答えた止める指摘')"
+  has_all "$k" '作業中の確認' '段 C'
+}
+
+@test "nonblocking triage (#1498): stage C retries a failed gh call once, treats it as in progress, and links the two children" {
+  c="$(nonblocking_para '段 C（')"
+  has_all "$c" 'どちらかの呼び出しが 0 以外で終わったら 1 回だけやり直し' '作業中と同じに扱って新しい子 issue を作る' \
+    '作業中の子の PR のマージ後に着手' '作業中の子には新しい子の番号をコメントで書く' '受け入れ条件は編集しない'
+  root="$BATS_TEST_DIRNAME/../../../openspec"
+  arc="$root/changes/archive/2026-10-31-stage-c-child-in-progress-check"
+  for f in "$root/specs/in-progress-issue-scope/spec.md" "$arc/specs/in-progress-issue-scope/spec.md"; do
+    grep -qF '#### Scenario: レビュー指摘の振り分けも対象' "$f" || return 1
+    ! grep -qF '#### Scenario: レビュー指摘の振り分けは対象外' "$f" || return 1
+  done
+  for f in "$root/specs/dev-workflow-pr-review-gate/spec.md" "$arc/specs/dev-workflow-pr-review-gate/spec.md"; do
+    has_all "$(cat "$f")" 'どちらかの呼び出しが 0 以外で終わったら 1 回だけやり直し、それでも取れなければ作業中と同じに扱って新しい子 issue を作る（MUST）' \
+      '#### Scenario: 呼び出しが取れない' '作業中の子の PR のマージ後に着手' '作業中の子には新しい子の番号をコメントで書く（受け入れ条件は編集しない）'
+  done
+  has_all "$(cat "$arc/design.md")" '作業中の子の PR のマージ後に着手' '作業中の子には新しい子の番号をコメントで書く'
+}
+
 @test "condition question delivery (#1013): the same sentence is in gate-runner.md, triage.md and the spec; develop SKILL.md points to it" {
   s='照合と振り分けの G の return の仕分け欄に `条件の確認待ち` の質問文があれば、G を起こした側（develop では本体）は、その質問文と `条件の確認待ち` の PR コメントの URL を主への次の報告にそのまま載せる（無人運用（loop-dev-agent）では記録先にコメントする）。'
   grep -qF -- "$s" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
