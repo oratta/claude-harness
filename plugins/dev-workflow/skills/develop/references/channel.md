@@ -21,6 +21,7 @@ channel の本体は AskUserQuestion を呼ばない。主に聞くときは、�
 - `templates/escalation-tripwires.md`
 - `commands/develop.md`
 - `commands/work-issue.md`
+- `scripts/child-log-read.py`
 - `commands/synced-skills-slim.md`
 - `skills/issueify/SKILL.md`
 
