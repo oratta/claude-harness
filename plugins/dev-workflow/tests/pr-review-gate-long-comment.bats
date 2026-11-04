@@ -316,7 +316,7 @@ check_table() {
   { cat "$WORK/unsplit.md"; sed -n 2p "$WORK/parts/part-1.md"; } > "$WORK/with-sha-line.md"
   run --separate-stderr check_table "$WORK/with-sha-line.md"
   [ "$status" -eq 1 ]
-  [[ "$stderr" == *"contract: 修正前 SHA: must appear exactly once"* ]]
+  [[ "$stderr" == *"contract: 修正前 SHA: must appear exactly once"* ]] || return 1
 }
 
 @test "long comment (#1249): a main-table row missing from the restored table exits one with missing:" {
@@ -330,6 +330,6 @@ check_table() {
   [ "$(wc -l < "$WORK/short.md")" -eq "$(($(wc -l < "$WORK/restored.md") - 1))" ]
   run --separate-stderr check_table "$WORK/short.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"missing: hits.txt:3"* ]]
-  [[ "$output" != *"contract:"* ]]
+  [[ "$output" == *"missing: hits.txt:3"* ]] || return 1
+  [[ "$output" != *"contract:"* ]] || return 1
 }
