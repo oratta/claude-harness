@@ -188,6 +188,32 @@ check_table() {
   echo "$s" | grep -qF '`検索コマンド: <コマンド>`'
 }
 
+@test "long comment (#1571): every definition of the review-tables comment carries the same three heading lines" {
+  gate="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+  received="$(grep -F '**レビュアーの要約受領**' "$TRIAGE")"
+  supplement="$(grep -F '補足の `needs-reviewer` を返す前に、元の三表' "$gate")"
+  input_row="$(grep -E '^\| レビューの三表と補足済み回数' "$gate")"
+  [ -n "$received" ] && [ -n "$supplement" ] && [ -n "$input_row" ]
+  for line in "$received" "$supplement" "$input_row"; do
+    echo "$line" | grep -qF '`固定 HEAD: <40 桁>`'
+    echo "$line" | grep -qF '補足済み回数:'
+  done
+  echo "$received" | grep -qF '`一周目の区画: <なし | n>`'
+  echo "$supplement" | grep -qF '`一周目の区画: <なし | n>`'
+  # 表の行の中では | をエスケープする（triage.md の表と同じ）
+  echo "$input_row" | grep -qF '`一周目の区画: <なし \| n>`'
+  echo "$input_row" | grep -qF '`補足済み回数: <0 \| 1>`'
+}
+
+@test "long comment (#1571): the parent rule points to the per-kind heading requirements, not to the unsplit headings" {
+  root="${PLUGIN_DIR}/../.."
+  for f in "$root/openspec/specs/dev-workflow-pr-review-gate/spec.md" \
+           "$root/openspec/changes/archive/2026-10-31-pr-review-gate-long-comment-split/specs/dev-workflow-pr-review-gate/spec.md"; do
+    if grep -qF '1 行目と見出しの行は分けないときと同じ' "$f"; then echo "old wording in $f"; return 1; fi
+    grep -F -- '- 親のコメント:' "$f" | grep -F '要件「三表の親と部分」「順 3 の一覧の親と部分」' | grep -qF '1 行目は分けないときと同じ'
+  done
+}
+
 @test "long comment (#1249): the rule cuts at line boundaries and never repeats the table header" {
   s="$(section)"
   echo "$s" | grep -qF '行の境界で切る'
