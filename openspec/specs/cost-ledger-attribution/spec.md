@@ -192,6 +192,10 @@ issue 番号は各行の `Bash` ツールの `command` から、`gh issue view`�
 - **WHEN** feature ブランチ上のセッションで `gh issue view 273` が実行されている
 - **THEN** その行のコストはブランチの合計にも issue 273 の合計にも含まれる
 
+#### Scenario: 単純な和は issue の合計と一致しない
+- **WHEN** issue #12 に帰属する区間の行が 3 行（各 $1.00）あり、そのうち 1 行がブランチ `feat/a` の行で、ブランチ `feat/a` の行が全部で 3 行（各 $1.00）ある会話ログで、`cost_ledger.py issue 12 --closing-pr 300:feat/a --json` を実行する
+- **THEN** `combined_total_usd` は 5.0 で、`total_usd`（3.0）と PR の分（3.0）の和 6.0 より、重なった 1 行の $1.00 だけ小さい
+
 ### Requirement: 同じ応答の 2 行目以降の issue と投稿の印
 Claude Code は 1 回の API 応答を、中身のブロックごとに別の行として会話ログに書き、どの行も同じ `requestId` を持つ。システムは、各会話ログのファイルの中で同じ `requestId` が最初に現れる行を**先頭の行**とし、先頭の行から通常の事実を 1 つ出 MUST す（今までどおり。事実は先頭の行の `uuid` を `uuid` の欄に持つ）。同じファイルでそれより後に現れる行を**後続行**と呼ぶ。
 
@@ -275,10 +279,6 @@ Claude Code は 1 回の API 応答を、中身のブロックごとに別の行
 - **WHEN** 1 回目の取り込みで応答の 1 行目だけを読み、2 回目の取り込みでその 2 行目を読む
 - **THEN** 2 行目だけが補足の事実になり、1 行目は 2 回目では事実を出さない
 
-#### Scenario: 単純な和は issue の合計と一致しない
-- **WHEN** issue #12 に帰属する区間の行が 3 行（各 $1.00）あり、そのうち 1 行がブランチ `feat/a` の行で、ブランチ `feat/a` の行が全部で 3 行（各 $1.00）ある会話ログで、`cost_ledger.py issue 12 --closing-pr 300:feat/a --json` を実行する
-- **THEN** `combined_total_usd` は 5.0 で、`total_usd`（3.0）と PR の分（3.0）の和 6.0 より、重なった 1 行の $1.00 だけ小さい
-
 #### Scenario: 確定行の出力トークンが差分として足される
 - **WHEN** 同じ `requestId` の 1 行目（考えた内容）の出力が 8、2 行目（`stop_reason` が `tool_use`、`gh issue` も投稿も無い）の出力が 251 で、入力・キャッシュは同じ
 - **THEN** 先頭の事実の出力は 8、補足の事実が 1 つ出て出力は 243、入力・キャッシュは 0、`continuation` は真。出力トークンの合計は 251 で、メッセージ数は 1
@@ -317,7 +317,7 @@ Claude Code は 1 回の API 応答を、中身のブロックごとに別の行
 - **PR の分**: 渡された PR 1 件ごとに、行のブランチ名がその PR のヘッドブランチと一致する行の合計。`/cost <PR番号>` と同じ引き方で、リポジトリでは絞らない
 - **PR の外の分**: その issue に帰属した区間の行（「issue による帰属（第 2 の鍵）」が数える行）のうち、行のブランチ名が、渡された PR のどのヘッドブランチとも一致しない行の合計
 
-システムは同じ行を 2 回数えてはなら MUST NOT ない。同じヘッドブランチを持つ PR が複数渡されたときは、番号のいちばん小さい PR だけを数え、残りは PR の分にも内訳にも入れてはなら MUST NOT ない。PR が 1 件も渡されないとき、issue の合計は `/cost <issue番号>` の値（区間の合計）と同じで MUST ある。入出力トークンとキャッシュトークンの合計も、金額と同じ行の集合から数え SHALL る。
+システムは同じ行を 2 回数えてはなら MUST NOT ない。同じヘッドブランチを持つ PR が複数渡されたときは、番号のいちばん小さい PR だけを数え、残りは PR の分にも内訳にも入れてはなら MUST NOT ない。PR が 1 件も渡されないとき、issue の合計は `cost_ledger.py issue <issue番号>` の 1 行目の値（区間の合計。子 issue を持たない issue の `/cost <issue番号>` の 1 行目と同じ）と同じで MUST ある。子 issue を持つ issue の `/cost <issue番号>` の 1 行目は子 issue の分を含む合計（帰属: `子 issue 込み`）なので、この値とは一致しない。入出力トークンとキャッシュトークンの合計も、金額と同じ行の集合から数え SHALL る。
 
 `cost_ledger.py issue <番号>` は `--closing-pr <PR番号>:<ヘッドブランチ>`（繰り返し可）を受け、JSON 出力に次の鍵を足 MUST す。既存の鍵（`total_usd`・`intervals` など）の値と、表示の 1 行目は変えてはなら MUST NOT ない。
 
@@ -334,7 +334,7 @@ Claude Code は 1 回の API 応答を、中身のブロックごとに別の行
 - **THEN** `total_usd` は 3.0、`closing_prs` は `[{"number": 300, "branch": "feat/a", "usd": 3.0}]`、`outside_pr_usd` は 2.0、`combined_total_usd` は 5.0（6.0 ではない）
 
 #### Scenario: 閉じた PR が 0 件なら `/cost` と同じ値
-- **WHEN** issue #12 に帰属する区間がある会話ログで、`--closing-pr` を付けずに `cost_ledger.py issue 12 --json` と `cost_ledger.py cost 12` を実行する
+- **WHEN** 子 issue を持たない issue #12 に帰属する区間がある会話ログで、`--closing-pr` を付けずに `cost_ledger.py issue 12 --json` と `cost_ledger.py cost 12` を実行する
 - **THEN** `closing_prs` は空の配列で、`combined_total_usd` と `outside_pr_usd` は `total_usd` と同じ値であり、その金額は `cost 12` の 1 行目の金額と一致する
 
 #### Scenario: PR が 2 件

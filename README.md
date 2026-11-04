@@ -75,7 +75,7 @@ export CLD_DEFAULT_ARGS="--dangerously-skip-permissions --remote-control"   # �
 
 ### product-handover
 
-プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト・サポート窓口・教訓ログの雛形3種だけを持ち、オーケストレーターもスキルも持たない。
+プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト・インシデント対応手順書・サポート窓口・教訓ログの雛形4種だけを持ち、オーケストレーターもスキルも持たない。
 
 ```bash
 /plugin install product-handover@oratta-claude-harness
@@ -230,6 +230,6 @@ install 済みの環境では、入れていたプラグインについて次を
 
 1. `claude plugin uninstall skill-pack@oratta-claude-harness`・`claude plugin uninstall telegram@oratta-claude-harness`・`claude plugin uninstall experience-to-skill@oratta-claude-harness` のうち、入れていたものを実行する
 2. uninstall で消えずに `settings.json` / `settings.local.json` の `enabledPlugins` に `<name>@oratta-claude-harness` が残っていれば、そのエントリを消す
-3. telegram を使っていた環境は、公式の `telegram@claude-plugins-official` を入れる（設定は公式側の手順に従う）
+3. telegram を使っていた環境は、公式の `telegram@claude-plugins-official` を入れ、起動時の `--channels`（住人なら `CHANNEL_PLUGINS`）を `plugin:telegram@oratta-claude-harness` から `plugin:telegram@claude-plugins-official` に替えて再起動する（Bot トークンと `access.json` は `~/.claude/channels/telegram/` のまま使える。そのほかの設定は公式側の手順に従う）
 
 `~/.claude/skills/distilled/` と `<repo>/.claude/skills/distilled/` にある蒸留スキル（名前が `e2s-` か `distilled-` で始まるもの）は uninstall では消えない。

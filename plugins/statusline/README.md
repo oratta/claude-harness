@@ -13,7 +13,7 @@ Context 91%  │  Cache 82%  │  API ¥1,446,038/mo  │  Session ¥1,240
 |---|---|
 | 1 | カレントディレクトリ / モデル / git ブランチ（未コミット変更は `✱`） |
 | 2 | コンテキスト残量 / プロンプトキャッシュのヒット率 / 直近30日の使用量を API 従量課金に換算した月額ペース / このセッションの API 換算コスト |
-| 3 | 5時間ウィンドウのレートリミット消化率 |
+| 3 | 5時間ウィンドウのレートリミット消化率（サーバーが5時間枠を返さないときは行が出ない） |
 | 4 | 7日ウィンドウのレートリミット消化率（全体 + Fable） |
 
 `Cache` は、メイン会話のセッション累計のプロンプトキャッシュのヒット率（Claude Code が渡す `prompt_cache.hit_ratio` を四捨五入した百分率。サブエージェントの分は含まない）。値によって色は変えない。直近にキャッシュのミスがあれば、そのうしろに `miss:<原因>` が付く。これは直近のミスの原因で、次のミスが起きるまで出続ける。短い名前は `tools`（`tools_changed`）・`system`（`system_prompt_changed`）・`ttl5m`（`ttl_expired_5m`）・`server`（`likely_server_side`）で、これ以外の原因名は 16 文字までそのまま出し、原因が複数あれば先頭だけを出して `+1` のように残りの件数を添える。`prompt_cache` を渡さない版と、最初の API 応答の前は区画を出さない。原因は Claude Code 2.1.260 以降でだけ出る。`caching_observed` は見ないので、キャッシュのトークン数を報告しないプロバイダやゲートウェイでは `Cache 0%` と出る。消したいときは `STATUSLINE_PROMPT_CACHE=0`。
@@ -87,9 +87,9 @@ Fable の週次消化率は Claude Code がステータスラインに渡して�
 
 `dev-workflow` を入れていない、あるいは snapshot が6時間以上古い場合は Fable セグメントを黙って省く。
 
-逆方向に、このステータスラインは、値が前回書いたものから変わった描画で、受け取った 5 時間枠と全体の週次を、起動アカウント別の記録 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`（`USAGE_SESSIONS_DIR` で上書き可）に書き出す。アカウント鍵は `CLAUDE_SECURESTORAGE_CONFIG_DIR`（下記）が未設定なら `default`、設定されていれば Keychain のサービス名の末尾と同じ 8 桁で、レジストリや snapshot の `active` からは決めない（別アカウントの値を取り違えないため）。`dev-workflow` の残量モードの判定・アカウント選択・複数アカウント表示の非 active 行はこの記録を主な情報源にし、usage API の snapshot は Fable 週次と記録の無いアカウントの補助に使う。記録の `observed_at` は値を新しく受け取った時刻で、セッションごとに前回書いた値を記録ディレクトリ内の `.sessions/`（session_id を JSON 文字列として引用符付きのまま sha256 した先頭 16 桁のファイル、7 日より古いものは書き込みのついでに消す）に覚え、前回と同じ値の描き直しでは書かない（止まっているセッションの古い値が、別セッションの新しい値を新しい時刻で潰さないため）。書けなかったときは黙って諦め、表示は変えない。
+逆方向に、このステータスラインは、値が前回書いたものから変わった描画で、受け取った 5 時間枠と全体の週次を、起動アカウント別の記録 `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions/<アカウント鍵>.json`（`USAGE_SESSIONS_DIR` で上書き可）に書き出す。アカウント鍵は `CLAUDE_SECURESTORAGE_CONFIG_DIR`（下記）が未設定なら `default`、設定されていれば Keychain のサービス名の末尾と同じ 8 桁で、レジストリや snapshot の `active` からは決めない（別アカウントの値を取り違えないため）。`dev-workflow` の残量モードの判定・アカウント選択・複数アカウント表示の非 active 行はこの記録を主な情報源にし、usage API の snapshot は Fable 週次と記録の無いアカウントの補助に使う。記録の `observed_at` は値を新しく受け取った時刻で、セッションごとに前回書いた値を記録ディレクトリ内の `.sessions/`（session_id を JSON 文字列として引用符付きのまま sha256 した先頭 16 桁のファイル、7 日より古いものは書き込みのついでに消す）に覚え、前回と同じ値の描き直しでは書かない（止まっているセッションの古い値が、別セッションの新しい値を新しい時刻で潰さないため）。書けなかったときは黙って諦め、表示は変えない。サーバーが 5 時間枠を返さない描画でも週次の値があれば記録を書き、`five_hour_pct` と `five_hour_resets_epoch` は `null` にする（0 にはしない）。
 
-あわせて、5h の使用率と空でない `session_id` がある既定アカウントの描画では、`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` に rate snapshot を書く。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空のセッションでは書かない。JSON は `ts`、`observed_at`、`written_at`、`obs_sig`、`host`、`storage_binding`、`session_id`、`five_hour_pct`、`five_hour_resets_at`、`seven_day_pct`、`seven_day_resets_at` を持つ。`ts` と `observed_at` は同じ観測時刻で、枠値・`storage_binding`・`session_id` が変わらない再表示では進まない。`written_at` は書込時刻。`session_id` は入力値をそのまま保存し、`host` は `hostname -s` の英数字・`.`・`_`・`-` 以外を文字ごとに `_` に置き換える。`$HOME/.claude.json` の `oauthAccount.accountUuid` が有効な場合だけ `account_id` も含む。欠けた任意の枠値は `null` とする。書込は同じディレクトリの一時ファイルから原子的に置き換える。
+あわせて、5h か 7d の使用率と空でない `session_id` がある既定アカウントの描画では、`${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.rate-limit-snapshot` に rate snapshot を書く。`CLAUDE_SECURESTORAGE_CONFIG_DIR` が非空のセッションでは書かない。JSON は `ts`、`observed_at`、`written_at`、`obs_sig`、`host`、`storage_binding`、`session_id`、`five_hour_pct`、`five_hour_resets_at`、`seven_day_pct`、`seven_day_resets_at` を持つ。`ts` と `observed_at` は同じ観測時刻で、枠値・`storage_binding`・`session_id` が変わらない再表示では進まない。`written_at` は書込時刻。`session_id` は入力値をそのまま保存し、`host` は `hostname -s` の英数字・`.`・`_`・`-` 以外を文字ごとに `_` に置き換える。`$HOME/.claude.json` の `oauthAccount.accountUuid` が有効な場合だけ `account_id` も含む。欠けた任意の枠値は `null` とし、キーは省かない。`five_hour_pct` の `null` は、その観測に 5 時間枠が無かった（欠測）ことを表し、使用率 0 ではない。これは読み手との契約で、読み手は `null` を判定にも表示にも 0 として使わず、同じ snapshot の週次の値は読む。書込は同じディレクトリの一時ファイルから原子的に置き換える。
 
 共有先を設定すると `<共有先>/<host>.json` にローカルと同じ JSON を書く。共有先は次の順で最初に定まったものを使う。(1) `CLAUDE_RATE_SHARE_DIR` が定義されていればその値（前後の空白は除く。空文字や空白だけなら共有を無効にする）、(2) 旧名の `FLATMATE_RATE_SHARE_DIR`（互換。主は `CLAUDE_RATE_SHARE_DIR`。同じく空文字や空白だけなら無効）、(3) `CLAUDE_RATE_SHARE_CONF`（既定 `$HOME/.claude/rate-share`）の先頭の非コメント・非空行、(4) 旧名の `FLATMATE_RATE_SHARE_CONF`（互換。主は `CLAUDE_RATE_SHARE_CONF`。既定 `$HOME/.claude/flatmate-rate-share`）の先頭の非コメント・非空行。(3) の設定ファイルが無いか有効な行が無いときだけ (4) を読む。環境変数・設定ファイル由来のパスは前後空白を除き、先頭の `~` を HOME に展開する。共有先に書けなくてもローカルの保存と表示は続く。
 
@@ -182,6 +182,8 @@ SCRIPTS=~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflo
 戻すときは `accounts.sh on <id>` を実行する。認証情報と、それまでに記録された使用量は残っているので、登録をやり直す必要は無い（書き換える前の登録簿は `accounts.json.bak` に 1 世代だけ残る。`accounts-init.sh` で同じ id を登録し直しても `enabled` は消えない）。オフのアカウントがいま使っているアカウントになっているセッション（`CLAUDE_SECURESTORAGE_CONFIG_DIR` を手で設定して起動した場合のほか、オフにした既定アカウントへ `cld` の自動選択が縮退して起動した場合、起動したあとでそのアカウントをオフにした場合）では、そのアカウントは消さずにライブ値で描く（他のアカウントがオンなら複数アカウントの表示になる）。
 
 ### 表示の読み方（複数アカウント時）
+
+サーバーが 5 時間枠を返さないアカウントは `5h` の行を出さず、`7d All` の行だけを描く。経過時間やリセット権の区画もその行に付く。5 時間も週次も無い active の行だけが `取得待ち` になる。5 時間枠がまた返るようになれば、そのまま元の 2 行に戻る。
 
 - **いま使っているアカウント**は行頭に `▸` が付き、label が通常の明るさになる。値は Claude Code から渡るライブ値で描き、Fable セグメントには従来どおり 6 時間の鮮度ゲートが効く
   - 記号と明るさの両方で示すのは、片方が落ちる環境があるため。スクリーンショットやログに貼ると色（明るさ）が失われ、フォントに `▸` が無い端末では記号が豆腐になる。どちらか一方でも残れば、どちらのアカウントの数字を見ているかは分かる
