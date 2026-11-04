@@ -16,7 +16,9 @@
 
 ### 1. 前提を揃える
 
-1. PR に `agent-review:pending` が付いていることを確認（無ければ付ける）。**`agent-review:failed` からの再レビューもここが起点** — 修正を push したら `failed` を外して `pending` に戻し（`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:failed` → `-X POST ... -f 'labels[]=agent-review:pending'`）、手順1から全工程をやり直す（前回の合格部分を流用しない。ただし再レビューの範囲は手順2の収束ルールに従い**差分限定**。方式の書き換えの後は全体レビューにし、周回は数え続ける）。
+**着手前の重複チェック（手順 1 の 1 より前に行う）**: ラベルの操作や main の取り込みに入る前に、PR の現在の HEAD（`gh api repos/$R/pulls/$N --jq .head.sha`）と、最新の `レビュー重量:` コメントの `固定 HEAD:` と `担当セッション:` を見る。`固定 HEAD:` が現在の HEAD と一致し、`agent-review:passed` が付いておらず、`担当セッション:` が自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）と違う（行が無い・自分の ID が取れないときも違うとみなす）ときは、別のセッションの担当が同じ HEAD で着手済みなので、手順 1 以降を何もせず降り、降りた旨・着手済みコメントの URL・その `担当セッション:` の値を return に書く（develop の G は Status `重複で降りた`・`次の段: なし`）。それ以外（HEAD が動いた・コメントが無い・passed が付いている・`担当セッション:` が自分と同じ）は通常どおり進む。同じセッションの担当は、そのセッションの本体が自分の会話と `ListAgents` で確かめられるので、ここでは止めない。別のセッションの担当は、こちらから生きているかを確かめられず止めることもできないので、降りた return を受けた本体は取り直さずに主に報告する（develop の本体の動きは `skills/develop/references/roles/gate-runner.md` の段の表）。起動指示に `取り直し: 明示（理由）` の行がある起動と、前の段の `## Gate Result` を貼って起こされた起動（保留の解除のあと・W の修正後の再レビュー）は、同じ HEAD でも降りずに進む。develop を通さない本体が、主から前の担当は止まっていると聞いて自分で取り直すときも、自分に `取り直し: 明示（理由）` の行があるものとして扱う。確認と投稿は不可分でないので、ほぼ同時の起動は防げない（最後の止め役は手順 5 の HEAD 照合）。前のセッションの担当が参照できなくても生きている場合があり、そのまま待機している担当と同じ HEAD に二重で走る事故があった（#249）。
+
+1. PR に `agent-review:pending` が付いていることを確認（無ければ付ける）。**`agent-review:failed` からの再レビューもここが起点** — 修正を push したら `failed` を外して `pending` に戻し（`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:failed` → `-X POST ... -f 'labels[]=agent-review:pending'`）、手順1から全工程をやり直す（前回の合格部分を流用しない。唯一の例外は手順 3-c の主の許容の引き継ぎ（`stages/hold.md`）。ただし再レビューの範囲は手順2の収束ルールに従い**差分限定**。方式の書き換えの後は全体レビューにし、周回は数え続ける）。
    このとき **`needs-approval` の要否も判断する** — 保留理由が解消しているなら
    `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外し、
    まだ主の許容待ちが残っているなら**付けたまま**にして手順6を続行する。黙って持ち越さない。
@@ -67,24 +69,24 @@ gh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除
 
 **light で変わるのはレビュー実行者だけで、免除される工程は無い** — 実装と別コンテキストであること・手順3のリスク宣言・手順4の動作確認証拠・手順5の HEAD SHA 照合と合格前の API 実測・収束ルール（stages/triage.md）はすべてそのまま適用する。
 
-**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `plugins/dev-workflow/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。パス順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。入力は 2 段で作る（1 本のパイプにしない。パイプだと `gh api` が失敗しても空の入力が渡り、「合計 0 行」と区別できない）。
+**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。パス順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。`${CLAUDE_PLUGIN_ROOT}` が未設定のときは、この段のファイル（stages/prepare.md）の位置から `../../../scripts/review-partitions.sh` を絶対パスに解決して使う。入力は 2 段で作る（1 本のパイプにしない。パイプだと `gh api` が失敗しても空の入力が渡り、「合計 0 行」と区別できない）。
 
 ```bash
 f="$(mktemp)"
 gh api repos/$R/pulls/$N/files --paginate --jq '.[] | "\(.additions + .deletions)\t\(.filename)"' > "$f" || { echo "gh api 失敗: 区画を推測せず止める"; exit 1; }
-plugins/dev-workflow/scripts/review-partitions.sh < "$f"
+${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh < "$f"
 ```
 
-(a) `gh api` が失敗したら止め、区画を推測しない（取得失敗を「合計 0 行」として扱わない。exit 2 で止めるのと同じ扱い）。(b) `review-partitions.sh < "$f"` の `合計:` を `gh api repos/$R/pulls/$N --jq '.additions+.deletions'` と比べ、一致しなければ止める。入力エラーで exit 2 のときも止め、区画を推測しない。区画に分けるのは Claude のレビュアーだけで、Codex には差分全体を渡す。二周目以降の差分限定レビューと方式書き換え後の全体レビューには区画を使わない。従来経路で Task サブエージェントを起こす側も同じスクリプトを使う。
+(a) `gh api` が失敗したら止め、区画を推測しない（取得失敗を「合計 0 行」として扱わない。exit 2 で止めるのと同じ扱い）。(b) `review-partitions.sh < "$f"` の `合計:` を `gh api repos/$R/pulls/$N --jq '.additions+.deletions'` と比べ、一致しなければ止める。exit 2 に限らず 0 以外ならすべて止め（exit 127 = スクリプトが見つからない場合を含む）、区画を推測しない。区画に分けるのは Claude のレビュアーだけで、Codex には差分全体を渡す。二周目以降の差分限定レビューと方式書き換え後の全体レビューには区画を使わない。従来経路で Task サブエージェントを起こす側も同じスクリプトを使う。
 
-判定結果と根拠を PR コメントに残す（後から light 判定をサンプリング再判定できるようにするため）。2 行目には手順 1 で固定した HEAD を `固定 HEAD: <SHA>`（40 桁）の形で書く。このコメントは周ごとに増えるので、あとの段は最新の 1 件を正とする（auto-merge が宣言の照合に使う別の行と取り違えないよう、この行は固定 HEAD と書く）:
+判定結果と根拠を PR コメントに残す（後から light 判定をサンプリング再判定できるようにするため）。2 行目には手順 1 で固定した HEAD を `固定 HEAD: <SHA>`（40 桁）の形で書く。最後の行には `担当セッション: <$CLAUDE_CODE_SESSION_ID の値>`（取れなければ `担当セッション: 不明`）を書く（手順 1 の冒頭の重複チェックが、別のセッションの担当かを見分けるのに使う）。このコメントは周ごとに増えるので、あとの段は最新の 1 件を正とする（auto-merge が宣言の照合に使う別の行と取り違えないよう、この行は固定 HEAD と書く）:
 
 ```bash
 gh api -X POST repos/$R/issues/$N/comments \
-  -f body="$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\n固定 HEAD: %s\n合計: 12 行\n区画: なし' "$HEAD")"
+  -f body="$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\n固定 HEAD: %s\n合計: 12 行\n区画: なし\n担当セッション: %s' "$HEAD" "${CLAUDE_CODE_SESSION_ID:-不明}")"
 ```
 
-`レビュー重量:` コメントの 3 行目以降に `review-partitions.sh` の出力（`合計:` と `区画:`、区画がある場合は一覧）をそのまま載せる。あとの G は最新コメントの区画を正とする。
+`レビュー重量:` コメントの 3 行目から `担当セッション:` の行の前までに `review-partitions.sh` の出力（`合計:` と `区画:`、区画がある場合は一覧）をそのまま載せる。あとの G は最新コメントの区画を正とする。
 
 ## G として動くとき（develop）
 
@@ -92,20 +94,20 @@ gh api -X POST repos/$R/issues/$N/comments \
 
 ### needs-reviewer の return（本体にレビュアーの spawn を委ねる）
 
-G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: dev-workflow:reviewer` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、照合と振り分けの G を新しく起こしてその要約を渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
+G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: dev-workflow:reviewer` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、照合と振り分けの G を新しく起こしてその要約を渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・Codex オフ・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
 
 ```markdown
 ## needs-reviewer
-- 判定: light | full（Codex 不可） | full（adapter 経路）
-- 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由>
+- 判定: light | full（Codex 不可） | full（Codex オフ） | full（adapter 経路）
+- 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由、Codex オフなら `Codex オフ（設定）`>
 - PR 番号: #<N>
 - HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
 - 区画: <なし | review-partitions.sh の出力の区画の一覧>
-- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）>
-- 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）>
-- 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路）>
-- 出力の要点: <full: 実測した不可条件と応答、adapter 経路: 未実行（adapter 経路）>
-- 実待ち時間: <タイムアウト時の実測値、完了未確認、adapter 経路: 未実行（adapter 経路）>
+- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）、Codex オフ: 未実行（Codex オフ）>
+- 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）、Codex オフ: python3 <plugin>/scripts/usage_view.py --codex-enabled → off>
+- 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路） | 未実行（Codex オフ）>
+- 出力の要点: <full: 実測した不可条件と応答、adapter 経路: 未実行（adapter 経路）、Codex オフ: Codex オフの設定により Codex を試していない>
+- 実待ち時間: <タイムアウト時の実測値、完了未確認、adapter 経路: 未実行（adapter 経路）、Codex オフ: 未実行（Codex オフ）>
 - 推奨モデル: opus（種別は dev-workflow:reviewer） | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）
 - 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>
 - 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>

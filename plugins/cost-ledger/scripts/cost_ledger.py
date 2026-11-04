@@ -92,11 +92,26 @@ RECORD_NUMBER_RE = re.compile(r"[0-9]+(\.[0-9]+)?([eE][-+]?[0-9]+)?")
 # 料金表
 # --------------------------------------------------------------------------
 
+def prompt_length(fact: dict) -> int:
+    """1 応答のプロンプト長（入力 + キャッシュ書込 5m + キャッシュ書込 1h + キャッシュ読出）。
+
+    補足の事実は入力・キャッシュが 0 なので、応答の分を ``prompt_tokens`` に持つ
+    （欄ができる前に書かれた補足の事実は持たない。0 として閾値以下の単価になる）。
+    """
+    if fact.get("continuation"):
+        return fact.get("prompt_tokens") or 0
+    return (fact["input_tokens"] + fact["cache_write_5m_tokens"]
+            + fact["cache_write_1h_tokens"] + fact["cache_read_tokens"])
+
+
 class Pricing:
     """pricing.json の内容。単価と換算レートを持つ唯一の入口。"""
 
     def __init__(self, data: dict):
         self.models = data["models"]
+        for name, price in self.models.items():
+            if "long_prompt" in price:
+                self._check_long_prompt(name, price["long_prompt"])
         self.rate_env = data.get("usd_jpy_rate_env", "COST_LEDGER_USD_JPY")
         rate = data["usd_jpy_rate"]
         override = os.environ.get(self.rate_env)
@@ -108,6 +123,18 @@ class Pricing:
         self.jpy_rate = float(rate)
         # 最長一致の前方一致にするため、鍵を長い順に見る（表の並び順に依存させない）
         self._keys = sorted(self.models, key=len, reverse=True)
+
+    @staticmethod
+    def _check_long_prompt(name: str, tier):
+        """``long_prompt``（閾値と閾値超の単価 5 種）が欠けたまま低い単価に落ちないよう、読み込みで検べる。"""
+        def number(value):
+            return (isinstance(value, (int, float)) and not isinstance(value, bool)
+                    and math.isfinite(value))
+        if not isinstance(tier, dict) or not all(
+                number(tier.get(key)) for key in ("threshold",) + PRICE_FIELDS):
+            raise SystemExit(
+                "pricing.json: %s の long_prompt は threshold と %s がすべて数である必要があります"
+                % (name, "・".join(PRICE_FIELDS)))
 
     @classmethod
     def load(cls, path: str) -> "Pricing":
@@ -126,6 +153,10 @@ class Pricing:
         price = self.find(fact["model"])
         if price is None:
             return 0.0, False
+        tier = price.get("long_prompt")
+        if tier is not None and prompt_length(fact) > tier["threshold"]:
+            # 1 応答のプロンプト長が閾値を超えたら、出力を含む全トークンが閾値超の単価
+            price = tier
         total = 0.0
         for token_field, price_field in zip(TOKEN_FIELDS, PRICE_FIELDS):
             total += fact[token_field] * float(price[price_field])
@@ -854,12 +885,16 @@ def facts_from_lines(lines, path: str, resolver: RepoResolver, seen, branch: str
                 if key in seen:
                     continue
             fact = build_fact(record, resolver, path)
+            # 単価の区分（プロンプト長の閾値）を決めるための応答のプロンプト長。トークンには数えない。
+            # usage の欄が数でない行はここで落ちるので、try の内側で求める
+            prompt_tokens = sum(fact[field] for field in TOKEN_KEYS if field != "output_tokens")
         except (AttributeError, TypeError, ValueError):
             SCAN_STATS["unreadable_lines"] += 1
             continue
         fact["request_id"] = key
         if recorded:
             fact["issues"], fact["post_marker"] = [], None
+        fact["prompt_tokens"] = prompt_tokens
         for field in TOKEN_KEYS:
             fact[field] = 0
         fact["output_tokens"] = delta
@@ -2301,11 +2336,16 @@ def render_breakdown(summary: dict, pricing: Pricing) -> list[str]:
                     format(row["usd"], ",.2f"),
                 )
             )
-    for model, count in sorted(summary["unknown_models"].items()):
-        lines.append(
-            "  未知モデル: %s %d 行（料金表に単価が無いため 0 円として扱っている）" % (model, count)
-        )
+    lines.extend(render_unknown_models(summary["unknown_models"]))
     return lines
+
+
+def render_unknown_models(unknown_models: dict) -> list[str]:
+    """未知モデルの行（モデル名の順）。branch・issue・epic の経路が同じ文言を出す。"""
+    return [
+        "  未知モデル: %s %d 行（料金表に単価が無いため 0 円として扱っている）" % (model, count)
+        for model, count in sorted(unknown_models.items())
+    ]
 
 
 def render_price_drift(result) -> list[str]:
@@ -2356,7 +2396,7 @@ def branch_label(facts, resolver: RepoResolver):
 
 def cmd_facts(args, pricing: Pricing, resolver: RepoResolver) -> int:
     for fact in load_facts(resolver):
-        sys.stdout.write(json.dumps(fact, ensure_ascii=False) + "\n")
+        sys.stdout.write(_json_dumps(fact) + "\n")
     return 0
 
 
@@ -2379,13 +2419,14 @@ def cmd_branch(args, pricing: Pricing, resolver: RepoResolver) -> int:
         unknown = [f for f in all_facts if f["repo_id"] == UNKNOWN_REPO]
     summary = summarise(facts, pricing)
     label = resolver.label(scope) if scope is not None else branch_label(facts, resolver)
-    target = "ブランチ %s" % args.branch
+    shown_branch = _display_text(args.branch)
+    target = "ブランチ %s" % shown_branch
     if args.target_label:
         target = args.target_label
     elif label:
-        target = "ブランチ %s (%s)" % (args.branch, label)
+        target = "ブランチ %s (%s)" % (shown_branch, label)
     print(headline(summary["total_usd"], pricing, target, "ブランチ"))
-    print("  対象: ブランチ %s（%d メッセージ）" % (args.branch, summary["messages"]))
+    print("  対象: ブランチ %s（%d メッセージ）" % (shown_branch, summary["messages"]))
     for line in render_breakdown(summary, pricing):
         print(line)
     if not facts:
@@ -2440,7 +2481,7 @@ def cmd_cost(args, pricing: Pricing, resolver: RepoResolver) -> int:
     if kind == "pr":
         return cmd_branch(
             argparse.Namespace(
-                branch=value, target_label="PR #%s (%s)" % (args.number, value),
+                branch=value, target_label="PR #%s (%s)" % (args.number, _display_text(value)),
                 no_drift_check=args.no_drift_check,
             ),
             pricing,
@@ -2506,7 +2547,7 @@ def cmd_report(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "usd_jpy_rate": pricing.jpy_rate,
     }
     if args.json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(_json_dumps(payload, indent=2))
         return 0
     print(headline(summary["total_usd"], pricing, "全履歴", "ブランチ"))
     for branch, usd in sorted(branches.items(), key=lambda kv: -kv[1]):
@@ -2527,15 +2568,15 @@ def cmd_intervals(args, pricing: Pricing, resolver: RepoResolver) -> int:
     rows = price_intervals(split_intervals(facts), pricing)
     total = sum(row["usd"] for row in rows)
     if args.json:
-        print(json.dumps({
+        print(_json_dumps({
             "branch": args.branch,
             "total_usd": total,
             "messages": sum(1 for fact in facts if not is_continuation(fact)),
             "intervals": [interval_payload(row, resolver) for row in rows],
             "usd_jpy_rate": pricing.jpy_rate,
-        }, ensure_ascii=False, indent=2))
+        }, indent=2))
         return 0
-    target = "ブランチ %s" % args.branch if args.branch else "全履歴"
+    target = "ブランチ %s" % _display_text(args.branch) if args.branch else "全履歴"
     print(headline(total, pricing, target, "区間"))
     print("  対象: %s（%d 区間 / %d メッセージ）" % (
         target, len(rows), sum(1 for fact in facts if not is_continuation(fact))))
@@ -2618,7 +2659,7 @@ def issue_combined_total(matched, closing_prs, pricing: Pricing, resolver: RepoR
     outside_usd = summarise(outside, pricing)["total_usd"]
     all_facts.extend(outside)
     total += outside_usd
-    return {"prs": prs, "outside_usd": outside_usd, "total_usd": total,
+    return {"prs": prs, "outside_usd": outside_usd, "total_usd": total, "facts": all_facts,
             "current": (int(round(total * 1e6)),) + token_totals(all_facts)}
 
 
@@ -2692,6 +2733,10 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
 
     金額は、ブランチごと・(issue, ブランチ) ごとにマイクロドルの整数へ丸めてから足し、ドルへの
     変換は最後に行う（割り当てた額の和と合計が、浮動小数の誤差なしで一致するように）。
+
+    返す ``children_usd`` と、エピックの直下の子の ``usd`` を浮動小数で足した値は、最後の桁が
+    ずれうる（0.1 + 0.2 は 0.30000000000000004）。一致するのは小数 6 桁に丸めた値（マイクロ
+    ドルの整数どうしでは一致する）。
     """
     owner = {}
     for row in issues:
@@ -2749,6 +2794,8 @@ def assign_epic_rows(issues, interval_facts, branch_facts, unknown_facts, pricin
         "inferred_repo_usd": _micro(inferred, pricing) / 1e6,
         "inferred_repo_messages": sum(1 for fact in inferred if not is_continuation(fact)),
         "sessions": {fact["session_id"] for fact in counted},
+        # 合計に入れた行のうち単価が引けなかったモデルと行数
+        "unknown_models": summarise(counted, pricing)["unknown_models"],
     }
 
 
@@ -2763,8 +2810,12 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
     標準入力で既存のコメント本文（無ければ空）を受け、節目の行を 1 行足した本文を標準出力に
     返す。``--issue`` に ``--closing-pr`` が 1 つ以上あれば、続けて issue の合計の行を 1 行足す。
     PR か issue か、issue を閉じた PR はどれかは呼ぶ側が調べて渡すので、ここでは ``gh`` を
-    呼ばない。1 行目の対象の表記と帰属の種別は、最後の行が合計の行でなければ ``cmd_cost`` が
-    同じ番号に対して作るものと同じ。積むものが無いとき、``--target-repo`` が ``--repo`` の
+    呼ばない。1 行目の対象の表記と帰属の種別は、最後の行が合計の行でなければ、PR、
+    ``--child-issue`` を渡した回、子 issue を持たない issue では ``cmd_cost`` が同じ番号に対して
+    作るものと同じ。
+    ``--child-issue`` を渡さない回の子 issue を持つ issue では ``cmd_issue`` のもの（種別は
+    ``区間``）と同じ。合計の行のときの種別は ``--child-issue`` があれば ``子 issue 込み``、
+    無ければ ``区間+閉じた PR``。積むものが無いとき、``--target-repo`` が ``--repo`` の
     場所のリポジトリと違うとき（PR でも issue でも）は、何も出さずに終了コード 3。
     """
     if args.closing_pr and args.issue is None:
@@ -2838,14 +2889,16 @@ def cmd_timeline(args, pricing: Pricing, resolver: RepoResolver) -> int:
             return 2
         facts = facts_until(load_facts(resolver, branch=args.branch), at_ms)
         total = summarise(facts, pricing)["total_usd"]
-        target, kind = "PR #%s (%s)" % (args.pr, args.branch), "ブランチ"
+        target, kind = "PR #%s (%s)" % (args.pr, _display_text(args.branch)), "ブランチ"
         current = (int(round(total * 1e6)),) + token_totals(facts)
     nothing = current == (0, 0, 0) and (total_row is None or total_row[1] == (0, 0, 0))
     if nothing and not body.strip():
         return 3
     if args.backfill:
         # 後追いだけの 2 つの判定（spec cost-ledger-timeline）。行を足す前に見る
-        if timeline_has_trigger_near(parse_timeline(body), args.trigger, at_ms):
+        # 後追いの --trigger には照会失敗の印が付くことがある（例: issue クローズ+PR 照会失敗）。
+        # 既存の行と照らすのは先頭の呼び名（マージ / issue クローズ）だけ
+        if timeline_has_trigger_near(parse_timeline(body), args.trigger.split("+")[0], at_ms):
             sys.stdout.write(body)  # 同じ出来事の行が既にある。合計の行も足さない
             return 0
         if nothing:
@@ -2890,6 +2943,10 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
     label = resolver.label(repo_id)
     inferred_usd, inferred_messages = inferred_totals(
         (fact for row in matched for fact in row["facts"]), pricing)
+    # 閉じた PR を合わせるときは、合計に入る行（PR のブランチの行と PR の外の区間の行）を数える
+    unknown_models = summarise(
+        combined["facts"] if closing_prs
+        else [fact for row in matched for fact in row["facts"]], pricing)["unknown_models"]
     payload = {
         "issue": number,
         "repo_id": repo_id,
@@ -2901,6 +2958,7 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         "unknown_repo_messages": sum(row["messages"] for row in unknown),
         "inferred_repo_usd": inferred_usd,
         "inferred_repo_messages": inferred_messages,
+        "unknown_models": unknown_models,
         "usd_jpy_rate": pricing.jpy_rate,
         "closing_prs": combined["prs"],
         "outside_pr_usd": combined["outside_usd"],
@@ -2917,7 +2975,7 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
                             facts=[f for f in all_facts if f["session_id"] in sessions])
     payload["price_drift"] = drift
     if args.json:
-        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        print(_json_dumps(payload, indent=2))
         return 0
     print(headline(total, pricing, "issue #%s (%s)" % (number, label), "区間"))
     if closing_prs:
@@ -2937,6 +2995,8 @@ def cmd_issue(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  リポジトリ不明: %d 件 $%s（cwd が削除済みで、どのリポジトリの #%s か絞れない）"
               % (payload["unknown_repo_messages"],
                  format(payload["unknown_repo_usd"], ",.2f"), number))
+    for line in render_unknown_models(unknown_models):
+        print(line)
     for line in render_inferred(inferred_usd, inferred_messages):
         print(line)
     print("  ※ issue 単位は区間分割による推定です。区間の内訳で寄せ先を確かめてください。")
@@ -2961,6 +3021,28 @@ def _display_text(text: str) -> str:
     cleaned = "".join(" " if unicodedata.category(char) in _UNPRINTABLE_CATEGORIES else char
                       for char in text)
     return re.sub(" {2,}", " ", cleaned).strip(" ")
+
+
+_JSON_ESCAPE_RE = re.compile("[%s]" % "".join(
+    chr(c) for c in range(0x7F, 0x110000)   # U+0000〜U+001F は json.dumps が自分でエスケープする
+    if unicodedata.category(chr(c)) in _UNPRINTABLE_CATEGORIES
+))
+
+
+def _json_dumps(obj, **kwargs) -> str:
+    """``--json`` の出力。日本語はそのまま残し、制御文字・書式文字・行と段落の区切りだけ ``\\uXXXX`` にする。
+
+    ``json.dumps`` の ``ensure_ascii=False`` は U+0000〜U+001F しかエスケープしない。U+007F・C1 の制御文字
+    （U+009B は 8 ビットの CSI）・U+2028・双方向制御文字などが生で出ると、端末の表示を書き換えられたり、
+    出力を読むエージェントに偽の行を読ませられたりする。値は変わらず、``json.loads`` で元の文字列に戻る。
+    """
+    def escape(match):
+        code = ord(match.group(0))
+        if code > 0xFFFF:
+            code -= 0x10000
+            return "\\u%04x\\u%04x" % (0xD800 + (code >> 10), 0xDC00 + (code & 0x3FF))
+        return "\\u%04x" % code
+    return _JSON_ESCAPE_RE.sub(escape, json.dumps(obj, ensure_ascii=False, **kwargs))
 
 
 def _epic_line(row: dict, has_children: bool) -> str:
@@ -3014,7 +3096,7 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
         # 対象のセッションが多いので、上限つきの読み直しに任せる（facts を渡さない）
         drift = price_drift(result["sessions"], pricing)
     if args.json:
-        print(json.dumps({
+        print(_json_dumps({
             "issue": str(number),
             "repo_id": repo_id,
             "repo_label": label,
@@ -3029,7 +3111,8 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
             "unknown_repo_messages": result["unknown_repo_messages"],
             "inferred_repo_usd": result["inferred_repo_usd"],
             "inferred_repo_messages": result["inferred_repo_messages"],
-        }, ensure_ascii=False, indent=2))
+            "unknown_models": result["unknown_models"],
+        }, indent=2))
         return 0
     print(headline(result["total_usd"], pricing, "issue #%d (%s)" % (number, label), "子 issue 込み"))
     print("  対象: issue #%d（%s）と子孫の issue %d 件" % (number, label, len(issues) - 1))
@@ -3042,6 +3125,8 @@ def cmd_epic(args, pricing: Pricing, resolver: RepoResolver) -> int:
         print("  数えていない子 issue: %s（別のリポジトリ）"
               % "、".join("%s#%d" % (_display_text(row["repo"]), row["number"])
                              for row in skipped))
+    for line in render_unknown_models(result["unknown_models"]):
+        print(line)
     if result["unknown_repo_messages"]:
         print("  リポジトリ不明: %d 件 %s（cwd が削除済みで、どのリポジトリの issue か絞れない。"
               "合計には入れていない）"
