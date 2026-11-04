@@ -69,7 +69,7 @@ gh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除
 
 **light で変わるのはレビュー実行者だけで、免除される工程は無い** — 実装と別コンテキストであること・手順3のリスク宣言・手順4の動作確認証拠・手順5の HEAD SHA 照合と合格前の API 実測・収束ルール（stages/triage.md）はすべてそのまま適用する。
 
-**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。パス順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。`${CLAUDE_PLUGIN_ROOT}` が未設定のときは、この段のファイル（stages/prepare.md）の位置から `../../../scripts/review-partitions.sh` を絶対パスに解決して使う。入力は 2 段で作る（1 本のパイプにしない。パイプだと `gh api` が失敗しても空の入力が渡り、「合計 0 行」と区別できない）。
+**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。files API が返す順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。`${CLAUDE_PLUGIN_ROOT}` が未設定のときは、この段のファイル（stages/prepare.md）の位置から `../../../scripts/review-partitions.sh` を絶対パスに解決して使う。入力は 2 段で作る（1 本のパイプにしない。パイプだと `gh api` が失敗しても空の入力が渡り、「合計 0 行」と区別できない）。
 
 ```bash
 f="$(mktemp)"
@@ -86,7 +86,7 @@ gh api -X POST repos/$R/issues/$N/comments \
   -f body="$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\n固定 HEAD: %s\n合計: 12 行\n区画: なし\n担当セッション: %s' "$HEAD" "${CLAUDE_CODE_SESSION_ID:-不明}")"
 ```
 
-`レビュー重量:` コメントの 3 行目から `担当セッション:` の行の前までに `review-partitions.sh` の出力（`合計:` と `区画:`、区画がある場合は一覧）をそのまま載せる。あとの G は最新コメントの区画を正とする。
+`レビュー重量:` コメントの 3 行目から `担当セッション:` の行の前までに `review-partitions.sh` の出力（`合計:` と `区画:`、区画がある場合は一覧）をそのまま載せる。あとの G は最新コメントの区画を正とする。二周目以降（差分限定・全体レビューの周）は区画に分けないので、`区画: なし` を載せる。
 
 ## G として動くとき（develop）
 
@@ -102,7 +102,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 - 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由、Codex オフなら `Codex オフ（設定）`>
 - PR 番号: #<N>
 - HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
-- 区画: <なし | review-partitions.sh の出力の区画の一覧>
+- 区画: <なし（二周目以降・差分限定・全体レビューの周は常に なし） | review-partitions.sh の出力の区画の一覧>
 - 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）、Codex オフ: 未実行（Codex オフ）>
 - 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）、Codex オフ: python3 <plugin>/scripts/usage_view.py --codex-enabled → off>
 - 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路） | 未実行（Codex オフ）>
