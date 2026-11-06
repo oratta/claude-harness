@@ -161,6 +161,25 @@ class ForegroundRequest(unittest.TestCase):
                     ['git', '-C', str(self.cwd), 'rev-parse', 'HEAD'], text=True).strip())
                 self.assertFalse(self.out.exists())
 
+    def test_entry_role_takes_the_decider_entry_but_keeps_the_review_phase(self):
+        self.write_mixed_profile()
+        roles = json.loads(self.profile_file.read_text())
+        roles['profiles']['custom']['roles']['decider'] = {
+            'executor': 'codex', 'account': 'mapped', 'model': 'decider-model', 'effort': 'high'}
+        self.profile_file.write_text(json.dumps(roles))
+        result = self.call('--account-home', 'mapped=' + str(self.home),
+                           '--entry-role', 'decider', phase='review')
+        self.assertEqual((result['status'], result['role'], result['model']),
+                         ('request-written', 'impl-review', 'decider-model'))
+        request = json.loads(self.out.read_text())
+        self.assertEqual((request['role'], request['model']), ('impl-review', 'decider-model'))
+        self.assertIn('Codex delegated develop phase: review.', request['prompt'])
+        self.assertIn('reviewer-brief.md', request['prompt'])
+        self.assertNotIn('agents/decider.md', request['prompt'])
+        # without the option the review phase keeps its own (Claude) entry
+        again = self.call('--account-home', 'mapped=' + str(self.home), phase='review')
+        self.assertEqual((again['status'], again['executor']), ('agent-required', 'claude'))
+
     def test_every_phase_role_is_one_the_worker_accepts(self):
         self.assertLessEqual({role for role, _ in m.PHASES.values()}, set(worker_module.ROLES))
 

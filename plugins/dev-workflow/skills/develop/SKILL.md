@@ -159,11 +159,12 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            `ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、
            G が再び passed を返したら見張りの続き（reference の「`ready` を受けたあと」）に進む。合格するまでマージ待ち・マージ依頼に進まない。unmanned は (4) を回さないので対象外
       needs-reviewer → adapter 経路では G は full でも light でもこれを返す。本体は次の順で進む:
-           ① codex-develop.py request --phase review で投げ先を選び直す（実行先オプションはこの develop 開始時と同じ。自動選択なら無指定）
+           ① codex-develop.py request --phase review で投げ先を選び直す（実行先オプションはこの develop 開始時と同じ。自動選択なら無指定。事前分類に当たれば `--entry-role decider` を足す。phase は `review` のまま。`decider` はレビュアーに使わない）
            ② 返った選択（構成・reason・両 provider の margin・各 fetched_at・代表 Codex account。欠測は missing）と解決した executor / model を
               記録先に dispatch 記録として投稿する。投稿に成功するまでレビュアーを起動しない
            ③ 選ばれた投げ先でレビュアーを起動する（executor が claude なら Agent ツールで `subagent_type: dev-workflow:reviewer` として、model は adapter の値に残量上限を適用したもの。
-              事前分類に当たれば profile の decider entry で dev-workflow:decider。codex なら request を実行する）
+              事前分類に当たれば profile の decider entry で dev-workflow:decider。codex なら request を実行する。
+              codex の review phase は読み取り専用 sandbox で一時ディレクトリに書けず bats を始められない。decider のレビュアーは Bash を持たない。どちらも request を作る前（Claude の decider は起動前）に、本体が固定 HEAD で reviewer-brief 2-1 の再実行の範囲（変えたファイルに関係するテストと lint）を走らせ、コマンドと exit code とログ末尾を `--input`（Claude は指示）に含める。レビュアーはそのログを証拠にし、再実行できないことを中断の理由にしない）
               一周目で payload に区画があり executor が claude なら、区画ごとに 1 体ずつ並列に起こす。description は
               `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` とする。executor が codex なら区画を使わず差分全体を 1 つの request に渡す。
            ④ レビュー要約と、選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。review phase の executor が codex なら、worker の結果 JSON の `execution.model_resolution.requested` / `execution.model_resolution.resolved` も G に渡す。resolved が未観測なら null をそのまま渡し、要求値や dispatch 時の model で補完しない。Claude の G は照合と振り分けの G を新しく起こし、前の Gate Result ブロックと一緒に起動指示で渡す
