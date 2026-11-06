@@ -1,0 +1,28 @@
+## 1. 判定基準と判断記録の契約（develop の正本）
+
+- [ ] 1.1 `plugins/dev-workflow/tests/develop-trivial-light-path.bats`（新規）に、文書の記述を見る失敗するテストを先に書く: decision-criteria.md の Step B に軽い通し方の小節があり、当てる条件（6 種類のどれか 1 つ・既存のテストかチェックで確かめられる）・省くもの（新しいテストと W の起動）・残すもの（記録先・判断の記録・pr-review-gate）・本体の手順 7 つ・途中で外れたときの戻し方・モード共通と unmanned の Draft PR と `agent-review:pending`・迷ったら当てず主に聞かないこと、が書かれている。「どの判定でも変えないもの」のテスト必須の段落に軽い通し方だけが例外と書かれている。spec-reviewer.md の判断記録の契約に `通し方: 軽い`・`種類:`（6 値）・`確かめ方:` の行の書式がある。`bats plugins/dev-workflow/tests/develop-trivial-light-path.bats` が落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/develop-trivial-light-path.bats（新規）
+- [ ] 1.2 decision-criteria.md の Step B に「仕様化しないが軽く通す（軽い通し方）」の小節を、「仕様化しない（コード直行）」と「仕様化するが軽く通す（仕様の文言合わせ）」の間に足す（design.md の D1〜D3・D6 の本体の戻し方）。「判定に迷ったら」に軽い通し方で迷ったら当てない行を足す。1.1 の該当テストが通ることを確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/decision-criteria.md:19-64（Step B の「仕様化しない」〜「判定に迷ったら」）
+- [ ] 1.3 decision-criteria.md の「どの判定でも変えないもの」のテスト必須の段落に、例外は軽い通し方だけで、`確かめ方:` のコマンドを走らせることが新しいテストの代わりになることを書く。W が起こされる経路ではどの判定でもテストを書くことは残す。1.1 の該当テストが通ることを確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/decision-criteria.md:56-58
+- [ ] 1.4 spec-reviewer.md の判断記録の契約の表に、軽い通し方の行（`^通し方: 軽い$`・`^種類: (typo|lint|コメント|フォーマット|ワンライナー fix|設定値)$`・`^確かめ方: .+`。本体が投稿し、照合側は pr-review-gate の前提確認の段が最新の仕様化判断のコメントの本文から読む。この行がある判断では R1 は起こされない）を足す。1.1 の該当テストが通ることを確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md:15-31（判断記録の契約の表・文言合わせの行の次）
+
+## 2. develop の SKILL.md と G の段の表
+
+- [ ] 2.1 1.1 の bats に失敗するテストを足す: SKILL.md の禁止事項「本体は Edit でコードを書かない」の箇所に例外は軽い通し方だけと書かれ（語句「Edit でコードを書かない」は残る）、1 ループの (0) と (1) の間に軽い通し方の分岐（W を起こさず本体が直して (4) へ）があり、(4) の failed に `原因: 軽い通し方の条件外` のときモデルを上げず W を `段: spec` で起こし G の確認コメントの URL を渡す戻し方がある。SKILL.md と gate-runner.md の段の表の前提確認と重さ判定の行の返しうる Status に failed がある。`wc -c < plugins/dev-workflow/skills/develop/SKILL.md` が `tests/develop-startup-budget.txt` の SKILL.md の予算以下であること。落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/develop-trivial-light-path.bats
+- [ ] 2.2 SKILL.md の禁止事項・(1) の前の分岐・(4) の failed の戻し方の 3 か所を、`references/decision-criteria.md` Step B を指す短い文で足す。同じファイルの文言合わせの通し方の記述（(1) の 3 行と (4) の 1 行）を、正本（decision-criteria.md Step B と worker/spec.md）を指す短い文に言い換えて同じ以上のバイト数を削り、予算を動かさない。`spec-wording-sync-light-path.bats`・`develop-skill.bats` が見ている語句は残す。`bats plugins/dev-workflow/tests/develop-trivial-light-path.bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/spec-wording-sync-light-path.bats tests/develop-startup-budget.bats` が通ることを確かめる。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:56-60（禁止事項）、plugins/dev-workflow/skills/develop/SKILL.md:101-186（1 ループ。文言合わせは 109-111 と 140）
+- [ ] 2.3 gate-runner.md の段の表の前提確認と重さ判定の行の返しうる Status に failed（軽い通し方の条件外。`次の段: 前提確認と重さ判定`）を足し、Status ごとの `次の段:` の表と食い違わないことを確かめる。SKILL.md の (4) に段の表の写しがあれば同じに揃える。`bats plugins/dev-workflow/tests/develop-trivial-light-path.bats plugins/dev-workflow/tests/develop-roles.bats` が通ることを確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/roles/gate-runner.md:61-95（Gate Result と段ごとの起動と入力の表）
+
+## 3. pr-review-gate の前提確認の段と動作確認
+
+- [ ] 3.1 1.1 の bats に失敗するテストを足す: prepare.md の手順 1 の 5 のあとに軽い通し方の確認の手順があり、`軽い通し方の確認: (条件内|条件外)` の PR コメント・`対象 HEAD:` の 2 行目・条件外での `agent-review:failed` と Status failed・`原因: 軽い通し方の条件外`・`通し方: 軽い` の行が無い PR では確かめずコメントもしないこと・G が差分を読んで種類に収まり挙動を変えないかを判断すること、が書かれている。加えて prepare.md のコードブロックから照合コマンドを抜き出し、偽の gh（先例 `spec-wording-sync-light-path.bats` の形）で次の fixture を走らせる: ワンライナー fix と書いて 2 ファイルを変えたもの（条件外）、`openspec/` に差分があるもの（条件外）、`確かめ方:` の行が無いもの（0 件）、`通し方: 軽い` の行が無いもの（0 件）、ワンライナー fix 1 ファイル 1 行と `plugins/x/changes/1.md`（変更の記録は数えず条件内）。落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/develop-trivial-light-path.bats、plugins/dev-workflow/tests/spec-wording-sync-light-path.bats:237-371（先例の読み取りだけ）
+- [ ] 3.2 prepare.md の手順 1 の 5 の直後に軽い通し方の確認の手順を足す（design.md の D5 のコマンドと D6 の結果の扱い）。「G として動くとき（develop）」節に条件外の failed の return を足す。3.1 のテストが通ることを確かめる。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/prepare.md:17-44（手順 1）、plugins/dev-workflow/skills/pr-review-gate/stages/prepare.md:83-120（G として動くとき）
+- [ ] 3.3 1.1 の bats に、pass.md の手順 4 に軽い通し方の PR では `確かめ方:` のコマンドを G が PR の HEAD の作業ツリーで走らせて表の 1 行にすることと、全体のテストなら CI の結果で扱うことが書かれているかのテストを先に足して落とし、pass.md の手順 4 を直して通す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:17-44（手順 4 の動作確認）
+
+## 4. 変更の記録と全体の確認
+
+- [ ] 4.1 変更の記録 `plugins/dev-workflow/changes/1584.md` を書く（何を足したか・受け入れたリスク・導入後の見直し）。`ls plugins/dev-workflow/changes/1584.md` で在ることを確かめる。触る範囲: plugins/dev-workflow/changes/1584.md（新規）
+- [ ] 4.2 全体の確認: `bash scripts/test.sh`（または `bats plugins/dev-workflow/tests/ tests/`）が通り、`tests/injection-budget.bats` と `tests/develop-startup-budget.bats` の予算ファイルを動かしていないこと（`git diff origin/main -- tests/injection-budget.txt tests/develop-startup-budget.txt` が空）、`commands/develop.md`・`plugins/dev-workflow/scripts/`・`stages/triage.md`・`stages/hold.md`・`declarations.md` に差分が無いこと（`git diff --stat origin/main`）、`openspec validate develop-trivial-light-path --type change --strict` が通ることを確かめる。触る範囲: なし（確認だけ）
+
+## Workflow follow-up
+
+- `openspec archive develop-trivial-light-path` と Draft PR の用意・仕様宣言は (3b) で行う
+- マージ前後に本体が実機で 2 件を確かめる（typo 相当の修正を軽い通し方で回す、条件外の変更で G が failed を返す）
