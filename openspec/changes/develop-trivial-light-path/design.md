@@ -136,7 +136,7 @@ G は確かめた結果を PR コメントに残す。1 行目は `^軽い通し
 
 ### D8. SKILL.md の起動時の予算を動かさない
 
-`skills/develop/SKILL.md` は予算 86400 バイトに対し 86392 バイトで、残りは 8 バイト。足すのは 3 か所（禁止事項の例外・(1) の前の分岐・(4) の failed の戻し方）で、それぞれ `references/decision-criteria.md` Step B を指す短い文にする。足した分と同じ以上のバイト数を、同じファイルの中の文言合わせの通し方の記述（(1) の 3 行と (4) の 2 行）を、正本（`decision-criteria.md` Step B と `worker/spec.md`）を指す短い文に言い換えて削る。言い換えたあとも、`spec-wording-sync-light-path.bats` と `develop-skill.bats` が見ている語句は残す。
+`skills/develop/SKILL.md` は予算 86400 バイトに対し 86392 バイトで、残りは 8 バイト。足すのは 4 か所（禁止事項の例外・入口 0 の例外・(1) の前の分岐・(4) の failed の戻し方）で、それぞれ `references/decision-criteria.md` Step B を指す短い文にする。足した分と同じ以上のバイト数を、同じファイルの中の文言合わせの通し方の記述（(1) の 3 行と (4) の 2 行）を、正本（`decision-criteria.md` Step B と `worker/spec.md`）を指す短い文に言い換えて削る。言い換えたあとも、`spec-wording-sync-light-path.bats` と `develop-skill.bats` が見ている語句は残す。
 
 ## Risks / Trade-offs
 
