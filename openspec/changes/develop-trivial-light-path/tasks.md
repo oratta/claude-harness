@@ -19,7 +19,7 @@
 
 ## 4. 変更の記録と全体の確認
 
-- [ ] 4.1 変更の記録 `plugins/dev-workflow/changes/1584.md` を書く（何を足したか・受け入れたリスク・導入後の見直し）。`ls plugins/dev-workflow/changes/1584.md` で在ることを確かめる。触る範囲: plugins/dev-workflow/changes/1584.md（新規）
+- [x] 4.1 変更の記録 `plugins/dev-workflow/changes/1584.md` を書く（何を足したか・受け入れたリスク・導入後の見直し）。`ls plugins/dev-workflow/changes/1584.md` で在ることを確かめる。触る範囲: plugins/dev-workflow/changes/1584.md（新規）
 - [ ] 4.2 全体の確認: `bash scripts/test.sh`（または `bats plugins/dev-workflow/tests/ tests/`）が通り、`tests/injection-budget.bats` と `tests/develop-startup-budget.bats` の予算ファイルを動かしていないこと（`git diff origin/main -- tests/injection-budget.txt tests/develop-startup-budget.txt` が空）、`commands/develop.md`・`plugins/dev-workflow/scripts/`・`stages/triage.md`・`stages/hold.md`・`declarations.md` に差分が無いこと（`git diff --stat origin/main`）、`openspec validate develop-trivial-light-path --type change --strict` が通ることを確かめる。触る範囲: なし（確認だけ）
 
 ## Workflow follow-up
