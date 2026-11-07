@@ -20,7 +20,9 @@
 ## 4. 変更の記録と全体の確認
 
 - [x] 4.1 変更の記録 `plugins/dev-workflow/changes/1584.md` を書く（何を足したか・受け入れたリスク・導入後の見直し）。`ls plugins/dev-workflow/changes/1584.md` で在ることを確かめる。触る範囲: plugins/dev-workflow/changes/1584.md（新規）
-- [ ] 4.2 全体の確認: `bash scripts/test.sh`（または `bats plugins/dev-workflow/tests/ tests/`）が通り、`tests/injection-budget.bats` と `tests/develop-startup-budget.bats` の予算ファイルを動かしていないこと（`git diff origin/main -- tests/injection-budget.txt tests/develop-startup-budget.txt` が空）、`commands/develop.md`・`plugins/dev-workflow/scripts/`・`stages/triage.md`・`stages/hold.md`・`declarations.md` に差分が無いこと（`git diff --stat origin/main`）、`openspec validate develop-trivial-light-path --type change --strict` が通ることを確かめる。触る範囲: なし（確認だけ）
+- [x] 4.2 全体の確認: `bash scripts/test.sh`（または `bats plugins/dev-workflow/tests/ tests/`）が通り、`tests/injection-budget.bats` と `tests/develop-startup-budget.bats` の予算ファイルを動かしていないこと（`git diff origin/main -- tests/injection-budget.txt tests/develop-startup-budget.txt` が空）、`commands/develop.md`・`plugins/dev-workflow/scripts/`・`stages/triage.md`・`stages/hold.md`・`declarations.md` に差分が無いこと（`git diff --stat origin/main`）、`openspec validate develop-trivial-light-path --type change --strict` が通ることを確かめる。触る範囲: なし（確認だけ）
+
+検証の分担: 全体テスト `scripts/test.sh` は worker/implement.md の規則に従って CI の `test`（`bats shard */4`、集約 `bats suites`）に委ねる。手元では変更したファイルのパス・名前を参照する bats をファイル指定で実行する。CI の成功はこの工程では未確認。 手元の関連 78 スイート（2,964 件）は初回に文書コマンドの参照番号ずれ 1 件で exit 1。`doc-command-templates.bats` の参照を新しいブロック位置に直し、同スイート全 17 件の再実行は exit 0。他の失敗は無し。必須 5 スイート（472 件）・予算 2 スイート（98 件）・新規スイート（14 件）・lint・auto-merge 不変条件・OpenSpec strict 検証は exit 0。
 
 ## Workflow follow-up
 
