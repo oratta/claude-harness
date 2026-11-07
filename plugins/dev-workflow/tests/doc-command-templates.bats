@@ -214,7 +214,8 @@ install_fixture() {
 }
 
 @test "prepare diff block counts changed lines excluding diff headers" {
-  prepare_block 4
+  # #1584: 軽い通し方の照合ブロックが HEAD 固定の直後に入る。
+  prepare_block 5
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   [ "$output" = $'alpha.md\nbeta.sh\n2' ]
