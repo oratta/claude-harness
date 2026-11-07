@@ -164,7 +164,7 @@ ci_handover() {
 }
 @test "ci handover: both existing resume and new handoff invalidate before dispatch" {
   section="$(ci_handover)"
-  for phrase in '既存 W の implement 再開と新しい W への implement 手渡しの両方' '許可条件を確認' '依頼入力として保持' '必要項目を継承' '手渡し: 不可（CI fix の W を起動／再開するため、今回の工程完了または停止確認待ち）' '投稿成功を確認してから起動／再開を指示' '投稿失敗なら起動／再開せず'; do
+  for phrase in 'CI 用引き継ぎが最新の可である間に W を起動・再開するとき（CI fix とゲート failed の直しを含む）' '許可条件を確認' '依頼入力として保持' '必要項目を継承' '手渡し: 不可（W を起動／再開するため、今回の工程完了または停止確認待ち）' '投稿成功を確認してから起動／再開を指示' '投稿失敗なら起動／再開せず'; do
     printf '%s\n' "$section" | grep -qF "$phrase"
   done
   ci_reentry | grep '起動／再開前' | grep -qF 'handover.md'
@@ -349,5 +349,21 @@ printf 'SELECTED=%s\n' \"\$DEC\""
     grep -q '終了コードが 0 でなければ.*passed を付けず.*failed' "$prefix/dev-workflow-pr-review-gate/spec.md"
     grep -q '種類:.*1 行ちょうど' "$prefix/dev-workflow-pr-review-gate/spec.md"
     ! grep -q '1 行以上あること' "$prefix/dev-workflow-pr-review-gate/spec.md" || return 1
+  done
+}
+
+@test "CI handover: gate failure after ready invalidates permission before review fixes" {
+  local root="$PLUGIN_DIR/../../openspec" spec
+  ci_handover | grep -q 'CI 用引き継ぎが最新の可である間に W を起動・再開するとき（CI fix とゲート failed の直しを含む）'
+  ci_handover | grep '^2\.' | grep -q '手渡し: 不可（W を起動／再開するため、今回の工程完了または停止確認待ち）'
+  ci_handover | grep '^2\.' | grep -q '投稿成功を確認してから起動／再開を指示'
+  for spec in "$root/specs/dev-workflow-develop/spec.md" "$root/changes/archive/2026-11-07-develop-ci-fix-worker-handover/specs/dev-workflow-develop/spec.md"; do
+    grep -q 'CI 用引き継ぎが最新の可である間に W を起動／再開するたびに（CI fix とゲート failed の直しを含む）' "$spec"
+    local scenario
+    scenario="$(LC_ALL=C awk '/^#### Scenario: CI fix 後のゲート failed で W を再開する/{f=1;next} /^#### Scenario:|^### Requirement:/{f=0} f' "$spec")"
+    printf '%s\n' "$scenario" | grep -q '可.*ready.*ゲート.*failed.*W.*再開.*HEAD.*作業ツリー.*本体が交代'
+    printf '%s\n' "$scenario" | grep -q '再開前.*不可.*投稿成功'
+    printf '%s\n' "$scenario" | grep -q '二人目の W を起こさず'
+    printf '%s\n' "$scenario" | grep -q '今回の工程完了または停止確認.*新しい可'
   done
 }
