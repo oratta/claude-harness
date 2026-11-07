@@ -144,8 +144,8 @@ DEC_FIX=$'仕様化判断: しない\n通し方: 軽い\n種類: ワンライナ
   run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" R=o/r REC=7 N=8 bash -c "$(measure_commands)
 printf 'SELECTED=%s\n' \"\$DEC\""
   [ "$status" -eq 0 ]
-  [[ "$output" == *'ワンライナー fix'* ]]
-  [[ "$output" != *untrusted* ]]
+  [[ "$output" == *'ワンライナー fix'* ]] || return 1
+  [[ "$output" != *untrusted* ]] || return 1
   grep '軽い通し方の PR' "$PASS" | grep -q '手順 1 の 6 と同じ.*絞り込み'
 }
 
@@ -189,7 +189,7 @@ printf 'SELECTED=%s\n' \"\$DEC\""
 @test "prepare commands: valid one-liner passes mechanical checks" {
   measure "$DEC_FIX" '1 1 a.sh'
   printf '%s\n' "$output" | grep -qx 'MACHINE_RESULT=条件内'
-  ! printf '%s\n' "$output" | grep -q 'Status: failed'
+  ! printf '%s\n' "$output" | grep -q 'Status: failed' || return 1
 }
 @test "specs: published and archived requirements keep the repaired contracts" {
   local root="$PLUGIN_DIR/../../openspec" prefix
@@ -199,6 +199,6 @@ printf 'SELECTED=%s\n' \"\$DEC\""
     grep -q 'unmanned では G を起こさず' "$prefix/dev-workflow-spec-review/spec.md"
     grep -q '終了コードが 0 でなければ.*passed を付けず.*failed' "$prefix/dev-workflow-pr-review-gate/spec.md"
     grep -q '種類:.*1 行ちょうど' "$prefix/dev-workflow-pr-review-gate/spec.md"
-    ! grep -q '1 行以上あること' "$prefix/dev-workflow-pr-review-gate/spec.md"
+    ! grep -q '1 行以上あること' "$prefix/dev-workflow-pr-review-gate/spec.md" || return 1
   done
 }
