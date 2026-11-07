@@ -33,6 +33,11 @@
 #   許可を書いた・使った・捨てたは <base>/permit-log.jsonl に残る。子が git-guard-permit.sh を自分で呼んだら deny。
 #   key の計算・一時領域の判定・記録の追記は共通ファイル git-guard-scratchpad.py にあり、子の破壊的操作を
 #   見つけたときだけ読む。読めなければ許可を探さず、記録も書かずに deny だけを返す。
+#   主の呼び出しで DEV_WORKFLOW_GIT_GUARD_NO_ASK（起動側が付ける git ガード専用の印）があれば、
+#   permission_mode と FORCE によらず deny。前後の空白を除いて空か 0 なら印なし、それ以外は印あり。
+#   理由文はコマンドの全文・対象・なぜ要るか・止まった理由を書いてオーナーに承認を求め、ターンを終えるよう
+#   案内する。承認後もオーナーが自分で実行する。確認画面・!・チャンネルの案内は出さず、回数は数えない。
+#   NO_ASK は UNATTENDED より先に決める。develop の実行モードは変えない。
 #   主の呼び出しで、環境変数 DEV_WORKFLOW_UNATTENDED（画面を見ている人のいないセッションの印。起動する側が
 #   claude の環境に入れる。前後の空白を除いて空か 0 なら印なし、それ以外は印あり）があれば、permission_mode
 #   にも DEV_WORKFLOW_GIT_GUARD_FORCE にもよらず deny（確認画面は誰にも押されず、セッションが止まるため）。
@@ -880,8 +885,10 @@ session_id, cwd = str_field("session_id"), str_field("cwd")
 guard_base = os.path.join(os.environ.get("TMPDIR") or "/tmp", "dev-workflow-git-guard")
 
 # 画面を見ている人のいないセッションの印（spec「確認画面が出るモードでだけ ask を返す」）。子の判定のあと、
-# FORCE より先に見る: FORCE=ask が残った住人のセッションで確認画面を出して止まらないため。
+# NO_ASK を UNATTENDED より先に、両方とも FORCE より先に見る: FORCE=ask が残った住人のセッションで確認画面を出して止まらないため。
 # 空か 0 以外はすべて印ありにする（付け損ねた値で確認画面に戻らず、止めすぎる向きにだけ外れる）。
+no_ask_mark = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_NO_ASK") or "").strip()
+is_no_ask = not is_child and no_ask_mark not in ("", "0")
 unattended_mark = (os.environ.get("DEV_WORKFLOW_UNATTENDED") or "").strip()
 is_unattended = not is_child and unattended_mark not in ("", "0")
 
@@ -908,7 +915,7 @@ if is_child:
     deny_count = count_child_deny(agent_id)
     if key:
         record_path = write_record(common, guard_base, key)
-elif is_unattended:
+elif is_no_ask or is_unattended:
     decision = "deny"
 else:
     forced = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_FORCE") or "").strip()
@@ -938,6 +945,10 @@ if is_child:
         body += "拒否の記録: " + record_path + " 。親に返す報告にこのパスを書く。"
     if deny_count >= 2:
         body += "この子への拒否は 2 回目以降なので、直ちに作業を終えて親に返す。"
+elif is_no_ask:
+    body = ("このコマンドは実行していない。コマンドの全文・対象のパス・なぜ要るか・止まった理由を書いて"
+            "オーナーに承認を求め、ターンを終えること。承認されたらオーナーが自分で実行する"
+            "（承認後もこのセッションでは実行しない）。")
 elif is_unattended:
     # 画面を見ている人がいないので、画面の操作や入力欄の ! の話を書かない。オーナーに届く経路はチャンネルだけ
     body = ("このコマンドは実行していない。このセッションの画面を見ている人はいないので、何を・なぜ・いつ実行するかを"
