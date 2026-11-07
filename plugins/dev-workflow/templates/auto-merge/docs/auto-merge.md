@@ -341,6 +341,23 @@ CI green の判定は**チェック名の完全一致**で auto-merge が自前�
 | `Bash(git push origin main:*)` / `master:*` | PR を経ない main 更新 |
 | `Bash(git push -f:*)` / `--force:*` / `--force-with-lease:*` | 履歴の書き換え（マージ済み SHA の差し替え） |
 | `Bash(git push --no-verify:*)` | pre-push ガード（push-guard-setup）の迂回 |
+| `Bash(git push * --force)` / `Bash(git push * --force *)`（`-f` / `--force-with-lease` も同じ対） | 中置・後置の force オプション。末尾と後続引数ありの両方を拒否 |
+| `Bash(git push --force-with-lease=*)` / `Bash(git push * --force-with-lease=*)` | 前置・中置・後置の値付き lease |
+| `Bash(git push * --no-verify)` / `Bash(git push * --no-verify *)` | 中置・後置の pre-push ガード迂回 |
+| `Bash(git push *:main)` / `Bash(git push *:main *)`（`master` / `refs/heads/main` / `refs/heads/master` も同じ対） | 送り元・remote に依存しない明示 refspec。末尾・後続引数あり・複数 refspec を覆う |
+
+既存 7 件を保持し、18 件を追加した計 25 件を配布する。`*` は空白も含む文字列に一致するが、
+複数 wildcard の末尾 ` *` は引数無しの形を含まないため、末尾一致と後続引数ありを対にする。
+`*:main*` / `*:master*` は `feature:main-fix` 等まで拒否するので使わない。
+`git push origin feature/foo` と `git push -u origin feature/foo` はこの deny に非一致
+（他の permission 設定による許可を保証する意味ではない）。
+
+照合範囲は、空白で引数を区切った単純な `git push` コマンド。引用符・タブ・変数展開・URL・
+オプション値の内部（列挙した値付き lease を除く）・複合 shell・wrapper・global Git オプション・
+短いオプションの結合形や省略形・`+` refspec は今回の拡張の対象外。
+例えばオプション値 `x:main` は refspec と区別せず一致しうるため、完全な Git 操作の防壁とはしない。
+回帰テストは[公式仕様](https://code.claude.com/docs/en/permissions#wildcard-patterns)の再現で検証、実測は未
+（実マッチャー未実測）。
 
 - 展開先に既存の deny があれば**消さずに足す**（README の jq コマンドは和集合を取る）。
   deny を減らす変更は `.claude/` が聖域なので `human-merge` になるが、親の判断の印で外れる。主の目を必ず通したいリポは
