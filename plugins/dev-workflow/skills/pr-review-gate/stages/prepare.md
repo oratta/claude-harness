@@ -45,38 +45,38 @@
 6. **軽い通し方の確認**: 手順 1 の 3 で解決した記録先（issue 参照が無い PR は PR 自身）を `REC` に置き、最新の仕様化判断だけを読む。最新コメントに `^通し方: 軽い$` と完全一致する行があるときだけ、レビュアーを起こす前に次を確かめる。その行が無ければこの確認をせず、コメントも投稿しない。
 
    ```bash
-DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body')
-LIGHT=$(printf '%s\n' "$DEC" | grep -cx '通し方: 軽い')
-if [ "$LIGHT" -ge 1 ]; then
-  printf '%s\n' "$DEC" | head -1
-  KIND=$(printf '%s\n' "$DEC" | sed -n 's/^種類: //p')
-  printf '%s\n' "$KIND"
-  CHECK_COUNT=$(printf '%s\n' "$DEC" | grep -c '^確かめ方: ')
-  printf '%s\n' "$CHECK_COUNT"
-  FILES=$(gh api --paginate repos/$R/pulls/$N/files --jq '.[] | "\(.additions) \(.deletions) \(.filename)"' | grep -vE ' ([^ ]*/)?changes/[0-9]+\.md$')
-  SPEC_COUNT=$(printf '%s\n' "$FILES" | grep -c ' openspec/')
-  printf '%s\n' "$SPEC_COUNT"
-  printf '%s\n' "$FILES" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}'
-  KIND_COUNT=$(printf '%s\n' "$DEC" | grep -c '^種類: ')
-  printf '種類の行数=%s\n' "$KIND_COUNT"
-  MACHINE_RESULT=条件内
-  [ "$(printf '%s\n' "$DEC" | head -1)" = '仕様化判断: しない' ] &&
-    [ "$KIND_COUNT" -eq 1 ] && [ "$CHECK_COUNT" -eq 1 ] &&
-    [ "$(printf '%s\n' "$DEC" | grep -c '^確かめ方: .')" -eq 1 ] &&
-    [ "$SPEC_COUNT" -eq 0 ] || MACHINE_RESULT=条件外
-  case "$KIND" in
-    typo|lint|コメント|フォーマット|設定値) ;;
-    'ワンライナー fix')
-      read -r COUNT ADDED DELETED <<< "$(printf '%s\n' "$FILES" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}')"
-      [ "$COUNT" -eq 1 ] && [ "$ADDED" -le 1 ] && [ "$DELETED" -le 1 ] || MACHINE_RESULT=条件外 ;;
-    *) MACHINE_RESULT=条件外 ;;
-  esac
-  printf 'MACHINE_RESULT=%s\n' "$MACHINE_RESULT"
-  if [ "$MACHINE_RESULT" = 条件外 ]; then
-    printf '%s\n' '軽い通し方の確認: 条件外' "対象 HEAD: $HEAD_SHA" '機械で測る点: 条件外'
-    printf '%s\n' 'Status: failed' '次の段: 前提確認と重さ判定' '原因: 軽い通し方の条件外'
-  fi
-fi
+   DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body')
+   LIGHT=$(printf '%s\n' "$DEC" | grep -cx '通し方: 軽い')
+   if [ "$LIGHT" -ge 1 ]; then
+     printf '%s\n' "$DEC" | head -1
+     KIND=$(printf '%s\n' "$DEC" | sed -n 's/^種類: //p')
+     printf '%s\n' "$KIND"
+     CHECK_COUNT=$(printf '%s\n' "$DEC" | grep -c '^確かめ方: ')
+     printf '%s\n' "$CHECK_COUNT"
+     FILES=$(gh api --paginate repos/$R/pulls/$N/files --jq '.[] | "\(.additions) \(.deletions) \(.filename)"' | grep -vE ' ([^ ]*/)?changes/[0-9]+\.md$')
+     SPEC_COUNT=$(printf '%s\n' "$FILES" | grep -c ' openspec/')
+     printf '%s\n' "$SPEC_COUNT"
+     printf '%s\n' "$FILES" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}'
+     KIND_COUNT=$(printf '%s\n' "$DEC" | grep -c '^種類: ')
+     printf '種類の行数=%s\n' "$KIND_COUNT"
+     MACHINE_RESULT=条件内
+     [ "$(printf '%s\n' "$DEC" | head -1)" = '仕様化判断: しない' ] &&
+       [ "$KIND_COUNT" -eq 1 ] && [ "$CHECK_COUNT" -eq 1 ] &&
+       [ "$(printf '%s\n' "$DEC" | grep -c '^確かめ方: .')" -eq 1 ] &&
+       [ "$SPEC_COUNT" -eq 0 ] || MACHINE_RESULT=条件外
+     case "$KIND" in
+       typo|lint|コメント|フォーマット|設定値) ;;
+       'ワンライナー fix')
+         read -r COUNT ADDED DELETED <<< "$(printf '%s\n' "$FILES" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}')"
+         [ "$COUNT" -eq 1 ] && [ "$ADDED" -le 1 ] && [ "$DELETED" -le 1 ] || MACHINE_RESULT=条件外 ;;
+       *) MACHINE_RESULT=条件外 ;;
+     esac
+     printf 'MACHINE_RESULT=%s\n' "$MACHINE_RESULT"
+     if [ "$MACHINE_RESULT" = 条件外 ]; then
+       printf '%s\n' '軽い通し方の確認: 条件外' "対象 HEAD: $HEAD_SHA" '機械で測る点: 条件外'
+       printf '%s\n' 'Status: failed' '次の段: 前提確認と重さ判定' '原因: 軽い通し方の条件外'
+     fi
+   fi
    ```
 
    grep の 0 件は終了コード 1 になるので、このブロックは `set -e` を有効にせず走らせ、終了コードではなく出力の値で判定する。出力は順に、仕様化判断の 1 行目・種類・確かめ方の行数・openspec のファイル数・変更ファイル数と追加／削除行数、種類の行数、機械判定。`MACHINE_RESULT=条件外` なら出力した確認コメントと Gate Result の欄を使って下の条件外の処理を行い、return する。条件内なら G が差分を読む判断に進む。
