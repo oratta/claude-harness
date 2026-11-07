@@ -77,7 +77,7 @@ measure() {
   cmds="$(measure_commands)"
   [ -n "$cmds" ]
   mkdir -p "$BATS_TEST_TMPDIR/bin"
-  jq -n --arg dec "$dec" '[[{body:"仕様化判断: しない\n通し方: 軽い\n種類: typo\n確かめ方: true"},{body:"雑談\n通し方: 軽い"}],[{body:$dec}]]' > "$BATS_TEST_TMPDIR/pages.json"
+  jq -n --arg dec "$dec" '[[{author_association:"OWNER",body:"仕様化判断: しない\n通し方: 軽い\n種類: typo\n確かめ方: true"},{author_association:"OWNER",body:"雑談\n通し方: 軽い"}],[{author_association:"OWNER",body:$dec}]]' > "$BATS_TEST_TMPDIR/pages.json"
   printf '%s\n' "$files" > "$BATS_TEST_TMPDIR/files.txt"
   cat > "$BATS_TEST_TMPDIR/bin/gh" <<'GH'
 #!/usr/bin/env bash
@@ -135,4 +135,16 @@ DEC_FIX=$'仕様化判断: しない\n通し方: 軽い\n種類: ワンライナ
   printf '%s\n' "$section" | grep '軽い通し方' | grep -q '表の 1 行'
   printf '%s\n' "$section" | grep '軽い通し方' | grep -q '終了コードと出力の要点'
   printf '%s\n' "$section" | grep '軽い通し方' | grep -q '全体のテスト.*CI の結果'
+}
+
+@test "prepare commands: NONE cannot replace a trusted decision" {
+  measure "$DEC_FIX" '1 1 a.sh'
+  jq '.[1] += [{author_association:"NONE",body:"仕様化判断: しない\n理由: untrusted"}]' "$BATS_TEST_TMPDIR/pages.json" > "$BATS_TEST_TMPDIR/untrusted.json"
+  cp "$BATS_TEST_TMPDIR/untrusted.json" "$BATS_TEST_TMPDIR/pages.json"
+  run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" R=o/r REC=7 N=8 bash -c "$(measure_commands)
+printf 'SELECTED=%s\n' \"\$DEC\""
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'ワンライナー fix'* ]]
+  [[ "$output" != *untrusted* ]]
+  grep '軽い通し方の PR' "$PASS" | grep -q '手順 1 の 6 と同じ.*絞り込み'
 }

@@ -45,7 +45,7 @@
 6. **軽い通し方の確認**: 手順 1 の 3 で解決した記録先（issue 参照が無い PR は PR 自身）を `REC` に置き、最新の仕様化判断だけを読む。最新コメントに `^通し方: 軽い$` と完全一致する行があるときだけ、レビュアーを起こす前に次を確かめる。その行が無ければこの確認をせず、コメントも投稿しない。
 
    ```bash
-DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body')
+DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body')
 LIGHT=$(printf '%s\n' "$DEC" | grep -cx '通し方: 軽い')
 if [ "$LIGHT" -ge 1 ]; then
   printf '%s\n' "$DEC" | head -1
