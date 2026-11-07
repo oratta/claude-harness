@@ -79,6 +79,43 @@ ci_reentry() {
     printf '%s\n' "$light" | grep -qF "$phrase"
   done
 }
+# #1596: 起動指示、先行確認、無関係時の早期 return を同じ復帰分岐で照合する。
+light_ci_worker() {
+  ci_reentry | sed -n '/^- 最新の仕様化判断に/,/^- 通常経路の既存 W/{ /^- 通常経路の既存 W/d; p; }'
+}
+@test "ci fix: dispatch orders ci-fail relation check before decision repost" {
+  light="$(light_ci_worker)"
+  printf '%s\n' "$light" | grep '起動指示' | grep -q 'ci-fail.*関係確認を仕様化判断の再投稿より先'
+  printf '%s\n' "$light" | grep -q 'W は.*仕様化判断の手順に入る前に.*7. 直し方.*手順 2.*ログと PR 差分の関係'
+  printf '%s\n' "$light" | grep -q '関係がある.*無関係と判断できない場合.*確認のあと.*実装前に同じ記録先.*投稿し直す'
+  printf '%s\n' "$light" | grep -q 'conflict.*無関係返却の対象.*従来どおり.*投稿し直す'
+}
+@test "ci fix: unrelated light failure returns without decision artifacts push or label changes" {
+  unrelated="$(light_ci_worker | grep '差分と無関係と判断できた場合')"
+  for phrase in '5. `--unrelated` を渡す基準' '仕様化判断を投稿し直さず' 'artifact 作成・修正・push をせず' 'チェック名と根拠を本体へ返す' '最新の `通し方: 軽い` の判断を保持' '手順 3 の passed 解除・Draft 化・pending 付与にも進まない' '同じ PR・同じ状態ファイル' 'next --unrelated <チェック名> --after-fix' '1 回だけ'; do
+    printf '%s\n' "$unrelated" | grep -qF "$phrase"
+  done
+}
+@test "ci fix: spec entry exits unrelated branch before general decision recording" {
+  spec="$PLUGIN_DIR/skills/develop/references/roles/worker/spec.md"
+  entry="$(sed '/^## 仕様化判断（opsx /,$d' "$spec")"
+  printf '%s\n' "$entry" | grep -q '軽い通し方.*ci-fail.*新しい W'
+  printf '%s\n' "$entry" | grep -qF 'decision-criteria.md'
+  printf '%s\n' "$entry" | grep -qF 'CI 見張りの fix からの戻し方'
+  printf '%s\n' "$entry" | grep -q '仕様化判断の再投稿より先.*関係確認'
+  printf '%s\n' "$entry" | grep -q '無関係なら.*判断記録の一般手順へ進まず.*本体へ返す'
+}
+@test "ci fix: shared log step connects early decision check and preserves unrelated criteria" {
+  watch="$PLUGIN_DIR/references/ci-watch.md"
+  step="$(sed -n '/^## 7\. 直し方/,/^## 8\./p' "$watch" | grep '^2\.')"
+  printf '%s\n' "$step" | grep -q '軽い通し方.*新しい W.*仕様化判断の再投稿より先.*関係確認'
+  printf '%s\n' "$step" | grep -qF 'decision-criteria.md'
+  printf '%s\n' "$step" | grep -qF 'CI 見張りの fix からの戻し方'
+  printf '%s\n' "$step" | grep -qF '5. `--unrelated` を渡す基準'
+  printf '%s\n' "$step" | grep -qF 'gh run view <run> --log-failed'
+  printf '%s\n' "$step" | grep -q '実装者がログを読んで.*直さず push もせず.*呼び出し側へ返し'
+  printf '%s\n' "$step" | grep -qF 'next --unrelated <チェック名> --after-fix'
+}
 @test "ci fix: new worker records a normal decision before implementation and always writes tests" {
   section="$(ci_reentry)"
   for phrase in '実装前に同じ記録先' '通し方:` の行の無い仕様化判断' 'する」か「しない」かは W' 'artifact 一式' 'R1 の APPROVE' 'どちらの判断でもテスト' '同じ PR' '以後は通常の通し方' '通し方: 軽い` を投稿し直さない'; do
