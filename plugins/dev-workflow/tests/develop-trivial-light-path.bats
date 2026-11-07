@@ -148,3 +148,57 @@ printf 'SELECTED=%s\n' \"\$DEC\""
   [[ "$output" != *untrusted* ]]
   grep '軽い通し方の PR' "$PASS" | grep -q '手順 1 の 6 と同じ.*絞り込み'
 }
+
+@test "criteria: main and fallback workers share the dedicated worktree" {
+  light_section | grep -q '直す前に対象専用の worktree'
+  light_section | grep -q '戻り経路.*同じ worktree'
+  grep -qx -- '- 挙動を変えない設定値の変更' "$CRITERIA"
+}
+@test "criteria: unmanned ends without starting gate" {
+  light_section | grep '^5\.' | grep -q 'unmanned.*agent-review:pending'
+  light_section | grep '^7\.' | grep -q 'unmanned.*G を起こさず'
+}
+@test "fallback: pre-review rejection restarts a first whole review" {
+  for file in "$CRITERIA" "$PREPARE" "$GATE"; do
+    grep -q '前の Gate Result を.*ゲートの開始' "$file"
+    grep -q '周回: 1.*全体レビュー' "$file"
+  done
+}
+@test "pass: nonzero recorded check rejects and restarts spec worker" {
+  grep '終了コードが 0 でなければ' "$PASS" | grep -q 'passed を付けず.*failed.*次の段: 前提確認と重さ判定.*段: spec'
+}
+@test "prepare commands: duplicate kinds return failed" {
+  measure "$DEC_FIX"$'\n種類: typo' '1 1 a.sh'
+  printf '%s\n' "$output" | grep -qx '軽い通し方の確認: 条件外'
+  printf '%s\n' "$output" | grep -qx 'Status: failed'
+}
+@test "prepare commands: duplicate or empty checks return failed" {
+  for extra in '確かめ方: true' '確かめ方: '; do
+    measure "$DEC_FIX"$'\n'"$extra" '1 1 a.sh'
+    printf '%s\n' "$output" | grep -qx '軽い通し方の確認: 条件外'
+    printf '%s\n' "$output" | grep -qx 'Status: failed'
+  done
+}
+@test "prepare commands: two-file one-liner returns failed before review (AC6)" {
+  measure "$DEC_FIX" $'1 1 a.sh\n1 1 b.sh'
+  printf '%s\n' "$output" | grep -qx '軽い通し方の確認: 条件外'
+  printf '%s\n' "$output" | grep -qx 'Status: failed'
+  printf '%s\n' "$output" | grep -qx '次の段: 前提確認と重さ判定'
+  printf '%s\n' "$output" | grep -qx '原因: 軽い通し方の条件外'
+}
+@test "prepare commands: valid one-liner passes mechanical checks" {
+  measure "$DEC_FIX" '1 1 a.sh'
+  printf '%s\n' "$output" | grep -qx 'MACHINE_RESULT=条件内'
+  ! printf '%s\n' "$output" | grep -q 'Status: failed'
+}
+@test "specs: published and archived requirements keep the repaired contracts" {
+  local root="$PLUGIN_DIR/../../openspec" prefix
+  for prefix in "$root/specs" "$root/changes/archive/2026-11-07-develop-trivial-light-path/specs"; do
+    grep -q '周回: 1.*全体レビュー' "$prefix/dev-workflow-develop/spec.md"
+    grep -q '同じ worktree' "$prefix/dev-workflow-develop/spec.md"
+    grep -q 'unmanned では G を起こさず' "$prefix/dev-workflow-spec-review/spec.md"
+    grep -q '終了コードが 0 でなければ.*passed を付けず.*failed' "$prefix/dev-workflow-pr-review-gate/spec.md"
+    grep -q '種類:.*1 行ちょうど' "$prefix/dev-workflow-pr-review-gate/spec.md"
+    ! grep -q '1 行以上あること' "$prefix/dev-workflow-pr-review-gate/spec.md"
+  done
+}

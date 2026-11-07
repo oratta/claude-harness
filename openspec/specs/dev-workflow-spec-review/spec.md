@@ -302,7 +302,7 @@ develop スキルは、仕様化判断が「しない」になる変更のうち
 - **THEN** これまでどおり W がテストを先に書いて実装する判断として扱う
 
 ### Requirement: 軽い通し方では本体が直し、仕様宣言までを行ってから G を起こす
-軽い通し方では、本体は (1)〜(3) の W を起こさず、判断の記録のあとに自分で直し、`確かめ方:` のコマンドを走らせて終了コード 0 を確かめ、commit・push し、PR を Draft のまま用意し（issue が記録先なら `Closes #<issue>` を本文に書く）、仕様宣言を「変更なし＋理由」形で投稿してから (4) の G を起こさなければならない（MUST）。手順の正本は `references/decision-criteria.md` の Step B の軽い通し方の小節に置く（MUST）。
+軽い通し方では、本体は (1)〜(3) の W を起こさず、判断の記録のあとに自分で直し、`確かめ方:` のコマンドを走らせて終了コード 0 を確かめ、commit・push し、PR を Draft のまま用意し（issue が記録先なら `Closes #<issue>` を本文に書く）、仕様宣言を「変更なし＋理由」形で投稿してから、unmanned を除き (4) の G を起こさなければならない（MUST）。unmanned では G を起こさず `agent-review:pending` を付けてサイクルを終えなければならない（MUST）。手順の正本は `references/decision-criteria.md` の Step B の軽い通し方の小節に置く（MUST）。
 
 #### Scenario: 本体の手順が書かれている
 - **WHEN** `references/decision-criteria.md` の軽い通し方の小節を読む
