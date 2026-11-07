@@ -42,6 +42,53 @@
    HEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')
    ```
 
+6. **軽い通し方の確認**: 手順 1 の 3 で解決した記録先（issue 参照が無い PR は PR 自身）を `REC` に置き、最新の仕様化判断だけを読む。最新コメントに `^通し方: 軽い$` と完全一致する行があるときだけ、レビュアーを起こす前に次を確かめる。その行が無ければこの確認をせず、コメントも投稿しない。
+
+   ```bash
+DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body')
+LIGHT=$(printf '%s\n' "$DEC" | grep -cx '通し方: 軽い')
+if [ "$LIGHT" -ge 1 ]; then
+  printf '%s\n' "$DEC" | head -1
+  KIND=$(printf '%s\n' "$DEC" | sed -n 's/^種類: //p')
+  printf '%s\n' "$KIND"
+  CHECK_COUNT=$(printf '%s\n' "$DEC" | grep -c '^確かめ方: ')
+  printf '%s\n' "$CHECK_COUNT"
+  FILES=$(gh api --paginate repos/$R/pulls/$N/files --jq '.[] | "\(.additions) \(.deletions) \(.filename)"' | grep -vE ' ([^ ]*/)?changes/[0-9]+\.md$')
+  SPEC_COUNT=$(printf '%s\n' "$FILES" | grep -c ' openspec/')
+  printf '%s\n' "$SPEC_COUNT"
+  printf '%s\n' "$FILES" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}'
+  KIND_COUNT=$(printf '%s\n' "$DEC" | grep -c '^種類: ')
+  printf '種類の行数=%s\n' "$KIND_COUNT"
+  MACHINE_RESULT=条件内
+  [ "$(printf '%s\n' "$DEC" | head -1)" = '仕様化判断: しない' ] &&
+    [ "$KIND_COUNT" -eq 1 ] && [ "$CHECK_COUNT" -eq 1 ] &&
+    [ "$(printf '%s\n' "$DEC" | grep -c '^確かめ方: .')" -eq 1 ] &&
+    [ "$SPEC_COUNT" -eq 0 ] || MACHINE_RESULT=条件外
+  case "$KIND" in
+    typo|lint|コメント|フォーマット|設定値) ;;
+    'ワンライナー fix')
+      read -r COUNT ADDED DELETED <<< "$(printf '%s\n' "$FILES" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}')"
+      [ "$COUNT" -eq 1 ] && [ "$ADDED" -le 1 ] && [ "$DELETED" -le 1 ] || MACHINE_RESULT=条件外 ;;
+    *) MACHINE_RESULT=条件外 ;;
+  esac
+  printf 'MACHINE_RESULT=%s\n' "$MACHINE_RESULT"
+  if [ "$MACHINE_RESULT" = 条件外 ]; then
+    printf '%s\n' '軽い通し方の確認: 条件外' "対象 HEAD: $HEAD_SHA" '機械で測る点: 条件外'
+    printf '%s\n' 'Status: failed' '次の段: 前提確認と重さ判定' '原因: 軽い通し方の条件外'
+  fi
+fi
+   ```
+
+   grep の 0 件は終了コード 1 になるので、このブロックは `set -e` を有効にせず走らせ、終了コードではなく出力の値で判定する。出力は順に、仕様化判断の 1 行目・種類・確かめ方の行数・openspec のファイル数・変更ファイル数と追加／削除行数、種類の行数、機械判定。`MACHINE_RESULT=条件外` なら出力した確認コメントと Gate Result の欄を使って下の条件外の処理を行い、return する。条件内なら G が差分を読む判断に進む。
+
+   **機械で測る点**: 1 行目が `仕様化判断: しない` ちょうど、`種類:` の行が 1 行ちょうどで値が `typo` / `lint` / `コメント` / `フォーマット` / `ワンライナー fix` / `設定値` のどれか 1 つちょうど、`確かめ方:` が 1 行ちょうど（値が空でない）、`openspec/` が 0 ファイルであること。さらにワンライナー fix だけは、変更ファイルが 1 つ、追加 1 行以下かつ削除 1 行以下であること。変更の記録（パスが `changes/<数字>.md` で終わるファイル）はどの種類でも数えない。ワンライナー fix 以外にファイル数・行数の上限を置かない。
+
+   **G が差分を読んで判断する点**: `gh pr diff $N --repo $R` で、変更の記録を除くすべての変更が宣言した種類に収まるかを読む。typo・lint・コメント・フォーマット・設定値はプログラムの挙動を変えないこと（設定値も値を変えて挙動が変わらないこと）。ワンライナー fix は明白なバグの 1 行修正で直し方に選択肢がないことを判断し、挙動が変わることを条件外の理由にしない（比較の向きの取り違えの修正は条件内、既定値の選び直しは条件外）。判断がつかない場合も条件外。
+
+   **結果**: PR コメントの 1 行目を `^軽い通し方の確認: (条件内|条件外)$` に完全一致させ、2 行目を `対象 HEAD: <40 桁フル SHA>`（手順 1 の 5 の `$HEAD_SHA`）、続けて確かめた点ごとの結果と、条件外なら外れた点を書く。条件内なら手順 2-0 へ進む。条件外なら `agent-review:pending` を外し `agent-review:failed` を付け、レビュアーを起こさず終了する。develop の G の return は下の「軽い通し方の条件外」を使い、それ以外の呼び出し元は確認コメントを見て通常の通し方に戻す。
+
+   **守備範囲**: 入力は本体が書いた最新の仕様化判断と PR の差分・変更ファイル一覧。書式・種類・openspec の差分・宣言した種類からの逸脱・ワンライナー fix の大きさ超えを拾う。変更の記録は機械の点と G の判断の両方から外すため、その中身は通ることを許す（レビュアーが差分全体と一緒に見る）。`確かめ方:` のコマンドの妥当性も見ない。穴を塞ぎ切ることは完了条件にしない。
+
 ### 2. レビュー（実装と別コンテキスト）
 
 **実装したコンテキストで自己レビューしない。** これは light / full のどちらでも変わらない。
@@ -84,6 +131,10 @@ gh api -X POST repos/$R/issues/$N/comments \
 
 この節は develop の G（`skills/develop/references/roles/gate-runner.md` の指示で動くゲート実行者）だけに関係する。develop 以外の読み手は読み飛ばしてよい。
 
+### 軽い通し方の条件外
+
+手順 1 の 6 で条件外なら、確認コメントを投稿しラベルを切り替えてから、Status `failed`・`次の段: 前提確認と重さ判定`・`原因: 軽い通し方の条件外` で return する。固定 HEAD と確認コメントの URL も Gate Result に含める。手順 2-0 とレビュアーの起動には進まない。この failed はレビューの周に数えず、本体は次の G を前の Gate Result を貼らずにゲートの開始として起こし、`周回: 1` の全体レビューにする（W の修正後の再レビューとして扱わない）。
+
 ### needs-reviewer の return（本体にレビュアーの spawn を委ねる）
 
 G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: dev-workflow:reviewer` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、照合と振り分けの G を新しく起こしてその要約を渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・Codex オフ・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
@@ -116,7 +167,7 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 ### この段で起こされたときの入力
 
 - **ゲートの開始・CI の見張りのあとの取り直し**: 起動指示の `段: 前提確認と重さ判定` と `レビュー経路:` の行だけで手順 1 から始める。`周回:` は取り直しなら前の Gate Result の値を引き継ぎ、ゲートの開始なら 1 とする
-- **W の修正後の再レビュー**（前の Gate Result が Status failed で `次の段: 前提確認と重さ判定`。前の `段:` は問わない。保留の解除の G が代替案への作り直しで返した failed もここに入る）: `stages/triage.md` の収束ルールの節（手順 2-1 の周回の規則）と、同じファイルの「この段で起こされたときの入力」の「W の修正後の再レビュー」を読む（規則はそちらが正本で、ここには写さない）。前の周の指摘は PR の仕分けコメントから読み、前の G の会話は持たない前提で動く。差分限定か全体レビューかは自分で判定し、全体レビューにしたときは修正差分の行数と前周の指摘の対象行数の 2 つを PR コメントに記録する。`周回:` は前の Gate Result の値に 1 を足す
+- **W の修正後の再レビュー**（前の Gate Result が Status failed で `次の段: 前提確認と重さ判定`。`原因: 軽い通し方の条件外` を除く。前の `段:` は問わない。保留の解除の G が代替案への作り直しで返した failed もここに入る）: `stages/triage.md` の収束ルールの節（手順 2-1 の周回の規則）と、同じファイルの「この段で起こされたときの入力」の「W の修正後の再レビュー」を読む（規則はそちらが正本で、ここには写さない）。前の周の指摘は PR の仕分けコメントから読み、前の G の会話は持たない前提で動く。差分限定か全体レビューかは自分で判定し、全体レビューにしたときは修正差分の行数と前周の指摘の対象行数の 2 つを PR コメントに記録する。`周回:` は前の Gate Result の値に 1 を足す
 - **保留の解除のあと**（前の Gate Result が `段: 保留の解除` で Status `次の段へ`・`次の段: 前提確認と重さ判定`。W の修正が要らないときだけ。failed の場合は上の再レビューの入口に入る）: 手順 1 から始め、`周回:` は前の Gate Result の値を引き継ぐ（足さない）
 
 ## 出口
