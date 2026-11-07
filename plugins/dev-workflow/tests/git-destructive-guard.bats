@@ -8,7 +8,7 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/git-destructive-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
-  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_UNATTENDED
+  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_UNATTENDED DEV_WORKFLOW_GIT_GUARD_NO_ASK
   # cd と git の行き先・設定を変える環境変数があると一時領域の判定を満たさないので、実行する人の環境から外す
   unset CDPATH GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
     GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM
@@ -1847,4 +1847,141 @@ PY
   [[ "$(reason)" != *'許可はあるが行き先を確かめられない'* ]] || return 1
   [ ! -e "$(GUARD_BASE)/denied" ]
   [ -f "$(GUARD_BASE)/permits/$k.json" ]
+}
+
+# --- 起動側が付ける git ガード専用の NO_ASK 印 ---
+
+assert_no_ask_reason() {
+  local r t
+  r="$(reason)"
+  for t in 'rules/destructive-git-guard.md' '実行していない' 'コマンドの全文' '対象' 'なぜ要るか' '止まった理由' 'オーナーに承認を求め' 'ターンを終える' 'オーナーが自分で実行' 'このセッションでは実行しない' '言い換えたコマンド'; do
+    [[ "$r" == *"$t"* ]] || { echo "missing $t: $r"; return 1; }
+  done
+  for t in '確認画面' '!' 'チャンネル' 'Discord' 'DEV_WORKFLOW_GIT_GUARD'; do
+    [[ "$r" != *"$t"* ]] || { echo "unexpected $t: $r"; return 1; }
+  done
+}
+
+@test "no-ask: nine kinds deny across interactive modes and FORCE ask" {
+  local c m f
+  [ "${#NINE_KINDS[@]}" -ge 9 ]
+  for c in "${NINE_KINDS[@]}"; do
+    for m in default bypassPermissions; do
+      for f in '' ask; do
+        call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 "DEV_WORKFLOW_GIT_GUARD_FORCE=$f" -- "$c" "$m"
+        [ "$status" -eq 0 ]
+        [ "$(decision)" = deny ] || { echo "$c / $m / $f: $output"; return 1; }
+      done
+    done
+  done
+}
+
+@test "no-ask: other modes and FORCE deny also deny" {
+  local m f
+  for m in acceptEdits plan auto dontAsk unknown -; do
+    for f in '' ask deny; do
+      call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 "DEV_WORKFLOW_GIT_GUARD_FORCE=$f" -- 'git reset --hard' "$m"
+      [ "$status" -eq 0 ]
+      [ "$(decision)" = deny ]
+      assert_no_ask_reason
+    done
+  done
+}
+
+@test "no-ask: unset empty whitespace and zero are unmarked; other values are marked" {
+  local m v
+  for m in default bypassPermissions; do
+    call 'git reset --hard' "$m"
+    [ "$(decision)" = ask ]
+    for v in '' '   ' 0 ' 0 '; do
+      call_env "DEV_WORKFLOW_GIT_GUARD_NO_ASK=$v" -- 'git reset --hard' "$m"
+      [ "$(decision)" = ask ]
+    done
+    for v in 1 true ' true ' yes; do
+      call_env "DEV_WORKFLOW_GIT_GUARD_NO_ASK=$v" -- 'git reset --hard' "$m"
+      [ "$(decision)" = deny ]
+    done
+  done
+}
+
+@test "no-ask: main agent definitions deny without counting or stopping" {
+  local a i
+  for a in - '""' 7; do
+    for i in 1 2; do
+      call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 -- 'git reset --hard' default "$a" s1
+      [ "$status" -eq 0 ]
+      [ "$(decision)" = deny ]
+      assert_no_ask_reason
+      ! has_continue || return 1
+    done
+  done
+  [ ! -e "$TMPDIR/dev-workflow-git-guard" ]
+}
+
+@test "no-ask: reason takes precedence over UNATTENDED and FORCE" {
+  local m u f
+  for m in default bypassPermissions; do
+    for u in '' 1; do
+      for f in '' ask; do
+        call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 "DEV_WORKFLOW_UNATTENDED=$u" "DEV_WORKFLOW_GIT_GUARD_FORCE=$f" -- 'git push origin main' "$m"
+        [ "$status" -eq 0 ]
+        [ "$(decision)" = deny ]
+        [[ "$(reason)" == *'main / master'* ]] || return 1
+        assert_no_ask_reason
+      done
+    done
+  done
+}
+
+@test "no-ask: harmless commands and guard off remain silent" {
+  call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 -- 'git status'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 DEV_WORKFLOW_GIT_GUARD=off -- 'git reset --hard'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "no-ask: child denial record and second denial stop keep the child reason" {
+  export DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 DEV_WORKFLOW_UNATTENDED=1 DEV_WORKFLOW_GIT_GUARD_FORCE=ask
+  call 'git checkout -- a' bypassPermissions '"a1"' s1
+  [ "$(decision)" = deny ]
+  ! has_continue || return 1
+  local rec
+  rec="$(only_record)"
+  [ -f "$rec" ]
+  [[ "$(reason)" == *"$rec"* ]] || return 1
+  [[ "$(reason)" == *'打ち直さず'* ]] || return 1
+  [[ "$(reason)" == *'親に返す'* ]] || return 1
+  [[ "$(reason)" != *'チャンネル'* ]] || return 1
+  [[ "$(reason)" != *'ターンを終える'* ]] || return 1
+  call 'git checkout -- a' bypassPermissions '"a1"' s1
+  [ "$(decision)" = deny ]
+  python3 -c 'import json,sys; assert json.load(sys.stdin)["continue"] is False' <<<"$output"
+  [[ "$(reason)" == *'2 回目以降'* ]] || return 1
+  [ "$(cat "$TMPDIR/dev-workflow-git-guard/$(count_files)")" = 2 ]
+}
+
+@test "no-ask: main leaves permit intact; child consumes it exactly once" {
+  setup_permit
+  export DEV_WORKFLOW_GIT_GUARD_NO_ASK=1
+  deny_then_permit 'git checkout -- .' "$REPO"
+  call_cwd 'git checkout -- .' - "$PERMIT_SID" "$REPO" bypassPermissions
+  [ "$(decision)" = deny ]
+  assert_no_ask_reason
+  ! has_continue || return 1
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = 1 ]
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = allow ]
+  permits_empty
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = deny ]
+}
+
+@test "no-ask: epic step five explains conditional transcript detection and screen limits" {
+  local step t
+  step="$(sed -n '/^5\. /,/^6\. /p' "${PLUGIN_DIR}/skills/develop/references/epic.md")"
+  for t in 'DEV_WORKFLOW_GIT_GUARD_NO_ASK' '起動側' '拒否後' '承認を求めてターンを終え' '会話ログが読める' 'wait --watch-stopped' '権限確認の画面で止まった子' '会話ログを読めない子' '検知できない'; do
+    [[ "$step" == *"$t"* ]] || { echo "missing $t"; return 1; }
+  done
 }
