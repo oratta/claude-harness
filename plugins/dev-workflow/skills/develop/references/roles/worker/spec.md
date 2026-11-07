@@ -28,6 +28,10 @@ EOF
 
 issue が記録先のときはこの節は不要（PR は (3) で作る）。
 
+## CI fix から起きた場合の先行確認
+
+軽い通し方の `ci-fail` による fix から起きた新しい W は、次節へ入る前に `skills/develop/references/decision-criteria.md` Step B「CI 見張りの fix からの戻し方」に従い、仕様化判断の再投稿より先に共有手順の関係確認を行う。無関係なら次節の判断記録の一般手順へ進まず、チェック名と根拠を本体へ返す。関係がある／無関係と判断できない場合や `conflict` は、正本どおり次節から通常復帰する。
+
 ## 仕様化判断（opsx / openspec の要否）と記録
 
 まず `openspec --version` で CLI の有無を確認する。opsx コマンドがあっても openspec CLI が無ければ仕様化経路は発生せず、理由に「openspec 不在」と書いてコード直行する。
