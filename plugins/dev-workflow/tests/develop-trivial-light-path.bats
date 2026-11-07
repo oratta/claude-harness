@@ -404,3 +404,25 @@ printf 'SELECTED=%s\n' \"\$DEC\""
     printf '%s\n' "$scenario" | grep -q '今回の工程完了または停止確認.*新しい可'
   done
 }
+
+# #1604: 正本に記述が残っていても、各入口の接続漏れを検出する。
+@test "ci handover entry: watch startup links to section 7 handover" {
+  section="$(LC_ALL=C awk '/^## 2\./{f=1;next} /^## /{f=0} f' "$PLUGIN_DIR/references/ci-watch.md")"
+  printf '%s\n' "$section" | grep '通常経路' | grep '7 冒頭' | grep -qF 'CI 用引き継ぎ'
+}
+
+@test "ci handover entry: failed dispatch and read occasions invalidate before instructions" {
+  local failed occasions section
+  failed="$(LC_ALL=C awk '/^      (failed 後|軽い通し方の failed →)/{f=1} /^      保留 →/{f=0} f' "$SKILL")"
+  occasions="$(LC_ALL=C awk '/^## 保留で止まるときの引き継ぎ/{f=1;next} /^## /{f=0} f' "$SKILL")"
+  for section in "$failed" "$occasions"; do
+    printf '%s\n' "$section" | grep '最新 CI 用引き継ぎが可' | grep '起動／再開前' | grep 'handover.md' | grep -qF '起動／再開前の無効化と再許可'
+    printf '%s\n' "$section" | grep '不可を投稿' | grep -qF '投稿成功後だけ指示'
+  done
+}
+
+@test "ci handover entry: unrelated completion renews permission before next without push" {
+  section="$(ci_handover | LC_ALL=C awk '/^### /{exit} {print}')"
+  printf '%s\n' "$section" | grep '修正後の待ちへ戻る前' | grep '今回の W' | grep '無関係' | grep 'push せず工程完了' | grep -qF 'next --unrelated'
+  printf '%s\n' "$section" | grep 'next --unrelated' | grep '前' | grep '今回の工程完了' | grep -qF '新しい手渡し可'
+}
