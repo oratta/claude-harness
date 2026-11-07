@@ -70,7 +70,7 @@ light_section() {
 
 # prepare の手順 1 にあるコードブロックをそのまま実行する。
 measure_commands() {
-  LC_ALL=C awk '/^DEC=/{f=1} f && /^[[:space:]]*```/{exit} f{print}' "$PREPARE"
+  LC_ALL=C awk '/^[[:space:]]*DEC=/{f=1} f && /^[[:space:]]*```/{exit} f{sub(/^   /, ""); print}' "$PREPARE"
 }
 measure() {
   local dec="$1" files="$2" cmds
@@ -103,6 +103,23 @@ DEC_FIX=$'仕様化判断: しない\n通し方: 軽い\n種類: ワンライナ
   grep 'ワンライナー fix は' "$PREPARE" | grep -q '挙動が変わることを条件外の理由にしない'
   grep -q 'gh pr diff' "$PREPARE"
   grep -q '穴を塞ぎ切ることは完了条件にしない' "$PREPARE"
+}
+@test "prepare commands: indented list block can be extracted and executed" {
+  local original="$PREPARE"
+  PREPARE="$BATS_TEST_TMPDIR/indented-prepare.md"
+  # 元の字下げに関係なく、リスト内のコードを 3 字下げにする。
+  LC_ALL=C awk '
+    /^[[:space:]]*DEC=/{f=1}
+    f && /^[[:space:]]*```/{f=0}
+    f {sub(/^   /, ""); $0="   " $0}
+    {print}
+  ' "$original" > "$PREPARE"
+  local cmds
+  cmds="$(measure_commands)"
+  [[ "$cmds" == DEC=* ]] || return 1
+  [[ "$cmds" == *$'\nfi' ]] || return 1
+  measure "$DEC_FIX" '1 1 a.sh'
+  printf '%s\n' "$output" | grep -qx 'MACHINE_RESULT=条件内'
 }
 @test "prepare commands: two files exceed the one-liner limit" {
   measure "$DEC_FIX" $'1 1 a.sh\n1 1 b.sh'
