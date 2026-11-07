@@ -27,7 +27,7 @@
 - 始めるときは、1 行目が `CI 見張り開始:` のコメントを PR に投稿する。本文には何を待っているか（PR の CI の決着を本体が待っていること）を 1 行添える。見張りを終えるときは、1 行目が `CI 見張り終了:` のコメントを投稿する（終えた理由を 1 行添える）
 - 前のセッションが閉じて終了のコメントが残らなかった見張りを、通知を受けていない別のセッションが引き継ぐには、下のオーナーの指示による再開の規則に従う。自分の会話で起動した待ちの `stopped` / `killed` の通知を受けた起動し直しのセッションは 9 に従う（オーナーの指示を待たない）。
 - オーナーの指示で見張りを再開するとき（前のセッションが閉じて終了のコメントが残らなかった・オーナーに上げたあと続けるよう言われた）は、状態ファイルの `raised` を消すだけで済ませない。`decide` は前回と同じ状態・同じ HEAD の決着を `none` にするので、中断した一手を飛ばしたまま見張りが終わってしまう。先に状態ファイル（`state`・`head`・`fixes`・`reran_head`）と PR の記録（直しの依頼・push・`gh run rerun`・ラベル）から、中断した一手が済んでいるかを確かめる
-  - 状態ファイルの `head` が PR の今の HEAD と同じで、`fix` の判定のあと直しの push が無いときは、`next` を呼ばずに、下の 7 の直し方の実装者への修正依頼から再開する（`fixes` は判定のときに数え済みなので書き換えない）
+  - 状態ファイルの `head` が PR の今の HEAD と同じで、`fix` の判定のあと直しの push が無いときは、`next` を呼ばずに、下の 7 の直し方の実装者への修正依頼から再開する（`fixes` は判定のときに数え済みなので書き換えない）。develop では `plugins/dev-workflow/skills/develop/references/decision-criteria.md` Step B「CI 見張りの fix からの戻し方」で担当を用意する。W 不明なら最新の CI 用引き継ぎの許可を確かめ、最新が不可なら古い可で二人目を起こさない
   - `rerun` の判定のあと、その HEAD で `gh run rerun` が実行されていなければ、6 の表の `rerun` の行の `gh run rerun` から再開する
   - `escalate` のあとに続けるよう言われたときは、オーナーの具体的な指示（直す・やり直す・関係ない失敗として扱うなど）を先に実行してから、`raised` を消して `wait` から見張りに戻る。指示が具体的でなければ、何をすればよいかをオーナーに聞き返す
   - `raised` の消し方: `f=<状態ファイル>; jq -c 'del(.raised)' "$f" > "$f.tmp" && mv -f "$f.tmp" "$f"`
@@ -98,6 +98,8 @@
 
 ## 7. 直し方
 
+develop の通常経路では、見張りを始める前と修正後の待ちへ戻る前に、本体が `plugins/dev-workflow/skills/develop/references/handover.md`「CI 見張りの修正担当の引き継ぎ」を PR に記録する。通常経路の W の起動／再開前の不可の投稿と今回の完了／停止確認後だけの再許可も同節に従う。
+
 genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ待ち PR の見張り」の修正手順を移したもの（住人の依頼の列とあなた待ちの操作は持ち込んでいない）。担い手は PR の実装者で、ゲートを回した側ではない（実装とレビューを別のコンテキストに保つため）。develop では W が直す。W がまだいない軽い通し方も含め、担当と起動段は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` Step B「CI 見張りの fix からの戻し方」に従って用意する。develop を使わずメインセッションで pr-review-gate を回したときは、メインセッションが実装者のサブエージェント（model は sonnet）を起こして直させる。
 
 1. `git fetch origin` し、PR ブランチの worktree で作業する。残っていればそれを使い、無ければ対象リポの clone から切る。harness では開発用の clone から切り、marketplace dir では作業しない
@@ -125,7 +127,7 @@ genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ�
    - 終了のコメントがあれば何もしない。
    - 終了のコメントが無く、PR が merged / closed なら再開せず、1 行目が `CI 見張り終了:` のコメントを投稿する（終えた理由を 1 行添える）。merged ならマージを報告し、closed なら見張りを終える。
    - PR が open で、最新の開始のコメントがあり、そのあとに終了のコメントが無いときだけ再開する。
-3. 再開すると決まったら、主やオーナーに再開してよいかを聞き返さずに `ci-watch.sh next <owner/repo> <PR番号>` を `--unrelated` なしで実行し、その出力を 6 の表どおりに処理する。`obs.state` が `wait` の `none` なら待ちに戻り、`ready` なら「`ready` を受けたあと」に進む（切れた待ちが `--until-merged` 付きでも同じ）。
+3. 再開すると決まったら、主やオーナーに再開してよいかを聞き返さずに `ci-watch.sh next <owner/repo> <PR番号>` を `--unrelated` なしで実行し、その出力を 6 の表どおりに処理する。develop の `fix` は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` Step B「CI 見張りの fix からの戻し方」に従い、W 不明の場合も CI 用引き継ぎから担当を用意するか停止する。`obs.state` が `wait` の `none` なら待ちに戻り、`ready` なら「`ready` を受けたあと」に進む（切れた待ちが `--until-merged` 付きでも同じ）。
 
 同じ見張りの続きなので、2 の開始の判定も開始のコメントもしない。通知が届くのは `wait` の実行中に落ちた場合で、待ちの前の一手は済んでいるため、2 の中断した一手の確認も要らない。通知を受けていない別のセッションが始める・引き継ぐ場合は、2 のオーナーの指示による再開の規則に従う。
 

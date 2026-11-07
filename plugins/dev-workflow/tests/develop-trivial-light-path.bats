@@ -125,6 +125,76 @@ ci_reentry() {
   done
 }
 
+# #1597: エージェントの実起動ではなく、CI fix の担当引き継ぎの文書契約。
+ci_handover() {
+  LC_ALL=C awk '/^## CI 見張りの修正担当の引き継ぎ/{f=1} f' "$PLUGIN_DIR/skills/develop/references/handover.md"
+}
+@test "ci handover: watch entry and repaired continuation record all required inputs" {
+  section="$(ci_handover)"
+  for phrase in '引き継ぎ: CI 見張りの修正担当' '見張りを始める前' '修正後の待ちへ戻る前' 'PR コメント' 'return 全文' '全文を読める' '成果・残作業・読んだコードの要点' '編集ファイル・commit SHA' 'W の名前は書かない'; do
+    printf '%s\n' "$section" | grep -qF "$phrase"
+  done
+  for key in 記録先 対象 '前任 W' 実行モード 実行先 周回 'PR トークン上限'; do
+    printf '%s\n' "$section" | grep -qF "| $key |"
+  done
+  grep '見張りを始める前' "$PLUGIN_DIR/references/ci-watch.md" | grep -qF 'references/handover.md'
+}
+@test "ci handover: unknown normal worker uses latest decision and an implement handoff" {
+  section="$(ci_reentry)"
+  printf '%s\n' "$section" | grep 'W を把握しない' | grep -qF 'handover.md'
+  section="$(ci_handover)"
+  for phrase in '全ページ' '最新の 1 件' '最新の仕様化判断' 'R1 APPROVE' '段: implement' '前任 return' '失敗したチェック・run' 'ci-watch.md 7' '直接修正' '存在しない W'; do
+    printf '%s\n' "$section" | grep -qF "$phrase"
+  done
+}
+@test "ci handover: missing unreadable interrupted denied or mismatched inputs stop dispatch" {
+  section="$(ci_handover)"
+  for phrase in '引き継ぎ無し' '必要項目不足' 'return 参照不能' '工程中断で停止確認無し' '手渡し不可' '対象不一致' '未コミット差分' 'W を起こさず' 'push もせず' '差分を戻して'; do
+    printf '%s\n' "$section" | grep -qF "$phrase"
+  done
+  for field in 'PR 番号' 'HEAD の 40 桁 SHA' ブランチ worktree 'git status' 'git diff'; do
+    printf '%s\n' "$section" | grep -qF "$field"
+  done
+}
+@test "ci handover: stopping uses shared escalation and epic child reporting" {
+  section="$(ci_handover)"
+  for phrase in 'needs-approval' '不足情報・PR/HEAD・fix の観測' 'CI 見張り終了:' 'escalate' 'オーナー' 'epic-child-stop.md' '経過時間' '続行指示' '代わりにしない'; do
+    printf '%s\n' "$section" | grep -qF "$phrase"
+  done
+}
+@test "ci handover: both existing resume and new handoff invalidate before dispatch" {
+  section="$(ci_handover)"
+  for phrase in '既存 W の implement 再開と新しい W への implement 手渡しの両方' '許可条件を確認' '依頼入力として保持' '必要項目を継承' '手渡し: 不可（CI fix の W を起動／再開するため、今回の工程完了または停止確認待ち）' '投稿成功を確認してから起動／再開を指示' '投稿失敗なら起動／再開せず'; do
+    printf '%s\n' "$section" | grep -qF "$phrase"
+  done
+  ci_reentry | grep '起動／再開前' | grep -qF 'handover.md'
+}
+@test "ci handover: unchanged HEAD after either dispatch cannot authorize a second worker" {
+  section="$(ci_handover)"
+  for phrase in '既存 W の再開後も新しい W の起動後も' 'HEAD 一致・差分なし' '最新の不可' '古い可へ遡らない' '以前の完了／停止確認' '二人目の W を起こさない' '中断済み fix'; do
+    printf '%s\n' "$section" | grep -qF "$phrase"
+  done
+}
+@test "ci handover: only current completion or confirmed stop renews permission" {
+  section="$(ci_handover)"
+  for phrase in '今回起動／再開した W' '工程完了: <工程名>' '停止指示に対する停止確認' '編集・投稿内容' '新しい手渡し可' '本体が commit してから記録' '以前の完了／停止確認や push・idle' '不可のまま' '同じ PR・状態ファイル' '修正回数をリセットしない'; do
+    printf '%s\n' "$section" | grep -qF "$phrase"
+  done
+}
+@test "ci handover: section 2 interrupted fix and section 9 restart share dispatch rules" {
+  watch="$PLUGIN_DIR/references/ci-watch.md"
+  for heading in '## 2.' '## 9.'; do
+    section="$(awk -v h="$heading" 'index($0,h)==1{f=1;print;next} /^## /{f=0} f' "$watch")"
+    printf '%s\n' "$section" | grep 'decision-criteria.md' | grep -qF 'CI 見張りの fix からの戻し方'
+  done
+}
+@test "ci handover: scope names sources errors and an accepted false report" {
+  section="$(ci_handover)"
+  for phrase in '守備範囲' 'GitHub' 'ローカルの作業ツリー' 'fix の観測' '無効化漏れ' '編集ファイルや成果の説明が事実と違う入力' '通ることを許す' '真正性' '読解ミス' '見張り重複判定' '穴を全て塞ぐことは完了条件にしない'; do
+    printf '%s\n' "$section" | grep -qF "$phrase"
+  done
+}
+
 @test "startup: skill remains within its unchanged byte budget" {
   budget="$(awk '$1=="skills/develop/SKILL.md"{print $2}' "$PLUGIN_DIR/../../tests/develop-startup-budget.txt")"
   [ "$(wc -c < "$SKILL")" -le "$budget" ]
