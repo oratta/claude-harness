@@ -1,6 +1,6 @@
 ---
 name: work-issue
-description: /develop のエイリアス（旧名）
+description: /develop のエイリアス（旧名）。リポジトリの追跡ファイルを変えるときは会話の依頼でも必ず通す。
 argument-hint: "[issue番号|issueURL|自然文の依頼]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ---
