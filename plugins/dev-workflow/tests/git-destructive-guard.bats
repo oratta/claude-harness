@@ -1926,7 +1926,7 @@ assert_no_ask_reason() {
         call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 "DEV_WORKFLOW_UNATTENDED=$u" "DEV_WORKFLOW_GIT_GUARD_FORCE=$f" -- 'git push origin main' "$m"
         [ "$status" -eq 0 ]
         [ "$(decision)" = deny ]
-        [[ "$(reason)" == *'main / master'* ]]
+        [[ "$(reason)" == *'main / master'* ]] || return 1
         assert_no_ask_reason
       done
     done
@@ -1950,15 +1950,15 @@ assert_no_ask_reason() {
   local rec
   rec="$(only_record)"
   [ -f "$rec" ]
-  [[ "$(reason)" == *"$rec"* ]]
-  [[ "$(reason)" == *'打ち直さず'* ]]
-  [[ "$(reason)" == *'親に返す'* ]]
-  [[ "$(reason)" != *'チャンネル'* ]]
-  [[ "$(reason)" != *'ターンを終える'* ]]
+  [[ "$(reason)" == *"$rec"* ]] || return 1
+  [[ "$(reason)" == *'打ち直さず'* ]] || return 1
+  [[ "$(reason)" == *'親に返す'* ]] || return 1
+  [[ "$(reason)" != *'チャンネル'* ]] || return 1
+  [[ "$(reason)" != *'ターンを終える'* ]] || return 1
   call 'git checkout -- a' bypassPermissions '"a1"' s1
   [ "$(decision)" = deny ]
   python3 -c 'import json,sys; assert json.load(sys.stdin)["continue"] is False' <<<"$output"
-  [[ "$(reason)" == *'2 回目以降'* ]]
+  [[ "$(reason)" == *'2 回目以降'* ]] || return 1
   [ "$(cat "$TMPDIR/dev-workflow-git-guard/$(count_files)")" = 2 ]
 }
 
