@@ -70,7 +70,7 @@ light_section() {
 
 # prepare の手順 1 にあるコードブロックをそのまま実行する。
 measure_commands() {
-  LC_ALL=C awk '/^DEC=/{f=1} f && /^```/{exit} f{print}' "$PREPARE"
+  LC_ALL=C awk '/^DEC=/{f=1} f && /^[[:space:]]*```/{exit} f{print}' "$PREPARE"
 }
 measure() {
   local dec="$1" files="$2" cmds
@@ -127,4 +127,12 @@ DEC_FIX=$'仕様化判断: しない\n通し方: 軽い\n種類: ワンライナ
   [ "$(printf '%s\n' "$output" | sed -n '4p')" = 0 ]
   measure "$DEC_FIX" $'1 1 a.sh\n1 1 plugins/x/changes/name.md'
   printf '%s\n' "$output" | grep -qx '2 2 2'
+}
+@test "pass: gate executes recorded checks at PR HEAD and delegates whole suites to CI" {
+  section="$(LC_ALL=C awk '/^### 4\./{f=1} /^### 5\./{f=0} f' "$PASS")"
+  printf '%s\n' "$section" | grep '軽い通し方' | grep -q '確かめ方:'
+  printf '%s\n' "$section" | grep '軽い通し方' | grep -q 'G が PR の HEAD の作業ツリーで'
+  printf '%s\n' "$section" | grep '軽い通し方' | grep -q '表の 1 行'
+  printf '%s\n' "$section" | grep '軽い通し方' | grep -q '終了コードと出力の要点'
+  printf '%s\n' "$section" | grep '軽い通し方' | grep -q '全体のテスト.*CI の結果'
 }
