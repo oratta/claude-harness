@@ -98,7 +98,7 @@
 
 ## 7. 直し方
 
-genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ待ち PR の見張り」の修正手順を移したもの（住人の依頼の列とあなた待ちの操作は持ち込んでいない）。担い手は PR の実装者で、ゲートを回した側ではない（実装とレビューを別のコンテキストに保つため）。develop では W が直す。develop を使わずメインセッションで pr-review-gate を回したときは、メインセッションが実装者のサブエージェント（model は sonnet）を起こして直させる。
+genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ待ち PR の見張り」の修正手順を移したもの（住人の依頼の列とあなた待ちの操作は持ち込んでいない）。担い手は PR の実装者で、ゲートを回した側ではない（実装とレビューを別のコンテキストに保つため）。develop では W が直す。W がまだいない軽い通し方も含め、担当と起動段は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` Step B「CI 見張りの fix からの戻し方」に従って用意する。develop を使わずメインセッションで pr-review-gate を回したときは、メインセッションが実装者のサブエージェント（model は sonnet）を起こして直させる。
 
 1. `git fetch origin` し、PR ブランチの worktree で作業する。残っていればそれを使い、無ければ対象リポの clone から切る。harness では開発用の clone から切り、marketplace dir では作業しない
 2. `conflict` は `git merge origin/main` で解く。版番号だけの競合は、main の値に PR の上げ幅を積んだ値にする（main が 1.4.0・PR が 1.3.0 → 1.3.1 なら 1.4.1）。`ci-fail` は `gh run view <run> --log-failed` を読んで直す。実装者がログを読んで PR の差分と関係ない失敗だと判断したら、直さず push もせずに呼び出し側へ返し、呼び出し側は `next --unrelated <チェック名> --after-fix` を 1 回だけ実行してその一手に従う（`--after-fix` は、直前の `fix` の判定で書かれた同じ状態・同じ HEAD の記録を外してやり直しを効かせる。同じ HEAD でのやり直しは 1 回までなので、失うのは CI 1 周分で止まる）
