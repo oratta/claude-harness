@@ -155,8 +155,9 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
            見張りの背景タスクの `stopped` / `killed` 通知は `references/ci-watch.md` の 9 に従う。
            ただし G の return に `issue で承認済み:` があれば、CI の見張りの前に主へその行（宣言 URL・分類・引用）を 1 回伝える（pr-review-gate 手順 5 の事後報告。書式は pr-review-gate `stages/pass.md`）。
-           見張りの一手が `fix` なら W に直させ（再開指示に `段: implement`。再開か手渡しかは (3) と同じく正本に従う）、
-           W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け、
+           見張りの一手が `fix` なら W に直させる。担当・段の分岐は `references/decision-criteria.md` Step B「CI 見張りの fix からの戻し方」に従う（最新判断が軽いなら同じ worktree の新しい W を `段: spec`、通常経路の既存 W は `段: implement` の再開／許可された手渡し）。
+           軽い通し方から戻す起動指示には `ci-watch.md`「7. 直し方」に従うこと（最初の push の前に手順 3）を入れる。仕様化途中の push では見張りに戻らず、通常経路を進めて (3b) の return を受けてから `wait` → `next` に戻る。
+           通常経路の既存 W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け、
            `ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、
            G が再び passed を返したら見張りの続き（reference の「`ready` を受けたあと」）に進む。合格するまでマージ待ち・マージ依頼に進まない。unmanned は (4) を回さないので対象外
       needs-reviewer → adapter 経路では G は full でも light でもこれを返す。本体は次の順で進む:

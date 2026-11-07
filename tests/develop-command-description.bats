@@ -10,8 +10,8 @@ check_description() {
   description=$(awk 'NR == 1 { if ($0 != "---") exit; next }
     /^---[ \t]*$/ { exit }
     /^description:/ { print }' "$REPO_ROOT/plugins/dev-workflow/commands/$1.md")
-  [[ "$description" == *"必ず通す"* ]]
-  [[ "$description" == *"会話"* ]]
+  [[ "$description" == *"必ず通す"* ]] || return 1
+  [[ "$description" == *"会話"* ]] || return 1
 }
 
 @test "develop description requires the workflow for conversational requests" {
