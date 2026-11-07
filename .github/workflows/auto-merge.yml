@@ -170,9 +170,9 @@ jobs:
           #   plugins/*/hooks/                          … セッションで自動実行されるフック（自己統治物件）
           #   plugins/dev-workflow/skills/pr-review-gate/ … agent-review:passed を発行するゲートの定義そのもの
           #   plugins/dev-workflow/templates/auto-merge/  … 各リポに展開されるマージロボットの原本
-          #   tests/injection-budget.txt                … 常時注入される固定分の予算値（動かす PR は人間マージ）
+          #   tests/injection-budget.*                  … 常時注入される固定分の予算ゲート一式（予算値 .txt と、測る対象を定義するスイート .bats。動かす PR は人間マージ）
           # >>> sacred-paths
-          SACRED='^\.github/workflows/|^\.claude/|(^|/)CLAUDE\.md$|^docs/agent-loop[^/]*(\.md$|/)|^rules/|^plugins/[^/]+/hooks/|^plugins/dev-workflow/skills/pr-review-gate/|^plugins/dev-workflow/templates/auto-merge/|^tests/injection-budget\.txt$'
+          SACRED='^\.github/workflows/|^\.claude/|(^|/)CLAUDE\.md$|^docs/agent-loop[^/]*(\.md$|/)|^rules/|^plugins/[^/]+/hooks/|^plugins/dev-workflow/skills/pr-review-gate/|^plugins/dev-workflow/templates/auto-merge/|^tests/injection-budget\.'
           # <<< sacred-paths
 
           # ── マージ条件そのもののパス（SACRED の部分集合）──

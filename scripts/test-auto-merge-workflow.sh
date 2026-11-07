@@ -107,7 +107,8 @@ else
     "plugins/dev-workflow/skills/pr-review-gate/SKILL.md" \
     "plugins/dev-workflow/templates/auto-merge/.github/workflows/auto-merge.yml" \
     "plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh" \
-    "tests/injection-budget.txt"; do
+    "tests/injection-budget.txt" \
+    "tests/injection-budget.bats"; do
     if printf '%s\n' "$p" | grep -qE "$SACRED"; then
       ok "聖域と判定される: $p"
     else
@@ -125,6 +126,7 @@ else
     "notCLAUDE.md" \
     ".github/ISSUE_TEMPLATE/bug.md" \
     "openspec/specs/rate-guard/spec.md" \
+    "tests/develop-skill.bats" \
     "plugins/dev-workflow/skills/develop/SKILL.md" \
     "plugins/dev-workflow/commands/develop.md" \
     "plugins/casting/README.md" \
