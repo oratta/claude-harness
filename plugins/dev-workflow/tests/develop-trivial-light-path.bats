@@ -237,7 +237,7 @@ ci_handover() {
   [ "$(wc -c < "$SKILL")" -le "$budget" ]
 }
 
-# prepare の手順 1 にあるコードブロックをそのまま実行する。
+# prepare の手順 1 の 6 にあるコードブロックをそのまま実行する。
 measure_commands() {
   LC_ALL=C awk '/^[[:space:]]*DEC=/{f=1} f && /^[[:space:]]*```/{exit} f{sub(/^   /, ""); print}' "$PREPARE"
 }
