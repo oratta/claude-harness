@@ -48,3 +48,83 @@ light_section() {
     printf '%s\n' "$row" | grep -q "$phrase"
   done
 }
+@test "loop: only light path permits main edits and bypasses workers" {
+  grep 'Edit でコードを書かない' "$SKILL" | grep -q '例外は軽い通し方だけ'
+  line="$(grep '^     軽い通し方なら' "$SKILL")"
+  printf '%s\n' "$line" | grep -q 'W を起こさず本体が直して G の工程'
+  printf '%s\n' "$line" | grep -q 'decision-criteria.md'
+  grep '入口 0 の例外' "$SKILL" | grep -q '整理 → 判定 → Draft PR → 判断の記録'
+}
+@test "loop: light failures dispatch a fresh spec worker before gate prepare" {
+  grep '軽い通し方の failed' "$SKILL" | grep -q '段: spec'
+  grep '軽い通し方の failed' "$SKILL" | grep -q 'decision-criteria.md'
+  # 条件外／通常の failed の詳細は正本に一本化し、SKILL から辿れること。
+  light_section | grep '原因: 軽い通し方の条件外' | grep -q 'モデルを上げず'
+  light_section | grep '通常のレビュー' | grep -q 'Gate Result.*仕分けコメントの URL'
+  grep '^| 前提確認と重さ判定 |' "$GATE" | grep -q 'failed.*次の段: 前提確認と重さ判定'
+}
+@test "startup: skill remains within its unchanged byte budget" {
+  budget="$(awk '$1=="skills/develop/SKILL.md"{print $2}' "$PLUGIN_DIR/../../tests/develop-startup-budget.txt")"
+  [ "$(wc -c < "$SKILL")" -le "$budget" ]
+}
+
+# prepare の手順 1 にあるコードブロックをそのまま実行する。
+measure_commands() {
+  LC_ALL=C awk '/^DEC=/{f=1} f && /^```/{exit} f{print}' "$PREPARE"
+}
+measure() {
+  local dec="$1" files="$2" cmds
+  cmds="$(measure_commands)"
+  [ -n "$cmds" ]
+  mkdir -p "$BATS_TEST_TMPDIR/bin"
+  jq -n --arg dec "$dec" '[[{body:"仕様化判断: しない\n通し方: 軽い\n種類: typo\n確かめ方: true"},{body:"雑談\n通し方: 軽い"}],[{body:$dec}]]' > "$BATS_TEST_TMPDIR/pages.json"
+  printf '%s\n' "$files" > "$BATS_TEST_TMPDIR/files.txt"
+  cat > "$BATS_TEST_TMPDIR/bin/gh" <<'GH'
+#!/usr/bin/env bash
+case "$*" in
+  *comments*) cat "$BATS_TEST_TMPDIR/pages.json" ;;
+  *files*) cat "$BATS_TEST_TMPDIR/files.txt" ;;
+  *) exit 99 ;;
+esac
+GH
+  chmod +x "$BATS_TEST_TMPDIR/bin/gh"
+  run env PATH="$BATS_TEST_TMPDIR/bin:$PATH" R=o/r REC=7 N=8 bash -c "$cmds
+printf 'LIGHT=%s\n' \"\$LIGHT\""
+  [ "$status" -eq 0 ]
+}
+DEC_FIX=$'仕様化判断: しない\n通し方: 軽い\n種類: ワンライナー fix\n確かめ方: bash check.sh'
+@test "prepare: checks after HEAD freeze, records verdict, rejects before reviewers" {
+  check="$(grep -n '6\. \*\*軽い通し方' "$PREPARE" | cut -d: -f1)"
+  head="$(grep -n '^   HEAD_SHA=' "$PREPARE" | cut -d: -f1)"
+  [ -n "$check" ] && [ "$check" -gt "$head" ]
+  for phrase in '^軽い通し方の確認: (条件内|条件外)$' '対象 HEAD: <40 桁フル SHA>' '原因: 軽い通し方の条件外' 'agent-review:failed' 'コメントも投稿しない'; do
+    grep -qF "$phrase" "$PREPARE"
+  done
+  grep 'ワンライナー fix は' "$PREPARE" | grep -q '挙動が変わることを条件外の理由にしない'
+  grep -q 'gh pr diff' "$PREPARE"
+  grep -q '穴を塞ぎ切ることは完了条件にしない' "$PREPARE"
+}
+@test "prepare commands: two files exceed the one-liner limit" {
+  measure "$DEC_FIX" $'1 1 a.sh\n1 1 b.sh'
+  printf '%s\n' "$output" | grep -qx '2 2 2'
+  printf '%s\n' "$output" | grep -qx 'LIGHT=1'
+}
+@test "prepare commands: openspec changes are counted" {
+  measure "$DEC_FIX" '1 1 openspec/specs/demo/spec.md'
+  [ "$(printf '%s\n' "$output" | sed -n '4p')" = 1 ]
+}
+@test "prepare commands: missing check is zero" {
+  measure $'仕様化判断: しない\n通し方: 軽い\n種類: typo' '1 1 a.md'
+  [ "$(printf '%s\n' "$output" | sed -n '3p')" = 0 ]
+}
+@test "prepare commands: latest decision without light line ignores older decisions and chatter" {
+  measure $'仕様化判断: しない\n理由: 通常' '1 1 a.md'
+  printf '%s\n' "$output" | grep -qx 'LIGHT=0'
+}
+@test "prepare commands: one-line bug fix excludes only numeric change records" {
+  measure "$DEC_FIX" $'1 1 a.sh\n50 0 plugins/x/changes/1.md\n20 0 changes/1584.md'
+  printf '%s\n' "$output" | grep -qx '1 1 1'
+  [ "$(printf '%s\n' "$output" | sed -n '4p')" = 0 ]
+  measure "$DEC_FIX" $'1 1 a.sh\n1 1 plugins/x/changes/name.md'
+  printf '%s\n' "$output" | grep -qx '2 2 2'
+}
