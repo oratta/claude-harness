@@ -1,6 +1,6 @@
 ## 1. 実装の前の実機確認
 
-- [ ] 1.1 `claude -p --permission-mode bypassPermissions` に PermissionRequest の入力を書き出す hook を置き、サブエージェントに確認画面が出るコマンドを打たせて、子の入力の `permission_mode` が `bypassPermissions` かを確かめる（「Dangerous rm operation not ruled out」の再現形を探す。2.1.321 では `$(printf ...)` と逆引用符・改行・行継続・`$'...'`・ノーブレークスペース・長い本文の 6 形と、子の `cd <dir>; rm -f tbl/*` では確認が出なかった）。`bypassPermissions` でなければ実装に進まず、仕様に戻すと return する。触る範囲: scratchpad（repo の外）
+- [ ] 1.1 `claude -p --permission-mode bypassPermissions` に PermissionRequest の入力を書き出す hook を置き、サブエージェントに確認画面が出るコマンドを打たせて、子の入力の `permission_mode` が `bypassPermissions` かを確かめる（「Dangerous rm operation not ruled out」の再現形を探す。2.1.321 では `$(printf ...)` と逆引用符・改行・行継続・`$'...'`・ノーブレークスペース・長い本文の 6 形と、子の `cd <dir>; rm -f tbl/*` では確認が出なかった）。次のどちらかなら、2 以降の実装に進まず本体に return する: 子の入力の `permission_mode` が `bypassPermissions` でない（判定の条件が変わるので仕様に戻す）／子に確認画面を出せず、子の入力を取れない（判定の前提が未検証。試した形・版・取れた入力を return に書く）。触る範囲: scratchpad（repo の外）
 
 ## 2. hook の判定
 
@@ -17,4 +17,4 @@
 ## 4. 記録と実機確認
 
 - [ ] 4.1 変更の記録を書く（何を変えたか・bypassPermissions に絞った理由・範囲外・戻し方）。触る範囲: plugins/dev-workflow/changes/1610.md（新規。書き方は plugins/dev-workflow/changes/1134.md:1-12）
-- [ ] 4.2 `claude -p --plugin-dir <worktree>/plugins/dev-workflow --permission-mode bypassPermissions` で、サブエージェントに 1.1 で見つけた形を打たせ、確認画面が出ずに拒否され、理由が子に返ることを確かめる。試したコマンド・結果・Claude Code の版を PR に記録する。どの形でも確認画面が出せなければ、試した形と版、hook を直接呼んだ結果を PR に書き、本体に return して主の判断を仰ぐ。触る範囲: scratchpad（repo の外）
+- [ ] 4.2 `claude -p --plugin-dir <worktree>/plugins/dev-workflow --permission-mode bypassPermissions` で、サブエージェントに 1.1 で見つけた形を打たせ、確認画面が出ずに拒否され、理由が子に返ることを確かめる。試したコマンド・結果・Claude Code の版を PR に記録する。どの形でも確認画面を出せなければ、実機確認は未検証として本体に return する（試した形・版・hook を直接呼んだ結果を書く。これを受け入れ条件の達成とは扱わない）。受け入れ条件を変えるときは、主の判断結果を記録先に記録してから変える。触る範囲: scratchpad（repo の外）
