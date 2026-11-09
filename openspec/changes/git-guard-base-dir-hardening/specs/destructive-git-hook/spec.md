@@ -99,29 +99,19 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 ### Requirement: 拒否の記録・回数・許可の置き場所（`<base>`）を確かめてから使う
 
-hook（`git-destructive-guard.sh`）と許可を書くスクリプト（`git-guard-permit.sh`）は、`<base>`（hook は `${TMPDIR:-/tmp}/dev-workflow-git-guard`、許可を書くスクリプトは拒否の記録のパスの 2 つ上）と、その下の `denied/`・`permits/` を使う前に、それぞれが次をすべて満たすかを、symlink を辿らずに（lstat で）確かめなければならない（MUST）: symlink でない／ディレクトリである／持ち主がプロセスの uid である／グループと他者に書き込み権が無い。無いときは所有者だけが使えるモード（0700）で作ってから確かめなければならない（MUST）。作るのは `<base>` とその下の `denied/`・`permits/` だけで、`<base>` の親（`TMPDIR` や `/tmp`）が無ければ作らず、確かめを満たさないものとして扱わなければならない（MUST）。既にあって確かめを満たすフォルダのモードは変えない（読み取り権の付いた 0755 のままでも使う）。
+hook と許可を書くスクリプトは、`<base>` とその下の `denied/`・`permits/` を使う前に、それぞれを lstat で見て、symlink でない・ディレクトリ・持ち主が自分の uid・グループと他者に書き込み権が無い、をすべて満たすか確かめなければならない（MUST）。無いものは 0700 で作ってから確かめる（MUST）。`<base>` の親が無ければ作らず、満たさないものとする（MUST）。既にあって満たすフォルダのモードは変えない（0755 でも使う）。確かめと作成は `git-guard-scratchpad.py` の 1 か所で行う（MUST）。
 
-確かめと作成は、`plugins/dev-workflow/scripts/git-guard-scratchpad.py` の 1 か所で行わなければならない（MUST。hook・許可を書くスクリプト・rm の hook で書き分けない）。
-
-`<base>` の中のファイル（回数のファイル・拒否の記録・許可・`permit-log.jsonl`・書き込み途中の一時ファイル）は、symlink を辿らずに開かなければならない（MUST）。新しく作るファイルは、予測できない名前で、既にあれば失敗する排他的な作成で、所有者だけが読み書きできるモード（0600）で作らなければならない（MUST）。拒否の記録と許可はその一時ファイルからの `rename` で置き、`permit-log.jsonl` は symlink を辿らない追記で開く（無ければ 0600 で作る）。`rename` で取った許可を読むときも symlink を辿らない（MUST。symlink だった許可は読めないものとして扱い、消す）。
-
-確かめを満たさないとき、hook は子の呼び出しに次のとおり答えなければならない（MUST）: 許可を探さない・使わない／拒否の記録を書かない／回数を数えない（要件「同じ子への拒否の繰り返しを打ち切る」。2 回目以降の扱い・`"continue"` のキーも出さない）／`permissionDecision` は `deny`／`permissionDecisionReason` には、要件「拒否理由は承認の取り方を案内する」の子向けの文に加えて、拒否の記録を置く場所を安全に使えなかったので記録を作れなかったこと（文字列「拒否の記録を作れなかった」を含む）・その場所（`<base>` のパス）・満たさなかった条件・親に返す報告にはコマンドの全文を書くことを含める。拒否の記録のパスは載せない。
-
-主の呼び出し（`agent_id` が無い・空・文字列でない）では、hook は `<base>` を作りも確かめもしてはならず（MUST NOT）、`<base>` の状態で `ask` / `deny` と理由文を変えてはならない（MUST NOT）。主の呼び出しは今までも `<base>` を使わないので、`<base>` が他人に作られていても、主の対話セッションの確認画面と、印のあるセッションの `deny` は今までどおり出る。
-
-許可を書くスクリプトは、確かめを満たさないとき、許可も `permit-log.jsonl` の行も書かず、回数のファイルも消さずに、満たさなかった条件と場所を stderr に書いて 0 以外で終わらなければならない（MUST）。拒否の記録自体も symlink を辿らずに開き、symlink なら読まずに 0 以外で終わる（MUST）。親はこの終わり方を、今までどおり「許可を書くスクリプトが 0 以外で終わった」としてオーナーに上げる（`skills/develop/SKILL.md` の手順は変えない）。
-
-守備範囲: 受け取る入力は、`<base>` とその下のフォルダ・ファイルの、ファイルシステム上の種類・持ち主・モードである。拾いたい誤りは、`<base>` が誰でも書ける `/tmp` の下になる環境（`TMPDIR` が未設定か空）で、同じ機械の別のユーザー（別の uid）が `<base>` を先に作るか symlink を置き、許可を偽造したり、hook に被害者の書けるファイルを上書き・追記させたり、拒否の記録（コマンドの全文）を読んだりすることである。次の入力は通す（守らない）ことを許す: 同じ uid のプロセス（子のサブエージェントを含む）が `<base>` の中に書くもの（同じ uid には隠せない。子が `permits/` に書く形は別の change で扱う）／確かめてから使うまでの間に、同じ uid のプロセスが `<base>` を差し替えるもの／この change より前に読み取り権付きで作られた `<base>` と、その中の 0644 の記録を別のユーザーが読むもの（モードを締め直さない）／root が書き換えるもの。止めすぎる向きでは、別のユーザーが先に `/tmp/dev-workflow-git-guard` を作った機械では、子の破壊的 git 操作と rm は親の許可で通せなくなり、親か主が打つことになるが、これは許す（主の呼び出しは止まらない）。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+守備範囲: 別の uid が `<base>` を先に作るか symlink にして、許可を偽造し、ファイルを上書きさせ、記録を読む誤りを拾う。同じ uid のプロセス（子を含む）・確かめてから使うまでの差し替え・既にある読み取り権付きの記録・root は守らない（design.md「Non-Goals」）。
 
 #### Scenario: 新しく作る `<base>` は所有者だけが使える
 
 - **WHEN** 空の `TMPDIR` で、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
-- **THEN** `permissionDecision` が `deny` で、`TMPDIR` の下の `dev-workflow-git-guard/` と `denied/` のモードが 0700、拒否の記録と回数のファイルのモードが 0600 になる
+- **THEN** `permissionDecision` が `deny` で、`TMPDIR` の下の `dev-workflow-git-guard/` と `denied/` のモードが 0700 になる
 
-#### Scenario: `<base>` が symlink なら記録も回数も書かず、置かれた許可も使わない
+#### Scenario: 既にある 0755 の `<base>` はそのまま使う
 
-- **WHEN** `TMPDIR` の下の `dev-workflow-git-guard` を別のディレクトリへの symlink にし、その先の `permits/<key>.json` に 4 つの値が一致し期限内の許可を置いてから、scratchpad の中の repo を `cwd` にした `agent_id` が `a1` の payload に `git checkout -- .` を 2 回渡す
-- **THEN** どちらも `permissionDecision` が `deny` で、`permissionDecisionReason` に「拒否の記録を作れなかった」が含まれ、「直ちに作業を終えて親に返す」が無く、出力に `"continue"` のキーが無い。symlink の先には `denied/` も回数のファイルも作られず、置いた許可が残っている
+- **WHEN** `TMPDIR` の下に自分の持ち物の `dev-workflow-git-guard` をモード 0755 で作り、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
+- **THEN** `permissionDecision` が `deny` で、`denied/` に拒否の記録が作られ、`dev-workflow-git-guard` のモードは 0755 のまま
 
 #### Scenario: グループか他者が書ける `<base>` は使わない
 
@@ -133,17 +123,50 @@ hook（`git-destructive-guard.sh`）と許可を書くスクリプト（`git-gua
 - **WHEN** 確かめを満たす `<base>` の下の `denied/`（別の試行では `permits/`）を別のディレクトリへの symlink にして、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
 - **THEN** `permissionDecision` が `deny` で、`permissionDecisionReason` に「拒否の記録を作れなかった」が含まれ、symlink の先に何も作られない
 
+### Requirement: `<base>` の中のファイルを symlink を辿らずに開き、所有者だけのモードで作る
+
+`<base>` の中のファイル（回数・拒否の記録・許可・`permit-log.jsonl`・一時ファイル）は symlink を辿らずに開かなければならない（MUST）。新しく作るファイルは、予測できない名前・既にあれば失敗する排他的な作成・0600 で作り、回数・拒否の記録・許可はその一時ファイルからの `rename` で置く（MUST）。`permit-log.jsonl` は symlink を辿らない追記で開き、無ければ 0600 で作る（MUST）。`rename` で取った許可と、許可を書くスクリプトが読む拒否の記録も symlink を辿らずに読み、symlink なら読めないものとして扱う（MUST。取った許可は消し、許可を書くスクリプトは 0 以外で終わる）。
+
+#### Scenario: 新しく作るファイルは 0600
+
+- **WHEN** 空の `TMPDIR` で、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
+- **THEN** 拒否の記録と回数のファイルのモードが 0600 になる
+
 #### Scenario: `<base>` の中の symlink の先を書き換えない
 
 - **WHEN** 確かめを満たす `<base>` の下で、回数のファイルを別のファイル A への symlink に、`permit-log.jsonl` を別のファイル B への symlink にし、期限切れの許可を `permits/<key>.json` に置いてから、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
 - **THEN** `permissionDecision` が `deny` で、A と B の中身が変わっていない
+
+#### Scenario: symlink の拒否の記録からは許可を書かない
+
+- **WHEN** `denied/<key>.json` を、中身が正しい記録の別のファイルへの symlink にしてから、そのパスで許可を書くスクリプトを実行する
+- **THEN** 終了コードが 0 以外で、`permits/` に許可が無い
+
+### Requirement: `<base>` を確かめられない子の呼び出しには deny だけを返す
+
+確かめを満たさないとき、hook は子の呼び出しで許可を探さず、拒否の記録を書かず、回数を数えずに（2 回目以降の扱いと `"continue"` のキーも出さない）、`permissionDecision` を `deny` にしなければならない（MUST）。`permissionDecisionReason` には子向けの文に加えて、文字列「拒否の記録を作れなかった」・`<base>` のパス・満たさなかった条件・親に返す報告にコマンドの全文を書くことを含める（MUST）。拒否の記録のパスは載せない。
+
+守備範囲: 止めすぎる向きでは、別のユーザーが先に `/tmp/dev-workflow-git-guard` を作った機械で、子の破壊的 git 操作と rm は親の許可で通せなくなるが、これは許す（打ち切らないので子は親に返り、主の呼び出しは止まらない）。
+
+#### Scenario: `<base>` が symlink なら記録も回数も書かず、置かれた許可も使わない
+
+- **WHEN** `TMPDIR` の下の `dev-workflow-git-guard` を別のディレクトリへの symlink にし、その先の `permits/<key>.json` に 4 つの値が一致し期限内の許可を置いてから、scratchpad の中の repo を `cwd` にした `agent_id` が `a1` の payload に `git checkout -- .` を 2 回渡す
+- **THEN** どちらも `permissionDecision` が `deny` で、`permissionDecisionReason` に「拒否の記録を作れなかった」と `<base>` のパスが含まれ、「直ちに作業を終えて親に返す」が無く、出力に `"continue"` のキーが無い。symlink の先には `denied/` も回数のファイルも作られず、置いた許可が残っている
+
+### Requirement: 主の呼び出しは `<base>` を作りも確かめもしない
+
+主の呼び出し（`agent_id` が無い・空・文字列でない）では、hook は `<base>` を作りも確かめもしてはならず（MUST NOT）、`<base>` の状態で `ask` / `deny` と理由文を変えてはならない（MUST NOT）。主の対話セッションの確認画面と、印のあるセッションの `deny` は、`<base>` が他人に作られていても今までどおり出る。
 
 #### Scenario: 主の呼び出しは `<base>` の状態によらず今までどおり
 
 - **WHEN** `TMPDIR` の下の `dev-workflow-git-guard` を別のディレクトリへの symlink にして、`agent_id` の無い `permission_mode` が `default` の payload に `git reset --hard` を渡す
 - **THEN** `permissionDecision` が `ask` で、理由文が `<base>` が正常なときと同じで、symlink の先に何も作られない
 
-#### Scenario: 許可を書くスクリプトは確かめを満たさない `<base>` に許可を書かない
+### Requirement: 許可を書くスクリプトは確かめを満たさない `<base>` に書かない
+
+許可を書くスクリプトは、拒否の記録のパスの 2 つ上を `<base>` として確かめ、満たさないときは許可も `permit-log.jsonl` の行も書かず、回数のファイルも消さずに、満たさなかった条件と場所を stderr に書いて 0 以外で終わらなければならない（MUST）。親はこれを今までどおり「許可を書くスクリプトが 0 以外で終わった」としてオーナーに上げる（`skills/develop/SKILL.md` の手順は変えない）。
+
+#### Scenario: 確かめを満たさない `<base>` に許可を書かない
 
 - **WHEN** 拒否の記録を書かせたあと、`<base>` のモードを 0777 に変えてから、その記録のパスで許可を書くスクリプトを実行する
 - **THEN** 終了コードが 0 以外で、stderr に `<base>` のパスが含まれ、`permits/` に許可が無く、`permit-log.jsonl` に `permit` の行が無い
