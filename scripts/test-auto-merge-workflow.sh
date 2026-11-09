@@ -201,7 +201,7 @@ fi
 # PR が自動マージされる（#1163）。全 plugins/*/hooks/hooks.json の "command": の行から
 # ${CLAUDE_PLUGIN_ROOT}/ に続く相対パスを取り出し、plugins/<name>/<相対パス> を SACRED に当てる。
 # command は 1 行に 1 つ、"\"${CLAUDE_PLUGIN_ROOT}/<相対パス>\"" か "${CLAUDE_PLUGIN_ROOT}/<相対パス>" の形で
-# 書く前提で、それ以外の形は読めないものとして失敗にする。jq は使わない（jq の無い環境でも必ず走らせる）。
+# 書く前提で、それ以外の形（行頭でない command を含む）は読めないものとして失敗にする。jq は使わない（jq の無い環境でも必ず走らせる）。
 # 許可を判定する hook が読み込む補助ファイル（SACRED に手で足したもの）はこの検査では拾わない。
 if [ -n "$SACRED" ]; then
   : > "$TMPD/hook-cmds.txt"
@@ -209,6 +209,12 @@ if [ -n "$SACRED" ]; then
   for hj in "$ROOT"/plugins/*/hooks/hooks.json; do
     [ -f "$hj" ] || continue
     plugin=$(basename "$(dirname "$(dirname "$hj")")")
+    # 行頭でない "command" キー（1 行に複数キーを書いた hook）は下の grep が拾わないので、
+    # キーの総数と行頭のキーの数を比べ、食い違えば読めない形として失敗にする。
+    total=$(grep -oE '"command"[[:space:]]*:' "$hj" | wc -l | tr -d ' ')
+    lines=$(grep -cE '^[[:space:]]*"command"[[:space:]]*:' "$hj")
+    [ "$total" -eq "$lines" ] \
+      || printf '%s\n' "1 行に 1 つでない command がある（1 行 1 キーで書く）: plugins/$plugin/hooks/hooks.json" >> "$TMPD/hook-ng.txt"
     grep -E '^[[:space:]]*"command"[[:space:]]*:' "$hj" | while IFS= read -r line; do
       v=$(printf '%s\n' "$line" | sed 's/^[[:space:]]*"command"[[:space:]]*:[[:space:]]*"//; s/"[[:space:]]*,\{0,1\}[[:space:]]*$//')
       rel=$(printf '%s\n' "$v" | sed -n 's|^\(\\"\)\{0,1\}\${CLAUDE_PLUGIN_ROOT}/\([A-Za-z0-9._/-]*[A-Za-z0-9._-]\)\(\\"\)\{0,1\}$|\2|p')
