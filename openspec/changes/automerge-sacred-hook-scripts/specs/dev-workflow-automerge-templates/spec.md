@@ -4,6 +4,8 @@
 
 claude-harness の展開先の `SACRED` は、全 `plugins/*/hooks/hooks.json` の `command` が `${CLAUDE_PLUGIN_ROOT}/` からの相対で指すスクリプトと、許可を判定する hook が判定の本体として直接読み込む `plugins/dev-workflow/scripts/git-guard-scratchpad.py`・`plugins/dev-workflow/scripts/usage_view.py`・`plugins/capability-registry/scripts/secret-guard.py` に、ファイル名ちょうどで一致しなければならない（MUST）。`plugins/*/scripts/` を丸ごと聖域にしてはならない（MUST NOT）。`MERGE_CONDITION` と原本（`plugins/dev-workflow/templates/auto-merge/`）の正規表現は変えない（SHALL）。
 
+**守備範囲**: 入力は判定時に REST で取る PR の変更ファイルの一覧（変更後のパスと rename 元のパス）だけである。拾いたい誤りは、hook の本体と選んだ補助 3 本の変更が聖域判定を素通りすることである。次は通す: hook が実行しない `plugins/dev-workflow/scripts/git-guard-permit.sh`（親が許可を書くスクリプト）だけの変更／補助がさらに読み込むファイルだけの変更。穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+
 #### Scenario: hook の本体だけを変えた PR は human-merge で止まる
 
 - **WHEN** 変更ファイルが `plugins/dev-workflow/scripts/git-destructive-guard.sh` だけの PR を claude-harness の展開先の auto-merge.yml が判定する
@@ -27,6 +29,8 @@ claude-harness の展開先の `SACRED` は、全 `plugins/*/hooks/hooks.json` �
 ### Requirement: claude-harness の展開先のテストは hooks.json が指すスクリプトがすべて聖域に一致するかを検査する
 
 claude-harness の展開先の `scripts/test-auto-merge-workflow.sh` は、全 `plugins/*/hooks/hooks.json` の `command` を集め、`${CLAUDE_PLUGIN_ROOT}/` からの相対で指すパスを `plugins/<name>/` の下のパスとして `SACRED` に当てなければならない（MUST）。一致しないパスがある、`command` がその形で読めない、または hooks.json や `command` を 1 件も拾えないときは、失敗にしなければならない（MUST）。補助ファイルはこの検査の対象外とする（SHALL）。
+
+**守備範囲**: 入力はリポ内の全 `plugins/*/hooks/hooks.json` の `command` と、auto-merge.yml の `SACRED` だけである。拾いたい誤りは、直接呼ぶスクリプトの `SACRED` への書き漏れ、読めない `command`、入力ゼロによる空振りの 3 つである。次は通す: 新しい補助ファイルだけの追加（検出しない）／hooks.json を経ずに実行されるスクリプト。穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 #### Scenario: hooks.json に足した hook を聖域に書き忘れると CI が落ちる
 
