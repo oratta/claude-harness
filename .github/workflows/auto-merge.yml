@@ -171,8 +171,14 @@ jobs:
           #   plugins/dev-workflow/skills/pr-review-gate/ … agent-review:passed を発行するゲートの定義そのもの
           #   plugins/dev-workflow/templates/auto-merge/  … 各リポに展開されるマージロボットの原本
           #   tests/injection-budget.txt                … 常時注入される固定分の予算値（動かす PR は人間マージ）
+          #   plugins/<name>/scripts/ のうち hook の本体 … hooks.json が呼ぶスクリプト（#1163）と、許可を判定する
+          #                                               hook が判定の本体として直接読み込む補助 3 本
+          #                                               （git-guard-scratchpad.py・usage_view.py・secret-guard.py）
+          # hook の本体だけは上の方針の例外としてファイル名ちょうどで列挙する（plugins/*/scripts/ を丸ごとにすると
+          # hook の経路に無い ci-watch.sh などまで人間マージになる）。列挙の漏れは scripts/test-auto-merge-workflow.sh が
+          # 全 plugins/*/hooks/hooks.json の command と突き合わせて CI で落とす。補助ファイルは手で選ぶので検査は拾わない。
           # >>> sacred-paths
-          SACRED='^\.github/workflows/|^\.claude/|(^|/)CLAUDE\.md$|^docs/agent-loop[^/]*(\.md$|/)|^rules/|^plugins/[^/]+/hooks/|^plugins/dev-workflow/skills/pr-review-gate/|^plugins/dev-workflow/templates/auto-merge/|^tests/injection-budget\.txt$'
+          SACRED='^\.github/workflows/|^\.claude/|(^|/)CLAUDE\.md$|^docs/agent-loop[^/]*(\.md$|/)|^rules/|^plugins/[^/]+/hooks/|^plugins/dev-workflow/skills/pr-review-gate/|^plugins/dev-workflow/templates/auto-merge/|^tests/injection-budget\.txt$|^plugins/capability-registry/scripts/(browser-guard\.sh|secret-guard\.sh|secret-guard\.py)$|^plugins/cost-ledger/scripts/(backfill\.sh|gate-report\.sh|ledger-hook\.sh)$|^plugins/statusline/scripts/statusline-update-hook\.sh$|^plugins/dev-workflow/scripts/(session-tripwires\.sh|team-mode-warning\.sh|develop-compact-reread\.sh|prompt-tripwires-refresh\.sh|unclear-reply-rephrase\.sh|agent-model-guard\.sh|context-tripwire\.sh|git-destructive-guard\.sh|rm-permission-guard\.sh|subagent-start-context\.sh|subagent-stop-guard\.sh|model-switch-recache-notice\.sh|owner-message-number-check\.sh|git-guard-scratchpad\.py|usage_view\.py)$|^plugins/worktree/scripts/(wt-create-hook\.sh|wt-setup-guard\.sh|session-proc-mark\.sh|dev-dir-env-check\.sh|session-proc-end\.sh)$'
           # <<< sacred-paths
 
           # ── マージ条件そのもののパス（SACRED の部分集合）──
