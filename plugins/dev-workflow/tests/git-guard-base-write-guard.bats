@@ -97,6 +97,9 @@ expect_silent() {
   ln -s "$T/dev-workflow-git-guard" "$T/link"
   call_write Write "$T/link/permits/k.json" '"a1"'
   expect_deny
+  # 相対パスは cwd を前に付けてから symlink を辿る（付けなければ名前の出ない書き先を見逃す）
+  call_write Write "link/permits/k.json" '"a1"' "$T"
+  expect_deny
 }
 
 @test "write: the main session and writes outside the base are not stopped" {
@@ -126,7 +129,8 @@ expect_silent() {
 }
 
 @test "write: a name written with \\u escapes is still seen" {
-  run "$SCRIPT" <<<'{"tool_name":"Write","tool_input":{"file_path":"/x/dev-workflow-git-guard/permits/k.json"},"agent_id":"a1"}'
+  # 名前と agent_id の両方を \u で書き、早期判定の \u00 の枝だけが本体を起こす形にする
+  run "$SCRIPT" <<<'{"tool_name":"Write","tool_input":{"file_path":"/x/\u0064ev-workflow-git-guard/k.json"},"\u0061gent_id":"a1"}'
   expect_deny
 }
 

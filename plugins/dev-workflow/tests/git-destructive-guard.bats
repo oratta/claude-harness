@@ -1902,6 +1902,22 @@ PY
   [ -z "$(find "$real" -mindepth 1)" ]
 }
 
+@test "store: with another kind and an unusable permits folder the reason does not list both names" {
+  # 2 つの名前は変数をつないで作る（このファイルを読むコマンドに 2 つの名前が並ばないように）
+  local n1="dev-workflow-git" n2="perm" r
+  n1="${n1}-guard"; n2="${n2}its"
+  mkdir -p "$TMPDIR/$n1/$n2"
+  chmod 700 "$TMPDIR/$n1"
+  chmod 777 "$TMPDIR/$n1/$n2"
+  call "git checkout -- a ; ls $TMPDIR/$n1/$n2" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  r="$(reason)"
+  [[ "$r" == *'を確かめられない'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'置き場所の下の許可のフォルダ'* ]] || { echo "$r"; return 1; }
+  [[ "$r" != *"$n1"* || "$r" != *"$n2"* ]] || { echo "$r"; return 1; }
+  chmod 700 "$TMPDIR/$n1/$n2"
+}
+
 @test "store: the reason sends the child back and does not list both names" {
   call "printf '{}' > $TMPDIR/dev-workflow-git-guard/permits/k.json" default '"a1"' s1
   local r

@@ -968,6 +968,11 @@ if is_child:
     if record_path:
         body += "拒否の記録: " + record_path + " 。親に返す報告にこのパスを書く。"
     elif base_err:
+        if permit_store:
+            # 許可のフォルダのパスには 2 つの名前が並ぶので、言い換えてから理由文に入れる
+            store_dir = os.path.join(guard_base, STORE_NAMES[1])
+            for p in sorted({store_dir, os.path.realpath(store_dir)}, key=len, reverse=True):
+                base_err = base_err.replace(p, "置き場所の下の許可のフォルダ")
         body += ("拒否の記録を作れなかった（拒否の記録の置き場所 " + guard_base + " を確かめられない: " + base_err
                  + "）。親に返す報告にコマンドの全文を書き、この置き場所の問題も書く。")
     elif not permit_store:
