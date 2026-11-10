@@ -807,8 +807,11 @@ def read_only(s, depth=0):
 # 子のコマンド文字列に許可を書くスクリプトの名前があれば、書き方（シェル経由・-c の中・BASH_ENV の設定など）を
 # 問わず permit-self として止め、許可も使わない。ただしコマンドが読むか表示するだけのコマンドだけでできていれば
 # 止めない（読み切れなければ止める側）。主の呼び出しは止めない
+# 字句読みが bash と違う読み方をする構文（$'..' の中の \' ・算術 $((..)) の中の <<）を含むコマンドには例外をかけない。
+# 読み違えると、実行される位置の名前を引用符の中や本文と読み、例外で通してしまう（字句読みの関数は変えない）
+LEX_DIFFERS = ("$'", "$((")
 self_permit = is_child and PERMIT_NAME in command
-if self_permit and kinds is not None:
+if self_permit and kinds is not None and not any(t in command for t in LEX_DIFFERS):
     try:
         self_permit = not read_only(command)
     except TooMuch:

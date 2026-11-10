@@ -1824,6 +1824,37 @@ PY
   done
 }
 
+@test "permit: the read-only exception is not applied to ANSI-C quoting or arithmetic" {
+  # 字句読みが bash と違う読み方をする構文（$'..' の中の \' ・算術の中の <<）では、実行される位置の名前を
+  # 引用符の中や本文と読み違える。どちらかを含むコマンドには例外をかけず、今までどおり止める
+  local c
+  # bash は $'\' ' を 1 つの文字列として読み、; のあとのスクリプトを実行する。字句読みは \ の直後の ' で閉じ、
+  # 後ろを単一引用符の中の文字列と読む
+  # （$(cat <<'EOF' ...) の形は、本文の引用符を bash が置換の中で数えて構文エラーになるので read で読む）
+  IFS= read -r -d '' c <<'EOF' || true
+echo $'\' '; /x/scripts/git-guard-permit.sh /y/denied/k.json ok; echo #'
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # bash は $((echo<<X)) を算術として読み、次の行のスクリプトを実行する。字句読みは << をヒアドキュメントと読み、
+  # 後ろの行を本文として読み飛ばす
+  IFS= read -r -d '' c <<'EOF' || true
+echo $((echo<<X
+))
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # 読み違えの無い形でも、$' か $(( があれば例外をかけない
+  for c in "echo \$'a' /x/scripts/git-guard-permit.sh" 'echo $((1+1)) /x/scripts/git-guard-permit.sh'; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+}
+
 @test "permit: a child mentioning the permit script name only in read-only commands is not stopped" {
   local c i
   for c in 'grep -rn "git-guard-permit" /x/dir' \
