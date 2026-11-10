@@ -7,7 +7,8 @@
 # 気付けないと main が黙って汚れる。ネットワークを使わずに検証できる不変条件をここで固定する:
 #
 #   (1) 聖域パス判定の**実物の正規表現**を workflow から抜き出し、聖域パス群に一致し、
-#       それ以外のパスに一致しないことを実際に grep で確かめる（文字列の目視ではなく挙動）
+#       それ以外のパスに一致しないことを実際に grep で確かめる（文字列の目視ではなく挙動）。
+#       claude-harness では、全 plugins/*/hooks/hooks.json が呼ぶスクリプトが聖域に一致するかも確かめる
 #   (2) ci.yml の全ジョブが、必須チェック（REQUIRED_CHECKS）か、必須チェックのジョブが
 #       needs: で直接待つジョブである。確かめるのは次の 3 つ:
 #         a. 必須チェック名それぞれが、ci.yml のちょうど 1 つのジョブの name: に一致する
@@ -107,6 +108,10 @@ else
     "plugins/dev-workflow/skills/pr-review-gate/SKILL.md" \
     "plugins/dev-workflow/templates/auto-merge/.github/workflows/auto-merge.yml" \
     "plugins/dev-workflow/templates/auto-merge/scripts/test-auto-merge-workflow.sh" \
+    "plugins/dev-workflow/scripts/git-destructive-guard.sh" \
+    "plugins/dev-workflow/scripts/git-guard-scratchpad.py" \
+    "plugins/capability-registry/scripts/secret-guard.py" \
+    "plugins/worktree/scripts/wt-create-hook.sh" \
     "tests/injection-budget.txt"; do
     if printf '%s\n' "$p" | grep -qE "$SACRED"; then
       ok "聖域と判定される: $p"
@@ -128,7 +133,9 @@ else
     "plugins/dev-workflow/skills/develop/SKILL.md" \
     "plugins/dev-workflow/commands/develop.md" \
     "plugins/casting/README.md" \
-    "plugins/worktree/skills/wt-clean/SKILL.md"; do
+    "plugins/worktree/skills/wt-clean/SKILL.md" \
+    "plugins/dev-workflow/scripts/ci-watch.sh" \
+    "plugins/dev-workflow/scripts/epic-dispatch.sh"; do
     if printf '%s\n' "$p" | grep -qE "$SACRED"; then
       ng "聖域と誤判定される（人間マージに落ちてしまう）: $p"
     else
@@ -176,6 +183,7 @@ else
     "docs/agent-loop.md" \
     "plugins/dev-workflow/hooks/hooks.json" \
     "plugins/worktree/hooks/post-checkout.sh" \
+    "plugins/dev-workflow/scripts/git-destructive-guard.sh" \
     "tests/injection-budget.txt" \
     "scripts/test-auto-merge-workflow.sh" \
     "docs/auto-merge.md"; do
@@ -185,6 +193,53 @@ else
       ok "マージ条件そのものではないと判定される: $p"
     fi
   done
+fi
+
+# ── (1-h) hooks.json が指すスクリプトがすべて聖域に一致する（claude-harness 固有）──
+# SACRED は hook の本体（plugins/<name>/scripts/ のうち hooks.json が呼ぶもの）をファイル名
+# ちょうどで列挙している。hook を足して SACRED に書き忘れると、その hook の本体だけを変えた
+# PR が自動マージされる（#1163）。全 plugins/*/hooks/hooks.json の "command": の行から
+# ${CLAUDE_PLUGIN_ROOT}/ に続く相対パスを取り出し、plugins/<name>/<相対パス> を SACRED に当てる。
+# command は 1 行に 1 つ、"\"${CLAUDE_PLUGIN_ROOT}/<相対パス>\"" か "${CLAUDE_PLUGIN_ROOT}/<相対パス>" の形で
+# 書く前提で、それ以外の形（行頭でない command を含む）は読めないものとして失敗にする。jq は使わない（jq の無い環境でも必ず走らせる）。
+# 許可を判定する hook が読み込む補助ファイル（SACRED に手で足したもの）はこの検査では拾わない。
+if [ -n "$SACRED" ]; then
+  : > "$TMPD/hook-cmds.txt"
+  : > "$TMPD/hook-ng.txt"
+  for hj in "$ROOT"/plugins/*/hooks/hooks.json; do
+    [ -f "$hj" ] || continue
+    plugin=$(basename "$(dirname "$(dirname "$hj")")")
+    # 行頭でない "command" キー（1 行に複数キーを書いた hook）は下の grep が拾わないので、
+    # キーの総数と行頭のキーの数を比べ、食い違えば読めない形として失敗にする。
+    total=$(grep -oE '"command"[[:space:]]*:' "$hj" | wc -l | tr -d ' ')
+    lines=$(grep -cE '^[[:space:]]*"command"[[:space:]]*:' "$hj")
+    [ "$total" -eq "$lines" ] \
+      || printf '%s\n' "1 行に 1 つでない command がある（1 行 1 キーで書く）: plugins/$plugin/hooks/hooks.json" >> "$TMPD/hook-ng.txt"
+    grep -E '^[[:space:]]*"command"[[:space:]]*:' "$hj" | while IFS= read -r line; do
+      v=$(printf '%s\n' "$line" | sed 's/^[[:space:]]*"command"[[:space:]]*:[[:space:]]*"//; s/"[[:space:]]*,\{0,1\}[[:space:]]*$//')
+      rel=$(printf '%s\n' "$v" | sed -n 's|^\(\\"\)\{0,1\}\${CLAUDE_PLUGIN_ROOT}/\([A-Za-z0-9._/-]*[A-Za-z0-9._-]\)\(\\"\)\{0,1\}$|\2|p')
+      if [ -z "$rel" ]; then
+        printf '%s\n' "読めない command（\${CLAUDE_PLUGIN_ROOT}/ で始まる 1 本のパスの形で書く）: plugins/$plugin/hooks/hooks.json: $v" >> "$TMPD/hook-ng.txt"
+      else
+        printf '%s\n' "plugins/$plugin/$rel" >> "$TMPD/hook-cmds.txt"
+      fi
+    done
+  done
+  sort -u "$TMPD/hook-cmds.txt" > "$TMPD/hook-paths.txt"
+  while IFS= read -r p; do
+    printf '%s\n' "$p" | grep -qE "$SACRED" \
+      || printf '%s\n' "hooks.json が呼ぶスクリプトが聖域に無い（SACRED に足す）: $p" >> "$TMPD/hook-ng.txt"
+  done < "$TMPD/hook-paths.txt"
+  HOOK_N=$(wc -l < "$TMPD/hook-paths.txt" | tr -d ' ')
+  if [ "$HOOK_N" -eq 0 ] && [ ! -s "$TMPD/hook-ng.txt" ]; then
+    ng "plugins/*/hooks/hooks.json から command を 1 件も拾えない（検査が空振りしている）"
+  elif [ -s "$TMPD/hook-ng.txt" ]; then
+    while IFS= read -r line; do
+      ng "$line"
+    done < "$TMPD/hook-ng.txt"
+  else
+    ok "hooks.json が呼ぶスクリプト ${HOOK_N} 本がすべて聖域に一致する"
+  fi
 fi
 
 # ── (1-b) 攻撃再現: 聖域ファイルを非聖域パスへ rename して迂回する ───
@@ -786,6 +841,7 @@ for token in \
   'parent-merge-approved' \
   '親が見た HEAD' \
   'MERGE_CONDITION' \
+  'hooks.json' \
   'human-only'; do
   if has "$DOC" "$token"; then
     ok "docs/auto-merge.md が $token に言及している"

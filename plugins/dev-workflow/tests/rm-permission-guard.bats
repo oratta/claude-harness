@@ -31,17 +31,26 @@ scratch_dir() {
 
 BASE() { printf '%s' "$TMPDIR/dev-workflow-git-guard"; }
 
-# call <command> <agent_id(JSON か "-")> <cwd> [session_id] — PermissionRequest の payload を hook に渡す
+# call <command> <agent_id(JSON か "-")> <cwd> [session_id] [permission_mode(JSON か "-")]
+#   — PermissionRequest の payload を hook に渡す。permission_mode の既定は "default"、"-" は項目を付けない
 call() {
   local json
   json="$(printf '%s' "$1" | python3 -c '
 import json, sys
-p = {"hook_event_name": "PermissionRequest", "tool_name": "Bash", "permission_mode": "default",
+p = {"hook_event_name": "PermissionRequest", "tool_name": "Bash",
      "tool_input": {"command": sys.stdin.read()}, "cwd": sys.argv[2], "session_id": sys.argv[3]}
 if sys.argv[1] != "-":
     p["agent_id"] = json.loads(sys.argv[1])
-print(json.dumps(p))' "$2" "$3" "${4:-$SID}")"
+if sys.argv[4] != "-":
+    p["permission_mode"] = json.loads(sys.argv[4])
+print(json.dumps(p))' "$2" "$3" "${4:-$SID}" "${5:-\"default\"}")"
   run "$SCRIPT" <<<"$json"
+}
+
+# no_guard_files — 許可・拒否の記録・ログのどれも作られていない
+no_guard_files() {
+  [ ! -e "$(BASE)/denied" ] && [ ! -e "$(BASE)/permits" ] && [ ! -e "$(BASE)/permit-log.jsonl" ] ||
+    { ls -laR "$(BASE)"; return 1; }
 }
 
 behavior() {
@@ -151,6 +160,76 @@ PY
   [ "$status" -eq 0 ] && [ -z "$output" ]
   run "$SCRIPT" <<<''
   [ "$status" -eq 0 ] && [ -z "$output" ]
+}
+
+# --- rm でない確認（#1610） ---
+
+BYPASS='"bypassPermissions"'
+
+@test "hook: a bypassPermissions child's non-rm confirmation is denied" {
+  call 'gh issue comment 1 --body "$(printf '"'"'a `x` b'"'"')"' '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$status" -eq 0 ]
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+}
+
+@test "hook: the non-rm deny uses no permit, writes no record and no log" {
+  call "ls -la" '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  no_guard_files
+}
+
+@test "hook: the non-rm deny message names the retry forms and returning to the parent" {
+  call "ls -la" '"a1"' "$SP" "$SID" "$BYPASS"
+  m="$(message)"
+  [[ "$m" == "[dev-workflow rm-permission-guard]"* ]] || { echo "$m"; return 1; }
+  local w
+  for w in "rm の判定に当たらない" "--body-file" '$(...)' "逆引用符" "親に返"; do
+    [[ "$m" == *"$w"* ]] || { echo "missing: $w / $m"; return 1; }
+  done
+  [[ "$m" != *"rm ではない"* ]] || { echo "$m"; return 1; }
+}
+
+@test "hook: without the common file a bypassPermissions child's non-rm confirmation is still denied" {
+  iso="${BATS_TEST_TMPDIR}/iso"
+  mkdir -p "$iso"
+  cp "$SCRIPT" "$iso/rm-permission-guard.sh"
+  SCRIPT="$iso/rm-permission-guard.sh"
+  call "ls -la" '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(message)" == *"rm の判定に当たらない"* ]] || { echo "$output"; return 1; }
+  [ ! -d "$(BASE)/denied" ]
+}
+
+@test "hook: children in modes that ask, and the main session in bypassPermissions, get no output for non-rm" {
+  local mode
+  for mode in '"default"' '"acceptEdits"' '"plan"' '-' '7'; do
+    call "ls -la" '"a1"' "$SP" "$SID" "$mode"
+    [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "mode $mode: $output"; return 1; }
+  done
+  local aid
+  for aid in '-' '""' '7'; do
+    call "ls -la" "$aid" "$SP" "$SID" "$BYPASS"
+    [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "agent_id $aid: $output"; return 1; }
+  done
+  no_guard_files
+}
+
+@test "hook: a bypassPermissions payload whose command is not a string gets no output" {
+  run "$SCRIPT" <<<'{"tool_name":"Bash","tool_input":{"command":7},"agent_id":"a1","permission_mode":"bypassPermissions","session_id":"s","cwd":"/tmp"}'
+  [ "$status" -eq 0 ] && [ -z "$output" ]
+  run "$SCRIPT" <<<'{"tool_name":"Bash","agent_id":"a1","permission_mode":"bypassPermissions","session_id":"s","cwd":"/tmp"}'
+  [ "$status" -eq 0 ] && [ -z "$output" ]
+}
+
+@test "hook: a bypassPermissions child's rm is still answered by the permit" {
+  call "rm -rf $SP/tbl/x/*" '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(message)" == *'実パスで単独のコマンド'* ]] || { echo "$output"; return 1; }
+  rec="$(only_record)"
+  run "$PERMIT" "$rec" "検証用の片づけ"
+  [ "$status" -eq 0 ] || { echo "permit failed: $output"; return 1; }
+  call "rm -rf $SP/tbl/x/*" '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$(behavior)" = "allow" ] || { echo "$output"; return 1; }
 }
 
 @test "hook: a matching permit allows the call exactly once and the log has permit then use" {
