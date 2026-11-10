@@ -11,9 +11,9 @@
 
 ### Requirement: 無人の印のあるセッションで AskUserQuestion を拒否する
 
-hook は、hook のプロセスの環境変数 `DEV_WORKFLOW_UNATTENDED` に印があるとき、`hookSpecificOutput.hookEventName` が `PreToolUse`、`permissionDecision` が `deny` の JSON を標準出力に出し、exit 0 で終わらなければならない（MUST）。どのスキル・コマンドから呼ばれた AskUserQuestion でも同じに扱い、`permission_mode` と payload の中身（`agent_id` の有無を含む）で判定を変えてはならない（MUST NOT）。
+hook は、環境変数 `DEV_WORKFLOW_UNATTENDED` に印があるとき、`hookSpecificOutput.hookEventName` が `PreToolUse`、`permissionDecision` が `deny` の JSON を標準出力に出し、exit 0 で終わらなければならない（MUST）。どのスキル・コマンドから呼ばれた AskUserQuestion でも同じに扱い、`permission_mode` と payload の中身（`agent_id` の有無を含む）で判定を変えてはならない（MUST NOT）。
 
-守備範囲: 入力は環境変数 `DEV_WORKFLOW_UNATTENDED` だけで、payload は判定に使わない。拾いたい誤りは、画面を見ている人のいないセッションで選択肢の画面が出て、誰も答えずに止まることである。印が無くチャンネルの依頼だけで channel になったセッションは止めない（hook はプロンプトの本文を見られず、画面の前にオーナーがいる場合も含むため）。
+守備範囲: 入力はこの環境変数だけ。拾う誤りは、画面を見る人のいないセッションで選択肢の画面が出て止まること。印が無くチャンネルの依頼だけで channel になったセッションは止めない（hook は本文を見られず、オーナーが画面の前にいる場合も含む）。穴が見つかるたびに塞ぎ切ることを完了条件にしない（MUST NOT）。
 
 #### Scenario: 印のあるセッションでは拒否する
 
