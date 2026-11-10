@@ -1373,6 +1373,40 @@ xrepo_block() { section 'エピックの扱い' "$EPIC" | awk '/^\*\*別のリ�
   printf '%s\n' "$p" | grep -qF '0 以外で終わった'
   printf '%s\n' "$p" | grep -qF '再び返った'
   printf '%s\n' "$p" | grep -qF 'オーナーが自分で実行'
+  # 終了コード 3 で打ち直しの条件を満たし、同じ W の同じ操作についてまだ打ち直しを指示していないときは除く（#1173）
+  printf '%s\n' "$p" | grep -qF '終了コード 3'
+  printf '%s\n' "$p" | grep -qF '同じ W の同じ操作についてまだ打ち直しを指示していない'
+}
+
+# 「1 ループ」の節で、`returned no output` を含む段落の直後の段落（空行 1 つを挟む）を出す
+retry_para() {
+  section '1 ループ' | awk 'index($0, "returned no output"){n=NR} n && NR==n+2{print; exit}'
+}
+
+@test "skill: an exit-3 retry is not a relaunch, and an empty return after it may ask for a report once more (#1173)" {
+  # spec: dev-workflow-develop「空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない」の例外
+  p="$(section '1 ループ' | grep -F 'returned no output')"
+  [ "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" = 1 ]
+  printf '%s\n' "$p" | grep -qF '打ち直しを指示して同じ W を再開することは、同じ指示での起こし直しに数えない'
+  r="$(retry_para)"
+  [ -n "$r" ]
+  printf '%s\n' "$r" | grep -qF '報告を改めて 1 回だけ求めてよい'
+  printf '%s\n' "$r" | grep -qF '打ち直しの前に求めた 1 回とは別'
+  printf '%s\n' "$r" | grep -qF '空だったことと作業ツリーの状態を主に上げる'
+}
+
+@test "skill: when the permit script exits 3, the parent asks the same W to retype once as a single command (#1173)" {
+  # spec: dev-workflow-develop「破壊的 git 操作の拒否の報告を受けたら、…」の「形の理由で断られたときの打ち直し」
+  r="$(retry_para)"
+  [ -n "$r" ]
+  [ "$(printf '%s\n' "$r" | wc -l | tr -d ' ')" = 1 ]
+  for t in '終了コード 3' '(1)・(3)・(4)' 'scratchpad の下の形' 'scripts/subagent-context.sh' \
+           '同じ W を SendMessage で再開' '別の Bash の呼び出しで先に' '実パス' '単独のコマンド' '1 回だけ打つ' \
+           '承認ではなく' '拒否される見込み' '打ち直さず' '新しい拒否の記録のパス' \
+           '許可の手順を (1) の確かめからやり直す' '同じ W の同じ操作' '回数を戻さない' '別の操作は別に数える' \
+           '2 回目の打ち直しを指示せず' 'オーナーに上げる'; do
+    printf '%s\n' "$r" | grep -qF -- "$t" || { echo "missing: $t"; return 1; }
+  done
 }
 
 # --- 起動部品の差し替え（epic-launcher-tmux） ---
