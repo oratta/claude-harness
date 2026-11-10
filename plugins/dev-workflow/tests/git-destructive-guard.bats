@@ -1991,7 +1991,7 @@ PY
     call "$cmd" default '"a1"' s1
     [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
     [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || { reason; return 1; }
-    ! has_continue || { echo "call $i: $output"; return 1; }
+    if has_continue; then echo "call $i: $output"; return 1; fi
   done
   [ ! -e "$(GUARD_BASE)" ]
 }
