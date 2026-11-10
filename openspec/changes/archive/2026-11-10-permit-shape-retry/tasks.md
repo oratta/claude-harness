@@ -17,4 +17,4 @@
 - [x] 3.1 `bats plugins/dev-workflow/tests/git-destructive-guard.bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/rm-permission-guard.bats plugins/dev-workflow/tests/hook-python-invocation.bats` と `openspec validate permit-shape-retry --type change --strict` を通す。触る範囲: なし（実行のみ）
 - [x] 3.2 design.md「実機確認の手順」の 2 ケースを `claude -p --plugin-dir <worktree>/plugins/dev-workflow --permission-mode default` で確かめる。どちらのケースも、子がまず破壊的でない別の Bash の呼び出しで対象を作り（中は scratchpad の repoA、外は scratchpad の外の新しいパスに repoC と scratchpad の中のリンク linkC）、そのあと追加の準備と checkout を `&&` でまとめて打って拒否される形にする。外の repoC の場所は親がプロンプトで新しいパスとして指定し、既存のものとして名指ししない。最初の報告で子が対象を作ったコマンドを示せていることを確かめる（示せず親が条件 3 で止まったら、打ち直しの経路を確かめたことにならないので、プロンプトを直して取り直す）。結果（子の agent_id・スクリプトの終了コードの並び（中は 3→0、外は 3→1）・permit-log の行（中は permit と use、外は permit なし）・最終状態（a.txt が orig に戻る、c.txt は changed のまま））を PR に記録する。触る範囲: なし（scratchpad と、scratchpad の外の一時の場所だけを使う）
 - [x] 3.3 変更の記録を書く。触る範囲: plugins/dev-workflow/changes/1173.md（新規）
-- [ ] 3.4 PR を出す前に origin/main を取り込み直し、#1159・#1166 の open PR と差分が重ならないかを再び確かめる。触る範囲: なし
+- [x] 3.4 PR を出す前に origin/main を取り込み直し、#1159・#1166 の open PR と差分が重ならないかを再び確かめる。触る範囲: なし

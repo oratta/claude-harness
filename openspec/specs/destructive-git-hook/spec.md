@@ -467,7 +467,7 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 
 ### Requirement: 許可を書くスクリプトは一時領域の中に収まるコマンドだけを許可する
 
-`plugins/dev-workflow/scripts/git-guard-permit.sh` は、引数に拒否の記録のパスと理由（空でない文字列）を受け取り、次をすべて確かめたときだけ許可を書かなければならない（MUST）。どれかを確かめられなければ、許可を書かず、理由を stderr に書いて 0 以外で終わらなければならない（MUST）。
+`plugins/dev-workflow/scripts/git-guard-permit.sh` は、引数に拒否の記録のパスと理由（空でない文字列）を受け取り、次をすべて確かめたときだけ許可を書かなければならない（MUST）。どれかを確かめられなければ、許可を書かず、理由を stderr に書いて 0 以外で終わらなければならない（MUST）。終了コードは、許可を書いたら 0、引数の誤りは 2 とする。確かめられなかったときは、記録の `command` が一時領域の判定（次の 2 つ目の項目）を満たさず、かつその `command` が単独のコマンドの形でなければ 3、それ以外（記録の置き場所・中身の確かめに落ちたもの、単独のコマンドの形なのに判定を満たさないもの、判定のあとの書き込みに失敗したもの）は 1 で終わらなければならない（MUST）。単独のコマンドの形とは、`command` が、使う判定（git 用か rm 用か。次の 2 つ目の項目と同じ決め方）が許す文字だけでできていて、`;`・`&`・改行を 1 つも含まないことをいう。3 で終わるときは、判定の理由の行に加えて、実パスで単独のコマンドに打ち直せば判定し直せる形の理由で断ったことを stderr に 1 行書かなければならない（MUST）。3 か 1 かの振り分けは打ち直しを頼めるかの目安であって、許可を書くかどうかを変えてはならない（MUST NOT）。
 
 - 記録が `<base>/denied/<key>.json` の形の場所にあり、`basename(<base>)` が `dev-workflow-git-guard` で、中身から計算し直した `<key>` がファイル名と一致する。`<base>` は記録のパスの 2 つ上とし、環境変数 `TMPDIR` を見てはならない（MUST NOT。hook と親の Bash で `TMPDIR` が違いうるため）
 - 記録の `session_id`・`cwd`・`command` が、一時領域の判定を満たす。`command` の単純コマンド（`&&`・`;`・改行で区切ったもの）のどれかの先頭の語が `rm` なら、次の git 用の判定の代わりに要件「rm の一時領域の判定」（spec rm-permission-hook）を使い、それ以外は次の判定を使う（どちらを使うかは記録の `command` だけで決め、記録の他の項目は見ない）
@@ -561,6 +561,21 @@ git 用の一時領域の判定は、`session_id`・`cwd`・`command` の 3 つ�
 
 - **WHEN** `cwd` が scratchpad の中で、コマンドが `cd ./tbl; rm -rf x/*` の拒否の記録（`kinds` は `rm`）を渡す
 - **THEN** exit 0 で終わり、`permits/` に許可が 1 つ作られる。同じ記録の `kinds` を `git` に書き換えても、判定は `command` だけで決まるので結果は変わらない
+
+#### Scenario: 単独のコマンドの形でないために判定に落ちた記録は終了コード 3 で断る
+
+- **WHEN** `cwd` が scratchpad の外の作業ツリーで、scratchpad の中の repo について、`mkdir -p <repo>/x && git -C <repo> checkout -- a.txt`・`git init <repo> && git -C <repo> checkout -- a.txt`・`R=<repo>; git -C $R checkout -- a.txt`・`git -C "<repo>" checkout -- a.txt`・`git -C <repo> checkout -- a.txt & git status` の拒否の記録をそれぞれ渡す。また、`cd <scratchpad の外の repo> && git reset --hard` の記録を渡す
+- **THEN** どれも終了コード 3 で終わり、stderr に判定の理由の行と、単独のコマンドに打ち直せば判定し直せる旨の行があり、`permits/` に許可が作られない
+
+#### Scenario: 単独のコマンドの形なのに判定に落ちた記録と、記録の確かめに落ちた記録は終了コード 1 で断る
+
+- **WHEN** `git -C <scratchpad の外の repo> checkout -- a.txt`・`git push --force origin main`・`git -C <scratchpad の中の、まだ無いディレクトリ> checkout -- a.txt` の拒否の記録をそれぞれ渡す。また、`mkdir -p <repo>/x && git -C <repo> checkout -- a.txt` の記録の中身のコマンドを書き換えたもの（key がファイル名と一致しない）を渡す
+- **THEN** どれも終了コード 1 で終わり、stderr に打ち直せば判定し直せる旨の行が無く、`permits/` に許可が作られない
+
+#### Scenario: 打ち直した単独のコマンドが scratchpad の中なら許可を書く
+
+- **WHEN** 同じ子について、`mkdir -p <repo>/x && git -C <repo> checkout -- a.txt` の拒否の記録で終了コード 3 を受けたあと、`git -C <repo> checkout -- a.txt` の拒否の記録を作って渡し、そのあと同じ payload を hook に渡す
+- **THEN** スクリプトは exit 0 で終わって `permits/` に許可が 1 つ作られ、hook は `permissionDecision` を `allow` にする
 
 ### Requirement: 子は許可を書くスクリプトを呼べない
 
