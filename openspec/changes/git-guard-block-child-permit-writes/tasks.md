@@ -9,7 +9,7 @@
 
 - [ ] 2.1 `LABELS` に種類 `permit-store`（ラベルは「許可の置き場所を名指しするコマンド（許可を書くのは親の役目）」。2 つの名前を書かない）を足し、`PERMIT_NAME` の近くに 2 つの名前の定数を置く。子のコマンドに両方が含まれれば `permit-store` を種類に足す（`self_permit` と同じ場所で、`kinds is not None and not kinds` の早期 exit より前。`kinds` が None のときも当たったことを覚えておく） 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh:88-113（`LABELS`・`PERMIT_NAME`）、plugins/dev-workflow/scripts/git-destructive-guard.sh:762-773（`self_permit` と早期 exit）
 - [ ] 2.2 子の経路で、`permit-store` が当たったら許可を探さず（`use_permit` を呼ばない）、拒否の記録を書かない。ほかの種類（`permit-store` 以外の種類か、`kinds` が None）が無ければ、共通ファイルの読み込み・`check_base`・回数を飛ばして `deny` だけを返す。あれば今までどおり `check_base` して回数を数える 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh:887-919（子の経路）
-- [ ] 2.3 子向けの理由文に、`permit-store` が当たったときの文（「拒否の記録を作らない」を含み、親も許可を書けないこと）を足し、そのときは「拒否の記録を作れなかった」の文を出さない。2 つの名前を理由文に並べない（`<base>` の確かめに失敗した文はほかの種類があるときだけ出る） 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh:937-954（子向けの理由文）
+- [ ] 2.3 子向けの理由文に、`permit-store` が当たったときの文（「拒否の記録を作らない」を含み、親も許可を書けないこと）を足し、そのときは通常の記録未作成の文（「拒否の記録を作れなかった」）は出さない。ただし、ほかの種類にも当たり `<base>` の確かめに失敗した場合は、既存の確かめ失敗の案内を保つ（要件「`<base>` を確かめられない子の呼び出しには deny だけを返す」に合わせる）。2 つの名前を理由文に並べない 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh:937-954（子向けの理由文）
 - [ ] 2.4 書き出しのコメント（返す値の説明）に、`permit-store` の扱いと、Write / Edit / NotebookEdit は別の hook が止めることを 1〜2 行で足す。字句解析部（`join_words`〜`judge`）には触らない（Draft PR #1463 と重ねない） 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh:23-33
 
 ## 3. テスト
