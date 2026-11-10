@@ -414,6 +414,23 @@ PY
   permits_empty
 }
 
+@test "permit: cd <scratchpad> && rm with cwd outside gets a permit and is allowed (#1159)" {
+  local cmd="cd $SP/tbl && rm -f x/*"
+  deny_then_permit "$cmd" "$OUT"
+  call "$cmd" '"a1"' "$OUT"
+  [ "$(behavior)" = "allow" ] || { echo "$output"; return 1; }
+  # 判定は rm を実行しない
+  [ -f "$SP/tbl/x/a" ] && [ -f "$SP/tbl/x/b" ]
+}
+
+@test "permit: cd <scratchpad>; rm with cwd outside gets no permit (#1159)" {
+  call "cd $SP/tbl; rm -f x/*" '"a1"' "$OUT"
+  [ "$(behavior)" = "deny" ]
+  run "$PERMIT" "$(only_record)" "検証"
+  [ "$status" -ne 0 ]
+  permits_empty
+}
+
 # --- rm 用の判定 ---
 
 @test "check_rm: targets inside the scratchpad are satisfied" {
@@ -479,6 +496,17 @@ rm -R b"
   chk_ "$SID" "$SP" "cd ./tbl; rm -rf x/*"
   # 絶対パスの削除先は cd の成否によらず同じ
   chk_ "$SID" "$OUT" "cd $SP/tbl; rm -rf $SP/tbl/x/*"
+}
+
+@test "check_rm: with only && separators, cd is checked against its success base only (#1159)" {
+  chk_ "$SID" "$OUT" "cd $SP/tbl && rm -f x/*"
+  chk_ "$SID" "$OUT" "cd $SP/tbl && rm -f x/a && rm -f x/b"
+  local c
+  for c in "cd $SP/tbl; rm -f x/*" "cd $SP/tbl
+rm -f x/*" "cd $SP/tbl && rm -f x/a; rm -f x/b"; do
+    run chk_ "$SID" "$OUT" "$c"
+    [ "$status" -ne 0 ] || { echo "satisfied: $c"; return 1; }
+  done
 }
 
 @test "check_rm: judging does not run rm" {

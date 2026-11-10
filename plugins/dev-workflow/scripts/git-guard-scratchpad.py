@@ -579,6 +579,10 @@ def check_rm(session_id, cwd, command, temp_dir=None):
         rms.append(targets)
     if not rms:
         return "rm のコマンドが無い", None, None
+    # 区切りが && だけなら、cd が失敗すると後ろの rm は走らないので、cd が成功した基準だけで見る。
+    # ; か改行が 1 つでもあれば、その後ろは cd が失敗しても元の cwd で走るので両方の基準で見る（#1159）
+    if n_cd and not re.search(r"[;\n]", command):
+        bases = bases[1:]
     sp_found, parents = None, []
     for targets in rms:
         for t in targets:
