@@ -1867,8 +1867,9 @@ EOF
   c="${c%$'\n'}"
   call "$c" default '"a1"' s1
   [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
-  # 読み違えの無い形でも、$' ・(( ・$[ があれば例外をかけない
+  # 読み違えの無い形でも、$' ・(( ・$[ ・${ があれば例外をかけない
   for c in "echo \$'a' /x/scripts/git-guard-permit.sh" 'echo $((1+1)) /x/scripts/git-guard-permit.sh' \
+           'echo ${HOME} /x/scripts/git-guard-permit.sh' \
            'for ((i=0; i<1; i++)); do echo /x/scripts/git-guard-permit.sh; done' \
            '(( 1 << 1 )); echo /x/scripts/git-guard-permit.sh' \
            'echo $[1+1] /x/scripts/git-guard-permit.sh'; do
