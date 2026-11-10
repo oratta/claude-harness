@@ -17,4 +17,4 @@
 ## 4. 記録と実機確認
 
 - [x] 4.1 変更の記録を書く（何を変えたか・bypassPermissions に絞った理由・範囲外・戻し方）。触る範囲: plugins/dev-workflow/changes/1610.md（新規。書き方は plugins/dev-workflow/changes/1134.md:1-12）
-- [x] 4.2 `claude -p --plugin-dir <worktree>/plugins/dev-workflow --permission-mode bypassPermissions` で、サブエージェントに 1.1 で見つけた形を打たせ、確認画面が出ずに拒否され、理由が子に返ることを確かめる。試したコマンド・結果・Claude Code の版を PR に記録する。どの形でも確認画面を出せなければ、実機確認は未検証として本体に return する（試した形・版・hook を直接呼んだ結果を書く。これを受け入れ条件の達成とは扱わない）。受け入れ条件を変えるときは、主の判断結果を記録先に記録してから変える。触る範囲: scratchpad（repo の外）
+- [x] 4.2 tmux の対話セッションで `claude --dangerously-skip-permissions --plugin-dir <worktree>/plugins/dev-workflow` を動かし（Claude Code 2.1.321 の `claude -p` では子の PermissionRequest が呼ばれないため、対話セッションで確かめる。手順の変更は主の判断として記録先に記録済み: https://github.com/oratta/claude-harness/issues/1610#issuecomment-6756881007 ）、サブエージェントに 1.1 で見つけた形を打たせ、確認画面が出ずに拒否され、理由が子に返ることを確かめる。試したコマンド・結果・Claude Code の版を PR に記録する。どの形でも確認画面を出せなければ、実機確認は未検証として本体に return する（試した形・版・hook を直接呼んだ結果を書く。これを受け入れ条件の達成とは扱わない）。受け入れ条件を変えるときは、主の判断結果を記録先に記録してから変える。触る範囲: scratchpad（repo の外）

@@ -113,7 +113,7 @@ TBD - created by archiving change rm-permission-parent-permit. Update Purpose af
 
 #### Scenario: 実機で確認画面が出ずに拒否され、子が理由を受け取る
 
-- **WHEN** `claude -p --plugin-dir <worktree>` を bypassPermissions で動かし、サブエージェントに rm を含まず本体が rm を除外できない形のコマンド（`gh issue comment N --body "$(printf '...`x`...')"` の形）を打たせる
+- **WHEN** tmux の対話セッションで `claude --dangerously-skip-permissions --plugin-dir <worktree>/plugins/dev-workflow` を動かし（Claude Code 2.1.321 の `claude -p` では子の PermissionRequest が呼ばれないため、対話セッションで確かめる）、サブエージェントに rm を含まず本体が rm を除外できない形のコマンド（`gh issue comment N --body "$(printf '...`x`...')"` の形）を打たせる
 - **THEN** 確認画面が出ずに拒否され、サブエージェントの受け取る拒否の理由に hook の `message` があり、PR に試したコマンド・結果・Claude Code の版が記録されている
 
 ### Requirement: 子の rm でない確認への deny は、許可と拒否の記録を使わない
