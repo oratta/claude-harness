@@ -33,6 +33,8 @@
 #   許可を書いた・使った・捨てたは <base>/permit-log.jsonl に残る。子が git-guard-permit.sh を自分で呼んだら deny。
 #   key の計算・一時領域の判定・記録の追記は共通ファイル git-guard-scratchpad.py にあり、子の破壊的操作を
 #   見つけたときだけ読む。読めなければ許可を探さず、記録も書かずに deny だけを返す。
+#   子のコマンドに許可の置き場所の 2 つの名前（STORE_NAMES）が両方あれば permit-store で deny し、記録を書かず許可も使わない。
+#   ほかの種類に当たらなければ回数も数えない。子の Write / Edit / NotebookEdit は git-guard-base-write-guard.sh が止める。
 #   主の呼び出しで DEV_WORKFLOW_GIT_GUARD_NO_ASK（起動側が付ける git ガード専用の印）があれば、
 #   permission_mode と FORCE によらず deny。前後の空白を除いて空か 0 なら印なし、それ以外は印あり。
 #   理由文はコマンドの全文・対象・なぜ要るか・止まった理由を書いてオーナーに承認を求め、ターンを終えるよう
@@ -97,6 +99,8 @@ LABELS = {
     "no-gpg": "`--no-gpg-sign`",
     # 子が許可を書くスクリプトを自分で呼ぶもの（決定 5）。子への理由に出るので、スクリプトの名前は書かない
     "permit-self": "許可を書くスクリプトの子からの呼び出し（許可を書くのは親の役目）",
+    # 子が許可の置き場所を名指しするもの（STORE_NAMES）。子への理由に出るので、2 つの名前は書かない
+    "permit-store": "許可の置き場所を名指しするコマンド（許可を書くのは親の役目）",
 }
 ORDER = list(LABELS)
 
@@ -111,6 +115,9 @@ SHELLS = {"bash", "sh", "zsh"}
 # 許可を書くスクリプトの名前。子の呼び出しのコマンド文字列のどこかにあれば、書き方を読み分けずに permit-self とする
 # （シェルの書き方を 1 つずつ読み分けると、塞ぐたびに別の書き方が出る。子がこのスクリプトを読む用事も無い）
 PERMIT_NAME = "git-guard-permit"
+# 許可の置き場所（<base> の名前と、その下の許可のディレクトリ名）。子のコマンド文字列に両方があれば、書き方を読み分けずに
+# permit-store とする（部分文字列・大文字小文字を区別する）。<base> の名前だけでは止めない（拒否の記録を読む用事がある）
+STORE_NAMES = ("dev-workflow-git-guard", "permits")
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
                      "--super-prefix", "--config-env", "--exec-path"}
 MAIN_REFS = {"main", "master", "refs/heads/main", "refs/heads/master"}
@@ -769,6 +776,13 @@ is_child = isinstance(agent_id, str) and agent_id != ""
 self_permit = is_child and PERMIT_NAME in command
 if self_permit and kinds is not None:
     kinds.add("permit-self")
+# 子のコマンド文字列に許可の置き場所の 2 つの名前が両方あれば permit-store として止める。kinds が None（判定しきれなかった）
+# でも当たったことを覚えておき、拒否の記録を書かず許可も使わない。主の呼び出しは止めない
+permit_store = is_child and all(n in command for n in STORE_NAMES)
+if permit_store and kinds is not None:
+    kinds.add("permit-store")
+# permit-store のほかに当たった種類（破壊的 git 操作・判定しきれなかったもの・permit-self）があるか。無ければ回数を数えない
+other_kinds = kinds is None or bool(kinds - {"permit-store"})
 if kinds is not None and not kinds:
     sys.exit(0)
 
@@ -888,7 +902,11 @@ deny_count = 0
 record_path = None
 unverified = None
 base_err = None
-if is_child:
+if is_child and permit_store and not other_kinds:
+    # 許可の置き場所を名指ししただけの拒否は、共通ファイルを読まず、<base> を作りも確かめもせず、回数も記録も触らない
+    # （ルールを読み飛ばした子を 1 回で打ち切らない。記録があると親がこのコマンドの許可を書けてしまう）
+    decision = "deny"
+elif is_child:
     decision = "deny"
     # 共通ファイルは子の破壊的操作を見つけたときだけ読む（主の呼び出しと、破壊的操作の無い呼び出しでは読まない）。
     # 読めなければ key を出せず <base> も確かめられないので、許可を探さず、拒否の記録も書かず、回数も数えずに deny だけを返す
@@ -903,7 +921,7 @@ if is_child:
             base_err = "確かめが失敗した（%s）" % e
     usable = bool(common) and not base_err
     used = None
-    if key and usable and not self_permit:
+    if key and usable and not self_permit and not permit_store:
         used = use_permit(common, guard_base, key)
     if used and used[0] == "allow":
         print(json.dumps({"hookSpecificOutput": {
@@ -915,7 +933,7 @@ if is_child:
         unverified = used[1]
     if usable:
         deny_count = count_child_deny(common, guard_base, agent_id)
-        if key:
+        if key and not permit_store:
             record_path = write_record(common, guard_base, key)
 elif is_no_ask or is_unattended:
     decision = "deny"
@@ -943,12 +961,21 @@ if is_child:
     if unverified:
         body = ("親が書いた許可はあるが行き先を確かめられないので、許可を使わずに捨てた（" + unverified + "）。"
                 + body)
+    if permit_store:
+        # 2 つの名前を並べない（子が理由文を報告用のコマンドに写したとき、そのコマンドが止まらないようにする）
+        body += ("このコマンドは許可の置き場所を名指しするコマンドなので、拒否の記録を作らない（親もこのコマンドの許可を"
+                 "書けない）。親に返す報告にコマンドの全文を書く。")
     if record_path:
         body += "拒否の記録: " + record_path + " 。親に返す報告にこのパスを書く。"
     elif base_err:
+        if permit_store:
+            # 許可のフォルダのパスには 2 つの名前が並ぶので、言い換えてから理由文に入れる
+            store_dir = os.path.join(guard_base, STORE_NAMES[1])
+            for p in sorted({store_dir, os.path.realpath(store_dir)}, key=len, reverse=True):
+                base_err = base_err.replace(p, "置き場所の下の許可のフォルダ")
         body += ("拒否の記録を作れなかった（拒否の記録の置き場所 " + guard_base + " を確かめられない: " + base_err
                  + "）。親に返す報告にコマンドの全文を書き、この置き場所の問題も書く。")
-    else:
+    elif not permit_store:
         body += "拒否の記録を作れなかった。親に返す報告にコマンドの全文を書く。"
     if deny_count >= 2:
         body += "この子への拒否は 2 回目以降なので、直ちに作業を終えて親に返す。"

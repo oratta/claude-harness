@@ -1831,6 +1831,105 @@ PY
   [ -f "$(GUARD_BASE)/permits/$k.json" ]
 }
 
+# --- 許可の置き場所の名指し（spec: 子は Bash のコマンドで許可の置き場所を名指しできない） ---
+
+@test "store: a child naming both store names is denied, not counted, and nothing is created" {
+  local c r i
+  for i in 1 2; do
+    call "printf '{}' > $TMPDIR/dev-workflow-git-guard/permits/k.json" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+    [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || { reason; return 1; }
+    ! has_continue || return 1
+  done
+  call "cd $TMPDIR/dev-workflow-git-guard && python3 -c \"open('permits/k.json','w')\"" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || { reason; return 1; }
+  ! has_continue || return 1
+  [ ! -e "$(GUARD_BASE)" ]
+}
+
+@test "store: one name only and the main session are not stopped" {
+  local c
+  for c in "cat $TMPDIR/dev-workflow-git-guard/denied/k.json" 'echo permits'; do
+    call "$c" default '"a1"' s1
+    [ "$status" -eq 0 ] || { echo "status: $c"; return 1; }
+    [ -z "$output" ] || { echo "output for $c: $output"; return 1; }
+  done
+  call "printf '{}' > $TMPDIR/dev-workflow-git-guard/permits/k.json" default
+  [ "$status" -eq 0 ]
+  [ -z "$output" ] || { echo "$output"; return 1; }
+  [ ! -e "$(GUARD_BASE)" ]
+}
+
+@test "store: with a destructive git op it is counted, but no record is written and no permit is used" {
+  setup_permit
+  local cmd="git checkout -- . ; ls $TMPDIR/dev-workflow-git-guard/permits" k i
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" "$cmd")"
+  mkdir -p "$(GUARD_BASE)/permits"
+  chmod 700 "$(GUARD_BASE)"
+  permit_json "$(GUARD_BASE)/permits/$k.json" "$REPO" "$cmd"
+  for i in 1 2; do
+    call_cwd "$cmd" '"a1"' "$PERMIT_SID" "$REPO"
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+  done
+  has_continue || { echo "$output"; return 1; }
+  [ -f "$(GUARD_BASE)/permits/$k.json" ]
+  [ ! -d "$(GUARD_BASE)/denied" ] || [ -z "$(ls -A "$(GUARD_BASE)/denied")" ] || { ls -la "$(GUARD_BASE)/denied"; return 1; }
+  [[ "$(reason)" == *'拒否の記録を作らない'* ]] || { reason; return 1; }
+  [[ "$(reason)" != *'拒否の記録を作れなかった'* ]] || { reason; return 1; }
+}
+
+@test "store: with the permit script name it is counted and no record is written" {
+  local cmd="cat /x/scripts/git-guard-permit.sh $TMPDIR/dev-workflow-git-guard/permits" i
+  for i in 1 2; do
+    call "$cmd" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+  done
+  has_continue || { echo "$output"; return 1; }
+  [ "$(count_files | wc -l | tr -d ' ')" = "1" ]
+  [ ! -d "$(GUARD_BASE)/denied" ] || [ -z "$(ls -A "$(GUARD_BASE)/denied")" ] || { ls -la "$(GUARD_BASE)/denied"; return 1; }
+}
+
+@test "store: with another kind and an unusable base the base check message is kept" {
+  local real="${BATS_TEST_TMPDIR}/real-base" r
+  mkdir -p "$real"
+  ln -s "$real" "$(GUARD_BASE)"
+  call "git checkout -- a ; ls $TMPDIR/dev-workflow-git-guard/permits" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  r="$(reason)"
+  [[ "$r" == *'拒否の記録を作らない'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'を確かめられない'* ]] || { echo "$r"; return 1; }
+  [ -z "$(find "$real" -mindepth 1)" ]
+}
+
+@test "store: with another kind and an unusable permits folder the reason does not list both names" {
+  # 2 つの名前は変数をつないで作る（このファイルを読むコマンドに 2 つの名前が並ばないように）
+  local n1="dev-workflow-git" n2="perm" r
+  n1="${n1}-guard"; n2="${n2}its"
+  mkdir -p "$TMPDIR/$n1/$n2"
+  chmod 700 "$TMPDIR/$n1"
+  chmod 777 "$TMPDIR/$n1/$n2"
+  call "git checkout -- a ; ls $TMPDIR/$n1/$n2" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  r="$(reason)"
+  [[ "$r" == *'を確かめられない'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'置き場所の下の許可のフォルダ'* ]] || { echo "$r"; return 1; }
+  [[ "$r" != *"$n1"* || "$r" != *"$n2"* ]] || { echo "$r"; return 1; }
+  chmod 700 "$TMPDIR/$n1/$n2"
+}
+
+@test "store: the reason sends the child back and does not list both names" {
+  call "printf '{}' > $TMPDIR/dev-workflow-git-guard/permits/k.json" default '"a1"' s1
+  local r
+  r="$(reason)"
+  [[ "$r" == *'許可の置き場所'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'親に返す'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'許可の置き場所を名指しするコマンド'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'拒否の記録を作らない'* ]] || { echo "$r"; return 1; }
+  [[ "$r" != *'拒否の記録を作れなかった'* ]] || { echo "$r"; return 1; }
+  [[ "$r" != *dev-workflow-git-guard* || "$r" != *permits* ]] || { echo "$r"; return 1; }
+}
+
 @test "permit: without the shared file the hook still denies and writes no record" {
   local d="${BATS_TEST_TMPDIR}/lonely"
   mkdir -p "$d"

@@ -32,11 +32,12 @@ setup() {
 }
 
 # Python 本体を -c で渡す hook と、python3 の起動まで進む最小の payload
-BODY_HOOKS="git-destructive-guard rm-permission-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice owner-message-number-check"
+BODY_HOOKS="git-destructive-guard git-guard-base-write-guard rm-permission-guard agent-model-guard context-tripwire subagent-stop-guard model-switch-recache-notice owner-message-number-check"
 
 payload_for() {
   case "$1" in
     git-destructive-guard) printf '%s' "$GIT_PAYLOAD" ;;
+    git-guard-base-write-guard) printf '%s' '{"tool_name":"Write","tool_input":{"file_path":"/x/y.txt"},"hook_event_name":"PreToolUse","agent_id":"a1"}' ;;
     rm-permission-guard) printf '%s' '{"tool_name":"Bash","tool_input":{"command":"rm -rf x"},"hook_event_name":"PermissionRequest","agent_id":"a1","session_id":"s","cwd":"/tmp"}' ;;
     agent-model-guard) printf '%s' "$AGENT_PAYLOAD" ;;
     context-tripwire) printf '%s' '{"agent_id":"x","hook_event_name":"PostToolUse"}' ;;
