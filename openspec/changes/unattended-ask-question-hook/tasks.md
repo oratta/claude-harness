@@ -16,6 +16,7 @@
 - [x] 3.1 `plugins/dev-workflow/changes/1153.md` を書く（既存の `changes/1582.md` の形: 見出し・`## 変更`・`## 検証`）。何を足したか（hook・登録・channel.md の 1 項目と除外・bats）、範囲（全スキル・印だけで判定・チャンネルの依頼だけの channel は範囲外とその理由）、git ガードと NO_ASK は変えないこと、常時注入の rules と予算は変えないこと、版は上げないこと、実機での確認の結果（3.3）を書く。確かめ方: ファイルがあり、`bats tests/public-private-split.bats` が通る。触る範囲: plugins/dev-workflow/changes/1153.md（新規）
 - [x] 3.2 関係する既存の検査を通す: `bats plugins/dev-workflow/tests/unattended-ask-guard.bats plugins/dev-workflow/tests/develop-channel-mode.bats plugins/dev-workflow/tests/epic-child-no-ask-tool.bats plugins/dev-workflow/tests/hook-python-invocation.bats tests/hook-python-isolation.bats tests/lint-plugin-validate.bats tests/injection-budget.bats tests/public-private-split.bats` が全部通る。`git diff --stat origin/main` に `scripts/git-destructive-guard.sh` と `rules/` が無いことを確かめる。触る範囲: なし（確認のみ）
 - [x] 3.3 実機の要否を (3a) の return の `画面確認:` 行で本体に伝える: 印 `DEV_WORKFLOW_UNATTENDED=1` を付けて `claude --plugin-dir <worktree>/plugins/dev-workflow` を起動し、AskUserQuestion を呼ばせて、拒否され理由文が Claude に渡ること（選択肢の画面が出ないこと）を確かめる手順を書く。W は画面で確かめない。結果（2026-11-10、V が tmux の対話セッションで確認）: 印ありは選択肢の画面が出ず理由文が届き、Claude は打ち直さず本文に番号付きで質問してターンを終えた。印なしは従来どおり選択肢の画面が出た。触る範囲: なし（return に書く）
+- [x] 3.4 origin/main の取り込み（#1163）で `scripts/test-auto-merge-workflow.sh` に入った「hooks.json が呼ぶスクリプトが聖域にあること」の検査に合わせ、`.github/workflows/auto-merge.yml` の `SACRED` の `^plugins/dev-workflow/scripts/(...)$` に `unattended-ask-guard\.sh` を足す（他の値は変えない）。確かめ方: `bash scripts/test-auto-merge-workflow.sh` が通る。触る範囲: .github/workflows/auto-merge.yml:181
 
 ## Workflow follow-up
 
