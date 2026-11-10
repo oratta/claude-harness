@@ -210,6 +210,13 @@ make_tree() {
     "$ROOT/.github/workflows/ci.yml" "$TREE/.github/workflows/"
   cp "$ROOT/docs/auto-merge.md" "$TREE/docs/"
   cp "$ROOT/scripts/test-auto-merge-workflow.sh" "$TREE/scripts/"
+  # hooks.json が呼ぶスクリプトと SACRED の突き合わせ（#1163）は hooks.json が無いと失敗にするので写す
+  local hj p
+  for hj in "$ROOT"/plugins/*/hooks/hooks.json; do
+    p=$(basename "$(dirname "$(dirname "$hj")")")
+    mkdir -p "$TREE/plugins/$p/hooks"
+    cp "$hj" "$TREE/plugins/$p/hooks/"
+  done
   TREE_CI="$TREE/.github/workflows/ci.yml"
 }
 

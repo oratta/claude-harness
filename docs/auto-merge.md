@@ -115,6 +115,18 @@ REST 読み取りは成功しないため。2026-08-03 実測）。run の寿命
 | `plugins/*/hooks/` | **claude-harness 固有**。セッションで自動実行されるフックの定義 |
 | `plugins/dev-workflow/skills/pr-review-gate/` | **claude-harness 固有**。`agent-review:passed` を発行するレビューゲートの定義そのもの（マージ条件の一部） |
 | `plugins/dev-workflow/templates/auto-merge/` | **claude-harness 固有**。各リポに展開されるマージロボットの原本 |
+| `plugins/<name>/scripts/` のうち hook の本体（**ファイル名ちょうど**） | **claude-harness 固有**。全 `plugins/*/hooks/hooks.json` の `command` が呼ぶスクリプト（`git-destructive-guard.sh` など）と、許可を判定する hook が判定の本体として直接読み込む補助 3 本（`plugins/dev-workflow/scripts/git-guard-scratchpad.py`・`plugins/dev-workflow/scripts/usage_view.py`・`plugins/capability-registry/scripts/secret-guard.py`）。hooks.json の定義だけを聖域にしても、本体を変える PR が素通りするため（#1163） |
+
+hook の本体は、ディレクトリ丸ごとにする方針の例外としてファイル名ちょうどで列挙している（`plugins/*/scripts/` を丸ごとにすると、
+`ci-watch.sh`・`epic-dispatch.sh` など hook の経路に無いスクリプトまで人間マージになるため）。列挙の漏れは
+`scripts/test-auto-merge-workflow.sh` が、全 `plugins/*/hooks/hooks.json` の `command` が指すパスを `SACRED` に当てて CI で落とす
+（hook を足したら `SACRED` にも足す。読めない形の `command` や、`command` を 1 件も拾えないときも落ちる）。
+
+残る限界:
+
+- 補助ファイルは許可を判定する hook の直接の読み込み先だけを手で選んでいて、CI の検査は hooks.json が直接呼ぶ分しか拾わない。新しい補助ファイルを足したときは `SACRED` に手で足す
+- 補助がさらに読み込むもの（`usage_view.py` の先など）は聖域に入らない
+- hook が実行しない `plugins/dev-workflow/scripts/git-guard-permit.sh`（親が許可を書くスクリプト）は聖域に入らない
 
 リポ固有の憲法 doc があれば `auto-merge.yml` の `SACRED`（`# >>> sacred-paths` マーカーの間）に追記し、
 `scripts/test-auto-merge-workflow.sh` の must-match リストにも代表パスを足す（片方だけだとテストが落ちる）。
@@ -197,7 +209,7 @@ ci.yml の隣に新しい workflow を置くだけで素通りできてしまう
 | `plugins/dev-workflow/skills/pr-review-gate/` | `agent-review:passed` を発行するレビューゲートの定義 |
 | `plugins/dev-workflow/templates/auto-merge/` | 各リポに展開されるマージロボットの原本 |
 
-`rules/`・`CLAUDE.md`・`.claude/`・`plugins/*/hooks/`・`tests/injection-budget.txt` などほかの聖域は、
+`rules/`・`CLAUDE.md`・`.claude/`・`plugins/*/hooks/`・hook の本体のスクリプト・`tests/injection-budget.txt` などほかの聖域は、
 マージ条件そのものではないので、親の判断の印で `human-merge` を外せる。
 
 **親の判断からも外したい PR には `human-only` か `needs-approval` を付ける。** 聖域に触れる PR に
