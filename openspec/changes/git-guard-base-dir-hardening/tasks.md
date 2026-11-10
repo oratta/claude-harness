@@ -14,7 +14,7 @@
 
 ## 3. rm ガードを確かめに通す
 
-- [ ] 3.1 key を出したあと、許可を使う前に 1.1 の確かめを呼ぶ。満たさなければ許可を探さず・記録も `permit-log.jsonl` の行も書かずに `deny` を返し、message を「拒否の記録を作れなかった」の文に揃えて `<base>` のパスと満たさなかった条件を足す。`use_permit` の取った許可の読み方を 1.2 の関数にする（spec rm-permission-hook「rm の hook も `<base>` を確かめてから使う」） 触る範囲: plugins/dev-workflow/scripts/rm-permission-guard.sh:72-157（`base`・`use_permit`・記録と message）
+- [ ] 3.1 key を出したあと、許可を使う前に 1.1 の確かめを呼ぶ。満たさなければ許可を探さず・記録も `permit-log.jsonl` の行も書かずに `deny` を返し、message を「拒否の記録を作れなかった」の文に揃えて `<base>` のパスと満たさなかった条件を足す。`use_permit` の取った許可の読み方を 1.2 の関数にする（spec rm-permission-hook「rm の hook も `<base>` を確かめてから使う」と、MODIFIED にした「子の rm の確認画面に、親の許可に従って答える」の、確かめを満たしたときだけ許可を取り記録を書く順序） 触る範囲: plugins/dev-workflow/scripts/rm-permission-guard.sh:72-157（`base`・`use_permit`・記録と message）
 
 ## 4. 許可を書くスクリプトを確かめに通す
 
@@ -22,9 +22,9 @@
 
 ## 5. テスト
 
-- [ ] 5.1 git ガードのテストを足す: 新しく作る `<base>` と `denied/` が 0700・記録と回数が 0600／`<base>` が symlink なら 2 回とも deny・「拒否の記録を作れなかった」あり・「直ちに作業を終えて親に返す」なし・`"continue"` なし・先に何も作らず置いた許可が残る／0777 の `<base>` の下に何も作らない／`denied/`・`permits/` が symlink なら先に何も作らない／回数のファイルと `permit-log.jsonl` を symlink にしても先が変わらない／主の呼び出しは symlink の `<base>` でも `ask` で理由文が変わらない／判定のファイルが無いとき 2 回目も打ち切らず回数のファイルを作らない／既にある 0755 の `<base>` はそのまま使えモードが変わらない 触る範囲: plugins/dev-workflow/tests/git-destructive-guard.bats:807-870（「child count」の並び）、plugins/dev-workflow/tests/git-destructive-guard.bats:1834-1860（「without the shared file」）
+- [ ] 5.1 git ガードのテストを足す: 新しく作る `<base>` と `denied/` が 0700・記録と回数が 0600／`<base>` が symlink なら 2 回とも deny・「拒否の記録を作れなかった」あり・「直ちに作業を終えて親に返す」なし・`"continue"` なし・先に何も作らず置いた許可が残る／0777 の `<base>` の下に何も作らない／`denied/`・`permits/` が symlink なら先に何も作らない／回数のファイルと `permit-log.jsonl` を symlink にしても先が変わらない／主の呼び出しは symlink の `<base>` でも `ask` で理由文が変わらない／判定のファイルが無いとき 2 回目も打ち切らず回数のファイルを作らない／既にある 0755 の `<base>` はそのまま使えモードが変わらない／`permits/<key>.json` を、内容が一致し期限内で一時領域の判定を満たす許可を書いた `<base>` の外のファイルへの symlink にすると allow せず、リンク先の中身が変わらない 触る範囲: plugins/dev-workflow/tests/git-destructive-guard.bats:807-870（「child count」の並び）、plugins/dev-workflow/tests/git-destructive-guard.bats:1834-1860（「without the shared file」）
 - [ ] 5.2 許可を書くスクリプトのテストを足す: 記録を書かせたあと `<base>` を 0777 にすると 0 以外で終わり、stderr に `<base>` のパスがあり、許可と `permit` の行が無い／拒否の記録が symlink なら読まずに 0 以外で終わる 触る範囲: plugins/dev-workflow/tests/git-destructive-guard.bats:1711-1760（「the script refuses records in the wrong place」の近く）
-- [ ] 5.3 rm ガードのテストを足す: `<base>` が symlink なら deny・message に「拒否の記録を作れなかった」と `<base>` のパス・先に `denied/` も `permit-log.jsonl` も作らない／symlink の先に置いた一致する許可を使わず残す。既存の「記録を書けなくても deny を返す」が通り続けることを確かめる 触る範囲: plugins/dev-workflow/tests/rm-permission-guard.bats:222-250（「without the common file」「when the record cannot be written」の近く）
+- [ ] 5.3 rm ガードのテストを足す: `<base>` が symlink なら deny・message に「拒否の記録を作れなかった」と `<base>` のパス・先に `denied/` も `permit-log.jsonl` も作らない／symlink の先に置いた一致する許可を使わず残す。／`permits/<key>.json` を、内容が一致し期限内で rm の一時領域の判定を満たす許可を書いた `<base>` の外のファイルへの symlink にすると allow せず、リンク先の中身が変わらない。既存の「記録を書けなくても deny を返す」が通り続けることを確かめる 触る範囲: plugins/dev-workflow/tests/rm-permission-guard.bats:222-250（「without the common file」「when the record cannot be written」の近く）
 - [ ] 5.4 `bats plugins/dev-workflow/tests/git-destructive-guard.bats plugins/dev-workflow/tests/rm-permission-guard.bats` を全件通し、既存のテスト（とくに「child count: still denies when the count cannot be written」と「permit:」の並び）が落ちないことを確かめる 触る範囲: plugins/dev-workflow/tests/git-destructive-guard.bats、plugins/dev-workflow/tests/rm-permission-guard.bats
 
 ## 6. 変更の記録
