@@ -31,6 +31,7 @@
 #   子が同じ session_id・agent_id・cwd・コマンドで打ち直したときだけ allow を返す（回数は数えない）。allow の前に
 #   使う時点の一時領域の判定（行き先がそのセッションの scratchpad の中か）をかけ直し、満たさなければ deny。
 #   許可を書いた・使った・捨てたは <base>/permit-log.jsonl に残る。子が git-guard-permit.sh を自分で呼んだら deny。
+#   ただし読むか表示するだけのコマンド（READ_ONLY）だけでできたコマンドの中の名前では止めない。
 #   key の計算・一時領域の判定・記録の追記は共通ファイル git-guard-scratchpad.py にあり、子の破壊的操作を
 #   見つけたときだけ読む。読めなければ許可を探さず、記録も書かずに deny だけを返す。
 #   子のコマンドに許可の置き場所の 2 つの名前（STORE_NAMES）が両方あれば permit-store で deny し、記録を書かず許可も使わない。
@@ -112,9 +113,14 @@ WRAPPERS = {"command", "env", "sudo", "nohup", "time", "exec", "builtin"}
 ENV_SHORT_ARG = set("uCPa")
 ENV_LONG_ARG = {"--unset", "--chdir", "--argv0"}
 SHELLS = {"bash", "sh", "zsh"}
-# 許可を書くスクリプトの名前。子の呼び出しのコマンド文字列のどこかにあれば、書き方を読み分けずに permit-self とする
-# （シェルの書き方を 1 つずつ読み分けると、塞ぐたびに別の書き方が出る。子がこのスクリプトを読む用事も無い）
+# 許可を書くスクリプトの名前。子の呼び出しのコマンド文字列のどこかにあれば permit-self とする。例外は、コマンドの
+# すべての単純コマンドの先頭の語が READ_ONLY のどれかのときだけ（名前は引数・本文・リダイレクトの行き先にしか無い）。
+# 実行される書き方を数え上げて止めるのではなく、通す側を小さく数え上げる（シェルの書き方を 1 つずつ読み分けると、
+# 塞ぐたびに別の書き方が出る。通す側に入らない書き方は、どんな新しい書き方でも止まる側に落ちる）
 PERMIT_NAME = "git-guard-permit"
+# 読むか表示するだけのコマンド。引数・オプション・設定からほかのプログラムを起動せず、シェルの変数も設定しないもの
+# だけを入れる（sed・awk・rg・find・xargs・git・less・printf は入れない）。字句読みのあとの語とちょうど一致するときだけ当たる
+READ_ONLY = {"grep", "egrep", "fgrep", "cat", "head", "tail", "wc", "ls", "echo"}
 # 許可の置き場所（<base> の名前と、その下の許可のディレクトリ名）。子のコマンド文字列に両方があれば、書き方を読み分けずに
 # permit-store とする（部分文字列・大文字小文字を区別する）。<base> の名前だけでは止めない（拒否の記録を読む用事がある）
 STORE_NAMES = ("dev-workflow-git-guard", "permits")
@@ -771,9 +777,42 @@ except TooMuch:
 # FORCE より先に見る: FORCE=ask が残ったセッションで子が起きても確認画面で止めないため。
 agent_id = payload.get("agent_id")
 is_child = isinstance(agent_id, str) and agent_id != ""
-# 子のコマンド文字列に許可を書くスクリプトの名前があれば、書き方（シェル経由・-c の中・BASH_ENV の設定・cat など）を
-# 問わず permit-self として止め、許可も使わない。主の呼び出しは止めない
+class Heads:
+    """字句読みが読み終えた単純コマンドの先頭の語が、すべて READ_ONLY に入るかだけを持つ。"""
+
+    def __init__(self):
+        self.ok = True
+
+    def append(self, cmd):
+        if cmd[0] not in READ_ONLY:
+            self.ok = False
+
+
+def read_only(s, depth=0):
+    """s のすべての単純コマンド（$(...) の中・ヒアドキュメントの引用されていない本文の中の $(...) を含む。
+    バッククォートの中身は読み直す）の先頭の語が READ_ONLY に入るか。読み切れない（引用符が閉じていない・
+    入れ子が深すぎる）なら偽。仕事量は judge と共有し、上限を超えたら TooMuch が上がる。"""
+    if depth > 8:
+        return False
+    s = str(s)  # 読み済みの置換の控えは使わない（控えで飛ばすと、中の単純コマンドを見ない）
+    charge(len(s))
+    heads = Heads()
+    try:
+        _, subs, _, _ = run(lex(s, cmds=heads))
+    except Unclosed:
+        return False
+    return heads.ok and all(read_only(inner, depth + 1) for inner in subs)
+
+
+# 子のコマンド文字列に許可を書くスクリプトの名前があれば、書き方（シェル経由・-c の中・BASH_ENV の設定など）を
+# 問わず permit-self として止め、許可も使わない。ただしコマンドが読むか表示するだけのコマンドだけでできていれば
+# 止めない（読み切れなければ止める側）。主の呼び出しは止めない
 self_permit = is_child and PERMIT_NAME in command
+if self_permit and kinds is not None:
+    try:
+        self_permit = not read_only(command)
+    except TooMuch:
+        pass  # 判定しきれなかった。止める側に倒す
 if self_permit and kinds is not None:
     kinds.add("permit-self")
 # 子のコマンド文字列に許可の置き場所の 2 つの名前が両方あれば permit-store として止める。kinds が None（判定しきれなかった）
