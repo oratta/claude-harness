@@ -1848,8 +1848,30 @@ EOF
   c="${c%$'\n'}"
   call "$c" default '"a1"' s1
   [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
-  # 読み違えの無い形でも、$' か $(( があれば例外をかけない
-  for c in "echo \$'a' /x/scripts/git-guard-permit.sh" 'echo $((1+1)) /x/scripts/git-guard-permit.sh'; do
+  # 裸の (( と $[ ] も算術の文脈で、同じく << をヒアドキュメントと読み違える
+  IFS= read -r -d '' c <<'EOF' || true
+((echo<<X
+))
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  IFS= read -r -d '' c <<'EOF' || true
+echo $[echo<<X
+]
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # 読み違えの無い形でも、$' ・(( ・$[ があれば例外をかけない
+  for c in "echo \$'a' /x/scripts/git-guard-permit.sh" 'echo $((1+1)) /x/scripts/git-guard-permit.sh' \
+           'for ((i=0; i<1; i++)); do echo /x/scripts/git-guard-permit.sh; done' \
+           '(( 1 << 1 )); echo /x/scripts/git-guard-permit.sh' \
+           'echo $[1+1] /x/scripts/git-guard-permit.sh'; do
     call "$c" default '"a1"' s1
     [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
   done

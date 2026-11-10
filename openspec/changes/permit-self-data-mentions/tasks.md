@@ -5,7 +5,7 @@
 - [x] 1.1 `PERMIT_NAME` の近くに、読むか表示するだけのコマンドの一覧（`grep`・`egrep`・`fgrep`・`cat`・`head`・`tail`・`wc`・`ls`・`echo`）の定数を置き、`PERMIT_NAME` のコメント（「書き方を読み分けずに」）を決定 1 の規則に合わせて直す 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh:114-117（`SHELLS`・`PERMIT_NAME` の定義とコメント）
 - [x] 1.2 子のコマンドに名前があるときだけ、字句読み（`run(lex(...))`）に先頭の語だけを集める受け手を渡して読み直し、すべての単純コマンドの先頭の語が一覧に入り、字句読みが返すバッククォートの中身も同じ規則を満たすときに限って `self_permit` を偽にする。`Unclosed`・`TooMuch` は真（止める側）。字句読みの関数（`join_words`〜`judge`）は変えない。`bats plugins/dev-workflow/tests/git-destructive-guard.bats` が 2.1〜2.3 のテストを含めて通ることで確かめる 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh:765-787（`judge(command)` の呼び出しから早期 exit まで。`self_permit` の判定は 774-778）
 - [x] 1.3 書き出しのコメント（返す値の説明の「子が git-guard-permit.sh を自分で呼んだら deny」）に、一覧のコマンドだけでできたコマンドは止めないことを 1 行で足す 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh:23-37
-- [x] 1.4 コマンド文字列に `$'` か `$((` を含むときは例外をかけない（字句読みが bash と違う読み方をする構文。commit 後の自動セキュリティレビューの指摘）。bats に「permit: the read-only exception is not applied to ANSI-C quoting or arithmetic」を足す 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh（`self_permit` の判定）、plugins/dev-workflow/tests/git-destructive-guard.bats
+- [x] 1.4 コマンド文字列に `$'`・`((`・`$[` のどれかを含むときは例外をかけない（字句読みが bash と違う読み方をする構文。commit 後の自動セキュリティレビューの指摘）。bats に「permit: the read-only exception is not applied to ANSI-C quoting or arithmetic」を足す 触る範囲: plugins/dev-workflow/scripts/git-destructive-guard.sh（`self_permit` の判定）、plugins/dev-workflow/tests/git-destructive-guard.bats
 
 ## 2. テスト
 
