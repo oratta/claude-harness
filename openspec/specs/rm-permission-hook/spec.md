@@ -9,9 +9,9 @@ TBD - created by archiving change rm-permission-parent-permit. Update Purpose af
 
 `plugins/dev-workflow/hooks/hooks.json` は `PermissionRequest`（matcher `Bash`）に `plugins/dev-workflow/scripts/rm-permission-guard.sh` を登録しなければならない（MUST）。hook は payload の `agent_id` が空でない文字列（サブエージェントの呼び出し）で、かつ `tool_input.command` が要件「rm の一時領域の判定」の入口の形（単純コマンドのどれかの先頭の語が `rm`）に当たるときは、この要件の答え方で答えなければならない（MUST）。入口の形に当たらない子の呼び出しのうち、要件「子の rm でない確認画面は、権限確認を省くモードでは拒否する」に当たるものは、その要件と要件「子の rm でない確認への拒否の理由に、打ち直し方と親に返る条件を書く」の答え方で答える。それ以外は何も出力せず exit 0 で終わらなければならない（MUST。主の呼び出し・`agent_id` が無い・空・文字列でない呼び出し・`permission_mode` が `bypassPermissions` でないときの `rm` を含まない Bash の確認・読めない payload・`python3` が無い場合を含む。確認画面または今までの拒否に任せる）。
 
-答え方は次のとおり。hook は `session_id`・`agent_id`・`cwd`・`tool_input.command` から、要件「子への拒否を記録し、親が 1 回だけ通せるようにする」（spec destructive-git-hook）と同じ規則で key を計算し、同じ `<base>/permits/<key>.json` を自分だけが使えるように `rename` で取って読む（`<base>` は `${TMPDIR:-/tmp}/dev-workflow-git-guard`）。許可の 4 つの値が payload と一致し、期限内で、使う時点の rm の一時領域の判定をその時点のファイルシステムで満たすときに限り、`hookSpecificOutput.decision.behavior` を `allow` にして、取った許可を消し、`permit-log.jsonl` に `event` が `use` の行を足さなければならない（MUST）。許可が無い・一致しない・期限切れ・判定を満たさない・判定のファイルを読めないときは `behavior` を `deny` にし、`message` に次を含めなければならない（MUST）: このコマンドは親の許可が無いので実行しなかったこと／何を（コマンド）・なぜ消したかったかを報告に書いて親に返すこと／同じコマンドを打ち直さないこと／親の許可を受けられる打ち方の例は、変数を使わず実パスで単独のコマンドとして打つこと（変数や置換を含む形は親が許可を書けない。ほかの形が許可を受けられないとは書かない）（1 文で書く。文字列「実パスで単独のコマンド」を含む）／拒否の記録を作れたときはそのパス（作れなかったとき、つまり判定のファイルを読めない・記録を書けないときは、パスの代わりに「拒否の記録を作れなかった」ことと、親に報告するときはコマンドの全文を書くこと）。許可があるが判定を満たさなかったときは「許可はあるが行き先を確かめられない」も含める。判定のファイルを読めたときは key を出せるので、deny のたびに拒否の記録を `<base>/denied/<key>.json` に（`kinds` を `["rm"]` として）書く。判定のファイルを読めないときは key を出せないので許可を探さず記録も書かず、記録を書けなかったときも、deny は返す（どちらも message はパスを示さない）。回数を数えての打ち切りはしない。
+答え方は次のとおり。hook は `session_id`・`agent_id`・`cwd`・`tool_input.command` から、要件「子への拒否を記録し、親が 1 回だけ通せるようにする」（spec destructive-git-hook）と同じ規則で key を計算する（`<base>` は `${TMPDIR:-/tmp}/dev-workflow-git-guard`）。次に、要件「rm の hook も `<base>` を確かめてから使う」の確かめを行う。確かめを満たしたときに限り、同じ `<base>/permits/<key>.json` を自分だけが使えるように `rename` で取って symlink を辿らずに読み、この段落の以下の手順（許可を使う・`permit-log.jsonl` に行を足す・拒否の記録を書く）を行う（MUST）。確かめを満たさないときは、許可を探さず、拒否の記録も `permit-log.jsonl` の行も書かずに、同じ要件のとおり `deny` を返さなければならない（MUST）。許可の 4 つの値が payload と一致し、期限内で、使う時点の rm の一時領域の判定をその時点のファイルシステムで満たすときに限り、`hookSpecificOutput.decision.behavior` を `allow` にして、取った許可を消し、`permit-log.jsonl` に `event` が `use` の行を足さなければならない（MUST）。許可が無い・一致しない・期限切れ・判定を満たさない・判定のファイルを読めないときは `behavior` を `deny` にし、`message` に次を含めなければならない（MUST）: このコマンドは親の許可が無いので実行しなかったこと／何を（コマンド）・なぜ消したかったかを報告に書いて親に返すこと／同じコマンドを打ち直さないこと／親の許可を受けられる打ち方の例は、変数を使わず実パスで単独のコマンドとして打つこと（変数や置換を含む形は親が許可を書けない。ほかの形が許可を受けられないとは書かない）（1 文で書く。文字列「実パスで単独のコマンド」を含む）／拒否の記録を作れたときはそのパス（作れなかったとき、つまり判定のファイルを読めない・`<base>` の確かめを満たさない・記録を書けないときは、パスの代わりに「拒否の記録を作れなかった」ことと、親に報告するときはコマンドの全文を書くこと）。許可があるが判定を満たさなかったときは「許可はあるが行き先を確かめられない」も含める。判定のファイルを読めて key を出せ、`<base>` の確かめを満たしたときは、deny のたびに拒否の記録を `<base>/denied/<key>.json` に（`kinds` を `["rm"]` として）書く。判定のファイルを読めないときは key を出せないので許可を探さず記録も書かず、記録を書けなかったときも、deny は返す（どちらも message はパスを示さない）。回数を数えての打ち切りはしない。
 
-守備範囲: 受け取る入力は PermissionRequest の payload（`tool_name`・`tool_input.command`・`permission_mode`・`cwd`・`agent_id`・`session_id`）だけで、なぜ確認画面が出たかは入力に無いため、hook は確認の理由を見ずにコマンド文字列から自分で判定する。拾いたい誤りは、子が自分の一時領域の中のファイルを消すだけの `rm` が確認画面で止まり、親が代わりに打つと主の確認画面が出て作業が止まることである。入口の形に当たる `rm` で一時領域の外を指すものは、親の許可があっても通さない。判定へ渡す入力（`session_id`・`cwd`・`command`）は、hook では payload から、`git-guard-permit.sh` では拒否の記録（hook が payload から書いたもの）から、それぞれ渡す。次の入力は通す・止めることを許す: 子がコマンドを 1 文字でも変えたもの・別の `cwd` から打ったものは止まる／判定から実行までの間に一時領域の中が symlink に差し替えられるもの・`permits/` に直接書かれた許可のうち判定を満たすものは通る。これらの穴を見つけるたびに塞ぎ切ることは、この要件の完了条件にしない。入口の形に当たらない子の呼び出しは、同じ payload の `permission_mode` だけで振り分け（確認の理由は見ない）、`bypassPermissions` なら要件「子の rm でない確認画面は、権限確認を省くモードでは拒否する」で拒否し、それ以外は何も返さない。拾いたい誤りは、権限確認を省いて動く誰も見ていない子が確認画面で止まり続けることで、避けたい誤りは、画面で承認できる default などの子と主の確認まで拒否することである。`bypassPermissions` の子が rm の判定に当たらない別種の安全確認（`/bin/rm` や critical path への書き込みなど）で拒否されることと、default などの子が rm の判定に当たらない安全確認の画面で止まることは許す。
+守備範囲: 受け取る入力は PermissionRequest の payload（`tool_name`・`tool_input.command`・`permission_mode`・`cwd`・`agent_id`・`session_id`）だけで、なぜ確認画面が出たかは入力に無いため、hook は確認の理由を見ずにコマンド文字列から自分で判定する。拾いたい誤りは、子が自分の一時領域の中のファイルを消すだけの `rm` が確認画面で止まり、親が代わりに打つと主の確認画面が出て作業が止まることである。入口の形に当たる `rm` で一時領域の外を指すものは、親の許可があっても通さない。判定へ渡す入力（`session_id`・`cwd`・`command`）は、hook では payload から、`git-guard-permit.sh` では拒否の記録（hook が payload から書いたもの）から、それぞれ渡す。次の入力は通す・止めることを許す: 子がコマンドを 1 文字でも変えたもの・別の `cwd` から打ったものは止まる／判定から実行までの間に一時領域の中が symlink に差し替えられるもの・`permits/` に直接書かれた許可のうち判定を満たすものは通る。`<base>` の確かめで止まる入力と、そこで通すことを許す入力は、要件「rm の hook も `<base>` を確かめてから使う」の守備範囲に従う。これらの穴を見つけるたびに塞ぎ切ることは、この要件の完了条件にしない。入口の形に当たらない子の呼び出しは、同じ payload の `permission_mode` だけで振り分け（確認の理由は見ない）、`bypassPermissions` なら要件「子の rm でない確認画面は、権限確認を省くモードでは拒否する」で拒否し、それ以外は何も返さない。拾いたい誤りは、権限確認を省いて動く誰も見ていない子が確認画面で止まり続けることで、避けたい誤りは、画面で承認できる default などの子と主の確認まで拒否することである。`bypassPermissions` の子が rm の判定に当たらない別種の安全確認（`/bin/rm` や critical path への書き込みなど）で拒否されることと、default などの子が rm の判定に当たらない安全確認の画面で止まることは許す。
 
 #### Scenario: 一致する許可があれば 1 回だけ allow を返す
 
@@ -94,6 +94,29 @@ TBD - created by archiving change rm-permission-parent-permit. Update Purpose af
 
 - **WHEN** PR 本文と記録先のコメントを見る
 - **THEN** 上の 3 点それぞれに、試したコマンドと結果が書かれている
+
+### Requirement: rm の hook も `<base>` を確かめてから使う
+
+`rm-permission-guard.sh` は、rm の入口の形に当たる子の呼び出しで、`<base>` とその中のファイルを、spec destructive-git-hook の要件「拒否の記録・回数・許可の置き場所（`<base>`）を確かめてから使う」と「`<base>` の中のファイルを symlink を辿らずに開き、所有者だけのモードで作る」と同じ規則・同じ処理で扱わなければならない（MUST）。確かめを満たさないときは、許可を探さず、記録も `permit-log.jsonl` の行も書かずに `behavior` を `deny` にし、`message` を拒否の記録を作れなかったときの文に揃えて `<base>` のパスと満たさなかった条件を足す（MUST）。それ以外の呼び出し（主の呼び出し・rm でない確認への deny を含む）では `<base>` を作りも確かめもしない（MUST NOT）。
+
+#### 守備範囲
+
+spec destructive-git-hook の 3 つの要件「拒否の記録・回数・許可の置き場所（`<base>`）を確かめてから使う」「`<base>` の中のファイルを symlink を辿らずに開き、所有者だけのモードで作る」「`<base>` を確かめられない子の呼び出しには deny だけを返す」の守備範囲（受け取る入力・拾いたい誤り・通すことや止めることを許す入力）を、この要件にもそのまま当てる。rm の hook で違うのは次の 2 点である。受け取る入力は、PermissionRequest の payload（`agent_id`・`session_id`・`cwd`・`tool_input.command`）と、上の 3 つの要件が見る `<base>` の状態である。rm の hook は回数を数えないので、確かめを満たさないあいだ子の rm は親の許可で通せず毎回 `deny` になる（止めすぎる向き）が、打ち切りの扱いはもともと無い。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+
+#### Scenario: `<base>` が symlink なら deny を返し、symlink の先に何も作らない
+
+- **WHEN** `TMPDIR` の下の `dev-workflow-git-guard` を別のディレクトリへの symlink にして、`agent_id` が `a1` で許可の無い payload に `rm -rf <scratchpad>/tbl/*` を渡す
+- **THEN** `decision.behavior` が `deny` で、`message` に「拒否の記録を作れなかった」と `<base>` のパスが含まれ、拒否の記録のパスを示さず、symlink の先に `denied/` も `permit-log.jsonl` も作られない
+
+#### Scenario: symlink の先に置いた許可は使わない
+
+- **WHEN** `TMPDIR` の下の `dev-workflow-git-guard` を別のディレクトリへの symlink にし、その先の `permits/<key>.json` に 4 つの値が一致し期限内で、rm の一時領域の判定を満たす許可を置いてから、scratchpad の形に合う `session_id`・`agent_id` が `a1`・`cwd` が scratchpad の中のディレクトリの payload に `cd ./tbl; rm -rf x/*` を渡す
+- **THEN** `decision.behavior` が `deny` で、`message` に「拒否の記録を作れなかった」が含まれ、置いた許可のファイルが残っている
+
+#### Scenario: 許可のファイルが symlink なら使わず、先を書き換えない
+
+- **WHEN** 確かめを満たす `<base>` の下で、4 つの値が payload と一致し期限内で rm の一時領域の判定を満たす許可の中身を書いたファイル C を `<base>` の外に置き、`permits/<key>.json` を C への symlink にしてから、その payload に `cd ./tbl; rm -rf x/*` を渡す
+- **THEN** `decision.behavior` が `deny` で、C の中身が変わらず残っている
 
 ### Requirement: 子の rm でない確認画面は、権限確認を省くモードでは拒否する
 

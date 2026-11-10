@@ -322,6 +322,67 @@ PY
   [[ "$m" == *"作れなかった"* && "$m" != *"denied/"* ]] || { echo "$m"; return 1; }
 }
 
+# --- <base> の確かめ（spec: rm の hook も <base> を確かめてから使う） ---
+
+# key_for <command> <cwd> — hook と同じ規則の key（子 a1・セッション SID）
+key_for() {
+  printf '%s' "$1" | python3 -I -c '
+import sys
+ns = {"__name__": "x"}
+exec(compile(open(sys.argv[1]).read(), sys.argv[1], "exec"), ns)
+print(ns["key_of"](sys.argv[2], "a1", sys.argv[3], sys.stdin.read()))' "$COMMON" "$SID" "$2"
+}
+
+# permit_json <file> <command> <cwd> — 子 a1 の、4 つの値が一致し期限内の許可の中身を <file> に書く
+permit_json() {
+  printf '%s' "$2" | python3 -c '
+import json, sys, time
+json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "command": sys.stdin.read(),
+           "expires_at": int(time.time()) + 600}, open(sys.argv[1], "w"))' "$1" "$SID" "$3"
+}
+
+@test "hook: a symlinked base gets deny and nothing is created at its target" {
+  local real="${BATS_TEST_TMPDIR}/real-base" m
+  mkdir -p "$real"
+  ln -s "$real" "$(BASE)"
+  call "rm -rf $SP/tbl/x/*" '"a1"' "$SP"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  m="$(message)"
+  [[ "$m" == *'拒否の記録を作れなかった'* && "$m" == *"$(BASE)"* && "$m" != *'denied/'* ]] || { echo "$m"; return 1; }
+  [ ! -e "$real/denied" ]
+  [ ! -e "$real/permit-log.jsonl" ]
+}
+
+@test "hook: a matching permit placed behind a symlinked base is not used" {
+  local real="${BATS_TEST_TMPDIR}/real-base" cmd="cd ./tbl; rm -rf x/*" k
+  chk_ "$SID" "$SP" "$cmd"
+  mkdir -p "$real/permits"
+  ln -s "$real" "$(BASE)"
+  k="$(key_for "$cmd" "$SP")"
+  permit_json "$real/permits/$k.json" "$cmd" "$SP"
+  call "$cmd" '"a1"' "$SP"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(message)" == *'拒否の記録を作れなかった'* ]] || { message; return 1; }
+  [ -f "$real/permits/$k.json" ]
+  [ -f "$SP/tbl/x/a" ]
+}
+
+@test "hook: a permit that is a symlink to a matching permit outside the base is not used and its target is kept" {
+  local cmd="cd ./tbl; rm -rf x/*" c="${BATS_TEST_TMPDIR}/C.json" k
+  k="$(key_for "$cmd" "$SP")"
+  permit_json "$c" "$cmd" "$SP"
+  cp "$c" "${BATS_TEST_TMPDIR}/C.orig"
+  mkdir -p "$(BASE)/permits"
+  ln -s "$c" "$(BASE)/permits/$k.json"
+  call "$cmd" '"a1"' "$SP"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  cmp "$c" "${BATS_TEST_TMPDIR}/C.orig"
+  # 同じ中身を普通のファイルとして置けば通る（symlink だから通さなかったことの確かめ）
+  cp "$c" "$(BASE)/permits/$k.json"
+  call "$cmd" '"a1"' "$SP"
+  [ "$(behavior)" = "allow" ] || { echo "$output"; return 1; }
+}
+
 @test "hook: a command with an unreadable form is denied even with a permit written directly" {
   call "rm -rf \"$SP/tbl/x\"" '"a1"' "$SP"
   [ "$(behavior)" = "deny" ]

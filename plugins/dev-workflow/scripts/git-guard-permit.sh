@@ -54,11 +54,18 @@ if os.path.basename(denied) != "denied" or os.path.basename(base) != C["BASE_NAM
 if not name.endswith(".json") or not C["is_key"](name[:-len(".json")]):
     fail("記録のファイル名が <key>.json の形でない: %s" % name)
 key = name[:-len(".json")]
+# 記録の場所から求めた <base> を hook と同じ確かめにかける。満たさなければ許可も permit-log.jsonl の行も書かず、
+# 回数のファイルも消さない（spec「許可を書くスクリプトは確かめを満たさない <base> に書かない」）
 try:
-    with open(rec_path, encoding="utf-8") as fh:
-        rec = json.load(fh)
+    base_err = C["check_base"](base)
 except Exception as e:
-    fail("記録を読めない（%s）" % e)
+    base_err = "確かめが失敗した（%s）" % e
+if base_err:
+    fail("拒否の記録の置き場所 %s を確かめられない: %s" % (base, base_err))
+try:
+    rec = C["read_json_nofollow"](rec_path)  # symlink の記録は読まない
+except Exception as e:
+    fail("記録を読めない（symlink か、普通のファイルでないか、壊れている: %s）" % e)
 if not isinstance(rec, dict):
     fail("記録の中身がオブジェクトでない")
 vals = {k: rec.get(k) for k in ("session_id", "agent_id", "cwd", "command")}

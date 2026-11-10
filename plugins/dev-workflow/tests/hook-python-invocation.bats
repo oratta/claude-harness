@@ -22,6 +22,9 @@ setup() {
   export USAGE_SESSIONS_DIR="${WORK}/.usage-sessions"
   export USAGE_PROBE_STATE="${WORK}/.usage-probe-state"
   export USAGE_PROBE_LOCK="${WORK}/.usage-probe.lock"
+  # rm-permission-guard は子の payload で拒否の記録を ${TMPDIR:-/tmp}/dev-workflow-git-guard に書くので、本物の置き場所に書かない
+  export TMPDIR="${WORK}/tmp"
+  mkdir -p "$TMPDIR"
   unset CLAUDE_SECURESTORAGE_CONFIG_DIR DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE \
     DEV_WORKFLOW_MODEL_GUARD DEV_WORKFLOW_CONTEXT_TRIPWIRE DEV_WORKFLOW_UNATTENDED DEV_WORKFLOW_OWNER_NUMBER_CHECK || true
   GIT_PAYLOAD='{"tool_name":"Bash","tool_input":{"command":"git reset --hard"},"hook_event_name":"PreToolUse","permission_mode":"default"}'

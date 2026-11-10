@@ -20,6 +20,8 @@
 #   <base> は ${TMPDIR:-/tmp}/dev-workflow-git-guard。許可を書くのは親の git-guard-permit.sh。
 #   deny のたびに拒否の記録 <base>/denied/<key>.json を書く（共通ファイルを読めないときと書けないときは書かず、
 #   理由もパスを示さない）。回数を数えての打ち切りはしない。
+#   許可を使う前に <base> を共通ファイルの check_base で確かめ、満たさなければ許可を探さず、記録も
+#   permit-log.jsonl の行も書かずに deny を返す（<base> の中のファイルは共通ファイルの関数で symlink を辿らずに開く）。
 set -uo pipefail
 
 command -v python3 >/dev/null 2>&1 || exit 0
@@ -50,7 +52,8 @@ def load_common():
             src = fh.read()
         ns = {"__name__": "git_guard_scratchpad"}
         exec(compile(src, path, "exec"), ns)
-        for name in ("key_of", "check_rm", "is_rm_command", "append_log", "write_json_atomic"):
+        for name in ("key_of", "check_rm", "is_rm_command", "append_log", "write_json_atomic", "check_base",
+                     "read_json_nofollow"):
             if not callable(ns.get(name)):
                 return None
         return ns
@@ -114,8 +117,7 @@ def use_permit(key):
     except OSError:
         return None
     try:
-        with open(taken, encoding="utf-8") as fh:
-            perm = json.load(fh)
+        perm = common["read_json_nofollow"](taken)  # symlink なら読めないものとして消す（先は読まない）
     except Exception:
         perm = None
     finally:
@@ -145,12 +147,20 @@ def use_permit(key):
 
 
 key = common["key_of"](session_id, agent_id, cwd, command) if common else None
-used = use_permit(key) if key else None
+# <base> は許可を使う前に確かめる。満たさなければ許可を探さず、記録も permit-log.jsonl の行も書かない
+# （spec rm-permission-hook「rm の hook も <base> を確かめてから使う」）
+base_err = None
+if key:
+    try:
+        base_err = common["check_base"](base)
+    except Exception as e:
+        base_err = "確かめが失敗した（%s）" % e
+used = use_permit(key) if key and not base_err else None
 if used and used[0] == "allow":
     emit("allow")
 
 record_path = None
-if key:
+if key and not base_err:
     path = os.path.join(base, "denied", key + ".json")
     rec = {"session_id": session_id, "agent_id": agent_id, "cwd": cwd, "command": command,
            "kinds": ["rm"], "time": int(time.time())}
@@ -168,6 +178,9 @@ msg += ("何を（コマンドの全文）・なぜ消したかったかを報�
         "親が一時領域の中と確かめて許可を書いたら、親が子を再開する。")
 if record_path:
     msg += "拒否の記録: " + record_path + " 。親に返す報告にこのパスを書く。"
+elif base_err:
+    msg += ("拒否の記録を作れなかった（拒否の記録の置き場所 " + base + " を確かめられない: " + base_err
+            + "）。親に返す報告にコマンドの全文と cwd を書き、この置き場所の問題も書く。")
 else:
     msg += "拒否の記録を作れなかった。親に返す報告にコマンドの全文と cwd を書く。"
 emit("deny", msg)
