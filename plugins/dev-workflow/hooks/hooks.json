@@ -74,6 +74,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh\""
           }
         ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/unattended-ask-guard.sh\""
+          }
+        ]
       }
     ],
     "PermissionRequest": [
