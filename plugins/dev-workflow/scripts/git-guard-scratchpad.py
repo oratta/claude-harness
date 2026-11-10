@@ -47,23 +47,85 @@ def is_key(name):
     return bool(_HEX64.match(name))
 
 
-def append_log(base, entry):
-    """<base>/permit-log.jsonl に 1 行足す。失敗したら例外を投げる（扱いは呼び出し側が決める）。"""
-    os.makedirs(base, exist_ok=True)
-    row = dict(entry)
-    row.setdefault("time", int(time.time()))
-    with open(os.path.join(base, "permit-log.jsonl"), "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
+# --- <base> の確かめと、<base> の中のファイルの開き方（spec destructive-git-hook の要件「拒否の記録・回数・許可の
+# 置き場所（<base>）を確かめてから使う」「<base> の中のファイルを symlink を辿らずに開き、所有者だけのモードで作る」）。
+# hook と許可を書くスクリプトは <base> の中のファイルをここの関数だけで開き、直接 open しない。
+_CLOEXEC = getattr(os, "O_CLOEXEC", 0)
 
 
-def write_json_atomic(path, obj):
-    """一時ファイルに書いてから rename で置く。"""
-    d = os.path.dirname(path)
-    os.makedirs(d, exist_ok=True)
-    tmp = os.path.join(d, ".%s.tmp.%d" % (os.path.basename(path), os.getpid()))
+def _check_dir(d):
+    """d が無ければ 0700 で作り、lstat の 4 条件（symlink でない・ディレクトリ・自分の uid・グループと他者に書き込み権
+    なし）を見る。満たせば None、満たさなければ理由。既にあるもののモードは変えない。"""
     try:
-        with open(tmp, "w", encoding="utf-8") as fh:
-            json.dump(obj, fh, ensure_ascii=False)
+        os.mkdir(d, 0o700)
+    except FileExistsError:
+        pass
+    except OSError as e:
+        return "%s を作れない（%s）" % (d, e.strerror or e)
+    try:
+        st = os.lstat(d)
+    except OSError as e:
+        return "%s を確かめられない（%s）" % (d, e.strerror or e)
+    if stat.S_ISLNK(st.st_mode):
+        return "%s が symlink" % d
+    if not stat.S_ISDIR(st.st_mode):
+        return "%s がディレクトリでない" % d
+    if st.st_uid != os.getuid():
+        return "%s の持ち主が自分（uid %d）でない（uid %d）" % (d, os.getuid(), st.st_uid)
+    if st.st_mode & (stat.S_IWGRP | stat.S_IWOTH):
+        return "%s にグループか他者の書き込み権がある（モード %o）" % (d, stat.S_IMODE(st.st_mode))
+    return None
+
+
+def check_base(base):
+    """<base> とその下の denied/・permits/ を確かめる（無ければ 0700 で作る）。満たせば None、満たさなければ
+    満たさなかった条件とパス。<base> の親が無ければ作らずに満たさないものとする。祖先（TMPDIR・/tmp）は見ない。"""
+    parent = os.path.dirname(base)
+    if not os.path.isdir(parent):
+        return "%s の親 %s が無い" % (base, parent)
+    for d in (base, os.path.join(base, "denied"), os.path.join(base, "permits")):
+        err = _check_dir(d)
+        if err:
+            return err
+    return None
+
+
+def _read_nofollow(path):
+    """path を symlink を辿らずに開いて中身（bytes）を返す。symlink・普通のファイルでないもの・読めないものは例外。"""
+    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK | _CLOEXEC)
+    try:
+        if not stat.S_ISREG(os.fstat(fd).st_mode):
+            raise OSError("%s が普通のファイルでない" % path)
+        chunks = []
+        while True:
+            b = os.read(fd, 65536)
+            if not b:
+                break
+            chunks.append(b)
+        return b"".join(chunks)
+    finally:
+        os.close(fd)
+
+
+def read_json_nofollow(path):
+    """symlink を辿らずに JSON を読む（許可・拒否の記録）。読めなければ例外。"""
+    return json.loads(_read_nofollow(path).decode("utf-8"))
+
+
+def read_int_nofollow(path):
+    """symlink を辿らずに整数を読む（回数のファイル）。読めない・整数でなければ例外。"""
+    return int(_read_nofollow(path).decode("ascii").strip())
+
+
+def write_text_atomic(path, text):
+    """path と同じディレクトリに、予測できない名前の一時ファイルを O_CREAT|O_EXCL|O_NOFOLLOW・0600 で作って書き、
+    rename で置く（置き先が symlink なら symlink 自体を置き換え、先を書き換えない）。ディレクトリは作らない。"""
+    d = os.path.dirname(path)
+    tmp = os.path.join(d, ".%s.tmp.%s" % (os.path.basename(path), os.urandom(8).hex()))
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_NOFOLLOW | _CLOEXEC, 0o600)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(text)
         os.rename(tmp, path)
     except BaseException:
         try:
@@ -71,6 +133,24 @@ def write_json_atomic(path, obj):
         except OSError:
             pass
         raise
+
+
+def write_json_atomic(path, obj):
+    """JSON を write_text_atomic で置く（拒否の記録・許可）。"""
+    write_text_atomic(path, json.dumps(obj, ensure_ascii=False))
+
+
+def append_log(base, entry):
+    """<base>/permit-log.jsonl に 1 行足す（symlink を辿らない追記。無ければ 0600 で作る）。失敗したら例外を投げる
+    （扱いは呼び出し側が決める）。<base> は作らない。"""
+    row = dict(entry)
+    row.setdefault("time", int(time.time()))
+    path = os.path.join(base, "permit-log.jsonl")
+    fd = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CREAT | os.O_NOFOLLOW | os.O_NONBLOCK | _CLOEXEC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as fh:
+        if not stat.S_ISREG(os.fstat(fh.fileno()).st_mode):
+            raise OSError("%s が普通のファイルでない" % path)
+        fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
 
 def _inside(path, root):

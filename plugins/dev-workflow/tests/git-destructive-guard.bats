@@ -1849,6 +1849,200 @@ PY
   [ -f "$(GUARD_BASE)/permits/$k.json" ]
 }
 
+# --- <base> の確かめ（spec: 拒否の記録・回数・許可の置き場所（<base>）を確かめてから使う／<base> の中のファイルを
+#     symlink を辿らずに開き、所有者だけのモードで作る／<base> を確かめられない子の呼び出しには deny だけを返す／
+#     主の呼び出しは <base> を作りも確かめもしない／許可を書くスクリプトは確かめを満たさない <base> に書かない） ---
+
+# mode_of <path> — lstat のモードの下 3 桁（8 進）
+mode_of() {
+  python3 -c 'import os, stat, sys; print("%o" % stat.S_IMODE(os.lstat(sys.argv[1]).st_mode))' "$1"
+}
+
+# permit_json <file> <cwd> <command> — 子 a1 の、4 つの値が一致し期限内の許可の中身を <file> に書く
+permit_json() {
+  printf '%s' "$3" | python3 -c '
+import json, sys, time
+json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "command": sys.stdin.read(),
+           "created_at": int(time.time()), "expires_at": int(time.time()) + 600}, open(sys.argv[1], "w"))' \
+    "$1" "$PERMIT_SID" "$2"
+}
+
+# count_name_of <session_id> <agent_id> — 回数のファイル名
+count_name_of() {
+  python3 -c 'import hashlib, sys; print(hashlib.sha256((sys.argv[1] + "\0" + sys.argv[2]).encode()).hexdigest())' "$1" "$2"
+}
+
+@test "base: a new base and denied/ are 0700, the record and the count file are 0600" {
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [ "$(mode_of "$(GUARD_BASE)")" = 700 ]
+  [ "$(mode_of "$(GUARD_BASE)/denied")" = 700 ]
+  [ "$(mode_of "$(only_record)")" = 600 ]
+  [ "$(mode_of "$(GUARD_BASE)/$(count_files)")" = 600 ]
+}
+
+@test "base: an existing 0755 base is used and keeps its mode" {
+  mkdir "$(GUARD_BASE)"
+  chmod 755 "$(GUARD_BASE)"
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [ -f "$(only_record)" ]
+  [ "$(mode_of "$(GUARD_BASE)")" = 755 ]
+}
+
+@test "base: a symlinked base gets deny only, twice, with no record, no count and the permit placed there kept" {
+  setup_permit
+  local real="${BATS_TEST_TMPDIR}/real-base" k i r
+  mkdir -p "$real/permits"
+  ln -s "$real" "$(GUARD_BASE)"
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" 'git checkout -- .')"
+  permit_json "$real/permits/$k.json" "$REPO" 'git checkout -- .'
+  for i in 1 2; do
+    call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+    r="$(reason)"
+    [[ "$r" == *'拒否の記録を作れなかった'* ]] || { echo "$r"; return 1; }
+    [[ "$r" == *"$(GUARD_BASE)"* ]] || { echo "$r"; return 1; }
+    [[ "$r" == *'コマンドの全文'* ]] || { echo "$r"; return 1; }
+    [[ "$r" != *'直ちに作業を終えて親に返す'* ]] || { echo "$r"; return 1; }
+    [[ "$r" != *'denied/'* ]] || { echo "$r"; return 1; }
+    ! has_continue || return 1
+  done
+  [ ! -e "$real/denied" ]
+  [ -z "$(find "$real" -mindepth 1 -maxdepth 1 -type f)" ]
+  [ -f "$real/permits/$k.json" ]
+}
+
+@test "base: a base that the group or others can write is not used and nothing is created under it" {
+  mkdir "$(GUARD_BASE)"
+  chmod 777 "$(GUARD_BASE)"
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" == *'拒否の記録を作れなかった'* ]] || { reason; return 1; }
+  [ -z "$(ls -A "$(GUARD_BASE)")" ]
+  [ "$(mode_of "$(GUARD_BASE)")" = 777 ]
+}
+
+@test "base: a symlinked denied/ or permits/ is not used and nothing is created at its target" {
+  local sub t
+  for sub in denied permits; do
+    export TMPDIR="${BATS_TEST_TMPDIR}/tmp-$sub"
+    mkdir -p "$(GUARD_BASE)"
+    chmod 700 "$(GUARD_BASE)"
+    t="${BATS_TEST_TMPDIR}/target-$sub"
+    mkdir -p "$t"
+    ln -s "$t" "$(GUARD_BASE)/$sub"
+    call 'git checkout -- a' default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "$sub: $output"; return 1; }
+    [[ "$(reason)" == *'拒否の記録を作れなかった'* ]] || { echo "$sub: $(reason)"; return 1; }
+    [ -z "$(ls -A "$t")" ] || { echo "$sub: created at the target"; ls -la "$t"; return 1; }
+    [ -z "$(count_files)" ] || { echo "$sub: counted"; return 1; }
+  done
+}
+
+@test "base: symlinked count file and permit-log.jsonl do not change their targets" {
+  setup_permit
+  local a="${BATS_TEST_TMPDIR}/A" b="${BATS_TEST_TMPDIR}/B" k cnt
+  printf 'keep-A' >|"$a"
+  printf 'keep-B' >|"$b"
+  mkdir -p "$(GUARD_BASE)/permits"
+  chmod 700 "$(GUARD_BASE)"
+  cnt="$(count_name_of "$PERMIT_SID" a1)"
+  ln -s "$a" "$(GUARD_BASE)/$cnt"
+  ln -s "$b" "$(GUARD_BASE)/permit-log.jsonl"
+  # 期限切れの許可を置くと、hook は permit-log.jsonl に expired の行を足そうとする
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" 'git checkout -- .')"
+  permit_json "$(GUARD_BASE)/permits/$k.json" "$REPO" 'git checkout -- .'
+  python3 - "$(GUARD_BASE)/permits/$k.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["expires_at"] = 1; json.dump(d, open(sys.argv[1], "w"))
+PY
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || return 1
+  [ "$(cat "$a")" = keep-A ]
+  [ "$(cat "$b")" = keep-B ]
+  # 回数のファイルは symlink 自体が一時ファイルからの rename で置き換わる
+  [ ! -L "$(GUARD_BASE)/$cnt" ]
+  [ "$(cat "$(GUARD_BASE)/$cnt")" = 1 ]
+  permits_empty
+}
+
+@test "base: a permit that is a symlink to a matching permit outside the base is not used and its target is kept" {
+  setup_permit
+  local c="${BATS_TEST_TMPDIR}/C.json" k
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" 'git checkout -- .')"
+  permit_json "$c" "$REPO" 'git checkout -- .'
+  cp "$c" "${BATS_TEST_TMPDIR}/C.orig"
+  mkdir -p "$(GUARD_BASE)/permits"
+  ln -s "$c" "$(GUARD_BASE)/permits/$k.json"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  cmp "$c" "${BATS_TEST_TMPDIR}/C.orig"
+  [ ! -L "$(GUARD_BASE)/permits/$k.json" ]
+  # 同じ中身を普通のファイルとして置けば通る（symlink だから通さなかったことの確かめ）
+  cp "$c" "$(GUARD_BASE)/permits/$k.json"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "allow" ] || { echo "$output"; return 1; }
+}
+
+@test "base: the main session asks with the same reason when the base is a symlink, and creates nothing" {
+  local r0 real="${BATS_TEST_TMPDIR}/real-base" a
+  call 'git reset --hard' default
+  [ "$(decision)" = "ask" ]
+  r0="$(reason)"
+  [ ! -e "$(GUARD_BASE)" ]
+  mkdir -p "$real"
+  ln -s "$real" "$(GUARD_BASE)"
+  for a in - '""' 7; do
+    call 'git reset --hard' default "$a" s1
+    [ "$(decision)" = "ask" ] || { echo "$a: $output"; return 1; }
+    [ "$(reason)" = "$r0" ] || { echo "$a: $(reason)"; return 1; }
+  done
+  [ -z "$(ls -A "$real")" ]
+}
+
+@test "base: without the shared file a child is never stopped as a repeat and no count file is made" {
+  local d="${BATS_TEST_TMPDIR}/lonely" json i
+  mkdir -p "$d"
+  cp "$SCRIPT" "$d/git-destructive-guard.sh"
+  json="$(payload 'git checkout -- a' default '"a1"' s1)"
+  for i in 1 2; do
+    run "$d/git-destructive-guard.sh" <<<"$json"
+    [ "$(decision)" = "deny" ]
+    [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || return 1
+    ! has_continue || return 1
+  done
+  [ ! -e "$(GUARD_BASE)" ]
+}
+
+@test "base: the permit script refuses a base that others can write" {
+  setup_permit
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  local rec
+  rec="$(only_record)"
+  chmod 777 "$(GUARD_BASE)"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$(GUARD_BASE)"* ]] || { echo "$output"; return 1; }
+  permits_empty
+  [ ! -f "$(GUARD_BASE)/permit-log.jsonl" ] || ! grep -qF '"event": "permit"' "$(GUARD_BASE)/permit-log.jsonl"
+  # 回数のファイルも消さない
+  [ -n "$(count_files)" ]
+}
+
+@test "base: the permit script does not read a record that is a symlink" {
+  setup_permit
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  local rec
+  rec="$(only_record)"
+  mv "$rec" "${BATS_TEST_TMPDIR}/real-record.json"
+  ln -s "${BATS_TEST_TMPDIR}/real-record.json" "$rec"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ]
+  permits_empty
+}
+
 # --- 起動側が付ける git ガード専用の NO_ASK 印 ---
 
 assert_no_ask_reason() {
