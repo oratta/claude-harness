@@ -21,4 +21,4 @@
 
 ## 4. 変更の記録
 
-- [ ] 4.1 `plugins/dev-workflow/changes/<PR 番号>.md` に、何を止めるようにしたか・止めないもの（変数で組み立てたパスなど）・HMAC を使わない理由・止めすぎの頻度・戻し方を書く（`changes/1155.md` は PR #1614 の記録として main にあるので、この PR の番号で作る） 触る範囲: plugins/dev-workflow/changes/<PR 番号>.md（新規）、plugins/dev-workflow/changes/1155.md:1-20（書き方の手本）
+- [x] 4.1 `plugins/dev-workflow/changes/<PR 番号>.md` に、何を止めるようにしたか・止めないもの（変数で組み立てたパスなど）・HMAC を使わない理由・止めすぎの頻度・戻し方を書く（`changes/1155.md` は PR #1614 の記録として main にあるので、この PR の番号で作る） 触る範囲: plugins/dev-workflow/changes/<PR 番号>.md（新規）、plugins/dev-workflow/changes/1155.md:1-20（書き方の手本）
