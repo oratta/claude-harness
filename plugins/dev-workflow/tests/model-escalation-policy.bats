@@ -148,10 +148,40 @@ setup() {
   grep -qF '昇格は実装品質起因のときだけ' "${TRIAGE}"
 }
 
-@test "escalation: the executor is capped at opus and never spawned as fable" {
-  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
-  echo "$sec" | grep -qF '実行役の上限は `opus`'
+@test "escalation (#1632): the 2-2 section names --failure executor / first / judgment and uses the model request returned" {
+  sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
+  [ -n "$sec" ]
+  echo "$sec" | grep -qF 'request --phase implement --failure executor'
+  echo "$sec" | grep -qF 'request --phase decider --failure first'
+  echo "$sec" | grep -qF -- '--failure judgment'
+  echo "$sec" | grep -qF '`request` が返した model'
+  echo "$sec" | grep -qF '新しい thread に手渡す'
+  echo "$sec" | grep -qF '一方だけ'
+}
+
+@test "escalation (#1632): the 2-2 section no longer spawns the executor as opus or names opus -> fable as the rule" {
+  sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
+  ! echo "$sec" | grep -qF '実行役を `opus` で spawn' || return 1
+  ! echo "$sec" | grep -qF '`opus` → `fable`' || return 1
+  ! echo "$sec" | grep -qF '実行役の上限は `opus`' || return 1
+  ! echo "$sec" | grep -qF '実行役はどの分類でも `opus` 止まり' || return 1
+  ! echo "$sec" | grep -qF 'model: opus' || return 1
+}
+
+@test "escalation (#1632): the executor is never raised to the top tier and agent-model-guard.sh enforces it" {
+  sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
+  echo "$sec" | grep -qF '実行役を最上位の格に上げない'
   echo "$sec" | grep -qF 'agent-model-guard.sh'
+}
+
+@test "escalation (#1632): the decider enters at --failure first on the gate's first failed and --failure judgment from the second" {
+  sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
+  echo "$sec" | grep -qF '1 回目の failed なら `--failure first`'
+  echo "$sec" | grep -qF '2 回目以降'
+  p="$(awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' "${TRIAGE}" | grep '^- 本体への提案:')"
+  echo "$p" | grep -qF 'request --phase decider --failure first'
+  echo "$p" | grep -qF '`--failure judgment`'
+  echo "$p" | grep -qF 'request --phase decider --failure'
 }
 
 @test "escalation: the two-round cap is given as the reason for raising on the first failed" {
@@ -166,7 +196,7 @@ setup() {
   p="$(awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' "${TRIAGE}" | grep '^- 本体への提案:')"
   [ -n "$p" ]
   echo "$p" | grep -qF 'request --phase implement --failure executor'
-  echo "$p" | grep -qF 'request --phase decider --failure judgment'
+  echo "$p" | grep -qF 'request --phase decider --failure'
   echo "$p" | grep -qF '`request` が返した model'
   echo "$p" | grep -qF '新しい thread に手渡す'
   echo "$p" | grep -qF '一方だけ'

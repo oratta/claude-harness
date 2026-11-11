@@ -75,7 +75,7 @@ SKILL.md は 1 issue（または 1 Draft PR）の 1 ループを次の順で規�
 
 G が `review-incomplete` を return したとき、本体は新しい reviewer を起動せず、`agent-review:pending` のまま残差を報告して工程を止めなければならない（MUST）。`needs-reviewer` が一周目照合の補足要求である場合、本体は fresh reviewer に固定 HEAD・元の三表・残差・補足済み回数を渡し、同じレビューの不足分だけを補わせなければならず（MUST）、レビューを最初からやり直させてはならない（MUST NOT）。
 
-failed のときは、G の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））で戻し方を決めなければならない（MUST）。モデルを上げるのは**実装品質起因のときだけ**で、そのとき上げるのは**決める役と実行役のどちらか一方だけ**である（MUST）: 実行側が原因（指示どおり実装して結果が違う）なら実行役を `opus` に上げ、判断側が原因（指示を解釈できなかった・指示自体が外れていた）なら決める役を `subagent_type: dev-workflow:decider` で立てて修正方針を作らせ、実行役は据え置く。**W を `fable` で再開してはならない**（MUST NOT。実行役の上限は `opus`）。仕様が曖昧なら仕様修正で返し、レビュアーの誤検出なら反証で返す。どちらもモデルを上げてはならない（MUST NOT。pr-review-gate 手順 2-2 の基線をこの change は変えない）。段 A だけなら W を据え置きで再開する（MUST）。修正後は G を再開して差分再レビュー（既定 2 周。2 周目以降の周の終わりの扱いは pr-review-gate の収束ルールと、下の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement に従う）。保留なら `needs-approval` のまま本体がオーナーに 1 アクションで依頼する。
+failed のときは、G の原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））で戻し方を決めなければならない（MUST）。モデルを上げるのは**実装品質起因のときだけ**で、そのとき上げるのは**決める役と実行役のどちらか一方だけ**である（MUST）: 実行側が原因（指示どおり実装して結果が違う）なら `codex-develop.py request --phase implement --failure executor` を呼んで実行役を上げ、判断側が原因（指示を解釈できなかった・指示自体が外れていた）なら `request --phase decider --failure first|judgment` を呼んで決める役を `subagent_type: dev-workflow:decider` で立てて修正方針を作らせ、実行役は据え置く（SHALL）。判断側の `--failure` の値は、そのゲートの 1 回目の failed なら `first`、決める役を立てたあとも failed が続く 2 回目以降なら `judgment` とする（SHALL）。どちらの場合も本体は `request` が返した `model` を使い、返った `model` と違う `model` を独自に指定してはならず（MUST NOT）、`model` が W の applied model と変わるときは SendMessage で再開せず新しい thread に手渡す（SHALL）。**実行役を最上位の格に上げてはならない**（MUST NOT。実行役の格の上限は上位で、Claude では `opus`）。仕様が曖昧なら仕様修正で返し、レビュアーの誤検出なら反証で返す。どちらもモデルを上げてはならない（MUST NOT。pr-review-gate 手順 2-2 の基線をこの change は変えない）。段 A だけなら W を据え置きで再開する（MUST）。修正後は G を再開して差分再レビュー（既定 2 周。2 周目以降の周の終わりの扱いは pr-review-gate の収束ルールと、下の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement に従う）。保留なら `needs-approval` のまま本体がオーナーに 1 アクションで依頼する。
 
 G が failed を `原因: 軽い通し方の条件外` で return したとき、本体は原因分類によるモデルの昇格を行ってはならず（MUST NOT）、W を `段: spec` で新しく起こし、起動指示に G の確認コメントの URL を書かなければならない（MUST）。W は `通し方:` の行の無い仕様化判断を投稿し直し、テストを書いて同じ PR に積む（SHALL）。この failed はレビューの周に数えず、前の Gate Result を渡さずゲートの開始として起こし、`周回: 1` の全体レビューにする（W の修正後の再レビューとして扱わない）（SHALL）。本体は、条件外と判定された記録先で `通し方: 軽い` の仕様化判断を投稿し直してはならない（MUST NOT）。
 
@@ -86,6 +86,8 @@ G が failed を `原因: 軽い通し方の条件外` で return したとき�
 worktree は本体が用意する（SHALL）: 本体が既に対象専用の worktree にいればそこで W を起こし、そうでなければ W を `isolation: "worktree"` で spawn する。W は自分で worktree を切らない（MUST NOT。セットアップは worktree プラグインの hooks が担い、`.worktreeinclude` が無いときの `/wt-setup` は本体が行う）。**W / G を `isolation: "remote"` で起こしてはならない**（MUST NOT）。強制停止に当たったサブエージェントの未コミット差分は本体が確認して commit する設計（下の「強制停止で止まった作業ツリーは本体が引き取る」Requirement）だが、`remote` 隔離は本体から見えない環境で動くため、そこで強制停止に当たると作業がそのまま失われる。
 
 `/opsx:*` のスラッシュコマンドは、本体や主が対話で change を作る場面の道具として SKILL.md に書いてよい（MAY）が、W が実行する工程として 1 ループに書いてはならない（MUST NOT。W の種別 `dev-workflow:worker` は `Skill` を持たない）。
+
+この要件の failed 分岐の守備範囲で入力として扱うのは、G の `failed` の return に書かれた原因分類と、本体が `request` を呼んで得る返り値（`model`・`tier`）である。拾いたい誤りは、`request` が返した model を使わずにモデル名を直接指定すること、実行役を最上位の格に上げること、決める役と実行役を同時に上げること、判断側の `--failure` の値をゲートの何回目の failed かと食い違えて渡すことである。一方、G が原因分類そのもの（実行側か判断側か）を誤ることはこの契約では検出せず、許容する。`request` が上限を適用して低い格の model を返したときは、その model を使うことも許容する。穴が見つかるたびに塞ぎ切ること（任意の不正入力や将来の executor への対応を際限なく足すこと）は、この要件の完了条件にしない。
 
 #### Scenario: ループの順序が書かれている
 - **WHEN** SKILL.md の 1 ループの記述を読む
@@ -130,7 +132,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 #### Scenario: G の failed は片方だけ上げて W の再開に戻る
 - **WHEN** G が failed を return する
-- **THEN** SKILL.md は実装品質起因のときだけ原因分類に応じて実行役を `opus` に上げるか決める役を `dev-workflow:decider` で立てるかの一方だけを行い、仕様が曖昧・レビュアーの誤検出・段 A だけ（昇格なし）ではモデルを上げず、段 A だけなら W を据え置きで再開し、W を `fable` にはせず、G を再開して差分再レビューするよう指示している
+- **THEN** SKILL.md は実装品質起因のときだけ原因分類に応じて、実行側なら `--failure executor` の `request` が返した model で実行役を上げるか、判断側なら `--failure first`（ゲートの 1 回目の failed）または `judgment`（2 回目以降）の `request` が返した model で決める役を `dev-workflow:decider` で立てるかの一方だけを行い、仕様が曖昧・レビュアーの誤検出・段 A だけ（昇格なし）ではモデルを上げず、段 A だけなら W を据え置きで再開し、実行役を最上位の格に上げず、G を再開して差分再レビューするよう指示している
 
 #### Scenario: decider として起こした R1 の結果は本体が投稿する
 - **WHEN** SKILL.md の (2) の記述を読む
