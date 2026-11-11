@@ -36,11 +36,15 @@
 
 `session-tripwires.sh` は `usage_view.py` を `CLAUDE_PLUGIN_ROOT/scripts` ではなく、自分のファイルのあるディレクトリ（`BASH_SOURCE[0]` の dirname を絶対パスにしたもの）から読み込む。導出を `usage_view.py` に寄せると、読み込めないときに残る道が「既定値を出す」しか無くなり、`CLAUDE_PLUGIN_ROOT` が空の起動で明示 env も効かなくなる。自分のディレクトリは空にならず、カレントディレクトリも指さないので、#847 の守り（空の検索先を入れない・ルート直下のパスを作らない）はそのまま保てる。`CLAUDE_PLUGIN_ROOT` が空のときに session の範囲で何も出さない早期終了は変えない。
 
-読み込みそのものが失敗したとき（ファイルが無い・壊れている）は、`conserve` / `ok`、出どころ `既定（usage_view.py を読めない）` を出す。このときは明示 env も読まない。明示 env を読むのは優先順位の写しになるため。`exhausted` を明示していても `conserve` と出るが、これはファイルの欠損という起きにくい壊れ方に限られ、hook を止めない（fail-soft）ことを優先する。
+読み込みそのものが失敗したとき（ファイルが無い・壊れている）は、`conserve` / `ok`、出どころ `既定（usage_view.py を読めない）` を出す。このときは明示 env も読まない。明示 env を読むのは優先順位の写しになるため。これは仕様の「明示 env を優先する」規定の例外として、`dev-workflow-escalation-tripwires` の要件に明記し scenario を置く。`exhausted` を明示していても `conserve` と出るが、これはファイルの欠損という起きにくい壊れ方に限られ、hook を止めない（fail-soft）ことを優先する。
 
 ### 効果の文は格の規則の語で書き、モデル名を添える
 
 効果の文は decision-criteria の表の効果の列の要点を、`model-tier-resolution` の格の語（最安・中位・上位・最上位）で書き、読み手が迷わないよう Claude のモデル名を括弧で添える。`depleted` は「explore と summarize（最安）はそのまま、それ以外の役は中位（sonnet）が上限・昇格なし。事前分類に当たっても上位・最上位を使わない」と読める文にする。`throttled` は「上げていない役の既定を中位に落とし、上限は上位。`abundant` の押し上げは無効。最安はそのまま」。`ok` と `conserve` は今の文の意味を保ち、`conserve` の「opus 止まり」の語は既存の bats が固定しているので残す。文面は bats で固定する。
+
+### 一致させるのは正規化後のモード
+
+`session-tripwires.sh` と `codex-develop.py request` が一致させるのは正規化後の `mode` で、提示する `shown` ではない。未知の明示値では `shown` が `foo` / `bar`、`mode` が `conserve` / `throttled` になる。`model-tier-resolution` の要件にこの区別を書く。守備範囲の段落（入力の出どころ・拾いたい誤り・通してよい入力・完了条件）は式と同じく 1 か所（`dev-workflow-escalation-tripwires` の SessionStart の要件）に置き、他の 2 つの要件はそこを指す。
 
 ## Risks / Trade-offs
 
