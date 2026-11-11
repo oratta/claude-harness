@@ -1787,7 +1787,7 @@ PY
     [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
   done
   # 書き方を読み分けない: コマンド文字列のどこかに名前があれば、-c の文字列の中・配列や += の代入・
-  # declare / typeset / printf -v / read 経由の設定・読むだけの cat も止める
+  # declare / typeset / printf -v / read 経由の設定も止める
   for c in "bash -c '/x/scripts/git-guard-permit.sh /y/denied/k.json ok'" \
            'bash -c "echo /x/scripts/git-guard-permit.sh"' \
            'BASH_ENV[0]=/x/scripts/git-guard-permit.sh bash /x/y.sh' \
@@ -1795,11 +1795,105 @@ PY
            'declare -x BASH_ENV=/x/scripts/git-guard-permit.sh; bash /x/y.sh' \
            'typeset -x ENV=/x/scripts/git-guard-permit.sh; sh -i' \
            'printf -v BASH_ENV %s /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh' \
-           'read BASH_ENV <<< /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh' \
-           'cat /x/scripts/git-guard-permit.sh'; do
+           'read BASH_ENV <<< /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh'; do
     call "$c" default '"a1"' s1
     [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
   done
+  # 読むか表示するだけのコマンドの一覧（grep・cat・echo など）に、一覧に無いコマンドが 1 つでも混じれば止める。
+  # 先頭の語にパス・前置き・変数の代入が付いた形と、引用符が閉じていないものも止める側
+  for c in 'echo /x/scripts/git-guard-permit.sh /y/denied/k.json ok | bash' \
+           'ls /x/scripts/git-guard-permit.sh | xargs bash' \
+           'cat /x/scripts/git-guard-permit.sh; bash /x/y.sh' \
+           'grep x "$(bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok)"' \
+           'echo `/x/scripts/git-guard-permit.sh /y/denied/k.json ok`' \
+           $'cat <<EOF\n$(/x/scripts/git-guard-permit.sh /y/denied/k.json ok)\nEOF' \
+           $'cat > /x/y.sh <<\'EOF\'\n/x/scripts/git-guard-permit.sh /y/denied/k.json ok\nEOF\nbash /x/y.sh' \
+           '/usr/bin/grep x /x/scripts/git-guard-permit.sh' \
+           'command cat /x/scripts/git-guard-permit.sh' \
+           'PATH=/x/bin grep x /x/scripts/git-guard-permit.sh' \
+           "grep 'x /x/scripts/git-guard-permit.sh"; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+  # 字句読みの扱わない構文（プロセス置換・{ ・関数定義）も、一覧に無い語が先頭に来るので止まる
+  for c in 'grep x <(bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok)' \
+           '{ grep x /x/scripts/git-guard-permit.sh; }' \
+           'f() { bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok; }; f'; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+}
+
+@test "permit: the read-only exception is not applied to ANSI-C quoting or arithmetic" {
+  # 字句読みが bash と違う読み方をする構文（$'..' の中の \' ・算術の中の <<）では、実行される位置の名前を
+  # 引用符の中や本文と読み違える。どちらかを含むコマンドには例外をかけず、今までどおり止める
+  local c
+  # bash は $'\' ' を 1 つの文字列として読み、; のあとのスクリプトを実行する。字句読みは \ の直後の ' で閉じ、
+  # 後ろを単一引用符の中の文字列と読む
+  # （$(cat <<'EOF' ...) の形は、本文の引用符を bash が置換の中で数えて構文エラーになるので read で読む）
+  IFS= read -r -d '' c <<'EOF' || true
+echo $'\' '; /x/scripts/git-guard-permit.sh /y/denied/k.json ok; echo #'
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # bash は $((echo<<X)) を算術として読み、次の行のスクリプトを実行する。字句読みは << をヒアドキュメントと読み、
+  # 後ろの行を本文として読み飛ばす
+  IFS= read -r -d '' c <<'EOF' || true
+echo $((echo<<X
+))
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # 裸の (( と $[ ] も算術の文脈で、同じく << をヒアドキュメントと読み違える
+  IFS= read -r -d '' c <<'EOF' || true
+((echo<<X
+))
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  IFS= read -r -d '' c <<'EOF' || true
+echo $[echo<<X
+]
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # 読み違えの無い形でも、$' ・(( ・$[ ・${ があれば例外をかけない
+  for c in "echo \$'a' /x/scripts/git-guard-permit.sh" 'echo $((1+1)) /x/scripts/git-guard-permit.sh' \
+           'echo ${HOME} /x/scripts/git-guard-permit.sh' \
+           'for ((i=0; i<1; i++)); do echo /x/scripts/git-guard-permit.sh; done' \
+           '(( 1 << 1 )); echo /x/scripts/git-guard-permit.sh' \
+           'echo $[1+1] /x/scripts/git-guard-permit.sh'; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+}
+
+@test "permit: a child mentioning the permit script name only in read-only commands is not stopped" {
+  local c i
+  for c in 'grep -rn "git-guard-permit" /x/dir' \
+           'grep -rln "git-guard-permit" --include=*.bats .' \
+           'cat /x/scripts/git-guard-permit.sh' \
+           'grep -n x /x/scripts/git-guard-permit.sh | head -5' \
+           'ls /x/scripts | grep git-guard-permit' \
+           'grep x /x/a <<< git-guard-permit' \
+           $'cat >> /x/spec.md <<\'EOF\'\n`git-guard-permit.sh` を呼ぶ\nEOF'; do
+    for i in 1 2; do
+      call "$c" default '"a1"' s1
+      [ "$status" -eq 0 ] || { echo "status $i: $c"; return 1; }
+      [ -z "$output" ] || { echo "output $i for $c: $output"; return 1; }
+    done
+  done
+  [ -z "$(ls -A "$TMPDIR")" ] || { ls -la "$TMPDIR"; return 1; }
 }
 
 @test "permit: the main session is not stopped for any mention of the permit script" {
@@ -1880,7 +1974,7 @@ PY
 }
 
 @test "store: with the permit script name it is counted and no record is written" {
-  local cmd="cat /x/scripts/git-guard-permit.sh $TMPDIR/dev-workflow-git-guard/permits" i
+  local cmd="bash /x/scripts/git-guard-permit.sh $TMPDIR/dev-workflow-git-guard/permits" i
   for i in 1 2; do
     call "$cmd" default '"a1"' s1
     [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
@@ -1888,6 +1982,18 @@ PY
   has_continue || { echo "$output"; return 1; }
   [ "$(count_files | wc -l | tr -d ' ')" = "1" ]
   [ ! -d "$(GUARD_BASE)/denied" ] || [ -z "$(ls -A "$(GUARD_BASE)/denied")" ] || { ls -la "$(GUARD_BASE)/denied"; return 1; }
+}
+
+@test "store: the permit script name only in read-only commands is denied as store only, not counted" {
+  # 読むか表示するだけのコマンドの中の名前は permit-self に当たらないので、置き場所の名指しだけの拒否になる
+  local cmd="cat /x/scripts/git-guard-permit.sh $TMPDIR/dev-workflow-git-guard/permits" i
+  for i in 1 2; do
+    call "$cmd" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+    [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || { reason; return 1; }
+    if has_continue; then echo "call $i: $output"; return 1; fi
+  done
+  [ ! -e "$(GUARD_BASE)" ]
 }
 
 @test "store: with another kind and an unusable base the base check message is kept" {
