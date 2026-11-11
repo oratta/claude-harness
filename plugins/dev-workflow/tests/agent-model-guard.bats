@@ -125,6 +125,63 @@ JSON
   echo "$output" | grep -q 'depleted'
 }
 
+# 共有枠モードは guard 自身の場所の usage_view.py から得る（#1625）。guard を一時の scripts ディレクトリに
+# 写し、偽の usage_view.py を置いて、guard が自分の式ではなく usage_view.py の導出で決めることを確かめる。
+fake_scripts() {  # $1 = 偽の usage_view.py の本文（空なら置かない）
+  mkdir -p "${WORK}/plugin/scripts"
+  cp "$SCRIPT" "${WORK}/plugin/scripts/agent-model-guard.sh"
+  [ -n "$1" ] && printf '%s\n' "$1" > "${WORK}/plugin/scripts/usage_view.py"
+  FAKE_SCRIPT="${WORK}/plugin/scripts/agent-model-guard.sh"
+}
+
+@test "fork: the shared mode comes from usage_view.py (a fake returning throttled denies without data)" {
+  fake_scripts 'SOURCE_EXPLICIT = "明示 env"
+def build_view(**kw):
+    return {"active": "default", "accounts": {"default": {}}}
+def budget_mode_details(slot, now, environ=None):
+    return {"fable": {"mode": "conserve", "shown": "conserve", "source": "x"},
+            "shared": {"mode": "throttled", "shown": "throttled", "source": "自動導出"}}'
+  run env USAGE_SNAPSHOT="${WORK}/none.json" "$FAKE_SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q 'throttled'
+}
+
+@test "fork: an explicit SHARED_BUDGET_MODE is judged without calling build_view" {
+  fake_scripts 'import os
+SOURCE_EXPLICIT = "明示 env"
+def build_view(**kw):
+    raise RuntimeError("build_view must not be called")
+def budget_mode_details(slot, now, environ=None):
+    environ = os.environ if environ is None else environ
+    v = (environ.get("SHARED_BUDGET_MODE") or "").strip()
+    shared = {"mode": v, "shown": v, "source": SOURCE_EXPLICIT} if v else {"mode": "ok", "shown": "ok", "source": "既定"}
+    return {"fable": {"mode": "conserve", "shown": "conserve", "source": "x"}, "shared": shared}'
+  run env SHARED_BUDGET_MODE=depleted USAGE_SNAPSHOT="${WORK}/none.json" "$FAKE_SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q 'depleted'
+}
+
+@test "fork: an unknown explicit value is denied as throttled and the reason shows the value as written" {
+  run env SHARED_BUDGET_MODE=foo "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q '共有枠モードが foo のあいだ'
+}
+
+@test "fork: without a loadable usage_view.py the explicit env is not read and fork is allowed" {
+  fake_scripts ''
+  run env SHARED_BUDGET_MODE=depleted USAGE_SNAPSHOT="${WORK}/none.json" "$FAKE_SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  fake_scripts 'raise ImportError("broken")'
+  run env SHARED_BUDGET_MODE=depleted USAGE_SNAPSHOT="${WORK}/none.json" "$FAKE_SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "fork: the guard has no formula of the shared budget mode (week seconds, the 90 threshold)" {
+  ! grep -nE '86400|> *90|weekly_all_pct|weekly_resets_epoch' "$SCRIPT"
+}
+
 @test "large payload: a multi-megabyte prompt is still judged (no ARG_MAX failure)" {
   big="$(head -c 3000000 /dev/zero | tr '\0' 'a')"
   printf '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"%s"}}' "$big" > "${WORK}/big.json"
