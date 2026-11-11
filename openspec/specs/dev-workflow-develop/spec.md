@@ -5239,3 +5239,18 @@ develop/SKILL.md の failed 後の W 起動／再開手順と handover.md を読
 #### Scenario: 検証の守備範囲
 - **WHEN** この契約の実装完了を判定する
 - **THEN** 関係 Bats で引き継ぎの作成・必要項目・対象照合・許可根拠・W 不明の implement 手渡し／停止先・9 と 2 からの接続・既存通常経路と軽い経路の維持を確かめる。既存 W の再開と新しい W の起動の両方で、事前の不可の投稿成功、投稿失敗時の停止、HEAD・差分が変わる前の本体交代による二人目の起動防止、今回の完了／停止確認後だけの再許可、守備範囲の段落も検査する。上の守備範囲を超えて穴を塞ぎ切ることは完了条件にしない
+
+### Requirement: 失敗の段は `--failure` で request に渡し、返った model を使う
+SKILL.md「モデル」節の失敗ループの段落は、`request` の `--failure` の各値がどの失敗の段に当たるか（`first` = 1 回目の失敗、`executor` = 2 回目で実行側が原因、`judgment` = 2 回目で判断側が原因）を書かなければならない（MUST）。決める役と実行役の model は、その段の `--failure` を渡した `request` が返した値を使うと書かなければならず（MUST）、決める役の model を `templates/escalation-tripwires.md` の文面から読み取る指示を書いてはならない（MUST NOT。判断側・実行側の分類の定義を読む先として同テンプレートを指すことは許す）。実行側の昇格は「W を上位で再開」ではなく、格が上がって model が変わるなら新しい thread に手渡す、と書かなければならない（MUST。細目の正本は `references/codex-develop.md`）。
+
+#### Scenario: `--failure` の値と段の対応が書かれている
+- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
+- **THEN** `--failure first`・`--failure executor`・`--failure judgment` のそれぞれが、1 回目の失敗・2 回目の実行側・2 回目の判断側に当たると書かれている
+
+#### Scenario: decider の model を文面から読まない
+- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
+- **THEN** 「decider の `model` の段は `templates/escalation-tripwires.md` を Read して従う」の形の文が無く、`request` が返した model を使うと書かれている
+
+#### Scenario: 実行側の昇格は新しい thread
+- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
+- **THEN** 実行側の昇格で model が変わるときは SendMessage で再開せず新しい thread に手渡すと書かれ、`references/codex-develop.md` を細目の正本として指している

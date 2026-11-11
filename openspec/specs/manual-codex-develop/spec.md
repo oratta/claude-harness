@@ -70,7 +70,9 @@ worker の completed を品質合格として扱ってはならない（MUST NOT
 
 Claude role の Agent 呼び出しの `subagent_type` は、canonical role で決めなければならない（MUST）。作業者 W（仕様化判断・仕様作成・仕様差戻し、実装・TDD・verify・修正、archive・Draft PR・仕様宣言）は `dev-workflow:worker`、ゲート実行者 G（ゲートの照合・記録）は `dev-workflow:gate-runner`、G が必要とする独立 PR レビューは `dev-workflow:reviewer`、仕様レビュー R1 は `general-purpose`、`decider` role は `dev-workflow:decider` とする（SHALL）。事前分類に当たる R1 または G が要求したレビュアーを profile の `decider` entry で起こす場合は、従来どおり `dev-workflow:decider` を使う（SHALL）。
 
-名前付き profile では thread の新規作成と再開を profile role 単位で決めなければならない（MUST）。同じ profile role の Claude thread を canonical develop が再開する前には毎回、同じ phase と入力で `request` を呼び直し、返った `tier` と動いている thread の格（起動時に記録した `tier`）を比べる。呼び直しの結果は `tier` だけを読み、executor・account・依頼ファイルは使わず、構成の選び直しにも使わない（MUST NOT）。返った `tier` が thread の格より低くない場合に限って既存の名前付き thread を SendMessage で再開する。低い場合は SendMessage で再開せず、既存の工程完了または停止確認の条件を満たしてから、要求 tuple を変更せず、上限内の適用 model で同じ role の fresh thread へ手渡しし、要求値・適用値・変更理由を記録しなければならない（MUST）。profile role が変わる境界、独立レビュー、または executor=codex の委譲では fresh thread を使い、前工程の成果物と必要な要約だけを引き継がなければならない（MUST）。
+名前付き profile では thread の新規作成と再開を profile role 単位で決めなければならない（MUST）。同じ profile role の Claude thread を canonical develop が再開する前には毎回、同じ phase と、今回の再開に当たる格の入力（失敗ループの段なら、その段の `--failure` の値を含む）で `request` を呼び直し、返った `tier` と `model` を、動いている thread の格（起動時に記録した `tier`）と applied model（起動時に記録した `model`）と比べなければならない（MUST）。呼び直しの結果は `tier` と `model` だけを読み、executor・account・依頼ファイルは使わず、構成の選び直しにも使ってはならない（MUST NOT）。返った `tier` が thread の格より低くなく、かつ返った `model` が thread の applied model と同じ場合に限って、既存の名前付き thread を SendMessage で再開する。それ以外（返った `tier` が低い場合と、返った `model` が applied model と違う場合。後者は失敗ループの昇格で格が上がった場合を含む）は SendMessage で再開せず、既存の工程完了または停止確認の条件を満たしてから、同じ role の fresh thread を返った `model` で起こして前任の return と成果物を手渡し、要求値・適用値・変更理由を記録しなければならない（MUST）。SendMessage の再開では model を変えられないため、格が上がった場合を SendMessage にすると昇格が起きないまま再開される。profile role が変わる境界、独立レビュー、または executor=codex の委譲では fresh thread を使い、前工程の成果物と必要な要約だけを引き継がなければならない（MUST）。
+
+**守備範囲（再開か fresh thread かの判定）**: ①入力の出どころは、本体が再開の直前に呼び直した `request` の結果 JSON の `tier` と `model`、および本体が起動時に dispatch 記録へ残した thread の `tier` と applied model だけである。②拾いたい誤りは、model が変わるのに SendMessage して昇格や降格が黙って起きないこと、呼び直しの結果で executor・account・構成を選び直すこと、失敗ループの段の `--failure` を付けずに呼び直して昇格を取りこぼすことである。③通してよい入力の例: 格は上がったが model が変わらない場合（codex の中位から上位、`tier_cap` で同じ格に下がる構成）は SendMessage で再開してよい。格も model も変わらない通常の再開も同じ。④dispatch 記録の欠けや改ざん、本体が `--failure` の値を誤って選ぶことなど、入力の穴をすべて見つけて塞ぐことはこの要件の完了条件にしない（失敗の原因の分類の守備範囲は `dev-workflow-escalation-tripwires` の要件「昇格トリップワイヤー3本の定義」に従う）。
 
 #### Scenario: 手順書から旧状態操作が消えている
 - **WHEN** adapter の通常手順を機械的に検索する
@@ -90,7 +92,16 @@ Claude role の Agent 呼び出しの `subagent_type` は、canonical role で�
 
 #### Scenario: 同じ Claude profile role を再開する
 - **WHEN** canonical develop が差戻しまたは次段のため、同じ profile role の名前付き Claude thread を再開する
-- **THEN** 再開前に同じ phase と入力で `request` を呼び直し、返った `tier` が thread の格より低くない場合に限って、要求 tuple と適用 model を変えず SendMessage で再開する。呼び直しで構成は選び直さない
+- **THEN** 再開前に同じ phase と今回の格の入力で `request` を呼び直し、返った `tier` が thread の格より低くなく、返った `model` が thread の applied model と同じ場合に限って、要求 tuple と適用 model を変えず SendMessage で再開する。呼び直しで構成は選び直さない
+
+#### Scenario: 実行側の失敗で Claude の W の格が上がる
+- **GIVEN** 中位（applied model=`sonnet`）で起動した名前付きの Claude の W があり、残量モードと構成の上限が無い
+- **WHEN** W の 2 回目の失敗が実行側と分類され、本体が `request --phase implement --failure executor` を呼び直すと上位（`opus`）が返る
+- **THEN** 既存 thread に SendMessage せず、工程完了または停止確認後に applied model=`opus` の fresh thread を起こして前任の return と成果物を手渡し、変更理由を記録する
+
+#### Scenario: 格が上がっても model が変わらない
+- **WHEN** 呼び直しで返った `tier` は thread の格より高いが、返った `model` は thread の applied model と同じである
+- **THEN** 本体は SendMessage で再開してよい
 
 #### Scenario: exhausted へ変更後に同じ Claude profile role を再開する
 - **GIVEN** requested model=`fable`、applied model=`fable` で起動した名前付き Claude thread がある
@@ -109,3 +120,33 @@ Claude role の Agent 呼び出しの `subagent_type` は、canonical role で�
 #### Scenario: 走行中の委譲を止める
 - **WHEN** 本体が走行中の委譲を止める必要がある
 - **THEN** 解決済み executor で起動した Agent または foreground command を停止し、別の状態操作を要求しない
+
+### Requirement: 失敗ループの昇格で profile と実装役の設定を差し替えない
+`references/codex-develop.md` は、失敗ループでの本体の手順を実行側と判断側それぞれ格の言葉で書かなければならない（MUST）。実行側は `request` に W の phase と `--failure executor` を渡し、返った（上限適用後の）`model` で実行役を起こす（MUST）。判断側は `request --phase decider --failure judgment` が返す投げ先・account・model で決める役を立てる（MUST）。本体は昇格の手段として、profile の作り直し・`--profile` / `--profile-file` の差し替え・返った model と違う model の独自指定や上書き・effort の変更をしてはならない（MUST NOT。返った model を Agent に渡すのは禁止に当たらない）。
+
+#### Scenario: Codex profile で実行側の失敗が起きる
+- **WHEN** `codex-standard` の構成で、W の 2 回目の失敗が実行側と分類される
+- **THEN** 本体は `request --phase implement --failure executor` を同じ profile の指定で呼び、返った model で実装役を起こし、別の profile を作らず、effort を変えない。残量モードと構成の上限が無いとき、返る model は対応表の上位（codex では中位と同じ値）である
+
+#### Scenario: 判断側の失敗で決める役を立てる
+- **WHEN** W の 2 回目の失敗が判断側と分類される
+- **THEN** 本体は `request --phase decider --failure judgment` が返した投げ先・account・model で決める役を立て、実行役の格は変えない
+
+#### Scenario: 返った model を Agent に渡すのは独自指定ではない
+- **WHEN** 本体が Claude の W を、`request` が返した `opus` を Agent の `model` に渡して起こす
+- **THEN** これは既存の契約どおりの起動で、model の独自指定・上書きの禁止に当たらない。`request` が `sonnet` を返したのに `opus` を渡すことは禁止に当たる
+
+#### Scenario: 手順が文書にある
+- **WHEN** `references/codex-develop.md` を読む
+- **THEN** 失敗ループの実行側と判断側の手順、`--failure` の値、profile の差し替え・model の独自指定や上書き・effort の変更をしないことが書かれている
+
+### Requirement: develop 開始時の profile の指定を工程の途中で変えない
+本体は develop 開始時の profile の指定（`--profile NAME`・`--profile-file PATH`・旧形式の account/model・無指定のどれか）を、develop の終わりまで同じ値で `request` に渡さなければならない（MUST）。無指定のときに phase ごとに構成を選び直す既存の規則は変えない。指定を変える必要があるときは、主に承認を求め、記録先に `profile 変更: <変更前の指定> → <変更後の指定>` の行と主の承認の発言を引いたコメントを残してから変えなければならない（MUST）。この要件は文書の規則であり、`request` による機械的な拒否はこの要件の範囲に含めない（#615 の範囲）。
+
+#### Scenario: 途中で外部 profile を作りたくなる
+- **WHEN** develop の途中で、本体が別の `--profile-file` を作って渡そうとする
+- **THEN** 文書の規則に従い、主の承認と記録先の `profile 変更:` の行が無ければ渡さない
+
+#### Scenario: 規則が文書にある
+- **WHEN** `references/codex-develop.md` を読む
+- **THEN** 開始時の指定を途中で変えないこと、変えるときの承認の記録の書式が書かれている
