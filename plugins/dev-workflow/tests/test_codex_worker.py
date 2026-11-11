@@ -211,6 +211,17 @@ class ForegroundTest(unittest.TestCase):
         out = subprocess.run(['pgrep','-P',str(pid)],text=True,capture_output=True)
         return [int(s) for s in out.stdout.split()]
 
+    def await_children(self, pid, what, deadline=30):
+        # A process table read right after an event can still miss a child that is being
+        # spawned, so wait until the count is the expected one instead of reading it once.
+        stop = time.monotonic()+deadline
+        found = self.children(pid)
+        while len(found) != 1 and time.monotonic() < stop:
+            time.sleep(.05)
+            found = self.children(pid)
+        self.assertEqual(len(found),1,'expected one '+what)
+        return found[0]
+
     def alive(self, pid):
         try:
             os.kill(pid, 0)
@@ -803,17 +814,15 @@ class ForegroundTest(unittest.TestCase):
                                    stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         try:
             self.await_turn()
-            shells = self.children(between.pid)
-            self.assertEqual(len(shells),1,'expected one shell wrapper')
-            runs = self.children(shells[0])
-            self.assertEqual(len(runs),1,'expected one foreground command')
-            run_pid = runs[0]
-            servers = self.children(run_pid)
-            self.assertEqual(len(servers),1,'expected one app-server child')
-            server_pid = servers[0]
+            shell_pid = self.await_children(between.pid,'shell wrapper')
+            run_pid = self.await_children(shell_pid,'foreground command')
+            server_pid = self.await_children(run_pid,'app-server child')
             between.kill();between.wait(timeout=10)
             start = time.monotonic()
-            while time.monotonic()-start < 30 and (self.alive(run_pid) or self.alive(server_pid)):
+            # Noticing the loss takes up to a poll interval, then the interrupt waits out the
+            # grace period; the margin on top covers a loaded machine.
+            limit = worker_module.ForegroundRecorder.grace+worker_module.WATCH_INTERVAL+50
+            while time.monotonic()-start < limit and (self.alive(run_pid) or self.alive(server_pid)):
                 time.sleep(.1)
             self.assertFalse(self.alive(run_pid),'foreground command outlived its caller')
             self.assertFalse(self.alive(server_pid),'app-server outlived its caller')
@@ -821,14 +830,48 @@ class ForegroundTest(unittest.TestCase):
             if between.poll() is None:
                 between.kill();between.wait(timeout=10)
 
+    def test_watch_caller_ignores_a_failed_process_lookup(self):
+        # A failed ps (for example while the machine cannot fork) says nothing about the
+        # caller, so it must not end a healthy turn.
+        import threading
+        chain = [10,20]
+        answers = iter([[10,-1],[10,-1],[10,20]])
+        stop = threading.Event()
+        calls = []
+        def fake(pid):
+            calls.append(pid)
+            try:
+                return next(answers)
+            except StopIteration:
+                stop.set()
+                return chain
+        original = worker_module.ancestors
+        worker_module.ancestors = fake
+        try:
+            worker_module.watch_caller(stop,chain,interval=.01)
+        finally:
+            worker_module.ancestors = original
+        self.assertTrue(stop.is_set())
+        self.assertGreaterEqual(len(calls),4,'the failed lookups were taken as a lost caller')
+
+    def test_watch_caller_stops_when_the_chain_changes(self):
+        import threading
+        stop = threading.Event()
+        original = worker_module.ancestors
+        worker_module.ancestors = lambda pid: []
+        try:
+            worker_module.watch_caller(stop,[10,20],interval=.01)
+        finally:
+            worker_module.ancestors = original
+        self.assertTrue(stop.is_set())
+
     def test_sigterm_interrupts_the_turn_and_leaves_no_server(self):
         self.config(wait=True)
         process = subprocess.Popen(self.command(),env=self.env,text=True,
                                    stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         try:
             self.await_turn()
-            servers = self.children(process.pid)
-            self.assertEqual(len(servers),1,'expected one app-server child')
+            servers = [self.await_children(process.pid,'app-server child')]
             process.terminate()
             out,err = process.communicate(timeout=30)
         finally:

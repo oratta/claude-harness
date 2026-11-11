@@ -633,9 +633,29 @@ class ForegroundRecorder:
         return self.deadline is None and self.stop.is_set()
 
 
-def watch_caller(stop, chain, interval=1):
+WATCH_INTERVAL = 1
+
+
+def settled_ancestors(pid, attempts=5):
+    # A lookup that failed ends in -1; it describes the lookup, not the caller. Retry so the
+    # baseline the watcher compares against is a complete chain.
+    chain = ancestors(pid)
+    while chain[-1:] == [-1] and attempts > 1:
+        attempts -= 1
+        time.sleep(.1)
+        chain = ancestors(pid)
+    return chain
+
+
+def watch_caller(stop, chain, interval=WATCH_INTERVAL):
     while not stop.wait(interval):
-        if ancestors(os.getppid()) != chain:
+        current = ancestors(os.getppid())
+        if current[-1:] == [-1]:
+            # ps failed under load; judging the caller lost here would end a healthy turn.
+            continue
+        # A baseline that stayed incomplete after the retries is compared by its known part.
+        known = chain[:-1] if chain[-1:] == [-1] else chain
+        if current[:len(known)] != known or (known is chain and current != chain):
             stop.set()
             return
 
@@ -671,7 +691,7 @@ def run(request_path):
         # main flow, which checks it at the entry.
         for number in (signal.SIGTERM, signal.SIGINT):
             signal.signal(number, lambda *_: stop.set())
-        threading.Thread(target=watch_caller, args=(stop, ancestors(os.getppid())),
+        threading.Thread(target=watch_caller, args=(stop, settled_ancestors(os.getppid())),
                          daemon=True).start()
         recorder = ForegroundRecorder(execution, stop)
         common = git_common_dir(payload['cwd'])
