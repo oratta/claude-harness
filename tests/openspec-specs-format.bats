@@ -74,3 +74,9 @@ setup() {
   echo "$output" | cut -c1-200 >&2
   false
 }
+
+@test "dev-workflow-develop depleted scenario heading states the cap and keeps cheapest roles" {
+  f="$SPECS_DIR/dev-workflow-develop/spec.md"
+  ! grep -qF 'すべての要求を Sonnet に固定' "$f"
+  grep -qF '#### Scenario: depleted は中位を上限にし、最安の役はそのままにする' "$f"
+}
