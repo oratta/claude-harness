@@ -67,6 +67,24 @@
         ]
       },
       {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/unattended-ask-guard.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/git-guard-base-write-guard.sh\""
+          }
+        ]
+      },
+      {
         "matcher": "Bash",
         "hooks": [
           {

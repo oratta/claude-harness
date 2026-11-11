@@ -12,6 +12,19 @@ Claude Code用スキル・プラグインのマーケットプレイス
 /plugin install dev-workflow@oratta-claude-harness
 ```
 
+シークレットの値が画面に出る形の Bash と Read を実行前に止める `secret-guard` は `capability-registry` に入っている。`/plugin install capability-registry@oratta-claude-harness` で有効になり、`settings.json` の編集は要らない。
+
+### 複数の Claude アカウントを使う場合（`cld` / `cld-account`）
+
+アカウントを 1 つしか使わない人は、この節は読み飛ばしてよい（`claude` をそのまま使える）。複数アカウントから週の余裕が最大のものを起動時に選ぶ `cld` と、アカウントを指定して起動する `cld-account` は、`dev-workflow` の `bin/` にある実行ファイルで、`~/.zshrc` に PATH を足すと使える（関数定義は要らない）。
+
+```zsh
+export PATH="$HOME/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/bin:$PATH"
+export CLD_DEFAULT_ARGS="--dangerously-skip-permissions --remote-control"   # 個人の既定フラグ。要らなければ書かない
+```
+
+`CLD_DEFAULT_ARGS` は、`cld` / `cld-account` が `claude` の引数の先頭に置く個人の既定フラグである。アカウントが 1 つでも、エピックの子を別セッションで起こすなら `CLD_DEFAULT_ARGS` は親の環境に置く（無いと子は許可の確認画面で止まる）。アカウントの登録や、以前のシェル関数からの移行を含む詳細は、`plugins/dev-workflow/README.md` の「Claude アカウントの起動時選択」を見る。
+
 ### Output Style `readable` を有効にする
 
 `output-styles/readable.md`（読み手が前提を持たない状態で読める書き方のスタイル）と `rules/*.md` は、プラグインではないので `/plugin install` では届かない。クイックスタートの後に、marketplace dir の `scripts/sync.sh` を 1 回実行する（SessionStart hook などの自動実行は無い）。これが `readable.md` を `~/.claude/output-styles/` に、`rules/*.md` を `~/.claude/rules/claude-harness/` に symlink する。
@@ -62,7 +75,7 @@ Claude Code用スキル・プラグインのマーケットプレイス
 
 ### product-handover
 
-プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト・サポート窓口・教訓ログの雛形3種だけを持ち、オーケストレーターもスキルも持たない。
+プロダクトをエージェントに引き渡すときにだけ必要になる固有部品を配るプラグイン。法務ドラフト・インシデント対応手順書・サポート窓口・教訓ログの雛形4種だけを持ち、オーケストレーターもスキルも持たない。
 
 ```bash
 /plugin install product-handover@oratta-claude-harness
@@ -87,7 +100,7 @@ Claude Code用スキル・プラグインのマーケットプレイス
 |-----------|------|
 | `worktree` | Git worktree のセットアップ（`/wt-setup`。`--with-pr` で Draft PR まで作成）とクリーンアップ（`/wt-clean`） |
 | `infra` | Vercel + Supabase + GitHub Actions で local/staging/prod の環境を一括セットアップする（`/infra-setup`） |
-| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層 |
+| `capability-registry` | 外部サービスを操作する前に CLI とトークンの在処を教える発見層。シークレットの値が画面に出る形の Bash と Read を止める `secret-guard` の hook も入る（無効化は環境変数 `CAPABILITY_REGISTRY_SECRET_GUARD=off`） |
 | `statusline` | 使用量ステータスライン。クォータ消化率と窓の日程消化率を1本のバーに重ね、`25%/29%` の形で「今のペースでリセットまで持つか」を示す（`/statusline:setup`） |
 
 ---
@@ -217,6 +230,6 @@ install 済みの環境では、入れていたプラグインについて次を
 
 1. `claude plugin uninstall skill-pack@oratta-claude-harness`・`claude plugin uninstall telegram@oratta-claude-harness`・`claude plugin uninstall experience-to-skill@oratta-claude-harness` のうち、入れていたものを実行する
 2. uninstall で消えずに `settings.json` / `settings.local.json` の `enabledPlugins` に `<name>@oratta-claude-harness` が残っていれば、そのエントリを消す
-3. telegram を使っていた環境は、公式の `telegram@claude-plugins-official` を入れる（設定は公式側の手順に従う）
+3. telegram を使っていた環境は、公式の `telegram@claude-plugins-official` を入れ、起動時の `--channels`（住人なら `CHANNEL_PLUGINS`）を `plugin:telegram@oratta-claude-harness` から `plugin:telegram@claude-plugins-official` に替えて再起動する（Bot トークンと `access.json` は `~/.claude/channels/telegram/` のまま使える。そのほかの設定は公式側の手順に従う）
 
 `~/.claude/skills/distilled/` と `<repo>/.claude/skills/distilled/` にある蒸留スキル（名前が `e2s-` か `distilled-` で始まるもの）は uninstall では消えない。

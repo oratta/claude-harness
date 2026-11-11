@@ -404,3 +404,50 @@ add_error_records() {
   echo "$output" | grep -q '"context_tokens": 160000'
   echo "$output" | grep -q '"last_record": "api_error"'
 }
+
+# 探索先の決まり方（#1231）。実行者の環境に左右されないよう、HOME を一時ディレクトリにして環境変数を外して起動する
+@test "search root: without CLAUDE_PROJECTS_DIR the transcript under CLAUDE_CONFIG_DIR is found" {
+  PROJECTS="${WORK}/cfg/projects"
+  f="$(make_transcript p s agent-a1.jsonl "$PWD" 1000,0,0)"
+  printf '{"name":"W-590"}\n' > "${f%.jsonl}.meta.json"
+  mkdir -p "${WORK}/home"
+  run env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" "$SCRIPT" W-590
+  echo "$output"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "\"file\": \"$f\""
+  echo "$output" | grep -q '"context_tokens": 1000'
+}
+
+@test "search root: CLAUDE_PROJECTS_DIR wins over CLAUDE_CONFIG_DIR" {
+  PROJECTS="${WORK}/cfg/projects"
+  other="$(make_transcript p s agent-W-590.jsonl "$PWD" 1000,0,0)"
+  PROJECTS="${WORK}/explicit"
+  f="$(make_transcript p s agent-W-590.jsonl "$PWD" 2000,0,0)"
+  mkdir -p "${WORK}/home"
+  run env HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" CLAUDE_PROJECTS_DIR="$PROJECTS" "$SCRIPT" W-590
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ -f "$other" ]
+  echo "$output" | grep -q "\"file\": \"$f\""
+  echo "$output" | grep -q '"context_tokens": 2000'
+}
+
+@test "search root: with neither variable set, \$HOME/.claude/projects is searched" {
+  PROJECTS="${WORK}/home/.claude/projects"
+  f="$(make_transcript p s agent-W-590.jsonl "$PWD" 3000,0,0)"
+  run env -u CLAUDE_PROJECTS_DIR -u CLAUDE_CONFIG_DIR HOME="${WORK}/home" "$SCRIPT" W-590
+  echo "$output"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "\"file\": \"$f\""
+  echo "$output" | grep -q '"context_tokens": 3000'
+}
+
+@test "search root: an empty CLAUDE_CONFIG_DIR falls back to \$HOME/.claude/projects" {
+  PROJECTS="${WORK}/home/.claude/projects"
+  f="$(make_transcript p s agent-W-590.jsonl "$PWD" 4000,0,0)"
+  run env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR= "$SCRIPT" W-590
+  echo "$output"
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q "\"file\": \"$f\""
+  echo "$output" | grep -q '"context_tokens": 4000'
+}

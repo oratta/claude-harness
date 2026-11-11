@@ -189,6 +189,25 @@ class EffectiveValues(unittest.TestCase):
         self.assertEqual(a['five_hour_pct'], 0)
         self.assertEqual(a['five_hour_observed_at'], NOW - HOUR)
 
+    def test_null_five_hour_record_keeps_weekly_and_stays_missing(self):
+        # 5 時間枠が返らない週次だけの記録（#1547）。0 にせず欠測のまま、週次は読む
+        self.record(None, observed=NOW - 60, five=None, five_reset=None,
+                    weekly=12, weekly_reset=NOW + DAY)
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['weekly_all_pct'], 12)
+        self.assertIsNone(a['five_hour_pct'])
+        self.assertIsNone(a['five_hour_resets_epoch'])
+
+    def test_null_five_hour_record_uses_snapshot_value_before_reset(self):
+        # 移行のための特別扱いはしない。もう一方の情報源にリセット前の値があれば規則どおり使う
+        self.record(None, observed=NOW - 60, five=None, five_reset=None,
+                    weekly=12, weekly_reset=NOW + DAY)
+        self.snap({'a': {'fetched_at': NOW - HOUR, 'five_hour_pct': 30,
+                         'five_hour_resets_epoch': NOW + HOUR}})
+        a = self.view()['accounts']['a']
+        self.assertEqual(a['five_hour_pct'], 30)
+        self.assertEqual(a['weekly_all_pct'], 12)
+
     def test_weekly_null_reset_is_missing(self):
         self.record(None, weekly=40, weekly_reset=None)
         self.assertIsNone(self.view()['accounts']['a']['weekly_all_pct'])

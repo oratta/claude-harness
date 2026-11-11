@@ -8,7 +8,7 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/git-destructive-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
-  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_UNATTENDED
+  unset DEV_WORKFLOW_GIT_GUARD DEV_WORKFLOW_GIT_GUARD_FORCE DEV_WORKFLOW_UNATTENDED DEV_WORKFLOW_GIT_GUARD_NO_ASK
   # cd と git の行き先・設定を変える環境変数があると一時領域の判定を満たさないので、実行する人の環境から外す
   unset CDPATH GIT_DIR GIT_WORK_TREE GIT_COMMON_DIR GIT_INDEX_FILE GIT_OBJECT_DIRECTORY \
     GIT_ALTERNATE_OBJECT_DIRECTORIES GIT_NAMESPACE GIT_CEILING_DIRECTORIES GIT_DISCOVERY_ACROSS_FILESYSTEM
@@ -307,6 +307,19 @@ NINE_KINDS=(
     # 深い入れ子があっても、単一引用符の中の文字列は読まない
     expect_silent "echo ${open}true${close}; echo 'git reset --hard'"
   done
+}
+
+@test "work limit: a 100000-deep substitution that copies its text per level is stopped with ask within 15 seconds (#872)" {
+  # 入れ子の段ごとに外側の長さ分の文字列を複写する形。複写の分が仕事量に数えられないと、10 秒かかっても上限に届かない（直した後は約 4 秒。遅い環境の余裕を見て 15 秒とする）
+  local n=100000 open close start end
+  open="$(printf '$(%.0s' $(seq "$n"))"
+  close="$(printf ')%.0s' $(seq "$n"))"
+  start=$SECONDS
+  call "echo ${open}git reset --hard${close}"
+  end=$SECONDS
+  [ "$status" -eq 0 ]
+  [ "$(decision)" = "ask" ] || { echo "not ask: [${output:0:300}]"; return 1; }
+  [ $((end - start)) -le 15 ] || { echo "took $((end - start)) seconds"; return 1; }
 }
 
 @test "shell syntax: quoted -c / eval arguments are kept at any nesting depth" {
@@ -1660,6 +1673,80 @@ mk_evil_repo() {
   done
 }
 
+# 形の理由（単独のコマンドの形でない）で判定に落ちたら 3、単独の形なのに落ちたもの・記録の確かめに落ちたものは 1
+# （spec destructive-git-hook「許可を書くスクリプトは一時領域の中に収まるコマンドだけを許可する」, #1173）
+RETRY_HINT='単独のコマンドに打ち直せば'
+
+@test "permit: a record refused only for not being a single command exits 3 with a retry hint (#1173)" {
+  setup_permit
+  local base rec cmd
+  base="$(GUARD_BASE)"
+  local -a cmds=(
+    "mkdir -p $REPO/x && git -C $REPO checkout -- a"
+    "git init $REPO && git -C $REPO checkout -- a"
+    "R=$REPO; git -C \$R checkout -- a"
+    "git -C \"$REPO\" checkout -- a"
+    "git -C $REPO checkout -- a & git status"
+    "cd $OUT && git reset --hard"
+  )
+  for cmd in "${cmds[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$OUT" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -eq 3 ] || { echo "status $status for: $cmd: $output"; return 1; }
+    [[ "$output" == *"一時領域の判定を満たさない"* ]] || { echo "no reason line: $cmd: $output"; return 1; }
+    [[ "$output" == *"$RETRY_HINT"* ]] || { echo "no retry hint: $cmd: $output"; return 1; }
+    permits_empty
+  done
+}
+
+@test "permit: single-shaped commands and records failing their own checks still exit 1 without the hint (#1173)" {
+  setup_permit
+  local base rec cmd
+  base="$(GUARD_BASE)"
+  local -a cmds=(
+    "git -C $OUT checkout -- a"
+    'git push --force origin main'
+    "git -C $SP/missing checkout -- a"
+  )
+  for cmd in "${cmds[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$OUT" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -eq 1 ] || { echo "status $status for: $cmd: $output"; return 1; }
+    [[ "$output" != *"$RETRY_HINT"* ]] || { echo "hint on single command: $cmd: $output"; return 1; }
+    permits_empty
+  done
+  # 記録の中身のコマンドを書き換えたもの（key がファイル名と一致しない）は、形によらず 1
+  rec="$(mk_record "$base" "$PERMIT_SID" a1 "$OUT" "mkdir -p $REPO/x && git -C $REPO checkout -- a")"
+  python3 -c '
+import json, sys
+p = sys.argv[1]; r = json.load(open(p)); r["command"] += " && git status"; json.dump(r, open(p, "w"))' "$rec"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 1 ] || { echo "status $status for tampered: $output"; return 1; }
+  [[ "$output" != *"$RETRY_HINT"* ]] || { echo "hint on tampered record: $output"; return 1; }
+  permits_empty
+}
+
+@test "permit: after exit 3, the retyped single command gets a permit and the hook allows it (#1173)" {
+  setup_permit
+  local first second rec
+  first="mkdir -p $REPO/x && git -C $REPO checkout -- a"
+  second="git -C $REPO checkout -- a"
+  call_cwd "$first" '"a1"' "$PERMIT_SID" "$OUT"
+  [ "$(decision)" = "deny" ] || { echo "first call: $output"; return 1; }
+  rec="$(GUARD_BASE)/denied/$(key_of "$PERMIT_SID" a1 "$OUT" "$first").json"
+  run "$PERMIT" "$rec" "検証用 repo を戻すだけ"
+  [ "$status" -eq 3 ] || { echo "first permit: $status $output"; return 1; }
+  permits_empty
+  call_cwd "$second" '"a1"' "$PERMIT_SID" "$OUT"
+  [ "$(decision)" = "deny" ] || { echo "second call: $output"; return 1; }
+  rec="$(GUARD_BASE)/denied/$(key_of "$PERMIT_SID" a1 "$OUT" "$second").json"
+  run "$PERMIT" "$rec" "検証用 repo を戻すだけ"
+  [ "$status" -eq 0 ] || { echo "second permit: $status $output"; return 1; }
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
+  call_cwd "$second" '"a1"' "$PERMIT_SID" "$OUT"
+  [ "$(decision)" = "allow" ] || { echo "retyped call: $output"; return 1; }
+}
+
 # cd の移り先は / ・ ./ ・ ../ で始まるか . ・ .. だけ。シェルはそれ以外を、オプション（-P・--）・ディレクトリ
 # スタック（+1・-1）・= 展開（zsh の =git）・CDPATH や zsh の cdpath の探索として読み、判定と別の所に移りうる
 @test "permit: the script refuses cd targets the shell may read as options, stack entries or search paths" {
@@ -1774,7 +1861,7 @@ PY
     [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
   done
   # 書き方を読み分けない: コマンド文字列のどこかに名前があれば、-c の文字列の中・配列や += の代入・
-  # declare / typeset / printf -v / read 経由の設定・読むだけの cat も止める
+  # declare / typeset / printf -v / read 経由の設定も止める
   for c in "bash -c '/x/scripts/git-guard-permit.sh /y/denied/k.json ok'" \
            'bash -c "echo /x/scripts/git-guard-permit.sh"' \
            'BASH_ENV[0]=/x/scripts/git-guard-permit.sh bash /x/y.sh' \
@@ -1782,11 +1869,105 @@ PY
            'declare -x BASH_ENV=/x/scripts/git-guard-permit.sh; bash /x/y.sh' \
            'typeset -x ENV=/x/scripts/git-guard-permit.sh; sh -i' \
            'printf -v BASH_ENV %s /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh' \
-           'read BASH_ENV <<< /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh' \
-           'cat /x/scripts/git-guard-permit.sh'; do
+           'read BASH_ENV <<< /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh'; do
     call "$c" default '"a1"' s1
     [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
   done
+  # 読むか表示するだけのコマンドの一覧（grep・cat・echo など）に、一覧に無いコマンドが 1 つでも混じれば止める。
+  # 先頭の語にパス・前置き・変数の代入が付いた形と、引用符が閉じていないものも止める側
+  for c in 'echo /x/scripts/git-guard-permit.sh /y/denied/k.json ok | bash' \
+           'ls /x/scripts/git-guard-permit.sh | xargs bash' \
+           'cat /x/scripts/git-guard-permit.sh; bash /x/y.sh' \
+           'grep x "$(bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok)"' \
+           'echo `/x/scripts/git-guard-permit.sh /y/denied/k.json ok`' \
+           $'cat <<EOF\n$(/x/scripts/git-guard-permit.sh /y/denied/k.json ok)\nEOF' \
+           $'cat > /x/y.sh <<\'EOF\'\n/x/scripts/git-guard-permit.sh /y/denied/k.json ok\nEOF\nbash /x/y.sh' \
+           '/usr/bin/grep x /x/scripts/git-guard-permit.sh' \
+           'command cat /x/scripts/git-guard-permit.sh' \
+           'PATH=/x/bin grep x /x/scripts/git-guard-permit.sh' \
+           "grep 'x /x/scripts/git-guard-permit.sh"; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+  # 字句読みの扱わない構文（プロセス置換・{ ・関数定義）も、一覧に無い語が先頭に来るので止まる
+  for c in 'grep x <(bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok)' \
+           '{ grep x /x/scripts/git-guard-permit.sh; }' \
+           'f() { bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok; }; f'; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+}
+
+@test "permit: the read-only exception is not applied to ANSI-C quoting or arithmetic" {
+  # 字句読みが bash と違う読み方をする構文（$'..' の中の \' ・算術の中の <<）では、実行される位置の名前を
+  # 引用符の中や本文と読み違える。どちらかを含むコマンドには例外をかけず、今までどおり止める
+  local c
+  # bash は $'\' ' を 1 つの文字列として読み、; のあとのスクリプトを実行する。字句読みは \ の直後の ' で閉じ、
+  # 後ろを単一引用符の中の文字列と読む
+  # （$(cat <<'EOF' ...) の形は、本文の引用符を bash が置換の中で数えて構文エラーになるので read で読む）
+  IFS= read -r -d '' c <<'EOF' || true
+echo $'\' '; /x/scripts/git-guard-permit.sh /y/denied/k.json ok; echo #'
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # bash は $((echo<<X)) を算術として読み、次の行のスクリプトを実行する。字句読みは << をヒアドキュメントと読み、
+  # 後ろの行を本文として読み飛ばす
+  IFS= read -r -d '' c <<'EOF' || true
+echo $((echo<<X
+))
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # 裸の (( と $[ ] も算術の文脈で、同じく << をヒアドキュメントと読み違える
+  IFS= read -r -d '' c <<'EOF' || true
+((echo<<X
+))
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  IFS= read -r -d '' c <<'EOF' || true
+echo $[echo<<X
+]
+/x/scripts/git-guard-permit.sh /y/denied/k.json ok
+X
+EOF
+  c="${c%$'\n'}"
+  call "$c" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  # 読み違えの無い形でも、$' ・(( ・$[ ・${ があれば例外をかけない
+  for c in "echo \$'a' /x/scripts/git-guard-permit.sh" 'echo $((1+1)) /x/scripts/git-guard-permit.sh' \
+           'echo ${HOME} /x/scripts/git-guard-permit.sh' \
+           'for ((i=0; i<1; i++)); do echo /x/scripts/git-guard-permit.sh; done' \
+           '(( 1 << 1 )); echo /x/scripts/git-guard-permit.sh' \
+           'echo $[1+1] /x/scripts/git-guard-permit.sh'; do
+    call "$c" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "not denied: $c"; return 1; }
+  done
+}
+
+@test "permit: a child mentioning the permit script name only in read-only commands is not stopped" {
+  local c i
+  for c in 'grep -rn "git-guard-permit" /x/dir' \
+           'grep -rln "git-guard-permit" --include=*.bats .' \
+           'cat /x/scripts/git-guard-permit.sh' \
+           'grep -n x /x/scripts/git-guard-permit.sh | head -5' \
+           'ls /x/scripts | grep git-guard-permit' \
+           'grep x /x/a <<< git-guard-permit' \
+           $'cat >> /x/spec.md <<\'EOF\'\n`git-guard-permit.sh` を呼ぶ\nEOF'; do
+    for i in 1 2; do
+      call "$c" default '"a1"' s1
+      [ "$status" -eq 0 ] || { echo "status $i: $c"; return 1; }
+      [ -z "$output" ] || { echo "output $i for $c: $output"; return 1; }
+    done
+  done
+  [ -z "$(ls -A "$TMPDIR")" ] || { ls -la "$TMPDIR"; return 1; }
 }
 
 @test "permit: the main session is not stopped for any mention of the permit script" {
@@ -1818,6 +1999,117 @@ PY
   [ -f "$(GUARD_BASE)/permits/$k.json" ]
 }
 
+# --- 許可の置き場所の名指し（spec: 子は Bash のコマンドで許可の置き場所を名指しできない） ---
+
+@test "store: a child naming both store names is denied, not counted, and nothing is created" {
+  local c r i
+  for i in 1 2; do
+    call "printf '{}' > $TMPDIR/dev-workflow-git-guard/permits/k.json" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+    [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || { reason; return 1; }
+    ! has_continue || return 1
+  done
+  call "cd $TMPDIR/dev-workflow-git-guard && python3 -c \"open('permits/k.json','w')\"" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || { reason; return 1; }
+  ! has_continue || return 1
+  [ ! -e "$(GUARD_BASE)" ]
+}
+
+@test "store: one name only and the main session are not stopped" {
+  local c
+  for c in "cat $TMPDIR/dev-workflow-git-guard/denied/k.json" 'echo permits'; do
+    call "$c" default '"a1"' s1
+    [ "$status" -eq 0 ] || { echo "status: $c"; return 1; }
+    [ -z "$output" ] || { echo "output for $c: $output"; return 1; }
+  done
+  call "printf '{}' > $TMPDIR/dev-workflow-git-guard/permits/k.json" default
+  [ "$status" -eq 0 ]
+  [ -z "$output" ] || { echo "$output"; return 1; }
+  [ ! -e "$(GUARD_BASE)" ]
+}
+
+@test "store: with a destructive git op it is counted, but no record is written and no permit is used" {
+  setup_permit
+  local cmd="git checkout -- . ; ls $TMPDIR/dev-workflow-git-guard/permits" k i
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" "$cmd")"
+  mkdir -p "$(GUARD_BASE)/permits"
+  chmod 700 "$(GUARD_BASE)"
+  permit_json "$(GUARD_BASE)/permits/$k.json" "$REPO" "$cmd"
+  for i in 1 2; do
+    call_cwd "$cmd" '"a1"' "$PERMIT_SID" "$REPO"
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+  done
+  has_continue || { echo "$output"; return 1; }
+  [ -f "$(GUARD_BASE)/permits/$k.json" ]
+  [ ! -d "$(GUARD_BASE)/denied" ] || [ -z "$(ls -A "$(GUARD_BASE)/denied")" ] || { ls -la "$(GUARD_BASE)/denied"; return 1; }
+  [[ "$(reason)" == *'拒否の記録を作らない'* ]] || { reason; return 1; }
+  [[ "$(reason)" != *'拒否の記録を作れなかった'* ]] || { reason; return 1; }
+}
+
+@test "store: with the permit script name it is counted and no record is written" {
+  local cmd="bash /x/scripts/git-guard-permit.sh $TMPDIR/dev-workflow-git-guard/permits" i
+  for i in 1 2; do
+    call "$cmd" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+  done
+  has_continue || { echo "$output"; return 1; }
+  [ "$(count_files | wc -l | tr -d ' ')" = "1" ]
+  [ ! -d "$(GUARD_BASE)/denied" ] || [ -z "$(ls -A "$(GUARD_BASE)/denied")" ] || { ls -la "$(GUARD_BASE)/denied"; return 1; }
+}
+
+@test "store: the permit script name only in read-only commands is denied as store only, not counted" {
+  # 読むか表示するだけのコマンドの中の名前は permit-self に当たらないので、置き場所の名指しだけの拒否になる
+  local cmd="cat /x/scripts/git-guard-permit.sh $TMPDIR/dev-workflow-git-guard/permits" i
+  for i in 1 2; do
+    call "$cmd" default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+    [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || { reason; return 1; }
+    if has_continue; then echo "call $i: $output"; return 1; fi
+  done
+  [ ! -e "$(GUARD_BASE)" ]
+}
+
+@test "store: with another kind and an unusable base the base check message is kept" {
+  local real="${BATS_TEST_TMPDIR}/real-base" r
+  mkdir -p "$real"
+  ln -s "$real" "$(GUARD_BASE)"
+  call "git checkout -- a ; ls $TMPDIR/dev-workflow-git-guard/permits" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  r="$(reason)"
+  [[ "$r" == *'拒否の記録を作らない'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'を確かめられない'* ]] || { echo "$r"; return 1; }
+  [ -z "$(find "$real" -mindepth 1)" ]
+}
+
+@test "store: with another kind and an unusable permits folder the reason does not list both names" {
+  # 2 つの名前は変数をつないで作る（このファイルを読むコマンドに 2 つの名前が並ばないように）
+  local n1="dev-workflow-git" n2="perm" r
+  n1="${n1}-guard"; n2="${n2}its"
+  mkdir -p "$TMPDIR/$n1/$n2"
+  chmod 700 "$TMPDIR/$n1"
+  chmod 777 "$TMPDIR/$n1/$n2"
+  call "git checkout -- a ; ls $TMPDIR/$n1/$n2" default '"a1"' s1
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  r="$(reason)"
+  [[ "$r" == *'を確かめられない'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'置き場所の下の許可のフォルダ'* ]] || { echo "$r"; return 1; }
+  [[ "$r" != *"$n1"* || "$r" != *"$n2"* ]] || { echo "$r"; return 1; }
+  chmod 700 "$TMPDIR/$n1/$n2"
+}
+
+@test "store: the reason sends the child back and does not list both names" {
+  call "printf '{}' > $TMPDIR/dev-workflow-git-guard/permits/k.json" default '"a1"' s1
+  local r
+  r="$(reason)"
+  [[ "$r" == *'許可の置き場所'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'親に返す'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'許可の置き場所を名指しするコマンド'* ]] || { echo "$r"; return 1; }
+  [[ "$r" == *'拒否の記録を作らない'* ]] || { echo "$r"; return 1; }
+  [[ "$r" != *'拒否の記録を作れなかった'* ]] || { echo "$r"; return 1; }
+  [[ "$r" != *dev-workflow-git-guard* || "$r" != *permits* ]] || { echo "$r"; return 1; }
+}
+
 @test "permit: without the shared file the hook still denies and writes no record" {
   local d="${BATS_TEST_TMPDIR}/lonely"
   mkdir -p "$d"
@@ -1834,4 +2126,335 @@ PY
   [[ "$(reason)" != *'許可はあるが行き先を確かめられない'* ]] || return 1
   [ ! -e "$(GUARD_BASE)/denied" ]
   [ -f "$(GUARD_BASE)/permits/$k.json" ]
+}
+
+# --- <base> の確かめ（spec: 拒否の記録・回数・許可の置き場所（<base>）を確かめてから使う／<base> の中のファイルを
+#     symlink を辿らずに開き、所有者だけのモードで作る／<base> を確かめられない子の呼び出しには deny だけを返す／
+#     主の呼び出しは <base> を作りも確かめもしない／許可を書くスクリプトは確かめを満たさない <base> に書かない） ---
+
+# mode_of <path> — lstat のモードの下 3 桁（8 進）
+mode_of() {
+  python3 -c 'import os, stat, sys; print("%o" % stat.S_IMODE(os.lstat(sys.argv[1]).st_mode))' "$1"
+}
+
+# permit_json <file> <cwd> <command> — 子 a1 の、4 つの値が一致し期限内の許可の中身を <file> に書く
+permit_json() {
+  printf '%s' "$3" | python3 -c '
+import json, sys, time
+json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "command": sys.stdin.read(),
+           "created_at": int(time.time()), "expires_at": int(time.time()) + 600}, open(sys.argv[1], "w"))' \
+    "$1" "$PERMIT_SID" "$2"
+}
+
+# count_name_of <session_id> <agent_id> — 回数のファイル名
+count_name_of() {
+  python3 -c 'import hashlib, sys; print(hashlib.sha256((sys.argv[1] + "\0" + sys.argv[2]).encode()).hexdigest())' "$1" "$2"
+}
+
+@test "base: a new base and denied/ are 0700, the record and the count file are 0600" {
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [ "$(mode_of "$(GUARD_BASE)")" = 700 ]
+  [ "$(mode_of "$(GUARD_BASE)/denied")" = 700 ]
+  [ "$(mode_of "$(only_record)")" = 600 ]
+  [ "$(mode_of "$(GUARD_BASE)/$(count_files)")" = 600 ]
+}
+
+@test "base: an existing 0755 base is used and keeps its mode" {
+  mkdir "$(GUARD_BASE)"
+  chmod 755 "$(GUARD_BASE)"
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [ -f "$(only_record)" ]
+  [ "$(mode_of "$(GUARD_BASE)")" = 755 ]
+}
+
+@test "base: a symlinked base gets deny only, twice, with no record, no count and the permit placed there kept" {
+  setup_permit
+  local real="${BATS_TEST_TMPDIR}/real-base" k i r
+  mkdir -p "$real/permits"
+  ln -s "$real" "$(GUARD_BASE)"
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" 'git checkout -- .')"
+  permit_json "$real/permits/$k.json" "$REPO" 'git checkout -- .'
+  for i in 1 2; do
+    call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+    [ "$(decision)" = "deny" ] || { echo "call $i: $output"; return 1; }
+    r="$(reason)"
+    [[ "$r" == *'拒否の記録を作れなかった'* ]] || { echo "$r"; return 1; }
+    [[ "$r" == *"$(GUARD_BASE)"* ]] || { echo "$r"; return 1; }
+    [[ "$r" == *'コマンドの全文'* ]] || { echo "$r"; return 1; }
+    [[ "$r" != *'直ちに作業を終えて親に返す'* ]] || { echo "$r"; return 1; }
+    [[ "$r" != *'denied/'* ]] || { echo "$r"; return 1; }
+    ! has_continue || return 1
+  done
+  [ ! -e "$real/denied" ]
+  [ -z "$(find "$real" -mindepth 1 -maxdepth 1 -type f)" ]
+  [ -f "$real/permits/$k.json" ]
+}
+
+@test "base: a base that the group or others can write is not used and nothing is created under it" {
+  mkdir "$(GUARD_BASE)"
+  chmod 777 "$(GUARD_BASE)"
+  call 'git checkout -- a' default '"a1"' s1
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" == *'拒否の記録を作れなかった'* ]] || { reason; return 1; }
+  [ -z "$(ls -A "$(GUARD_BASE)")" ]
+  [ "$(mode_of "$(GUARD_BASE)")" = 777 ]
+}
+
+@test "base: a symlinked denied/ or permits/ is not used and nothing is created at its target" {
+  local sub t
+  for sub in denied permits; do
+    export TMPDIR="${BATS_TEST_TMPDIR}/tmp-$sub"
+    mkdir -p "$(GUARD_BASE)"
+    chmod 700 "$(GUARD_BASE)"
+    t="${BATS_TEST_TMPDIR}/target-$sub"
+    mkdir -p "$t"
+    ln -s "$t" "$(GUARD_BASE)/$sub"
+    call 'git checkout -- a' default '"a1"' s1
+    [ "$(decision)" = "deny" ] || { echo "$sub: $output"; return 1; }
+    [[ "$(reason)" == *'拒否の記録を作れなかった'* ]] || { echo "$sub: $(reason)"; return 1; }
+    [ -z "$(ls -A "$t")" ] || { echo "$sub: created at the target"; ls -la "$t"; return 1; }
+    [ -z "$(count_files)" ] || { echo "$sub: counted"; return 1; }
+  done
+}
+
+@test "base: symlinked count file and permit-log.jsonl do not change their targets" {
+  setup_permit
+  local a="${BATS_TEST_TMPDIR}/A" b="${BATS_TEST_TMPDIR}/B" k cnt
+  printf 'keep-A' >|"$a"
+  printf 'keep-B' >|"$b"
+  mkdir -p "$(GUARD_BASE)/permits"
+  chmod 700 "$(GUARD_BASE)"
+  cnt="$(count_name_of "$PERMIT_SID" a1)"
+  ln -s "$a" "$(GUARD_BASE)/$cnt"
+  ln -s "$b" "$(GUARD_BASE)/permit-log.jsonl"
+  # 期限切れの許可を置くと、hook は permit-log.jsonl に expired の行を足そうとする
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" 'git checkout -- .')"
+  permit_json "$(GUARD_BASE)/permits/$k.json" "$REPO" 'git checkout -- .'
+  python3 - "$(GUARD_BASE)/permits/$k.json" <<'PY'
+import json, sys
+d = json.load(open(sys.argv[1])); d["expires_at"] = 1; json.dump(d, open(sys.argv[1], "w"))
+PY
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ]
+  [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || return 1
+  [ "$(cat "$a")" = keep-A ]
+  [ "$(cat "$b")" = keep-B ]
+  # 回数のファイルは symlink 自体が一時ファイルからの rename で置き換わる
+  [ ! -L "$(GUARD_BASE)/$cnt" ]
+  [ "$(cat "$(GUARD_BASE)/$cnt")" = 1 ]
+  permits_empty
+}
+
+@test "base: a permit that is a symlink to a matching permit outside the base is not used and its target is kept" {
+  setup_permit
+  local c="${BATS_TEST_TMPDIR}/C.json" k
+  k="$(key_of "$PERMIT_SID" a1 "$REPO" 'git checkout -- .')"
+  permit_json "$c" "$REPO" 'git checkout -- .'
+  cp "$c" "${BATS_TEST_TMPDIR}/C.orig"
+  mkdir -p "$(GUARD_BASE)/permits"
+  ln -s "$c" "$(GUARD_BASE)/permits/$k.json"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "deny" ] || { echo "$output"; return 1; }
+  cmp "$c" "${BATS_TEST_TMPDIR}/C.orig"
+  [ ! -L "$(GUARD_BASE)/permits/$k.json" ]
+  # 同じ中身を普通のファイルとして置けば通る（symlink だから通さなかったことの確かめ）
+  cp "$c" "$(GUARD_BASE)/permits/$k.json"
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = "allow" ] || { echo "$output"; return 1; }
+}
+
+@test "base: the main session asks with the same reason when the base is a symlink, and creates nothing" {
+  local r0 real="${BATS_TEST_TMPDIR}/real-base" a
+  call 'git reset --hard' default
+  [ "$(decision)" = "ask" ]
+  r0="$(reason)"
+  [ ! -e "$(GUARD_BASE)" ]
+  mkdir -p "$real"
+  ln -s "$real" "$(GUARD_BASE)"
+  for a in - '""' 7; do
+    call 'git reset --hard' default "$a" s1
+    [ "$(decision)" = "ask" ] || { echo "$a: $output"; return 1; }
+    [ "$(reason)" = "$r0" ] || { echo "$a: $(reason)"; return 1; }
+  done
+  [ -z "$(ls -A "$real")" ]
+}
+
+@test "base: without the shared file a child is never stopped as a repeat and no count file is made" {
+  local d="${BATS_TEST_TMPDIR}/lonely" json i
+  mkdir -p "$d"
+  cp "$SCRIPT" "$d/git-destructive-guard.sh"
+  json="$(payload 'git checkout -- a' default '"a1"' s1)"
+  for i in 1 2; do
+    run "$d/git-destructive-guard.sh" <<<"$json"
+    [ "$(decision)" = "deny" ]
+    [[ "$(reason)" != *'直ちに作業を終えて親に返す'* ]] || return 1
+    ! has_continue || return 1
+  done
+  [ ! -e "$(GUARD_BASE)" ]
+}
+
+@test "base: the permit script refuses a base that others can write" {
+  setup_permit
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  local rec
+  rec="$(only_record)"
+  chmod 777 "$(GUARD_BASE)"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$(GUARD_BASE)"* ]] || { echo "$output"; return 1; }
+  permits_empty
+  [ ! -f "$(GUARD_BASE)/permit-log.jsonl" ] || ! grep -qF '"event": "permit"' "$(GUARD_BASE)/permit-log.jsonl"
+  # 回数のファイルも消さない
+  [ -n "$(count_files)" ]
+}
+
+@test "base: the permit script does not read a record that is a symlink" {
+  setup_permit
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  local rec
+  rec="$(only_record)"
+  mv "$rec" "${BATS_TEST_TMPDIR}/real-record.json"
+  ln -s "${BATS_TEST_TMPDIR}/real-record.json" "$rec"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -ne 0 ]
+  permits_empty
+}
+
+# --- 起動側が付ける git ガード専用の NO_ASK 印 ---
+
+assert_no_ask_reason() {
+  local r t
+  r="$(reason)"
+  for t in 'rules/destructive-git-guard.md' '実行していない' 'コマンドの全文' '対象' 'なぜ要るか' '止まった理由' 'オーナーに承認を求め' 'ターンを終える' 'オーナーが自分で実行' 'このセッションでは実行しない' '言い換えたコマンド'; do
+    [[ "$r" == *"$t"* ]] || { echo "missing $t: $r"; return 1; }
+  done
+  for t in '確認画面' '!' 'チャンネル' 'Discord' 'DEV_WORKFLOW_GIT_GUARD'; do
+    [[ "$r" != *"$t"* ]] || { echo "unexpected $t: $r"; return 1; }
+  done
+}
+
+@test "no-ask: nine kinds deny across interactive modes and FORCE ask" {
+  local c m f
+  [ "${#NINE_KINDS[@]}" -ge 9 ]
+  for c in "${NINE_KINDS[@]}"; do
+    for m in default bypassPermissions; do
+      for f in '' ask; do
+        call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 "DEV_WORKFLOW_GIT_GUARD_FORCE=$f" -- "$c" "$m"
+        [ "$status" -eq 0 ]
+        [ "$(decision)" = deny ] || { echo "$c / $m / $f: $output"; return 1; }
+      done
+    done
+  done
+}
+
+@test "no-ask: other modes and FORCE deny also deny" {
+  local m f
+  for m in acceptEdits plan auto dontAsk unknown -; do
+    for f in '' ask deny; do
+      call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 "DEV_WORKFLOW_GIT_GUARD_FORCE=$f" -- 'git reset --hard' "$m"
+      [ "$status" -eq 0 ]
+      [ "$(decision)" = deny ]
+      assert_no_ask_reason
+    done
+  done
+}
+
+@test "no-ask: unset empty whitespace and zero are unmarked; other values are marked" {
+  local m v
+  for m in default bypassPermissions; do
+    call 'git reset --hard' "$m"
+    [ "$(decision)" = ask ]
+    for v in '' '   ' 0 ' 0 '; do
+      call_env "DEV_WORKFLOW_GIT_GUARD_NO_ASK=$v" -- 'git reset --hard' "$m"
+      [ "$(decision)" = ask ]
+    done
+    for v in 1 true ' true ' yes; do
+      call_env "DEV_WORKFLOW_GIT_GUARD_NO_ASK=$v" -- 'git reset --hard' "$m"
+      [ "$(decision)" = deny ]
+    done
+  done
+}
+
+@test "no-ask: main agent definitions deny without counting or stopping" {
+  local a i
+  for a in - '""' 7; do
+    for i in 1 2; do
+      call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 -- 'git reset --hard' default "$a" s1
+      [ "$status" -eq 0 ]
+      [ "$(decision)" = deny ]
+      assert_no_ask_reason
+      ! has_continue || return 1
+    done
+  done
+  [ ! -e "$TMPDIR/dev-workflow-git-guard" ]
+}
+
+@test "no-ask: reason takes precedence over UNATTENDED and FORCE" {
+  local m u f
+  for m in default bypassPermissions; do
+    for u in '' 1; do
+      for f in '' ask; do
+        call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 "DEV_WORKFLOW_UNATTENDED=$u" "DEV_WORKFLOW_GIT_GUARD_FORCE=$f" -- 'git push origin main' "$m"
+        [ "$status" -eq 0 ]
+        [ "$(decision)" = deny ]
+        [[ "$(reason)" == *'main / master'* ]] || return 1
+        assert_no_ask_reason
+      done
+    done
+  done
+}
+
+@test "no-ask: harmless commands and guard off remain silent" {
+  call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 -- 'git status'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  call_env DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 DEV_WORKFLOW_GIT_GUARD=off -- 'git reset --hard'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "no-ask: child denial record and second denial stop keep the child reason" {
+  export DEV_WORKFLOW_GIT_GUARD_NO_ASK=1 DEV_WORKFLOW_UNATTENDED=1 DEV_WORKFLOW_GIT_GUARD_FORCE=ask
+  call 'git checkout -- a' bypassPermissions '"a1"' s1
+  [ "$(decision)" = deny ]
+  ! has_continue || return 1
+  local rec
+  rec="$(only_record)"
+  [ -f "$rec" ]
+  [[ "$(reason)" == *"$rec"* ]] || return 1
+  [[ "$(reason)" == *'打ち直さず'* ]] || return 1
+  [[ "$(reason)" == *'親に返す'* ]] || return 1
+  [[ "$(reason)" != *'チャンネル'* ]] || return 1
+  [[ "$(reason)" != *'ターンを終える'* ]] || return 1
+  call 'git checkout -- a' bypassPermissions '"a1"' s1
+  [ "$(decision)" = deny ]
+  python3 -c 'import json,sys; assert json.load(sys.stdin)["continue"] is False' <<<"$output"
+  [[ "$(reason)" == *'2 回目以降'* ]] || return 1
+  [ "$(cat "$TMPDIR/dev-workflow-git-guard/$(count_files)")" = 2 ]
+}
+
+@test "no-ask: main leaves permit intact; child consumes it exactly once" {
+  setup_permit
+  export DEV_WORKFLOW_GIT_GUARD_NO_ASK=1
+  deny_then_permit 'git checkout -- .' "$REPO"
+  call_cwd 'git checkout -- .' - "$PERMIT_SID" "$REPO" bypassPermissions
+  [ "$(decision)" = deny ]
+  assert_no_ask_reason
+  ! has_continue || return 1
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = 1 ]
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = allow ]
+  permits_empty
+  call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = deny ]
+}
+
+@test "no-ask: epic step five explains conditional transcript detection and screen limits" {
+  local step t
+  step="$(sed -n '/^5\. /,/^6\. /p' "${PLUGIN_DIR}/skills/develop/references/epic.md")"
+  for t in 'DEV_WORKFLOW_GIT_GUARD_NO_ASK' '起動側' '拒否後' '承認を求めてターンを終え' '会話ログが読める' 'wait --watch-stopped' '権限確認の画面で止まった子' '会話ログを読めない子' '検知できない'; do
+    [[ "$step" == *"$t"* ]] || { echo "missing $t"; return 1; }
+  done
 }

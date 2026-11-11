@@ -3,7 +3,9 @@
 ## Purpose
 
 `rules/destructive-git-guard.md` の一覧にある破壊的 git 操作を、dev-workflow の PreToolUse hook が Bash の実行前に止め、主に確認を回す。判定の対象・守備範囲・モード別の ask / deny・逃げ道、ルール本文との分担、wt-clean のブランチ削除が止められたときの扱いを定義する。
+
 ## Requirements
+
 ### Requirement: 破壊的 git 操作を Bash の実行前に検出する
 
 dev-workflow は PreToolUse の command hook `scripts/git-destructive-guard.sh` を持ち、`hooks/hooks.json` の PreToolUse 配列の末尾に `matcher: "Bash"` で登録しなければならない（MUST）。hooks.json の `command` は `"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh"` のように引用符で囲む（MUST）。対象の絞り込みは hooks.json の `if` で行わず、スクリプトが判定する（MUST。一覧を 1 か所に置き、bats で検査できるようにするため）。
@@ -70,17 +72,21 @@ dry-run の決め方: `git push` / `git clean` の引数をオプションとし
 
 payload の `agent_id` が空でない文字列のとき（サブエージェントから呼ばれたとき。`context-tripwire.sh` と同じ判定）は、`permission_mode` にも `DEV_WORKFLOW_GIT_GUARD_FORCE` にもよらず `deny` を返さなければならない（MUST）。ただし、要件「子への拒否を記録し、親が 1 回だけ通せるようにする」の一致する許可があるときは `allow` を返す。親は子の確認画面に応答できず、子が止まっていることも分からないので、子に `ask` を返してはならない（MUST NOT）。`agent_id` が無い・文字列でない・空のときは、以下の規則で決める。
 
-環境変数 `DEV_WORKFLOW_UNATTENDED` は「このセッションの画面を見ている人がいない」という印で、セッションを起動する側（flatmate の住人の `boot.sh` など）が claude の環境に入れる。値の前後の空白を除いたものが空（未設定を含む）か `0` なら印なし、それ以外の値はすべて印ありとして扱わなければならない（MUST。付け損ねた値で確認画面に戻らず、止めすぎる向きにだけ外れるため）。印のあるセッションでは、主の呼び出しにも `permission_mode` にも `DEV_WORKFLOW_GIT_GUARD_FORCE` にもよらず `deny` を返さなければならない（MUST）。画面を見ている人がいないので、確認画面は誰にも押されず、セッションが止まったままになるため。印のあるセッションでも、子の呼び出しは上の段落（要件「子への拒否を記録し、親が 1 回だけ通せるようにする」の条件を満たす許可があるときは `allow`、無ければ `deny`）で決まり、要件「子への拒否を記録し、親が 1 回だけ通せるようにする」の許可は印のあるセッションの主の呼び出しには効かない。印の無いセッションでは、以下の `permission_mode` と `DEV_WORKFLOW_GIT_GUARD_FORCE` の規則で決める。
+環境変数 `DEV_WORKFLOW_GIT_GUARD_NO_ASK` は、画面を見ている人もチャンネルも無いセッション向けに、git ガードだけに効く印である。起動する側が hook のプロセスに引き継がれる環境に設定する。前後の空白を除いて未設定・空・`0` は印なし、それ以外は印ありとして扱わなければならない（MUST）。印のある主の呼び出しは、`permission_mode` と `DEV_WORKFLOW_GIT_GUARD_FORCE` によらず `deny` としなければならない（MUST）。子の呼び出しは上の段落の規則を維持し、一致する許可があれば `allow`、無ければ `deny` とし、主は子の許可を使ってはならない（MUST NOT）。両方の印がある主への理由文は NO_ASK の案内を優先しなければならない（MUST）。この印を develop の実行モードの決定に使ってはならない（MUST NOT）。
+
+NO_ASK の印が無いとき、環境変数 `DEV_WORKFLOW_UNATTENDED` は「このセッションの画面を見ている人がいない」という印で、セッションを起動する側（flatmate の住人の `boot.sh` など）が claude の環境に入れる。値の前後の空白を除いたものが空（未設定を含む）か `0` なら印なし、それ以外の値はすべて印ありとして扱わなければならない（MUST。付け損ねた値で確認画面に戻らず、止めすぎる向きにだけ外れるため）。印のあるセッションでは、主の呼び出しにも `permission_mode` にも `DEV_WORKFLOW_GIT_GUARD_FORCE` にもよらず `deny` を返さなければならない（MUST）。画面を見ている人がいないので、確認画面は誰にも押されず、セッションが止まったままになるため。印のあるセッションでも、子の呼び出しは上の段落（要件「子への拒否を記録し、親が 1 回だけ通せるようにする」の条件を満たす許可があるときは `allow`、無ければ `deny`）で決まり、要件「子への拒否を記録し、親が 1 回だけ通せるようにする」の許可は印のあるセッションの主の呼び出しには効かない。印の無いセッションでは、以下の `permission_mode` と `DEV_WORKFLOW_GIT_GUARD_FORCE` の規則で決める。
 
 `permissionDecision` は payload の `permission_mode` で決めなければならない（MUST）: `default` / `acceptEdits` / `plan` / `bypassPermissions` は `ask`、それ以外（`dontAsk`・`auto`・未知の値・欠落）は `deny`。この対応は実機確認（design.md「`ask` と `deny` は payload の `permission_mode` で切り替える」の判定条件。対照実験を含む）で確定した: `-p` では `default` と `bypassPermissions` のどちらでも `ask` が実行を止め、対話セッションの `bypassPermissions` では `ask` で主が承認できる確認画面が出た。`ask` が `-p` で実行を止めない、または対話セッションで確認画面を出さないと分かったモードは、`deny` に戻さなければならない（MUST）。
 
-環境変数 `DEV_WORKFLOW_GIT_GUARD_FORCE` が `ask` か `deny` のときは、`permission_mode` によらずその値を返さなければならない（MUST。実機確認と bats のための上書き）。ただし子の呼び出しと、印のあるセッションの主の呼び出しには効かない（上の段落が先に決める）。
+環境変数 `DEV_WORKFLOW_GIT_GUARD_FORCE` が `ask` か `deny` のときは、`permission_mode` によらずその値を返さなければならない（MUST。実機確認と bats のための上書き）。ただし子の呼び出しと、いずれかの印のあるセッションの主の呼び出しには効かない（上の段落が先に決める）。
 
-以下、`agent_id` が無い・空・文字列でない呼び出しを「主の呼び出し」、`agent_id` が空でない文字列の呼び出しを「子の呼び出し」と呼ぶ。`DEV_WORKFLOW_UNATTENDED` の印があるセッションを「無人のセッション」、印の無いセッションを「対話のセッション」と呼ぶ。
+以下、`agent_id` が無い・空・文字列でない呼び出しを「主の呼び出し」、`agent_id` が空でない文字列の呼び出しを「子の呼び出し」と呼ぶ。`DEV_WORKFLOW_UNATTENDED` の印があるセッションを「無人のセッション」、どちらの印も無いセッションを「対話のセッション」と呼ぶ。NO_ASK の印がある主の呼び出しには「拒否理由は承認の取り方を案内する」の NO_ASK 用の規則を適用する。以下の既存 Scenario は、NO_ASK を指定しない限り、その印が無い状態とする。
 
 守備範囲: 子と主の見分けは、要件「破壊的 git 操作を Bash の実行前に検出する」の守備範囲の入力に、Claude Code が PreToolUse で hook の stdin に渡す payload の `agent_id`（Claude Code が子の呼び出しに付ける値で、エージェントが書く `tool_input.command` とは別のフィールド）を足す。拾いたい誤りは、子が破壊的 git 操作を打ったときに主の確認画面が出て、親が応答も検知もできず、主が画面を見るまでワークフロー全体が止まることである。次の入力は通すこと（または今までどおり確認画面を出すこと）を許す: Claude Code の版や起動経路によって子の payload に `agent_id` が入らない呼び出し（主の呼び出しとして扱われ、`permission_mode` と `DEV_WORKFLOW_GIT_GUARD_FORCE` の規則に従う）／`DEV_WORKFLOW_GIT_GUARD=off` のセッションで子が打つもの（すべて通る）／要件「破壊的 git 操作を Bash の実行前に検出する」の守備範囲で通ることを許した形を子が打つもの（変数で組み立てた形やスクリプトファイル経由など）。止めすぎる向きでは、主が子に破壊的操作を任せた場合も、親が許可を書けるコマンド（要件「許可を書くスクリプトは一時領域の中に収まるコマンドだけを許可する」）以外は子では実行できず、親か主が打つことになるが、これは許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
 
 守備範囲: 無人のセッションの見分けは、守備範囲の入力に hook のプロセスの環境変数 `DEV_WORKFLOW_UNATTENDED`（セッションを起動する側が付ける値で、payload とは別）を足す。拾いたい誤りは、画面を見ている人のいない `bypassPermissions` などの対話 TUI（flatmate の住人）で確認画面が出て、誰も押さずにセッションが止まり、セッション cron とチャンネルの受信も止まることである。次の入力は今までどおり確認画面を出すことを許す: 起動する側が印を付けなかったセッション（住人が tmux などで別に起動したセッションが、起動した側の環境を引き継がなかったものを含む）。止めすぎる向きでは、印のあるセッションをオーナーが Remote Control や tmux の画面で見ていても確認画面が出ず、オーナーが自分で実行することになるが、これは許す。これらの穴（印が届かないセッション）を塞ぎ切ることは、この要件の完了条件にしない。起動したセッションへの印の引き継ぎは #1123・#1126 で扱う。
+
+守備範囲: hook の環境変数 `DEV_WORKFLOW_GIT_GUARD_NO_ASK` を入力に追加する。拾う誤りは、起動側がこの印を付けた別セッションで `ask` を返し、親が検知できない確認画面で止まることである。印を付け忘れたセッション、既存の検出範囲外のコマンド、`DEV_WORKFLOW_GIT_GUARD=off` と fail-open は既存のままとする。印の伝播を推測したり、すべての起動経路に強制したりして穴を塞ぐことは完了条件にしない。
 
 #### Scenario: 確認画面が出るモードでは ask
 
@@ -147,11 +153,41 @@ payload の `agent_id` が空でない文字列のとき（サブエージェン
 - **WHEN** `DEV_WORKFLOW_GIT_GUARD=off` と `DEV_WORKFLOW_UNATTENDED=1` を付けて `git reset --hard` を渡す
 - **THEN** exit 0 で何も出力しない
 
+#### Scenario: NO_ASK の主は対象 9 種をモードと FORCE によらず拒否する
+
+- **WHEN** `DEV_WORKFLOW_GIT_GUARD_NO_ASK=1` で、主の payload に対象 9 種のコマンドを、`default` と `bypassPermissions` でそれぞれ渡す。`DEV_WORKFLOW_GIT_GUARD_FORCE=ask` も付けて同じ組を渡す
+- **THEN** すべて exit 0 の JSON で `permissionDecision` が `deny` になる
+- **AND** `acceptEdits`・`plan`・`auto`・`dontAsk`・未知・欠落のモードでも、FORCE が未設定・ask・deny のいずれでも主は `deny` になる
+
+#### Scenario: NO_ASK の値は UNATTENDED と同じに読む
+
+- **WHEN** UNATTENDED と FORCE の無い環境で、NO_ASK が未設定・空・空白だけ・`0`・` 0 `・`1`・` true `・`yes` のそれぞれについて、主の `git reset --hard` を `default` と `bypassPermissions` で渡す
+- **THEN** 未設定・空・空白だけ・`0`・` 0 ` は `ask`、それ以外は `deny` になる
+
+#### Scenario: NO_ASK の主の定義は既存の agent_id の判定と同じ
+
+- **WHEN** NO_ASK=1 で、agent_id が無い・空文字・数値の payload に `git reset --hard` を渡す
+- **THEN** どれも主として `deny` と NO_ASK 用の理由文を返し、子の拒否回数を数えず `continue: false` を返さない
+
+#### Scenario: NO_ASK の子は拒否と一度限りの許可の規則を維持する
+
+- **WHEN** NO_ASK=1 で、同じ session_id・空でない agent_id の子が許可なしで破壊的 git 操作を 2 回試みる
+- **THEN** 親に返す既存の理由文で両方 `deny` となり、2 回目は `continue: false` になる
+- **WHEN** 既存の手順で scratchpad 内のコマンドに子への有効な一度限りの許可を書き、同じ session_id・cwd・command の主の payload、元の子の payload、もう一度子の payload の順に渡す
+- **THEN** 主は NO_ASK 用の理由で `deny` となり許可を残し、子は 1 回 `allow` となり許可を使い切り、その後は `deny` になる
+
+#### Scenario: NO_ASK でも検出範囲と off は変わらない
+
+- **WHEN** NO_ASK=1 で `git status` を渡す。また `DEV_WORKFLOW_GIT_GUARD=off` も付けて `git reset --hard` を渡す
+- **THEN** どちらも exit 0・無出力となる
+
 ### Requirement: 拒否理由は承認の取り方を案内する
 
 対話のセッションの主の呼び出し（`agent_id` が無い・空・文字列でない）への `permissionDecisionReason` は次をすべて含まなければならない（MUST）: 当たった操作の種類（9 種のどれか。複数当たればすべて）／規範の正本が `rules/destructive-git-guard.md` であること／実行せず主に承認を求めること／承認されたら主が自分で実行すること（Claude Code の入力欄で `!` を付けるか、自分の端末で。`ask` のときは、確認画面が出ないセッション（`claude -p` など）ではそうすること）／`ask` のときは、確認画面を出していること／言い換えたコマンドで再実行して hook を避けないこと。`!` の入力は PreToolUse hook を通らない（対話セッションで `! git reset --hard` が止められずに実行されることを確かめた）ので、`!` の案内を残す。コマンドに付けて hook を通す目印（環境変数の前置など）を案内してはならない（MUST NOT）。
 
-無人のセッションの主の呼び出しへの `permissionDecisionReason` は次をすべて含まなければならない（MUST）: 当たった操作の種類（判定しきれなかった入れ子のときはその旨）／規範の正本が `rules/destructive-git-guard.md` であること／このコマンドは実行していないこと／何を・なぜ・いつ実行するかをチャンネル（Discord など）でオーナーに伝えて承認を求めること（文字列「チャンネル」と「オーナー」を含む）／承認されたらオーナーが自分で実行すること／言い換えたコマンドで再実行して hook を避けないこと。無人のセッションへの理由に、確認画面の話（文字列「確認画面」）を書いてはならない（MUST NOT。出していない確認画面の操作を待って止まる余地を残さないため）。コマンドに付けて hook を通す目印を案内してはならない（MUST NOT）。
+NO_ASK の印が無い無人のセッションの主の呼び出しへの `permissionDecisionReason` は次をすべて含まなければならない（MUST）: 当たった操作の種類（判定しきれなかった入れ子のときはその旨）／規範の正本が `rules/destructive-git-guard.md` であること／このコマンドは実行していないこと／何を・なぜ・いつ実行するかをチャンネル（Discord など）でオーナーに伝えて承認を求めること（文字列「チャンネル」と「オーナー」を含む）／承認されたらオーナーが自分で実行すること／言い換えたコマンドで再実行して hook を避けないこと。無人のセッションへの理由に、確認画面の話（文字列「確認画面」）を書いてはならない（MUST NOT。出していない確認画面の操作を待って止まる余地を残さないため）。コマンドに付けて hook を通す目印を案内してはならない（MUST NOT）。
+
+NO_ASK の印がある主への `permissionDecisionReason` は、当たった種類（判定しきれなかった入れ子ならその旨）・規範の正本・実行していないことに加え、コマンドの全文・対象・なぜ要るか・止まった理由を書いてオーナーへの承認を求め、ターンを終えることを案内しなければならない（MUST）。承認されてもこのセッションでは実行せず、オーナーが自分で実行すること、言い換えて再実行しないことも含めなければならない（MUST）。確認画面・入力欄の `!`・チャンネルや Discord の案内・hook を通す目印の付け方を書いてはならない（MUST NOT）。UNATTENDED も付いている場合はこの段落を優先しなければならない（MUST）。
 
 子の呼び出し（`agent_id` が空でない文字列）への `deny` の `permissionDecisionReason` は次をすべて含まなければならない（MUST）: 当たった操作の種類（判定しきれなかった入れ子のときはその旨）／規範の正本が `rules/destructive-git-guard.md` であること／このコマンドは実行されないこと／打ち直さず、別の書き方も試さないこと（文字列「打ち直さず」を含む）／scratchpad の検証用 repo なら git で戻さず作り直すこと／それ以外は作業を止め、報告に次の 4 項目を書いて親に返すこと（打ちたかったコマンドの全文、対象のパス、その対象を自分で作ったか（作ったなら、作ったコマンド）、なぜ要るか。文字列「コマンドの全文」「対象のパス」「自分で作った」を含む）／親の許可を受けられる打ち方の例は、変数を使わず実パスで単独のコマンドとして打つこと（変数や置換を含む形は親が許可を書けない。ほかの形が許可を受けられないとは書かない）（1 文で書く。文字列「実パスで単独のコマンド」を含む。この文は打ち方を教えるもので、打ち直しを許すものではなく、「打ち直さず」の指示は変えない）／拒否の記録を書けたときは、そのパスと、親に返す報告にそのパスを書くこと。子への理由に、確認画面を出していること、`!` を付けて打つこと、許可を書くスクリプトの名前と使い方を書いてはならない（MUST NOT。主に上げるのも許可を書くのも親の役目で、子が自分で主に聞こうとしたり自分で許可を書こうとしたりする余地を残さないため）。コマンドに付けて hook を通す目印を案内してはならない（MUST NOT）。
 
@@ -174,6 +210,12 @@ payload の `agent_id` が空でない文字列のとき（サブエージェン
 
 - **WHEN** `agent_id` が空でない文字列で `permission_mode` が `default` の payload に `git checkout -- a` を渡す
 - **THEN** `permissionDecisionReason` に、許可を受けられる打ち方の 1 文（「実パスで単独のコマンド」と「変数」）、作業の破棄に当たったこと、`rules/destructive-git-guard.md`、「打ち直さず」、scratchpad の検証用 repo なら作り直すこと、報告に書く 4 項目（「コマンドの全文」「対象のパス」「自分で作った」「なぜ」）を書いて親に返すこと、拒否の記録のパスが含まれ、「確認画面」と `!` を付けて打つ案内と `git-guard-permit.sh` と `DEV_WORKFLOW_GIT_GUARD` の文字列は含まれない
+
+#### Scenario: NO_ASK の理由は承認を求めてターンを終えるよう案内する
+
+- **WHEN** NO_ASK=1 の主が `git push origin main` を default と bypassPermissions で試みる。UNATTENDED=1 も併せた場合と FORCE=ask も付けた場合も同じ入力で試みる
+- **THEN** すべて `deny` となり、理由には main / master への push、`rules/destructive-git-guard.md`、実行していないこと、コマンドの全文・対象・なぜ要るか・止まった理由、オーナーへの承認依頼、ターンを終える指示、承認後もこのセッションでは実行せずオーナーが自分で実行すること、言い換えて再実行しないことが含まれる
+- **AND** 理由に「確認画面」・`!`・「チャンネル」・「Discord」・印を付け外しする案内は含まれない
 
 ### Requirement: 逃げ道と fail-open
 
@@ -319,18 +361,13 @@ worktree プラグインの `skills/wt-clean/SKILL.md` は、`git branch -D`（s
 
 ### Requirement: 同じ子への拒否の繰り返しを打ち切る
 
-子（`agent_id` が空でない文字列）に `deny` を返すたびに、`session_id` と `agent_id` の組ごとの拒否の回数を、環境変数 `TMPDIR` が空でない文字列ならその下、未設定か空なら `/tmp` の下の `dev-workflow-git-guard/` にあるファイルに数えなければならない（MUST）。書き込めない `TMPDIR` を飛ばして別の場所に書いてはならない（MUST NOT。`tempfile.gettempdir()` の候補探しを使わない）。ファイル名は `session_id` と `agent_id` から導いたハッシュとし、`agent_id` や `session_id` をそのままパスに使ってはならない（MUST NOT）。回数のファイルを作れない・読めない・中身が整数でないときは、その呼び出しを 1 回目として扱い、`deny` は返さなければならない（MUST。数えられないことで通してはならない）。`allow` を返した呼び出しは数えてはならない（MUST NOT）。
+子（`agent_id` が空でない文字列）に `deny` を返すたびに、`session_id` と `agent_id` の組ごとの拒否の回数を、環境変数 `TMPDIR` が空でない文字列ならその下、未設定か空なら `/tmp` の下の `dev-workflow-git-guard/` にあるファイルに数えなければならない（MUST）。書き込めない `TMPDIR` を飛ばして別の場所に書いてはならない（MUST NOT。`tempfile.gettempdir()` の候補探しを使わない）。ファイル名は `session_id` と `agent_id` から導いたハッシュとし、`agent_id` や `session_id` をそのままパスに使ってはならない（MUST NOT）。回数のファイルを作れない・読めない・中身が整数でないときは、その呼び出しを 1 回目として扱い、`deny` は返さなければならない（MUST。数えられないことで通してはならない）。`allow` を返した呼び出しは数えてはならない（MUST NOT）。要件「拒否の記録・回数・許可の置き場所（`<base>`）を確かめてから使う」の確かめを満たさないとき、および判定のファイル（`plugins/dev-workflow/scripts/git-guard-scratchpad.py`）を読めず確かめられないときは、回数のファイルを読みも書きもせず、その呼び出しを数えてはならない（MUST NOT。`deny` は返す。2 回目以降の扱いにもしない）。回数のファイルは symlink を辿らずに開かなければならない（MUST。symlink なら読めないものとして 1 回目に扱い、その先を書き換えない）。要件「子は Bash のコマンドで許可の置き場所を名指しできない」が止める呼び出しのうち、ほかの種類（破壊的 git 操作の 9 種・判定しきれなかったもの・許可を書くスクリプトの子からの呼び出し）に当たらないものは、数えてはならない（MUST NOT。`deny` は返す。2 回目以降の扱いにもせず、`"continue"` のキーも出さない）。ほかの種類にも当たるものは、今までどおり数える（MUST）。
 
 親が許可を書くスクリプト（要件「許可を書くスクリプトは一時領域の中に収まるコマンドだけを許可する」）で許可を書いたときは、その子の回数を 0 に戻す（回数のファイルを消す）。許可のあとの最初の拒否は 1 回目として扱わなければならない（MUST）。
 
-同じ組への 2 回目以降の `deny` では、`permissionDecisionReason` に「直ちに作業を終えて親に返す」を含めなければならない（MUST）。加えて、出力のトップレベルに `"continue": false` と `stopReason` を含めるかは実装段の実機確認（design.md「2 回目以降の拒否」）の結果で決める:
+同じ組への 2 回目以降の `deny` では、`permissionDecisionReason` に「直ちに作業を終えて親に返す」を含め、出力のトップレベルに `"continue": false` と `stopReason` を含めなければならない（MUST）。この形は既存のコードの実機確認済みの決定を引き継いだもので、この change では決め直さない（子の中で `continue: false` を返すと子だけが終わり、親が子の結果を受け取って続けることを確かめた記録は、archive の `openspec/changes/archive/2026-10-19-subagent-git-guard-deny/design.md` の節「2 回目以降の拒否: 強い理由文は常に足し、`continue: false` は実機確認の結果で決める」にある）。1 回目の `deny` には `"continue"` のキーを出力してはならない（MUST NOT）。主の呼び出し（`agent_id` が無い・空・文字列でない）は数えず、出力も変えない（MUST）。
 
-- 子の中で `continue: false` を返すと子だけが終わり、親が子の結果を受け取って続けると確かめた場合は、`"continue": false` と `stopReason` を含めなければならない（MUST）
-- 親まで止まると分かった場合、または確かめられなかった場合は、`"continue"` のキーを出力してはならない（MUST NOT）
-
-どちらに決めたかと実機確認の結果は、この change の design.md と PR 本文に記録しなければならない（MUST）。1 回目の `deny` には `"continue"` のキーを出力してはならない（MUST NOT）。主の呼び出し（`agent_id` が無い・空・文字列でない）は数えず、出力も変えない（MUST）。
-
-守備範囲: 受け取る入力は、Claude Code が PreToolUse で渡す payload の `agent_id` と `session_id`、環境変数 `TMPDIR`、その下の回数のファイルである。拾いたい誤りは、拒否された子が打ち直しや言い換えで同じ hook に繰り返し当たり続けることである。次の入力は打ち切らずに通す（1 回目として扱う）ことを許す: 同じ子が並列の Bash 呼び出しで同時に拒否され、回数の読み書きが重なったもの／回数のファイルを作れない・読めない・中身が整数でないとき（毎回 1 回目になる）／一時ディレクトリが片付けられたあとの拒否（0 から数え直す）／hook に当たらない書き方（要件「破壊的 git 操作を Bash の実行前に検出する」の守備範囲で通ることを許した形）で子が同じことを試みたもの（拒否にならないので数えない）／他のプロセスが回数のファイルを書き換えたもの。止めすぎる向きでは、SendMessage で再開された子は同じ `agent_id` を持つので回数が再開をまたいで続き、前の工程で 1 回拒否され親が許可を書かなかった子は次の工程の最初の拒否で 2 回目として扱われるが、これは許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+守備範囲: 受け取る入力は、Claude Code が PreToolUse で渡す payload の `agent_id` と `session_id`、環境変数 `TMPDIR`、その下の回数のファイルである。拾いたい誤りは、拒否された子が打ち直しや言い換えで同じ hook に繰り返し当たり続けることである。次の入力は打ち切らずに通す（1 回目として扱う）ことを許す: 同じ子が並列の Bash 呼び出しで同時に拒否され、回数の読み書きが重なったもの／回数のファイルを作れない・読めない・中身が整数でないとき（毎回 1 回目になる）／一時ディレクトリが片付けられたあとの拒否（0 から数え直す）／hook に当たらない書き方（要件「破壊的 git 操作を Bash の実行前に検出する」の守備範囲で通ることを許した形）で子が同じことを試みたもの（拒否にならないので数えない）／他のプロセスが回数のファイルを書き換えたもの／`<base>` を確かめられないときの拒否と、判定のファイルを読めないときの拒否（数えないので毎回 1 回目になり、打ち切られない）／要件「子は Bash のコマンドで許可の置き場所を名指しできない」だけに当たった拒否（要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」の拒否は別の hook で、もともと数えない。ルールを読み飛ばした子を 1 回で打ち切らないため数えない。同じ子が何度打ち直しても毎回 1 回目として返るが、コマンドは実行されない）。止めすぎる向きでは、SendMessage で再開された子は同じ `agent_id` を持つので回数が再開をまたいで続き、前の工程で 1 回拒否され親が許可を書かなかった子は次の工程の最初の拒否で 2 回目として扱われるが、これは許す。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 1 回目は打ち切らない
 
@@ -340,7 +377,7 @@ worktree プラグインの `skills/wt-clean/SKILL.md` は、`git branch -D`（s
 #### Scenario: 同じ子への 2 回目は強く返す
 
 - **WHEN** 空の `TMPDIR` で、`session_id` が `s1`・`agent_id` が `a1` の payload に `git checkout -- a` を渡して 1 回拒否されたあと、同じ `TMPDIR` で `session_id` が `s1`・`agent_id` が `a1` の payload に `git checkout -- b` を渡す
-- **THEN** `permissionDecision` が `deny` で、`permissionDecisionReason` に「直ちに作業を終えて親に返す」が含まれ、実機確認で子だけが終わると確かめた場合は出力のトップレベルに `"continue": false` と `stopReason` が含まれ、そうでない場合は `"continue"` のキーが無い
+- **THEN** `permissionDecision` が `deny` で、`permissionDecisionReason` に「直ちに作業を終えて親に返す」が含まれ、出力のトップレベルに `"continue": false` と `stopReason` が含まれる
 
 #### Scenario: 別の子は 1 回目として数える
 
@@ -380,13 +417,13 @@ dev-workflow の `agents/reviewer.md`・`agents/worker.md`・`agents/gate-runner
 
 ### Requirement: 子への拒否を記録し、親が 1 回だけ通せるようにする
 
-子の呼び出し（`agent_id` が空でない文字列）に `deny` を返すたびに、hook は拒否の記録を `<base>/denied/<key>.json` に書かなければならない（MUST）。`<base>` は要件「同じ子への拒否の繰り返しを打ち切る」の回数のファイルと同じ `dev-workflow-git-guard/`（環境変数 `TMPDIR` が空でない文字列ならその下、未設定か空なら `/tmp` の下）。`<key>` は payload の `session_id`・`agent_id`・`cwd`・`tool_input.command` を NUL でつないだ文字列の sha256 の 16 進とする（`session_id` と `cwd` が文字列でなければ空文字として扱う）。記録には `session_id`・`agent_id`・`cwd`・`command`（全文）・当たった種類・時刻を含めなければならない（MUST）。記録を書けなかったときも `deny` は返さなければならない（MUST）。
+子の呼び出し（`agent_id` が空でない文字列）に `deny` を返すたびに、hook は拒否の記録を `<base>/denied/<key>.json` に書かなければならない（MUST）。`<base>` は要件「同じ子への拒否の繰り返しを打ち切る」の回数のファイルと同じ `dev-workflow-git-guard/`（環境変数 `TMPDIR` が空でない文字列ならその下、未設定か空なら `/tmp` の下）。`<key>` は payload の `session_id`・`agent_id`・`cwd`・`tool_input.command` を NUL でつないだ文字列の sha256 の 16 進とする（`session_id` と `cwd` が文字列でなければ空文字として扱う）。記録には `session_id`・`agent_id`・`cwd`・`command`（全文）・当たった種類・時刻を含めなければならない（MUST）。記録を書けなかったときも `deny` は返さなければならない（MUST）。`<base>` が要件「拒否の記録・回数・許可の置き場所（`<base>`）を確かめてから使う」の確かめを満たさないときは、この段落と次の段落の手順（記録を書く・許可を探す・回数を数える）を一つも行わずに `deny` を返さなければならない（MUST）。要件「子は Bash のコマンドで許可の置き場所を名指しできない」が当たった呼び出しでは、ほかの種類にも当たるときも含めて、拒否の記録を書かず、許可を探さずに `deny` を返さなければならない（MUST。この段落と次の段落の記録と許可の手順より優先する。回数の扱いは要件「同じ子への拒否の繰り返しを打ち切る」）。
 
-子の呼び出しで破壊的 git 操作を見つけたとき、hook は同じ規則で `<key>` を計算し、`<base>/permits/<key>.json`（許可）を自分だけが使えるように `rename` で取ってから読まなければならない（MUST）。取れた許可の `session_id`・`agent_id`・`cwd`・`command` がすべて payload と一致し、`expires_at` が今より後で、かつ payload の `session_id`・`cwd`・`tool_input.command` が要件「許可を書くスクリプトは一時領域の中に収まるコマンドだけを許可する」の判定（以下「一時領域の判定」）をその時点のファイルシステムで満たすときに限り、`permissionDecision` を `allow` にし、取った許可を消さなければならない（MUST）。このとき拒否の回数を数えてはならず、拒否の記録も書いてはならない（MUST NOT）。一時領域の判定は、hook と許可を書くスクリプトが `plugins/dev-workflow/scripts/` に置いた同じ 1 つのファイルを読んで行わなければならない（MUST。判定を 2 か所に書き分けない）。許可ファイルが担うのは親の同意だけで、一時領域の外へ通さないことは hook のこの判定が担う。許可が無い・取れない・読めない・どれかの値が一致しない・期限切れのときは、取った許可を消し、今までどおり `deny` を返して回数を数えなければならない（MUST）。許可の 4 つの値は一致し期限内だが一時領域の判定を満たさないときも、取った許可を消して `deny` を返し回数を数え、`permissionDecisionReason` に「許可はあるが行き先を確かめられない」を含めなければならない（MUST）。判定のファイルを読めないときは `<key>` を出せないので、許可を探さず拒否の記録も書かずに `deny` を返して回数を数えなければならない（MUST。許可は残り、期限で切れる）。
+子の呼び出しで破壊的 git 操作を見つけたとき、hook は同じ規則で `<key>` を計算し、`<base>/permits/<key>.json`（許可）を自分だけが使えるように `rename` で取ってから読まなければならない（MUST）。取れた許可の `session_id`・`agent_id`・`cwd`・`command` がすべて payload と一致し、`expires_at` が今より後で、かつ payload の `session_id`・`cwd`・`tool_input.command` が要件「許可を書くスクリプトは一時領域の中に収まるコマンドだけを許可する」の判定（以下「一時領域の判定」）をその時点のファイルシステムで満たすときに限り、`permissionDecision` を `allow` にし、取った許可を消さなければならない（MUST）。このとき拒否の回数を数えてはならず、拒否の記録も書いてはならない（MUST NOT）。一時領域の判定は、hook と許可を書くスクリプトが `plugins/dev-workflow/scripts/` に置いた同じ 1 つのファイルを読んで行わなければならない（MUST。判定を 2 か所に書き分けない）。許可ファイルが担うのは親の同意だけで、一時領域の外へ通さないことは hook のこの判定が担う。許可が無い・取れない・読めない・どれかの値が一致しない・期限切れのときは、取った許可を消し、今までどおり `deny` を返して回数を数えなければならない（MUST）。許可の 4 つの値は一致し期限内だが一時領域の判定を満たさないときも、取った許可を消して `deny` を返し回数を数え、`permissionDecisionReason` に「許可はあるが行き先を確かめられない」を含めなければならない（MUST）。判定のファイルを読めないときは `<key>` を出せないので、許可を探さず拒否の記録も書かずに `deny` を返さなければならない（MUST。許可は残り、期限で切れる）。このときは `<base>` を確かめられないので、回数も数えてはならない（MUST NOT。要件「同じ子への拒否の繰り返しを打ち切る」）。
 
 hook と許可を書くスクリプトは、payload の `cwd` を、そのコマンドが実行されるディレクトリとして扱う（実機で確認済み: 子の Bash は呼び出しをまたいで作業ディレクトリを持ち越さず、`cd` だけを打った次の呼び出しの payload の `cwd` は起動ディレクトリのままで、コマンドが実行されるディレクトリと一致した。archive の design.md「cd のあとの payload の cwd」）。主の呼び出し（`agent_id` が無い・空・文字列でない）は許可を見てはならない（MUST NOT。今までどおり `ask` / `deny`）。`allow` の `permissionDecisionReason` には、親が書いた許可に一致したのでこの 1 回だけ通すことを書かなければならない（MUST）。
 
-守備範囲: 受け取る入力は、要件「同じ子への拒否の繰り返しを打ち切る」の入力に payload の `cwd` と、`<base>` の下の `denied/` と `permits/` のファイルを足したものである。拾いたい誤りは、子が自分の scratchpad の検証用 repo を戻すだけの操作でも、親が代わりに打つと主の確認画面が出て、主が画面を押すまで作業が止まることである。次の入力は止めることを許す: 親が許可を書いたあと、子がコマンドを 1 文字でも変えて打ったもの・別の cwd から打ったもの／SendMessage で再開されずに新しい子として起こされ `agent_id` が変わったもの／期限が切れてから打ったもの。次の入力は通すことを許す: 子や他のプロセスが許可を書くスクリプトを経ずに `permits/` に直接書いた許可のうち、一時領域の判定を満たすもの（親の同意は経ないが、通るのは scratchpad の中の repo への操作だけに限られる）／hook が一時領域の判定を終えてからコマンドが実行されるまでの間に、scratchpad の中のディレクトリが外への symlink に差し替えられたもの。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+守備範囲: 受け取る入力は、要件「同じ子への拒否の繰り返しを打ち切る」の入力に payload の `cwd` と、`<base>` の下の `denied/` と `permits/` のファイルを足したものである。拾いたい誤りは、子が自分の scratchpad の検証用 repo を戻すだけの操作でも、親が代わりに打つと主の確認画面が出て、主が画面を押すまで作業が止まることである。次の入力は止めることを許す: 親が許可を書いたあと、子がコマンドを 1 文字でも変えて打ったもの・別の cwd から打ったもの／SendMessage で再開されずに新しい子として起こされ `agent_id` が変わったもの／期限が切れてから打ったもの。次の入力は通すことを許す: 子や他のプロセスが許可を書くスクリプトを経ずに `permits/` に直接書いた許可のうち、一時領域の判定を満たすもの（親の同意は経ないが、通るのは scratchpad の中の repo への操作だけに限られる）。子が書く形のうち、Write / Edit / NotebookEdit で書くものと、Bash のコマンドに置き場所の名前を 2 つとも書くものは、要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」と要件「子は Bash のコマンドで許可の置き場所を名指しできない」が書く前に止める。それ以外の書き方（要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」の守備範囲で通ることを許した形）で置かれた許可は、使う時点で区別できないので通る／hook が一時領域の判定を終えてからコマンドが実行されるまでの間に、scratchpad の中のディレクトリが外への symlink に差し替えられたもの。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 一致する許可があれば 1 回だけ通す
 
@@ -426,11 +463,11 @@ hook と許可を書くスクリプトは、payload の `cwd` を、そのコマ
 #### Scenario: 判定のファイルを読めないときは許可を探さずに拒否する
 
 - **WHEN** `git-guard-scratchpad.py` が無い場所に hook だけを置き、4 つの値が一致する許可を `permits/<key>.json` に置いてから、`agent_id` が `a1` の `git checkout -- a` の payload を渡す
-- **THEN** `permissionDecision` が `deny` で、`permissionDecisionReason` に「許可はあるが行き先を確かめられない」を含まず、`denied/` は作られず、許可のファイルは残る
+- **THEN** `permissionDecision` が `deny` で、`permissionDecisionReason` に「許可はあるが行き先を確かめられない」を含まず、`denied/` は作られず、許可のファイルは残る。同じ payload をもう 1 回渡しても、`permissionDecisionReason` に「直ちに作業を終えて親に返す」が無く、回数のファイルが作られない
 
 ### Requirement: 許可を書くスクリプトは一時領域の中に収まるコマンドだけを許可する
 
-`plugins/dev-workflow/scripts/git-guard-permit.sh` は、引数に拒否の記録のパスと理由（空でない文字列）を受け取り、次をすべて確かめたときだけ許可を書かなければならない（MUST）。どれかを確かめられなければ、許可を書かず、理由を stderr に書いて 0 以外で終わらなければならない（MUST）。
+`plugins/dev-workflow/scripts/git-guard-permit.sh` は、引数に拒否の記録のパスと理由（空でない文字列）を受け取り、次をすべて確かめたときだけ許可を書かなければならない（MUST）。どれかを確かめられなければ、許可を書かず、理由を stderr に書いて 0 以外で終わらなければならない（MUST）。終了コードは、許可を書いたら 0、引数の誤りは 2 とする。確かめられなかったときは、記録の `command` が一時領域の判定（次の 2 つ目の項目）を満たさず、かつその `command` が単独のコマンドの形でなければ 3、それ以外（記録の置き場所・中身の確かめに落ちたもの、単独のコマンドの形なのに判定を満たさないもの、判定のあとの書き込みに失敗したもの）は 1 で終わらなければならない（MUST）。単独のコマンドの形とは、`command` が、使う判定（git 用か rm 用か。次の 2 つ目の項目と同じ決め方）が許す文字だけでできていて、`;`・`&`・改行を 1 つも含まないことをいう。3 で終わるときは、判定の理由の行に加えて、実パスで単独のコマンドに打ち直せば判定し直せる形の理由で断ったことを stderr に 1 行書かなければならない（MUST）。3 か 1 かの振り分けは打ち直しを頼めるかの目安であって、許可を書くかどうかを変えてはならない（MUST NOT）。
 
 - 記録が `<base>/denied/<key>.json` の形の場所にあり、`basename(<base>)` が `dev-workflow-git-guard` で、中身から計算し直した `<key>` がファイル名と一致する。`<base>` は記録のパスの 2 つ上とし、環境変数 `TMPDIR` を見てはならない（MUST NOT。hook と親の Bash で `TMPDIR` が違いうるため）
 - 記録の `session_id`・`cwd`・`command` が、一時領域の判定を満たす。`command` の単純コマンド（`&&`・`;`・改行で区切ったもの）のどれかの先頭の語が `rm` なら、次の git 用の判定の代わりに要件「rm の一時領域の判定」（spec rm-permission-hook）を使い、それ以外は次の判定を使う（どちらを使うかは記録の `command` だけで決め、記録の他の項目は見ない）
@@ -525,11 +562,26 @@ git 用の一時領域の判定は、`session_id`・`cwd`・`command` の 3 つ�
 - **WHEN** `cwd` が scratchpad の中で、コマンドが `cd ./tbl; rm -rf x/*` の拒否の記録（`kinds` は `rm`）を渡す
 - **THEN** exit 0 で終わり、`permits/` に許可が 1 つ作られる。同じ記録の `kinds` を `git` に書き換えても、判定は `command` だけで決まるので結果は変わらない
 
+#### Scenario: 単独のコマンドの形でないために判定に落ちた記録は終了コード 3 で断る
+
+- **WHEN** `cwd` が scratchpad の外の作業ツリーで、scratchpad の中の repo について、`mkdir -p <repo>/x && git -C <repo> checkout -- a.txt`・`git init <repo> && git -C <repo> checkout -- a.txt`・`R=<repo>; git -C $R checkout -- a.txt`・`git -C "<repo>" checkout -- a.txt`・`git -C <repo> checkout -- a.txt & git status` の拒否の記録をそれぞれ渡す。また、`cd <scratchpad の外の repo> && git reset --hard` の記録を渡す
+- **THEN** どれも終了コード 3 で終わり、stderr に判定の理由の行と、単独のコマンドに打ち直せば判定し直せる旨の行があり、`permits/` に許可が作られない
+
+#### Scenario: 単独のコマンドの形なのに判定に落ちた記録と、記録の確かめに落ちた記録は終了コード 1 で断る
+
+- **WHEN** `git -C <scratchpad の外の repo> checkout -- a.txt`・`git push --force origin main`・`git -C <scratchpad の中の、まだ無いディレクトリ> checkout -- a.txt` の拒否の記録をそれぞれ渡す。また、`mkdir -p <repo>/x && git -C <repo> checkout -- a.txt` の記録の中身のコマンドを書き換えたもの（key がファイル名と一致しない）を渡す
+- **THEN** どれも終了コード 1 で終わり、stderr に打ち直せば判定し直せる旨の行が無く、`permits/` に許可が作られない
+
+#### Scenario: 打ち直した単独のコマンドが scratchpad の中なら許可を書く
+
+- **WHEN** 同じ子について、`mkdir -p <repo>/x && git -C <repo> checkout -- a.txt` の拒否の記録で終了コード 3 を受けたあと、`git -C <repo> checkout -- a.txt` の拒否の記録を作って渡し、そのあと同じ payload を hook に渡す
+- **THEN** スクリプトは exit 0 で終わって `permits/` に許可が 1 つ作られ、hook は `permissionDecision` を `allow` にする
+
 ### Requirement: 子は許可を書くスクリプトを呼べない
 
-子の呼び出しで、`tool_input.command` の文字列のどこかに `git-guard-permit` が含まれるものに、hook は書き方（直接の呼び出し・シェル経由・`-c` のコマンド文字列の中・`BASH_ENV` / `ENV` の設定・`cat` などで読むだけのもの）を問わず `deny` を返さなければならない（MUST。大文字小文字は区別する）。シェルの書き方を 1 つずつ読み分けて止めると、塞ぐたびに別の書き方が出るため、コマンドの読み方に頼らない。子がこのスクリプトを読む用事は無いので、読むだけのものも止める。拒否理由・回数・拒否の記録は、破壊的 git 操作の拒否と同じに扱う（当たった種類は許可を書くスクリプトの子からの呼び出し）。この呼び出しには許可を使ってはならない（MUST NOT）。主の呼び出しは止めてはならない（MUST NOT）。
+子の呼び出しで、`tool_input.command` の文字列のどこかに `git-guard-permit` が含まれるもの（大文字小文字は区別する）に、hook は `deny` を返さなければならない（MUST）。ただし、コマンドを要件「コマンド文字列をシェルと同じ単位で読む」と同じ読み方で読み、`$(...)` の中・バッククォートの中・ヒアドキュメントの引用されていない本文の中の `$(...)` を含むすべての単純コマンドの先頭の語が、読むか表示するだけのコマンドの一覧（`grep`・`egrep`・`fgrep`・`cat`・`head`・`tail`・`wc`・`ls`・`echo` の 9 つ。語がこの文字列ちょうどのときだけ当たる）のどれかであるときは、名前はそれらの引数・ヒアドキュメントの本文・here-string・リダイレクトの行き先・コメントとしてだけ出ていて実行される位置に無いので、この要件で止めてはならない（MUST NOT）。先頭の語にパスを付けた形（`/usr/bin/grep`）・前置き（`command`・`env`・`sudo` など）・変数の代入を前に置いた形・`{` や予約語で始まる形は一覧に当たらない（MUST。止める側）。字句読みが bash と違う読み方をする構文（`$'..'` の中の `\'`・算術 `$((..))`・`((..))`・`for ((..))`・`$[..]` の中の `<<`・`${..}` の中の引用と置換）で実行される位置の名前を引用符の中や本文と読み違えないよう、コマンド文字列に `$'`・`((`・`$[`・`${` のどれかを含むものにはこの例外をかけてはならない（MUST NOT。止める側）。引用符が閉じていない・判定の仕事量の上限を超えたなど、最後まで読めないコマンドは止める側として扱わなければならない（MUST）。一覧のコマンドだけでできたコマンドを止めないことのほかは、書き方（直接の呼び出し・シェル経由・`-c` のコマンド文字列の中・`BASH_ENV` / `ENV` の設定・パイプで渡す先・`xargs`・`find -exec`・インタプリタ）を読み分けない。拒否理由・回数・拒否の記録は、破壊的 git 操作の拒否と同じに扱う（当たった種類は許可を書くスクリプトの子からの呼び出し）。ただし同じコマンドに要件「子は Bash のコマンドで許可の置き場所を名指しできない」も当たるときは、拒否の記録を書かない（その要件に従う。回数は数える）。この呼び出しには許可を使ってはならない（MUST NOT）。主の呼び出しは止めてはならない（MUST NOT）。
 
-守備範囲: 受け取る入力は、Claude Code が PreToolUse で渡す payload の `tool_input.command`（子が書く値）と `agent_id` である。拾いたい誤りは、拒否された子が親に返らずに、コマンド文字列にスクリプトのパスを書いて自分で許可を書くことである。変数を組み合わせて名前を作る形・別名・グロブ・別のファイルの中から呼ぶ形など、コマンド文字列に名前が出ない書き方と、`permits/` に直接書く形は通ることを許す。通っても、許可が効くのは使う時点の一時領域の判定（要件「子への拒否を記録し、親が 1 回だけ通せるようにする」）を満たす scratchpad の中だけである。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+守備範囲: 受け取る入力は、Claude Code が PreToolUse で渡す payload の `tool_input.command`（子が書く値）と `agent_id` である。拾いたい誤りは、拒否された子が親に返らずに、コマンド文字列にスクリプトのパスを書いて自分で許可を書くことである。止めない一覧は、引数からほかのプログラムを起動する手段を持たないコマンドに限る（`sed`・`awk`・`rg`・`find`・`xargs`・`git`・`less`・`printf` は、命令やオプションや設定でほかのプログラムを起動するか変数を設定できるので入れない）。一覧に無いコマンドを 1 つでも含めば止めるので、名前をファイルに書いて同じコマンドの中で実行する形（`cat > x.sh <<EOF` のあとの `bash x.sh`）や、名前を出力してシェルに渡す形（`echo <パス> | bash`）は止まる。次の入力は通すことを許す: 字句読みと bash の読み方の差を突いて、一覧のコマンドだけに見せたもの（extglob の `@(..)` など・`case`・`[[` の中など、例外をかけない構文の一覧に無いもの。一覧は、字句読みが食い違うと分かっていて、ふつうの作業でも出やすい構文だけを並べる。この判定はセキュリティの境界ではなく、差を突く子は今の規則でも名前を引用符で割れば届く）／一覧のコマンドで名前を含む中身をファイルに書き（スクリプトの上書き・シェルの起動ファイルへの追記を含む）、別の呼び出しでそのファイルを名前を書かずに実行するもの（同じことは、今も名前を引用符で割る・変数で組み立てる形で通る）／変数を組み合わせて名前を作る形・引用符で割った名前・別名・グロブ・シンボリックリンクやコピーを経て呼ぶ形・別のファイルの中から呼ぶ形など、コマンド文字列に名前が出ない書き方。名前の出ない書き方で呼ばれたスクリプトを、ほかの層は止めない（Write / Edit の hook と要件「子は Bash のコマンドで許可の置き場所を名指しできない」は、スクリプト自身が組み立てる置き場所のパスを見ない）。スクリプトを経ずに許可の置き場所へ直接書く形は、この要件では見ない（分かりやすい 2 つの書き方は要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」と要件「子は Bash のコマンドで許可の置き場所を名指しできない」が止め、残りは要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」の守備範囲で通ることを許す）。通っても、許可が効くのは使う時点の一時領域の判定（要件「子への拒否を記録し、親が 1 回だけ通せるようにする」）を満たす scratchpad の中だけで、許可を書いたことは `permit-log.jsonl` に残る。次の入力は止めることを許す（止めすぎる向き）: 一覧に無いコマンドで名前を文字列として扱うもの（`sed -n`・`rg`・`git log`・`git diff`・`cd` のあとの `grep`・`for` の中の `grep`・テストの実行を後ろにつないだもの）。子はコマンドを打つ前の書き方の選択として、Read / Edit / Write ツールで読み書きするか、一覧のコマンドだけで書く形を使える。拒否されたあとは、要件「拒否理由は承認の取り方を案内する」の理由文どおり打ち直さず親に返す（一覧のコマンドで書き直して打ち直すことは、この要件が許す手順ではない）。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: 子がスクリプトを呼ぶと拒否する
 
@@ -538,8 +590,18 @@ git 用の一時領域の判定は、`session_id`・`cwd`・`command` の 3 つ�
 
 #### Scenario: 書き方を問わず名前があれば拒否する
 
-- **WHEN** `agent_id` が `a1` の payload に `bash -o errexit /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`bash --rcfile /x/scripts/git-guard-permit.sh -i`・`zsh -O /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`bash -c '/x/scripts/git-guard-permit.sh /y/denied/k.json ok'`・`BASH_ENV=/x/scripts/git-guard-permit.sh bash -c true`・`BASH_ENV[0]=/x/scripts/git-guard-permit.sh bash /x/y.sh`・`BASH_ENV+=/x/scripts/git-guard-permit.sh bash /x/y.sh`・`declare -x BASH_ENV=/x/scripts/git-guard-permit.sh; bash /x/y.sh`・`typeset -x ENV=/x/scripts/git-guard-permit.sh; sh -i`・`printf -v BASH_ENV %s /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh`・`read BASH_ENV <<< /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh`・`cat /x/scripts/git-guard-permit.sh` をそれぞれ渡す
+- **WHEN** `agent_id` が `a1` の payload に `bash -o errexit /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`bash --rcfile /x/scripts/git-guard-permit.sh -i`・`zsh -O /x/scripts/git-guard-permit.sh /y/denied/k.json ok`・`bash -c '/x/scripts/git-guard-permit.sh /y/denied/k.json ok'`・`BASH_ENV=/x/scripts/git-guard-permit.sh bash -c true`・`BASH_ENV[0]=/x/scripts/git-guard-permit.sh bash /x/y.sh`・`BASH_ENV+=/x/scripts/git-guard-permit.sh bash /x/y.sh`・`declare -x BASH_ENV=/x/scripts/git-guard-permit.sh; bash /x/y.sh`・`typeset -x ENV=/x/scripts/git-guard-permit.sh; sh -i`・`printf -v BASH_ENV %s /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh`・`read BASH_ENV <<< /x/scripts/git-guard-permit.sh; export BASH_ENV; bash /x/y.sh` をそれぞれ渡す
 - **THEN** どれも `permissionDecision` が `deny` になる
+
+#### Scenario: 一覧のコマンドに一覧に無いコマンドが混じれば拒否する
+
+- **WHEN** `agent_id` が `a1` の payload に `echo /x/scripts/git-guard-permit.sh /y/denied/k.json ok | bash`・`ls /x/scripts/git-guard-permit.sh | xargs bash`・`cat /x/scripts/git-guard-permit.sh; bash /x/y.sh`・`grep x "$(bash /x/scripts/git-guard-permit.sh /y/denied/k.json ok)"`・`` echo `/x/scripts/git-guard-permit.sh /y/denied/k.json ok` ``・1 行目が `cat <<EOF`、2 行目が `$(/x/scripts/git-guard-permit.sh /y/denied/k.json ok)`、3 行目が `EOF` のコマンド・1 行目が `cat > /x/y.sh <<'EOF'`、2 行目が `/x/scripts/git-guard-permit.sh /y/denied/k.json ok`、3 行目が `EOF`、4 行目が `bash /x/y.sh` のコマンド・`/usr/bin/grep x /x/scripts/git-guard-permit.sh`・`command cat /x/scripts/git-guard-permit.sh`・`PATH=/x/bin grep x /x/scripts/git-guard-permit.sh`・`grep 'x /x/scripts/git-guard-permit.sh`（引用符が閉じていない）・`echo $'\' '; /x/scripts/git-guard-permit.sh /y/denied/k.json ok; echo #'`・`echo $((1+1)) /x/scripts/git-guard-permit.sh`・`(( 1 << 1 )); echo /x/scripts/git-guard-permit.sh`・`echo $[1+1] /x/scripts/git-guard-permit.sh`・`echo ${HOME} /x/scripts/git-guard-permit.sh` をそれぞれ渡す
+- **THEN** どれも `permissionDecision` が `deny` になる
+
+#### Scenario: 読むか表示するだけのコマンドの中の名前は止めない
+
+- **WHEN** 空の `TMPDIR` を T として、`agent_id` が `a1` の payload に `grep -rn "git-guard-permit" /x/dir`・`grep -rln "git-guard-permit" --include=*.bats .`・`cat /x/scripts/git-guard-permit.sh`・`grep -n x /x/scripts/git-guard-permit.sh | head -5`・`ls /x/scripts | grep git-guard-permit`・`grep x /x/a <<< git-guard-permit`・1 行目が `cat >> /x/spec.md <<'EOF'`、2 行目が `` `git-guard-permit.sh` を呼ぶ ``、3 行目が `EOF` のコマンドを、それぞれ 2 回ずつ渡す
+- **THEN** どれも exit 0 で何も出力せず、T の下に何も作られない
 
 #### Scenario: 主の呼び出しは止めない
 
@@ -555,3 +617,178 @@ git 用の一時領域の判定は、`session_id`・`cwd`・`command` の 3 つ�
 - **WHEN** 要件「子への拒否を記録し、親が 1 回だけ通せるようにする」の「一致する許可があれば 1 回だけ通す」の手順を行う
 - **THEN** `permit-log.jsonl` に `event` が `permit` の行（理由とコマンドを含む）と `use` の行がこの順にある
 
+### Requirement: 別セッションの子の停止検知の条件を案内する
+
+`skills/develop/references/epic.md` の手順 5 は、NO_ASK の印を起動側が付けた子は git ガードの確認画面で止まらず、拒否後に承認を求めてターンを終えた止まりを、会話ログが読めるとき `wait --watch-stopped` が検知することを案内しなければならない（MUST）。印の無い子の確認画面や会話ログを読めない子は検知できないという注意を維持しなければならない（MUST）。
+
+#### Scenario: 手順 5 が検知できる止まりと検知できない止まりを区別する
+
+- **WHEN** `epic.md` の手順 5 を読む
+- **THEN** NO_ASK の印の名前、拒否後に承認を求めてターンを終えた子は会話ログから検知されること、確認画面で止まった子とログを読めない子は検知できないことが書かれている
+
+### Requirement: 拒否の記録・回数・許可の置き場所（`<base>`）を確かめてから使う
+
+hook と許可を書くスクリプトは、`<base>` とその下の `denied/`・`permits/` を使う前に、それぞれを lstat で見て、symlink でない・ディレクトリ・持ち主が自分の uid・グループと他者に書き込み権が無い、をすべて満たすか確かめなければならない（MUST）。無いものは 0700 で作ってから確かめる（MUST）。`<base>` の親が無ければ作らず、満たさないものとする（MUST）。既にあって満たすフォルダのモードは変えない（0755 でも使う）。確かめと作成は `git-guard-scratchpad.py` の 1 か所で行う（MUST）。
+
+#### 守備範囲
+
+受け取る入力は、環境変数 `TMPDIR`、`<base>`・`denied/`・`permits/` を lstat で見た結果（種類・持ち主の uid・モード）、hook と許可を書くスクリプトを動かしている自分の uid である。拾いたい誤りは、別の uid が `<base>`（またはその下の `denied/`・`permits/`）を先に作るか別の場所への symlink にしておき、そこへ偽の許可を置いて子のコマンドを通させる・hook に symlink の先のファイルを上書きさせる・拒否の記録（コマンドの全文と cwd）を読むことである。次の入力は通すことを許す: 同じ uid のプロセス（子のサブエージェントを含む）が作った・差し替えた `<base>` とその中身（子による許可の偽造は別の change で扱う）／確かめてから使うまでの間に同じ uid のプロセスが差し替えたもの／既にある 0755 の `<base>` と、その中の読み取り権付きの記録（別の uid に読まれうるが、書き換えや偽造にはつながらない）／root が作った・書き換えたもの／`<base>` の祖先（`TMPDIR`・`/tmp`・macOS の `/var` → `/private/var`）が symlink であるもの。止めすぎる向きでは、自分で 0775 や 0777 に変えた自分の `<base>` も満たさないものとして扱い、子の許可が通らなくなるが、これは許す（理由文に満たさなかった条件が出るので、主が手で直せる）。これらの穴を塞ぎ切ることは、この要件の完了条件にしない（design.md「Non-Goals」）。
+
+#### Scenario: 新しく作る `<base>` は所有者だけが使える
+
+- **WHEN** 空の `TMPDIR` で、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
+- **THEN** `permissionDecision` が `deny` で、`TMPDIR` の下の `dev-workflow-git-guard/` と `denied/` のモードが 0700 になる
+
+#### Scenario: 既にある 0755 の `<base>` はそのまま使う
+
+- **WHEN** `TMPDIR` の下に自分の持ち物の `dev-workflow-git-guard` をモード 0755 で作り、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
+- **THEN** `permissionDecision` が `deny` で、`denied/` に拒否の記録が作られ、`dev-workflow-git-guard` のモードは 0755 のまま
+
+#### Scenario: グループか他者が書ける `<base>` は使わない
+
+- **WHEN** `TMPDIR` の下に `dev-workflow-git-guard` をモード 0777 で作り、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
+- **THEN** `permissionDecision` が `deny` で、`permissionDecisionReason` に「拒否の記録を作れなかった」が含まれ、`dev-workflow-git-guard/` の下に何も作られない
+
+#### Scenario: `denied/` や `permits/` が symlink なら使わない
+
+- **WHEN** 確かめを満たす `<base>` の下の `denied/`（別の試行では `permits/`）を別のディレクトリへの symlink にして、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
+- **THEN** `permissionDecision` が `deny` で、`permissionDecisionReason` に「拒否の記録を作れなかった」が含まれ、symlink の先に何も作られない
+
+### Requirement: `<base>` の中のファイルを symlink を辿らずに開き、所有者だけのモードで作る
+
+`<base>` の中のファイル（回数・拒否の記録・許可・`permit-log.jsonl`・一時ファイル）は symlink を辿らずに開かなければならない（MUST）。新しく作るファイルは、予測できない名前・既にあれば失敗する排他的な作成・0600 で作り、回数・拒否の記録・許可はその一時ファイルからの `rename` で置く（MUST）。`permit-log.jsonl` は symlink を辿らない追記で開き、無ければ 0600 で作る（MUST）。`rename` で取った許可と、許可を書くスクリプトが読む拒否の記録も symlink を辿らずに読み、symlink なら読めないものとして扱う（MUST。取った許可は消し、許可を書くスクリプトは 0 以外で終わる）。
+
+#### 守備範囲
+
+受け取る入力は、確かめを満たした `<base>` の中の名前（回数のファイル・`denied/<key>.json`・`permits/<key>.json`・`permit-log.jsonl`・一時ファイル）が symlink かどうかとその中身、許可を書くスクリプトに引数で渡された拒否の記録のパスである。拾いたい誤りは、`<base>` の中の名前が別のファイルへの symlink にされていて、hook や許可を書くスクリプトがその先のファイル（自分が書けるリポジトリのファイルなど）を上書き・追記すること、symlink の先の偽の許可や記録を読んで使うこと、予測できる一時ファイルの名前を先に作られてそこへ書くことである。次の入力は通すことを許す: 同じ uid のプロセスが symlink でない普通のファイルとして直接置いた許可・拒否の記録（子による偽造は別の change で扱う）／ハードリンク（`O_NOFOLLOW` はハードリンクを見分けないが、別の uid は確かめを満たす `<base>` の中に名前を作れない）／`rename` で置く直前やその直後に同じ uid のプロセスが置き先を差し替えたもの／既にある 0644 などのファイル（モードを締め直さない）。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+
+#### Scenario: 許可のファイルが symlink なら使わず、先を書き換えない
+
+- **WHEN** 確かめを満たす `<base>` の下で、4 つの値が payload と一致し期限内で一時領域の判定を満たす許可の中身を書いたファイル C を `<base>` の外に置き、`permits/<key>.json` を C への symlink にしてから、その payload に `git checkout -- .` を渡す
+- **THEN** `permissionDecision` が `deny` で、C の中身が変わらず残っている
+
+#### Scenario: 新しく作るファイルは 0600
+
+- **WHEN** 空の `TMPDIR` で、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
+- **THEN** 拒否の記録と回数のファイルのモードが 0600 になる
+
+#### Scenario: `<base>` の中の symlink の先を書き換えない
+
+- **WHEN** 確かめを満たす `<base>` の下で、回数のファイルを別のファイル A への symlink に、`permit-log.jsonl` を別のファイル B への symlink にし、期限切れの許可を `permits/<key>.json` に置いてから、`agent_id` が `a1` の payload に `git checkout -- a` を渡す
+- **THEN** `permissionDecision` が `deny` で、A と B の中身が変わっていない
+
+#### Scenario: symlink の拒否の記録からは許可を書かない
+
+- **WHEN** `denied/<key>.json` を、中身が正しい記録の別のファイルへの symlink にしてから、そのパスで許可を書くスクリプトを実行する
+- **THEN** 終了コードが 0 以外で、`permits/` に許可が無い
+
+### Requirement: `<base>` を確かめられない子の呼び出しには deny だけを返す
+
+確かめを満たさないとき、hook は子の呼び出しで許可を探さず、拒否の記録を書かず、回数を数えずに（2 回目以降の扱いと `"continue"` のキーも出さない）、`permissionDecision` を `deny` にしなければならない（MUST）。`permissionDecisionReason` には子向けの文に加えて、文字列「拒否の記録を作れなかった」・`<base>` のパス・満たさなかった条件・親に返す報告にコマンドの全文を書くことを含める（MUST）。拒否の記録のパスは載せない。
+
+#### 守備範囲
+
+受け取る入力は、要件「拒否の記録・回数・許可の置き場所（`<base>`）を確かめてから使う」の確かめの結果（満たしたか・満たさなかった条件・パス）と、payload の `agent_id`・`tool_input.command` である。拾いたい誤りは、確かめを満たさない場所へ記録や回数を書いて symlink の先を書き換えること、そこに置かれた許可で子のコマンドを通すこと、子に落ち度の無い環境の問題で子を打ち切ること、の 3 つである。次の入力は止める・通すことを許す: 自分で 0777 に変えた `<base>` など確かめを満たさない環境では、子の破壊的 git 操作は親の許可で通せなくなる（止めすぎる向き。打ち切らないので子は親に返り、主の呼び出しは止まらない）／確かめを満たさないあいだ、子が同じコマンドを何度打ち直しても打ち切られず毎回 1 回目として返る（通しすぎる向き。拒否は返るのでコマンドは実行されない）。1 台の Mac を別のユーザーが同時に使い、そのユーザーが先に `/tmp/dev-workflow-git-guard` を作る形は想定しない（エピック #1476 の本文の節「条件の答え」）。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+
+#### Scenario: `<base>` が symlink なら記録も回数も書かず、置かれた許可も使わない
+
+- **WHEN** `TMPDIR` の下の `dev-workflow-git-guard` を別のディレクトリへの symlink にし、その先の `permits/<key>.json` に 4 つの値が一致し期限内の許可を置いてから、scratchpad の中の repo を `cwd` にした `agent_id` が `a1` の payload に `git checkout -- .` を 2 回渡す
+- **THEN** どちらも `permissionDecision` が `deny` で、`permissionDecisionReason` に「拒否の記録を作れなかった」と `<base>` のパスが含まれ、「直ちに作業を終えて親に返す」が無く、出力に `"continue"` のキーが無い。symlink の先には `denied/` も回数のファイルも作られず、置いた許可が残っている
+
+### Requirement: 主の呼び出しは `<base>` を作りも確かめもしない
+
+主の呼び出し（`agent_id` が無い・空・文字列でない）では、hook は `<base>` を作りも確かめもしてはならず（MUST NOT）、`<base>` の状態で `ask` / `deny` と理由文を変えてはならない（MUST NOT）。主の対話セッションの確認画面と、印のあるセッションの `deny` は、`<base>` が他人に作られていても今までどおり出る。
+
+#### 守備範囲
+
+受け取る入力は payload の `agent_id` だけで、`<base>` の状態は見ない。拾いたい誤りは、`<base>` が symlink や他人の持ち物であることで、主の確認画面が出なくなる・理由文が変わる・主の呼び出しで `<base>` が作られることである。次の入力は通すことを許す: 主の呼び出しが続くあいだは、`<base>` が確かめを満たさなくても hook は何も知らせない（気づくのは子の呼び出しの拒否の理由文から）。この穴を塞ぎ切ることは、この要件の完了条件にしない。
+
+#### Scenario: 主の呼び出しは `<base>` の状態によらず今までどおり
+
+- **WHEN** `TMPDIR` の下の `dev-workflow-git-guard` を別のディレクトリへの symlink にして、`agent_id` の無い `permission_mode` が `default` の payload に `git reset --hard` を渡す
+- **THEN** `permissionDecision` が `ask` で、理由文が `<base>` が正常なときと同じで、symlink の先に何も作られない
+
+### Requirement: 許可を書くスクリプトは確かめを満たさない `<base>` に書かない
+
+許可を書くスクリプトは、拒否の記録のパスの 2 つ上を `<base>` として確かめ、満たさないときは許可も `permit-log.jsonl` の行も書かず、回数のファイルも消さずに、満たさなかった条件と場所を stderr に書いて 0 以外で終わらなければならない（MUST）。親はこれを今までどおり「許可を書くスクリプトが 0 以外で終わった」としてオーナーに上げる（`skills/develop/SKILL.md` の手順は変えない）。
+
+#### 守備範囲
+
+受け取る入力は、許可を書くスクリプトに引数で渡された拒否の記録のパスと、その 2 つ上のディレクトリ（`<base>`）と `denied/`・`permits/` を lstat で見た結果である。拾いたい誤りは、別の uid が作った・symlink にした `<base>` の中に許可や `permit-log.jsonl` の行を書き、偽の許可が使える場所に親の許可を置いたり symlink の先を書き換えたりすることである。次の入力は止める・通すことを許す: 自分で 0777 に変えた自分の `<base>` の記録からも許可を書けない（止めすぎる向き。親はオーナーに上げ、オーナーが直す）／確かめてから書くまでの間に同じ uid のプロセスが `<base>` を差し替えたものには書く（通しすぎる向き。同じ uid は守らない）。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+
+#### Scenario: 確かめを満たさない `<base>` に許可を書かない
+
+- **WHEN** 拒否の記録を書かせたあと、`<base>` のモードを 0777 に変えてから、その記録のパスで許可を書くスクリプトを実行する
+- **THEN** 終了コードが 0 以外で、stderr に `<base>` のパスが含まれ、`permits/` に許可が無く、`permit-log.jsonl` に `permit` の行が無い
+
+### Requirement: 子は Write / Edit / NotebookEdit で許可の置き場所に書けない
+
+hook `scripts/git-guard-base-write-guard.sh` は、子（`agent_id` が空でない文字列）の書き先（Write / Edit は `tool_input.file_path`、NotebookEdit は `tool_input.notebook_path`）の部品のどれかが、大文字小文字を区別せずに `<base>` の名前 `dev-workflow-git-guard` と一致すれば、`permissionDecision` が `deny` の JSON を出さなければならない（MUST。`permits/` に限らず `<base>` の中はすべて）。書き先は、相対なら payload の `cwd` を前に付け、`..` を畳んだパスと、既にある部分の symlink を辿ったパスの両方で見る（MUST）。この hook は `<base>` を作らず、回数・拒否の記録・許可に触れない（MUST NOT。数えない）。
+
+#### 守備範囲
+
+この要件と、要件「子は Bash のコマンドで許可の置き場所を名指しできない」「許可の置き場所への書き込みの拒否は親に返すよう案内する」の目的は、ルールを読み飛ばした子が許可の置き場所に分かりやすく書こうとしたときに止めることで、セキュリティ境界ではない。子・hook・親は同じ uid で動き、hook が読める秘密は子も読めるので、子が作れない印で許可を見分けることはできない。受け取る入力は、Claude Code が PreToolUse で渡す payload のうち、子が指定するツール入力（`tool_name`・`tool_input.file_path`・`tool_input.notebook_path`・`tool_input.command`）と、Claude Code が付ける識別情報（`agent_id`・`cwd`。子はこれらを直接は指定しない）、書き先のパスを辿った時点のファイルシステム、環境変数 `DEV_WORKFLOW_GIT_GUARD` である。拾いたい誤りは、拒否された子が親に返らずに、Write / Edit / NotebookEdit ツールか、置き場所の名前を書いた Bash のコマンドで、自分で許可を置くことである。次の入力は通すことを許す: 変数や置換で組み立てたパス（`d=dev-workflow-git-; "$TMPDIR/${d}guard/permits/k.json"`）／グロブ（`"$TMPDIR"/dev-workflow-*/permits/k.json`、`.../dev-workflow-git-guard/p*/k.json`）／置き場所に移ってから `permits` の名前を書かずに書くもの（`cd .../dev-workflow-git-guard/perm*` のあとの書き込み）／スクリプトファイル・Makefile・別のファイルの中から書くもの／大文字小文字を変えた名前の Bash のコマンド（大文字小文字を区別しないファイルシステムでは同じ場所に届く）／Write / Edit / NotebookEdit 以外のツール（MCP のファイル書き込みなど）で書くもの／hook が書き先を辿ってから書かれるまでの間に、途中のフォルダが置き場所への symlink に差し替えられたもの／主の呼び出しが書くもの。通っても、許可が効くのは使う時点の一時領域の判定（要件「子への拒否を記録し、親が 1 回だけ通せるようにする」）を満たす scratchpad の中だけである。次の入力は止めることを許す（止めすぎる向き）: このガードの置き場所そのものを扱う開発で、子が 2 つの名前を両方含むコマンド（spec の書き換え・grep・偽造の確かめ）を打つもの（2026-11-10 時点の会話ログで Bash の呼び出し 109,484 件のうち 8 件。子は親に返り、親が打つ）／置き場所の名前の部品を持つ、置き場所でないフォルダへの書き込み。これらの穴を塞ぎ切ることは、この要件の完了条件にしない。
+
+#### Scenario: Write / Edit / NotebookEdit で `<base>` の中に書くと拒否する
+
+- **WHEN** 空の `TMPDIR` を T として、`agent_id` が `a1` の Write の payload の `file_path` を `T/dev-workflow-git-guard/permits/k.json` に、Edit の payload の `file_path` を `T/dev-workflow-git-guard/<回数のファイルの名前>` に、NotebookEdit の payload の `notebook_path` を `T/dev-workflow-git-guard/x.ipynb` にして、それぞれ新しい hook に渡す
+- **THEN** どれも `permissionDecision` が `deny` で、出力に `"continue"` のキーが無く、T の下に何も作られない
+
+#### Scenario: 書き先の書き方を変えても拒否する
+
+- **WHEN** `agent_id` が `a1` の Write の payload の `file_path` を、`T/Dev-Workflow-Git-Guard/permits/k.json`・`T/x/../dev-workflow-git-guard/permits/k.json`・`cwd` を T にした相対パス `dev-workflow-git-guard/permits/k.json`・`T/dev-workflow-git-guard` を指す symlink `T/link` を経た `T/link/permits/k.json` にして、それぞれ渡す
+- **THEN** どれも `permissionDecision` が `deny` になる
+
+### Requirement: 置き場所への書き込みを止める hook の配線と逃げ道
+
+dev-workflow は `scripts/git-guard-base-write-guard.sh` を、`hooks/hooks.json` の PreToolUse に `matcher: "Write|Edit|NotebookEdit"` で、`command` を `"${CLAUDE_PLUGIN_ROOT}/scripts/git-guard-base-write-guard.sh"` と引用符で囲み、`if` を付けずに登録しなければならない（MUST）。PreToolUse の末尾は git ガードの Bash のエントリのまま保つ（MUST）。この hook は、主の呼び出し（`agent_id` が無い・空・文字列でない）・部品が一致しない書き先・`DEV_WORKFLOW_GIT_GUARD=off`・python3 が無い・stdin が JSON でない・payload がオブジェクトでない・`tool_name` が 3 つのどれでもない・書き先が文字列でないときは、何も出さずに exit 0 としなければならない（MUST）。
+
+#### 守備範囲
+
+要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」の守備範囲と同じ。
+
+#### Scenario: 主の呼び出しと置き場所の外への書き込みは止めない
+
+- **WHEN** `agent_id` の無い Write の payload の `file_path` を `T/dev-workflow-git-guard/permits/k.json` にしたもの、`agent_id` が `a1` の Write の payload の `file_path` を `plugins/dev-workflow/tests/git-destructive-guard.bats` と `T/notes/dev-workflow-git-guard.md` にしたもの、`DEV_WORKFLOW_GIT_GUARD=off` で `agent_id` が `a1` の `file_path` を `T/dev-workflow-git-guard/permits/k.json` にしたもの、`tool_name` が `Bash` の payload、JSON でない文字列を、それぞれ新しい hook に渡す
+- **THEN** どれも exit 0 で何も出力しない
+
+#### Scenario: 新しい hook が hooks.json に登録されている
+
+- **WHEN** `plugins/dev-workflow/hooks/hooks.json` の PreToolUse を読む
+- **THEN** `matcher` が `Write|Edit|NotebookEdit` で `"${CLAUDE_PLUGIN_ROOT}/scripts/git-guard-base-write-guard.sh"` の command hook を持ち `if` の無いエントリがあり、配列の末尾は git ガードの `matcher` が `Bash` のエントリのままである
+
+### Requirement: 子は Bash のコマンドで許可の置き場所を名指しできない
+
+git ガード（`scripts/git-destructive-guard.sh`）は、子の呼び出しの `tool_input.command` のどこかに `dev-workflow-git-guard` と `permits` の両方が含まれるとき（部分文字列で、大文字小文字を区別する）、書き方を読み分けずに `deny` を返さなければならない（MUST。当たった種類は「許可の置き場所を名指しするコマンド」）。拒否の記録を書かず、許可を探さない（MUST NOT）。ほかの種類（破壊的 git 操作の 9 種・判定しきれなかったもの・許可を書くスクリプトの子からの呼び出し）に当たらなければ、回数を数えず `<base>` を作りも確かめもしない（MUST NOT）。当たれば今までどおり数える（MUST）。主の呼び出しはこの判定で止めない（MUST NOT）。
+
+#### 守備範囲
+
+要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」の守備範囲と同じ。2 つの名前の選び方と止めすぎの頻度の根拠は、この change の design.md の決定 2。
+
+#### Scenario: Bash のコマンドに 2 つの名前があれば拒否し、数えない
+
+- **WHEN** 空の `TMPDIR` を T として、`agent_id` が `a1` の payload に `printf '{}' > T/dev-workflow-git-guard/permits/k.json` を 2 回、続けて `cd T/dev-workflow-git-guard && python3 -c "open('permits/k.json','w')"` を 1 回渡す
+- **THEN** どれも `permissionDecision` が `deny` で、「直ちに作業を終えて親に返す」は無く、出力に `"continue"` のキーが無い。T の下に `dev-workflow-git-guard/` が作られない
+
+#### Scenario: 名前が 1 つだけのコマンドと主の呼び出しは止めない
+
+- **WHEN** `agent_id` が `a1` の payload に `cat T/dev-workflow-git-guard/denied/k.json` と `echo permits` を、`agent_id` の無い `permission_mode` が `default` の payload に `printf '{}' > T/dev-workflow-git-guard/permits/k.json` を、それぞれ渡す
+- **THEN** どれも exit 0 で何も出力しない
+
+#### Scenario: 破壊的 git 操作も含むなら数えるが、記録を書かず許可も使わない
+
+- **WHEN** scratchpad の中の repo を `cwd` にした `agent_id` が `a1` の payload のコマンド C を `git checkout -- . ; ls T/dev-workflow-git-guard/permits` として、4 つの値が C の payload と一致し期限内の許可を `permits/<key>.json` に置いてから、C を 2 回渡す
+- **THEN** どちらも `permissionDecision` が `deny` で、2 回目の出力のトップレベルに `"continue": false` があり、置いた許可が残っていて、`denied/` に記録が無い
+
+### Requirement: 許可の置き場所への書き込みの拒否は親に返すよう案内する
+
+要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」と「子は Bash のコマンドで許可の置き場所を名指しできない」の拒否の `permissionDecisionReason` は、「許可の置き場所」を含み、打ち直さず別の書き方も試さずに作業を止め、要るものを報告に書いて親に返すよう案内しなければならない（MUST）。Bash の拒否では、このコマンドには拒否の記録を作らないことを、文字列「拒否の記録を作らない」を含む文で書かなければならない（MUST）。どちらの理由文も `dev-workflow-git-guard` と `permits` を両方は含んではならない（MUST NOT。子が理由文を報告用のコマンドに写したとき、そのコマンドが止まらないようにするため）。
+
+#### 守備範囲
+
+要件「子は Write / Edit / NotebookEdit で許可の置き場所に書けない」の守備範囲と同じ。理由文の中身で子の振る舞いを縛ることはできず、案内に従わない子は止められない（拒否は返るのでコマンドは実行されない）。
+
+#### Scenario: 理由文が親に返すよう案内し、2 つの名前を並べない
+
+- **WHEN** `agent_id` が `a1` の Write の payload の `file_path` を `T/dev-workflow-git-guard/permits/k.json` にして新しい hook に渡し、`agent_id` が `a1` の payload に `printf '{}' > T/dev-workflow-git-guard/permits/k.json` を git ガードに渡す
+- **THEN** どちらの `permissionDecisionReason` にも「許可の置き場所」と「親に返す」が含まれ、`dev-workflow-git-guard` と `permits` の両方は含まれない。git ガードの理由文には「許可の置き場所を名指しするコマンド」と「拒否の記録を作らない」が含まれる

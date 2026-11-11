@@ -1,6 +1,6 @@
 ---
 name: develop
-description: 標準開発ワークフロー（develop スキル）を起動する。issue があればそれを記録先に、無ければ Draft PR を記録先にして進める（issue を切るのは追跡・キュー・議論が要るときだけ）
+description: 標準開発ワークフロー（develop スキル）を起動する。issue があればそれを記録先に、無ければ Draft PR を記録先にして進める（issue を切るのは追跡・キュー・議論が要るときだけ）。リポジトリの追跡ファイルを変えるときは会話の依頼でも必ず通す。
 argument-hint: "[(--profile NAME [--profile-file PATH] | --account NAME --model MODEL) (--account-home NAME=PATH… | --account-home-file PATH) [--executor codex]] [issue URL | request]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ---
@@ -24,6 +24,7 @@ plugin_root="${CLAUDE_PLUGIN_ROOT}"
 DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
 for dir in \
   "${plugin_root:+$plugin_root/skills/develop}" \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/develop \
   ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/develop \
   ~/.claude/plugins/installed/*/dev-workflow/skills/develop; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
@@ -59,6 +60,7 @@ unset DW_NG
    DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
    for dir in \
      "${plugin_root:+$plugin_root/skills/issueify}" \
+     ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/issueify \
      ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/issueify \
      ~/.claude/plugins/installed/*/dev-workflow/skills/issueify; do
      [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break

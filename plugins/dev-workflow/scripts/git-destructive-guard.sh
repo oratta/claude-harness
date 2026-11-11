@@ -31,8 +31,16 @@
 #   子が同じ session_id・agent_id・cwd・コマンドで打ち直したときだけ allow を返す（回数は数えない）。allow の前に
 #   使う時点の一時領域の判定（行き先がそのセッションの scratchpad の中か）をかけ直し、満たさなければ deny。
 #   許可を書いた・使った・捨てたは <base>/permit-log.jsonl に残る。子が git-guard-permit.sh を自分で呼んだら deny。
+#   ただし読むか表示するだけのコマンド（READ_ONLY）だけでできたコマンドの中の名前では止めない。
 #   key の計算・一時領域の判定・記録の追記は共通ファイル git-guard-scratchpad.py にあり、子の破壊的操作を
 #   見つけたときだけ読む。読めなければ許可を探さず、記録も書かずに deny だけを返す。
+#   子のコマンドに許可の置き場所の 2 つの名前（STORE_NAMES）が両方あれば permit-store で deny し、記録を書かず許可も使わない。
+#   ほかの種類に当たらなければ回数も数えない。子の Write / Edit / NotebookEdit は git-guard-base-write-guard.sh が止める。
+#   主の呼び出しで DEV_WORKFLOW_GIT_GUARD_NO_ASK（起動側が付ける git ガード専用の印）があれば、
+#   permission_mode と FORCE によらず deny。前後の空白を除いて空か 0 なら印なし、それ以外は印あり。
+#   理由文はコマンドの全文・対象・なぜ要るか・止まった理由を書いてオーナーに承認を求め、ターンを終えるよう
+#   案内する。承認後もオーナーが自分で実行する。確認画面・!・チャンネルの案内は出さず、回数は数えない。
+#   NO_ASK は UNATTENDED より先に決める。develop の実行モードは変えない。
 #   主の呼び出しで、環境変数 DEV_WORKFLOW_UNATTENDED（画面を見ている人のいないセッションの印。起動する側が
 #   claude の環境に入れる。前後の空白を除いて空か 0 なら印なし、それ以外は印あり）があれば、permission_mode
 #   にも DEV_WORKFLOW_GIT_GUARD_FORCE にもよらず deny（確認画面は誰にも押されず、セッションが止まるため）。
@@ -92,6 +100,8 @@ LABELS = {
     "no-gpg": "`--no-gpg-sign`",
     # 子が許可を書くスクリプトを自分で呼ぶもの（決定 5）。子への理由に出るので、スクリプトの名前は書かない
     "permit-self": "許可を書くスクリプトの子からの呼び出し（許可を書くのは親の役目）",
+    # 子が許可の置き場所を名指しするもの（STORE_NAMES）。子への理由に出るので、2 つの名前は書かない
+    "permit-store": "許可の置き場所を名指しするコマンド（許可を書くのは親の役目）",
 }
 ORDER = list(LABELS)
 
@@ -103,9 +113,17 @@ WRAPPERS = {"command", "env", "sudo", "nohup", "time", "exec", "builtin"}
 ENV_SHORT_ARG = set("uCPa")
 ENV_LONG_ARG = {"--unset", "--chdir", "--argv0"}
 SHELLS = {"bash", "sh", "zsh"}
-# 許可を書くスクリプトの名前。子の呼び出しのコマンド文字列のどこかにあれば、書き方を読み分けずに permit-self とする
-# （シェルの書き方を 1 つずつ読み分けると、塞ぐたびに別の書き方が出る。子がこのスクリプトを読む用事も無い）
+# 許可を書くスクリプトの名前。子の呼び出しのコマンド文字列のどこかにあれば permit-self とする。例外は、コマンドの
+# すべての単純コマンドの先頭の語が READ_ONLY のどれかのときだけ（名前は引数・本文・リダイレクトの行き先にしか無い）。
+# 実行される書き方を数え上げて止めるのではなく、通す側を小さく数え上げる（シェルの書き方を 1 つずつ読み分けると、
+# 塞ぐたびに別の書き方が出る。通す側に入らない書き方は、どんな新しい書き方でも止まる側に落ちる）
 PERMIT_NAME = "git-guard-permit"
+# 読むか表示するだけのコマンド。引数・オプション・設定からほかのプログラムを起動せず、シェルの変数も設定しないもの
+# だけを入れる（sed・awk・rg・find・xargs・git・less・printf は入れない）。字句読みのあとの語とちょうど一致するときだけ当たる
+READ_ONLY = {"grep", "egrep", "fgrep", "cat", "head", "tail", "wc", "ls", "echo"}
+# 許可の置き場所（<base> の名前と、その下の許可のディレクトリ名）。子のコマンド文字列に両方があれば、書き方を読み分けずに
+# permit-store とする（部分文字列・大文字小文字を区別する）。<base> の名前だけでは止めない（拒否の記録を読む用事がある）
+STORE_NAMES = ("dev-workflow-git-guard", "permits")
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace",
                      "--super-prefix", "--config-env", "--exec-path"}
 MAIN_REFS = {"main", "master", "refs/heads/main", "refs/heads/master"}
@@ -163,9 +181,18 @@ HEREDOCS = [0]  # 読んだヒアドキュメントの数（置換の中にヒ�
 
 
 def charge(count):
+    # 加算の直後に上限を見る（入れ子の複写のように 1 回の加算が大きい形で、次の加算まで気づかずに進まない）
+    WORK[0] += count
     if WORK[0] > WORK_LIMIT:
         raise TooMuch()
-    WORK[0] += count
+
+
+# 文字列の複写の分の仕事量。複写は字句読みの 1 文字あたりの仕事より 2 桁以上軽い（字句読みは 1 秒に約 300 万
+# 文字、複写は 1 秒に数 GB）ので、1/1024 で数える。入れ子の段ごとに外側の置換の全体を語へ複写する形（$( を
+# 10 万重）は、複写の合計が長さの 2 乗に比例する。数えないと 10 秒かかっても上限に届かない（#872）。
+# 数えても、数千重までの入れ子の判定は上限に届かない。
+def charge_copy(count):
+    charge(count >> 10)
 
 
 # 字句読み（spec destructive-git-hook「コマンド文字列をシェルと同じ単位で読む」）。
@@ -262,6 +289,7 @@ def double_quoted(s, i, subs, cmds, term='"', memo=None):
             end, plain = yield subst(s, i, subs, cmds, memo)
             if plain:
                 spans.append((pos, pos + end - i))
+            charge_copy(end - i)  # 二重引用符の中の置換を文字列に複写する分
             out.append(s[i:end])
             pos += end - i
             i = end
@@ -343,6 +371,7 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
         if not st["has"]:
             return
         w = "".join(word)
+        charge_copy(len(w))  # 語を 1 つの文字列につなぐ分の複写
         word.clear()
         if spans:
             w = Word(w)
@@ -397,6 +426,7 @@ def lex_body(s, i, in_subst, cmds, subs, memo):
             end, plain = yield subst(s, i, subs, cmds, memo)
             if plain:
                 spans.append((st["len"], st["len"] + end - i))
+            charge_copy(end - i)  # 置換の文字列を語に複写する分（入れ子の段ごとに外側の長さ分の複写が起きる）
             add(s[i:end])
             i = end
             continue
@@ -747,38 +777,76 @@ except TooMuch:
 # FORCE より先に見る: FORCE=ask が残ったセッションで子が起きても確認画面で止めないため。
 agent_id = payload.get("agent_id")
 is_child = isinstance(agent_id, str) and agent_id != ""
-# 子のコマンド文字列に許可を書くスクリプトの名前があれば、書き方（シェル経由・-c の中・BASH_ENV の設定・cat など）を
-# 問わず permit-self として止め、許可も使わない。主の呼び出しは止めない
+class Heads:
+    """字句読みが読み終えた単純コマンドの先頭の語が、すべて READ_ONLY に入るかだけを持つ。"""
+
+    def __init__(self):
+        self.ok = True
+
+    def append(self, cmd):
+        if cmd[0] not in READ_ONLY:
+            self.ok = False
+
+
+def read_only(s, depth=0):
+    """s のすべての単純コマンド（$(...) の中・ヒアドキュメントの引用されていない本文の中の $(...) を含む。
+    バッククォートの中身は読み直す）の先頭の語が READ_ONLY に入るか。読み切れない（引用符が閉じていない・
+    入れ子が深すぎる）なら偽。仕事量は judge と共有し、上限を超えたら TooMuch が上がる。"""
+    if depth > 8:
+        return False
+    s = str(s)  # 読み済みの置換の控えは使わない（控えで飛ばすと、中の単純コマンドを見ない）
+    charge(len(s))
+    heads = Heads()
+    try:
+        _, subs, _, _ = run(lex(s, cmds=heads))
+    except Unclosed:
+        return False
+    return heads.ok and all(read_only(inner, depth + 1) for inner in subs)
+
+
+# 子のコマンド文字列に許可を書くスクリプトの名前があれば、書き方（シェル経由・-c の中・BASH_ENV の設定など）を
+# 問わず permit-self として止め、許可も使わない。ただしコマンドが読むか表示するだけのコマンドだけでできていれば
+# 止めない（読み切れなければ止める側）。主の呼び出しは止めない
+# 字句読みが bash と違う読み方をする構文（$'..' の中の \' ・算術 $((..)) / ((..)) / for ((..)) / $[..] の中の << ・
+# ${..} の中の引用と置換）を含むコマンドには例外をかけない。読み違えると、実行される位置の名前を引用符の中や本文と読み、
+# 例外で通してしまう（字句読みの関数は変えない）。(( は $(( を含む。ここに並べるのは、食い違うと分かっていて、ふつうの
+# 作業でも出やすい構文だけ（extglob・case・[[ などは並べない。この判定はセキュリティの境界ではなく、差を突く子は今の規則
+# でも名前を引用符で割れば届く）
+LEX_DIFFERS = ("$'", "((", "$[", "${")
 self_permit = is_child and PERMIT_NAME in command
+if self_permit and kinds is not None and not any(t in command for t in LEX_DIFFERS):
+    try:
+        self_permit = not read_only(command)
+    except TooMuch:
+        pass  # 判定しきれなかった。止める側に倒す
 if self_permit and kinds is not None:
     kinds.add("permit-self")
+# 子のコマンド文字列に許可の置き場所の 2 つの名前が両方あれば permit-store として止める。kinds が None（判定しきれなかった）
+# でも当たったことを覚えておき、拒否の記録を書かず許可も使わない。主の呼び出しは止めない
+permit_store = is_child and all(n in command for n in STORE_NAMES)
+if permit_store and kinds is not None:
+    kinds.add("permit-store")
+# permit-store のほかに当たった種類（破壊的 git 操作・判定しきれなかったもの・permit-self）があるか。無ければ回数を数えない
+other_kinds = kinds is None or bool(kinds - {"permit-store"})
 if kinds is not None and not kinds:
     sys.exit(0)
 
 
-def count_child_deny(agent_id):
-    """この子（session_id と agent_id の組）への拒否の回数を 1 足して返す。数えられなければ 1。"""
+def count_child_deny(common, base, agent_id):
+    """この子（session_id と agent_id の組）への拒否の回数を 1 足して返す。数えられなければ 1。
+    base は確かめを満たした <base>。回数のファイルは共通ファイルの関数で symlink を辿らずに読み、一時ファイルからの
+    rename で置く（symlink なら読めないものとして 1 回目に扱い、先を書き換えない）。<base> は作らない。"""
     session_id = payload.get("session_id")
     if not isinstance(session_id, str):
         session_id = ""
-    # tempfile の一時ディレクトリ探しは書き込めない TMPDIR を黙って飛ばして別の候補に書くので使わない
-    base = os.environ.get("TMPDIR") or "/tmp"
-    d = os.path.join(base, "dev-workflow-git-guard")
-    name = hashlib.sha256((session_id + "\0" + agent_id).encode("utf-8", "surrogatepass")).hexdigest()
-    f = os.path.join(d, name)
-    n = 0
+    f = os.path.join(base, hashlib.sha256((session_id + "\0" + agent_id).encode("utf-8", "surrogatepass")).hexdigest())
     try:
-        with open(f) as fh:
-            n = int(fh.read().strip())
-        if n < 0:
-            n = 0
+        n = max(common["read_int_nofollow"](f), 0)
     except Exception:
         n = 0
     n += 1
     try:
-        os.makedirs(d, exist_ok=True)
-        with open(f, "w") as fh:
-            fh.write(str(n))
+        common["write_text_atomic"](f, str(n))
     except Exception:
         return 1
     return n
@@ -797,7 +865,8 @@ def load_common():
             src = fh.read()
         ns = {"__name__": "git_guard_scratchpad"}
         exec(compile(src, path, "exec"), ns)
-        for name in ("key_of", "check", "append_log", "write_json_atomic"):
+        for name in ("key_of", "check", "append_log", "write_json_atomic", "check_base", "read_json_nofollow",
+                     "read_int_nofollow", "write_text_atomic"):
             if not callable(ns.get(name)):
                 return None
         return ns
@@ -822,8 +891,7 @@ def use_permit(common, base, key):
     except OSError:
         return None
     try:
-        with open(taken, encoding="utf-8") as fh:
-            p = json.load(fh)
+        p = common["read_json_nofollow"](taken)  # symlink なら読めないものとして消す（先は読まない）
     except Exception:
         p = None
     finally:
@@ -868,22 +936,37 @@ session_id, cwd = str_field("session_id"), str_field("cwd")
 guard_base = os.path.join(os.environ.get("TMPDIR") or "/tmp", "dev-workflow-git-guard")
 
 # 画面を見ている人のいないセッションの印（spec「確認画面が出るモードでだけ ask を返す」）。子の判定のあと、
-# FORCE より先に見る: FORCE=ask が残った住人のセッションで確認画面を出して止まらないため。
+# NO_ASK を UNATTENDED より先に、両方とも FORCE より先に見る: FORCE=ask が残った住人のセッションで確認画面を出して止まらないため。
 # 空か 0 以外はすべて印ありにする（付け損ねた値で確認画面に戻らず、止めすぎる向きにだけ外れる）。
+no_ask_mark = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_NO_ASK") or "").strip()
+is_no_ask = not is_child and no_ask_mark not in ("", "0")
 unattended_mark = (os.environ.get("DEV_WORKFLOW_UNATTENDED") or "").strip()
 is_unattended = not is_child and unattended_mark not in ("", "0")
 
 deny_count = 0
 record_path = None
 unverified = None
-if is_child:
+base_err = None
+if is_child and permit_store and not other_kinds:
+    # 許可の置き場所を名指ししただけの拒否は、共通ファイルを読まず、<base> を作りも確かめもせず、回数も記録も触らない
+    # （ルールを読み飛ばした子を 1 回で打ち切らない。記録があると親がこのコマンドの許可を書けてしまう）
+    decision = "deny"
+elif is_child:
     decision = "deny"
     # 共通ファイルは子の破壊的操作を見つけたときだけ読む（主の呼び出しと、破壊的操作の無い呼び出しでは読まない）。
-    # 読めなければ key を出せないので、許可を探さず、拒否の記録も書かずに deny だけを返す
+    # 読めなければ key を出せず <base> も確かめられないので、許可を探さず、拒否の記録も書かず、回数も数えずに deny だけを返す
     common = load_common()
     key = common["key_of"](session_id, agent_id, cwd, command) if common else None
+    # <base> は許可を使う前に確かめる。満たさなければ許可を探さず、記録も回数も書かない（spec「<base> を確かめられない
+    # 子の呼び出しには deny だけを返す」）。主の呼び出しはここを通らないので <base> を作りも確かめもしない
+    if common:
+        try:
+            base_err = common["check_base"](guard_base)
+        except Exception as e:
+            base_err = "確かめが失敗した（%s）" % e
+    usable = bool(common) and not base_err
     used = None
-    if key and not self_permit:
+    if key and usable and not self_permit and not permit_store:
         used = use_permit(common, guard_base, key)
     if used and used[0] == "allow":
         print(json.dumps({"hookSpecificOutput": {
@@ -893,10 +976,11 @@ if is_child:
         sys.exit(0)
     if used:
         unverified = used[1]
-    deny_count = count_child_deny(agent_id)
-    if key:
-        record_path = write_record(common, guard_base, key)
-elif is_unattended:
+    if usable:
+        deny_count = count_child_deny(common, guard_base, agent_id)
+        if key and not permit_store:
+            record_path = write_record(common, guard_base, key)
+elif is_no_ask or is_unattended:
     decision = "deny"
 else:
     forced = (os.environ.get("DEV_WORKFLOW_GIT_GUARD_FORCE") or "").strip()
@@ -922,10 +1006,28 @@ if is_child:
     if unverified:
         body = ("親が書いた許可はあるが行き先を確かめられないので、許可を使わずに捨てた（" + unverified + "）。"
                 + body)
+    if permit_store:
+        # 2 つの名前を並べない（子が理由文を報告用のコマンドに写したとき、そのコマンドが止まらないようにする）
+        body += ("このコマンドは許可の置き場所を名指しするコマンドなので、拒否の記録を作らない（親もこのコマンドの許可を"
+                 "書けない）。親に返す報告にコマンドの全文を書く。")
     if record_path:
         body += "拒否の記録: " + record_path + " 。親に返す報告にこのパスを書く。"
+    elif base_err:
+        if permit_store:
+            # 許可のフォルダのパスには 2 つの名前が並ぶので、言い換えてから理由文に入れる
+            store_dir = os.path.join(guard_base, STORE_NAMES[1])
+            for p in sorted({store_dir, os.path.realpath(store_dir)}, key=len, reverse=True):
+                base_err = base_err.replace(p, "置き場所の下の許可のフォルダ")
+        body += ("拒否の記録を作れなかった（拒否の記録の置き場所 " + guard_base + " を確かめられない: " + base_err
+                 + "）。親に返す報告にコマンドの全文を書き、この置き場所の問題も書く。")
+    elif not permit_store:
+        body += "拒否の記録を作れなかった。親に返す報告にコマンドの全文を書く。"
     if deny_count >= 2:
         body += "この子への拒否は 2 回目以降なので、直ちに作業を終えて親に返す。"
+elif is_no_ask:
+    body = ("このコマンドは実行していない。コマンドの全文・対象のパス・なぜ要るか・止まった理由を書いて"
+            "オーナーに承認を求め、ターンを終えること。承認されたらオーナーが自分で実行する"
+            "（承認後もこのセッションでは実行しない）。")
 elif is_unattended:
     # 画面を見ている人がいないので、画面の操作や入力欄の ! の話を書かない。オーナーに届く経路はチャンネルだけ
     body = ("このコマンドは実行していない。このセッションの画面を見ている人はいないので、何を・なぜ・いつ実行するかを"

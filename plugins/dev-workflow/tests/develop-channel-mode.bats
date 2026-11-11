@@ -82,6 +82,7 @@ refute() {
   printf '%s\n' "$s" | grep -qF 'ターンを終える'
   printf '%s\n' "$s" | grep -qF 'needs-approval'
   printf '%s\n' "$s" | grep -qF 'フル URL'
+  printf '%s\n' "$s" | grep -F '記録に残す問い' | grep -qF '仕様レビューの条件の問い'
   printf '%s\n' "$s" | grep -qF 'channel ではこの聞き方に読む'
 }
 
@@ -93,6 +94,9 @@ refute() {
   while IFS= read -r rel; do
     [ "$rel" = "skills/develop/SKILL.md" ] && continue
     [ "$rel" = "skills/develop/references/channel.md" ] && continue
+    # 手順として読まれない hook の登録と本体（#1153）。hooks/ ごとは除かない
+    [ "$rel" = "hooks/hooks.json" ] && continue
+    [ "$rel" = "scripts/unattended-ask-guard.sh" ] && continue
     n=$((n + 1))
     if ! printf '%s\n' "$s" | grep -qF "\`$rel\`"; then
       echo "読み替えの列挙に無い: $rel" >&2

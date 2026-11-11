@@ -16,7 +16,9 @@
 
 ### 1. 前提を揃える
 
-1. PR に `agent-review:pending` が付いていることを確認（無ければ付ける）。**`agent-review:failed` からの再レビューもここが起点** — 修正を push したら `failed` を外して `pending` に戻し（`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:failed` → `-X POST ... -f 'labels[]=agent-review:pending'`）、手順1から全工程をやり直す（前回の合格部分を流用しない。ただし再レビューの範囲は手順2の収束ルールに従い**差分限定**。方式の書き換えの後は全体レビューにし、周回は数え続ける）。
+**着手前の重複チェック（手順 1 の 1 より前に行う）**: ラベルの操作や main の取り込みに入る前に、PR の現在の HEAD（`gh api repos/$R/pulls/$N --jq .head.sha`）と、最新の `レビュー重量:` コメントの `固定 HEAD:` と `担当セッション:` を見る。`固定 HEAD:` が現在の HEAD と一致し、`agent-review:passed` が付いておらず、`担当セッション:` が自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）と違う（行が無い・自分の ID が取れないときも違うとみなす）ときは、別のセッションの担当が同じ HEAD で着手済みなので、手順 1 以降を何もせず降り、降りた旨・着手済みコメントの URL・その `担当セッション:` の値を return に書く（develop の G は Status `重複で降りた`・`次の段: なし`）。それ以外（HEAD が動いた・コメントが無い・passed が付いている・`担当セッション:` が自分と同じ）は通常どおり進む。同じセッションの担当は、そのセッションの本体が自分の会話と `ListAgents` で確かめられるので、ここでは止めない。別のセッションの担当は、こちらから生きているかを確かめられず止めることもできないので、降りた return を受けた本体は取り直さずに主に報告する（develop の本体の動きは `skills/develop/references/roles/gate-runner.md` の段の表）。起動指示に `取り直し: 明示（理由）` の行がある起動と、前の段の `## Gate Result` を貼って起こされた起動（保留の解除のあと・W の修正後の再レビュー）は、同じ HEAD でも降りずに進む。develop を通さない本体が、主から前の担当は止まっていると聞いて自分で取り直すときも、自分に `取り直し: 明示（理由）` の行があるものとして扱う。確認と投稿は不可分でないので、ほぼ同時の起動は防げない（最後の止め役は手順 5 の HEAD 照合）。前のセッションの担当が参照できなくても生きている場合があり、そのまま待機している担当と同じ HEAD に二重で走る事故があった（#249）。
+
+1. PR に `agent-review:pending` が付いていることを確認（無ければ付ける）。**`agent-review:failed` からの再レビューもここが起点** — 修正を push したら `failed` を外して `pending` に戻し（`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:failed` → `-X POST ... -f 'labels[]=agent-review:pending'`）、手順1から全工程をやり直す（前回の合格部分を流用しない。唯一の例外は手順 3-c の主の許容の引き継ぎ（`stages/hold.md`）。ただし再レビューの範囲は手順2の収束ルールに従い**差分限定**。方式の書き換えの後は全体レビューにし、周回は数え続ける）。
    このとき **`needs-approval` の要否も判断する** — 保留理由が解消しているなら
    `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外し、
    まだ主の許容待ちが残っているなら**付けたまま**にして手順6を続行する。黙って持ち越さない。
@@ -39,6 +41,53 @@
    ```bash
    HEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')
    ```
+
+6. **軽い通し方の確認**: 手順 1 の 3 で解決した記録先（issue 参照が無い PR は PR 自身）を `REC` に置き、最新の仕様化判断だけを読む。最新コメントに `^通し方: 軽い$` と完全一致する行があるときだけ、レビュアーを起こす前に次を確かめる。その行が無ければこの確認をせず、コメントも投稿しない。
+
+   ```bash
+   DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.author_association | IN("OWNER", "MEMBER", "COLLABORATOR")) | select(.body | split("\n")[0] | test("^仕様化判断: (する|しない)$"))] | last | .body')
+   LIGHT=$(printf '%s\n' "$DEC" | grep -cx '通し方: 軽い')
+   if [ "$LIGHT" -ge 1 ]; then
+     printf '%s\n' "$DEC" | head -1
+     KIND=$(printf '%s\n' "$DEC" | sed -n 's/^種類: //p')
+     printf '%s\n' "$KIND"
+     CHECK_COUNT=$(printf '%s\n' "$DEC" | grep -c '^確かめ方: ')
+     printf '%s\n' "$CHECK_COUNT"
+     FILES=$(gh api --paginate repos/$R/pulls/$N/files --jq '.[] | "\(.additions) \(.deletions) \(.filename)"' | grep -vE ' ([^ ]*/)?changes/[0-9]+\.md$')
+     SPEC_COUNT=$(printf '%s\n' "$FILES" | grep -c ' openspec/')
+     printf '%s\n' "$SPEC_COUNT"
+     printf '%s\n' "$FILES" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}'
+     KIND_COUNT=$(printf '%s\n' "$DEC" | grep -c '^種類: ')
+     printf '種類の行数=%s\n' "$KIND_COUNT"
+     MACHINE_RESULT=条件内
+     [ "$(printf '%s\n' "$DEC" | head -1)" = '仕様化判断: しない' ] &&
+       [ "$KIND_COUNT" -eq 1 ] && [ "$CHECK_COUNT" -eq 1 ] &&
+       [ "$(printf '%s\n' "$DEC" | grep -c '^確かめ方: .')" -eq 1 ] &&
+       [ "$SPEC_COUNT" -eq 0 ] || MACHINE_RESULT=条件外
+     case "$KIND" in
+       typo|lint|コメント|フォーマット|設定値) ;;
+       'ワンライナー fix')
+         read -r COUNT ADDED DELETED <<< "$(printf '%s\n' "$FILES" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}')"
+         [ "$COUNT" -eq 1 ] && [ "$ADDED" -le 1 ] && [ "$DELETED" -le 1 ] || MACHINE_RESULT=条件外 ;;
+       *) MACHINE_RESULT=条件外 ;;
+     esac
+     printf 'MACHINE_RESULT=%s\n' "$MACHINE_RESULT"
+     if [ "$MACHINE_RESULT" = 条件外 ]; then
+       printf '%s\n' '軽い通し方の確認: 条件外' "対象 HEAD: $HEAD_SHA" '機械で測る点: 条件外'
+       printf '%s\n' 'Status: failed' '次の段: 前提確認と重さ判定' '原因: 軽い通し方の条件外'
+     fi
+   fi
+   ```
+
+   grep の 0 件は終了コード 1 になるので、このブロックは `set -e` を有効にせず走らせ、終了コードではなく出力の値で判定する。出力は順に、仕様化判断の 1 行目・種類・確かめ方の行数・openspec のファイル数・変更ファイル数と追加／削除行数、種類の行数、機械判定。`MACHINE_RESULT=条件外` なら出力した確認コメントと Gate Result の欄を使って下の条件外の処理を行い、return する。条件内なら G が差分を読む判断に進む。
+
+   **機械で測る点**: 1 行目が `仕様化判断: しない` ちょうど、`種類:` の行が 1 行ちょうどで値が `typo` / `lint` / `コメント` / `フォーマット` / `ワンライナー fix` / `設定値` のどれか 1 つちょうど、`確かめ方:` が 1 行ちょうど（値が空でない）、`openspec/` が 0 ファイルであること。さらにワンライナー fix だけは、変更ファイルが 1 つ、追加 1 行以下かつ削除 1 行以下であること。変更の記録（パスが `changes/<数字>.md` で終わるファイル）はどの種類でも数えない。ワンライナー fix 以外にファイル数・行数の上限を置かない。
+
+   **G が差分を読んで判断する点**: `gh pr diff $N --repo $R` で、変更の記録を除くすべての変更が宣言した種類に収まるかを読む。typo・lint・コメント・フォーマット・設定値はプログラムの挙動を変えないこと（設定値も値を変えて挙動が変わらないこと）。ワンライナー fix は明白なバグの 1 行修正で直し方に選択肢がないことを判断し、挙動が変わることを条件外の理由にしない（比較の向きの取り違えの修正は条件内、既定値の選び直しは条件外）。判断がつかない場合も条件外。
+
+   **結果**: PR コメントの 1 行目を `^軽い通し方の確認: (条件内|条件外)$` に完全一致させ、2 行目を `対象 HEAD: <40 桁フル SHA>`（手順 1 の 5 の `$HEAD_SHA`）、続けて確かめた点ごとの結果と、条件外なら外れた点を書く。条件内なら手順 2-0 へ進む。条件外なら `agent-review:pending` を外し `agent-review:failed` を付け、レビュアーを起こさず終了する。develop の G の return は下の「軽い通し方の条件外」を使い、それ以外の呼び出し元は確認コメントを見て通常の通し方に戻す。
+
+   **守備範囲**: 入力は本体が書いた最新の仕様化判断と PR の差分・変更ファイル一覧。書式・種類・openspec の差分・宣言した種類からの逸脱・ワンライナー fix の大きさ超えを拾う。変更の記録は機械の点と G の判断の両方から外すため、その中身は通ることを許す（レビュアーが差分全体と一緒に見る）。`確かめ方:` のコマンドの妥当性も見ない。穴を塞ぎ切ることは完了条件にしない。
 
 ### 2. レビュー（実装と別コンテキスト）
 
@@ -67,37 +116,41 @@ gh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除
 
 **light で変わるのはレビュー実行者だけで、免除される工程は無い** — 実装と別コンテキストであること・手順3のリスク宣言・手順4の動作確認証拠・手順5の HEAD SHA 照合と合格前の API 実測・収束ルール（stages/triage.md）はすべてそのまま適用する。
 
-**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `plugins/dev-workflow/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。パス順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。入力は `gh api repos/$R/pulls/$N/files --paginate --jq '.[] | "\(.additions + .deletions)\t\(.filename)"' | plugins/dev-workflow/scripts/review-partitions.sh`。入力エラーで exit 2 なら止め、区画を推測しない。区画に分けるのは Claude のレビュアーだけで、Codex には差分全体を渡す。二周目以降の差分限定レビューと方式書き換え後の全体レビューには区画を使わない。従来経路で Task サブエージェントを起こす側も同じスクリプトを使う。
+**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。files API が返す順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。入力は `gh api repos/$R/pulls/$N/files --paginate --jq '.[] | "\(.additions + .deletions)\t\(.filename)"' | ${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh`。`${CLAUDE_PLUGIN_ROOT}` が未設定のときは、この段のファイル（stages/prepare.md）の位置から `../../../scripts/review-partitions.sh` を絶対パスに解決して使う。exit 2 に限らず 0 以外ならすべて止め（exit 127 = スクリプトが見つからない場合を含む）、区画を推測しない。区画に分けるのは Claude のレビュアーだけで、Codex には差分全体を渡す。二周目以降の差分限定レビューと方式書き換え後の全体レビューには区画を使わない。従来経路で Task サブエージェントを起こす側も同じスクリプトを使う。
 
-判定結果と根拠を PR コメントに残す（後から light 判定をサンプリング再判定できるようにするため）。2 行目には手順 1 で固定した HEAD を `固定 HEAD: <SHA>`（40 桁）の形で書く。このコメントは周ごとに増えるので、あとの段は最新の 1 件を正とする（auto-merge が宣言の照合に使う別の行と取り違えないよう、この行は固定 HEAD と書く）:
+判定結果と根拠を PR コメントに残す（後から light 判定をサンプリング再判定できるようにするため）。2 行目には手順 1 で固定した HEAD を `固定 HEAD: <SHA>`（40 桁）の形で書く。最後の行には `担当セッション: <$CLAUDE_CODE_SESSION_ID の値>`（取れなければ `担当セッション: 不明`）を書く（手順 1 の冒頭の重複チェックが、別のセッションの担当かを見分けるのに使う）。このコメントは周ごとに増えるので、あとの段は最新の 1 件を正とする（auto-merge が宣言の照合に使う別の行と取り違えないよう、この行は固定 HEAD と書く）:
 
 ```bash
 gh api -X POST repos/$R/issues/$N/comments \
-  -f body="$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\n固定 HEAD: %s\n合計: 12 行\n区画: なし' "$HEAD")"
+  -f body="$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\n固定 HEAD: %s\n合計: 12 行\n区画: なし\n担当セッション: %s' "$HEAD" "${CLAUDE_CODE_SESSION_ID:-不明}")"
 ```
 
-`レビュー重量:` コメントの 3 行目以降に `review-partitions.sh` の出力（`合計:` と `区画:`、区画がある場合は一覧）をそのまま載せる。あとの G は最新コメントの区画を正とする。
+`レビュー重量:` コメントの 3 行目から `担当セッション:` の行の前までに `review-partitions.sh` の出力（`合計:` と `区画:`、区画がある場合は一覧）をそのまま載せる。あとの G は最新コメントの区画を正とする。二周目以降（差分限定・全体レビューの周）は区画に分けないので、`区画: なし` を載せる。
 
 ## G として動くとき（develop）
 
 この節は develop の G（`skills/develop/references/roles/gate-runner.md` の指示で動くゲート実行者）だけに関係する。develop 以外の読み手は読み飛ばしてよい。
 
+### 軽い通し方の条件外
+
+手順 1 の 6 で条件外なら、確認コメントを投稿しラベルを切り替えてから、Status `failed`・`次の段: 前提確認と重さ判定`・`原因: 軽い通し方の条件外` で return する。固定 HEAD と確認コメントの URL も Gate Result に含める。手順 2-0 とレビュアーの起動には進まない。この failed はレビューの周に数えず、本体は次の G を前の Gate Result を貼らずにゲートの開始として起こし、`周回: 1` の全体レビューにする（W の修正後の再レビューとして扱わない）。
+
 ### needs-reviewer の return（本体にレビュアーの spawn を委ねる）
 
-G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: dev-workflow:reviewer` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、照合と振り分けの G を新しく起こしてその要約を渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
+G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: dev-workflow:reviewer` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、照合と振り分けの G を新しく起こしてその要約を渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・Codex オフ・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。
 
 ```markdown
 ## needs-reviewer
-- 判定: light | full（Codex 不可） | full（adapter 経路）
-- 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由>
+- 判定: light | full（Codex 不可） | full（Codex オフ） | full（adapter 経路）
+- 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由、Codex オフなら `Codex オフ（設定）`>
 - PR 番号: #<N>
 - HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>
-- 区画: <なし | review-partitions.sh の出力の区画の一覧>
-- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）>
-- 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）>
-- 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路）>
-- 出力の要点: <full: 実測した不可条件と応答、adapter 経路: 未実行（adapter 経路）>
-- 実待ち時間: <タイムアウト時の実測値、完了未確認、adapter 経路: 未実行（adapter 経路）>
+- 区画: <なし（二周目以降・差分限定・全体レビューの周は常に なし） | review-partitions.sh の出力の区画の一覧>
+- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）、Codex オフ: 未実行（Codex オフ）>
+- 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）、Codex オフ: python3 <plugin>/scripts/usage_view.py --codex-enabled → off>
+- 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路） | 未実行（Codex オフ）>
+- 出力の要点: <full: 実測した不可条件と応答、adapter 経路: 未実行（adapter 経路）、Codex オフ: Codex オフの設定により Codex を試していない>
+- 実待ち時間: <タイムアウト時の実測値、完了未確認、adapter 経路: 未実行（adapter 経路）、Codex オフ: 未実行（Codex オフ）>
 - 推奨モデル: opus（種別は dev-workflow:reviewer） | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）
 - 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>
 - 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>
@@ -114,8 +167,8 @@ G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light 
 ### この段で起こされたときの入力
 
 - **ゲートの開始・CI の見張りのあとの取り直し**: 起動指示の `段: 前提確認と重さ判定` と `レビュー経路:` の行だけで手順 1 から始める。`周回:` は取り直しなら前の Gate Result の値を引き継ぎ、ゲートの開始なら 1 とする
-- **W の修正後の再レビュー**（前の Gate Result が failed で `次の段: 前提確認と重さ判定`）: `stages/triage.md` の収束ルールの節（手順 2-1 の周回の規則）と、同じファイルの「この段で起こされたときの入力」の「W の修正後の再レビュー」を読む（規則はそちらが正本で、ここには写さない）。前の周の指摘は PR の仕分けコメントから読み、前の G の会話は持たない前提で動く。差分限定か全体レビューかは自分で判定し、全体レビューにしたときは修正差分の行数と前周の指摘の対象行数の 2 つを PR コメントに記録する。`周回:` は前の Gate Result の値に 1 を足す
-- **保留の解除のあと**（前の Gate Result が `段: 保留の解除` で `次の段: 前提確認と重さ判定`）: 許容せず代替案で手順 2 からやり直す場合なので、手順 1 から始め、`周回:` は前の Gate Result の値を引き継ぐ
+- **W の修正後の再レビュー**（前の Gate Result が Status failed で `次の段: 前提確認と重さ判定`。`原因: 軽い通し方の条件外` を除く。前の `段:` は問わない。保留の解除の G が代替案への作り直しで返した failed もここに入る）: `stages/triage.md` の収束ルールの節（手順 2-1 の周回の規則）と、同じファイルの「この段で起こされたときの入力」の「W の修正後の再レビュー」を読む（規則はそちらが正本で、ここには写さない）。前の周の指摘は PR の仕分けコメントから読み、前の G の会話は持たない前提で動く。差分限定か全体レビューかは自分で判定し、全体レビューにしたときは修正差分の行数と前周の指摘の対象行数の 2 つを PR コメントに記録する。`周回:` は前の Gate Result の値に 1 を足す
+- **保留の解除のあと**（前の Gate Result が `段: 保留の解除` で Status `次の段へ`・`次の段: 前提確認と重さ判定`。W の修正が要らないときだけ。failed の場合は上の再レビューの入口に入る）: 手順 1 から始め、`周回:` は前の Gate Result の値を引き継ぐ（足さない）
 
 ## 出口
 
