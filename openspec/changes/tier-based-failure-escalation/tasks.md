@@ -21,7 +21,7 @@
 ## 4. 変更の記録と全体の確認
 
 - [x] 4.1 `plugins/dev-workflow/changes/424.md` に、何を変えたか・なぜか・#615 に寄せたもの（上位格の実行役の拒否、profile 差し替えの機械的な拒否）を書く。確認: ファイルがある。触る範囲: plugins/dev-workflow/changes/424.md（新規）
-- [ ] 4.2 `git fetch origin && git merge origin/main` で main を取り込んでから `bats plugins/dev-workflow/tests` と `bats tests/injection-budget.bats` を流す。確認: どちらも exit 0。触る範囲: なし（確認のみ）
+- [x] 4.2 `git fetch origin && git merge origin/main` で main を取り込んでから `bats plugins/dev-workflow/tests` と `bats tests/injection-budget.bats` を流す。確認: どちらも exit 0。触る範囲: なし（確認のみ）
 
 ## Workflow follow-up
 
