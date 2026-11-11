@@ -184,7 +184,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       review-incomplete → reviewer を再起動しない。`agent-review:pending` のまま Gate Result の残差を報告して工程を止め、合格処理へ進まない
       failed 後の W 起動／再開前に、最新 CI 用引き継ぎが可なら `references/handover.md`「起動／再開前の無効化と再許可」に従い不可を投稿し、投稿成功後だけ指示する
       軽い通し方の failed → W を `段: spec` で新規起動。条件外と通常の failed の戻し方は `references/decision-criteria.md` Step B。以後 G は前提確認と重さ判定から
-      failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、上げるのは決める役と実行役の一方だけ（実行側が原因なら `request --phase implement --failure executor` が返した model で W を起こし、model が変わるなら SendMessage で再開せず新しい thread に手渡す。判断側が原因なら `request --phase decider --failure judgment` が返した model で dev-workflow:decider を立てる。判断側・実行側の定義と `--failure` の値の段は「モデル」節の昇格トリップワイヤーの段落）。
+      failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））で戻し方を決める。モデルを上げるのは実装品質起因のときだけで、上げるのは決める役と実行役の一方だけ（実行側は `request --phase implement --failure executor`、判断側は `request --phase decider --failure judgment` の返す model で W か decider を起こし、model が変われば新しい thread に手渡す。定義は「モデル」節の昇格トリップワイヤーの段落）。
            仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）。段 A だけなら W を据え置きで再開する
            → W を再開（再開指示に `段: implement`。再開前に測る。上限超のあとの扱いは (3) と同じく正本に従う）→ W の修正のあと、failed の Gate Result の `次の段:` どおりの G を新しく起こして再レビュー（順 3 だけなら照合と振り分け、それ以外は前提確認と重さ判定。
            2 周キャップ。範囲と 3 周目の扱いは pr-review-gate の収束ルールに従う）
