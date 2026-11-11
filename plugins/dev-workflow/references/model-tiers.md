@@ -19,11 +19,11 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 
 ## develop role の provider-neutral profile
 
-`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各 role は、`references/codex-role-profiles.json`（または明示した version 1 profile-file）の同名 entry にある executor/account/model/effort へ解決する。歴史的なファイル名は維持するが、version 1 table は Claude と Codex を同じ profile 内で扱う provider-neutral な正本である。本表へ個別 Codex model ID を重複記載せず、Claude の tier alias を Codex model へ暗黙変換しない。
+`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各 role は、`references/codex-role-profiles.json`（または明示した形式版 2 の profile-file）の同名 entry にある executor/account/effort と、`codex-develop.py request` が決める格へ解決する。歴史的なファイル名は維持するが、形式版 2 の table は Claude と Codex を同じ profile 内で扱う provider-neutral な正本である。格は低い順に `最安`・`中位`・`上位`・`最上位` で、格からモデル名への対応は `references/model-tier-map.json` の 1 か所にあり、`codex-develop.py tier-model --executor <executor> --tier <格>` で引ける。本表へ個別 Codex model ID を重複記載せず、Claude の tier alias を Codex model へ暗黙変換しない。
 
-Claude entry は account=`current`、model=`haiku|sonnet|opus|fable`、非空の effort を要求する。`fable` は `decider` role だけに許可する。別 Claude account の実行はまだ対応せず、account 欄自体は allocator の共通出力として保持する。Codex entry は登録済み account と非空の model/effort を要求し、正式な model/effort の対応可否は worker 起動時にも検証する。
+Claude entry は account=`current` と非空の effort を要求する。別 Claude account の実行はまだ対応せず、account 欄自体は allocator の共通出力として保持する。Codex entry は登録済み account と非空の effort を要求し、正式な model/effort の対応可否は worker 起動時にも検証する。どの entry にも `model` は書けず、任意の `tier_cap` で役の格より低い格に抑える。
 
-重めの実装・レビューを中位ティアで回すときは `'opus'` を渡す（`rules/subagent-model-selection.md` の対応表と同じ）。
+重めの実装・レビューを中位ティアで回すときは `'opus'` を渡す（`rules/subagent-model-selection.md` の対応表と同じ）。この「中位（重めは opus）」は、上の格の `上位` に当たる。
 
 ## `inherit` の意味
 

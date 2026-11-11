@@ -2,32 +2,42 @@
 
 ## Purpose
 TBD - created by archiving change codex-develop-role-profiles. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: 名前付き設定セットを共通入口で選ぶ
-システムは `/develop --profile NAME [--profile-file PATH]` と対応する develop CLI の role resolver を提供しなければならない（MUST）。組み込み名は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review` とし、各 entry は executor/account/model/effort を持つ。形式版1の JSON は design の厳密な形式を満たし、全 canonical role を網羅しなければならない（MUST）。各 role の executor は `codex` または `claude` とし、同じ profile 内で混在できなければならない（MUST）。profile と旧 account/model の併用を拒否しなければならない（MUST）。組み込み profile の Codex entry の model は、モデル ID ではなく系統名（`astra` / `sol` / `luna`）で書かなければならない（MUST）。
+システムは `/develop --profile NAME [--profile-file PATH]` と対応する develop CLI の role resolver を提供しなければならない（MUST）。組み込み名は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review`、`claude-default` とし、各 entry は executor/account/effort と任意の `tier_cap` を持ち、model を持ってはならない（MUST NOT）。形式版 2 の JSON は design の厳密な形式を満たし、全 canonical role を網羅しなければならない（MUST）。形式版 1 の profile は組み込み・外部とも拒否しなければならない（MUST）。各 role の executor は `codex` または `claude` とし、同じ profile 内で混在できなければならない（MUST）。profile と旧 account/model の併用を拒否しなければならない（MUST）。resolver の model は `model-tier-resolution` の格と対応表から決めなければならない（MUST）。
 
 #### Scenario: 二つの Codex 組み込みセットを解決する
-- **WHEN** `codex-standard` または `codex-economy` を解決する
+- **WHEN** `FABLE_BUDGET_MODE=conserve`、`SHARED_BUDGET_MODE=ok` で `codex-standard` または `codex-economy` を入力なしで解決する
 - **THEN** spec-write は順に sol/high または luna/medium、spec-review/impl-review/review は sol/high、decider は astra/high、implement は sol/medium または luna/medium、explore/summarize は luna/low に解決する。model の値は系統名そのもの（`sol` / `luna` / `astra`）で、全 entry は executor=codex、account=current となる
 
 #### Scenario: 既存の混在セットを役割ごとに解決する
-- **WHEN** `hybrid-standard` で書く役、独立レビュー役、decider、補助役を順に解決する
-- **THEN** 各 role は既存 profile に記録された executor/account/model/effort をそのまま返し、Codex が書き Claude が検査する向きを維持する。Codex role の model は系統名で返る
+- **WHEN** `FABLE_BUDGET_MODE=conserve`、`SHARED_BUDGET_MODE=ok` で `hybrid-standard` の書く役、独立レビュー役、decider、補助役を順に入力なしで解決する
+- **THEN** 順に codex/sol、claude/opus、claude/fable、codex/luna に解決し、Codex が書き Claude が検査する向きを維持する。Codex role の model は系統名で返る
 
 #### Scenario: Claude が書き Codex が検査する組み込みセットを解決する
-- **WHEN** `claude-write-codex-review` を解決する
+- **WHEN** `FABLE_BUDGET_MODE=conserve`、`SHARED_BUDGET_MODE=ok` で `claude-write-codex-review` を入力なしで解決する
 - **THEN** spec-write/implement は claude/current/sonnet/medium、explore/summarize は claude/current/haiku/low、spec-review/impl-review/review は codex/current/sol/high、decider は codex/current/astra/high となる
 
+#### Scenario: claude-default を組み込みセットとして解決する
+- **WHEN** `--profile claude-default` を account-home なしで入力なしのまま解決する
+- **THEN** 全 role が executor=claude、account=current で、model は自動選択の Claude 既定構成と同じ値になる
+
+#### Scenario: 節約の構成は格の上限で表す
+- **WHEN** 組み込み profile の `tier_cap` を読む
+- **THEN** `codex-economy` の spec-write と implement だけが `tier_cap: 最安` を持つ
+
 #### Scenario: 組み込み profile にモデル ID が書かれていない
-- **WHEN** `git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/codex-role-profiles.json` を実行する
-- **THEN** 0 件である
+- **WHEN** 組み込み profile の全 entry を走査し、`git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/codex-role-profiles.json` を実行する
+- **THEN** どの entry にも `model` キーが無く、grep は 0 件である
 
 #### Scenario: 役割ごとに登録 Codex account を選ぶ
-- **WHEN** version=1 の外部 profile-file の Codex 役割に異なる登録 account を指定して解決する
+- **WHEN** version=2 の外部 profile-file の Codex 役割に異なる登録 account を指定して解決する
 - **THEN** 各 entry の account を保存し、外部ファイルを組み込みと merge せず、各 Codex 委譲は当該 entry の account だけを使う
 
 #### Scenario: 曖昧または不完全な指定を拒否する
-- **WHEN** profile と account/model のいずれかを併用する、profile-file のみ指定する、未知版/名前/キー/役割・重複キー・欠落役割・空値・未登録 Codex account・`codex`/`claude` 以外の executor がある
+- **WHEN** profile と account/model のいずれかを併用する、profile-file のみ指定する、未知版/version 1/名前/キー/役割・重複キー・欠落役割・空値・`model` キー・未定義の `tier_cap`・未登録 Codex account・`codex`/`claude` 以外の executor がある
 - **THEN** resolver は失敗し、実行可能な request/run/job を作らず、既定値や別 account に置換しない
 
 ### Requirement: 解決済み設定と版を init で固定する
@@ -83,23 +93,25 @@ profile dispatch は pending_execution の role/executor/account/model/effort �
 - **THEN** worker の開始前拒否/両RPC、develop の工程不変/pending固定/旧retry/継続v1-v2を fixture で検証し、Python 回帰はリポジトリ直下の `tests/python-suites.bats` 経由でファイル名を絞らずに全件検出される
 
 ### Requirement: executor ごとの role 設定を検証する
-Version 1 profile の検証は executor を discriminator として行わなければならない（MUST）。`codex` entry は登録済み account を要求し、model/effort を非空文字列として保持する。`claude` entry は account=`current` と model=`haiku|sonnet|opus|fable` を要求し、`fable` は role=`decider` にだけ許可しなければならない（MUST）。Claude entry の effort は必須の非空文字列として解決結果に保持するが Agent 呼び出しへ渡してはならない（MUST NOT）。
+形式版 2 の profile の検証は executor を discriminator として行わなければならない（MUST）。`codex` entry は登録済み account と非空の effort を要求する。`claude` entry は account=`current` と非空の effort を要求しなければならない（MUST）。どちらの entry も model を持ってはならず（MUST NOT）、`tier_cap` は持つなら 4 格のどれかでなければならない（MUST）。Claude entry の effort は必須の非空文字列として解決結果に保持するが Agent 呼び出しへ渡してはならない（MUST NOT）。
+
+**守備範囲（profile の検証）**: ①入力の出どころは、組み込みの JSON と利用者の `--profile-file` である。②拾いたい誤りは、`model` キーの残存（形式版 1 の書き換え漏れ）・未定義の `tier_cap`・空値である。③通してよい入力は、`tier_cap` の無い entry と claude entry の `tier_cap` である。account の実在は Codex だけ検査する。④この検査は入力の穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 有効な Claude role を解決する
-- **WHEN** account=current、model=opus、非空 effort の Claude review role を解決する
-- **THEN** executor/account/model/effort を欠落なく返し、Codex model への変換を行わない
+- **WHEN** account=current、非空 effort の Claude review role を解決する
+- **THEN** executor/account/effort と格から引いた model を欠落なく返す
 
 #### Scenario: 残量モードは resolver の要求 tuple を変更しない
-- **WHEN** model=fable の Claude decider role を、`FABLE_BUDGET_MODE=exhausted` または `SHARED_BUDGET_MODE=depleted` の環境で解決する
-- **THEN** resolver は model=fable を含む profile の executor/account/model/effort をそのまま返し、Agent 起動時の上限適用を resolver 内で先取りしない
+- **WHEN** Claude decider role を、`FABLE_BUDGET_MODE=exhausted` または `SHARED_BUDGET_MODE=depleted` の環境で解決する
+- **THEN** 結果の `requested_model` は `fable` のままで、`model` にだけ上限が適用される。結果の `execution_config` の entry と `execution_config_hash` は残量モードで変わらない
 
 #### Scenario: 未対応の Claude account を拒否する
 - **WHEN** Claude role の account が current 以外である
 - **THEN** 別 Claude account の実行は未対応だと分かるエラーで profile 全体を拒否し、欄そのものを欠落扱いにしない
 
 #### Scenario: Claude model と Fable role 制約を検証する
-- **WHEN** Claude tier 以外の model、または decider 以外の role に model=fable を指定する
-- **THEN** profile 全体を拒否し、Agent も Codex worker も起動しない
+- **WHEN** executor を問わず entry が `model` キーを持つ
+- **THEN** profile 全体を拒否し、Agent も Codex worker も起動しない。最上位の格になる role は decider だけなので、`fable` が decider 以外に渡る経路は無い
 
 #### Scenario: 未知 executor を拒否する
 - **WHEN** executor が codex と claude のどちらでもない
@@ -132,7 +144,7 @@ headroom の設定（`HEADROOM_7D_CAP_PCT`・`HEADROOM_NORMAL_RATE_PCT_PER_DAY`�
 
 #### Scenario: 明示 profile は自動選択を迂回する
 - **WHEN** `--profile NAME` を明示して工程を開始する
-- **THEN** Claude/Codex の snapshot を読み取らず、指定 profile の検証済み role tuple を返す
+- **THEN** 構成の選択には Claude/Codex の snapshot を使わず、usage probe も実行せず、指定 profile の検証済み role 設定を返す。残量モードの導出には `model-tier-resolution` のとおり Claude の実効値を読む
 
 #### Scenario: 起動 account と snapshot.active が食い違う
 - **WHEN** 起動時の `CLAUDE_SECURESTORAGE_CONFIG_DIR` から導出したサービス名がスロット A に一致し、schema 2 snapshot の `active` とトップレベルのミラーがスロット B を指す
@@ -247,12 +259,12 @@ profile・旧 account/model・account-home 対応表がいずれも未指定の�
 - **WHEN** repository の `scripts/test.sh` を実行する
 - **THEN** 自動選択、明示指定、profile 検証、Codex snapshot 分離を含む回帰が exit 0 になる
 
-### Requirement: Codex entry の model は系統名か完全なモデル ID で書ける
-Codex entry の model は、系統名（英小文字だけからなる値。例: `astra` / `sol` / `luna`）と完全なモデル ID（それ以外の値。例: `gpt-6-sol`）のどちらでもよく、resolver は値を変換せずにそのまま request の model に写さなければならない（MUST）。外部 profile-file と旧形式 `--model` は、版を固定したい利用者のために完全なモデル ID を従来どおり受け付けなければならない（MUST）。resolver の Codex entry の model に対する静的検証は従来どおり非空文字列であることだけとし、値の形やモデルの実在は検証しない（実在しない値は worker が解決時に止める）。系統名から実際のモデル ID への解決は resolver で行ってはならず（MUST NOT）、Codex worker が委譲の直前に行う（`codex-worker` capability）。develop 本体は Codex 委譲の結果を記録先に書くとき、要求した model の値と worker が返した解決後のモデル ID の両方を書かなければならない（MUST）。
+### Requirement: Codex の model は系統名か完全なモデル ID で受け付ける
+対応表の Codex の値は系統名（英小文字だけからなる値。例: `astra` / `sol` / `luna`）で書かなければならない（MUST）。旧形式 `--model` は、版を固定したい利用者のために系統名と完全なモデル ID（それ以外の値。例: `gpt-6-sol`）のどちらも従来どおり受け付けなければならない（MUST）。resolver は値を変換せずにそのまま request の model に写し、旧形式の model に対する静的検証は非空文字列であることだけとする（実在しない値は worker が解決時に止める）。系統名から実際のモデル ID への解決は resolver で行ってはならず（MUST NOT）、Codex worker が委譲の直前に行う（`codex-worker` capability）。develop 本体は Codex 委譲の結果を記録先に書くとき、要求した model の値と worker が返した解決後のモデル ID の両方を書かなければならない（MUST）。
 
 #### Scenario: 外部 profile-file に系統名と完全 ID を混ぜる
-- **WHEN** version=1 の外部 profile-file で、ある Codex role の model を `sol`、別の Codex role の model を `gpt-5.6-sol` として request を作る
-- **THEN** 両方とも検証を通り、各 request の model はそれぞれ `sol` と `gpt-5.6-sol` のまま書かれる
+- **WHEN** version=2 の外部 profile-file で、ある Codex role に `model: sol`、別の Codex role に `model: gpt-5.6-sol` を書いて request を作る
+- **THEN** `model` キーを理由に profile 全体を拒否する。対応表の値は `git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/model-tier-map.json` が 0 件で、モデル ID を書かない
 
 #### Scenario: 旧形式で系統名と完全 ID を指定する
 - **WHEN** 旧形式 `--account NAME --model sol`、または `--account NAME --model gpt-6-astra` で request を作る
@@ -261,4 +273,3 @@ Codex entry の model は、系統名（英小文字だけからなる値。例:
 #### Scenario: 解決後の ID を記録先に残す
 - **WHEN** model=sol の Codex role を委譲し、worker の結果 JSON の `execution.model_resolution` が requested=sol、resolved=gpt-6-sol を返す
 - **THEN** develop 本体の記録先コメントには要求値 `sol` と解決後の ID `gpt-6-sol` の両方が書かれ、どの ID で走ったかが後から追える
-

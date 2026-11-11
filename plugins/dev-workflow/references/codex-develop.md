@@ -6,7 +6,7 @@
 
 `/dev-workflow:develop --profile hybrid-standard <issue URL または依頼>`
 
-`request` は無指定の自動選択のほか、明示 profile（`--profile NAME [--profile-file PATH]`）と旧形式（`--account NAME --model MODEL`）を取る。明示指定のときは検証規則と外部 profile の書式を `references/codex-develop-explicit.md` で読む。各 role は設定を解決した直後に `executor` で一度だけ分岐する。`claude` は要求 tuple を保持して既存の残量上限を適用した model で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。事前分類に当たる R1 または G が要求したレビュアーは、対象 role の設定ではなく profile の `decider` entry（投げ先/account/model）で `subagent_type: dev-workflow:decider` として起動する。
+`request` は無指定の自動選択のほか、明示 profile（`--profile NAME [--profile-file PATH]`）と旧形式（`--account NAME --model MODEL`）を取る。明示指定のときは検証規則と外部 profile の書式を `references/codex-develop-explicit.md` で読む。各 role は設定を解決した直後に `executor` で一度だけ分岐する。`claude` は要求 tuple を保持して `request` が返した `model` で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。`request` にはどの形式でも格の入力（以下「格の入力」と呼ぶ。当たる事前分類の `--pre-class sacred|merge|contract|billing`（繰り返し可。順に聖域パス・マージ権限・層間契約・課金/法務）、記録先が設計判断を含むときの `--design-judgment`、失敗のラダーの段を示す `--failure first|executor|judgment`、自動実行のときの `--unmanned`）を渡す。旧形式は受けて無視する。事前分類に当たる R1 または G が要求したレビュアーは、`--pre-class` を渡した `request` が `role: decider` と構成の `decider` entry の投げ先/account を返すので、`subagent_type: dev-workflow:decider` として起動する。
 
 無指定では各 canonical phase の開始時に Claude 起動 account と登録済み Codex accounts を再評価する。Codex 側も Claude 側も取得からの経過時間では捨てず、Codex は週次 snapshot を、Claude は `usage_view` の実効値（セッション記録と snapshot）を、リセット時刻で読み替えた値（リセット前は下限、リセットを過ぎた窓は 0%）で、`margin = 週経過率 - 週次使用率`。両 provider が margin 0 以上なら `claude-write-codex-review`、Codex だけなら代表 account に束縛した `codex-standard`、それ以外は Claude 既定構成を選ぶ。開始済み role は途中で切り替えない。返された selection evidence（構成、reason、両 margin / fetched_at、代表 account）を最初の開始コメントと各 dispatch 記録に残し、欠測値は `missing` と書く。登録簿（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルの `codex.enabled` が JSON の `false` のとき（Codex オフ）は、Codex の使用量を読まずに `claude-default` を reason `codex-off` で選び、selection evidence の `codex` に `enabled: false` を載せる。
 
@@ -16,11 +16,11 @@ account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰�
 
 ## 本体が行う操作
 
-develop 入口 0 で記録先を確定し、対象 repo のルールで専用 worktree を用意する。CLI 自身は worktree を作らない。各委譲の直前に role を解決し、返された account/model/effort と対象 HEAD を監査情報として保持する。Claude role でも同じ `request`（`--input` と `--out` は必須だが、Claude role ではどちらも読み書きしない）を呼び、`status: agent-required` を読む。
+develop 入口 0 で記録先を確定し、対象 repo のルールで専用 worktree を用意する。CLI 自身は worktree を作らない。各委譲の直前に格の入力を渡して role を解決し、返された account/model/effort と対象 HEAD を監査情報として保持する。Claude role でも同じ `request`（`--input` と `--out` は必須だが、Claude role ではどちらも読み書きしない）を呼び、`status: agent-required` を読む。
 
-Claude role の新規起動では、profile の model を requested model として変更せず保持する。Agent 起動直前に既存の `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` を適用し、requested model / applied model / reason を別々に記録する。W の phase `spec`／`implement`／`finish` は `dev-workflow:worker`、G の phase `gate` は `dev-workflow:gate-runner`、`decider` role は `subagent_type: dev-workflow:decider`、レビュアーは `dev-workflow:reviewer`、R1 は `general-purpose`、`explore`・`summarize` role は `general-purpose` として起動する。すべての上限の正本は `skills/develop/references/decision-criteria.md` の残量モード表であり、以下の列挙は例である。`FABLE_BUDGET_MODE=exhausted` で applied=opus に下がっても `decider` の subagent_type は変えない。`FABLE_BUDGET_MODE=reserve` の自動実行では Fable を使わず、Opus を上限とする。`SHARED_BUDGET_MODE=throttled` は Sonnet 起点、Opus 上限とする。制限が無ければ applied=requested、reason=unchanged。`FABLE_BUDGET_MODE=exhausted` は requested=fable を applied=opus にし、`SHARED_BUDGET_MODE=depleted` は requested にかかわらず applied=sonnet に固定して前者より優先する。
+Claude role の新規起動では、`request` が返した `requested_model`・`model`・`tier_reason` を requested model / applied model / reason として別々に記録し、`tier`・`executed_tier`・`tier_cap` も dispatch 記録に残して、返った `model` で Agent を起動する。`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` の適用は `request` が済ませているので、本体は上限を計算し直さない。`tier_reason` は `tier` の変化だけを表すので、`tier_cap` で値が変わった起動は `executed_tier` と `tier_cap` の記録で見分ける。W の phase `spec`／`implement`／`finish` は `dev-workflow:worker`、G の phase `gate` は `dev-workflow:gate-runner`、返った `role` が `decider` なら `subagent_type: dev-workflow:decider`、レビュアーは `dev-workflow:reviewer`、R1 は `general-purpose`、`explore`・`summarize` role は `general-purpose` として起動する。すべての上限の正本は `skills/develop/references/decision-criteria.md` の残量モード表であり、以下の列挙は例である。`FABLE_BUDGET_MODE=exhausted` で applied=opus に下がっても `decider` の subagent_type は変えない。`FABLE_BUDGET_MODE=reserve` の自動実行では Fable を使わず、Opus を上限とする。`SHARED_BUDGET_MODE=throttled` は Sonnet 起点、Opus 上限とする。制限が無ければ applied=requested、reason=unchanged。`FABLE_BUDGET_MODE=exhausted` は requested=fable を applied=opus にし、`SHARED_BUDGET_MODE=depleted` は sonnet 上限で haiku はそのままとし、前者より優先する。
 
-同じ Claude profile role を再開する前にも毎回現在の上限を再計算する。SendMessage 再開前の `subagent-context.sh` によるコンテキスト上限計測は、profile 経路でも従来どおり適用する。既存 thread の applied model が上限内のときだけ requested tuple と applied model を変えず SendMessage する。上限を超えるときは SendMessage せず、既存の工程完了または停止確認条件を満たしてから、requested tuple と成果物・必要な要約を fresh thread へ渡し、上限内の applied model と reason を記録する。たとえば fable thread の再開前に exhausted へ変われば fresh opus、depleted へ変われば fresh sonnet とする。profile role の境界、独立レビュー、Codex 委譲も fresh thread とし、会話履歴全体を渡さない。
+同じ Claude role を再開する前にも毎回、同じ phase と入力（実行先オプションも同じ）で `request` を呼び直し、返った `tier`（上限を適用済み）と動いている thread の格（起動時に記録した `tier`）を比べて現在の上限を確かめる。呼び直しの結果は `tier` だけを読み、投げ先・account・依頼ファイルは使わず、構成の選び直しにも使わない（`tier` は構成によらないので、役の途中切り替えにはならない）。呼び直しで書かれた依頼ファイルは使わず捨てる。SendMessage 再開前の `subagent-context.sh` によるコンテキスト上限計測は、profile 経路でも従来どおり適用する。返った `tier` が thread の格より低くないときだけ requested tuple と applied model を変えず SendMessage する。低いときは SendMessage せず、既存の工程完了または停止確認条件を満たしてから、requested tuple と成果物・必要な要約を fresh thread へ渡し、上限内の applied model と reason を記録する。applied model は返った `tier` を `references/model-tier-map.json` の claude で引いた値（起動時に `tier_cap` を記録していれば、その格まで下げた値）で、reason は返った `tier_reason` である。たとえば fable thread の再開前に exhausted へ変われば fresh opus、depleted へ変われば fresh sonnet とする。profile role の境界、独立レビュー、Codex 委譲も fresh thread とし、会話履歴全体を渡さない。
 
 Codex role は次の3手順で1回の委譲を行う。
 
@@ -30,13 +30,13 @@ Codex role は次の3手順で1回の委譲を行う。
    ```sh
    python3 <plugin>/scripts/codex-develop.py request --phase PHASE --input <指示ファイル> \
      --cwd <worktree-root> --profile NAME [--profile-file /absolute/profiles.json] \
-     --account-home current=/absolute/codex-home --out <依頼ファイル>
+     --account-home current=/absolute/codex-home [<格の入力>] --out <依頼ファイル>
    python3 <plugin>/scripts/codex-worker.py run --request <依頼ファイル>
    ```
 
 3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功は exit 0、失敗は exit 2。transport state は残らないので、照会・受領・live resume は行わない。記録先に委譲結果を書くときは、要求した model（`execution.model_resolution.requested`）と解決後のモデル ID（`execution.model_resolution.resolved`）を両方書き、観測できた `execution.effective.model` も添える。
 
-書込 role は一度に1つずつ動かし、担当中の role が完了してから次を開始する。Codex への委譲をセッションをまたいで引き継ぐ仕組みはないため、途中で切れた委譲はその工程の最初からやり直し、停止または中断時点の成果物と結果 JSON を記録する。Claude role の再開には上記の上限再計算と fresh thread への手渡し規則を適用する。
+書込 role は一度に1つずつ動かし、担当中の role が完了してから次を開始する。Codex への委譲をセッションをまたいで引き継ぐ仕組みはないため、途中で切れた委譲はその工程の最初からやり直し、停止または中断時点の成果物と結果 JSON を記録する。Claude role の再開には上記の `tier` の比較と fresh thread への手渡し規則を適用する。
 
 | 正本の委譲箇所 | phase | role |
 |---|---|---|

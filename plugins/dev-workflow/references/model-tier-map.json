@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "tiers": ["最安", "中位", "上位", "最上位"],
+  "executors": {
+    "claude": {"最安": "haiku", "中位": "sonnet", "上位": "opus", "最上位": "fable"},
+    "codex": {"最安": "luna", "中位": "sol", "上位": "sol", "最上位": "astra"}
+  }
+}
