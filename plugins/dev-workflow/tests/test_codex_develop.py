@@ -1685,8 +1685,11 @@ class DocumentationContracts(unittest.TestCase):
         self.assertIn('import headroom', source)
 
     def test_executor_branch_is_documented_on_exactly_one_line(self):
-        executor_lines = [line for line in self.adapter.splitlines() if 'executor' in line]
-        self.assertEqual(len(executor_lines), 1)  # grep -c "executor" ... must print 1
+        # #424: `--failure executor`（失敗の段の値）は分岐ではないので数えない
+        executor_lines = [line for line in self.adapter.splitlines()
+                          if 'executor' in line.replace('--failure executor', '')
+                          .replace('first|executor|judgment', '')]
+        self.assertEqual(len(executor_lines), 1)  # 分岐を書く行は 1 行だけ
         branch = executor_lines[0]
         for value in ('role', 'claude', 'Agent', 'codex', '前景'):
             self.assertIn(value, branch)
@@ -1711,7 +1714,7 @@ class DocumentationContracts(unittest.TestCase):
         self.assertNotIn('再計算', self.adapter)
         self.assertIn('sonnet 上限で haiku はそのまま', self.adapter)
         self.assertNotIn('applied=sonnet に固定', self.adapter)
-        self.assertIn('同じ phase と入力（実行先オプションも同じ）で `request` を呼び直し', self.adapter)
+        self.assertIn('その段の `--failure` の値を含む。実行先オプションも同じ）で `request` を呼び直し', self.adapter)
         self.assertIn('呼び直しで書かれた依頼ファイルは使わず捨てる', self.adapter)
         for flag in ('--pre-class', '--design-judgment', '--failure', '--unmanned'):
             self.assertIn(flag, self.adapter)
