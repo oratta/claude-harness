@@ -145,7 +145,7 @@ G が自分で決めるときの根拠は、エピックと記録先の本文、
 
 | failed の原因 | 戻し方 |
 |---|---|
-| **実装品質起因**（テスト不足・エッジケース漏れ・既存コードとの不整合・安全機構の穴） | 失敗の原因が判断側（指示を解釈できなかった・指示自体が外れていた）か実行側（指示どおりやって結果が違う）かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。実行側なら実行役を `opus` で spawn し、判断側なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせ、実行役は据え置く（残量モードと共有枠モードの上限内） |
+| **実装品質起因**（テスト不足・エッジケース漏れ・既存コードとの不整合・安全機構の穴） | 失敗の原因が判断側（指示を解釈できなかった・指示自体が外れていた）か実行側（指示どおりやって結果が違う）かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。実行側なら `codex-develop.py request --phase implement --failure executor` を呼び、`request` が返した model で実行役を起こす。判断側なら `request --phase decider --failure first|judgment` を呼び、`request` が返した model で `subagent_type: dev-workflow:decider` を立てて修正方針を作らせ、実行役は据え置く。判断側の値は、そのゲートの 1 回目の failed なら `--failure first`（上位の格。Claude では `opus`）、決める役を立てたあとも failed が続く 2 回目以降なら `--failure judgment`（最上位の格。Claude では `fable`）。残量モードと共有枠モードの上限は `request` の返り値に適用済み |
 | **仕様が曖昧**（受け入れ条件から一意に決まらない） | モデル昇格ではなく仕様修正で返す。issue の受け入れ条件を確定させてから修正に入る（unmanned なら `needs-approval` を付けて主に返す） |
 | **レビュアーの誤検出**（指摘が事実と違う） | モデル昇格ではなく反証で返す。該当コード・テスト結果を PR コメントに書いて指摘を閉じる |
 
@@ -153,20 +153,22 @@ G が自分で決めるときの根拠は、エピックと記録先の本文、
 
 **段 A だけで戻した failed では昇格を当てない。** 戻した指摘が止めない指摘の振り分け表の段 A だけ（止める指摘が無い）なら、上の表を当てず、W のモデルを据え置く（戻す中身が止めない指摘で、モデルを上げても収束の見込みは変わらない）。原因分類には「段 A だけ（昇格なし）」と書く。止める指摘（順 2〜4）が同じ failed に混ざるときは、上の表をそのまま当てる。
 
-**実行役の上限は `opus`。** 修正実装を `model: fable` で spawn しない（`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。Fable が消費するのはターン数（会話履歴の cache 読込）で、修正ループは数十〜数百ターン回るため、実行役を Fable にすると週次枠が溶ける。Fable を使うのは決める役（`subagent_type: dev-workflow:decider`。`Bash` を持たないので、その return を PR に書くのは呼び出し側）だけで、決める役はどの段階でも種別を固定して `model`（`opus` → `fable`）だけを切り替える。ラダーの正本は develop スキルの `templates/escalation-tripwires.md`。
+**`request` が返した model を使い、model が変わるなら新しい thread に手渡す。** 使うモデルは `--failure` の値を渡した `request` の返り値で、ここに書いた値（括弧内は Claude での例）から計算し直さず、返った model と違う model を独自に指定しない。返った model が起こし済みの W の model と違うときは SendMessage で再開せず、新しい thread に手渡す（細目の正本は `plugins/dev-workflow/references/codex-develop.md`）。
+
+**実行役を最上位の格に上げない。** 実行役の格の上限は上位（Claude では `opus`）で、修正実装を `model: fable` で spawn しない（`scripts/agent-model-guard.sh` が PreToolUse で拒否する）。最上位の格が消費するのはターン数（会話履歴の cache 読込）で、修正ループは数十〜数百ターン回るため、実行役を最上位にすると週次枠が溶ける。最上位を使うのは決める役（`subagent_type: dev-workflow:decider`。`Bash` を持たないので、その return を PR に書くのは呼び出し側）だけで、決める役はどの段階でも種別を固定し、model は `--failure` の値を渡した `request` の返り値で切り替える。ラダーの正本は develop スキルの `templates/escalation-tripwires.md`。
 
 **なぜ 1 回目の failed で上げるのか**: G のレビューループは 2 周キャップで**2 周目が既定の最終周**にあたる（3 周目以降は直し方の判定・主の回答・順 6 の裁定のどれかがあるときだけ開く）ため、1 回目の failed の時点で原因側を一方だけ上げてキャップ内での収束確率を上げる（昇格トリップワイヤーの「1 回目の失敗では誰も上げない」は同じテストの 2 連続失敗を数える別の発火条件で、こちらとは数え方が違う）。
 
 **収束ルール（2周キャップ）との関係**: 再レビューは既定2周なので**2周目が既定の最終周**にあたる（3 周目以降は直し方の判定・主の回答・順 6 の裁定のどれかがあるときだけ開く）。最終周の修正に最強モデルを当てることで、キャップ内で収束する確率を最大化する（3周目へ持ち越さないための配分）。
 
-**Fable が使えないときのフォールバック**: レート制限・週次枠切れ（`FABLE_BUDGET_MODE=exhausted` 相当）で決める役を Fable で立てられない場合は、種別は `dev-workflow:decider` のまま `model: opus` に落として進め、その旨を PR コメントに1行残す（レビュー実行者行と同形式。この記録形式がフォールバック記録の正本）:
+**Fable が使えないときのフォールバック**: レート制限・週次枠切れ（`FABLE_BUDGET_MODE=exhausted` 相当）で `request` が決める役に最上位の格の model を返せない場合は、種別は `dev-workflow:decider` のまま `request` が返した model（Claude では `opus`）で進め、その旨を PR コメントに1行残す（レビュー実行者行と同形式。この記録形式がフォールバック記録の正本）:
 
 ```bash
 gh api -X POST repos/$R/issues/$N/comments \
   -f body='決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）'
 ```
 
-1周目からモデルを上げる「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務。実行役はどの分類でも `opus` 止まりで、読んで判断する役が分類に当たるときは `subagent_type: dev-workflow:decider`）は **develop スキルの references/pre-classification.md が正本** — このゲートでは再掲しない。
+1周目からモデルを上げる「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務。実行役はどの分類でも上位の格止まりで、読んで判断する役が分類に当たるときは `subagent_type: dev-workflow:decider`）は **develop スキルの references/pre-classification.md が正本** — このゲートでは再掲しない。
 
 ## G として動くとき（develop）
 
@@ -182,7 +184,7 @@ gh api -X POST repos/$R/issues/$N/comments \
 ### failed のとき
 - 原因分類（pr-review-gate 手順 2-2）: 実装品質起因 | 仕様が曖昧 | レビュアーの誤検出 | 段 A だけ（昇格なし）
 - 指摘一覧（再現手順・修正点）と PR コメント URL
-- 本体への提案: 実装品質起因なら、失敗の原因が実行側（指示どおりやって結果が違う）か判断側（指示を解釈できなかった・指示自体が外れていた）かを書き添えて、実行側なら `codex-develop.py request --phase implement --failure executor` を呼んで `request` が返した model で W を起こし（model が変わるなら SendMessage で再開せず、新しい thread に手渡す。細目の正本は `plugins/dev-workflow/references/codex-develop.md`）、判断側なら `request --phase decider --failure judgment` を呼んで `request` が返した model で `subagent_type: dev-workflow:decider` を立てて修正方針を作らせるよう提案する（**決める役と実行役のどちらか一方だけ**を上げる。`request` が返した model と違う model を独自に指定せず、実行役を最上位の格に上げない。残量モードと共有枠モードの上限は `request` の返り値に効いている）。仕様が曖昧なら受け入れ条件の確定（unmanned は needs-approval）、誤検出なら反証コメントの投稿
+- 本体への提案: 実装品質起因なら、失敗の原因が実行側（指示どおりやって結果が違う）か判断側（指示を解釈できなかった・指示自体が外れていた）かを書き添えて、実行側なら `codex-develop.py request --phase implement --failure executor` を呼んで `request` が返した model で W を起こし（model が変わるなら SendMessage で再開せず、新しい thread に手渡す。細目の正本は `plugins/dev-workflow/references/codex-develop.md`）、判断側なら `request --phase decider --failure first`（そのゲートの 1 回目の failed）または `--failure judgment`（決める役を立てたあとも failed が続く 2 回目以降）を呼んで `request` が返した model で `subagent_type: dev-workflow:decider` を立てて修正方針を作らせるよう提案する（**決める役と実行役のどちらか一方だけ**を上げる。`request` が返した model と違う model を独自に指定せず、実行役を最上位の格に上げない。残量モードと共有枠モードの上限は `request` の返り値に効いている）。仕様が曖昧なら受け入れ条件の確定（unmanned は needs-approval）、誤検出なら反証コメントの投稿
 ### needs-decider のとき
 - 本体に渡すもの（仕分け表の順 6）: 同じ型の指摘と前の周の指摘の原文、対象ファイルのパス、仕分け欄、順 6 に当てた理由（同じ型の再発／順 3 の差し戻し後の不一致／順 4 の 2 回目）。本体は決める役を起こして裁定を受け取り、照合と振り分けの G を新しく起こして渡す（下の「決める役の裁定受領」）。この PR で裁定が既に 1 回あれば needs-decider で返さず「切り出す」として扱う。順 5 と順 6 の混在で保留にした PR で、主の回答のあとに未処理の順 6 が残っているときもここに当たる（`needs-approval` を外し、failed を付けずに返す）
 ### needs-fix-check のとき
