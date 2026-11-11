@@ -229,3 +229,90 @@ JSON
   ! echo "$output" | grep -q 'fable（最終 verify' || return 1
   echo "$output" | grep -q 'dev-workflow:decider'
 }
+
+# ===== 実行役の種別は対応表の上限を超える格で起こせない（#615） =====
+
+@test "role cap: worker with fable is denied naming the roles, the tiers and the decider type" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"fable","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  denied
+  for word in 'spec-write' 'implement' '最上位' '上位' 'dev-workflow:decider' 'role_caps' 'subagent-model-selection'; do
+    echo "$output" | grep -q -- "$word"
+  done
+}
+
+@test "role cap: gate-runner with the full Fable id is denied naming implement and the tiers" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:gate-runner","model":"claude-fable-5-1","prompt":"x"}}'
+  denied
+  for word in 'implement' '最上位' '上位' 'role_caps'; do
+    echo "$output" | grep -q -- "$word"
+  done
+}
+
+@test "role cap: worker with haiku, sonnet, opus, an unknown name or no model passes" {
+  for model_part in ',"model":"haiku"' ',"model":"sonnet"' ',"model":"opus"' ',"model":"fabel"' ''; do
+    call "{\"tool_name\":\"Agent\",\"tool_input\":{\"subagent_type\":\"dev-workflow:worker\",\"prompt\":\"x\"$model_part}}"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+
+copy_plugin() {  # $1 = destination; copies scripts and references, the table the guard reads
+  mkdir -p "$1"
+  cp -R "${PLUGIN_DIR}/scripts" "${PLUGIN_DIR}/references" "$1/"
+}
+
+@test "role cap: a broken table skips the cap check, so worker fable is still denied by the Fable check and opus passes" {
+  copy_plugin "${WORK}/copy"
+  echo '{not json' > "${WORK}/copy/references/model-tier-map.json"
+  run env USAGE_SNAPSHOT="${WORK}/none.json" "${WORK}/copy/scripts/agent-model-guard.sh" \
+    <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"fable","prompt":"x"}}'
+  denied
+  ! echo "$output" | grep -q 'role_caps' || return 1
+  echo "$output" | grep -q 'dev-workflow:decider'
+  run env USAGE_SNAPSHOT="${WORK}/none.json" "${WORK}/copy/scripts/agent-model-guard.sh" \
+    <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"opus","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "role cap: lowering the cap in one table changes both the guard and codex-develop.py request" {
+  copy_plugin "${WORK}/copy"
+  python3 - "${WORK}/copy/references/model-tier-map.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+table = json.load(open(path, encoding='utf-8'))
+table['role_caps'] = {'spec-write': '中位', 'implement': '中位'}
+json.dump(table, open(path, 'w', encoding='utf-8'), ensure_ascii=False)
+PY
+  repo="${WORK}/repo"
+  git init -q "$repo"
+  git -C "$repo" -c user.name=Test -c user.email=test@example.invalid commit --allow-empty -qm fixture
+  echo 'Do only this phase.' > "${WORK}/input.txt"
+  worker_opus='{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"opus","prompt":"x"}}'
+  request() {  # $1 = plugin dir whose codex-develop.py is run
+    run env CLAUDE_CONFIG_DIR="$WORK" USAGE_PROBE_RESPONSE_FILE="${WORK}/nonexistent.json" \
+      FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=ok \
+      python3 "$1/scripts/codex-develop.py" request --profile claude-default --phase implement \
+      --pre-class contract --input "${WORK}/input.txt" --cwd "$repo" --out "${WORK}/request-$2.json"
+  }
+
+  # The bundled table lets both through.
+  run env USAGE_SNAPSHOT="${WORK}/none.json" FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=ok "$SCRIPT" <<<"$worker_opus"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  request "$PLUGIN_DIR" bundled
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '上位'
+
+  # The lowered copy refuses both.
+  run env USAGE_SNAPSHOT="${WORK}/none.json" FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=ok \
+    "${WORK}/copy/scripts/agent-model-guard.sh" <<<"$worker_opus"
+  denied
+  echo "$output" | grep -q '中位'
+  request "${WORK}/copy" copy
+  [ "$status" -ne 0 ]
+  for word in 'implement' '上位' '中位'; do
+    echo "$output" | grep -q -- "$word"
+  done
+}

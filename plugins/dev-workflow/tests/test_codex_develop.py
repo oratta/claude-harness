@@ -344,10 +344,11 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                          m.execution_config_hash(result['execution_config']))
 
     def test_family_names_and_exact_ids_are_written_to_the_request_unchanged(self):
-        for model in ('sol', 'gpt-6-astra'):
+        # gpt-6-astra is above the implement cap (#615), so it is checked on decider, which has none.
+        for model, phase in (('sol', 'implement'), ('gpt-6-astra', 'decider')):
             with self.subTest(legacy=model):
                 target = self.root/('legacy-' + model + '.json')
-                args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
+                args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
                         '--cwd', str(self.cwd), '--account', 'mapped', '--model', model,
                         '--account-home', 'mapped=' + str(self.home), '--out', str(target)]
                 with patch.object(sys, 'argv', args):
@@ -1224,6 +1225,7 @@ class TierMap(RequestFixture, unittest.TestCase):
         self.assertEqual(table['executors'], {
             'claude': {'最安': 'haiku', '中位': 'sonnet', '上位': 'opus', '最上位': 'fable'},
             'codex': {'最安': 'luna', '中位': 'sol', '上位': 'sol', '最上位': 'astra'}})
+        self.assertEqual(table['role_caps'], {'spec-write': '上位', 'implement': '上位'})
 
     def test_the_table_holds_no_model_id(self):
         path = SCRIPT.parents[1] / 'references/model-tier-map.json'
@@ -1247,6 +1249,13 @@ class TierMap(RequestFixture, unittest.TestCase):
             'empty value': edited(lambda t: t['executors']['claude'].update({'中位': ''})),
             'not a string': edited(lambda t: t['executors']['claude'].update({'中位': 1})),
             'duplicate key': '{"version":1,"version":1}',
+            'missing role caps': edited(lambda t: t.pop('role_caps')),
+            'missing implement cap': edited(lambda t: t['role_caps'].pop('implement')),
+            'a cap on another role': edited(lambda t: t['role_caps'].update({'decider': '上位'})),
+            'unknown role': edited(lambda t: t['role_caps'].update({'builder': '上位'})),
+            'undefined cap tier': edited(lambda t: t['role_caps'].update({'implement': '特上'})),
+            'non-string cap': edited(lambda t: t['role_caps'].update({'implement': 1})),
+            'role caps not an object': edited(lambda t: t.update({'role_caps': []})),
             'not json': '{',
             'not an object': '[]',
         }
@@ -1662,9 +1671,10 @@ class LegacyForm(RequestFixture, unittest.TestCase):
         self.assertEqual((request['role'], request['model']), ('impl-review', 'gpt-6-sol'))
 
     def test_family_names_and_exact_ids_pass_unchanged(self):
-        for model in ('sol', 'gpt-6-astra'):
+        # gpt-6-astra is above the implement cap (#615), so it is checked on decider, which has none.
+        for model, phase in (('sol', 'implement'), ('gpt-6-astra', 'decider')):
             with self.subTest(model=model):
-                self.assertEqual(self.legacy(model)['model'], model)
+                self.assertEqual(self.legacy(model, phase=phase)['model'], model)
 
     def test_the_legacy_form_ignores_a_broken_table_and_the_modes(self):
         with patch.object(m, 'TIER_MAP', self.root / 'absent.json'), \
@@ -1764,3 +1774,98 @@ class DocumentationContracts(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SharedTierCaps(unittest.TestCase):
+    # tier_caps.py is the one place both enforcement layers turn a model name into a tier.
+    def test_names_go_back_to_the_lowest_matching_tier(self):
+        table = m.load_tier_map()
+        claude, codex = table['executors']['claude'], table['executors']['codex']
+        cases = [(claude, 'fable', '最上位'), (claude, 'Claude-Fable-5-1', '最上位'),
+                 (claude, 'opus', '上位'), (claude, 'fabel', None),
+                 (codex, 'gpt-6-astra', '最上位'), (codex, 'gpt-5.6-sol', '中位')]
+        for models, model, expected in cases:
+            with self.subTest(model=model):
+                self.assertEqual(m.tier_caps.model_tier(models, model), expected)
+
+    def test_the_refusal_names_the_role_and_both_tiers(self):
+        text = m.tier_caps.refusal('implement', '最上位', '上位')
+        for word in ('implement', '最上位', '上位', 'role_caps'):
+            self.assertIn(word, text)
+
+
+class RoleCaps(RequestFixture, unittest.TestCase):
+    # model-tier-resolution「役の上限を超える格の依頼を拒否する」: a tier above the writer
+    # cap is refused, never lowered to it.
+    MODES = {'FABLE_BUDGET_MODE': 'abundant', 'SHARED_BUDGET_MODE': 'ok'}
+
+    def lowered_map(self):
+        table = json.loads((SCRIPT.parents[1] / 'references/model-tier-map.json').read_text())
+        table['role_caps'] = {'spec-write': '中位', 'implement': '中位'}
+        path = self.root / 'lowered-map.json'
+        path.write_text(json.dumps(table, ensure_ascii=False))
+        return path
+
+    def request(self, *extra, profile='claude-default', phase='implement', modes=None):
+        args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
+                '--cwd', str(self.cwd), '--profile', profile,
+                '--account-home', 'current=' + str(self.home),
+                '--account-home', 'mapped=' + str(self.home), '--out', str(self.out), *extra]
+        with patch.object(sys, 'argv', args), patch.dict(os.environ, modes or self.MODES):
+            return m.main()
+
+    def test_the_bundled_table_lets_a_raised_writer_through(self):
+        result = self.request('--pre-class', 'contract')
+        self.assertEqual((result['status'], result['executed_tier'], result['model']),
+                         ('agent-required', '上位', 'opus'))
+
+    def test_a_lowered_cap_refuses_the_same_request_without_a_file(self):
+        with patch.object(m, 'TIER_MAP', self.lowered_map()):
+            with self.assertRaises(RuntimeError) as caught:
+                self.request('--pre-class', 'contract', profile='codex-standard')
+        for word in ('implement', '上位', '中位'):
+            self.assertIn(word, str(caught.exception))
+        self.assertFalse(self.out.exists())
+
+    def test_a_tier_within_the_cap_passes(self):
+        with patch.object(m, 'TIER_MAP', self.lowered_map()):
+            self.assertEqual(self.request()['executed_tier'], '中位')
+            depleted = {'FABLE_BUDGET_MODE': 'abundant', 'SHARED_BUDGET_MODE': 'depleted'}
+            self.assertEqual(self.request('--pre-class', 'contract', modes=depleted)['executed_tier'],
+                             '中位')
+
+    def test_readers_are_not_capped(self):
+        with patch.object(m, 'TIER_MAP', self.lowered_map()):
+            self.assertEqual(self.request(phase='review')['executed_tier'], '上位')
+
+
+class LegacyRoleCaps(RequestFixture, unittest.TestCase):
+    # model-tier-resolution「旧形式は格の規則を通らない」: only the writer roles are checked.
+    def legacy(self, model, phase='implement'):
+        args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
+                '--cwd', str(self.cwd), '--account', 'mapped', '--model', model,
+                '--account-home', 'mapped=' + str(self.home), '--out', str(self.out)]
+        with patch.object(sys, 'argv', args):
+            return m.main()
+
+    def test_a_top_tier_model_on_a_writer_is_refused(self):
+        for model in ('gpt-6-astra', 'astra'):
+            for phase in ('implement', 'spec'):
+                with self.subTest(model=model, phase=phase):
+                    with self.assertRaises(RuntimeError) as caught:
+                        self.legacy(model, phase)
+                    role = 'implement' if phase == 'implement' else 'spec-write'
+                    for word in (role, '最上位', '上位'):
+                        self.assertIn(word, str(caught.exception))
+                    self.assertFalse(self.out.exists())
+
+    def test_a_model_within_the_cap_or_off_the_table_passes(self):
+        for model in ('gpt-6-sol', 'astr'):
+            with self.subTest(model=model):
+                result = self.legacy(model)
+                self.assertEqual((result['model'], result['tier']), (model, None))
+
+    def test_an_unreadable_table_stops_a_writer(self):
+        with patch.object(m, 'TIER_MAP', self.root / 'absent.json'), self.assertRaises(RuntimeError):
+            self.legacy('gpt-6-sol')
+        self.assertFalse(self.out.exists())
