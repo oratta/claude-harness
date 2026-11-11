@@ -819,10 +819,9 @@ class ForegroundTest(unittest.TestCase):
             server_pid = self.await_children(run_pid,'app-server child')
             between.kill();between.wait(timeout=10)
             start = time.monotonic()
-            # The spec allows 30 seconds from the loss to both processes being gone (MUST).
-            # Noticing takes up to a poll interval and the interrupt may wait out the grace
-            # period, so the budget has to cover both.
-            self.assertLess(worker_module.ForegroundRecorder.grace+worker_module.WATCH_INTERVAL,30)
+            # The spec allows 30 seconds from the loss to both processes being gone (MUST), and
+            # the worker's own worst case (stop_budget) has to fit inside it.
+            self.assertLess(self.stop_budget(),30)
             limit = 30
             while time.monotonic()-start < limit and (self.alive(run_pid) or self.alive(server_pid)):
                 time.sleep(.1)
@@ -832,63 +831,114 @@ class ForegroundTest(unittest.TestCase):
             if between.poll() is None:
                 between.kill();between.wait(timeout=10)
 
-    def watch(self, chain, answers):
-        # Runs the watcher against scripted lookups. Returns (stopped, ticks, final chain seen).
-        import threading
+    def stop_budget(self):
+        # Everything that may pass between the caller's loss and both processes being gone:
+        # failed lookups are tolerated for the window, the lookup that crosses it comes up to
+        # one interval and one lookup timeout later, the main flow notices the flag, the
+        # interrupt waits out the grace period and Rpc.close waits three times.
+        w = worker_module
+        return (w.LOOKUP_FAILURE_WINDOW+w.WATCH_INTERVAL+w.LOOKUP_TIMEOUT+w.STOP_SLACK
+                +w.ForegroundRecorder.grace+3*w.CLOSE_WAIT)
+
+    def test_the_stop_after_a_lost_caller_fits_the_30_seconds_of_the_spec(self):
+        self.assertGreater(worker_module.LOOKUP_FAILURE_WINDOW,0)
+        self.assertLess(self.stop_budget(),30)
+
+    def watch(self, chain, answers, cost=0):
+        # Runs the watcher against scripted lookups on a fake clock: every tick advances it by
+        # one watch interval and every lookup by cost. Returns (stopped, ticks, clock).
+        import threading,types
         stop = threading.Event()
         queue = list(answers)
         ticks = []
-        def fake(pid):
-            ticks.append(pid)
-            if not queue:
-                return None
-            return queue.pop(0)
+        clock = [0.0]
         def lookup(pid):
-            value = fake(pid)
-            if value is None:
+            ticks.append(pid)
+            clock[0] += worker_module.WATCH_INTERVAL+cost
+            if not queue:
+                # The script ran out: end the watcher without counting it as a stop.
                 stop.set()
-                return chain if chain[-1:] != [-1] else chain[:-1]
-            return value
-        original = worker_module.ancestors
+                return chain
+            return queue.pop(0)
+        original,real_time = worker_module.ancestors,worker_module.time
         worker_module.ancestors = lookup
+        worker_module.time = types.SimpleNamespace(monotonic=lambda: clock[0],sleep=lambda s: None)
         try:
-            # stop is set by the watcher on a lost caller; the lookup sets it only when the
-            # script runs out, which is told apart through the ticks count.
-            worker_module.watch_caller(stop,chain,interval=.001)
+            worker_module.watch_caller(stop,chain,0.0,interval=.001)
         finally:
-            worker_module.ancestors = original
-        return stop.is_set() and len(ticks) <= len(answers), len(ticks)
+            worker_module.ancestors,worker_module.time = original,real_time
+        return stop.is_set() and len(ticks) <= len(answers), len(ticks), clock[0]
 
     def test_watch_caller_stops_when_the_chain_changes(self):
-        self.assertEqual(self.watch([10,20],[[]]),(True,1))
-        self.assertEqual(self.watch([10,20],[[10,20],[11,20]]),(True,2))
+        self.assertEqual(self.watch([10,20],[[]])[:2],(True,1))
+        self.assertEqual(self.watch([10,20],[[10,20],[11,20]])[:2],(True,2))
 
     def test_watch_caller_ignores_a_failed_lookup_that_agrees_with_the_baseline(self):
-        stopped,ticks = self.watch([10,20],[[10,-1],[10,-1],[10,20]])
+        stopped,ticks,_ = self.watch([10,20],[[10,-1],[10,-1],[10,20]])
         self.assertFalse(stopped)
         self.assertEqual(ticks,4)
 
     def test_watch_caller_stops_on_a_failed_lookup_that_disagrees(self):
-        self.assertEqual(self.watch([10,20],[[10,-1],[11,-1]]),(True,2))
-        self.assertEqual(self.watch([10,-1],[[11,-1]]),(True,1))
+        self.assertEqual(self.watch([10,20],[[10,-1],[11,-1]])[:2],(True,2))
+        # Reading past the end of the baseline means the chain is not the one recorded.
+        self.assertEqual(self.watch([10,20],[[10,20,30,-1]])[:2],(True,1))
 
-    def test_watch_caller_stops_when_lookups_keep_failing(self):
-        limit = worker_module.MAX_LOOKUP_FAILURES
-        self.assertGreater(limit,0)
-        # The budget leaves room for the grace period inside the 30 seconds of the spec.
-        self.assertLess(limit*worker_module.WATCH_INTERVAL+worker_module.ForegroundRecorder.grace,30)
-        stopped,ticks = self.watch([10,20],[[10,-1]]*(limit+5))
-        self.assertTrue(stopped)
-        self.assertEqual(ticks,limit+1)
-        # A success in between resets the count.
-        stopped,ticks = self.watch([10,20],[[10,-1]]*limit+[[10,20]]+[[10,-1]]*limit)
+    def test_watch_caller_stops_within_the_window_when_lookups_keep_failing(self):
+        window = worker_module.LOOKUP_FAILURE_WINDOW
+        latest = window+worker_module.WATCH_INTERVAL+worker_module.LOOKUP_TIMEOUT
+        # Fast failures and failures that each use the whole lookup timeout both stop once
+        # the window since the last good lookup has passed, and no later than one more tick.
+        for cost in (0,worker_module.LOOKUP_TIMEOUT):
+            with self.subTest(cost=cost):
+                stopped,ticks,clock = self.watch([10,20],[[10,-1]]*100,cost=cost)
+                self.assertTrue(stopped)
+                self.assertGreaterEqual(clock,window)
+                self.assertLess(clock,latest)
+
+    def test_watch_caller_counts_the_window_from_the_last_good_lookup(self):
+        # Each tick takes one interval on the fake clock and the window restarts where the good
+        # lookup began, so n failures on either side stay inside it while 2n+1 ticks do not.
+        ticks_per_window = worker_module.LOOKUP_FAILURE_WINDOW/worker_module.WATCH_INTERVAL
+        n = int(ticks_per_window)-2
+        self.assertGreater(n,0)
+        self.assertGreater(2*n+1,ticks_per_window)
+        stopped,_,_ = self.watch([10,20],[[10,-1]]*n+[[10,20]]+[[10,-1]]*n)
         self.assertFalse(stopped)
 
-    def test_watch_caller_replaces_an_incomplete_baseline_with_a_complete_chain(self):
-        # [10,-1] then [10,20] agrees and becomes the baseline, so a later [10,21] now differs.
-        self.assertFalse(self.watch([10,-1],[[10,20],[10,20]])[0])
-        self.assertEqual(self.watch([10,-1],[[10,20],[10,21]]),(True,2))
-        self.assertEqual(self.watch([10,-1],[[11,20]]),(True,1))
+    def fake_ps(self, body):
+        directory = self.root/'fake-ps';directory.mkdir(exist_ok=True)
+        (directory/'ps').write_text('#!/bin/sh\n'+body+'\n');(directory/'ps').chmod(0o700)
+        return str(directory)
+
+    def lookup_with(self, directory):
+        original = os.environ['PATH']
+        os.environ['PATH'] = directory+os.pathsep+original
+        try:
+            start = time.monotonic()
+            chain = worker_module.ancestors(4242)
+            return chain, time.monotonic()-start
+        finally:
+            os.environ['PATH'] = original
+
+    def test_ancestors_gives_up_on_a_ps_that_hangs(self):
+        chain,took = self.lookup_with(self.fake_ps('sleep 30'))
+        self.assertEqual(chain,[4242,-1])
+        self.assertLess(took,worker_module.LOOKUP_TIMEOUT+1)
+
+    def test_ancestors_bounds_the_whole_lookup_not_each_ps(self):
+        # Every ps answers, slowly, with a parent that has a parent: 64 links at 0.6 s each
+        # would take far longer than the lookup timeout.
+        chain,took = self.lookup_with(self.fake_ps('sleep .6; echo $(($4+1))'))
+        self.assertEqual(chain[-1],-1)
+        self.assertGreater(len(chain),2)
+        self.assertLess(took,worker_module.LOOKUP_TIMEOUT+1)
+
+    def test_a_caller_that_cannot_be_read_at_start_ends_before_the_server(self):
+        self.env['PATH'] = self.fake_ps('exit 1')+os.pathsep+self.env['PATH']
+        r = self.run_cli(code=2)
+        self.assertEqual(r['error_kind'],'caller_lookup_failed')
+        self.assertIsNone(r['status'])
+        self.assertEqual(self.calls(),[])
 
     def test_settled_ancestors_retries_a_failed_lookup(self):
         answers = iter([[10,-1],[10,-1],[10,20]])
