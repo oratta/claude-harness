@@ -18,8 +18,9 @@
 #   - model あり → 許可
 #   - subagent_type が定義に model を持つエージェント（plugin:agent 形式や casting-* 等）→ 許可
 #     （Agent ツールは定義側の model を使うため、パラメータ省略が親継承にならない）
-#   - subagent_type が fork → SHARED_BUDGET_MODE（明示 env、無ければ active スロットの実効値から導出）が ok のときだけ許可。
-#     throttled / depleted では拒否（fork は常に親＝Fable で動く）
+#   - subagent_type が fork → 共有枠モード（usage_view.py の budget_mode_details から得る。明示 env、無ければ
+#     active スロットの実効値から導出）が ok のときだけ許可。throttled / depleted では拒否（fork は常に親＝Fable で動く）。
+#     usage_view.py を読み込めなければ明示 env も読まず許可（fail-open）
 #   - それ以外（general-purpose / Explore / Plan / 未指定）で model 無し → 拒否
 #   - DEV_WORKFLOW_MODEL_GUARD=off で全許可（緊急の逃げ道。恒久設定にしない）
 #
@@ -63,31 +64,25 @@ def deny(reason):
 
 # fork は model パラメータを無視して常に親モデルで動くので、model の有無より先に判定する
 if stype == "fork":
-    shared = (os.environ.get("SHARED_BUDGET_MODE") or "").strip()
-    if not shared:
-        shared = "ok"
-        try:
-            now_env = os.environ.get("USAGE_PROBE_NOW")
-            now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
-            sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
-            import usage_view
+    # 共有枠モードの式（明示 env の優先・データ無し・90 超・週経過との比較）は usage_view.py の 1 か所にだけ置く
+    # （#1625）。明示 env があれば出どころが「明示 env」になるので、実効値（build_view）を読まずにその結果で判定する。
+    # usage_view.py を読み込めない・呼び出しが例外を出すときは明示 env も読まず ok（fail-open。session-tripwires.sh と同じ）。
+    mode, shown = "ok", "ok"
+    try:
+        now_env = os.environ.get("USAGE_PROBE_NOW")
+        now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
+        sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+        import usage_view
+        shared = usage_view.budget_mode_details({}, now)["shared"]
+        if shared["source"] != usage_view.SOURCE_EXPLICIT:
             view = usage_view.build_view(snapshot_path=os.environ["SNAPSHOT"], now=now)
-            slot = view["accounts"].get(view["active"]) or {}
-            all_pct = float(slot.get("weekly_all_pct"))
-            if all_pct > 90:
-                shared = "depleted"            # 週経過に関わらず 90% 超は depleted
-            else:
-                resets = int(slot.get("weekly_resets_epoch"))
-                WEEK = 7 * 86400
-                elapsed = max(0.0, min(100.0, (WEEK - (resets - now)) / WEEK * 100.0))
-                if all_pct > elapsed:
-                    shared = "throttled"
-        except Exception:
-            if shared == "ok":
-                pass  # 読めなければ ok（fail-open）
-    if shared == "ok":
+            shared = usage_view.budget_mode_details(view["accounts"].get(view["active"]) or {}, now)["shared"]
+        mode, shown = shared["mode"], shared["shown"]
+    except Exception:
+        mode, shown = "ok", "ok"
+    if mode == "ok":
         sys.exit(0)
-    deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く（model パラメータは無視される）。共有枠モードが {shared} のあいだは fork を使わず、"
+    deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く（model パラメータは無視される）。共有枠モードが {shown} のあいだは fork を使わず、"
          "model を明示した general-purpose（sonnet / opus）で spawn する。規範: rules/subagent-model-selection.md")
 
 # 実行役の種別は対応表の上限を超える格で起こせない（#615）。種別と役の対応は env で足せる形にしない
