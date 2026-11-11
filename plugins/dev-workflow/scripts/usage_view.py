@@ -5,7 +5,8 @@ The rules are specified in openspec/specs/usage-session-records ("記録と snap
 求める"). Every dev-workflow reader (select-account.sh, session-tripwires.sh,
 agent-model-guard.sh, codex-develop.py) uses this one implementation. budget_mode_details()
 turns those values into the budget modes and is the only place of that formula;
-session-tripwires.sh shows its result and budget_modes() gives codex-develop.py the modes.
+session-tripwires.sh shows its result, agent-model-guard.sh decides fork with its shared mode
+and budget_modes() gives codex-develop.py the modes.
 
   usage_view.py --json [--now EPOCH]   print {"now", "active", "accounts"} as one JSON line
   usage_view.py --codex-enabled        print "on" or "off" (registry "codex"."enabled"), exit 0
