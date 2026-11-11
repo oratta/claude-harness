@@ -819,9 +819,11 @@ class ForegroundTest(unittest.TestCase):
             server_pid = self.await_children(run_pid,'app-server child')
             between.kill();between.wait(timeout=10)
             start = time.monotonic()
-            # Noticing the loss takes up to a poll interval, then the interrupt waits out the
-            # grace period; the margin on top covers a loaded machine.
-            limit = worker_module.ForegroundRecorder.grace+worker_module.WATCH_INTERVAL+50
+            # The spec allows 30 seconds from the loss to both processes being gone (MUST).
+            # Noticing takes up to a poll interval and the interrupt may wait out the grace
+            # period, so the budget has to cover both.
+            self.assertLess(worker_module.ForegroundRecorder.grace+worker_module.WATCH_INTERVAL,30)
+            limit = 30
             while time.monotonic()-start < limit and (self.alive(run_pid) or self.alive(server_pid)):
                 time.sleep(.1)
             self.assertFalse(self.alive(run_pid),'foreground command outlived its caller')
@@ -830,40 +832,73 @@ class ForegroundTest(unittest.TestCase):
             if between.poll() is None:
                 between.kill();between.wait(timeout=10)
 
-    def test_watch_caller_ignores_a_failed_process_lookup(self):
-        # A failed ps (for example while the machine cannot fork) says nothing about the
-        # caller, so it must not end a healthy turn.
+    def watch(self, chain, answers):
+        # Runs the watcher against scripted lookups. Returns (stopped, ticks, final chain seen).
         import threading
-        chain = [10,20]
-        answers = iter([[10,-1],[10,-1],[10,20]])
         stop = threading.Event()
-        calls = []
+        queue = list(answers)
+        ticks = []
         def fake(pid):
-            calls.append(pid)
-            try:
-                return next(answers)
-            except StopIteration:
+            ticks.append(pid)
+            if not queue:
+                return None
+            return queue.pop(0)
+        def lookup(pid):
+            value = fake(pid)
+            if value is None:
                 stop.set()
-                return chain
+                return chain if chain[-1:] != [-1] else chain[:-1]
+            return value
         original = worker_module.ancestors
-        worker_module.ancestors = fake
+        worker_module.ancestors = lookup
         try:
-            worker_module.watch_caller(stop,chain,interval=.01)
+            # stop is set by the watcher on a lost caller; the lookup sets it only when the
+            # script runs out, which is told apart through the ticks count.
+            worker_module.watch_caller(stop,chain,interval=.001)
         finally:
             worker_module.ancestors = original
-        self.assertTrue(stop.is_set())
-        self.assertGreaterEqual(len(calls),4,'the failed lookups were taken as a lost caller')
+        return stop.is_set() and len(ticks) <= len(answers), len(ticks)
 
     def test_watch_caller_stops_when_the_chain_changes(self):
-        import threading
-        stop = threading.Event()
-        original = worker_module.ancestors
-        worker_module.ancestors = lambda pid: []
+        self.assertEqual(self.watch([10,20],[[]]),(True,1))
+        self.assertEqual(self.watch([10,20],[[10,20],[11,20]]),(True,2))
+
+    def test_watch_caller_ignores_a_failed_lookup_that_agrees_with_the_baseline(self):
+        stopped,ticks = self.watch([10,20],[[10,-1],[10,-1],[10,20]])
+        self.assertFalse(stopped)
+        self.assertEqual(ticks,4)
+
+    def test_watch_caller_stops_on_a_failed_lookup_that_disagrees(self):
+        self.assertEqual(self.watch([10,20],[[10,-1],[11,-1]]),(True,2))
+        self.assertEqual(self.watch([10,-1],[[11,-1]]),(True,1))
+
+    def test_watch_caller_stops_when_lookups_keep_failing(self):
+        limit = worker_module.MAX_LOOKUP_FAILURES
+        self.assertGreater(limit,0)
+        # The budget leaves room for the grace period inside the 30 seconds of the spec.
+        self.assertLess(limit*worker_module.WATCH_INTERVAL+worker_module.ForegroundRecorder.grace,30)
+        stopped,ticks = self.watch([10,20],[[10,-1]]*(limit+5))
+        self.assertTrue(stopped)
+        self.assertEqual(ticks,limit+1)
+        # A success in between resets the count.
+        stopped,ticks = self.watch([10,20],[[10,-1]]*limit+[[10,20]]+[[10,-1]]*limit)
+        self.assertFalse(stopped)
+
+    def test_watch_caller_replaces_an_incomplete_baseline_with_a_complete_chain(self):
+        # [10,-1] then [10,20] agrees and becomes the baseline, so a later [10,21] now differs.
+        self.assertFalse(self.watch([10,-1],[[10,20],[10,20]])[0])
+        self.assertEqual(self.watch([10,-1],[[10,20],[10,21]]),(True,2))
+        self.assertEqual(self.watch([10,-1],[[11,20]]),(True,1))
+
+    def test_settled_ancestors_retries_a_failed_lookup(self):
+        answers = iter([[10,-1],[10,-1],[10,20]])
+        original,sleep = worker_module.ancestors,worker_module.time.sleep
+        worker_module.ancestors = lambda pid: next(answers)
+        worker_module.time.sleep = lambda s: None
         try:
-            worker_module.watch_caller(stop,[10,20],interval=.01)
+            self.assertEqual(worker_module.settled_ancestors(5),[10,20])
         finally:
-            worker_module.ancestors = original
-        self.assertTrue(stop.is_set())
+            worker_module.ancestors,worker_module.time.sleep = original,sleep
 
     def test_sigterm_interrupts_the_turn_and_leaves_no_server(self):
         self.config(wait=True)

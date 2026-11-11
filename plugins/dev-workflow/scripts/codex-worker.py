@@ -647,15 +647,35 @@ def settled_ancestors(pid, attempts=5):
     return chain
 
 
+# The spec gives 30 seconds from the caller's loss to both processes being gone. The
+# interrupt may wait out the grace period, so lookups that keep failing may only delay
+# the verdict for what is left of that budget.
+MAX_LOOKUP_FAILURES = int((30-ForegroundRecorder.grace)/WATCH_INTERVAL)-1
+
+
 def watch_caller(stop, chain, interval=WATCH_INTERVAL):
+    failures = 0
     while not stop.wait(interval):
         current = ancestors(os.getppid())
+        incomplete = chain[-1:] == [-1]
+        known = chain[:-1] if incomplete else chain
         if current[-1:] == [-1]:
-            # ps failed under load; judging the caller lost here would end a healthy turn.
+            # ps failed under load. The part that was read still has to agree with the
+            # baseline; only an unreadable remainder is skipped, and only for a while.
+            seen = current[:-1]
+            n = min(len(seen), len(known))
+            failures += 1
+            if seen[:n] != known[:n] or failures > MAX_LOOKUP_FAILURES:
+                stop.set()
+                return
             continue
-        # A baseline that stayed incomplete after the retries is compared by its known part.
-        known = chain[:-1] if chain[-1:] == [-1] else chain
-        if current[:len(known)] != known or (known is chain and current != chain):
+        failures = 0
+        if incomplete:
+            if current[:len(known)] != known:
+                stop.set()
+                return
+            chain = current
+        elif current != chain:
             stop.set()
             return
 
