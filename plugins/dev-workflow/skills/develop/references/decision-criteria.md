@@ -165,7 +165,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 | 値 | 導出 | 効果 |
 |---|---|---|
 | `ok` | データ無し、または消費が週の経過ペース以下 | 制約なし。役割表の既定どおり |
-| `throttled` | `weekly_all_pct` が週経過% より大きい（このペースだと週末までに枠が尽きる） | W / R1 / G の既定を **Sonnet** に落とす。昇格上限 Opus。`abundant` の押し上げは無効 |
+| `throttled` | `weekly_all_pct` が週経過% より大きい（このペースだと週末までに枠が尽きる） | W / R1 / G と G が要求するレビュアーの既定を **Sonnet** に落とす。昇格上限 Opus。`abundant` の押し上げは無効 |
 | `depleted` | `weekly_all_pct > 90` | 全役割 Sonnet 上限・昇格なし。事前分類に当たっても Fable / Opus を使わない（枠が無いので使えば全員が止まる） |
 
 Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。

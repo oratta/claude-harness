@@ -112,6 +112,13 @@ setup() {
   grep -qF '`sonnet` 上限' "$PRE"
 }
 
+@test "shared budget: the throttled row lowers the reviewer G requests to Sonnet, as request does" {
+  grep -F '| `throttled`' "$CRITERIA" | grep -qF 'W / R1 / G と G が要求するレビュアーの既定を **Sonnet** に落とす'
+  GATE_RUNNER="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+  grep -qF 'レビュアーは `throttled` では既定 `sonnet`（マージ権限・層間契約・課金/法務に当たっても `opus` 止まり）' "$GATE_RUNNER"
+  ! grep -qF 'レビュアーは `throttled` では `opus` 止まり' "$GATE_RUNNER" || return 1
+}
+
 @test "pre-classification: budget mode still caps escalation" {
   grep -qF 'FABLE_BUDGET_MODE=reserve' "$PRE"
   grep -qF 'exhausted' "$PRE"

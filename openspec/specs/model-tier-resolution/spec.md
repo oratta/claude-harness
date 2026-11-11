@@ -93,8 +93,8 @@ phase `spec-review` と `review` に `--pre-class merge`、`contract`、`billing
 
 #### Scenario: throttled は上げていない役を中位まで下げる
 
-- **WHEN** `SHARED_BUDGET_MODE=throttled` で、入力なしの R1、事前分類に当たる W、`--pre-class contract` の R1、decider、explore を解決する
-- **THEN** 適用後の格は順に中位、上位、上位、上位、最安である
+- **WHEN** `SHARED_BUDGET_MODE=throttled` で、入力なしの R1、入力なしの G が要求するレビュアー（phase `review`）、事前分類に当たる W、`--pre-class contract` の R1、decider、explore を解決する
+- **THEN** 適用後の格は順に中位、中位、上位、上位、上位、最安である
 
 #### Scenario: exhausted は全経路で上位までにする
 
