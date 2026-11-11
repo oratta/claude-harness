@@ -1393,8 +1393,8 @@ class TierRule(RequestFixture, unittest.TestCase):
 
 
 class BudgetModeDerivation(RequestFixture, unittest.TestCase):
-    # usage_view.budget_modes is a copy of the formula in session-tripwires.sh, which stays
-    # untouched, so the tripwire script itself is the expected value in the last test.
+    # The formula lives only in usage_view.budget_mode_details; budget_modes and
+    # session-tripwires.sh both read it. The last test checks the injected modes still agree.
     NOW = 2_000_000
     DAY = 86400
 
@@ -1428,6 +1428,47 @@ class BudgetModeDerivation(RequestFixture, unittest.TestCase):
         self.assertEqual(m.usage_view.budget_modes(
             None, self.NOW, {'FABLE_BUDGET_MODE': ' ', 'SHARED_BUDGET_MODE': ''}),
             {'fable': 'conserve', 'shared': 'ok'})
+
+    def details(self, slot, environ):
+        return m.usage_view.budget_mode_details(slot, self.NOW, environ)
+
+    def test_details_of_explicit_values_keep_the_shown_value(self):
+        got = self.details(None, {'FABLE_BUDGET_MODE': ' reserve ', 'SHARED_BUDGET_MODE': 'ok'})
+        self.assertEqual(got['fable'], {'mode': 'reserve', 'shown': 'reserve', 'source': '明示 env'})
+        self.assertEqual(got['shared'], {'mode': 'ok', 'shown': 'ok', 'source': '明示 env'})
+
+    def test_details_of_unknown_explicit_values_split_shown_and_mode(self):
+        got = self.details(None, {'FABLE_BUDGET_MODE': 'foo', 'SHARED_BUDGET_MODE': 'bar'})
+        self.assertEqual(got['fable'], {'mode': 'conserve', 'shown': 'foo', 'source': '明示 env'})
+        self.assertEqual(got['shared'], {'mode': 'throttled', 'shown': 'bar', 'source': '明示 env'})
+
+    def test_details_of_blank_explicit_values_are_not_set(self):
+        got = self.details(None, {'FABLE_BUDGET_MODE': ' ', 'SHARED_BUDGET_MODE': ''})
+        self.assertEqual(got['fable'], {'mode': 'conserve', 'shown': 'conserve',
+                                        'source': '既定（usage データなし）'})
+        self.assertEqual(got['shared'], {'mode': 'ok', 'shown': 'ok',
+                                         'source': '既定（usage データなし）'})
+
+    def test_details_of_effective_values_are_derived(self):
+        slot = self.slot(fable=10, weekly=95, fable_resets=self.NOW + self.DAY,
+                         weekly_resets=self.NOW + self.DAY)
+        got = self.details(slot, {})
+        self.assertEqual(got['fable'], {'mode': 'abundant', 'shown': 'abundant', 'source': '自動導出'})
+        self.assertEqual(got['shared'], {'mode': 'depleted', 'shown': 'depleted', 'source': '自動導出'})
+
+    def test_budget_modes_is_the_mode_of_the_details(self):
+        for slot, environ in ((None, {'FABLE_BUDGET_MODE': 'foo'}),
+                              (self.slot(fable=50, weekly=10, fable_resets=self.NOW + 6 * self.DAY,
+                                         weekly_resets=self.NOW + 6 * self.DAY), {})):
+            with self.subTest(slot=slot, environ=environ):
+                got = self.details(slot, environ)
+                self.assertEqual(m.usage_view.budget_modes(slot, self.NOW, environ),
+                                 {'fable': got['fable']['mode'], 'shared': got['shared']['mode']})
+
+    def test_elapsed_pct_is_public(self):
+        self.assertIsNone(m.usage_view.elapsed_pct(None, self.NOW))
+        self.assertAlmostEqual(m.usage_view.elapsed_pct(self.NOW + 6 * self.DAY, self.NOW),
+                               100 / 7)
 
     def test_same_values_as_session_tripwires(self):
         script = SCRIPT.parent / 'session-tripwires.sh'

@@ -4,8 +4,8 @@
 
 ## 1. usage_view.py に出どころ付きの導出を置く
 
-- [ ] 1.1 `test_codex_develop.py` の `BudgetModeDerivation` に、出どころ付きの導出関数のテスト（明示 env・未知の明示値（表示する値はそのまま、モードは conserve / throttled）・空白だけの明示値・データ無し・自動導出の各出どころ）を先に足し、落ちることを確かめる。クラス冒頭の注記（`session-tripwires.sh` は写しで手を付けない）を、導出が `usage_view.py` の 1 か所にあることに直す。確認: `python3 -m unittest plugins/dev-workflow/tests/test_codex_develop.py -k BudgetModeDerivation` が新しいテストだけ落ちる。触る範囲: plugins/dev-workflow/tests/test_codex_develop.py:1395-1463（`BudgetModeDerivation`）
-- [ ] 1.2 `usage_view.py` に、モードごとに `mode`・`shown`・`source` を返す関数を足し、`budget_modes` をその結果のモード名だけを返す包みにする。docstring の「The formula is the one in session-tripwires.sh」を、この関数が式の唯一の置き場である旨に直す。週経過の割合を表示に使えるよう `_elapsed_pct` を公開名でも呼べるようにする。確認: 1.1 のテストと既存の `BudgetModeDerivation`・`budget_modes` を使う `test_codex_develop.py` の全テストが通る。触る範囲: plugins/dev-workflow/scripts/usage_view.py:1-15（docstring）、plugins/dev-workflow/scripts/usage_view.py:249-284（`_elapsed_pct`・`budget_modes`）
+- [x] 1.1 `test_codex_develop.py` の `BudgetModeDerivation` に、出どころ付きの導出関数のテスト（明示 env・未知の明示値（表示する値はそのまま、モードは conserve / throttled）・空白だけの明示値・データ無し・自動導出の各出どころ）を先に足し、落ちることを確かめる。クラス冒頭の注記（`session-tripwires.sh` は写しで手を付けない）を、導出が `usage_view.py` の 1 か所にあることに直す。確認: `python3 -m unittest plugins/dev-workflow/tests/test_codex_develop.py -k BudgetModeDerivation` が新しいテストだけ落ちる。触る範囲: plugins/dev-workflow/tests/test_codex_develop.py:1395-1463（`BudgetModeDerivation`）
+- [x] 1.2 `usage_view.py` に、モードごとに `mode`・`shown`・`source` を返す関数を足し、`budget_modes` をその結果のモード名だけを返す包みにする。docstring の「The formula is the one in session-tripwires.sh」を、この関数が式の唯一の置き場である旨に直す。週経過の割合を表示に使えるよう `_elapsed_pct` を公開名 `elapsed_pct` にする。確認: 1.1 のテストと既存の `BudgetModeDerivation`・`budget_modes` を使う `test_codex_develop.py` の全テストが通る。触る範囲: plugins/dev-workflow/scripts/usage_view.py:1-15（docstring）、plugins/dev-workflow/scripts/usage_view.py:249-284（`_elapsed_pct`・`budget_modes`）
 
 ## 2. session-tripwires.sh から導出の写しを除く
 
