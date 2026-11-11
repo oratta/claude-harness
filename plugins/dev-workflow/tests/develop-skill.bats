@@ -341,13 +341,22 @@ refute() {
   # #1239 C9・C10: 段落はラダーの正本を指し、W の上限は表の W の行を指す 1 句で残す
   t="$(echo "$m" | grep '^昇格トリップワイヤー')"
   echo "$t" | grep -qF 'templates/escalation-tripwires.md'
-  echo "$t" | grep -qF 'W を `opus`'
   echo "$t" | grep -qF 'W の上限は「モデル」節の表の W の行（`opus`）'
   ! echo "$t" | grep -qF '`opus` → `fable`' || return 1
-  # review F1: 判断側・実行側の定義と decider の model の段は escalation-tripwires.md を Read して従う
+  # review F1: 判断側・実行側の定義は escalation-tripwires.md を Read して従う
   echo "$t" | grep -qF '指示を解釈できなかった'
   echo "$t" | grep -qF '指示どおりやって結果が違う'
   echo "$t" | grep -qF 'templates/escalation-tripwires.md` を Read'
+  # #424: --failure の各値と失敗の段の対応を書き、model は request の返り値を使う。
+  # decider の model を文面から読む指示と「W を opus で再開」は残さない
+  echo "$t" | grep -qF '`--failure first`（1 回目の失敗）'
+  echo "$t" | grep -qF '`--failure executor`（2 回目の失敗で原因が実行側）'
+  echo "$t" | grep -qF '`--failure judgment`（2 回目の失敗で原因が判断側）'
+  echo "$t" | grep -qF '`request` が返した `model`'
+  echo "$t" | grep -qF '新しい thread に手渡す'
+  echo "$t" | grep -qF 'references/codex-develop.md'
+  refute "$t" -F 'decider の `model` の段'
+  refute "$t" -F 'W を `opus` で再開'
 }
 
 @test "loop: step 1 points the W model to the W row of the model table (#1239 C10)" {
@@ -1785,4 +1794,75 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$p9" | grep -qF '時間分類の 60 分以上と同じ項目の再開の記録'
   grep -F '**待ちをやめてよい条件**' "$EPIC" \
     | grep -qF '(f) `wait` が `expired <N>...` で返り、手順 9 を済ませたとき（伝え済みの止まりだけが残っているので、下のやめる直前の (1)(2) の確認は要らない）'
+}
+
+# spec: dev-workflow-escalation-tripwires（失敗ループのラダーは格と --failure の値で書く。#424）
+@test "tripwires: the failure ladder is written in requested tiers and --failure values (#424)" {
+  sec="$(awk '/^2\. 【失敗ループ/{f=1} /^3\. 【/{f=0} f' "$TRIPWIRES")"
+  [ -n "$sec" ]
+  printf '%s\n' "$sec" | grep -qF '| 段階 | `--failure` | 決める役の要求の格（phase `decider`） | 実行役の要求の格（W の phase） |'
+  for v in first executor judgment; do
+    printf '%s\n' "$sec" | grep -qF "| \`$v\` |"
+  done
+  printf '%s\n' "$sec" | grep -qF 'references/model-tier-map.json'
+  printf '%s\n' "$sec" | grep -qF '上限を適用する前の要求の格'
+  printf '%s\n' "$sec" | grep -qF '`SHARED_BUDGET_MODE=depleted` では決める役も中位'
+  printf '%s\n' "$sec" | grep -qF '`request` が返した `model`'
+  printf '%s\n' "$sec" | grep -qF 'dev-workflow:decider'
+  printf '%s\n' "$sec" | grep -qF '実行役の格の上限は上位'
+  # 旧表（Claude のモデル名で段を書いた形）と、request を通らない「その場で」の但し書きは残さない
+  refute "$sec" -F '| `sonnet` で再試行 |'
+  refute "$sec" -F '本体が opus 以上ならその場で'
+  refute "$sec" -F '本体が fable ならその場で'
+  refute "$sec" -F 'fable が決めて opus が実行しても'
+  refute "$sec" -F 'Opus が決めて Opus が実行しても'
+}
+
+# spec: manual-codex-develop（失敗ループの昇格で profile と実装役の設定を差し替えない。#424）
+@test "codex-develop: the failure loop keeps the profile, the returned model and the effort (#424)" {
+  CODEX_DEV="${PLUGIN_DIR}/references/codex-develop.md"
+  ops="$(section '本体が行う操作' "$CODEX_DEV")"
+  p="$(printf '%s\n' "$ops" | grep '^失敗ループ')"
+  [ -n "$p" ]
+  printf '%s\n' "$p" | grep -qF '`--failure executor`'
+  printf '%s\n' "$p" | grep -qF '`request --phase decider --failure judgment`'
+  printf '%s\n' "$p" | grep -qF '`request` が返した model と違う model を独自に指定・上書きしない'
+  printf '%s\n' "$p" | grep -qF 'effort を profile の entry の値から変えない'
+  printf '%s\n' "$p" | grep -qF '返った model を Agent の `model` に渡すのは既存の契約どおり'
+  printf '%s\n' "$p" | grep -qF '対応表で引いた結果'
+  refute "$p" -E 'gpt-|astra|`sol`'
+}
+
+# spec: manual-codex-develop（develop 開始時の profile の指定を工程の途中で変えない。#424）
+@test "codex-develop: the profile given at the start is kept until the end, with an owner-approved record to change it (#424)" {
+  CODEX_DEV="${PLUGIN_DIR}/references/codex-develop.md"
+  r="$(section '起動と role 解決' "$CODEX_DEV")"
+  printf '%s\n' "$r" | grep -qF 'develop 開始時の profile の指定'
+  printf '%s\n' "$r" | grep -qF '工程の途中で変えない'
+  printf '%s\n' "$r" | grep -qF '`profile 変更: <変更前の指定> → <変更後の指定>`'
+  printf '%s\n' "$r" | grep -qF '#615'
+}
+
+# spec: manual-codex-develop（委譲は前景実行の 3 手順で行う: 再開の条件を 1 つにまとめる。#424）
+@test "resume: SendMessage only when the tier is not lower and the model is the same, in both documents (#424)" {
+  CODEX_DEV="${PLUGIN_DIR}/references/codex-develop.md"
+  rule='返った `tier` が thread の格より低くなく、かつ返った `model` が thread の applied model と同じときだけ SendMessage'
+  grep -qF "$rule" "$CODEX_DEV"
+  rp="$(section 'Role profile の選択')"
+  printf '%s\n' "$rp" | grep -qF "$rule"
+  for body in "$(cat "$CODEX_DEV")" "$rp"; do
+    printf '%s\n' "$body" | grep -qF '`--failure` の値を含む'
+    printf '%s\n' "$body" | grep -qF '`tier` と `model` だけを読み'
+    refute "$body" -F '呼び直しの結果は `tier` だけを読み'
+  done
+}
+
+# spec: dev-workflow-escalation-tripwires（W の指示書の失敗ループの要約も格と request の返り値で書く。#424）
+@test "worker common: the failure-loop summary uses the model request returns (#424)" {
+  COMMON="${SKILL_DIR}/references/roles/worker/common.md"
+  l="$(grep -F -- '- **失敗ループ**' "$COMMON")"
+  printf '%s\n' "$l" | grep -qF '`--failure executor`'
+  printf '%s\n' "$l" | grep -qF '新しい W に手渡す'
+  refute "$l" -F 'W を `opus` で再開'
+  refute "$l" -F 'Opus が決めて Opus が実行しても'
 }
