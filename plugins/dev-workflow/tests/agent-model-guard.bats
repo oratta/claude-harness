@@ -179,7 +179,9 @@ def budget_mode_details(slot, now, environ=None):
 }
 
 @test "fork: the guard has no formula of the shared budget mode (week seconds, the 90 threshold)" {
-  ! grep -nE '86400|> *90|weekly_all_pct|weekly_resets_epoch' "$SCRIPT"
+  run grep -nE '86400|> *90|weekly_all_pct|weekly_resets_epoch' "$SCRIPT"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
 }
 
 @test "large payload: a multi-megabyte prompt is still judged (no ARG_MAX failure)" {
