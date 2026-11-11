@@ -8,9 +8,9 @@
 
 - `templates/escalation-tripwires.md` の失敗ループのラダーを、Claude のモデル名ではなく格と `request` に渡す `--failure` の値で書く。モデル名は「対応表 `references/model-tier-map.json` で引いた値」とし、Claude での値は括弧書きの例に留める
 - `references/codex-develop.md` に、失敗ループが起きたときの本体の手順を実行側・判断側それぞれ書く:
-  - 実行側: `request --phase implement --failure executor` が返した格と model だけを使う。Codex の対応表では上位も `sol` なので実装役のモデルは変わらない。本体は profile を作り直さず、`--profile-file` を差し替えず、model と effort を自分で選ばない
+  - 実行側: `request --phase implement --failure executor` が返した格と model だけを使う。Codex の対応表では上位も `sol` なので実装役のモデルは変わらない。本体は profile を作り直さず、`--profile-file` を差し替えず、`request` が返した model と違う model を独自に指定・上書きせず、effort を変えない
   - 判断側: `request --phase decider --failure judgment` が返す構成の `decider` entry で決める役を立てる
-  - 格が上がって model が変わるときは SendMessage で再開せず、返った model で新しい thread を起こして手渡す
+  - 再開前の比較を 1 つの条件にまとめる: 返った `tier` が低くなく `model` が同じときだけ SendMessage、それ以外（降格と model が変わる昇格）は返った model の新しい thread に手渡す（SKILL.md「Role profile の選択」の再開の段落も同じ条件にする）
 - `references/codex-develop.md` に、develop 開始時に決めた profile の指定（`--profile` / `--profile-file` / 旧形式 / 無指定）を工程の途中で変えない規則と、変えるならオーナーの承認を記録先に記録する規則を書く（機械的な拒否は作らない。#615 に寄せる）
 - `skills/develop/SKILL.md`「モデル」節の昇格の段落を、`--failure` の各値がどの失敗の段に当たるかで書き、decider の model を escalation-tripwires.md の文面から読む形をやめて `request` が返す値を使う形にする
 - 上の文を固定する bats を足し、旧文言を固定していた bats を新しい文言に合わせる
@@ -26,7 +26,7 @@
 ### Modified Capabilities
 
 - `dev-workflow-escalation-tripwires`: 要件「昇格トリップワイヤー3本の定義」の失敗ループのラダーを格と `--failure` の値で書く
-- `manual-codex-develop`: 失敗ループで本体が profile と実装役の model・effort を差し替えない要件と、develop 開始時の profile の指定を工程の途中で変えない要件を足す
+- `manual-codex-develop`: 失敗ループで本体が profile と実装役の model・effort を差し替えない要件と、develop 開始時の profile の指定を工程の途中で変えない要件を足し、要件「委譲は前景実行の 3 手順で行う」の再開の条件を昇格・同格・降格で 1 つにまとめる（MODIFIED）
 - `dev-workflow-develop`: SKILL.md「モデル」節が `--failure` の各値と失敗の段の対応を書き、decider の model を `request` の返り値から取る要件を足す
 
 ## Impact

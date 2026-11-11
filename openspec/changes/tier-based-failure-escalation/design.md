@@ -29,9 +29,9 @@ Non-Goals:
 
 ### ラダーの表は格と `--failure` の値で書く
 
-表の列を「段階・`--failure` の値・決める役の格・実行役の格」にする。モデル名は「`references/model-tier-map.json` で引いた値」と書き、Claude での値は括弧書きで残す（hook 注入でテンプレートを読む本体自身は Claude で動くことが多く、括弧の値で読み替えずに済む）。
+表の列を「段階・`--failure` の値・決める役の要求の格・実行役の要求の格」にする。表の格は `request` の要求の格（残量モードと構成の上限を適用する前）で、実際の model は `request` の返り値で決まることを表のそばに書く（`SHARED_BUDGET_MODE=depleted` では決める役も中位の model が返る）。モデル名は「`references/model-tier-map.json` で引いた値」と書き、Claude での値は括弧書きで残す（hook 注入でテンプレートを読む本体自身は Claude で動くことが多く、括弧の値で読み替えずに済む）。
 
-| 段階 | `--failure` | 決める役（phase `decider`） | 実行役（W の phase） |
+| 段階 | `--failure` | 決める役の要求の格（phase `decider`） | 実行役の要求の格（W の phase） |
 |---|---|---|---|
 | 初回 | なし | 仕様化判断と R1 レビュー | 既定の格（中位） |
 | 1 回目の失敗 | `first` | 上位 | 格は変えない |
@@ -43,15 +43,15 @@ Non-Goals:
 
 ### 本体は `request` が返した model だけを使い、profile・model・effort を差し替えない
 
-実行側の失敗では、本体は `request --phase implement --failure executor` を呼び、返った `model` で実行役を起こす。profile を作り直すこと、`--profile` / `--profile-file` を開始時と違う値にすること、`model` を明示することは、失敗ループの昇格の手段にしない。Codex では上位も `sol` なので実装役のモデルは変わらない。これが issue #424 の「実行側の失敗では implement のモデルを変えない」を、格の言葉で満たす形になる。
+実行側の失敗では、本体は `request --phase implement --failure executor` を呼び、返った `model` で実行役を起こす。profile を作り直すこと、`--profile` / `--profile-file` を開始時と違う値にすること、`request` が返した model と違う model を本体が独自に指定・上書きすることは、失敗ループの昇格の手段にしない（`request` が返した model を Agent の `model` に渡すのは既存の契約どおりで、禁止に当たらない）。Codex では上位も `sol` なので実装役のモデルは変わらない。これが issue #424 の「実行側の失敗では implement のモデルを変えない」を、格の言葉で満たす形になる。
 
 effort は上げない。effort は profile の entry の値で、`request` は格の入力で effort を動かさない。案として「実行側の失敗で effort だけ 1 段上げる」も考えたが採らない。flatmate#847 の事故は astra と high の組み合わせで、effort の上げ下げを本体の判断に残すと、モデルを据え置いても同じ形の消費が起きうる。effort を変えたいなら profile を変える扱いになり、下の「profile の指定を途中で変えない」に従う。
 
-### 格が上がって model が変わるときは fresh thread に手渡す
+### 再開か fresh thread かの条件を 1 つにまとめる
 
-再開前の比較に「上がった場合」を足す。返った `tier` が thread の格より高く、返った `model` が thread の起動時の applied model と違うときは、SendMessage せず、返った model で新しい thread を起こし、前任の return と成果物を手渡す。`model` が同じ（Codex の 中位→上位、`tier_cap` で同じ格に下がる構成）なら SendMessage で再開してよい。Codex role は委譲ごとに fresh なので、この比較は Claude role にだけ効く。
+既存の `manual-codex-develop`「委譲は前景実行の 3 手順で行う」は、再開前の呼び直しで `tier` だけを読み、「低くなければ applied model を変えず SendMessage」と決めている。ここに「上がった場合」を別の要件として足すと、既存の要件と食い違う。そこで既存の要件を MODIFIED にして条件を 1 つにする: 呼び直しは今回の格の入力（失敗ループの段なら `--failure` の値を含む）で行い、結果は `tier` と `model` だけを読む。返った `tier` が thread の格より低くなく、かつ返った `model` が thread の applied model と同じときだけ SendMessage する。それ以外（降格と、model が変わる昇格）は工程完了か停止確認のあとで、返った model の fresh thread に手渡す。Codex role は委譲ごとに fresh なので、この比較は Claude role にだけ効く。文書では `codex-develop.md`「本体が行う操作」と SKILL.md「Role profile の選択」の再開の段落の 2 か所を同じ条件に直す。
 
-比較の基準を `tier` だけにする案（「高ければ常に fresh」）も考えたが採らない。model が変わらないのに thread を捨てると、成果の手渡しの手間だけが増える。SendMessage で変えられないのは model なので、model の差で分ける。
+比較の基準を `tier` だけにする案（「高ければ常に fresh」）も考えたが採らない。降格側は既存どおり `tier` で判定し（格が下がれば fresh）、昇格側だけ model の差を足す。model が変わらないのに thread を捨てると、成果の手渡しの手間だけが増える。SendMessage で変えられないのは model なので、model の差で分ける。
 
 ### decider の格は `request` の返り値から取る
 
