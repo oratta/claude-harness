@@ -1224,6 +1224,7 @@ class TierMap(RequestFixture, unittest.TestCase):
         self.assertEqual(table['executors'], {
             'claude': {'最安': 'haiku', '中位': 'sonnet', '上位': 'opus', '最上位': 'fable'},
             'codex': {'最安': 'luna', '中位': 'sol', '上位': 'sol', '最上位': 'astra'}})
+        self.assertEqual(table['role_caps'], {'spec-write': '上位', 'implement': '上位'})
 
     def test_the_table_holds_no_model_id(self):
         path = SCRIPT.parents[1] / 'references/model-tier-map.json'
@@ -1247,6 +1248,13 @@ class TierMap(RequestFixture, unittest.TestCase):
             'empty value': edited(lambda t: t['executors']['claude'].update({'中位': ''})),
             'not a string': edited(lambda t: t['executors']['claude'].update({'中位': 1})),
             'duplicate key': '{"version":1,"version":1}',
+            'missing role caps': edited(lambda t: t.pop('role_caps')),
+            'missing implement cap': edited(lambda t: t['role_caps'].pop('implement')),
+            'a cap on another role': edited(lambda t: t['role_caps'].update({'decider': '上位'})),
+            'unknown role': edited(lambda t: t['role_caps'].update({'builder': '上位'})),
+            'undefined cap tier': edited(lambda t: t['role_caps'].update({'implement': '特上'})),
+            'non-string cap': edited(lambda t: t['role_caps'].update({'implement': 1})),
+            'role caps not an object': edited(lambda t: t.update({'role_caps': []})),
             'not json': '{',
             'not an object': '[]',
         }
@@ -1720,3 +1728,21 @@ class DocumentationContracts(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SharedTierCaps(unittest.TestCase):
+    # tier_caps.py is the one place both enforcement layers turn a model name into a tier.
+    def test_names_go_back_to_the_lowest_matching_tier(self):
+        table = m.load_tier_map()
+        claude, codex = table['executors']['claude'], table['executors']['codex']
+        cases = [(claude, 'fable', '最上位'), (claude, 'Claude-Fable-5-1', '最上位'),
+                 (claude, 'opus', '上位'), (claude, 'fabel', None),
+                 (codex, 'gpt-6-astra', '最上位'), (codex, 'gpt-5.6-sol', '中位')]
+        for models, model, expected in cases:
+            with self.subTest(model=model):
+                self.assertEqual(m.tier_caps.model_tier(models, model), expected)
+
+    def test_the_refusal_names_the_role_and_both_tiers(self):
+        text = m.tier_caps.refusal('implement', '最上位', '上位')
+        for word in ('implement', '最上位', '上位', 'role_caps'):
+            self.assertIn(word, text)

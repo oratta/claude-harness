@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import usage_view  # noqa: E402
 import headroom  # noqa: E402
+import tier_caps  # noqa: E402
 CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
                    'decider', 'explore', 'summarize')
 PHASES = {
@@ -388,10 +389,11 @@ def load_tier_map(path=None):
         document = json.loads(Path(source).read_text(), object_pairs_hook=_unique_object)
     except (OSError, ValueError) as exc:
         raise RuntimeError('tier map is unavailable or invalid') from exc
-    if (not isinstance(document, dict) or set(document) != {'version', 'tiers', 'executors'} or
+    if (not isinstance(document, dict) or
+            set(document) != {'version', 'tiers', 'executors', 'role_caps'} or
             type(document['version']) is not int or document['version'] != 1 or
             document['tiers'] != list(TIERS)):
-        raise RuntimeError('tier map must have exactly version=1, tiers and executors')
+        raise RuntimeError('tier map must have exactly version=1, tiers, executors and role_caps')
     executors = document['executors']
     if not isinstance(executors, dict) or set(executors) != {'claude', 'codex'}:
         raise RuntimeError('tier map must define exactly the claude and codex executors')
@@ -400,6 +402,13 @@ def load_tier_map(path=None):
             raise RuntimeError(f'tier map {executor} must define exactly the four tiers')
         if any(not isinstance(model, str) or not model for model in models.values()):
             raise RuntimeError(f'tier map {executor} has an empty or non-string model')
+    # Only the writer roles carry a cap. The legacy form decides from the role name alone
+    # whether to read the table, so a cap on another role needs its own change.
+    caps = document['role_caps']
+    if not isinstance(caps, dict) or set(caps) != set(tier_caps.CAPPED_ROLES):
+        raise RuntimeError('tier map role_caps must cap exactly spec-write and implement')
+    if any(cap not in TIERS for cap in caps.values()):
+        raise RuntimeError('tier map role_caps has an undefined tier')
     return document
 
 
