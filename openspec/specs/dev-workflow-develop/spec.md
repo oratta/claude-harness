@@ -455,7 +455,7 @@ develop 本体は、Claude 既定の経路を含めて、新しい role を起�
 - **WHEN** decider を `FABLE_BUDGET_MODE=exhausted`、`SHARED_BUDGET_MODE=ok` で解決する
 - **THEN** resolver は `requested_model`=`fable`、`model`=`opus`、`tier_reason`=`FABLE_BUDGET_MODE=exhausted` を返し、本体はその `model` で Agent を起動する
 
-#### Scenario: depleted はすべての要求を Sonnet に固定する
+#### Scenario: depleted は中位を上限にし、最安の役はそのままにする
 - **WHEN** Claude の decider を `SHARED_BUDGET_MODE=depleted` で解決する
 - **THEN** resolver は `requested_model`=`fable`、`model`=`sonnet`、`tier_reason`=`SHARED_BUDGET_MODE=depleted` を返し、本体はその `model` で Agent を起動する
 
