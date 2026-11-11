@@ -182,7 +182,7 @@ gh api -X POST repos/$R/issues/$N/comments \
 ### failed のとき
 - 原因分類（pr-review-gate 手順 2-2）: 実装品質起因 | 仕様が曖昧 | レビュアーの誤検出 | 段 A だけ（昇格なし）
 - 指摘一覧（再現手順・修正点）と PR コメント URL
-- 本体への提案: 実装品質起因なら、失敗の原因が実行側（指示どおりやって結果が違う）か判断側（指示を解釈できなかった・指示自体が外れていた）かを書き添えて、実行側なら W を `opus` で再開、判断側なら `subagent_type: dev-workflow:decider`（`model` は `opus` → `fable`。種別は固定して `model` だけ切り替える）を立てて修正方針を作らせるよう提案する（**決める役と実行役のどちらか一方だけ**を上げる。W を `fable` にはしない。残量モードと共有枠モードの上限内）。仕様が曖昧なら受け入れ条件の確定（unmanned は needs-approval）、誤検出なら反証コメントの投稿
+- 本体への提案: 実装品質起因なら、失敗の原因が実行側（指示どおりやって結果が違う）か判断側（指示を解釈できなかった・指示自体が外れていた）かを書き添えて、実行側なら `codex-develop.py request --phase implement --failure executor` を呼んで `request` が返した model で W を起こし（model が変わるなら SendMessage で再開せず、新しい thread に手渡す。細目の正本は `plugins/dev-workflow/references/codex-develop.md`）、判断側なら `request --phase decider --failure judgment` を呼んで `request` が返した model で `subagent_type: dev-workflow:decider` を立てて修正方針を作らせるよう提案する（**決める役と実行役のどちらか一方だけ**を上げる。`request` が返した model と違う model を独自に指定せず、実行役を最上位の格に上げない。残量モードと共有枠モードの上限は `request` の返り値に効いている）。仕様が曖昧なら受け入れ条件の確定（unmanned は needs-approval）、誤検出なら反証コメントの投稿
 ### needs-decider のとき
 - 本体に渡すもの（仕分け表の順 6）: 同じ型の指摘と前の周の指摘の原文、対象ファイルのパス、仕分け欄、順 6 に当てた理由（同じ型の再発／順 3 の差し戻し後の不一致／順 4 の 2 回目）。本体は決める役を起こして裁定を受け取り、照合と振り分けの G を新しく起こして渡す（下の「決める役の裁定受領」）。この PR で裁定が既に 1 回あれば needs-decider で返さず「切り出す」として扱う。順 5 と順 6 の混在で保留にした PR で、主の回答のあとに未処理の順 6 が残っているときもここに当たる（`needs-approval` を外し、failed を付けずに返す）
 ### needs-fix-check のとき
