@@ -160,7 +160,7 @@ W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B
 
 ## 共有枠モード `SHARED_BUDGET_MODE`
 
-全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は active スロットの実効値から自動導出（`scripts/session-tripwires.sh`）。
+全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は active スロットの実効値から自動導出（式は `scripts/usage_view.py` の 1 か所、セッションへの注入は `scripts/session-tripwires.sh`）。
 
 | 値 | 導出 | 効果 |
 |---|---|---|
