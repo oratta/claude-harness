@@ -8,6 +8,10 @@
 #
 # 判定:
 #   - tool_name が Agent 以外 → 何もしない（exit 0・無出力）
+#   - 実行役の種別（dev-workflow:worker → spec-write・implement、dev-workflow:gate-runner → implement）で
+#     model あり → guard の場所から ../references/model-tier-map.json を読み、claude の列で model を格に戻し、
+#     role_caps の上限（役が複数なら低いほう）を超えたら拒否（#615。照合と文面の前半は scripts/tier_caps.py で
+#     codex-develop.py と共有）。格に戻せない名前は通す。表が読めない・壊れていれば飛ばして次の Fable 判定へ
 #   - model が Fable（エイリアス fable / 完全 ID claude-fable-*）→ subagent_type が決める役
 #     （dev-workflow:decider）のときだけ許可。それ以外は拒否（実行役の上限は opus）
 #   - worker / gate-runner / reviewer は DECIDER_TYPES に入れず、定義の model（worker / gate-runner は sonnet、reviewer は opus）を使う
@@ -85,6 +89,31 @@ if stype == "fork":
         sys.exit(0)
     deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く（model パラメータは無視される）。共有枠モードが {shared} のあいだは fork を使わず、"
          "model を明示した general-purpose（sonnet / opus）で spawn する。規範: rules/subagent-model-selection.md")
+
+# 実行役の種別は対応表の上限を超える格で起こせない（#615）。種別と役の対応は env で足せる形にしない
+# （DECIDER_TYPES と同じ理由）。表の置き場所は guard 自身の場所から決め、env で差し替えない。
+TYPE_ROLES = {"dev-workflow:worker": ("spec-write", "implement"),
+              "dev-workflow:gate-runner": ("implement",)}
+if model and stype in TYPE_ROLES:
+    try:
+        sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+        import tier_caps
+        table = tier_caps.read_table(os.path.join(os.path.dirname(os.environ["USAGE_VIEW_DIR"]),
+                                                  "references", "model-tier-map.json"))
+    except Exception:
+        table = None  # 表を読めなければ上限の判定を飛ばし、下の Fable 判定に任せる
+    if table is not None:
+        roles = TYPE_ROLES[stype]
+        caps = [table["role_caps"].get(r) for r in roles]
+        caps = [c for c in caps if c in tier_caps.TIERS]
+        if caps:
+            cap = min(caps, key=tier_caps.TIERS.index)
+            tier = tier_caps.model_tier(table["executors"]["claude"], model)
+            if tier_caps.exceeds(tier, cap):
+                deny(tier_caps.refusal("/".join(roles), tier, cap, note=f"subagent_type: {stype}")
+                     + f"model: {model} は使えない。実行役は model: sonnet / opus を使い、"
+                     "決めさせたいなら subagent_type: dev-workflow:decider に替えて再実行。"
+                     "規範: rules/subagent-model-selection.md")
 
 # Fable は決める役の種別でだけ spawn できる（実行役の上限は opus）。
 # エイリアス fable の完全一致と、完全 ID claude-fable-* の前方一致で見る（世代交代で穴が開かないように）。

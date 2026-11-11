@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import usage_view  # noqa: E402
 import headroom  # noqa: E402
+import tier_caps  # noqa: E402
 CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
                    'decider', 'explore', 'summarize')
 PHASES = {
@@ -388,10 +389,11 @@ def load_tier_map(path=None):
         document = json.loads(Path(source).read_text(), object_pairs_hook=_unique_object)
     except (OSError, ValueError) as exc:
         raise RuntimeError('tier map is unavailable or invalid') from exc
-    if (not isinstance(document, dict) or set(document) != {'version', 'tiers', 'executors'} or
+    if (not isinstance(document, dict) or
+            set(document) != {'version', 'tiers', 'executors', 'role_caps'} or
             type(document['version']) is not int or document['version'] != 1 or
             document['tiers'] != list(TIERS)):
-        raise RuntimeError('tier map must have exactly version=1, tiers and executors')
+        raise RuntimeError('tier map must have exactly version=1, tiers, executors and role_caps')
     executors = document['executors']
     if not isinstance(executors, dict) or set(executors) != {'claude', 'codex'}:
         raise RuntimeError('tier map must define exactly the claude and codex executors')
@@ -400,6 +402,13 @@ def load_tier_map(path=None):
             raise RuntimeError(f'tier map {executor} must define exactly the four tiers')
         if any(not isinstance(model, str) or not model for model in models.values()):
             raise RuntimeError(f'tier map {executor} has an empty or non-string model')
+    # Only the writer roles carry a cap. The legacy form decides from the role name alone
+    # whether to read the table, so a cap on another role needs its own change.
+    caps = document['role_caps']
+    if not isinstance(caps, dict) or set(caps) != set(tier_caps.CAPPED_ROLES):
+        raise RuntimeError('tier map role_caps must cap exactly spec-write and implement')
+    if any(cap not in TIERS for cap in caps.values()):
+        raise RuntimeError('tier map role_caps has an undefined tier')
     return document
 
 
@@ -451,6 +460,14 @@ def tier_fields(args, execution, switched, tier_map):
     return {'requested_tier': requested, 'tier': tier, 'tier_reason': reason, 'tier_cap': cap,
             'executed_tier': executed, 'requested_model': models[requested],
             'model': models[executed], 'budget_modes': modes}
+
+
+def check_role_cap(role, tier, tier_map):
+    # A tier above the role's cap is refused, never lowered: the Claude guard can only refuse,
+    # and a tier above the cap means the table or the rule is set wrong.
+    cap = tier_map['role_caps'].get(role)
+    if cap is not None and tier_caps.exceeds(tier, cap):
+        raise RuntimeError(tier_caps.refusal(role, tier, cap))
 
 
 def cap_tier(tier, cap):
@@ -664,8 +681,13 @@ def build_request(args):
         raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
-    # The legacy pair goes around the tiers, so only the other forms need the table.
-    tier_map = None if legacy else load_tier_map()
+    # The legacy pair goes around the tiers, so only the other forms need the table, except
+    # that a writer role is checked against its cap (whether to read it is decided by name).
+    phase_role = PHASES[args.phase][0]
+    tier_map = None if legacy and phase_role not in tier_caps.CAPPED_ROLES else load_tier_map()
+    if legacy and tier_map is not None:
+        check_role_cap(phase_role, tier_caps.model_tier(tier_map['executors']['codex'], args.model),
+                       tier_map)
     if legacy or profile:
         refuse_explicit_codex_when_off(args, legacy)
     mapping = account_homes(args.account_home, args.account_home_file)
@@ -708,6 +730,8 @@ def build_request(args):
                             'budget_modes'))
              | {'requested_model': args.model, 'model': args.model} if legacy else
              tier_fields(args, execution, switched, tier_map))
+    if not legacy:
+        check_role_cap(execution['role'], tiers['executed_tier'], tier_map)
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
         result = {'status': 'agent-required', 'phase': args.phase, 'role': execution['role'],
