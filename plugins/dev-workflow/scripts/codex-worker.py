@@ -240,17 +240,28 @@ def discard_runtime(runtime):
     (runtime/'auth.json').unlink(missing_ok=True)
 
 
+# One lookup of the caller's chain may take this long in total, however many links it walks;
+# the watcher's 30-second budget below counts on it.
+LOOKUP_TIMEOUT = 2
+
+
 def ancestors(pid):
     # The direct parent is a shell wrapper whenever the caller starts this in the background,
     # so the whole chain identifies the caller: if any link disappears the rest is reparented
     # and the chain no longer matches. A recycled PID cannot fake the entire chain.
+    # A lookup that fails or runs out of time ends in -1.
     chain = []
+    deadline = time.monotonic()+LOOKUP_TIMEOUT
     while pid > 1 and len(chain) < 64:
         chain.append(pid)
         try:
+            left = deadline-time.monotonic()
+            if left <= 0:
+                raise subprocess.TimeoutExpired('ps', LOOKUP_TIMEOUT)
             pid = int(subprocess.check_output(['ps', '-o', 'ppid=', '-p', str(pid)],
-                                              text=True, stderr=subprocess.DEVNULL).strip())
-        except (subprocess.CalledProcessError, ValueError, OSError):
+                                              text=True, stderr=subprocess.DEVNULL,
+                                              timeout=left).strip())
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError, OSError):
             chain.append(-1)
             break
     return chain
@@ -338,6 +349,10 @@ def quota_available(result, margin, inflight):
         require(pct + margin*inflight <= 100, 'quota_headroom_insufficient')
         found = True
     require(found, 'quota_unknown')
+
+
+# Rpc.close waits up to three times this long: after closing stdin, after SIGTERM, after SIGKILL.
+CLOSE_WAIT = 3
 
 
 class Rpc:
@@ -436,14 +451,14 @@ class Rpc:
         except BrokenPipeError:
             pass
         try:
-            self.proc.wait(timeout=3)
+            self.proc.wait(timeout=CLOSE_WAIT)
         except subprocess.TimeoutExpired:
             self.proc.terminate()
             try:
-                self.proc.wait(timeout=3)
+                self.proc.wait(timeout=CLOSE_WAIT)
             except subprocess.TimeoutExpired:
                 self.proc.kill()
-                self.proc.wait(timeout=3)
+                self.proc.wait(timeout=CLOSE_WAIT)
         self.proc.stdout.close()
 
 
@@ -633,9 +648,43 @@ class ForegroundRecorder:
         return self.deadline is None and self.stop.is_set()
 
 
-def watch_caller(stop, chain, interval=1):
+WATCH_INTERVAL = 1
+# Room for the main flow to see the stop flag (it polls every .25 seconds) and for the
+# process to exit after Rpc.close.
+STOP_SLACK = 1
+# The spec gives 30 seconds from the caller's loss to both processes being gone. After the
+# flag is raised the interrupt may wait out the grace period and Rpc.close may wait three
+# times; the watcher sees the flag's cause up to one interval and one lookup later than the
+# window it tolerates failed lookups for. Those add up to 6+1+2+1+10+9 = 29 seconds.
+LOOKUP_FAILURE_WINDOW = 6
+
+
+def settled_ancestors(pid, attempts=5):
+    # A lookup that failed ends in -1; it describes the lookup, not the caller. Retry so the
+    # baseline the watcher compares against is a complete chain.
+    chain = ancestors(pid)
+    while chain[-1:] == [-1] and attempts > 1:
+        attempts -= 1
+        time.sleep(.1)
+        chain = ancestors(pid)
+    return chain
+
+
+def watch_caller(stop, chain, since, interval=WATCH_INTERVAL):
+    # chain is a complete baseline; since is when the caller was last known to be there.
     while not stop.wait(interval):
-        if ancestors(os.getppid()) != chain:
+        begun = time.monotonic()
+        current = ancestors(os.getppid())
+        if current[-1:] != [-1]:
+            if current != chain:
+                stop.set()
+                return
+            since = begun
+            continue
+        # ps failed under load. The part that was read still has to agree with the baseline;
+        # only an unreadable remainder is skipped, and only within the window.
+        seen = current[:-1]
+        if seen != chain[:len(seen)] or time.monotonic()-since >= LOOKUP_FAILURE_WINDOW:
             stop.set()
             return
 
@@ -671,8 +720,11 @@ def run(request_path):
         # main flow, which checks it at the entry.
         for number in (signal.SIGTERM, signal.SIGINT):
             signal.signal(number, lambda *_: stop.set())
-        threading.Thread(target=watch_caller, args=(stop, ancestors(os.getppid())),
-                         daemon=True).start()
+        since = time.monotonic()
+        caller = settled_ancestors(os.getppid())
+        # A baseline that could not be read in full cannot tell a lost caller from a slow ps.
+        require(caller[-1:] != [-1], 'caller_lookup_failed')
+        threading.Thread(target=watch_caller, args=(stop, caller, since), daemon=True).start()
         recorder = ForegroundRecorder(execution, stop)
         common = git_common_dir(payload['cwd'])
         runtime = foreground_runtime(payload['request_id'], str(home), payload['cwd'], common)
