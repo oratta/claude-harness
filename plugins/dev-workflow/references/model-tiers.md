@@ -19,7 +19,7 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 
 ## develop role の provider-neutral profile
 
-`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各 role は、`references/codex-role-profiles.json`（または明示した形式版 2 の profile-file）の同名 entry にある executor/account/effort と、`codex-develop.py request` が決める格へ解決する。歴史的なファイル名は維持するが、形式版 2 の table は Claude と Codex を同じ profile 内で扱う provider-neutral な正本である。格は低い順に `最安`・`中位`・`上位`・`最上位` で、格からモデル名への対応は `references/model-tier-map.json` の 1 か所にあり、`codex-develop.py tier-model --executor <executor> --tier <格>` で引ける。本表へ個別 Codex model ID を重複記載せず、Claude の tier alias を Codex model へ暗黙変換しない。
+`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各 role は、`references/codex-role-profiles.json`（または明示した形式版 2 の profile-file）の同名 entry にある executor/account/effort と、`codex-develop.py request` が決める格へ解決する。歴史的なファイル名は維持するが、形式版 2 の table は Claude と Codex を同じ profile 内で扱う provider-neutral な正本である。格は低い順に `最安`・`中位`・`上位`・`最上位` で、格からモデル名への対応は `references/model-tier-map.json` の 1 か所にあり、`codex-develop.py tier-model --executor <executor> --tier <格>` で引ける。実行役（`spec-write`・`implement`）の格の上限も同じ表の `role_caps` にある（今は両方とも `上位`）。本表へ個別 Codex model ID を重複記載せず、Claude の tier alias を Codex model へ暗黙変換しない。
 
 Claude entry は account=`current` と非空の effort を要求する。別 Claude account の実行はまだ対応せず、account 欄自体は allocator の共通出力として保持する。Codex entry は登録済み account と非空の effort を要求し、正式な model/effort の対応可否は worker 起動時にも検証する。どの entry にも `model` は書けず、任意の `tier_cap` で役の格より低い格に抑える。
 
@@ -73,7 +73,7 @@ effort は親セッションの値を継ぐだけだと、答えの型が決ま�
 - **中位ティア** — 通常の実装・複数ファイルにまたがる調査・通常のコードレビュー。**迷ったらここ**
 - **最上位ティア** — 判断が一点に集中する仕事だけ（最終 verify・マージ可否・アーキテクチャ判断）。手を動かす仕事（実装・修正ループ）は聖域パスでも中位ティア止まり。枠残量（`FABLE_BUDGET_MODE`。正本は dev-workflow の `scripts/session-tripwires.sh`、未設定時は `conserve` 扱い）を確認してから使う
 
-**最上位ティアは決める役の種別（`dev-workflow:decider`）でだけ spawn する**（`general-purpose` / `Explore` / `Plan` / 他種別に `model: fable` を付けない）。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`（`Agent` の PreToolUse。全解除は `DEV_WORKFLOW_MODEL_GUARD=off`）。
+**最上位ティアは決める役の種別（`dev-workflow:decider`）でだけ spawn する**（`general-purpose` / `Explore` / `Plan` / 他種別に `model: fable` を付けない）。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`（`Agent` の PreToolUse。全解除は `DEV_WORKFLOW_MODEL_GUARD=off`）。実行役の上限は `plugins/dev-workflow/references/model-tier-map.json` の `role_caps` にあり、guard（`dev-workflow:worker` → spec-write・implement、`dev-workflow:gate-runner` → implement）と `codex-develop.py request` が同じ表から判定し、上限を超える格を下げずに拒否する（model 名から格を引く規則と拒否の文面は `scripts/tier_caps.py` で共有）。
 
 ### 対応表の保守
 

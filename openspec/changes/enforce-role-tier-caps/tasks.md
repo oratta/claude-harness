@@ -19,7 +19,7 @@
 
 ## 4. 文書と記録
 
-- [ ] 4.1 `model-tiers.md` の強制層の説明に、実行役の上限は `model-tier-map.json` の `role_caps` にあり、guard と `codex-develop.py request` が同じ表から判定することを足す。`model-tier-map.json` の役割を述べる 22 行目付近の段落にも上限の置き場所を 1 文足す。変更の記録 `dw/changes/615.md` を書く。確認: `git grep -n role_caps dw/references/model-tiers.md` が当たる。触る範囲: dw/references/model-tiers.md:22-26、dw/references/model-tiers.md:76、dw/changes/615.md（新規）
+- [x] 4.1 `model-tiers.md` の強制層の説明に、実行役の上限は `model-tier-map.json` の `role_caps` にあり、guard と `codex-develop.py request` が同じ表から判定することを足す。`model-tier-map.json` の役割を述べる 22 行目付近の段落にも上限の置き場所を 1 文足す。変更の記録 `dw/changes/615.md` を書く。確認: `git grep -n role_caps dw/references/model-tiers.md` が当たる。触る範囲: dw/references/model-tiers.md:22-26、dw/references/model-tiers.md:76、dw/changes/615.md（新規）
 
 ## 5. 全体の確認
 
