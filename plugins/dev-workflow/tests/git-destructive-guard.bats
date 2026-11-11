@@ -1673,6 +1673,80 @@ mk_evil_repo() {
   done
 }
 
+# 形の理由（単独のコマンドの形でない）で判定に落ちたら 3、単独の形なのに落ちたもの・記録の確かめに落ちたものは 1
+# （spec destructive-git-hook「許可を書くスクリプトは一時領域の中に収まるコマンドだけを許可する」, #1173）
+RETRY_HINT='単独のコマンドに打ち直せば'
+
+@test "permit: a record refused only for not being a single command exits 3 with a retry hint (#1173)" {
+  setup_permit
+  local base rec cmd
+  base="$(GUARD_BASE)"
+  local -a cmds=(
+    "mkdir -p $REPO/x && git -C $REPO checkout -- a"
+    "git init $REPO && git -C $REPO checkout -- a"
+    "R=$REPO; git -C \$R checkout -- a"
+    "git -C \"$REPO\" checkout -- a"
+    "git -C $REPO checkout -- a & git status"
+    "cd $OUT && git reset --hard"
+  )
+  for cmd in "${cmds[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$OUT" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -eq 3 ] || { echo "status $status for: $cmd: $output"; return 1; }
+    [[ "$output" == *"一時領域の判定を満たさない"* ]] || { echo "no reason line: $cmd: $output"; return 1; }
+    [[ "$output" == *"$RETRY_HINT"* ]] || { echo "no retry hint: $cmd: $output"; return 1; }
+    permits_empty
+  done
+}
+
+@test "permit: single-shaped commands and records failing their own checks still exit 1 without the hint (#1173)" {
+  setup_permit
+  local base rec cmd
+  base="$(GUARD_BASE)"
+  local -a cmds=(
+    "git -C $OUT checkout -- a"
+    'git push --force origin main'
+    "git -C $SP/missing checkout -- a"
+  )
+  for cmd in "${cmds[@]}"; do
+    rec="$(mk_record "$base" "$PERMIT_SID" a1 "$OUT" "$cmd")"
+    run "$PERMIT" "$rec" "戻すだけ"
+    [ "$status" -eq 1 ] || { echo "status $status for: $cmd: $output"; return 1; }
+    [[ "$output" != *"$RETRY_HINT"* ]] || { echo "hint on single command: $cmd: $output"; return 1; }
+    permits_empty
+  done
+  # 記録の中身のコマンドを書き換えたもの（key がファイル名と一致しない）は、形によらず 1
+  rec="$(mk_record "$base" "$PERMIT_SID" a1 "$OUT" "mkdir -p $REPO/x && git -C $REPO checkout -- a")"
+  python3 -c '
+import json, sys
+p = sys.argv[1]; r = json.load(open(p)); r["command"] += " && git status"; json.dump(r, open(p, "w"))' "$rec"
+  run "$PERMIT" "$rec" "戻すだけ"
+  [ "$status" -eq 1 ] || { echo "status $status for tampered: $output"; return 1; }
+  [[ "$output" != *"$RETRY_HINT"* ]] || { echo "hint on tampered record: $output"; return 1; }
+  permits_empty
+}
+
+@test "permit: after exit 3, the retyped single command gets a permit and the hook allows it (#1173)" {
+  setup_permit
+  local first second rec
+  first="mkdir -p $REPO/x && git -C $REPO checkout -- a"
+  second="git -C $REPO checkout -- a"
+  call_cwd "$first" '"a1"' "$PERMIT_SID" "$OUT"
+  [ "$(decision)" = "deny" ] || { echo "first call: $output"; return 1; }
+  rec="$(GUARD_BASE)/denied/$(key_of "$PERMIT_SID" a1 "$OUT" "$first").json"
+  run "$PERMIT" "$rec" "検証用 repo を戻すだけ"
+  [ "$status" -eq 3 ] || { echo "first permit: $status $output"; return 1; }
+  permits_empty
+  call_cwd "$second" '"a1"' "$PERMIT_SID" "$OUT"
+  [ "$(decision)" = "deny" ] || { echo "second call: $output"; return 1; }
+  rec="$(GUARD_BASE)/denied/$(key_of "$PERMIT_SID" a1 "$OUT" "$second").json"
+  run "$PERMIT" "$rec" "検証用 repo を戻すだけ"
+  [ "$status" -eq 0 ] || { echo "second permit: $status $output"; return 1; }
+  [ "$(ls "$(GUARD_BASE)/permits" | wc -l | tr -d ' ')" = "1" ]
+  call_cwd "$second" '"a1"' "$PERMIT_SID" "$OUT"
+  [ "$(decision)" = "allow" ] || { echo "retyped call: $output"; return 1; }
+}
+
 # cd の移り先は / ・ ./ ・ ../ で始まるか . ・ .. だけ。シェルはそれ以外を、オプション（-P・--）・ディレクトリ
 # スタック（+1・-1）・= 展開（zsh の =git）・CDPATH や zsh の cdpath の探索として読み、判定と別の所に移りうる
 @test "permit: the script refuses cd targets the shell may read as options, stack entries or search paths" {
