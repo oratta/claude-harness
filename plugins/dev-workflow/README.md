@@ -146,8 +146,7 @@ plugin.json の `description` は /plugin メニューに出るため 1 文に�
 - 規範パス接触の裏取りは scripts/spec-touch-check.sh。
 - レビューの重量は変更内容から light / full に事前判定し、既定と迷ったときは full＝Codex に倒す。
 - auto-merge workflow のリポ展開テンプレートは templates/auto-merge/）。
-- レビュー failed からの修正は実装品質起因のときだけ昇格し、失敗の原因が判断側か実行側かで決める役（dev-workflow:decider。
-- 上げる model は `codex-develop.py request` が `--failure first|judgment`（決める役）または `--failure executor`（実行役）を受けて返した値を使い、実行役を最上位の格に上げない）のどちらか一方だけを上げる（仕様曖昧・レビュアー誤検出はモデル昇格しない。
+- レビュー failed からの修正は実装品質起因のときだけ昇格し、失敗の原因が判断側か実行側かで、決める役（dev-workflow:decider。`--failure first|judgment` を渡して `codex-develop.py request` が返した値で上げる）と実行役（`--failure executor` を渡して返った値で上げる。最上位の格には上げない）のどちらか一方だけを上げる（仕様曖昧・レビュアー誤検出はモデル昇格しない。
 - フォールバック記録の正本は pr-review-gate）。
 - 上流の壁打ち（/opsx:explore）は呼ばず、issue 化前の壁打ちとは切り分ける。
 - references/（プラグイン直下）: 複数プラグインで共有する契約 — self-verification.md（自己検証の共通原則）・pr-body-format.md（PR / issue 本文の型）・model-tiers.md（Workflow 実行のロール別ティア → opts.model エイリアス）・workflow-execution.md（1 ループに収まらない規模をネイティブ Workflow で回す型。
