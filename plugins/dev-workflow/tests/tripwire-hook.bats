@@ -91,6 +91,48 @@ PY
   echo "$(ctx_of conserve)" | grep -qF 'opus 止まり'
 }
 
+# 共有枠モードの効果の文は decision-criteria の共有枠モードの表と model-tier-resolution の
+# 「残量モードを格に適用する」に合わせる。最安の役（haiku）を上げる読み方をさせない（#1622）。
+# spec: dev-workflow-escalation-tripwires / dev-workflow-execution-strategy
+@test "injection: shared-mode effects follow the tier rule and never raise the cheapest roles" {
+  effect_of() {  # $1=SHARED_BUDGET_MODE → その効果の行
+    run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" SHARED_BUDGET_MODE="$1" "$SCRIPT"
+    [ "$status" -eq 0 ] || return 1
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output" \
+      | grep -F -- "- $1 の効果:"
+  }
+  line="$(effect_of depleted)"
+  [ -n "$line" ] || return 1
+  echo "$line" | grep -qF "最安の役（explore と summarize）はそのまま" || return 1
+  echo "$line" | grep -qF "中位（sonnet）が上限" || return 1
+  echo "$line" | grep -qF "昇格なし" || return 1
+  ! echo "$line" | grep -qF "固定" || return 1
+  line="$(effect_of throttled)"
+  echo "$line" | grep -qF "中位（sonnet）に落とし" || return 1
+  echo "$line" | grep -qF "上限は上位（opus）" || return 1
+  echo "$line" | grep -qF "最安の役（explore と summarize）はそのまま" || return 1
+  line="$(effect_of ok)"
+  echo "$line" | grep -qF "制約なし" || return 1
+  echo "$line" | grep -qF "W=sonnet、R1=opus、G=sonnet"
+}
+
+@test "injection: Fable-mode effects keep the role table defaults and the opus cap" {
+  effect_of() {  # $1=FABLE_BUDGET_MODE → その効果の行
+    run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" FABLE_BUDGET_MODE="$1" "$SCRIPT"
+    [ "$status" -eq 0 ] || return 1
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output" \
+      | grep -F -- "- $1 の効果:"
+  }
+  line="$(effect_of conserve)"
+  echo "$line" | grep -qF "W=sonnet、R1=opus、G=sonnet" || return 1
+  echo "$line" | grep -qF "事前分類" || return 1
+  echo "$line" | grep -qF "opus 止まり" || return 1
+  echo "$(effect_of reserve)" | grep -qF "上限は上位（opus）" || return 1
+  line="$(effect_of exhausted)"
+  echo "$line" | grep -qF "Fable を一切使わず" || return 1
+  echo "$line" | grep -qF "上限は上位（opus）"
+}
+
 @test "template: intro documents hook-based default and optional manual copy" {
   grep -q 'SessionStart' "$TEMPLATE"
   grep -Eq 'オプション|プラグイン未導入' "$TEMPLATE"
@@ -205,6 +247,65 @@ JSON
   # コンテキスト上限の案内が載る
   echo "$out" | grep -q "subagent-context.sh"
   rm -rf "$work"
+}
+
+# ---- 式は usage_view.py の 1 か所（spec: dev-workflow-escalation-tripwires「SessionStart で残量モードを自動導出注入」） ----
+# session-tripwires.sh を一時領域の scripts に写して走らせる。usage_view.py はスクリプト自身の
+# ディレクトリから読むので、CLAUDE_PLUGIN_ROOT は実物のままでも写した側の usage_view.py が使われる。
+
+copied_ctx() {  # $1=写した scripts ディレクトリ、残りは env の追加 → additionalContext
+  local dir="$1"; shift
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" "$@" "${dir}/session-tripwires.sh"
+  [ "$status" -eq 0 ] || return 1
+  python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+}
+
+@test "derivation: the modes come from usage_view.py next to the script, not a copy of the formula" {
+  dir="${TMPDIR_EMPTY}/scripts"
+  mkdir -p "$dir"
+  cp "$SCRIPT" "$dir/"
+  # 実効値は空（自前で導けば conserve / ok）なのに、偽物は reserve / throttled を返す
+  cat > "${dir}/usage_view.py" <<'FAKE'
+def build_view(**kwargs):
+    return {"now": 0, "active": "default", "accounts": {"default": {}}}
+
+def elapsed_pct(resets_epoch, now):
+    return None
+
+def budget_mode_details(slot, now, environ=None):
+    return {"fable": {"mode": "reserve", "shown": "reserve", "source": "偽物"},
+            "shared": {"mode": "throttled", "shown": "throttled", "source": "偽物"}}
+FAKE
+  out="$(copied_ctx "$dir")" || return 1
+  echo "$out" | grep -qF "現在の FABLE_BUDGET_MODE: reserve（偽物）" || return 1
+  echo "$out" | grep -qF "SHARED_BUDGET_MODE: throttled（偽物）"
+}
+
+@test "derivation: without a loadable usage_view.py the defaults show and the explicit env is not read" {
+  dir="${TMPDIR_EMPTY}/scripts"
+  mkdir -p "$dir"
+  cp "$SCRIPT" "$dir/"
+  for broken in missing raises; do
+    rm -f "${dir}/usage_view.py"
+    if [ "$broken" = raises ]; then
+      printf 'raise RuntimeError("broken")\n' > "${dir}/usage_view.py"
+    fi
+    out="$(copied_ctx "$dir" FABLE_BUDGET_MODE=exhausted SHARED_BUDGET_MODE=depleted)" || return 1
+    echo "$out" | grep -qF "現在の FABLE_BUDGET_MODE: conserve（既定（usage_view.py を読めない））" || return 1
+    echo "$out" | grep -qF "SHARED_BUDGET_MODE: ok（既定（usage_view.py を読めない））" || return 1
+    # 昇格トリップワイヤー節は従来どおり載る
+    echo "$out" | grep -q "^## 昇格トリップワイヤー" || return 1
+  done
+}
+
+@test "derivation: unknown explicit values are shown as written with the safe-side effect" {
+  run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" FABLE_BUDGET_MODE=foo SHARED_BUDGET_MODE=bar "$SCRIPT"
+  [ "$status" -eq 0 ]
+  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
+  echo "$out" | grep -qF "現在の FABLE_BUDGET_MODE: foo（明示 env）" || return 1
+  echo "$out" | grep -qF "SHARED_BUDGET_MODE: bar（明示 env）" || return 1
+  echo "$out" | grep -F -- "- foo の効果:" | grep -qF "conserve 相当" || return 1
+  echo "$out" | grep -F -- "- bar の効果:" | grep -qF "throttled 相当"
 }
 
 # 注入文はエージェントがファイルを開かずに受け取る唯一の面なので、正本への参照だけでなく

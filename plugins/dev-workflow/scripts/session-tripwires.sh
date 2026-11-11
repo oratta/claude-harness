@@ -8,8 +8,15 @@
 # ブロック（「## Fable 残量モード（自動導出）」から共有枠モードの効果の行まで）だけを JSON でなく
 # 本文テキストで出す。この範囲では usage-probe・メモリ索引の検知・トリップワイヤー節の抽出を
 # 行わず、親向けの「W を再開する前に測る」行も出さない。テンプレートが無くても出す。
-# 未設定・それ以外の値のときは従来どおり。導出式はこのファイルの 1 か所だけに置く。
+# 未設定・それ以外の値のときは従来どおり。
+#
+# 残量モードの式（明示 env の優先・閾値の比較）は usage_view.py の budget_mode_details の 1 か所に
+# あり、ここでは結果を表示するだけで写しを持たない。usage_view.py は CLAUDE_PLUGIN_ROOT ではなく
+# このスクリプト自身のディレクトリから読む（空の CLAUDE_PLUGIN_ROOT でも明示 env が効き、
+# カレントディレクトリも指さない。#847）。読み込めなければ明示 env も読まず conserve / ok を出す。
 set -uo pipefail
+
+SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SELF_DIR=""
 
 ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 TEMPLATE="${ROOT:+${ROOT}/templates/escalation-tripwires.md}"
@@ -35,9 +42,9 @@ if [ "$SCOPE" = "session" ]; then
 fi
 
 # 導出は active スロットの実効値（セッション記録と snapshot を突き合わせた値）から行う。
-# 規則の実装は usage_view.py の 1 か所（正本: openspec/specs/usage-session-records）。
+# 実効値の規則（正本: openspec/specs/usage-session-records）も残量モードの式も usage_view.py にある。
 TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" SCOPE="$SCOPE" \
-  USAGE_VIEW_DIR="${ROOT:+${ROOT}/scripts}" python3 -I <<'PY'
+  USAGE_VIEW_DIR="$SELF_DIR" python3 -I <<'PY'
 import json, os, re, sys, time
 
 SCOPE = os.environ.get("SCOPE", "session")
@@ -57,81 +64,62 @@ if SCOPE == "session":
 now = os.environ.get("USAGE_PROBE_NOW")
 now = int(now) if (now and now.lstrip("-").isdigit()) else int(time.time())
 
-# --- active スロットの実効値（fail-open: 読めなければデータ無しとして既定に倒す） ---
+# --- active スロットの実効値と残量モード（式は usage_view.budget_mode_details の 1 か所） ---
+UNREADABLE = "既定（usage_view.py を読めない）"
 slot = {}
 try:
     if not os.environ["USAGE_VIEW_DIR"]:
-        # CLAUDE_PLUGIN_ROOT が空。空文字列を検索パスに入れるとカレントディレクトリを指すので読まない（#847）
-        raise RuntimeError("no plugin root")
+        # 自分の場所が求まらない。空文字列を検索パスに入れるとカレントディレクトリを指すので読まない（#847）
+        raise RuntimeError("no script dir")
     sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
     import usage_view
+    details = usage_view.budget_mode_details  # 読めなければ明示 env も読まない（優先の判定も式の一部）
+    elapsed_of = usage_view.elapsed_pct
+except Exception:
+    usage_view = None
+try:
+    if usage_view is None:
+        raise RuntimeError("usage_view.py unavailable")
     view = usage_view.build_view(snapshot_path=os.environ["SNAPSHOT"], now=now)
     slot = view["accounts"].get(view["active"]) or {}
 except Exception:
     slot = {}
 
-def number(value):
-    try:
-        return float(value) if value is not None else None
-    except Exception:
-        return None
+DEFAULTS = {"fable": {"mode": "conserve", "shown": "conserve", "source": UNREADABLE},
+            "shared": {"mode": "ok", "shown": "ok", "source": UNREADABLE}}
+try:
+    if usage_view is None:
+        raise RuntimeError("usage_view.py unavailable")
+    modes = details(slot, now)
+except Exception:
+    modes, slot = DEFAULTS, {}
+    elapsed_of = lambda resets_epoch, now: None
 
-pct = number(slot.get("fable_weekly_pct"))
-all_pct = number(slot.get("weekly_all_pct"))
+pct = slot.get("fable_weekly_pct")
+all_pct = slot.get("weekly_all_pct")
+# 表示だけに使う（Fable の週経過は Fable の窓のリセット時刻から求める）
+try:
+    elapsed_pct = elapsed_of(slot.get("fable_resets_epoch"), now)
+except Exception:
+    elapsed_pct = None
 
-WEEK = 7 * 86400
-def elapsed_of(resets_epoch):
-    if not resets_epoch:
-        return None
-    try:
-        remaining = int(resets_epoch) - now
-        return max(0.0, min(100.0, (WEEK - remaining) / WEEK * 100.0))
-    except Exception:
-        return None
+mode, source = modes["fable"]["shown"], modes["fable"]["source"]
+shared, shared_source = modes["shared"]["shown"], modes["shared"]["source"]
 
-# Fable と全体の週次はそれぞれの窓のリセット時刻から週経過を求める
-elapsed_pct = elapsed_of(slot.get("fable_resets_epoch"))
-all_elapsed_pct = elapsed_of(slot.get("weekly_resets_epoch"))
-
-# --- 残量モード導出（明示 env > snapshot 無し > exhausted > バーンレート比較） ---
-explicit = (os.environ.get("FABLE_BUDGET_MODE") or "").strip()
-if explicit:
-    mode, source = explicit, "明示 env"
-elif pct is None:
-    mode, source = "conserve", "既定（usage データなし）"
-elif pct > 90:
-    mode, source = "exhausted", "自動導出"
-elif elapsed_pct is not None and pct <= elapsed_pct:
-    mode, source = "abundant", "自動導出"
-else:
-    mode, source = "conserve", "自動導出"
-
-# --- 共有枠モード導出（全モデル共通の週次枠。Fable が尽きても Opus/Sonnet はこの枠で止まる） ---
-# 明示 env > データ無し(ok) > 90% 超(depleted) > 週経過ペースより速い(throttled) > ok
-shared_explicit = (os.environ.get("SHARED_BUDGET_MODE") or "").strip()
-if shared_explicit:
-    shared, shared_source = shared_explicit, "明示 env"
-elif all_pct is None:
-    shared, shared_source = "ok", "既定（usage データなし）"
-elif all_pct > 90:
-    shared, shared_source = "depleted", "自動導出"
-elif all_elapsed_pct is not None and all_pct > all_elapsed_pct:
-    shared, shared_source = "throttled", "自動導出"
-else:
-    shared, shared_source = "ok", "自動導出"
-
+# 効果の文は decision-criteria.md の残量モード表・共有枠モード表と、model-tier-resolution の
+# 「残量モードを格に適用する」の格の語（最安・中位・上位・最上位）に合わせ、Claude のモデル名を添える。
 EFFECT = {
     "abundant": "どの役割の既定も上げない（Fable が使われる経路は決める役 subagent_type: dev-workflow:decider だけ）。余った Fable 枠は人間の対話と verify に回す。",
-    "conserve": "役割表の既定どおり（W=sonnet、R1=opus、G=sonnet）。Fable は決める役（subagent_type: dev-workflow:decider）だけで、実行役 W はどの事前分類でも opus 止まり。",
-    "reserve":  "conserve に加え、自動実行（unmanned/cron/loop）では Fable を一切使わない。昇格上限 Opus。interactive は conserve と同一。",
-    "exhausted":"Fable 週次枠を実質使い切った。interactive/unmanned を問わず Fable を一切使わず、昇格上限 Opus。rate-limit 実エラーは reactive に Opus へ降格。",
+    "conserve": "役割表の既定どおり（W=sonnet、R1=opus、G=sonnet）。Fable は決める役（subagent_type: dev-workflow:decider）だけで、事前分類（マージ権限・層間契約・課金/法務）に当たる読んで判断する役（R1 / G が要求するレビュアー）に使う。実行役 W はどの事前分類でも opus 止まり。",
+    "reserve":  "conserve に加え、自動実行（unmanned/cron/loop）では Fable をどの役でも使わず、上限は上位（opus）。interactive は conserve と同一。",
+    "exhausted":"Fable 週次枠を実質使い切った。interactive/unmanned を問わず Fable を一切使わず、上限は上位（opus）。rate-limit 実エラーは reactive に opus へ降格。",
 }
 effect = EFFECT.get(mode, "未知のモード指定。conserve 相当（安全側）で扱う。")
 
 SHARED_EFFECT = {
     "ok":        "制約なし。役割の既定は decision-criteria の役割表どおり（W=sonnet、R1=opus、G=sonnet）。",
-    "throttled": "全モデル枠の消費が週の経過ペースより速い。W/R1/G の既定を sonnet に落とし、昇格上限 opus。abundant の押し上げは無効。",
-    "depleted":  "全モデル枠を実質使い切った。全役割 sonnet 固定・昇格なし。Fable/Opus は事前分類に当たっても使わない。",
+    "throttled": "全モデル枠の消費が週の経過ペースより速い。上げていない役（W / R1 / G と G が要求するレビュアー）の既定を中位（sonnet）に落とし、上限は上位（opus）。abundant の押し上げは無効。最安の役（explore と summarize）はそのまま（haiku）。",
+    "depleted":  "全モデル枠を実質使い切った。最安の役（explore と summarize）はそのまま（haiku）、それ以外の役は中位（sonnet）が上限・昇格なし。事前分類に当たっても上位・最上位（opus / fable）を使わない。",
 }
 shared_effect = SHARED_EFFECT.get(shared, "未知のモード指定。throttled 相当（安全側）で扱う。")
 

@@ -6,7 +6,8 @@
 #                         TRIPWIRES_SCOPE=subagent-budget の出力）＋途中計測の閾値の現在値
 #   reviewer:             途中計測の閾値の現在値だけ（モデルを選ばないので残量モードは渡さない）
 #
-# 残量モードの導出式は session-tripwires.sh の 1 か所だけに置き、ここに複製しない。
+# 残量モードの導出式は usage_view.py の 1 か所だけにあり（session-tripwires.sh はその結果を出す）、
+# ここに複製しない。
 # 途中計測の扱いの規則は decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」が
 # 正本なので、ここでは hook 実行時の値と案内だけを出し、規則を言い換えない。
 #
