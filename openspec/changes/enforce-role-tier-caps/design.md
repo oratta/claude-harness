@@ -22,22 +22,23 @@ Non-Goals:
 
 ### 上限は対応表の `role_caps` に置く
 
-`model-tier-map.json` に `"role_caps": {"spec-write": "上位", "implement": "上位"}` を足す。キーは profile の canonical role 名（`spec-write`・`spec-review`・`implement`・`impl-review`・`review`・`decider`・`explore`・`summarize`）のどれかで、値は 4 格のどれか。spec-write と implement は必須、ほかの役は書けば上限が付き、書かなければ上限なし。`version` は 1 のまま（同梱の表だけを読む内部の形式で、外から渡す口が無いので版を分ける必要がない）。
+`model-tier-map.json` に `"role_caps": {"spec-write": "上位", "implement": "上位"}` を足す。キーは実行役の `spec-write` と `implement` のちょうど 2 つに限り、値は 4 格のどれか。ほかの canonical role（`spec-review`・`impl-review`・`review`・`decider`・`explore`・`summarize`）は上限を持たず、`role_caps` に書けば表ごと拒否する。将来ほかの役に上限を足すときは、旧形式の対象判定を広げる別の change にする（下の「旧形式は…」の対象判定が、表を読まずに役だけで決まることに依存しているため）。`version` は 1 のまま（同梱の表だけを読む内部の形式で、外から渡す口が無いので版を分ける必要がない）。
 
 - 代替: profile（`codex-role-profiles.json`）に置く。profile は外部の `--profile-file` で差し替えられるので、上限も差し替えられてしまう。また Claude の Agent 呼び出しは profile を読まない。採らない
 - 代替: 書く役の上限を `codex-develop.py` と guard のコード定数に置く。2 か所に書くことになり、受け入れ条件の「同じ表から来る」を満たさない。採らない
 - spec-write と implement を必須にするのは、表の書き換えで上限が無言で消えないようにするため（#614 の「既定値に倒さない」と同じ考え）
+- キーを 2 つに固定するのは、エピック #616 の完了条件が実行役の上限だけを求めているためと、旧形式が「上限の無い役では表を読まない」を保つには、対象の役を表を読む前に決める必要があるため（仕様レビュー 1 周目の指摘と本体の判断 https://github.com/oratta/claude-harness/issues/615#issuecomment-6788829915 ）
 
 ### 上限超えは拒否する（下げない）
 
-`codex-develop.py` は、profile 形式・自動選択では `executed_tier`（残量モードと profile の `tier_cap` を適用したあとの格）を、実際に動く entry の役（review が decider に切り替わったときは decider）の上限と比べ、超えたら `RuntimeError`（`status: blocked`・終了コード 2、依頼ファイルなし）にする。
+`codex-develop.py` は、profile 形式・自動選択では、実際に動く entry の役（review が decider に切り替わったときは decider）が実行役のとき、`executed_tier`（残量モードと profile の `tier_cap` を適用したあとの格）をその役の上限と比べ、超えたら `RuntimeError`（`status: blocked`・終了コード 2、依頼ファイルなし）にする。
 
 - 代替: 上限まで下げて通す（`tier_cap` と同じ扱い）。Claude 側の guard は呼び出しを書き換えられず拒否しかできないので、Codex だけ下げると両者の判定が揃わない。また上限を超える格が出るのは表か規則の設定誤りなので、黙って下げるより止めて気づかせるほうがよい。採らない
 - 今の同梱の表と規則では書く役の格は `上位` 止まりなので、profile 形式・自動選択でこの拒否が出るのは表の上限を `上位` より下げたときだけである。この判定は「表を変えると判定が変わる」ことの受け皿で、受け入れ条件の「最上位の拒否」は主に旧形式と Claude 側で効く
 
 ### 旧形式は、上限を持つ役でだけ model を格に戻して確かめる
 
-旧形式の役（phase の役。旧形式は decider に切り替わらない）が `role_caps` に載っているときだけ、対応表を読み、指定された `--model` を codex の列で格に戻し、上限を超えたら拒否する。上限を持たない役（review・decider など）は今までどおり表を読まずに通す（壊れた表でも decider の旧形式は通る、という既存のテストを保つ）。上限を持つ役で表が読めないときは止める（`codex-develop.py` は表について fail-closed）。
+旧形式の役（phase の役。旧形式は decider に切り替わらない）が実行役（spec-write か implement）のときだけ、対応表を読み、指定された `--model` を codex の列で格に戻し、上限を超えたら拒否する。実行役以外の役（review・decider など）は、対象かどうかを役の名前だけで決めて、今までどおり表を読まずに通す（壊れた表でも decider の旧形式は通る、という既存のテストを保つ）。上限を持つ役で表が読めないときは止める（`codex-develop.py` は表について fail-closed）。
 
 - 格に戻せない model（表のどの名前にも当たらない）は上限を確かめずに通す。旧形式は版を固定するための口で、表に無い名前を止めると、その目的が壊れる
 - 代替: 旧形式は今のまま上限を見ない。#424 と同じ指定が通り続け、Codex 側の強制が実質ない。採らない

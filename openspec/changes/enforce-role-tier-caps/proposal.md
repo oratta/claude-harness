@@ -6,7 +6,7 @@
 
 ## What Changes
 
-- `model-tier-map.json` に役ごとの上限の格 `role_caps` を足す（初期値は spec-write・implement とも `上位`）。上限を持たない役は上限なし
+- `model-tier-map.json` に役ごとの上限の格 `role_caps` を足す（初期値は spec-write・implement とも `上位`）。上限を持つのはこの 2 役だけで、ほかの役に足すときは旧形式の対象判定を広げる別 change にする
 - `codex-develop.py request` が、profile 形式・自動選択では適用後の格（`executed_tier`）が役の上限を超えたら、旧形式 `--account --model` では指定された model を対応表で格に戻して上限を超えたら、依頼ファイルを作らずに拒否する
 - **BREAKING（要件の変更）** 旧形式は「格の規則・対応表を通らない」から、上限を持つ役に限って対応表で上限を確かめる形に変わる。上限を持つ役で対応表が読めなければ旧形式も止まる
 - `agent-model-guard.sh` が、`dev-workflow:worker`（spec-write・implement）と `dev-workflow:gate-runner`（implement）の `model` を対応表で格に戻し、上限を超えたら拒否する。表が読めないときは今の Fable 判定に戻る

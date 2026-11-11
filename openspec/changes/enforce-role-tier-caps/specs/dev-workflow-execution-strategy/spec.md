@@ -61,7 +61,7 @@ Fable 以外の `model` は、要件「実行役の種別は対応表の上限�
 
 ### Requirement: 実行役の種別は対応表の上限を超える格で起こせない
 
-`scripts/agent-model-guard.sh` は、`subagent_type` が `dev-workflow:worker`（役 spec-write・implement）または `dev-workflow:gate-runner`（役 implement）で `model` があるとき、`plugins/dev-workflow/references/model-tier-map.json` の claude の列で `model` を格に戻し（照合の規則は `model-tier-resolution` の要件「上限の判定を Claude と Codex で共有する」）、その格が `role_caps` にあるその種別の役の上限（役が複数なら、そのうちいちばん低い上限）を超えるなら拒否しなければならない（MUST）。種別と役の対応は guard の中に置き、環境変数で足せる形にしてはならない（MUST NOT）。
+`scripts/agent-model-guard.sh` は、`subagent_type` が `dev-workflow:worker`（役 spec-write・implement）または `dev-workflow:gate-runner`（役 implement）で `model` があるとき、`plugins/dev-workflow/references/model-tier-map.json` の claude の列で `model` を格に戻し（照合の規則は `model-tier-resolution` の要件「上限の判定を Claude と Codex で共有する」）、その格が `role_caps` にあるその種別の役の上限（役が複数なら、そのうちいちばん低い上限）を超えるなら拒否しなければならない（MUST）。種別と役の対応は guard の中に置き、環境変数で足せる形にしてはならない（MUST NOT）。守備範囲は `model-tier-resolution` の要件「上限の判定の守備範囲」に従う。
 
 #### Scenario: ゲート実行者の種別の完全 ID は拒否される
 
