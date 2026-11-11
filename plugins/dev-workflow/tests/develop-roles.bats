@@ -421,7 +421,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   ! gate_all | grep -q '1 段上' || return 1
   grep -qF 'dev-workflow:decider' "$GATE"
   grep -qF '一方だけ' "${TRIAGE}"
-  grep -qF 'W を `fable` にはしない' "${TRIAGE}"
+  grep -qF '実行役を最上位の格に上げない' "${TRIAGE}"
   grep -qF '`general-purpose` に `model: fable` は付けない' "${PREPARE}"
   grep -q 'マージ条件' "$GATE"
   grep -q '聖域' "$GATE"

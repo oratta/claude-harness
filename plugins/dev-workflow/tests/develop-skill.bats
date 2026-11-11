@@ -187,8 +187,12 @@ refute() {
   # #1239 C9・C10: どちらを上げるかと W の上限は「モデル」節の昇格トリップワイヤーの段落を指す
   echo "$loop" | grep -E 'failed.*原因分類' | grep -qF '「モデル」節の昇格トリップワイヤーの段落'
   ! grep -qF 'W を fable にはしない' "$SKILL" || return 1
-  # review F2: failed の行に W の上限 opus を戻す
-  echo "$loop" | grep -E 'failed.*原因分類' | grep -qF 'W を `opus` まで（`fable` にしない'
+  # #1628: failed の行は Claude のモデル名ではなく --failure の値と request の返り値で書く
+  f="$(echo "$loop" | grep -E 'failed.*原因分類')"
+  echo "$f" | grep -qF 'request --phase implement --failure executor'
+  echo "$f" | grep -qF 'request --phase decider --failure judgment'
+  echo "$f" | grep -qF '新しい thread に手渡す'
+  ! echo "$f" | grep -qF 'W を `opus` まで' || return 1
   echo "$loop" | grep -qE 'W を再開'
   # #554: G は再開せず、failed の Gate Result の 次の段: どおりに新しく起こす
   echo "$loop" | grep -qF '`次の段:` どおりの G を新しく起こして再レビュー'

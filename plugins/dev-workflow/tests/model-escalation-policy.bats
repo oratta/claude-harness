@@ -162,6 +162,19 @@ setup() {
   echo "$sec" | grep -qF '直し方の判定'
 }
 
+@test "escalation (#1628): the failed proposal names --failure executor / judgment and uses the model request returned" {
+  p="$(awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' "${TRIAGE}" | grep '^- 本体への提案:')"
+  [ -n "$p" ]
+  echo "$p" | grep -qF 'request --phase implement --failure executor'
+  echo "$p" | grep -qF 'request --phase decider --failure judgment'
+  echo "$p" | grep -qF '`request` が返した model'
+  echo "$p" | grep -qF '新しい thread に手渡す'
+  echo "$p" | grep -qF '一方だけ'
+  ! echo "$p" | grep -qF '`opus`' || return 1
+  ! echo "$p" | grep -qF '`fable`' || return 1
+  ! grep -qF 'W を `opus` で再開' "${TRIAGE}" || return 1
+}
+
 @test "escalation: ambiguous spec and reviewer false positives are not escalated" {
   grep -q '仕様が曖昧' "${TRIAGE}"
   grep -q '誤検出' "${TRIAGE}"
