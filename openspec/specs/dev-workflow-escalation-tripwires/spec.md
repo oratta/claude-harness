@@ -17,7 +17,7 @@ dev-workflow プラグインは、作業役（develop スキルの W、または
    | 1 回目の失敗 | `first` | 上位（Claude では `opus`）。失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | 格を変えずに再試行 |
    | 2 回目の失敗・指示どおりやって結果が違う（実行側） | `executor` | 上位 | 上位（上限。Claude では `opus`） |
    | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた（判断側） | `judgment` | 最上位（Claude では `fable`） | 格を変えない |
-   | 最上位が決めて上位が実行しても落ちる | — | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
+   | 昇格のあとの失敗（どちらの経路でも） | — | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
 
    各段の決める役と実行役のモデルは、その段の `--failure` の値を渡した `request` が返した `model` を使い、表から計算し直してはならない（MUST NOT。残量モードと構成の上限は `request` が適用済み）。決める役を起こすときは、どの段階でも `subagent_type` を `dev-workflow:decider` に固定しなければならない（MUST。`general-purpose` に読み替えない）。実行役の格の上限は上位であり、実行役を最上位で起こしてはならない（MUST NOT。Claude の強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`）。`FABLE_BUDGET_MODE=reserve` の自動実行、および `exhausted`（全経路）では決める役も上位止まりとする（種別は `dev-workflow:decider` のまま）。共有枠モード `SHARED_BUDGET_MODE` の下限が先に効く（`depleted` は昇格なし、`throttled` は上位が上限）。上限を適用したあとの格とモデルは `request` の返り値で決まり、表の格と違ってよい（例: `SHARED_BUDGET_MODE=depleted` では決める役も中位の model が返る）
 3. **仕様の発明検知 → 壁打ち/質問**: ユーザーの指示に書かれていない仕様上の決定を自分で埋めた回数が2回に達した。局所的なら AskUserQuestion、構造に及ぶなら `/opsx:explore` で壁打ちに戻す

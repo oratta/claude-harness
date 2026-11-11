@@ -49,6 +49,7 @@
    括弧内は Claude での値の例。実際に起こすモデルは、その段の `--failure` の値を渡して
    `request` が返した `model`（残量モードと構成の上限を適用済み）を使い、表から計算し直さない
    （例: `SHARED_BUDGET_MODE=depleted` では決める役も中位の model が返る）。
+   develop の外で本体自身が読んでいて `request` を通らないときは、括弧内の Claude の値で起こす。
 
    | 段階 | `--failure` | 決める役の要求の格（phase `decider`） | 実行役の要求の格（W の phase） |
    |---|---|---|---|
@@ -56,10 +57,11 @@
    | 1 回目の失敗 | `first` | 上位（Claude では `opus`）。失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | 格を変えずに再試行 |
    | 2 回目の失敗・指示どおりやって結果が違う（実行側） | `executor` | 上位 | 上位（上限。Claude では `opus`） |
    | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた（判断側） | `judgment` | 最上位（Claude では `fable`） | 格を変えない |
-   | 最上位が決めて上位が実行しても落ちる | — | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
+   | 昇格のあとの失敗（どちらの経路でも） | — | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
 
-   決める役はどの段階でも `subagent_type` を `dev-workflow:decider` に固定し、`model` だけを
-   切り替える（`general-purpose` に読み替えない）。**実行役の格の上限は上位で、実行役を最上位で
+   決める役は、`request` が返した投げ先が claude ならどの段階でも `subagent_type` を
+   `dev-workflow:decider` に固定し（`general-purpose` に読み替えない）、codex なら
+   `references/codex-develop.md` の Codex role の手順で起こす。**実行役の格の上限は上位で、実行役を最上位で
    起こさない**（Claude の強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`。`model: fable` の
    実行役 spawn は PreToolUse で拒否される）。本体は昇格の手段として profile を作り直したり、
    `request` が返した model と違う model を独自に指定したりしない（Codex の手順は
@@ -69,7 +71,7 @@
    `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）と `exhausted`（Fable 週次枠を
    実質使い切った。明示宣言またはセッション記録と usage snapshot の実効値からの自動導出）では、決める役も
    `dev-workflow:decider` のまま上位止まりとする（種別は変えない。どちらも `request` が適用する）。
-   上位が決めて上位が実行しても2連続失敗が続く場合は issue に needs-approval を付けて
+   昇格のあとの失敗（判断側・実行側のどちらの経路でも）が続く場合は issue に needs-approval を付けて
    経緯をコメントし、そのサイクルを終了する
 
 3. 【仕様の発明検知 → plan/質問へ】
