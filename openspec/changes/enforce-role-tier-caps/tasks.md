@@ -23,4 +23,4 @@
 
 ## 5. 全体の確認
 
-- [ ] 5.1 `bats plugins/dev-workflow/tests` と `python3 -m pytest plugins/dev-workflow/tests/test_codex_develop.py plugins/dev-workflow/tests/test_model_resolution_current.py` が exit 0。`openspec validate enforce-role-tier-caps --type change --strict` が通る
+- [x] 5.1 `bats plugins/dev-workflow/tests` と `python3 -m pytest plugins/dev-workflow/tests/test_codex_develop.py plugins/dev-workflow/tests/test_model_resolution_current.py` が exit 0。`openspec validate enforce-role-tier-caps --type change --strict` が通る
