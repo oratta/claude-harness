@@ -344,10 +344,11 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                          m.execution_config_hash(result['execution_config']))
 
     def test_family_names_and_exact_ids_are_written_to_the_request_unchanged(self):
-        for model in ('sol', 'gpt-6-astra'):
+        # gpt-6-astra is above the implement cap (#615), so it is checked on decider, which has none.
+        for model, phase in (('sol', 'implement'), ('gpt-6-astra', 'decider')):
             with self.subTest(legacy=model):
                 target = self.root/('legacy-' + model + '.json')
-                args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
+                args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
                         '--cwd', str(self.cwd), '--account', 'mapped', '--model', model,
                         '--account-home', 'mapped=' + str(self.home), '--out', str(target)]
                 with patch.object(sys, 'argv', args):
@@ -1629,9 +1630,10 @@ class LegacyForm(RequestFixture, unittest.TestCase):
         self.assertEqual((request['role'], request['model']), ('impl-review', 'gpt-6-sol'))
 
     def test_family_names_and_exact_ids_pass_unchanged(self):
-        for model in ('sol', 'gpt-6-astra'):
+        # gpt-6-astra is above the implement cap (#615), so it is checked on decider, which has none.
+        for model, phase in (('sol', 'implement'), ('gpt-6-astra', 'decider')):
             with self.subTest(model=model):
-                self.assertEqual(self.legacy(model)['model'], model)
+                self.assertEqual(self.legacy(model, phase=phase)['model'], model)
 
     def test_the_legacy_form_ignores_a_broken_table_and_the_modes(self):
         with patch.object(m, 'TIER_MAP', self.root / 'absent.json'), \
