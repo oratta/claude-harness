@@ -106,18 +106,20 @@ except Exception:
 mode, source = modes["fable"]["shown"], modes["fable"]["source"]
 shared, shared_source = modes["shared"]["shown"], modes["shared"]["source"]
 
+# 効果の文は decision-criteria.md の残量モード表・共有枠モード表と、model-tier-resolution の
+# 「残量モードを格に適用する」の格の語（最安・中位・上位・最上位）に合わせ、Claude のモデル名を添える。
 EFFECT = {
     "abundant": "どの役割の既定も上げない（Fable が使われる経路は決める役 subagent_type: dev-workflow:decider だけ）。余った Fable 枠は人間の対話と verify に回す。",
-    "conserve": "役割表の既定どおり（W=sonnet、R1=opus、G=sonnet）。Fable は決める役（subagent_type: dev-workflow:decider）だけで、実行役 W はどの事前分類でも opus 止まり。",
-    "reserve":  "conserve に加え、自動実行（unmanned/cron/loop）では Fable を一切使わない。昇格上限 Opus。interactive は conserve と同一。",
-    "exhausted":"Fable 週次枠を実質使い切った。interactive/unmanned を問わず Fable を一切使わず、昇格上限 Opus。rate-limit 実エラーは reactive に Opus へ降格。",
+    "conserve": "役割表の既定どおり（W=sonnet、R1=opus、G=sonnet）。Fable は決める役（subagent_type: dev-workflow:decider）だけで、事前分類（マージ権限・層間契約・課金/法務）に当たる読んで判断する役（R1 / G が要求するレビュアー）に使う。実行役 W はどの事前分類でも opus 止まり。",
+    "reserve":  "conserve に加え、自動実行（unmanned/cron/loop）では Fable をどの役でも使わず、上限は上位（opus）。interactive は conserve と同一。",
+    "exhausted":"Fable 週次枠を実質使い切った。interactive/unmanned を問わず Fable を一切使わず、上限は上位（opus）。rate-limit 実エラーは reactive に opus へ降格。",
 }
 effect = EFFECT.get(mode, "未知のモード指定。conserve 相当（安全側）で扱う。")
 
 SHARED_EFFECT = {
     "ok":        "制約なし。役割の既定は decision-criteria の役割表どおり（W=sonnet、R1=opus、G=sonnet）。",
-    "throttled": "全モデル枠の消費が週の経過ペースより速い。W/R1/G の既定を sonnet に落とし、昇格上限 opus。abundant の押し上げは無効。",
-    "depleted":  "全モデル枠を実質使い切った。全役割 sonnet 固定・昇格なし。Fable/Opus は事前分類に当たっても使わない。",
+    "throttled": "全モデル枠の消費が週の経過ペースより速い。上げていない役（W / R1 / G と G が要求するレビュアー）の既定を中位（sonnet）に落とし、上限は上位（opus）。abundant の押し上げは無効。最安の役（explore と summarize）はそのまま（haiku）。",
+    "depleted":  "全モデル枠を実質使い切った。最安の役（explore と summarize）はそのまま（haiku）、それ以外の役は中位（sonnet）が上限・昇格なし。事前分類に当たっても上位・最上位（opus / fable）を使わない。",
 }
 shared_effect = SHARED_EFFECT.get(shared, "未知のモード指定。throttled 相当（安全側）で扱う。")
 

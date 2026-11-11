@@ -15,8 +15,8 @@
 
 ## 3. 効果の文を格の規則に合わせる
 
-- [ ] 3.1 `tripwire-hook.bats` に、各モードの効果の文を固定する bats を先に足し、落ちることを確かめる。`depleted` は最安（explore と summarize）をそのままにし、それ以外は中位（sonnet）が上限・昇格なしと読めること、「全役割 sonnet 固定」を含まないこと。`throttled` は中位に落として上限が上位で、最安はそのままと読めること。`ok`・`conserve` は今の意味（`conserve` の「opus 止まり」を含む）を保つこと。確認: 新しいテストだけ落ちる。触る範囲: plugins/dev-workflow/tests/tripwire-hook.bats:70-92（「injection: budget-mode effects …」の近く）
-- [ ] 3.2 `session-tripwires.sh` の `EFFECT` と `SHARED_EFFECT` の文を、decision-criteria の表と `model-tier-resolution` の格の語に合わせて直す（design.md「効果の文は格の規則の語で書き、モデル名を添える」）。`abundant` と `reserve`・`exhausted` は表と食い違う点だけを直す。確認: 3.1 の bats と既存の「injection: budget-mode effects route Fable through the decider type」が通る。触る範囲: plugins/dev-workflow/scripts/session-tripwires.sh:123-136（`EFFECT`・`SHARED_EFFECT`）
+- [x] 3.1 `tripwire-hook.bats` に、各モードの効果の文を固定する bats を先に足し、落ちることを確かめる。`depleted` は最安（explore と summarize）をそのままにし、それ以外は中位（sonnet）が上限・昇格なしと読めること、「全役割 sonnet 固定」を含まないこと。`throttled` は中位に落として上限が上位で、最安はそのままと読めること。`ok`・`conserve` は今の意味（`conserve` の「opus 止まり」を含む）を保つこと。確認: 新しいテストだけ落ちる。触る範囲: plugins/dev-workflow/tests/tripwire-hook.bats:70-92（「injection: budget-mode effects …」の近く）
+- [x] 3.2 `session-tripwires.sh` の `EFFECT` と `SHARED_EFFECT` の文を、decision-criteria の表と `model-tier-resolution` の格の語に合わせて直す（design.md「効果の文は格の規則の語で書き、モデル名を添える」）。`abundant` と `reserve`・`exhausted` は表と食い違う点だけを直す。確認: 3.1 の bats と既存の「injection: budget-mode effects route Fable through the decider type」が通る。触る範囲: plugins/dev-workflow/scripts/session-tripwires.sh:123-136（`EFFECT`・`SHARED_EFFECT`）
 
 ## 4. 全体の確認
 

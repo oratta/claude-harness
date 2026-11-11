@@ -91,6 +91,48 @@ PY
   echo "$(ctx_of conserve)" | grep -qF 'opus 止まり'
 }
 
+# 共有枠モードの効果の文は decision-criteria の共有枠モードの表と model-tier-resolution の
+# 「残量モードを格に適用する」に合わせる。最安の役（haiku）を上げる読み方をさせない（#1622）。
+# spec: dev-workflow-escalation-tripwires / dev-workflow-execution-strategy
+@test "injection: shared-mode effects follow the tier rule and never raise the cheapest roles" {
+  effect_of() {  # $1=SHARED_BUDGET_MODE → その効果の行
+    run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" SHARED_BUDGET_MODE="$1" "$SCRIPT"
+    [ "$status" -eq 0 ] || return 1
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output" \
+      | grep -F -- "- $1 の効果:"
+  }
+  line="$(effect_of depleted)"
+  [ -n "$line" ] || return 1
+  echo "$line" | grep -qF "最安の役（explore と summarize）はそのまま" || return 1
+  echo "$line" | grep -qF "中位（sonnet）が上限" || return 1
+  echo "$line" | grep -qF "昇格なし" || return 1
+  ! echo "$line" | grep -qF "固定" || return 1
+  line="$(effect_of throttled)"
+  echo "$line" | grep -qF "中位（sonnet）に落とし" || return 1
+  echo "$line" | grep -qF "上限は上位（opus）" || return 1
+  echo "$line" | grep -qF "最安の役（explore と summarize）はそのまま" || return 1
+  line="$(effect_of ok)"
+  echo "$line" | grep -qF "制約なし" || return 1
+  echo "$line" | grep -qF "W=sonnet、R1=opus、G=sonnet"
+}
+
+@test "injection: Fable-mode effects keep the role table defaults and the opus cap" {
+  effect_of() {  # $1=FABLE_BUDGET_MODE → その効果の行
+    run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" FABLE_BUDGET_MODE="$1" "$SCRIPT"
+    [ "$status" -eq 0 ] || return 1
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output" \
+      | grep -F -- "- $1 の効果:"
+  }
+  line="$(effect_of conserve)"
+  echo "$line" | grep -qF "W=sonnet、R1=opus、G=sonnet" || return 1
+  echo "$line" | grep -qF "事前分類" || return 1
+  echo "$line" | grep -qF "opus 止まり" || return 1
+  echo "$(effect_of reserve)" | grep -qF "上限は上位（opus）" || return 1
+  line="$(effect_of exhausted)"
+  echo "$line" | grep -qF "Fable を一切使わず" || return 1
+  echo "$line" | grep -qF "上限は上位（opus）"
+}
+
 @test "template: intro documents hook-based default and optional manual copy" {
   grep -q 'SessionStart' "$TEMPLATE"
   grep -Eq 'オプション|プラグイン未導入' "$TEMPLATE"
