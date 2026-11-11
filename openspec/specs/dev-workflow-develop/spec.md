@@ -431,7 +431,7 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 - **THEN** (3) を (3a)/(3b) より細かく切らないことと、その理由（手渡しごとに払う固定分と、実装の途中で切ると後任が Red のまま止まったテストから再出発すること）が書かれている
 
 ### Requirement: 本体は role profile から executor を選ぶ
-develop 本体は、Claude 既定の経路を含めて、新しい role を起動する直前に事前分類・設計判断・失敗の原因・自動実行かどうかを共通 resolver（`codex-develop.py request`）に渡し、canonical role の executor/account/model/effort を取得して、executor=claude なら Agent、executor=codex なら foreground request/run 経路を選ばなければならない（MUST）。resolver が `role: decider` を返したとき（事前分類に当たる R1 または G が要求したレビュアー）は、`subagent_type: dev-workflow:decider` として起動しなければならない（MUST）。本体は resolver の `requested_model`・`model`・`tier_reason` を要求 model・適用 model・変更理由として記録し、あわせて `tier`・`executed_tier`・`tier_cap` も dispatch 記録に残し、Agent には `model` を渡さなければならない（MUST）。`tier_reason` は `tier` の変化だけを表すので、`tier_cap` で値が変わった場合は `executed_tier` と `tier_cap` の記録で見分ける。新しい起動の `model` を文章の規則で計算し直してはならない（MUST NOT）。同じ Claude thread の再開前の上限確認は、同じ phase と入力で `request` を呼び直し、返った `tier` と動いている thread の格（起動時に記録した `tier`）を比べて行わなければならない（MUST）。呼び直しの結果は `tier` だけを読み、executor・account・構成の選び直しには使ってはならない（MUST NOT）。`tier` は構成によらないので、役の途中切り替えにはならない。executor の選択は transport と execution setting だけを変え、仕様化判断、工程順、独立レビュー、差戻し上限、verify、archive、PR gate の条件を変えてはならない（MUST NOT）。
+develop 本体は、Claude 既定の経路を含めて、新しい role を起動する直前に事前分類・設計判断・失敗の原因・自動実行かどうかを共通 resolver（`codex-develop.py request`）に渡し、canonical role の executor/account/model/effort を取得して、executor=claude なら Agent、executor=codex なら foreground request/run 経路を選ばなければならない（MUST）。resolver が `role: decider` を返したとき（事前分類に当たる R1 または G が要求したレビュアー）は、`subagent_type: dev-workflow:decider` として起動しなければならない（MUST）。本体は resolver の `requested_model`・`model`・`tier_reason` を要求 model・適用 model・変更理由として記録し、あわせて `tier`・`executed_tier`・`tier_cap` も dispatch 記録に残し、Agent には `model` を渡さなければならない（MUST）。`tier_reason` は `tier` の変化だけを表すので、`tier_cap` で値が変わった場合は `executed_tier` と `tier_cap` の記録で見分ける。新しい起動の `model` を文章の規則で計算し直してはならない（MUST NOT）。同じ Claude thread の再開前の上限確認は、同じ phase と、今回の再開に当たる格の入力（失敗ループの段なら、その段の `--failure` の値を含む）で `request` を呼び直し、返った `tier` と `model` を thread の格（起動時に記録した `tier`）と applied model（起動時に記録した `model`）と比べて行わなければならない（MUST）。呼び直しの結果は `tier` と `model` だけを読み、executor・account・構成の選び直しには使ってはならない（MUST NOT）。`tier` は構成によらないので、役の途中切り替えにはならない。executor の選択は transport と execution setting だけを変え、仕様化判断、工程順、独立レビュー、差戻し上限、verify、archive、PR gate の条件を変えてはならない（MUST NOT）。
 
 #### Scenario: 1 つの profile で executor が工程間に変わる
 - **WHEN** spec-write=codex、spec-review=claude の profile で仕様化工程を進める
@@ -5239,3 +5239,18 @@ develop/SKILL.md の failed 後の W 起動／再開手順と handover.md を読
 #### Scenario: 検証の守備範囲
 - **WHEN** この契約の実装完了を判定する
 - **THEN** 関係 Bats で引き継ぎの作成・必要項目・対象照合・許可根拠・W 不明の implement 手渡し／停止先・9 と 2 からの接続・既存通常経路と軽い経路の維持を確かめる。既存 W の再開と新しい W の起動の両方で、事前の不可の投稿成功、投稿失敗時の停止、HEAD・差分が変わる前の本体交代による二人目の起動防止、今回の完了／停止確認後だけの再許可、守備範囲の段落も検査する。上の守備範囲を超えて穴を塞ぎ切ることは完了条件にしない
+
+### Requirement: 失敗の段は `--failure` で request に渡し、返った model を使う
+SKILL.md「モデル」節の失敗ループの段落は、`request` の `--failure` の各値がどの失敗の段に当たるか（`first` = 1 回目の失敗、`executor` = 2 回目で実行側が原因、`judgment` = 2 回目で判断側が原因）を書かなければならない（MUST）。決める役と実行役の model は、その段の `--failure` を渡した `request` が返した値を使うと書かなければならず（MUST）、決める役の model を `templates/escalation-tripwires.md` の文面から読み取る指示を書いてはならない（MUST NOT。判断側・実行側の分類の定義を読む先として同テンプレートを指すことは許す）。実行側の昇格は「W を上位で再開」ではなく、格が上がって model が変わるなら新しい thread に手渡す、と書かなければならない（MUST。細目の正本は `references/codex-develop.md`）。
+
+#### Scenario: `--failure` の値と段の対応が書かれている
+- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
+- **THEN** `--failure first`・`--failure executor`・`--failure judgment` のそれぞれが、1 回目の失敗・2 回目の実行側・2 回目の判断側に当たると書かれている
+
+#### Scenario: decider の model を文面から読まない
+- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
+- **THEN** 「decider の `model` の段は `templates/escalation-tripwires.md` を Read して従う」の形の文が無く、`request` が返した model を使うと書かれている
+
+#### Scenario: 実行側の昇格は新しい thread
+- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
+- **THEN** 実行側の昇格で model が変わるときは SendMessage で再開せず新しい thread に手渡すと書かれ、`references/codex-develop.md` を細目の正本として指している

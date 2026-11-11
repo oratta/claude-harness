@@ -277,7 +277,8 @@ model_section() {
 
 @test "role profile section: a resume calls request again and compares tiers without reselecting" {
   sec="$(awk 'index($0,"## Role profile の選択")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL")"
-  echo "$sec" | grep -qF '同じ phase と入力で `request` を呼び直し'
+  # #424: 呼び直しは今回の格の入力（失敗ループの段なら --failure の値を含む）で行う
+  echo "$sec" | grep -qF '同じ phase と、今回の再開に当たる格の入力'
   echo "$sec" | grep -qF 'thread の格'
   echo "$sec" | grep -qF '選び直しには使わない'
 }

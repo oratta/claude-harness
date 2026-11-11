@@ -2,26 +2,30 @@
 
 ## Purpose
 TBD - created by archiving change dev-workflow-execution-strategy. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: 昇格トリップワイヤー3本の定義
 dev-workflow プラグインは、作業役（develop スキルの W、または hook 注入を読む本体自身）が手を止める条件を定義する常駐ルールテンプレートを配布しなければならない（SHALL）。テンプレートは以下のトリップワイヤーを、行為ベースの数えられる条件として定義する:
 
 1. **規模超過 → 分割**: 編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた。W として起動されている場合は本体に return し、本体が change / 子 issue（develop スキルのエピック化）に分割する。それ以外（本体自身が読んでいる場合）は develop のエピック化、またはネイティブ Workflow 実行（型は `plugins/dev-workflow/references/workflow-execution.md`。スクリプトは `workflow-authoring` スキルを読んで書く）に切り替える
-2. **失敗ループ → 決める役 / 実行役の分離ラダー**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した。実行役を1段ずつ上げるのではなく、失敗の原因が「決めた内容が間違っていた（判断側）」か「決めたとおりに実行できなかった（実行側）」かで、上げる相手を**一方だけ**決める（両方同時に上げない）。決める役は数ターンで終わるので先に上げ、実行役を上げるのは実行側が原因と分かったときだけとする（SHALL）。ラダーは次のとおり:
+2. **失敗ループ → 決める役 / 実行役の分離ラダー**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した。実行役を1段ずつ上げるのではなく、失敗の原因が「決めた内容が間違っていた（判断側）」か「決めたとおりに実行できなかった（実行側）」かで、上げる相手を**一方だけ**決める（両方同時に上げない）。決める役は数ターンで終わるので先に上げ、実行役を上げるのは実行側が原因と分かったときだけとする（SHALL）。ラダーは格（最安・中位・上位・最上位。語の正本は `model-tier-resolution`）と、`codex-develop.py request` に渡す `--failure` の値で書かなければならない（MUST）。モデル名は `plugins/dev-workflow/references/model-tier-map.json` で引いた値とし、Claude での値は括弧書きの例に留めなければならない（MUST。Claude・Codex の片方の名前だけで段を書いてはならない）。表の格は `request` の要求の格（`requested_tier`。残量モードと構成の上限を適用する前の値）であり、テンプレートはそのことを表の直前か直後に明記しなければならない（MUST）。ラダーは次のとおり:
 
-   | 段階 | 決める役 | 実行役 |
-   |---|---|---|
-   | 初回 | 仕様化判断と R1 レビューが担う（既存の流れ） | `sonnet` |
-   | 1 回目の失敗 | `dev-workflow:decider` を `model: opus` で spawn（本体が opus 以上ならその場で）し、失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | `sonnet` で再試行 |
-   | 2 回目の失敗・指示どおりやって結果が違う | `dev-workflow:decider`（`model: opus`） | `opus` |
-   | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた | `dev-workflow:decider`（`model: fable`。本体が fable ならその場で） | `sonnet` または `opus` |
-   | fable が決めて opus が実行しても落ちる | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
+   | 段階 | `--failure` | 決める役の要求の格（phase `decider`） | 実行役の要求の格（W の phase） |
+   |---|---|---|---|
+   | 初回 | なし | 仕様化判断と R1 レビューが担う（既存の流れ） | 既定の格（中位。Claude では `sonnet`） |
+   | 1 回目の失敗 | `first` | 上位（Claude では `opus`）。失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | 格を変えずに再試行 |
+   | 2 回目の失敗・指示どおりやって結果が違う（実行側） | `executor` | 上位 | 上位（上限。Claude では `opus`） |
+   | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた（判断側） | `judgment` | 最上位（Claude では `fable`） | 格を変えない |
+   | 昇格のあとの失敗（どちらの経路でも） | — | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
 
-   決める役を spawn するときは、どの段階でも `subagent_type` を `dev-workflow:decider` に固定し `model` だけを切り替えなければならない（MUST。`general-purpose` に読み替えない）。実行役の上限は `opus` であり、実行役を Fable で spawn してはならない（MUST NOT。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`）。`FABLE_BUDGET_MODE=reserve` の自動実行、および `exhausted`（全経路）では決める役も `model: opus` 止まりとする（種別は `dev-workflow:decider` のまま）。共有枠モード `SHARED_BUDGET_MODE` の下限が先に効く（`depleted` は昇格なし、`throttled` は Opus 上限）
+   各段の決める役と実行役のモデルは、その段の `--failure` の値を渡した `request` が返した `model` を使い、表から計算し直してはならない（MUST NOT。残量モードと構成の上限は `request` が適用済み）。決める役を起こすときは、どの段階でも `subagent_type` を `dev-workflow:decider` に固定しなければならない（MUST。`general-purpose` に読み替えない）。実行役の格の上限は上位であり、実行役を最上位で起こしてはならない（MUST NOT。Claude の強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`）。`FABLE_BUDGET_MODE=reserve` の自動実行、および `exhausted`（全経路）では決める役も上位止まりとする（種別は `dev-workflow:decider` のまま）。共有枠モード `SHARED_BUDGET_MODE` の下限が先に効く（`depleted` は昇格なし、`throttled` は上位が上限）。上限を適用したあとの格とモデルは `request` の返り値で決まり、表の格と違ってよい（例: `SHARED_BUDGET_MODE=depleted` では決める役も中位の model が返る）
 3. **仕様の発明検知 → 壁打ち/質問**: ユーザーの指示に書かれていない仕様上の決定を自分で埋めた回数が2回に達した。局所的なら AskUserQuestion、構造に及ぶなら `/opsx:explore` で壁打ちに戻す
 4. **rate-limit 実エラー → reactive 降格**: Fable 実行が rate-limit / weekly-limit の実エラーを返したら、その場で Opus に降格して作業を継続し、usage snapshot を更新する
 
 閾値は初期値であり運用調整前提であることをテンプレートに明記しなければならない（SHALL）。「あと少しで終わるから」を乗り換えない理由にしないことを明記する。
+
+**守備範囲（失敗ループの原因の分類）**: ①入力の出どころは、W の return にある「指示のどこまでやって、どこで何が起きたか」と失敗したテストの出力、および決める役が出した指示の文面だけである。②拾いたい誤りは、決める役と実行役を両方同時に上げること、原因が判断側なのに実行役を上げること（同じ指示のまま強いモデルで繰り返して消費だけが増える）、実行役を最上位にすること、段に合わない `--failure` の値を `request` に渡すことである。③通してよい入力の例: 原因が判断側にも実行側にも見える return で、本体が理由を書いてどちらか一方を選んで進めることは許す（外れていれば次の失敗で人間へ上がる段に進む）。1 回目の失敗では分類せず `first` を渡すことも許す。④本体の分類がいつも正しいことや、W の return の書き漏れをすべて見つけることは、この要件の完了条件にしない（再開か fresh thread かの判定の守備範囲は `manual-codex-develop` の要件「委譲は前景実行の 3 手順で行う」に従う）。
 
 #### Scenario: 規模超過での乗り換え
 - **WHEN** 作業中に編集対象ファイルが6個目に達する
@@ -29,23 +33,31 @@ dev-workflow プラグインは、作業役（develop スキルの W、または
 
 #### Scenario: 1 回目の失敗では誰も上げない
 - **WHEN** 同じテストが2連続で落ちて 1 回目の失敗として扱う
-- **THEN** 実行役は `sonnet` のまま再試行し、`subagent_type: dev-workflow:decider` を `model: opus` で立てた決める役が失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする
+- **THEN** 実行役は格を変えずに再試行し、`--failure first` を渡した `request` が返した（上限適用後の）model で `subagent_type: dev-workflow:decider` の決める役を立て、失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする
 
 #### Scenario: 実行側が原因なら実行役だけ上げる
 - **WHEN** 2 回目の失敗で、実行役が指示どおりやったのに結果が違うと分類される
-- **THEN** 実行役を `opus` に上げ、決める役は `opus` のままで Fable には上げない
+- **THEN** 実行役は `--failure executor` を渡した `request` が返した（上限適用後の）model で起こし、決める役も `--failure executor` の返り値を使う。残量モードと構成の上限が無いとき、実行役の格は上位、決める役の格は上位で、最上位にはならない
 
 #### Scenario: 判断側が原因なら決める役だけ上げる
 - **WHEN** 2 回目の失敗で、実行役が指示を解釈できなかった、または指示自体が外れていたと分類される
-- **THEN** 決める役を `dev-workflow:decider`（`fable`）に上げ、実行役は `sonnet` または `opus` のままとする
+- **THEN** `--failure judgment` を渡した `request` が返した（上限適用後の）model で決める役（`dev-workflow:decider`）を立て、実行役の格は変えない。残量モードと構成の上限が無いとき、決める役の格は最上位である
 
 #### Scenario: 実行役は Fable にならない
 - **WHEN** 昇格ラダーのどの段階かにかかわらず実行役のモデルを決める
-- **THEN** 上限は `opus` で、`model: fable` の実行役 spawn は `agent-model-guard.sh` に拒否される
+- **THEN** 格の上限は上位で、Claude では `model: fable` の実行役 spawn が `agent-model-guard.sh` に拒否される
+
+#### Scenario: ラダーがどちらの提供元でも同じ文で読める
+- **WHEN** `templates/escalation-tripwires.md` の失敗ループの表を読む
+- **THEN** 各段に `--failure` の値と要求の格が書かれ、表の格が上限適用前の要求の格であることが明記され、モデル名は `references/model-tier-map.json` を引くよう書かれており、Claude のモデル名は括弧書きの例としてだけ現れる
 
 #### Scenario: exhausted では昇格が Opus 上限
 - **WHEN** `FABLE_BUDGET_MODE=exhausted` のセッションで失敗ループのトリップワイヤーを踏む
-- **THEN** interactive / unmanned を問わず昇格は Opus までに留まり、決める役は `dev-workflow:decider` のまま `model: opus` で立てられる（種別は変えない）
+- **THEN** interactive / unmanned を問わず `request` は上位までの model を返し、決める役は `dev-workflow:decider` のままその model で立てられる（種別は変えない）
+
+#### Scenario: depleted では決める役も中位の model になる
+- **WHEN** `SHARED_BUDGET_MODE=depleted` のセッションで、2 回目の失敗が判断側と分類される
+- **THEN** 本体は `request --phase decider --failure judgment` が返した中位の model で `dev-workflow:decider` を立て、表の要求の格（最上位）から model を計算し直さない
 
 #### Scenario: 仕様の発明での停止
 - **WHEN** ユーザーの指示に無い仕様決定（例:「DB は SQLite でいいだろう」）を自分で埋めた回数が2回に達する
@@ -321,7 +333,9 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 - 未知の穴を塞ぎ切ることをこの要件の完了条件にしない。非公開の呼び方で予告なく形が変わりうるので、想定外の形は「欄を出さない」に倒し、使用率の取得を止めない
 
 ### Requirement: SessionStart で残量モードを自動導出注入
-`scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、active スロットの実効値（`usage-session-records` capability の「記録と snapshot から実効値を求める」。active スロットは `usage-account-registry` の active スロットの判定規則で起動環境から求める）から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。snapshot のトップレベルのミラーを導出に使ってはならない（MUST NOT）。導出の式と優先順位（明示 env > データ無し > 90% 超 > 週経過との比較）は変えない。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。
+`scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、active スロットの実効値（`usage-session-records` capability の「記録と snapshot から実効値を求める」。active スロットは `usage-account-registry` の active スロットの判定規則で起動環境から求める）から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。snapshot のトップレベルのミラーを導出に使ってはならない（MUST NOT）。導出の式と優先順位（明示 env > データ無し > 90% 超 > 週経過との比較）は変えず、式は `scripts/usage_view.py` の 1 か所にだけ置く（SHALL）。`session-tripwires.sh` は閾値の比較も明示 env の優先も自分で行わず、モード・出どころ（明示 env / 既定（usage データなし）/ 自動導出）・表示する値を `usage_view.py` から得なければならない（MUST）。`usage_view.py` は `CLAUDE_PLUGIN_ROOT` ではなく `session-tripwires.sh` 自身のディレクトリから読み込む。各モードの効果の文は `skills/develop/references/decision-criteria.md` の残量モード表・共有枠モード表と `model-tier-resolution` の要件「残量モードを格に適用する」に一致させる（SHALL）。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する（未知の値もその値のまま提示し、効果の文は安全側の扱いを示す）。例外として、`usage_view.py` を読み込めないとき（ファイルが無い・壊れている）は明示 env も読まず、`conserve` / `ok` を出どころ `既定（usage_view.py を読めない）` として提示し、hook を止めない（SHALL）。明示 env の優先の判定も式の一部で、`session-tripwires.sh` に写しを残さないためである。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。
+
+**守備範囲（残量モードの導出）**: ①入力の出どころは、明示 env（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE`）と、`usage_view.py` が求める active スロットの実効値（`usage-session-records` の規則でセッション記録と snapshot から求めた値）だけである。snapshot やセッション記録を直接読む経路を足さない。②拾いたい誤りは、式が 2 か所にあって注入されるモードと `codex-develop.py request` が格に当てるモードがずれること、別スロットや snapshot のトップレベルのミラーの値でモードを決めること、欠測を 0% と読んで `abundant` / `ok` に倒すことである。③通してよい入力: 未知の明示値（提示はその値のまま、正規化後のモードは `conserve` / `throttled`）、空白だけの明示値（未設定と同じ）、Fable の欠測（明示 env が無く、active スロットの実効値の `fable_weekly_pct` が求まらなければ `conserve`。値があっても週経過が求まらなければ `abundant` にしない）、共有枠の欠測（明示 env が無く、セッション記録と snapshot の双方から週次の実効値が求まらなければ `ok`）、`usage_view.py` を読み込めない場合（明示 env も読まず `conserve` / `ok`）。値の妥当性（数値か・0..100 か・リセットを跨いだか）の検査は `usage-session-records` の規則に任せ、ここで重ねない。④この導出で入力の穴が見つかるたびに塞ぎ切ることを、この要件の完了条件にしない。
 
 `scripts/agent-model-guard.sh` の fork 拒否判定で使う共有枠モードも、active スロットの実効値から同じ式で導出しなければならない（SHALL）。
 
@@ -344,6 +358,26 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 #### Scenario: 古い snapshot の Fable 値はリセット時刻で読む
 - **WHEN** 2 日前に取得した snapshot の active スロットが Fable 95%・リセット時刻が現在より前である状態で SessionStart スクリプトを実行する
 - **THEN** Fable を 0% として導出し、`exhausted` にならない
+
+#### Scenario: 導出を usage_view.py から得る
+- **WHEN** モードを固定値で返す偽の `usage_view.py` を置いた scripts ディレクトリから `session-tripwires.sh` を実行する
+- **THEN** additionalContext の残量モードと共有枠モードは偽物が返した値になる
+
+#### Scenario: depleted の効果の文は最安を上げない
+- **WHEN** `SHARED_BUDGET_MODE=depleted` で `session-tripwires.sh` を実行する
+- **THEN** `depleted` の効果の文は、最安の役（explore と summarize）はそのままで、それ以外の役は中位（sonnet）が上限・昇格なしと読め、「全役割 sonnet 固定」の語を含まない
+
+#### Scenario: throttled の効果の文は最安を上げない
+- **WHEN** `SHARED_BUDGET_MODE=throttled` で `session-tripwires.sh` を実行する
+- **THEN** `throttled` の効果の文は、上げていない役の既定を中位に落とし上限を上位とし、最安の役はそのままと読める
+
+#### Scenario: 未知の明示値は提示とモードが分かれる
+- **WHEN** `FABLE_BUDGET_MODE=foo`、`SHARED_BUDGET_MODE=bar` で `session-tripwires.sh` を実行する
+- **THEN** additionalContext は `foo`（明示 env）と `bar`（明示 env）を提示し、効果の文はそれぞれ conserve 相当・throttled 相当で扱う旨を示す。同じ env の `budget_modes` は `conserve` と `throttled` を返す
+
+#### Scenario: usage_view.py を読み込めなければ明示 env も読まずに既定を出す
+- **WHEN** `usage_view.py` の無い（または import で例外を出す）scripts ディレクトリから、`FABLE_BUDGET_MODE=exhausted`、`SHARED_BUDGET_MODE=depleted` を設定して `session-tripwires.sh` を実行する
+- **THEN** exit code 0 で、additionalContext は `conserve` と `ok` を出どころ `既定（usage_view.py を読めない）` として提示し、昇格トリップワイヤー節は従来どおり注入される
 
 #### Scenario: fork の共有枠判定もセッション記録を使う
 - **WHEN** snapshot が無く、active スロットの鍵のセッション記録に週次 95% がある状態で、`SHARED_BUDGET_MODE` 未設定のまま `subagent_type: fork` の Agent 呼び出しを agent-model-guard に渡す
@@ -382,7 +416,7 @@ dev-workflow プラグインは `hooks/hooks.json` に SubagentStart のエン�
 - worker と gate-runner: Fable 残量モードと共有枠モード（現在値・出どころ・効果）、途中計測の閾値の現在値
 - reviewer: 途中計測の閾値の現在値だけ（Fable 残量モードと共有枠モードを含めてはならない（MUST NOT））
 
-残量モードの導出は `scripts/session-tripwires.sh` と同じ式・同じ優先順位で行い、式を別の場所に複製してはならない（MUST NOT）。`session-tripwires.sh` は環境変数 `TRIPWIRES_SCOPE=subagent-budget` のとき残量モードのブロックだけを本文のテキストで出し、その範囲では usage-probe を実行しない（SHALL）。`subagent-budget` のときの出力範囲は、`## Fable 残量モード（自動導出）` の見出しから共有枠モードの効果の行までで、親向けの「W を SendMessage で再開する前に `subagent-context.sh` で測る」行・メモリ索引の検知行・昇格トリップワイヤー節を含めてはならない（MUST NOT）。この範囲はテンプレートが無くても出す（SHALL）。`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外の値のときの `session-tripwires.sh` の出力は従来と変えない（SHALL）。
+残量モードの導出は `scripts/session-tripwires.sh` を通して `scripts/usage_view.py` の 1 か所の式で行い、式を別の場所に複製してはならない（MUST NOT）。導出の守備範囲は要件「SessionStart で残量モードを自動導出注入」の段落に従う。`session-tripwires.sh` は環境変数 `TRIPWIRES_SCOPE=subagent-budget` のとき残量モードのブロックだけを本文のテキストで出し、その範囲では usage-probe を実行しない（SHALL）。`subagent-budget` のときの出力範囲は、`## Fable 残量モード（自動導出）` の見出しから共有枠モードの効果の行までで、親向けの「W を SendMessage で再開する前に `subagent-context.sh` で測る」行・メモリ索引の検知行・昇格トリップワイヤー節を含めてはならない（MUST NOT）。この範囲はテンプレートが無くても出す（SHALL）。`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外の値のときの `session-tripwires.sh` の出力は従来と変えない（SHALL）。
 
 途中計測の行は、hook 実行時の `DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` の実効値（未設定なら `scripts/context-tripwire.sh` と同じ既定値）と、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除されているかを示し、扱いの規則は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」を読むよう案内する（SHALL）。規則の言い換えを本文に書いてはならない（MUST NOT）。
 
@@ -429,4 +463,3 @@ python3 が無い・入力が JSON でない・`agent_type` が無い・残量�
 #### Scenario: hooks.json の SubagentStart エントリ
 - **WHEN** `plugins/dev-workflow/hooks/hooks.json` をパースする
 - **THEN** SubagentStart エントリが存在し、matcher が `^dev-workflow:(worker|reviewer|gate-runner)$`、command が `${CLAUDE_PLUGIN_ROOT}` 経由で `scripts/subagent-start-context.sh` を指している
-
