@@ -462,6 +462,14 @@ def tier_fields(args, execution, switched, tier_map):
             'model': models[executed], 'budget_modes': modes}
 
 
+def check_role_cap(role, tier, tier_map):
+    # A tier above the role's cap is refused, never lowered: the Claude guard can only refuse,
+    # and a tier above the cap means the table or the rule is set wrong.
+    cap = tier_map['role_caps'].get(role)
+    if cap is not None and tier_caps.exceeds(tier, cap):
+        raise RuntimeError(tier_caps.refusal(role, tier, cap))
+
+
 def cap_tier(tier, cap):
     # A cap only ever lowers: min over the tier order, with no cap leaving the tier alone.
     return tier if cap is None else min(tier, cap, key=TIERS.index)
@@ -673,8 +681,13 @@ def build_request(args):
         raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
-    # The legacy pair goes around the tiers, so only the other forms need the table.
-    tier_map = None if legacy else load_tier_map()
+    # The legacy pair goes around the tiers, so only the other forms need the table, except
+    # that a writer role is checked against its cap (whether to read it is decided by name).
+    phase_role = PHASES[args.phase][0]
+    tier_map = None if legacy and phase_role not in tier_caps.CAPPED_ROLES else load_tier_map()
+    if legacy and tier_map is not None:
+        check_role_cap(phase_role, tier_caps.model_tier(tier_map['executors']['codex'], args.model),
+                       tier_map)
     if legacy or profile:
         refuse_explicit_codex_when_off(args, legacy)
     mapping = account_homes(args.account_home, args.account_home_file)
@@ -717,6 +730,8 @@ def build_request(args):
                             'budget_modes'))
              | {'requested_model': args.model, 'model': args.model} if legacy else
              tier_fields(args, execution, switched, tier_map))
+    if not legacy:
+        check_role_cap(execution['role'], tiers['executed_tier'], tier_map)
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
         result = {'status': 'agent-required', 'phase': args.phase, 'role': execution['role'],
