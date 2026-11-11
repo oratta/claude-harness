@@ -20,7 +20,7 @@
 
 ## 4. 全体の確認
 
-- [ ] 4.1 `scripts/test.sh` が exit 0 で終わり、`openspec validate unify-budget-mode-derivation --type change --strict` が通る。PR を出す前に `git fetch origin && git merge origin/main` で main を取り込み、もう一度 `scripts/test.sh` を通す。触る範囲: なし（確認だけ）
+- [x] 4.1 `scripts/test.sh` が exit 0 で終わり、`openspec validate unify-budget-mode-derivation --type change --strict` が通る。PR を出す前に `git fetch origin && git merge origin/main` で main を取り込み、もう一度 `scripts/test.sh` を通す。触る範囲: なし（確認だけ）
 
 ## Workflow follow-up
 
