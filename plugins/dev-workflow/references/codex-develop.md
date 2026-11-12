@@ -38,7 +38,7 @@ Codex role は次の3手順で1回の委譲を行う。
    python3 <plugin>/scripts/codex-worker.py run --request <依頼ファイル>
    ```
 
-3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`）を読む。成功は exit 0、失敗は exit 2。transport state は残らないので、照会・受領・live resume は行わない。記録先に委譲結果を書くときは、要求した model（`execution.model_resolution.requested`）と解決後のモデル ID（`execution.model_resolution.resolved`）を両方書き、観測できた `execution.effective.model` も添える。
+3. 標準出力の1行 JSON（`text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind` / `started_at` / `ended_at`）を読む。成功は exit 0、失敗は exit 2。transport state は残らないので、照会・受領・live resume は行わない。記録先に委譲結果を書くときは、要求した model（`execution.model_resolution.requested`）と解決後のモデル ID（`execution.model_resolution.resolved`）を両方書き、観測できた `execution.effective.model` も添える。
 
 書込 role は一度に1つずつ動かし、担当中の role が完了してから次を開始する。Codex への委譲をセッションをまたいで引き継ぐ仕組みはないため、途中で切れた委譲はその工程の最初からやり直し、停止または中断時点の成果物と結果 JSON を記録する。Claude role の再開には上記の再開の条件（`tier` と `model` の比較）と fresh thread への手渡し規則を適用する。
 

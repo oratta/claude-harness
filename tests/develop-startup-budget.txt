@@ -1,3 +1,3 @@
-skills/develop/SKILL.md 92996
+skills/develop/SKILL.md 93433
 commands/develop.md 11462
-references/codex-develop.md 18565
+references/codex-develop.md 18593

@@ -40,7 +40,7 @@ ID token の email と `account/read` を照合する。ターン開始前は元
 
 呼び出し元の祖先プロセス連鎖が変わるか、SIGTERM / SIGINT を受けると停止要求を立てる。signal handler から RPC は送らず、通常フローが `turn/interrupt` を 1 回送り、単一の 10 秒猶予内で終了する。終了時は App Server の子プロセスを残さない。
 
-標準出力は `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind` を持つ 1 行 JSON だけ。成功は exit 0、それ以外は exit 2。`thread/start` / `turn/start` がエラー応答を返した場合の `error_kind` は `server_rejected_start_<コード>`。要求値と実効値・観測元を分け、未観測値を要求値から補完しない。`effective.account` は App Server が返した実行中 account、`requested.account` は呼び出し側のラベルである。
+標準出力は `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind` / `started_at` / `ended_at` を持つ 1 行 JSON だけ（`started_at` / `ended_at` は実行の開始と終了の時刻で、UTC の ISO8601・秒まで・末尾 `Z`。成功・失敗を問わず入る）。成功は exit 0、それ以外は exit 2。`thread/start` / `turn/start` がエラー応答を返した場合の `error_kind` は `server_rejected_start_<コード>`。要求値と実効値・観測元を分け、未観測値を要求値から補完しない。`effective.account` は App Server が返した実行中 account、`requested.account` は呼び出し側のラベルである。
 
 品質判定に渡す `text` は一意な `phase=final_answer` だけ。途中 commentary、phase 欠測、複数 final、空 final を承認証拠にしない。結果 JSON を受け取れず終了した場合は、記録先と worktree を確認し、その工程を fresh phase としてやり直す。
 

@@ -679,10 +679,20 @@ refute() {
   echo "$s" | grep -qF '2 行目以降'
 }
 
-@test "consumption mark: no time keys, and an unknown account name is omitted not guessed" {
+@test "consumption mark: time keys only in the Codex consumption comment, and an unknown account name is omitted not guessed" {
   s="$(section 'PR トークン上限')"
-  echo "$s" | grep -qF '`開始=` `終了=` は書かない'
+  refute "$s" -F '`開始=` `終了=` は書かない'
+  echo "$s" | grep -qF '`開始=` `終了=` は `Codex 消費:` コメントの印にだけ書き、description と `develop 開始` コメントの印には書かない'
   echo "$s" | grep -qF '`アカウント=` のキーごと省き'
+}
+
+@test "consumption mark: the Codex consumption record copies started_at / ended_at, omits missing ones, and skips G's full review (#1321)" {
+  p="$(section 'PR トークン上限' | grep -F '**Codex の消費の記録**')"
+  [ -n "$p" ]
+  echo "$p" | grep -qF '結果 JSON の `started_at` を `開始=`、`ended_at` を `終了=`'
+  echo "$p" | grep -qF '開始=2026-10-19T23:50:00Z 終了=2026-10-20T00:10:00Z'
+  echo "$p" | grep -qF 'キーが無いか `null` なら、そのキーを印から省き、推測で埋めない'
+  echo "$p" | grep -qF 'G の full レビュー分は時刻が取れないので `開始=` `終了=` を書かない'
 }
 
 @test "consumption mark: a resumable W gets account only in description and the mark at the head of each resume message" {

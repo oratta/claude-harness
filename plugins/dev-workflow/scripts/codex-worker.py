@@ -2,6 +2,7 @@
 """Run one account-bound App Server turn in the foreground."""
 import argparse
 import base64
+import datetime
 import hashlib
 import json
 import math
@@ -689,7 +690,15 @@ def watch_caller(stop, chain, since, interval=WATCH_INTERVAL):
             return
 
 
+def utc_timestamp():
+    # Wall clock in UTC to the second: the consumption comment copies it into 開始= / 終了=,
+    # which the reader compares with reset times. A monotonic clock is not a time of day.
+    return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+
 def run(request_path):
+    # Taken before the request is read, so every result, failed or not, carries it.
+    started_at = utc_timestamp()
     execution = None
     state = TurnState()
     status = text = error_kind = None
@@ -751,9 +760,13 @@ def run(request_path):
             if runtime:
                 discard_runtime(runtime)
                 shutil.rmtree(runtime.parent, ignore_errors=True)
+    # The wall clock can step back during the run; the fixed-width format orders as text,
+    # so holding the end at the start keeps started_at from coming after ended_at.
+    ended_at = max(started_at, utc_timestamp())
     print(json.dumps({'text': text or None, 'status': status, 'usage': state.usage,
                       'execution': execution, 'thread_id': state.thread_id,
-                      'turn_id': state.turn_id, 'error_kind': error_kind}))
+                      'turn_id': state.turn_id, 'error_kind': error_kind,
+                      'started_at': started_at, 'ended_at': ended_at}))
     raise SystemExit(0 if status == 'completed' and error_kind is None else 2)
 
 
