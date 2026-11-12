@@ -34,7 +34,7 @@
 
 判断に迷ったら「許容が必要」側に倒す。**判断がつかないことは「リスクなし」の理由にならない。**
 
-コメント文面（`gh api -X POST repos/$R/issues/$N/comments -F body=@<file>` で投稿する）。**2 行目の `対象 HEAD:` は必須**:
+コメント文面（`gh api -X POST repos/$R/issues/$N/comments -F body=@<file>` で投稿する）。ファイル名・書き込み・投稿前後の確認は `SKILL.md` の「コメント本文ファイルの共通規約」に従う。**2 行目の `対象 HEAD:` は必須**:
 
 ```
 ## リスク宣言
