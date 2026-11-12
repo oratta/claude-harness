@@ -8,12 +8,12 @@
 
 ## 2. develop の本体が `Codex 消費:` コメントの印に時刻を書く
 
-- [ ] 2.1 `tests/develop-skill.bats` の `consumption mark: no time keys, ...` を、時刻を `Codex 消費:` コメントの印にだけ書く規則の検査に書き換え（`` `開始=` `終了=` は書かない`` の文字列を探す行を外し、置き場の限定の文を探す）、「Codex の消費の記録」の段落に `started_at` → `開始=`・`ended_at` → `終了=`・取れなければキーごと省く・G の full レビューの分には書かない、の 4 点があることを検査するテストを足して、先に落ちることを確かめる 触る範囲: plugins/dev-workflow/tests/develop-skill.bats:682-686
-- [ ] 2.2 SKILL.md「PR トークン上限」節の「消費の記録の印」の時刻の行を「`開始=` `終了=` は `Codex 消費:` コメントの印にだけ書き、description と `develop 開始` コメントの印には書かない」に改め、「Codex の消費の記録」の段落に結果 JSON の `started_at` / `ended_at` を `開始=` / `終了=` に写す書き方（例の印を 1 つ添える）・キーが無いか `null` なら省いて推測で埋めない・G の full レビューの分には書かない、を足して、2.1 のテストと `bats plugins/dev-workflow/tests/develop-skill.bats` が通ることを確かめる 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:240（時刻の行）、plugins/dev-workflow/skills/develop/SKILL.md:247（「Codex の消費の記録」の段落）
+- [x] 2.1 `tests/develop-skill.bats` の `consumption mark: no time keys, ...` を、時刻を `Codex 消費:` コメントの印にだけ書く規則の検査に書き換え（`` `開始=` `終了=` は書かない`` の文字列を探す行を外し、置き場の限定の文を探す）、「Codex の消費の記録」の段落に `started_at` → `開始=`・`ended_at` → `終了=`・取れなければキーごと省く・G の full レビューの分には書かない、の 4 点があることを検査するテストを足して、先に落ちることを確かめる 触る範囲: plugins/dev-workflow/tests/develop-skill.bats:682-686
+- [x] 2.2 SKILL.md「PR トークン上限」節の「消費の記録の印」の時刻の行を「`開始=` `終了=` は `Codex 消費:` コメントの印にだけ書き、description と `develop 開始` コメントの印には書かない」に改め、「Codex の消費の記録」の段落に結果 JSON の `started_at` / `ended_at` を `開始=` / `終了=` に写す書き方（例の印を 1 つ添える）・キーが無いか `null` なら省いて推測で埋めない・G の full レビューの分には書かない、を足して、2.1 のテストと `bats plugins/dev-workflow/tests/develop-skill.bats` が通ることを確かめる 触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:240（時刻の行）、plugins/dev-workflow/skills/develop/SKILL.md:247（「Codex の消費の記録」の段落）
 
 ## 3. 変更の記録と全体の確認
 
-- [ ] 3.1 `plugins/dev-workflow/changes/1321.md` に変更の記録（何が変わったか・読み取り側 genetta-inc/flatmate#1776 との関係）を書き、`version` を上げていないことを `git diff origin/main -- plugins/dev-workflow/.claude-plugin/plugin.json` が空であることで確かめる 触る範囲: plugins/dev-workflow/changes/1321.md（新規）
+- [x] 3.1 `plugins/dev-workflow/changes/1321.md` に変更の記録（何が変わったか・読み取り側 genetta-inc/flatmate#1776 との関係）を書き、`version` を上げていないことを `git diff origin/main -- plugins/dev-workflow/.claude-plugin/plugin.json` が空であることで確かめる 触る範囲: plugins/dev-workflow/changes/1321.md（新規）
 - [ ] 3.2 `scripts/test.sh` が exit 0 で終わることを確かめる（`tests/python-suites.bats` 経由の `test_codex_worker.py`、`tests/injection-budget.bats` を含む） 触る範囲: なし（確認のみ）
 
 ## Workflow follow-up
