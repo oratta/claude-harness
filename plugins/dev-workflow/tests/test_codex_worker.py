@@ -1,6 +1,8 @@
 import base64
+import contextlib
 import datetime
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -746,6 +748,23 @@ class ForegroundTest(unittest.TestCase):
         self.assertLessEqual(before, r['started_at'])
         self.assertLessEqual(r['started_at'], r['ended_at'])
         self.assertLessEqual(r['ended_at'], after)
+
+    def test_end_is_not_before_the_start_when_the_clock_steps_back(self):
+        # #1321 F1: the spec forbids started_at after ended_at. The wall clock can step back
+        # (NTP) between the two readings, so the end must be held at the start.
+        readings = iter(['2026-11-12T10:00:05Z', '2026-11-12T10:00:00Z'])
+        original = worker_module.utc_timestamp
+        worker_module.utc_timestamp = lambda: next(readings)
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as stopped:
+                worker_module.run(str(self.root/'missing-request.json'))
+        finally:
+            worker_module.utc_timestamp = original
+        self.assertEqual(stopped.exception.code, 2)
+        r = json.loads(out.getvalue().splitlines()[-1])
+        self.assertEqual(r['started_at'], '2026-11-12T10:00:05Z')
+        self.assertEqual(r['ended_at'], '2026-11-12T10:00:05Z')
 
     def develop(self, *args, code=0):
         p = subprocess.run([sys.executable,str(DEVELOP),*args],env=self.env,text=True,capture_output=True,timeout=60)
