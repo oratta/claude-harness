@@ -59,6 +59,14 @@ setup() {
   }
 }
 
+# issue #1273: 検証に使う openspec の版は openspec/CLI_VERSION の 1 か所で、その版で main の spec が strict に通る。
+@test "pinned openspec version validates all specs --strict (#1273)" {
+  command -v npx >/dev/null 2>&1 || skip "npx が無い"
+  [ -s "${REPO_ROOT}/openspec/CLI_VERSION" ]
+  run bash -c "cd '${REPO_ROOT}' && scripts/openspec.sh validate --specs --strict"
+  [ "$status" -eq 0 ]
+}
+
 # develop の SKILL.md から references/ へ移した節を、spec が「SKILL.md の節」として名指ししていないこと（#1241）。
 # 節名の一覧は移設先（epic.md・epic-child-stop.md・handover.md・fix-check.md・channel.md）の見出し。
 # SKILL.md に中身が残る節（ループの終わり等）はこの一覧に入れない。
