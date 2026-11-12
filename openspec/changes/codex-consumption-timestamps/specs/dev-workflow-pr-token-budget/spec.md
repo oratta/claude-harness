@@ -21,6 +21,33 @@ develop の本体は、executor が `codex` の役割へ委譲した分の `Code
 
 ## MODIFIED Requirements
 
+### Requirement: 消費の記録に工程・試行・アカウントの印を書く
+develop の本体は、記録先の消費の記録に、1 行の印 `[消費記録 工程=<工程> 試行=<n> アカウント=<provider>:<登録名> 引継ぎ=<k>]` を MUST 書く。キーの順は問わない。`引継ぎ=` は、同じ工程と試行で手渡しにより起こし直した k 番目の担当のときだけ書き、最初の担当には書かない。読み取り側（flatmate の `burn_consumption.py`）の契約に合わせ、この印以外の書き方（自由文）で工程・試行・アカウントを表してはならない（MUST NOT）。
+- 置き場は次の 3 か所とする: (1) `Codex 消費:` コメントの 2 行目以降（1 行目の `Codex 消費: <thread_id> <tokens>` の形は変えない）、(2) サブエージェントの `description`（`#N` と同じ文字列の中）、(3) `develop 開始` コメント（本体の起動アカウント。`工程=` と `試行=` は省いてよい）
+
+#### Scenario: Codex 消費コメントの 2 行目に印を書く
+- **WHEN** 本体が executor `codex` の W の implement 工程の 2 回目の試行の結果を記録する（thread_id `t1`・totalTokens 1200000・Codex の登録名 `current`・結果 JSON に `started_at` と `ended_at` が無い）
+- **THEN** 本体は 1 行目が `Codex 消費: t1 1200000` で、2 行目が `[消費記録 工程=implement 試行=2 アカウント=codex:current]` のコメントを投稿する
+
+#### Scenario: 1 つの工程・試行にしか使わないサブエージェントの description に印を入れる
+- **GIVEN** Claude の登録名が `a` と取れていて、記録先 #288 の implement 工程のレビュアー（`impl-review`）の初回（試行 1・手渡しなし）を、再開しない 1 体として起こす
+- **WHEN** 本体が spawn する
+- **THEN** `description` は `#288` と `[消費記録 工程=impl-review 試行=1 アカウント=claude:a]` を同じ文字列の中に含む
+
+#### Scenario: SKILL.md に規約が書かれている
+- **WHEN** `skills/develop/SKILL.md` を読む
+- **THEN** 「PR トークン上限」節の紐付けの規約と Codex の消費の記録、「Role profile の選択」節の develop 開始コメントの記述に、印の形・置き場・工程名の語彙・試行と引継ぎの数え方・再開される W の扱い・G とレビュアーの工程の決め方が書かれている
+
+#### Scenario: 手渡しで起こし直した W に引継ぎを書く
+- **GIVEN** 登録名 `a` が取れていて、implement 工程の 2 回目の試行を、前任から手渡しで起こし直した 1 番目の担当の W に担わせる（再開しない）
+- **WHEN** 本体が記録先 #288 のために spawn する
+- **THEN** `description` の印は `工程=implement 試行=2 アカウント=claude:a 引継ぎ=1` を含む
+
+#### Scenario: develop 開始コメントに起動アカウントを書く
+- **GIVEN** Claude の起動アカウントの登録名 `a` が取れている
+- **WHEN** 本体が `develop 開始` コメントを投稿する
+- **THEN** コメントに `[消費記録 アカウント=claude:a]` の行がある（`工程=` と `試行=` は無くてよい）
+
 ### Requirement: 消費の記録の印のアカウントと時刻の扱いを決める
 develop の本体は、印のアカウントと時刻を次のとおり MUST 扱う。
 - アカウントは `claude:<登録名>` か `codex:<CODEX_HOME 対応表の登録名>` とする。登録名が分からないときは `アカウント=` のキーごと省き、推測で埋めてはならない（MUST NOT）

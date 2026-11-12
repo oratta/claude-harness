@@ -19,4 +19,4 @@
 ## Workflow follow-up
 
 - R1 の仕様レビューで APPROVE を受けてから実装に入る
-- 実装と verify のあと、change を archive して PR を作り、pr-review-gate を通す
+- 実装と verify のあと、change を archive して Draft PR を更新する
