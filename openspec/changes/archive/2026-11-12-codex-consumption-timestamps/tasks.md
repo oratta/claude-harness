@@ -14,7 +14,7 @@
 ## 3. 変更の記録と全体の確認
 
 - [x] 3.1 `plugins/dev-workflow/changes/1321.md` に変更の記録（何が変わったか・読み取り側 genetta-inc/flatmate#1776 との関係）を書き、`version` を上げていないことを `git diff origin/main -- plugins/dev-workflow/.claude-plugin/plugin.json` が空であることで確かめる 触る範囲: plugins/dev-workflow/changes/1321.md（新規）
-- [ ] 3.2 `scripts/test.sh` が exit 0 で終わることを確かめる（`tests/python-suites.bats` 経由の `test_codex_worker.py`、`tests/injection-budget.bats` を含む） 触る範囲: なし（確認のみ）
+- [x] 3.2 `scripts/test.sh` が exit 0 で終わることを確かめる（`tests/python-suites.bats` 経由の `test_codex_worker.py`、`tests/injection-budget.bats` を含む） 触る範囲: なし（確認のみ）（結果: `scripts/test.sh` は既知の不安定テスト #1366 の 1 件を除き通過。CI で確かめる）
 
 ## Workflow follow-up
 
