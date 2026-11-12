@@ -49,6 +49,14 @@ if printf '%s' "$SETUP_OUT" | grep -q 'NEEDS_NPM_INSTALL=true'; then
   NOTES="${NOTES}
 - \`node_modules\` が無い。\`npm install\` の要否をユーザーに確認すること。"
 fi
+# wt-setup.sh の Step 4 が git フックの設定を変えた（または変えるのを見送った）とき。
+# 設定するとその clone ではそれまでのフック（グローバルのマージ済みブランチ拒否など）が走らなくなるので、
+# 「残タスクなし」で黙らせず、実行結果の注意をユーザーに伝えさせる
+GITHOOKS_LINE=$(printf '%s\n' "$SETUP_OUT" | grep -m1 '^=== git フック:' || true)
+if [ -n "$GITHOOKS_LINE" ]; then
+  NOTES="${NOTES}
+- git フックの設定について注意がある（実行結果の \`${GITHOOKS_LINE}\` とその下の行）。この clone で走るフックが変わる、または有効化を見送った件なので、内容をユーザーに伝えること。"
+fi
 
 CONTEXT="[wt-setup] この worktree は未セットアップだったため、セッション開始時に wt-setup.sh を自動実行した（.claude/ の symlink と .worktreeinclude 対象ファイルのコピー）。
 
