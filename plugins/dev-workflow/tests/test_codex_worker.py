@@ -1,4 +1,5 @@
 import base64
+import datetime
 import importlib.util
 import json
 import os
@@ -725,6 +726,27 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(execution['evidence']['effort'],'turn/start:result.turn.effort')
         self.assertEqual(execution['evidence']['executor'],'transport:codex-app-server')
 
+    TIMESTAMP = r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+
+    @staticmethod
+    def utc_now():
+        # Seconds precision, truncated, matching the worker's own format.
+        return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    def test_foreground_result_carries_the_start_and_end_of_the_run(self):
+        # #1321: the consumption comment copies these into 開始= / 終了=, so a completed run
+        # must carry both, in UTC, and within the time the caller spent waiting for it.
+        self.config(usage={'inputTokens':12,'outputTokens':3})
+        before = self.utc_now()
+        r = self.run_cli()
+        after = self.utc_now()
+        self.assertEqual(r['status'],'completed')
+        for key in ('started_at','ended_at'):
+            self.assertRegex(r[key], self.TIMESTAMP, key)
+        self.assertLessEqual(before, r['started_at'])
+        self.assertLessEqual(r['started_at'], r['ended_at'])
+        self.assertLessEqual(r['ended_at'], after)
+
     def develop(self, *args, code=0):
         p = subprocess.run([sys.executable,str(DEVELOP),*args],env=self.env,text=True,capture_output=True,timeout=60)
         self.assertEqual(p.returncode,code,p.stdout+p.stderr)
@@ -792,7 +814,11 @@ class ForegroundTest(unittest.TestCase):
             self.config(job,**config)
             r = self.run_cli(job,code=2)
             self.assertEqual(r['error_kind'],kind,job)
-            self.assertEqual(set(r),{'text','status','usage','execution','thread_id','turn_id','error_kind'})
+            self.assertEqual(set(r),{'text','status','usage','execution','thread_id','turn_id','error_kind',
+                                     'started_at','ended_at'})
+            for key in ('started_at','ended_at'):
+                self.assertRegex(r[key], self.TIMESTAMP, (job,key))
+            self.assertLessEqual(r['started_at'], r['ended_at'], job)
             self.assertIsNone(r['status'],job)
             self.assertIsNone(r['text'],job)
             self.assertIsNone(r['usage'],job)
