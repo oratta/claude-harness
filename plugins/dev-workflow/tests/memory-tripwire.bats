@@ -282,7 +282,7 @@ PY
   [[ "$output" != *"a2.md"* ]] || return 1
   wait_bg
   # 当日に閉じたと控えたものは確かめ直さず、当日に開いていると控えたものは毎回確かめ直す
-  ! grep -qF "issue view ${I1}" "${WORK}/gh.log"
+  ! grep -qF "issue view ${I1}" "${WORK}/gh.log" || return 1
   [ "$(grep -cF "issue view ${I2}" "${WORK}/gh.log")" -eq 2 ]
 }
 
@@ -339,7 +339,7 @@ PY
   wait_bg
   [ "$(grep -c '' "$CACHE")" -eq 2 ]
   grep -qF "$I3" "$CACHE"
-  ! ls "${WORK}/cache" | grep -v -x -e patches-cache.tsv
+  ! ls "${WORK}/cache" | grep -v -x -e patches-cache.tsv || return 1
 }
 
 @test "patches: the memory directory is left unchanged and holds no cache" {

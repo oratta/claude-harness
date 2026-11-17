@@ -83,7 +83,7 @@ patch_pairs="$(awk '
 ' ${mem_files[@]+"${mem_files[@]}"} /dev/null 2>/dev/null)" || patch_pairs=""
 
 # 裏の確認（#1654）: 引数の URL（1 行 1 本）を gh で確かめ、控えを書き換える。開始の処理からは
-# 標準入力・標準出力・標準エラーを閉じた裏のプロセスとして呼ぶ。終わったら目印（$lock）を外す。
+# 標準入力・標準出力・標準エラーを閉じた裏のプロセスとして呼ぶ。終わったら目印（${lock}）を外す。
 check_patches() {
   local need="$1" work i pids e n pid u st why out s r start timer new_lines cur kept body tmpc
   trap 'rmdir "$lock" 2>/dev/null' EXIT
