@@ -4,6 +4,8 @@
 
 `.github/workflows/ci.yml` の分けた bats のジョブは、`runs-on:` に `ubuntu-<数字>.<数字>` の形でランナーの版を 1 行で書き、`ubuntu-latest` や式を使ってはならない（MUST NOT）。bats は `apt-get install` に `bats=<版>` の形で版を書いて入れ、そのステップ名は `install bats (<版>)` で同じ版を示さなければならない（MUST）。書く版は、そのランナーの apt にある版でなければならない（MUST）。
 
+守備範囲: 入力はリポジトリ編集者が変える `ci.yml` とテスト用の写し。拾う誤りはランナーか bats の固定外しと、`bats=` とステップ名の版のずれ。形と版がそろえば apt に無い組でも構造検査は通す（実在は CI の `install bats` が確かめる）。検査をすり抜ける書き方を塞ぎ切ることは完了条件にしない。
+
 #### Scenario: このリポジトリの ci.yml の固定がそろっている
 
 - **WHEN** `scripts/test.sh ci-bats-shards` を実行する
