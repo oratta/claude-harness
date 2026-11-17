@@ -65,6 +65,18 @@ referrers() {
   printf '%s\n' "$s" | grep -qF 'どれにも当たらなければ聞かずに自分で決めて進め、事後報告する'
 }
 
+@test "canonical: owner-hands-only ops are what the agent cannot pass, not logged-in browser clicks (#1654)" {
+  local s item
+  s="$(section3)"
+  item="$(printf '%s\n' "$s" | grep -E '^ *- 主の手でしかできない操作')"
+  [ "$(printf '%s\n' "$item" | wc -l | tr -d ' ')" -eq 1 ]
+  printf '%s\n' "$item" | grep -qF 'パスワード・MFA・CAPTCHA'
+  printf '%s\n' "$item" | grep -qF 'エージェントの手では通せない'
+  printf '%s\n' "$item" | grep -qF '人が押すと決まっているマージ'
+  ! printf '%s\n' "$item" | grep -qF 'MFA・ログイン・' || return 1
+  printf '%s\n' "$item" | grep -F 'ログイン済みのブラウザ' | grep -qF '入らない'
+}
+
 @test "canonical: risk has three elements" {
   local s; s="$(section3)"
   printf '%s\n' "$s" | grep -qF '何が起きるか'

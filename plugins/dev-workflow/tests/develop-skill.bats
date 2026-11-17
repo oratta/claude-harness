@@ -991,6 +991,30 @@ refute() {
   done
 }
 
+@test "ask-owner (#1654): owner-hands-only ops are what the agent cannot pass; logged-in browser clicks are not" {
+  s="$(section '主に聞かずに決めること')"
+  echo "$s" | grep -qF 'パスワード・MFA・CAPTCHA' || { echo "missing: パスワード・MFA・CAPTCHA"; return 1; }
+  if echo "$s" | grep -qF 'MFA・OAuth・ログイン'; then echo "old example remains"; return 1; fi
+  # 文単位で見る（「。」で区切る）
+  sentences="$(echo "$s" | awk '{gsub(/。/, "。\n"); print}')"
+  # 主の手でしかできない操作の例を挙げる文に OAuth・ログイン・ダッシュボードが無い
+  ex="$(printf '%s\n' "$sentences" | grep -F '主の手でしかできない操作（')"
+  [ -n "$ex" ] || { echo "no example sentence"; return 1; }
+  for t in 'OAuth' 'ログイン' 'ダッシュボード'; do
+    if printf '%s\n' "$ex" | grep -qF "$t"; then echo "example lists: $t"; return 1; fi
+  done
+  # ログイン済みのブラウザを含む文は、主の手でしかできない操作から外す書き方
+  lb="$(printf '%s\n' "$sentences" | grep -F 'ログイン済みのブラウザ')"
+  [ -n "$lb" ] || { echo "no logged-in browser sentence"; return 1; }
+  while IFS= read -r line; do
+    printf '%s\n' "$line" | grep -qF '主の手でしかできない操作に入らない' || { echo "not excluded: $line"; return 1; }
+  done <<< "$lb"
+  # 主の名義で外へ出る・取り消せない操作は、規則が主の承認を求める操作として聞く
+  ap="$(printf '%s\n' "$sentences" | grep -F '主の名義で外へ公開・送信する・課金する・取り消せない')"
+  [ -n "$ap" ] || { echo "no approval sentence"; return 1; }
+  printf '%s\n' "$ap" | grep -qF '規則が主の承認を求める操作として聞く' || { echo "approval not split: $ap"; return 1; }
+}
+
 @test "ask-owner (#1035): cleanup of own mistakes reverts with a backup and excludes git and the sanctuary" {
   s="$(section '主に聞かずに決めること')"
   for token in '控えを取って戻し' '事後報告' 'git の破壊的操作' 'destructive-git-guard' '聖域'; do
