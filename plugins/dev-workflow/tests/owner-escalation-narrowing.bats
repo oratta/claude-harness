@@ -43,10 +43,17 @@ step8() { grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC"; }
   grep -E '^理由: ' "$PASS" | grep -qF '根拠'
 }
 
-@test "pass criteria (#1653): sessions without a delegation keep the three safety conditions on the unsafe side" {
+@test "pass criteria (#1653): stops not sent by delegation keep the three safety conditions on the unsafe side, with or without a delegation" {
   p="$(para '主に上げるとき' "$PASS")"
-  printf '%s\n' "$p" | grep -F '委任の無いセッション' | grep -F '「聖域でない」「戻せる」「実機操作でない」' | grep -qF '満たさない側に読む'
+  printf '%s\n' "$p" | grep -F '委任で送らない止まりでは（委任の有無によらず）' | grep -F '「聖域でない」「戻せる」「実機操作でない」' | grep -qF '満たさない側に読む'
   printf '%s\n' "$p" | grep -qF '主に聞く理由の有無の判定とは別'
+  run grep -F '委任の無いセッションでは、「聖域でない」「戻せる」「実機操作でない」' "$PASS"
+  [ "$status" -eq 1 ]
+  root="$(cd "$PLUGIN_DIR/../.." && pwd)"
+  for spec in "$root/openspec/specs/dev-workflow-develop/spec.md" "$root/openspec/changes/archive/2026-11-17-narrow-owner-escalation/specs/dev-workflow-develop/spec.md"; do
+    line="$(grep -F -- '- **主に上げるとき**' "$spec")"
+    printf '%s\n' "$line" | grep -qF '委任で送らない止まりでは（委任の有無によらず）、「聖域でない」「戻せる」「実機操作でない」' || { echo "brake not widened: $spec"; return 1; }
+  done
 }
 
 @test "pass criteria (#1653): delegation runs first and sessions without it never pass sanctuary, destructive git or merge" {
