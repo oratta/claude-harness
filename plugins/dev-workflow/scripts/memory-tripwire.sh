@@ -103,15 +103,20 @@ if [ -n "$patch_pairs" ]; then
         gh issue view "$u" --json state,stateReason > "${work}/${i}.out" 2>/dev/null < /dev/null &
         pids="${pids} ${i}:$!"
       done <<< "$need"
-      # 打ち切り: 0.05 秒刻みで TIMEOUT 秒ぶん待つ（bash 3.2 には timeout と EPOCHREALTIME が無い）
-      start="$SECONDS"; ticks=0; limit=$((PATCHES_TIMEOUT * 20))
+      # 打ち切り: TIMEOUT 秒の sleep を時計にして、それが終わるまで 0.05 秒刻みで待つ（bash 3.2 には
+      # timeout と EPOCHREALTIME が無い）。上限は秒で決め、刻みの数に頼らない（負荷で刻みが遅れても
+      # 待ちが延びない）。時計を起こせなかったときのために、整数の SECONDS でも上限をかける。
+      start="$SECONDS"
+      sleep "$PATCHES_TIMEOUT" 2>/dev/null & timer=$!
       while :; do
         running=0
         for e in $pids; do kill -0 "${e#*:}" 2>/dev/null && running=1; done
         [ "$running" -eq 0 ] && break
-        [ "$ticks" -ge "$limit" ] && [ $((SECONDS - start)) -ge "$PATCHES_TIMEOUT" ] && break
-        sleep 0.05; ticks=$((ticks + 1))
+        kill -0 "$timer" 2>/dev/null || break
+        [ $((SECONDS - start)) -gt "$PATCHES_TIMEOUT" ] && break
+        sleep 0.05
       done
+      kill "$timer" 2>/dev/null; wait "$timer" 2>/dev/null
       new_lines=""
       for e in $pids; do
         n="${e%%:*}"; pid="${e#*:}"

@@ -315,7 +315,15 @@ PY
 
 @test "patches: gh missing → no output, no cache, exit 0" {
   add_mem a.md "name: a\nmetadata:\n  patches: ${I1}"
-  run env -u DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT PATH="/usr/bin:/bin" DEV_WORKFLOW_MEMORY_PATCHES_CACHE="$CACHE" \
+  # スクリプトが使う道具だけを置いた bin。/usr/bin や /bin を足すと、本物の gh が入った環境
+  # （GitHub Actions の ubuntu-latest など）では gh が見つかってしまう
+  mkdir -p "${WORK}/nogh"
+  for c in bash env awk sed cut sort cat date mktemp wc stat grep paste rm mv sleep dirname; do
+    ln -s "$(command -v "$c")" "${WORK}/nogh/$c"
+  done
+  run "${WORK}/nogh/bash" -c 'PATH="$1"; command -v gh' _ "${WORK}/nogh"
+  [ "$status" -ne 0 ]
+  run env -u DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT PATH="${WORK}/nogh" DEV_WORKFLOW_MEMORY_PATCHES_CACHE="$CACHE" \
     DEV_WORKFLOW_MEMORY_DIR="$MEM" "$SCRIPT"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
@@ -348,6 +356,21 @@ PY
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [ "$(gh_calls)" -eq 1 ]
+}
+
+@test "patches: the timeout holds in seconds even when each wait step runs slow" {
+  add_mem a.md "name: a\nmetadata:\n  patches: ${I1}"
+  respond "$I1" "hang"
+  # 待ちの刻み（sleep 0.05）だけを 0.15 秒に遅らせる。ほかの sleep（偽の gh の hang）は本物に渡す
+  mkdir -p "${WORK}/slow"
+  real_sleep="$(command -v sleep)"
+  printf '#!/bin/sh\nif [ "$1" = 0.05 ]; then exec %s 0.15; fi\nexec %s "$@"\n' "$real_sleep" "$real_sleep" > "${WORK}/slow/sleep"
+  chmod +x "${WORK}/slow/sleep"
+  ms="$(elapsed_ms env PATH="${WORK}/slow:${WORK}/bin:${PATH}" DEV_WORKFLOW_MEMORY_PATCHES_CACHE="$CACHE" \
+    DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT=3 DEV_WORKFLOW_MEMORY_DIR="$MEM" "$SCRIPT")"
+  echo "elapsed ${ms}ms"
+  [ "$ms" -ge 3000 ]
+  [ "$ms" -lt 4000 ]
 }
 
 @test "patches: a failed lookup does not hide the threshold or another closed issue" {
