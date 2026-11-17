@@ -2374,3 +2374,104 @@ triage_line() {
   echo "$flat" | grep -qE '取り直さずに主に報告'
   grep -qF '担当セッション: %s' "$(step_file 2-0)"
 }
+
+# --- Requirement: 論点なしのリスク宣言は、決める役の確認で合格処理に進める（issue #1653） ---
+
+no_point_section() { awk '/^#### 6-0\. 論点なしの宣言の確認/{f=1;print;next} f&&/^#### |^### /{exit} f' "$HOLD"; }
+
+@test "no-point (#1653): the no-point line no longer asks the owner for an OK by rule" {
+  ! grep -qF '決まりで主の OK が要る' "$DECLARATIONS"
+  grep -qxF '論点なし — 分類に当たったが、この変更を入れることで新たに生じるリスクは無い。決める役の確認で通す。' "$DECLARATIONS"
+}
+
+@test "no-point (#1653): the step 3 table routes a no-point declaration to the decider check before step 6" {
+  row="$(grep -F '| **主のリスク許容が必要** |' "$DECLARATIONS")"
+  echo "$row" | grep -qF '論点なし'
+  echo "$row" | grep -qF '論点なしの確認: 通す'
+  echo "$row" | grep -qF '手順4'
+  echo "$row" | grep -qF '手順6'
+}
+
+@test "no-point (#1653): declarations step 3 names the decider as the only checker and lists the three outcomes" {
+  grep -F '論点なしの確認' "$DECLARATIONS" | grep -qF 'dev-workflow:decider'
+  grep -qF 'エピックの子でも決める役が確かめ、親は確かめない' "$DECLARATIONS"
+  grep -qF '通す → 手順 4・5' "$DECLARATIONS"
+  grep -qF '論点あり → 宣言を `論点あり — ` の形で投稿し直して手順 6' "$DECLARATIONS"
+  grep -qF '判断できない → 宣言を変えずに手順 6' "$DECLARATIONS"
+}
+
+@test "no-point (#1653): hold.md step 6-0 has the check before asking the owner, with the roles that start the decider" {
+  s="$(no_point_section)"
+  [ -n "$s" ]
+  echo "$s" | grep -qF 'subagent_type: dev-workflow:decider'
+  echo "$s" | grep -qF 'model: opus'
+  echo "$s" | grep -qF '`needs-approval` を付けずに Status `needs-no-point-check`・`次の段: 合格処理`'
+  echo "$s" | grep -qF 'develop の外のゲートは自分で決める役を起こす'
+  echo "$s" | grep -F '従来経路の一括の G' | grep -qF '手順 6 で主に聞く'
+  echo "$s" | grep -qF '親（エピック）は確かめない'
+}
+
+@test "no-point (#1653): hold.md 6-0 passes only the declaration and the PR diff and asks for a 2-line answer" {
+  s="$(no_point_section)"
+  echo "$s" | grep -qF '宣言の本文と PR の差分だけ'
+  echo "$s" | grep -qF '判定: 論点なし'
+  echo "$s" | grep -qF '判定: 論点あり'
+  echo "$s" | grep -qF '判定: 判断できない'
+  echo "$s" | grep -qF '理由: <1 行>'
+}
+
+@test "no-point (#1653): hold.md 6-0 has the record format and it is not an owner answer" {
+  s="$(no_point_section)"
+  echo "$s" | grep -qxF '論点なしの確認: 通す|論点あり|判断できない'
+  echo "$s" | grep -qxF '対象 HEAD: <40 桁フル SHA>'
+  echo "$s" | grep -qxF '宣言: <宣言コメントの URL>'
+  echo "$s" | grep -qxF '確認者: dev-workflow:decider（<エージェント名>）'
+  echo "$s" | grep -qxF '根拠: <決める役の理由の 1 行>'
+  echo "$s" | grep -qF '1 行目は `主の回答:` で始まらない'
+  echo "$s" | grep -qF '引き継ぎの元にしない'
+}
+
+@test "no-point (#1653): hold.md 6-0 sends a has-point result and an undecidable result to step 6, and depleted posts undecidable" {
+  s="$(no_point_section)"
+  echo "$s" | grep -qF '論点あり — ` の形で投稿し直して手順 6'
+  echo "$s" | grep -qF '宣言を変えずに手順 6'
+  echo "$s" | grep -F 'SHARED_BUDGET_MODE=depleted' | grep -qF '論点なしの確認: 判断できない'
+  echo "$s" | grep -qF '`論点あり — ` の行を持つ宣言はこの確認に回さない'
+}
+
+@test "no-point (#1653): hold.md 3-c never carries over the no-point check record and retakes it on a new HEAD" {
+  sec="$(awk '/^#### 3-c\./{f=1} /^##### 終了コード 4 の判定役/{f=0} f' "$HOLD")"
+  echo "$sec" | grep -F '論点なしの確認:' | grep -qF '引き継ぎの元にしない'
+  echo "$sec" | grep -qF '新しい HEAD の宣言で論点なしの確認を取り直す'
+}
+
+@test "no-point (#1653): the session split sentence for starting the decider covers the no-point check" {
+  grep -F '**起こすセッションの区別**' "$HOLD" | grep -qF '論点なしの確認'
+}
+
+@test "no-point (#1653): the first of the four categories is limited to has-point or a failed no-point check" {
+  row="$(grep -E '^\| 1 \| リスク許容の確認 \|' "$HOLD")"
+  echo "$row" | grep -qF '論点ありの宣言か、論点なしの確認で通らなかったものに限る'
+}
+
+@test "no-point (#1653): the G return format has a needs-no-point-check section with the four fields" {
+  s="$(awk '/^### needs-no-point-check のとき/{f=1;print;next} f&&/^```/{exit} f' "$HOLD")"
+  [ -n "$s" ]
+  echo "$s" | grep -qF '宣言のコメントのリンク'
+  echo "$s" | grep -qF '対象 HEAD'
+  echo "$s" | grep -qF '該当する観点'
+  echo "$s" | grep -qF '変更ファイル'
+}
+
+@test "no-point (#1653): pass.md step 5 accepts the same-HEAD same-declaration no-point check record" {
+  row="$(grep -F '| 「**主のリスク許容が必要**」を投稿済み' "$PASS_STAGE" | grep -F '論点なしの確認: 通す')"
+  [ -n "$row" ]
+  echo "$row" | grep -qF '論点なし — '
+  echo "$row" | grep -qF '同じ HEAD・同じ宣言の URL'
+  echo "$row" | grep -qF '| 可 |'
+}
+
+@test "no-point (#1653): pass.md lists needs-no-point-check in the entry and the return line" {
+  grep -F '前の Gate Result が `段: 合格処理`・Status `needs-no-point-check`' "$PASS_STAGE" | grep -qF '論点なしの確認:'
+  grep -F '保留を返すときは' "$PASS_STAGE" | grep -qF '`needs-no-point-check`'
+}

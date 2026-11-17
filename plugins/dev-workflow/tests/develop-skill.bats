@@ -938,6 +938,27 @@ refute() {
   echo "$row" | grep -qF '起こさない'
 }
 
+@test "no-point check (#1653): step (4) handles needs-no-point-check by starting the decider, posting the record and starting the pass G" {
+  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
+  echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-no-point-check'
+  nc="$(echo "$step4" | awk '/^      needs-no-point-check →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  [ -n "$nc" ] || { echo "no needs-no-point-check line in step (4)"; return 1; }
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '宣言の本文と PR の差分だけ' '記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '6-0' 'SHARED_BUDGET_MODE=depleted' '`論点なしの確認: 判断できない`' 'ラベルを付けず' '主に聞かない' '同じ宣言・同じ HEAD' '起こし直さず'; do
+    echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  # 記録の書式は hold.md を正本にし、SKILL.md に再掲しない
+  ! echo "$nc" | grep -qF '確認者: dev-workflow:decider（' || return 1
+}
+
+@test "no-point check (#1653): the model table has the no-point checker row (decider, opus, not started when depleted)" {
+  row="$(section 'モデル' | grep -E '^\| ' | grep -F '論点なしの確認役')"
+  [ -n "$row" ] || { echo "no no-point checker row"; return 1; }
+  echo "$row" | grep -qF '`dev-workflow:decider`'
+  echo "$row" | grep -qF '`opus`'
+  echo "$row" | grep -qF 'depleted'
+  echo "$row" | grep -qF '起こさない'
+}
+
 @test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {
   s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
