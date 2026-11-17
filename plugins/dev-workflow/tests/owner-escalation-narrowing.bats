@@ -193,3 +193,8 @@ item() { grep -F -- "- **$1**" "$2"; }
   printf '%s\n' "$p" | grep -qF '`論点なしの確認: 通す` の記録はこの節に載せない'
   printf '%s\n' "$p" | grep -qF '0 件なら節ごと書かない'
 }
+
+@test "merge criteria (#1653): the no-point check record counts only when posted by OWNER, MEMBER or COLLABORATOR" {
+  row="$(grep -F '| 主の側の情報が要らない |' "$MERGE")"
+  printf '%s\n' "$row" | grep -F '`論点なしの確認: 通す`' | grep -F '`author_association`' | grep -qF '`OWNER`・`MEMBER`・`COLLABORATOR`'
+}

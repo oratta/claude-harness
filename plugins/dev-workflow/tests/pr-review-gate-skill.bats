@@ -2475,3 +2475,16 @@ no_point_section() { awk '/^#### 6-0\. 論点なしの宣言の確認/{f=1;print
   grep -F '前の Gate Result が `段: 合格処理`・Status `needs-no-point-check`' "$PASS_STAGE" | grep -qF '論点なしの確認:'
   grep -F '保留を返すときは' "$PASS_STAGE" | grep -qF '`needs-no-point-check`'
 }
+
+@test "no-point (#1653): the no-point check record is used only when posted by OWNER, MEMBER or COLLABORATOR" {
+  sel="$(grep -F -- '- **記録の選び方**' "$HOLD")"
+  [ -n "$sel" ]
+  printf '%s\n' "$sel" | grep -F '`論点なしの確認:`' | grep -F '`author_association`' | grep -qF '`OWNER`・`MEMBER`・`COLLABORATOR`'
+  row="$(grep -F '`論点なしの確認: 通す` の記録' "$PASS_STAGE" | grep -F '| 可 |')"
+  [ -n "$row" ]
+  printf '%s\n' "$row" | grep -F '`author_association`' | grep -qF '`OWNER`・`MEMBER`・`COLLABORATOR`'
+  for spec in "$PLUGIN_ROOT/openspec/specs/dev-workflow-pr-review-gate/spec.md" "$PLUGIN_ROOT/openspec/changes/archive/2026-11-17-narrow-owner-escalation/specs/dev-workflow-pr-review-gate/spec.md"; do
+    scope="$(awk '/^### Requirement: 論点なしの確認の経路の守備範囲$/{f=1;next} f&&/^#### /{exit} f' "$spec")"
+    printf '%s\n' "$scope" | grep -qF '`論点なしの確認:` の記録（投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のもの）' || { echo "scope not narrowed: $spec"; return 1; }
+  done
+}

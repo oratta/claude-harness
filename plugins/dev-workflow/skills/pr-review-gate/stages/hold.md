@@ -121,7 +121,7 @@ bash <plugin>/scripts/risk-carryover-check.sh <前 HEAD> <新しい HEAD> <前�
 
 - `SHARED_BUDGET_MODE=depleted` のときは決める役を起こさず、起こす側が `論点なしの確認: 判断できない`・`根拠: 決める役を起こさなかった（共有枠 depleted）` の記録を投稿する。develop の G は depleted でも `needs-no-point-check` で返し、記録を自分で投稿しない
 - **結果ごとの後続**: `通す` なら手順 6 に入らず `stages/pass.md` の手順 4・5 へ進む（同じ HEAD・同じ宣言の URL の記録が合格条件の表で許容済みとして扱われる）。`論点あり` なら G は宣言を `論点あり — ` の形で投稿し直して手順 6（下の 1 から）。`判断できない` なら宣言を変えずに手順 6
-- **記録の選び方**: 同じ PR の 1 行目が `論点なしの確認:` のコメントのうち、`対象 HEAD:` が今の HEAD の 40 桁と、`宣言:` が今の HEAD の宣言コメントの URL と一致する最新 1 件だけを使う。一致する記録があれば決める役を起こし直さない（develop の G は `needs-no-point-check` を返し直さない）。記録を受けて起こされた合格処理の G（前の Gate Result が `段: 合格処理`・Status `needs-no-point-check`）が一致する記録を見つけられないときは、`needs-no-point-check` を返し直さず手順 6 で主に聞く（同じ宣言で決める役を何度も起こさないため）
+- **記録の選び方**: 同じ PR の 1 行目が `論点なしの確認:` で、投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれかのコメントのうち、`対象 HEAD:` が今の HEAD の 40 桁と、`宣言:` が今の HEAD の宣言コメントの URL と一致する最新 1 件だけを使う。一致する記録があれば決める役を起こし直さない（develop の G は `needs-no-point-check` を返し直さない）。記録を受けて起こされた合格処理の G（前の Gate Result が `段: 合格処理`・Status `needs-no-point-check`）が一致する記録を見つけられないときは、`needs-no-point-check` を返し直さず手順 6 で主に聞く（同じ宣言で決める役を何度も起こさないため）
 
 1. `agent-review:passed` は**付けない**。`needs-approval` を付ける（`gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=needs-approval'`）。
 2. リポに保留を主へミラーする仕組み（pending 管理ファイルとその同期スクリプト等）が**あればそれに従って記録する**。無ければ、PR の `needs-approval` ラベルと宣言コメントが保留の正本になる。
