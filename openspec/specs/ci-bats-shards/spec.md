@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change ci-bats-shards. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: scripts/test.sh は TEST_SHARD で全体を分けた 1 組だけを実行できる
 
 `scripts/test.sh` は、環境変数 `TEST_SHARD=k/N`（k と N は 1 以上の整数で k ≦ N）が与えられたとき、`git ls-files -- '*.bats' ':(exclude)_longruns/'` の一覧のスイートを次の規則で N 個の組に分け、k 番目の組のスイートだけを対象にしなければならない（MUST）。規則は、スイートごとの `@test` の件数（行頭が `@test` の行の数）に 1 を足した値を重み（`@test` が 0 件のスイートも 1 と数える）とし、重い順（重みが同じものは一覧の順）に並べて、その時点で重みの合計がいちばん小さい組（同点なら番号の小さい組）へ順に配ることである。割り当ては一覧のパスとファイルの中身だけで決まり、どの組のジョブでも同じになる。組の割り当ては、位置引数のフィルタと `TEST_EXCLUDE` を当てる前の一覧に対して決めなければならない（MUST）。割り当てのあとの対象には、既存のフィルタと `TEST_EXCLUDE` をそのまま当てる。
@@ -174,3 +176,28 @@ bats の `--jobs` を使ってはならない（MUST NOT）。
 - **WHEN** `ci.yml` を確認する
 - **THEN** `scripts/test-auto-merge-workflow.sh` を実行するステップは `name: shellcheck` のジョブにちょうど 1 つあり、matrix で分けたジョブには無い
 
+### Requirement: bats のジョブはランナーの版と bats の版をそろえて固定する
+
+`.github/workflows/ci.yml` の分けた bats のジョブは、`runs-on:` に `ubuntu-<数字>.<数字>` の形でランナーの版を 1 行で書き、`ubuntu-latest` や式を使ってはならない（MUST NOT）。bats は `apt-get install` に `bats=<版>` の形で版を書いて入れ、そのステップ名は `install bats (<版>)` で同じ版を示さなければならない（MUST）。書く版は、そのランナーの apt にある版でなければならない（MUST）。
+
+守備範囲: 入力はリポジトリ編集者が変える `ci.yml` とテスト用の写し。拾う誤りはランナーか bats の固定外しと、`bats=` とステップ名の版のずれ。形と版がそろえば apt に無い組でも構造検査は通す（実在は CI の `install bats` が確かめる）。検査をすり抜ける書き方を塞ぎ切ることは完了条件にしない。
+
+#### Scenario: このリポジトリの ci.yml の固定がそろっている
+
+- **WHEN** `scripts/test.sh ci-bats-shards` を実行する
+- **THEN** 分けたジョブの `runs-on:` が `ubuntu-<数字>.<数字>` の形で、`bats=<版>` の版とステップ名 `install bats (<版>)` の版が等しいことを確かめるテストが `ok` になる
+
+#### Scenario: ランナーの版を固定しない写しは検知される
+
+- **WHEN** 分けたジョブの `runs-on:` を `ubuntu-latest` にした `ci.yml` の写しと、`${{ vars.CI_RUNNER }}` のような式にした写しのそれぞれに、固定を確かめる検査を当てる
+- **THEN** どちらも検査が失敗する
+
+#### Scenario: bats の版を書かない写しと、ステップ名の版がずれた写しは検知される
+
+- **WHEN** `bats=<版>` を `bats` だけにした `ci.yml` の写しと、`bats=<版>` だけを別の版に書き換えてステップ名をそのままにした写しのそれぞれに、固定を確かめる検査を当てる
+- **THEN** どちらも検査が失敗する
+
+#### Scenario: CI で bats を入れる手順が通る
+
+- **WHEN** この変更の PR と、マージ後の main で CI が走る
+- **THEN** 分けたジョブ 4 つの `install bats` の手順が成功し、`gh run view <run> --log` に `was not found` が出ず、`bats suites` のチェックが bats の結果で決まる

@@ -13,7 +13,7 @@
 ## 3. 確かめ
 
 - [x] 3.1 `scripts/lint.sh` と `scripts/test.sh ci-bats-shards` が通ることを確かめる
-- [ ] 3.2 PR の CI で、分けたジョブ 4 つの `install bats (1.10.0-1)` が成功し、`gh run view <run> --log` に `was not found` が出ず、`bats suites` が bats の結果で緑か赤になることを確かめる（AC1）
+- [x] 3.2 PR の CI で、分けたジョブ 4 つの `install bats (1.10.0-1)` が成功し、`gh run view <run> --log` に `was not found` が出ず、`bats suites` が bats の結果で緑か赤になることを確かめる（AC1）
 
 ## Workflow follow-up
 
