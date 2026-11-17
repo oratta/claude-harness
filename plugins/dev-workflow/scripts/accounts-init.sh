@@ -56,9 +56,16 @@ if [ -z "$SLOT_ID" ]; then
   usage >&2
   exit 2
 fi
-case "$SLOT_ID" in
-  *[!A-Za-z0-9-]*|"") printf 'invalid --id: %s\n' "$SLOT_ID" >&2; exit 2 ;;
-esac
+# accounts.sh の check_id() と同じ検査にする。bash 3.2 + UTF-8 ロケールでは
+# [!A-Za-z0-9-] が照合順で評価され、全角の英数字が通るので、関数内だけ LC_ALL=C に固定する
+# （label の検査と長さは従来のロケールのまま）。
+id_is_valid() {
+  local LC_ALL=C
+  case "$1" in
+    ""|*[!A-Za-z0-9-]*) return 1 ;;
+  esac
+}
+id_is_valid "$SLOT_ID" || { printf 'invalid --id: %s\n' "$SLOT_ID" >&2; exit 2; }
 [ "${#SLOT_ID}" -le 32 ] || { printf '--id is too long (max 32)\n' >&2; exit 2; }
 [ -n "$SLOT_LABEL" ] || SLOT_LABEL="$SLOT_ID"
 # label は snapshot 経由で TSV に載るので、区切りを壊す制御文字を弾く。
