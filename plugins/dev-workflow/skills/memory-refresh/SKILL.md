@@ -26,7 +26,7 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 
 - 置き場所: frontmatter の `metadata:` の下（上の例）か、トップレベルの `patches:`。本文の中の `patches:` は読まれない
 - 値: 直し先の GitHub の issue の URL 1 本（`https://github.com/<owner>/<repo>/issues/<番号>`）。引用符で囲まない。PR の URL・番号だけ・複数の URL は読まれない
-- 検知: `memory-tripwire.sh` が URL ごとに 1 日 1 回 `gh issue view` で状態を確かめ、閉じていれば `[memory]` の 1 行に「ファイル名 ← URL」で出す（閉じ方は分けない）。控えはメモリディレクトリの外の `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.memory-patches-cache.tsv`（`DEV_WORKFLOW_MEMORY_PATCHES_CACHE` で変えられる）。その日の最初のセッションで控えの無い URL があるときだけ、最大 `DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT` 秒（既定 3。0 で確かめない）待つ。`gh` が無い・認証切れ・オフラインのときは何も出さない。急いで確かめ直すときは控えのファイルを消す
+- 検知: `memory-tripwire.sh` がセッションの開始時に、URL ごとの状態を裏のプロセスで `gh issue view` に確かめて控えに書き、閉じていればその次のセッションの `[memory]` の 1 行に「ファイル名 ← URL」で出す（閉じ方は分けない。閉じたあと 2 回目のセッションになることがある）。開始の処理は控えだけを読み、照会を待たない。当日に閉じたと控えた URL は確かめ直さない。控えはメモリディレクトリの外の `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.memory-patches-cache.tsv`（`DEV_WORKFLOW_MEMORY_PATCHES_CACHE` で変えられる）。裏の確認は `DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT` 秒（既定 3。0 で確かめない）で打ち切る。`gh` が無い・認証切れ・オフラインのときは何も出さない
 
 ## 手順
 

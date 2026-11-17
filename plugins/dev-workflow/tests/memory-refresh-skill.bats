@@ -81,7 +81,8 @@ PY
   [ -n "$s" ]
   printf '%s\n' "$s" | grep -F '置き場所' | grep -F '`metadata:` の下' | grep -qF 'トップレベル'
   printf '%s\n' "$s" | grep -F '値:' | grep -qF 'issue の URL 1 本'
-  printf '%s\n' "$s" | grep -F '検知:' | grep -F 'memory-tripwire.sh' | grep -qF '1 日 1 回'
+  printf '%s\n' "$s" | grep -F '検知:' | grep -F 'memory-tripwire.sh' | grep -F '裏' | grep -qF '次のセッション'
+  ! printf '%s\n' "$s" | grep -qF '1 日 1 回'
   printf '%s\n' "$s" | grep -qF '.memory-patches-cache.tsv'
   printf '%s\n' "$s" | grep -qF 'DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT'
 }
