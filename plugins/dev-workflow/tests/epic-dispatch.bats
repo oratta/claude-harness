@@ -3999,7 +3999,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — <理由> 発言 <止まりの uuid か 不明>'
   printf '%s\n' "$p" | grep -F '判断が「主に上げる」' | grep -qF '判断できなかった'
   printf '%s\n' "$p" | grep -F '覆して通す' | grep -qF '3 つの理由のどれにも当たらない根拠を 1 文で'
-  printf '%s\n' "$p" | grep -F '主に聞く理由が成り立つか迷うときは' | grep -qF '主に上げる'
+  printf '%s\n' "$p" | grep -F '主に上げるのは' | grep -F '根拠' | grep -qF '示せなければ通す'
   # マージ待ちの止まりは照らし直さず、マージ待ちの子の手順に進む
   printf '%s\n' "$p" | grep -F '`PR のマージ待ち（` で始まる' | grep -F '照らし直さず' | grep -qF '**マージ待ちの子**'
   printf '%s\n' "$p" | grep -F '送信だけが失敗' | grep -qF 'reply --as parent'
@@ -4140,7 +4140,7 @@ orca_cmd_scripts() {
   grep -F '`主に聞く理由:`' "$f" | grep -qF '鵜呑みにしない'
   grep -F '`主に聞く理由: なし（…）`' "$f" | grep -qF '通す側で読む'
   grep -F '項目の無い記録' "$f" | grep -qF 'ほかの項目から'
-  grep -F '主に聞く理由が成り立つか迷うときは' "$f" | grep -qF '成り立つ側に倒す'
+  run grep -F '成り立つ側に倒す' "$f"; [ "$status" -eq 1 ]
 }
 
 # spec: dev-workflow-develop（親が通してよい範囲の基準は、CI の見張りのやり直しの上限で止まった子の扱いを決める）
@@ -4202,7 +4202,8 @@ orca_cmd_scripts() {
   printf '%s\n' "$sec" | grep -F '節の外のランナーの確認を含む推奨の読み方について' | grep -qF '読み広げない'
   printf '%s\n' "$sec" | grep -F '「ランナーの確認を含む止まりを通すこと」はこの節の対象の止まりに限り' | grep -qF '表の下の「ランナーの状態の確認を含む推奨の読み方」で決める'
   printf '%s\n' "$sec" | grep -F '優先順位について拾いたい誤りは' | grep -qF '上限で止まった子の再実行を通る例で通すこと'
-  printf '%s\n' "$sec" | grep -F '再び止まれば次は主に上がる）と、通してよい止まりを判断のモデルが主に上げることは許す' >/dev/null
+  printf '%s\n' "$sec" | grep -F '再び止まれば次は主に上がる）は許す' >/dev/null
+  run grep -F '通してよい止まりを判断のモデルが主に上げることは許す' <<<"$sec"; [ "$status" -eq 1 ]
   printf '%s\n' "$pr" | grep -F 'job-timeout' | grep -F '手順 7 の止まりも' | grep -qF '主に上げる'
   # 通る例の「CI の再実行」の行の行末に、節が先に効くと添えてある（括弧の中は変えない）
   grep -F -e '- CI の再実行（' "$f" | grep -qE '上限で止まった子は.*先に効く$'
@@ -4241,7 +4242,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -F 'エピック本文の目的・原則・決まった方針' | grep -F '一意に決める' | grep -qF '「主の側の情報が要らない」を満たすと読む'
   printf '%s\n' "$p" | grep -qF 'ほかの 8 条件'
   printf '%s\n' "$p" | grep -F '聖域' | grep -F '破壊的' | grep -F 'リスクの許容' | grep -qF '目的・原則が推奨を決めていても通さない'
-  printf '%s\n' "$p" | grep -F '1 つに決まらない' | grep -qF '迷ったとき'
+  printf '%s\n' "$p" | grep -F '1 つに決まらない' | grep -qF '主に上げるとき'
   # リスクは表の「その子のブランチの中に閉じるもの」と揃え、解釈の揺れは推奨が変わるときに限る（#1254 のゲートの指摘）
   printf '%s\n' "$p" | grep -qF '許容と書かれておらず、その子のブランチの中にも閉じないリスク'
   printf '%s\n' "$p" | grep -qF '原則の語が 2 通り以上に読め、読み方で推奨が変わる'
