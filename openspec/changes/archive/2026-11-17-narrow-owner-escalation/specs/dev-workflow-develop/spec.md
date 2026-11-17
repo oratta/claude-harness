@@ -343,7 +343,7 @@ develop の手順書（`skills/develop` 配下）に `orca` のサブコマン�
 
 ### Requirement: 親は論点なしの止まりの委任で、マージ待ちの子の PR に判断の印を付ける
 
-`references/epic.md` と `parent-merge-criteria.md` は、`主の委任: 論点なしの止まり` が効くマージ待ちの子を、既存の `parent-merge-approved` の経路に乗せて進める手順を書かなければならない（MUST）。親は、委任が有効か・子の最後の発言の時刻が委任の確認の timestamp より後か・今の HEAD の `論点なしの確認: 通す` の記録があるか・`parent-merge-criteria.md` の可の条件を確かめ、PR のマージ判断のコメントに `主の委任: <委任の記録の URL>` を追記してから `parent-merge-approved` の印を付ける（MUST）。エピックには `委任で送った: 子 #<N> <最後の発言の uuid> 委任の記録: <URL>` を残す。子には承認もマージもさせず、マージの完了を待たせる（MUST）。
+`references/epic.md` と `parent-merge-criteria.md` は、`主の委任: 論点なしの止まり` が効くマージ待ちの子を、既存の `parent-merge-approved` の経路に乗せて進める手順を書かなければならない（MUST）。親は、委任が有効か・子の最後の発言の時刻が委任の確認の timestamp より後か・今の HEAD の `論点なしの確認: 通す` の記録があるか・`parent-merge-criteria.md` の可の条件を確かめ（決める役には、委任の記録の本文と URL と `委任の確認の場所:` の行を渡す。MUST）、PR のマージ判断のコメントに `主の委任: <委任の記録の URL>` を追記してから `parent-merge-approved` の印を付ける（MUST）。エピックには `委任で送った: 子 #<N> <最後の発言の uuid> 委任の記録: <URL>` を残す。子には承認もマージもさせず、マージの完了を待たせる（MUST）。
 
 #### Scenario: 委任があれば論点なしの確認で通ったマージ待ちに印を付ける
 

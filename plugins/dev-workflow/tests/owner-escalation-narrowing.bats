@@ -205,3 +205,12 @@ item() { grep -F -- "- **$1**" "$2"; }
   row="$(grep -F '| 主の側の情報が要らない |' "$MERGE")"
   printf '%s\n' "$row" | grep -F '`論点なしの確認: 通す`' | grep -F '`author_association`' | grep -qF '`OWNER`・`MEMBER`・`COLLABORATOR`'
 }
+
+@test "epic merge wait (#1653): the decider gets the no-point delegation record and its confirmation line when one is valid" {
+  p="$(para 'マージ待ちの子' "$EPIC")"
+  [ -n "$p" ]
+  printf '%s\n' "$p" | grep -qF '有効な `主の委任: 論点なしの止まり` があれば、その記録の本文と URL、親が確かめた `委任の確認の場所:` の行' || { echo "epic.md: delegation not passed to decider"; return 1; }
+  root="$(cd "$PLUGIN_DIR/../.." && pwd)"
+  judge="$(awk '/^### Requirement: Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける$/{f=1;next} f&&/^### /{exit} f' "$root/openspec/specs/dev-workflow-develop/spec.md" | grep -F -- '- **判断**')"
+  printf '%s\n' "$judge" | grep -qF '有効な `主の委任: 論点なしの止まり` があれば、その記録の本文と URL、親が確かめた `委任の確認の場所:` の行' || { echo "spec: delegation not passed to decider"; return 1; }
+}
