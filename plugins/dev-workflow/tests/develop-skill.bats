@@ -1101,7 +1101,7 @@ refute() {
 # 「委任が有効か」の 6 条件と「委任が効く止まり」の 4 条件は、epic.md・epic-child-stop.md・pr-review-gate の pass.md に
 # 同じ文字列で入れる（pass.md 側は pr-review-gate-skill.bats が同じ文字列で検査する）。
 
-DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1〜4 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
+DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1 行目が `主の委任: リスク許容` なら 1〜4 行目が、`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
 DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 DELEG_RECOMMEND='`推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 
@@ -1129,11 +1129,12 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "delegated reply (#1293): the confirmation question asks to type the delegation word right after it, and re-asks when unreadable or interrupted" {
   p="$(deleg_para | grep -F -- '- **委任の受け方**')"
-  echo "$p" | grep -qF '親のタブで `任せる` を、この問いの直後に別の発言を挟まずに打つ'
+  # #1653: 挟まった発言だけでは問い直さない（`not-direct` で落とさない）
+  echo "$p" | grep -qF '親のタブで `任せる` と打つ'
   echo "$p" | grep -qF '質問ツールで聞かない'
   echo "$p" | grep -qF '任せる意思が読めないとき'
-  echo "$p" | grep -qF 'not-direct'
-  echo "$p" | grep -qF '問いを本文で出し直してから確認を受け直す'
+  echo "$p" | grep -qF '挟まっただけでは問い直さない'
+  echo "$p" | grep -qF '委任を使わず問いを出し直す'
   echo "$p" | grep -qF 'その発言だけを委任として扱わない'
 }
 
@@ -1170,7 +1171,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   p="$(deleg_para | grep -F -- '- **委任で送る**')"
   echo "$p" | grep -qF 'reply --as owner'
   echo "$p" | grep -qF '`許容する（主の委任による。停止の記録: <URL>） [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]`'
-  echo "$p" | grep -qF '`委任で送った: 子 #<N> <停止の記録の URL>`'
+  echo "$p" | grep -qF '`委任で送った: 子 #<N> <停止の記録の URL> 委任の記録: <委任の記録の URL>`'
   echo "$p" | grep -qF '`親の判断:` で始めない'
   echo "$p" | grep -qF '手順 8 の形で主に上げる'
 }
@@ -1182,7 +1183,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "delegated reply (#1293): the parent route has a scope paragraph" {
   p="$(deleg_para | grep -F -- '- **守備範囲**')"
-  for w in '①入力の出どころ' '②拾いたい誤り' '③確認に `任せる` 以外の語で任せる意思が読める答えは通してよい' '④穴を塞ぎ切ることは完了条件にしない'; do
+  for w in '①入力の出どころ' '②拾いたい誤り' '③確認に `任せる` 以外の語で任せる意思が読める答えと' '④穴を塞ぎ切ることは完了条件にしない'; do
     echo "$p" | grep -qF "$w" || return 1
   done
 }
@@ -1201,8 +1202,9 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   item="$(child_reply_item)"
   echo "$item" | grep -qF '止まりに委任が効かないときは G を起こさず'
   # 委任の返事はリスク許容待ちの止まりにだけ受ける（P3-F1）
-  echo "$item" | grep -qF '止まった件がリスク許容への返事待ち（pr-review-gate 手順 3 の宣言で止まった件）のときだけ受け、上の `--relayed` に掛けず'
-  echo "$item" | grep -qF '止まった件がリスク許容への返事待ちでない（聖域の変更・破壊的な操作・マージ・実機操作などで止まった）、または止まりに委任が効かないときは G を起こさず'
+  # #1653: 聖域の変更・破壊的な git 操作の承認待ちも記録を残す止まりに入った
+  echo "$item" | grep -qF '止まった件が記録を残す止まり（リスク許容・聖域の変更の承認・破壊的な git 操作の承認の返事待ち）のときだけ受け、上の `--relayed` に掛けず'
+  echo "$item" | grep -qF '止まった件が記録を残す止まりでない（マージ待ち・実機操作などで止まった）、または止まりに委任が効かないときは G を起こさず'
   echo "$item" | grep -qF '確かめられなかった理由（`REASON=` の値か満たさなかった条件）'
   echo "$item" | grep -qF '③親と子が同じ PC で動き、委任の確認のあとに親が起動し直したものは通してよい'
   # [主の発言: …] の経路の文は変えない
