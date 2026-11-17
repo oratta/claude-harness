@@ -244,3 +244,12 @@ issue1209_terms() {
   grep -F '主に聞く理由:' "$c" | grep -qF '論点なし'
   grep -F 'マージで新たに生じるリスク:' "$c" | grep -qF '新たに生じるもの'
 }
+
+@test "issue1653: canonical and short both treat design forks as an owner view that goes into the report" {
+  for t in '運用の形・構造の分け方・将来の拡張に効く設計の分かれ目' '主の指摘が効く観点' '決めた内容と他の案を報告に載せる'; do
+    section3 | grep -qF -- "$t" || { echo "canonical lacks: $t"; return 1; }
+    short3 | grep -qF -- "$t" || { echo "short lacks: $t"; return 1; }
+  done
+  # 主に聞く理由は 3 つのまま（設計の分かれ目を理由に数えない）
+  section3 | grep -F '設計の分かれ目' | grep -qF 'この 3 つに数えない'
+}
