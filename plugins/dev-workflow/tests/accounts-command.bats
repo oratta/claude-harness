@@ -443,3 +443,17 @@ assert [s["label"] for s in d["accounts"] if s["id"]=="s3"]==["S3b"], d
   [ "$status" -eq 0 ]
   [[ "$output" == -a$'\t'A$'\t'on* ]] || return 1
 }
+
+@test "accounts-init.sh: a full-width id is rejected with exit 2 even under a UTF-8 locale, registry untouched" {
+  # macOS の /bin/bash 3.2 では [!A-Za-z0-9-] が照合順で評価され、全角の英数字が通っていた。
+  printf '{"schema":1,"accounts":[]}\n' > "$CLAUDE_ACCOUNTS_FILE"
+  cp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/orig"
+  export LC_ALL=en_US.UTF-8
+  run /bin/bash "$INIT" --id ｂ
+  [ "$status" -eq 2 ]
+  cmp "$CLAUDE_ACCOUNTS_FILE" "${WORK}/orig"
+  run /bin/bash "$INIT" --id b
+  [ "$status" -eq 0 ]
+  run /bin/bash "$INIT" --id work-2
+  [ "$status" -eq 0 ]
+}
