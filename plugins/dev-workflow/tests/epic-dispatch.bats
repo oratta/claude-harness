@@ -3828,10 +3828,11 @@ orca_cmd_scripts() {
   ! grep -qF 'mark resumed' "$EPIC_CHILD_STOP" || return 1
   ! grep -qF 'mark resumed/stopped' "$EPIC_CHILD_STOP" || return 1
   ! grep -qF '記録と印' "$EPIC_CHILD_STOP" || return 1
-  # 記録を残すのはリスク許容の返事待ちだけで、質問より先に投稿する
+  # 記録を残すのはリスク許容・聖域の変更・破壊的な git 操作の返事待ちだけで、質問より先に投稿する
   l="$(printf '%s\n' "$r" | grep -F 'pr-review-gate 手順 3 の宣言')"
   printf '%s\n' "$l" | grep -qF '質問より先に'
-  printf '%s\n' "$l" | grep -qF 'それ以外の止まりでは記録を残さない'
+  # #1653: 聖域の変更・破壊的な git 操作の承認待ちも記録を残す止まりに入った
+  printf '%s\n' "$l" | grep -qF 'それ以外の止まり（マージ待ち・実機操作など）では記録を残さない'
   printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
   # 親に気づかせる手順は子に無い。親の wait が会話ログから気づく
   printf '%s\n' "$r" | grep -F '`wait`' | grep -qF '子の会話ログ'
