@@ -459,13 +459,13 @@ codex_name_env() {
   printf '{"tokens":{"account_id":"test"}}' > "$CODEX_HOME/auth.json"
   printf '#!/bin/sh\nexit 0\n' > "$WORK/no-codex"
   chmod 700 "$WORK/no-codex"
-  # 取得を後ろに倒したキャッシュを置き、描画が裏で refresh を起こさないようにする（teardown との競合を避ける）
+  # 取得を後ろに倒したキャッシュを置き、描画が裏で refresh を起こさないようにする（teardown との競合を避ける）。next_attempt は now+TTL+5 以内に収める（遠い未来だと read_json が破損扱いで {} を返し、描画のたびに --refresh の子が $WORK に書く）
   python3 - "$CODEX_HOME" "$WORK/.statusline-codex" <<'PY'
-import hashlib, json, pathlib, sys
+import hashlib, json, pathlib, sys, time
 home = pathlib.Path(sys.argv[1])
 auth = (home / "auth.json").read_bytes()
 key = hashlib.sha256(str(home.resolve()).encode() + b"\0" + auth).hexdigest()
-pathlib.Path(sys.argv[2]).write_text(json.dumps({"identity": key, "next_attempt": 4102444800}))
+pathlib.Path(sys.argv[2]).write_text(json.dumps({"identity": key, "next_attempt": int(time.time()) + 100}))
 PY
 }
 
