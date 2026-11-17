@@ -1009,8 +1009,9 @@ refute() {
   while IFS= read -r line; do
     printf '%s\n' "$line" | grep -qF '主の手でしかできない操作に入らない' || { echo "not excluded: $line"; return 1; }
   done <<< "$lb"
-  # 主の名義で外へ出る・取り消せない操作は、規則が主の承認を求める操作として聞く
-  ap="$(printf '%s\n' "$sentences" | grep -F '主の名義で外へ公開・送信する・課金する・取り消せない')"
+  # 主の名義で外へ出る・権限を渡す（OAuth の認可）・取り消せない操作は、同じ文で、規則が主の承認を
+  # 求める操作として聞く（OAuth の認可を主の手の操作から外しても、承認の側に残す。P2-F1）
+  ap="$(printf '%s\n' "$sentences" | grep -F '主の名義で外へ公開・送信する・課金する・外部のアプリやサービスに権限を渡す（OAuth の認可を含む）・取り消せない')"
   [ -n "$ap" ] || { echo "no approval sentence"; return 1; }
   printf '%s\n' "$ap" | grep -qF '規則が主の承認を求める操作として聞く' || { echo "approval not split: $ap"; return 1; }
 }
