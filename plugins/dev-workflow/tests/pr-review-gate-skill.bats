@@ -2380,7 +2380,7 @@ triage_line() {
 no_point_section() { awk '/^#### 6-0\. 論点なしの宣言の確認/{f=1;print;next} f&&/^#### |^### /{exit} f' "$HOLD"; }
 
 @test "no-point (#1653): the no-point line no longer asks the owner for an OK by rule" {
-  ! grep -qF '決まりで主の OK が要る' "$DECLARATIONS"
+  run grep -qF '分類に当たったので決まりで主の OK が要る' "$DECLARATIONS"; [ "$status" -eq 1 ]
   grep -qxF '論点なし — 分類に当たったが、この変更を入れることで新たに生じるリスクは無い。決める役の確認で通す。' "$DECLARATIONS"
 }
 
