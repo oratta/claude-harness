@@ -1141,6 +1141,24 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   echo "$rf" | grep -qF '`stages/hold.md`'
 }
 
+# ===== 論点なしの確認（issue #1653）=====
+
+@test "gate-runner (#1653): Status list and next-stage table carry needs-no-point-check routed to the pass stage" {
+  common="$(awk '/^## Gate Result/{f=1} f&&/^```$/{exit} f' "$GATE")"
+  echo "$common" | grep -E '^- Status: ' | grep -qF 'needs-no-point-check'
+  grep -qxF '| needs-no-point-check | `合格処理` |' "$GATE"
+  grep -F 'Status ごとの欄の書式は' "$GATE" | grep -qF '`needs-no-point-check` は `stages/hold.md`'
+}
+
+@test "gate-runner (#1653): the pass rows take the no-point check record" {
+  row="$(grep -E '^\| 合格処理 \|' "$GATE")"
+  echo "$row" | grep -qF '論点なしの確認を受け取ったとき'
+  echo "$row" | grep -qF '論点なしの確認の記録の URL'
+  echo "$row" | grep -qF '`needs-no-point-check`'
+  rf="$(grep -E '^\| 合格処理（手順 3' "$GATE")"
+  echo "$rf" | grep -qF '`needs-no-point-check` を返すとき'
+}
+
 # TTY の無い Bash ツールでは `openspec archive <change>` が確認プロンプトで exit 1 になる（#596）。
 # develop 配下で change 名を伴う archive の実行指示は、すべて --yes を付ける。
 @test "develop: every openspec archive <change> instruction carries --yes (#596)" {
