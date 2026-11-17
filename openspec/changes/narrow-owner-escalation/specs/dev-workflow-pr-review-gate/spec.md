@@ -68,7 +68,7 @@ pr-review-gate の `declarations.md` の手順 3 は、「主のリスク許容�
 #### Scenario: 聖域に触れた PR のマージは人間に残る
 
 - **WHEN** 論点なしの確認で合格した PR が聖域のパスに触れている
-- **THEN** マージは `auto-merge.yml` のパスによる判定のまま人間のマージに回る（auto-merge 未配備のリポジトリではマージは今どおり主の操作）
+- **THEN** マージは `auto-merge.yml` のパスによる判定のまま `human-merge` で人間のマージに回る。例外は、エピックの子で親が既存の `parent-merge-approved` の経路の条件と `主の委任: 論点なしの止まり` の委任を確かめて印を付けたときだけ（dev-workflow-develop の要件「親は論点なしの止まりの委任で、マージ待ちの子の PR に判断の印を付ける」）。auto-merge 未配備のリポジトリではマージは今どおり主の操作
 
 ### Requirement: 論点なしの確認を起こす役を、ゲートの回り方で分ける
 
