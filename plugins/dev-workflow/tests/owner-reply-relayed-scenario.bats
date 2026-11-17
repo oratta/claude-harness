@@ -89,3 +89,14 @@ expect_fail() {  # $1 = REASON
   relayed "$REAL_UUID"
   [ "$status" -eq 0 ]
 }
+
+# 2026-11-09 の flatmate #2058 と同じ並び（親が URL を見せる → 主の別の発言 → 主の答え）でも、--relayed は今どおり
+# not-direct で落ちる（issue #1653 で緩めたのは --delegated だけ）
+@test "relayed scenario: the 2026-11-09 order (URL shown, another owner message, then the answer) is still not-direct (#1653)" {
+  : > "$LOG"
+  add '{"type":"assistant","isSidechain":false,"uuid":"cccccccc-0000-4000-8000-000000000011","timestamp":"2026-10-19T07:10:00.000Z","message":{"role":"assistant","content":[{"type":"text","text":"子 #1087 が主の許容を待って止まった。停止の記録: '"$STOP_URL"'"}]}}'
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"aaaaaaaa-0000-4000-8000-000000000011","timestamp":"2026-10-19T07:20:00.000Z","message":{"role":"user","content":"2058 の状態はどうなっている"}}'
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"'"$REAL_UUID"'","timestamp":"2026-10-19T07:30:00.000Z","message":{"role":"user","content":"任せる。今回の件も許容する。"}}'
+  relayed "$REAL_UUID"
+  expect_fail not-direct
+}

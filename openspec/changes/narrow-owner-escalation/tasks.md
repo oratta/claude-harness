@@ -4,9 +4,9 @@
 
 ## 1. `--delegated` の並び順の判定（design.md D4 の案 A）
 
-- [ ] 1.1 `check_asked_directly` の `not-direct` を `--relayed` のときだけ当て、`--delegated` では挟まった主の発言で落とさないようにする。冒頭の使い方の説明（`--delegated` の確かめる順）も直す。確認: `bats plugins/dev-workflow/tests/owner-reply-check.bats` が exit 0 で、`--relayed` の `not-direct` のテスト（#1059）は今のまま通る。触る範囲: plugins/dev-workflow/scripts/owner-reply-check.sh:43-52（使い方の説明）、plugins/dev-workflow/scripts/owner-reply-check.sh:337-362（`check_asked_directly`）
-- [ ] 1.2 `owner-reply-delegated-scenario.bats` の「挟まった発言は not-direct」のテストを、挟まっても exit 0 になるテストに置き換え、2026-11-09 の flatmate #2058 と同じ並び（親が委任の記録の URL を見せる → 主の別の発言 → 主の「任せる。今回の件も許容する。」→ 停止の記録）の会話ログで `--delegated` が exit 0・`MATCHES=1` を返すシナリオを足す。確認: `bats plugins/dev-workflow/tests/owner-reply-delegated-scenario.bats` が exit 0。触る範囲: plugins/dev-workflow/tests/owner-reply-delegated-scenario.bats:104-112、plugins/dev-workflow/tests/owner-reply-delegated-scenario.bats:1-40（会話ログの組み立て）
-- [ ] 1.3 `owner-reply-relayed-scenario.bats` に、同じ並びの会話ログでも `--relayed` は今どおり `not-direct` で落ちることを確かめるテストを足す（`--relayed` を緩めていないことの固定）。確認: `bats plugins/dev-workflow/tests/owner-reply-relayed-scenario.bats` が exit 0。触る範囲: plugins/dev-workflow/tests/owner-reply-relayed-scenario.bats:1-91
+- [x] 1.1 `check_asked_directly` の `not-direct` を `--relayed` のときだけ当て、`--delegated` では挟まった主の発言で落とさないようにする。冒頭の使い方の説明（`--delegated` の確かめる順）も直す。確認: `bats plugins/dev-workflow/tests/owner-reply-check.bats` が exit 0 で、`--relayed` の `not-direct` のテスト（#1059）は今のまま通る。触る範囲: plugins/dev-workflow/scripts/owner-reply-check.sh:43-52（使い方の説明）、plugins/dev-workflow/scripts/owner-reply-check.sh:337-362（`check_asked_directly`）
+- [x] 1.2 `owner-reply-delegated-scenario.bats` の「挟まった発言は not-direct」のテストを、挟まっても exit 0 になるテストに置き換え、2026-11-09 の flatmate #2058 と同じ並び（親が委任の記録の URL を見せる → 主の別の発言 → 主の「任せる。今回の件も許容する。」→ 停止の記録）の会話ログで `--delegated` が exit 0・`MATCHES=1` を返すシナリオを足す。確認: `bats plugins/dev-workflow/tests/owner-reply-delegated-scenario.bats` が exit 0。触る範囲: plugins/dev-workflow/tests/owner-reply-delegated-scenario.bats:104-112、plugins/dev-workflow/tests/owner-reply-delegated-scenario.bats:1-40（会話ログの組み立て）
+- [x] 1.3 `owner-reply-relayed-scenario.bats` に、同じ並びの会話ログでも `--relayed` は今どおり `not-direct` で落ちることを確かめるテストを足す（`--relayed` を緩めていないことの固定）。確認: `bats plugins/dev-workflow/tests/owner-reply-relayed-scenario.bats` が exit 0。触る範囲: plugins/dev-workflow/tests/owner-reply-relayed-scenario.bats:1-91
 
 ## 2. ゲートの論点なしの経路（design.md D2）
 

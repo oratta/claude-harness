@@ -2096,10 +2096,16 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
   echo "$body" | grep -qF '子の停止: 主の返事待ち'
   echo "$body" | grep -qF 'last | .html_url'
   echo "$body" | grep -qF 'owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時>'
-  for r in not-found not-owner not-after not-asked not-direct not-before; do
+  for r in not-found not-owner not-after not-asked not-before; do
     echo "$body" | grep -qF "$r" || { echo "missing $r"; return 1; }
   done
   echo "$body" | grep -F '任せる意思' | grep -qF 'MATCH:'
+}
+
+@test "delegated reply (#1653): step 5 does not list not-direct for --delegated and says an owner message in between is not rejected by order" {
+  body="$(deleg_check_body)"
+  ! echo "$body" | grep -qF 'not-direct'
+  echo "$body" | grep -qF '別の主の発言が挟まっても並び順では落とさない'
 }
 
 @test "delegated reply (#1293): step 5 records the --delegated exit 0 and never uses --relayed for the delegated form" {
