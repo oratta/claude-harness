@@ -36,13 +36,13 @@
 ## 5. 論点の定義（design.md D6）
 
 - [x] 5.1 `output-styles/readable.md` の節 3 に、運用の形・構造の分け方・将来の拡張に効く設計の分かれ目は主の指摘が効く観点で、主に聞く理由にせず、決めた内容と他の案を報告に載せる扱いを足す。主に聞く理由の 3 つは増やさない。確認: 5.3 の bats。触る範囲: output-styles/readable.md:39-90（節 3）
-- [ ] 5.2 `rules/communication-style.md` の 3 に同じ内容を 1 文で足す（常時注入。予算の値は動かさない）。確認: `bats tests/injection-budget.bats` が exit 0。触る範囲: rules/communication-style.md:10
+- [x] 5.2 `rules/communication-style.md` の 3 に同じ内容を 1 文で足す（常時注入。予算の値は動かさない）。確認: `bats tests/injection-budget.bats` が exit 0。触る範囲: rules/communication-style.md:10
 - [x] 5.3 `tests/owner-question-style.bats` に、正本と短い版の両方に主の観点の語と「報告に載せる」扱いがあることを確かめるテストを足す。確認: `bats tests/owner-question-style.bats` が exit 0。触る範囲: tests/owner-question-style.bats:239-246（末尾に追加）
 
 ## 6. 変更の記録と全体の確認
 
 - [x] 6.1 変更の記録を書く（何を変えたか・D4 の緩めた判定・聖域に触れること）。確認: ファイルがあり、版を上げていない（`plugin.json` の `version` を変えていない）。触る範囲: plugins/dev-workflow/changes/1653.md（新規）
-- [ ] 6.2 受け入れ条件のコマンドを回す: `bats plugins/dev-workflow/tests/`・`bats tests/owner-question-style.bats`・`bats tests/injection-budget.bats` が exit 0、`grep -n "成り立つ側に倒す" plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` が 0 件、`openspec validate narrow-owner-escalation --type change --strict` が通る。触る範囲: なし（確認だけ）
+- [x] 6.2 受け入れ条件のコマンドを回す: `bats plugins/dev-workflow/tests/`・`bats tests/owner-question-style.bats`・`bats tests/injection-budget.bats` が exit 0、`grep -n "成り立つ側に倒す" plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` が 0 件、`openspec validate narrow-owner-escalation --type change --strict` が通る。触る範囲: なし（確認だけ）
 
 ## Workflow follow-up
 
