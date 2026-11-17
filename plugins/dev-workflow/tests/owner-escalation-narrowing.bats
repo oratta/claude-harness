@@ -214,3 +214,11 @@ item() { grep -F -- "- **$1**" "$2"; }
   judge="$(awk '/^### Requirement: Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける$/{f=1;next} f&&/^### /{exit} f' "$root/openspec/specs/dev-workflow-develop/spec.md" | grep -F -- '- **判断**')"
   printf '%s\n' "$judge" | grep -qF '有効な `主の委任: 論点なしの止まり` があれば、その記録の本文と URL、親が確かめた `委任の確認の場所:` の行' || { echo "spec: delegation not passed to decider"; return 1; }
 }
+
+@test "epic step 8 (#1653): after appending a precedent the parent commits and pushes it by that repo's workflow" {
+  step8 | grep -F '`.claude/casting/precedents.md` に 1 判例を追記' | grep -qF '追記したら、その repo の運用（PR 運用か main 運用か）で commit・push する'
+  root="$(cd "$PLUGIN_DIR/../.." && pwd)"
+  for spec in "$root/openspec/specs/dev-workflow-develop/spec.md" "$root/openspec/changes/archive/2026-11-17-narrow-owner-escalation/specs/dev-workflow-develop/spec.md"; do
+    awk '/^### Requirement: 主に上げた件と主の聞き返しを判例台帳に記録する$/{f=1;next} f&&/^#### /{exit} f' "$spec" | grep -qF '追記したら、その repo の運用（PR 運用か main 運用か）で commit・push する（MUST）' || { echo "spec: no commit after precedent: $spec"; return 1; }
+  done
+}

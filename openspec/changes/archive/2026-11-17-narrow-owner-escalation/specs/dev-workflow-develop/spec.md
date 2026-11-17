@@ -366,7 +366,7 @@ develop の手順書（`skills/develop` 配下）に `orca` のサブコマン�
 
 ### Requirement: 主に上げた件と主の聞き返しを判例台帳に記録する
 
-`references/epic.md` の手順 8 は、親が主に上げた止まりに主が答えたとき、または主の聞き返し（論点を問う・なぜ主に聞くのかを問う発言）を受けたときに、そのターンで `.claude/casting/precedents.md` に 1 判例を追記することを書かなければならない（MUST）。書式は casting の SKILL.md「判例の書き方」に従い、経路は「主に上げた」とし、聞き返しを受けた件は帰結に聞き返しの中身を書く。
+`references/epic.md` の手順 8 は、親が主に上げた止まりに主が答えたとき、または主の聞き返し（論点を問う・なぜ主に聞くのかを問う発言）を受けたときに、そのターンで `.claude/casting/precedents.md` に 1 判例を追記することを書かなければならない（MUST）。書式は casting の SKILL.md「判例の書き方」に従い、経路は「主に上げた」とし、聞き返しを受けた件は帰結に聞き返しの中身を書く。追記したら、その repo の運用（PR 運用か main 運用か）で commit・push する（MUST）。
 
 #### Scenario: 手順 8 に判例の記録の契機がある
 
