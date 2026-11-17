@@ -42,6 +42,7 @@ Codex を呼ぶ、または呼び方を書いている手順書・スクリプ�
 | `plugins/dev-workflow/skills/develop/references/pre-classification.md` | `--pre-class` に渡す分類の表 | 言及のみ |
 | `plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md` | レビュアー向けの指示。Codex が返す形の読み替え | 言及のみ |
 | `plugins/dev-workflow/templates/escalation-tripwires.md` | 昇格の段と格の表 | 言及のみ |
+| `plugins/dev-workflow/docs/provider-compat-update.md` | Claude / Codex の更新時の確認手順。呼び出しの語は手順の説明に出るだけ（#325） | 言及のみ |
 | `plugins/worktree/references/wt-clean-orphan-detection.md` | 居残りプロセスの判定。`ps` の出力例に `codex app-server` が出る | 言及のみ |
 | `plugins/statusline/scripts/statusline-codex.py` | ステータスラインの Codex 行。使用量の取得で App Server を起動する | 委譲外 |
 | `scripts/poc/codex-appserver/poc.py` | App Server の読み取りだけの試作 | 委譲外 |
