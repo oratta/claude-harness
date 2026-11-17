@@ -2104,7 +2104,7 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
 
 @test "delegated reply (#1653): step 5 does not list not-direct for --delegated and says an owner message in between is not rejected by order" {
   body="$(deleg_check_body)"
-  ! echo "$body" | grep -qF 'not-direct'
+  ! echo "$body" | grep -qF 'not-direct' || return 1
   echo "$body" | grep -qF '別の主の発言が挟まっても並び順では落とさない'
 }
 
