@@ -18,5 +18,5 @@
 ## 4. 記録と実機の確認
 
 - [x] 4.1 `plugins/dev-workflow/changes/1654.md` にこの change の分（何が変わったか・控えの場所・待ち時間・止め方・戻し方）を足す。確かめ方: ファイルに `patches:` と `DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT` の説明がある。触る範囲: plugins/dev-workflow/changes/1654.md（owner-hands-only-ops で新規に作ったファイルに追記。先に無ければ新規）
-- [ ] 4.2 実機で確かめる: 一時ディレクトリの `CLAUDE_CONFIG_DIR` と `DEV_WORKFLOW_MEMORY_DIR` に、実際に閉じた issue の URL を `metadata:` の下の `patches:` に書いたメモリと前の日の控えを置き、本物の `gh` で `session-tripwires.sh` を走らせて additionalContext の先頭に `[memory]` の候補が出ること、同じ日にもう一度走らせると `gh` を呼ばず 0.5 秒未満で終わることを確かめ、コマンドと出力を記録先に残す。実ホームには書かない
-- [ ] 4.3 `bats plugins/dev-workflow/tests/memory-tripwire.bats` と `bats plugins/dev-workflow/tests/` の SessionStart 関係のテスト（`session-tripwires` を呼ぶもの）が通る
+- [x] 4.2 実機で確かめる: 一時ディレクトリの `CLAUDE_CONFIG_DIR` と `DEV_WORKFLOW_MEMORY_DIR` に、実際に閉じた issue の URL を `metadata:` の下の `patches:` に書いたメモリと前の日の控えを置き、本物の `gh` で `session-tripwires.sh` を走らせて additionalContext の先頭に `[memory]` の候補が出ること、同じ日にもう一度走らせると `gh` を呼ばず 0.5 秒未満で終わることを確かめ、コマンドと出力を記録先に残す。実ホームには書かない
+- [x] 4.3 `bats plugins/dev-workflow/tests/memory-tripwire.bats` と `bats plugins/dev-workflow/tests/` の SessionStart 関係のテスト（`session-tripwires` を呼ぶもの）が通る

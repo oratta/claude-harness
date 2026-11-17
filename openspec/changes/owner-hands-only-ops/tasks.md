@@ -12,7 +12,7 @@
 ## 3. 記録と通し
 
 - [x] 3.1 `plugins/dev-workflow/changes/1654.md` を新しく作り、この change の分（何を替えたか・直さなかった箇所と理由・戻し方）を書く。確かめ方: ファイルがあり、見出しに `#1654` がある。触る範囲: plugins/dev-workflow/changes/1654.md（新規）
-- [ ] 3.2 `bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/epic-dispatch.bats tests/owner-question-style.bats plugins/dev-workflow/tests/unclear-reply-rephrase.bats tests/injection-budget.bats` が通り、`grep -rnE 'MFA・OAuth・ログイン|MFA・ログイン・' plugins/dev-workflow/skills output-styles rules` が 0 件であることを確かめる
+- [x] 3.2 `bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/epic-dispatch.bats tests/owner-question-style.bats plugins/dev-workflow/tests/unclear-reply-rephrase.bats tests/injection-budget.bats` が通り、`grep -rnE 'MFA・OAuth・ログイン|MFA・ログイン・' plugins/dev-workflow/skills output-styles rules` が 0 件であることを確かめる
 
 ## Workflow follow-up
 
