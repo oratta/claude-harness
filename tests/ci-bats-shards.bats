@@ -19,6 +19,9 @@
 #   `TEST_SHARD: ${{ matrix.shard }}/4` の数字の分母・1 行の `needs:`・インデント 4 の
 #   `if: always()` の形だけを読む。それ以外の書き方は「読めない」として失敗に倒す
 #   （読めないまま通すと、確かめないまま CI が緑になる）。
+#   分けたジョブの固定（issue #1659）は `runs-on: ubuntu-<数字>.<数字>`・`bats=<版>`・
+#   ステップ名 `install bats (<版>)` の形を読み、版がそろっていることだけを見る
+#   （その版がランナーの apt に実在するかは CI の install bats の手順が確かめる）。
 
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -195,6 +198,51 @@ check_result_job() { # <ci.yml>
   # ジョブ ID は英字か _ で始まるので、`needs.*.result` の `*` はこの形に一致しない。
   if printf '%s\n' "$block" | grep -qE 'needs\.[A-Za-z_][A-Za-z0-9_-]*\.result'; then
     echo "ジョブ $id の判定がジョブ ID を列挙している（needs.<ジョブ ID>.result の形）" >&2
+    return 1
+  fi
+  return 0
+}
+
+# 分けたジョブが、ランナーの版と bats の版をそろえて固定していることを確かめる（issue #1659）。
+# runs-on: は ubuntu-<数字>.<数字> の 1 行、bats は apt-get install に bats=<版> で入れ、
+# ステップ名 install bats (<版>) の版が bats=<版> と等しいこと。読めない形は失敗にする。
+# その版がそのランナーの apt に実在するかは見ない（CI の install bats の手順が確かめる）。
+check_bats_pin() { # <ci.yml>
+  local id block runs installs pinned named
+  id=$(shard_job_ids "$1")
+  if [ "$(printf '%s\n' "$id" | grep -c .)" -ne 1 ]; then
+    echo "matrix で分けたジョブがちょうど 1 つではない: [$id]" >&2
+    return 1
+  fi
+  block=$(job_block "$1" "$id")
+  runs=$(printf '%s\n' "$block" | grep -E '^    runs-on:')
+  if [ "$(printf '%s\n' "$runs" | grep -c .)" -ne 1 ]; then
+    echo "ジョブ $id の runs-on: の行がちょうど 1 つではない" >&2
+    return 1
+  fi
+  printf '%s\n' "$runs" | grep -qxE '    runs-on: ubuntu-[0-9]+\.[0-9]+' || {
+    echo "ジョブ $id の runs-on: がランナーの版を固定していない（runs-on: ubuntu-24.04 の形で書く）: $runs" >&2
+    return 1
+  }
+  # コメント以外の行で、apt-get install で bats を入れている行
+  installs=$(printf '%s\n' "$block" | grep -vE '^[ \t]*#' \
+    | grep -E 'apt-get install' | grep -E '(^|[ \t])bats(=|[ \t]|$)')
+  if [ "$(printf '%s\n' "$installs" | grep -c .)" -ne 1 ]; then
+    echo "ジョブ $id で bats を apt-get install する行がちょうど 1 つではない" >&2
+    return 1
+  fi
+  pinned=$(printf '%s\n' "$installs" | sed -n -E 's/^.*[ \t]bats=([0-9][0-9A-Za-z.+~-]*)([ \t].*)?$/\1/p')
+  if [ -z "$pinned" ]; then
+    echo "ジョブ $id の bats の版が固定されていない（bats=<版> の形で書く）: $installs" >&2
+    return 1
+  fi
+  named=$(printf '%s\n' "$block" | sed -n -E 's/^      - name: install bats \(([^)]+)\)$/\1/p')
+  if [ "$(printf '%s\n' "$named" | grep -c .)" -ne 1 ]; then
+    echo "ジョブ $id に install bats (<版>) のステップ名がちょうど 1 つではない" >&2
+    return 1
+  fi
+  if [ "$named" != "$pinned" ]; then
+    echo "ジョブ $id のステップ名の版（${named}）が bats=${pinned} と違う" >&2
     return 1
   fi
   return 0
@@ -507,6 +555,55 @@ rewrite_ci() { # <ci.yml> <awk の -v 代入...> <awk program>
   [ "$(printf '%s\n' "$id" | grep -c .)" -eq 1 ]
   job_block "$CI_YML" "$id" | grep -qE '^ +run: scripts/test-auto-merge-workflow\.sh$'
   ! job_block "$CI_YML" "$id" | grep -qE '^ +shard:' || return 1
+}
+
+@test "ci.yml: the shard job pins both the runner image and the bats version, and the step name matches" {
+  run check_bats_pin "$CI_YML"
+  [ "$status" -eq 0 ] || { echo "$output"; return 1; }
+}
+
+@test "ci.yml: an unpinned runner (ubuntu-latest or an expression) is detected" {
+  local shard_id
+  shard_id=$(shard_job_ids "$CI_YML")
+
+  cp "$CI_YML" "${BATS_TEST_TMPDIR}/latest.yml"
+  rewrite_ci "${BATS_TEST_TMPDIR}/latest.yml" -v id="$shard_id" '
+    /^  [A-Za-z_][A-Za-z0-9_-]*:[ \t]*$/ { on = ($0 == "  " id ":") }
+    on && /^    runs-on:/ { $0 = "    runs-on: ubuntu-latest" }
+    { print }'
+  job_block "${BATS_TEST_TMPDIR}/latest.yml" "$shard_id" | grep -qxF '    runs-on: ubuntu-latest'
+  run check_bats_pin "${BATS_TEST_TMPDIR}/latest.yml"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"runs-on: がランナーの版を固定していない"* ]] || { echo "$output"; return 1; }
+
+  cp "$CI_YML" "${BATS_TEST_TMPDIR}/expr.yml"
+  rewrite_ci "${BATS_TEST_TMPDIR}/expr.yml" -v id="$shard_id" '
+    /^  [A-Za-z_][A-Za-z0-9_-]*:[ \t]*$/ { on = ($0 == "  " id ":") }
+    on && /^    runs-on:/ { $0 = "    runs-on: ${{ vars.CI_RUNNER }}" }
+    { print }'
+  job_block "${BATS_TEST_TMPDIR}/expr.yml" "$shard_id" | grep -qxF '    runs-on: ${{ vars.CI_RUNNER }}'
+  run check_bats_pin "${BATS_TEST_TMPDIR}/expr.yml"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"runs-on: がランナーの版を固定していない"* ]] || { echo "$output"; return 1; }
+}
+
+@test "ci.yml: an unpinned bats, or a step name whose version differs from bats=, is detected" {
+  cp "$CI_YML" "${BATS_TEST_TMPDIR}/nover.yml"
+  rewrite_ci "${BATS_TEST_TMPDIR}/nover.yml" \
+    '/apt-get install/ && !/^[ \t]*#/ { sub(/bats=[^ \t]+/, "bats") } { print }'
+  ! diff -q "$CI_YML" "${BATS_TEST_TMPDIR}/nover.yml" >/dev/null || return 1
+  run check_bats_pin "${BATS_TEST_TMPDIR}/nover.yml"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"bats の版が固定されていない"* ]] || { echo "$output"; return 1; }
+
+  cp "$CI_YML" "${BATS_TEST_TMPDIR}/mismatch.yml"
+  rewrite_ci "${BATS_TEST_TMPDIR}/mismatch.yml" \
+    '/apt-get install/ && !/^[ \t]*#/ { sub(/bats=[^ \t]+/, "bats=9.9.9-1") } { print }'
+  grep -qF 'bats=9.9.9-1' "${BATS_TEST_TMPDIR}/mismatch.yml"
+  ! grep -qF 'install bats (9.9.9-1)' "${BATS_TEST_TMPDIR}/mismatch.yml" || return 1
+  run check_bats_pin "${BATS_TEST_TMPDIR}/mismatch.yml"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"ステップ名の版（1.10.0-1）が bats=9.9.9-1 と違う"* ]] || { echo "$output"; return 1; }
 }
 
 # ══ 3. 必須チェックと ci.yml のジョブの対応の検査 ═════════════
