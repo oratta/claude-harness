@@ -4834,7 +4834,7 @@ unmanned で仕様の発明が 2 回に達した、または change の割り方
 
 ### Requirement: 条件の確かめは PR のレビューに当てない
 
-**PR のレビュー**: この節の本体の手順は G の `needs-fix-check` には当てない（MUST NOT）。PR のレビューの指摘の条件は、G が `stages/triage.md` の段 B と段落「周の終わりの止める指摘の条件」で確かめ、本体は判定しない（MUST NOT）。本体が決める役に渡すのは `needs-fix-check` で渡された指摘に限る（MUST）。
+**PR のレビュー**: この節の本体の手順は G の `needs-fix-check` には当てない（MUST NOT）。PR のレビューの指摘の条件は、G が `stages/triage-nonblocking.md` の段 B と `stages/triage-convergence.md` の段落「周の終わりの止める指摘の条件」で確かめ、本体は判定しない（MUST NOT）。本体が決める役に渡すのは `needs-fix-check` で渡された指摘に限る（MUST）。
 
 #### Scenario: PR のレビューには当てない
 - **WHEN** G が Status `needs-fix-check` で return する

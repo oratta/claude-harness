@@ -849,11 +849,10 @@ $(nonblocking_para '段 C（')"
   done
   if printf '%s\n' "$c" | grep -qF '候補探しの前に済ませる'; then echo "stale: 候補探しの前"; return 1; fi
   # 条件の答えを読み書きする文の 1 句は、spec・gate-runner.md・reviewer-brief.md で同じ
-  phrase='親が別リポジトリなら親のリポジトリの本文'
+  phrase='親が別リポジトリなら親のリポジトリの本文（`stages/triage-epic.md` の段 C の段落）'
   has_all "$(awk '/^### Requirement: 条件を主に聞くときは条件だけを聞き/{f=1;next} /^### Requirement: /{f=0} f' "$spec")" "$phrase" || return 1
   has_all "$(cat "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md")" "$phrase" || return 1
   has_all "$(cat "$REVIEWER_BRIEF")" "$phrase" || return 1
-  grep -F "$phrase" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md" | grep -qF '`stages/triage-epic.md` の段 C の段落'
   grep -q '^\*\*段 C（' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-epic.md"
   parent_line="$(grep -nF 'issues/<記録先 issue の番号>/parent' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-nonblocking.md" | cut -d: -f1)"
   b_line="$(grep -n '^\*\*段 B（' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-nonblocking.md" | cut -d: -f1)"

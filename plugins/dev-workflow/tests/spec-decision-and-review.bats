@@ -308,7 +308,9 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
   echo "$pr" | grep -qF 'この節の本体の手順は G の `needs-fix-check` には当てない'
   echo "$pr" | grep -qF '`stages/triage-nonblocking.md`'
   echo "$pr" | grep -qF '`stages/triage-convergence.md`'
-  echo "$pr" | grep -qF '段落「周の終わりの止める指摘の条件」'
+  # 段 B と周の終わりの条件は、それぞれの移動先に結び付いている
+  echo "$pr" | grep -qF '`stages/triage-nonblocking.md` の段 B'
+  echo "$pr" | grep -qF '`stages/triage-convergence.md` の段落「周の終わりの止める指摘の条件」'
   echo "$pr" | grep -qF '本体は判定しない'
   echo "$pr" | grep -qF '決める役に渡すのは `needs-fix-check` で渡された指摘に限る'
   line="$(echo "$s" | grep -F 'この手順の守備範囲は')"
