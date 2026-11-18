@@ -1,8 +1,11 @@
 #!/usr/bin/env bats
 # #1584: 本体が通す軽い修正の契約と、文書中の照合コマンドの実測。
+# #1683: 軽い通し方の正本は decision-criteria.md から light-path.md へ移った。
+load lib/develop-docs
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  CRITERIA="$PLUGIN_DIR/skills/develop/references/decision-criteria.md"
+  CRITERIA="$PLUGIN_DIR/skills/develop/references/light-path.md"
+  HANDOVER="$PLUGIN_DIR/skills/develop/references/handover.md"
   REVIEWER="$PLUGIN_DIR/skills/develop/references/roles/spec-reviewer.md"
   SKILL="$PLUGIN_DIR/skills/develop/SKILL.md"
   GATE="$PLUGIN_DIR/skills/develop/references/roles/gate-runner.md"
@@ -10,7 +13,7 @@ setup() {
   PASS="$PLUGIN_DIR/skills/pr-review-gate/stages/pass.md"
 }
 light_section() {
-  LC_ALL=C awk '/^### /{f=0} index($0,"### 仕様化しないが軽く通す（軽い通し方）")==1{f=1} f' "$CRITERIA"
+  LC_ALL=C awk '/^#{2,3} /{f=0} index($0,"## 仕様化しないが軽く通す（軽い通し方）")==1{f=1} f' "$CRITERIA"
 }
 @test "criteria: six kinds distinguish unchanged behavior from an unambiguous bug fix" {
   light_section | grep -q '既存のテストかチェック'
@@ -36,8 +39,8 @@ light_section() {
   light_section | grep -q '通常のレビュー.*failed'
   light_section | grep -q '通し方:.*投稿し直さない'
   light_section | grep -q '前提確認と重さ判定'
-  grep 'テスト作成は全経路で必須' "$CRITERIA" | grep -q '軽い通し方だけ'
-  grep 'テスト作成は全経路で必須' "$CRITERIA" | grep -q 'W が起こされる経路'
+  develop_docs | grep 'テスト作成は全経路で必須' | grep -q '軽い通し方だけ'
+  develop_docs | grep 'テスト作成は全経路で必須' | grep -q 'W が起こされる経路'
 }
 @test "decision contract: main posts the three exact lines and prepare reads the latest decision" {
   row="$(grep '^| 軽い通し方の行' "$REVIEWER")"
@@ -52,12 +55,12 @@ light_section() {
   grep 'Edit でコードを書かない' "$SKILL" | grep -q '例外は軽い通し方だけ'
   line="$(grep '^     軽い通し方なら' "$SKILL")"
   printf '%s\n' "$line" | grep -q 'W を起こさず本体が直して G の工程'
-  printf '%s\n' "$line" | grep -q 'decision-criteria.md'
+  printf '%s\n' "$line" | grep -q 'light-path.md'
   grep '入口 0 の例外' "$SKILL" | grep -q '整理 → 判定 → Draft PR → 判断の記録'
 }
 @test "loop: light failures dispatch a fresh spec worker before gate prepare" {
   grep '軽い通し方の failed' "$SKILL" | grep -q '段: spec'
-  grep '軽い通し方の failed' "$SKILL" | grep -q 'decision-criteria.md'
+  grep '軽い通し方の failed' "$SKILL" | grep -q 'light-path.md'
   # 条件外／通常の failed の詳細は正本に一本化し、SKILL から辿れること。
   light_section | grep '原因: 軽い通し方の条件外' | grep -q 'モデルを上げず'
   light_section | grep '通常のレビュー' | grep -q 'Gate Result.*仕分けコメントの URL'
@@ -100,7 +103,7 @@ light_ci_worker() {
   spec="$PLUGIN_DIR/skills/develop/references/roles/worker/spec.md"
   entry="$(sed '/^## 仕様化判断（opsx /,$d' "$spec")"
   printf '%s\n' "$entry" | grep -q '軽い通し方.*ci-fail.*新しい W'
-  printf '%s\n' "$entry" | grep -qF 'decision-criteria.md'
+  printf '%s\n' "$entry" | grep -qF 'light-path.md'
   printf '%s\n' "$entry" | grep -qF 'CI 見張りの fix からの戻し方'
   printf '%s\n' "$entry" | grep -q '仕様化判断の再投稿より先.*関係確認'
   printf '%s\n' "$entry" | grep -q '無関係なら.*判断記録の一般手順へ進まず.*本体へ返す'
@@ -109,7 +112,7 @@ light_ci_worker() {
   watch="$PLUGIN_DIR/references/ci-watch.md"
   step="$(sed -n '/^## 7\. 直し方/,/^## 8\./p' "$watch" | grep '^2\.')"
   printf '%s\n' "$step" | grep -q '軽い通し方.*新しい W.*仕様化判断の再投稿より先.*関係確認'
-  printf '%s\n' "$step" | grep -qF 'decision-criteria.md'
+  printf '%s\n' "$step" | grep -qF 'light-path.md'
   printf '%s\n' "$step" | grep -qF 'CI 見張りの fix からの戻し方'
   printf '%s\n' "$step" | grep -qF '5. `--unrelated` を渡す基準'
   printf '%s\n' "$step" | grep -qF 'gh run view <run> --log-failed'
@@ -131,7 +134,7 @@ light_ci_worker() {
 
 @test "ci fix: develop entry points share dispatch rules and preserve the watch continuation" {
   for file in "$SKILL" "$PLUGIN_DIR/references/ci-watch.md"; do
-    grep 'fix\|develop では W' "$file" | grep 'decision-criteria.md' | grep -q 'CI 見張りの fix からの戻し方'
+    grep 'fix\|develop では W' "$file" | grep 'light-path.md' | grep -q 'CI 見張りの fix からの戻し方'
   done
   grep 'CI 見張りの fix からの戻し方' "$SKILL" | grep -q '軽いなら同じ worktree の新しい W を `段: spec`.*既存 W は `段: implement`'
   section="$(ci_reentry)"
@@ -222,8 +225,18 @@ ci_handover() {
   watch="$PLUGIN_DIR/references/ci-watch.md"
   for heading in '## 2.' '## 9.'; do
     section="$(awk -v h="$heading" 'index($0,h)==1{f=1;print;next} /^## /{f=0} f' "$watch")"
-    printf '%s\n' "$section" | grep 'decision-criteria.md' | grep -qF 'CI 見張りの fix からの戻し方'
+    printf '%s\n' "$section" | grep 'light-path.md' | grep -qF 'CI 見張りの fix からの戻し方'
   done
+}
+# #1683: handover.md と重なる 2 段落は light-path.md に写さず、handover.md の小節名を指す。
+@test "light path: overlapping handover paragraphs live only in handover.md" {
+  ! grep -qF '最新の対象・必要情報・許可根拠を確認し、揃う場合だけ新しい W へ' "$CRITERIA" || return 1
+  ! grep -qF '最新の可を不可として投稿し、投稿成功後だけ指示する' "$CRITERIA" || return 1
+  grep -qx '### W を把握しない本体の読取りと停止先' "$HANDOVER"
+  grep -qx '### 起動／再開前の無効化と再許可' "$HANDOVER"
+  ci_reentry | grep 'W を把握しない' | grep -qF '「CI 見張りの修正担当の引き継ぎ」の「W を把握しない本体の読取りと停止先」'
+  ci_reentry | grep '起動／再開' | grep -qF '「CI 見張りの修正担当の引き継ぎ」の「起動／再開前の無効化と再許可」'
+  ci_handover | grep -q '軽い経路なら light-path.md「CI 見張りの fix からの戻し方」'
 }
 @test "ci handover: scope names sources errors and an accepted false report" {
   section="$(ci_handover)"
@@ -338,7 +351,7 @@ printf 'SELECTED=%s\n' \"\$DEC\""
 @test "criteria: main and fallback workers share the dedicated worktree" {
   light_section | grep -q '直す前に対象専用の worktree'
   light_section | grep -q '戻り経路.*同じ worktree'
-  grep -qx -- '- 挙動を変えない設定値の変更' "$CRITERIA"
+  develop_docs | grep -qx -- '- 挙動を変えない設定値の変更'
 }
 @test "criteria: unmanned ends without starting gate" {
   light_section | grep '^5\.' | grep -q 'unmanned.*agent-review:pending'

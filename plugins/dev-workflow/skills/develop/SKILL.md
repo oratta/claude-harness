@@ -56,7 +56,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 
 禁止事項（本体がこれをやると、別コンテキストの網が全部外れる）:
 
-- **本体は Edit でコードを書かない。** 例外は軽い通し方だけ（`references/decision-criteria.md` Step B）。テスト・実装・仕様ファイルの編集はすべて W の仕事。本体が「小さいから」と直接直した瞬間に、その変更は R1 / G の別コンテキストレビューを通らずに PR に乗る
+- **本体は Edit でコードを書かない。** 例外は軽い通し方だけ（`references/light-path.md`）。テスト・実装・仕様ファイルの編集はすべて W の仕事。本体が「小さいから」と直接直した瞬間に、その変更は R1 / G の別コンテキストレビューを通らずに PR に乗る
 - **本体はレビューを代行しない。** 仕様レビューは R1、PR レビューは G（と G が要求したレビュアー）が行う。本体が W の return を読んで「よさそう」と判断することはレビューではない
 - **W が孫を呼ぶ必要がある工程を設けない。** 別コンテキストを要する工程（R1・G・G のレビュアー）はすべて本体が起こす。W の指示書に「サブエージェントを spawn せよ」と書かない
 
@@ -85,7 +85,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 
 - **issue があればそれを記録先にする**（番号・URL・自然文マッチ。`/develop` の 5 分岐は `commands/develop.md`）。エピックの子は子 issue が記録先
 - **無ければ issue を切らない。** 本体が worktree を用意し、W が worktree 直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする（GitHub の "open a draft PR early" の慣行）。この Draft PR は**仕様化判断を記録する前**に存在していなければならない — 記録先が無い状態で判定を先に進めない（手順は `references/roles/worker/spec.md`「記録先の用意」）
-- **入口 0 の例外**: 軽い通し方だけ本体が Draft PR を作る。整理 → 判定 → Draft PR → 判断の記録（`references/decision-criteria.md` Step B）
+- **入口 0 の例外**: 軽い通し方だけ本体が Draft PR を作る。整理 → 判定 → Draft PR → 判断の記録（`references/light-path.md`）
 - Draft PR を記録先にするときの PR 本文の決まり（受け入れ条件は PR 本文に書く・PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を書かない。エピックの子は `Closes #子` を書く）は、`references/roles/worker/spec.md`「記録先の用意」が正本
 - 仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）
 - **仕様宣言は記録先ではなく常に PR コメントに置く**（記録先が issue でも issue には書かない）。pr-review-gate 手順 5 が PR のコメントでリスク宣言・仕様宣言・動作確認の 3 見出しを照合し、`対象 HEAD:` 規約が PR の HEAD に紐づくため。書式の正本は pr-review-gate スキル手順 3-b
@@ -104,11 +104,11 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 
 ```
 (0) 記録先を確定する（入口 0）。worktree を用意する
-     軽い通し方なら W を起こさず本体が直して G の工程へ（`references/decision-criteria.md` Step B）
+     軽い通し方なら W を起こさず本体が直して G の工程へ（`references/light-path.md`）
 (1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: `request` が返した `model`。入力は「Role profile の選択」節、既定と上限は「モデル」節の表の W の行）:
       記録先の用意（Draft PR 経路）→ 仕様化判断の記録 → 分割判定 → openspec new change → return「仕様できた」
       仕様化しない判定なら → (3) へ直行（TDD → PR）
-      文言合わせの通し方なら W は仕様の差分 1 ファイルだけを書いて return（正本: `references/decision-criteria.md` Step B・`references/roles/worker/spec.md`）。
+      文言合わせの通し方なら W は仕様の差分 1 ファイルだけを書いて return（正本: `references/spec-decision.md` Step B・`references/roles/worker/spec.md`）。
            return の文面ではなく記録先の最新の判断に `通し方: 文言合わせ` があれば R1 の工程を飛ばして `段: implement` で再開。
            行が無ければ `段: spec` で判断を投稿し直させ R1 の工程を通す
 (2) R1 を spawn（model: `request` が返した `model`。既定 opus。マージ条件・層間契約・課金/法務に触れれば `--pre-class` を渡し、返った `role: decider` で subagent_type: dev-workflow:decider として spawn する。聖域パスだけでは上げない）:
@@ -155,7 +155,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
            見張りの背景タスクの `stopped` / `killed` 通知は `references/ci-watch.md` の 9 に従う。
            ただし G の return に `issue で承認済み:` があれば、CI の見張りの前に主へその行（宣言 URL・分類・引用）を 1 回伝える（pr-review-gate 手順 5 の事後報告。書式は pr-review-gate `stages/pass.md`）。
-           見張りの一手が `fix` なら W に直させる。担当・段の分岐は `references/decision-criteria.md` Step B「CI 見張りの fix からの戻し方」に従う（最新判断が軽いなら同じ worktree の新しい W を `段: spec`、通常経路の既存 W は `段: implement` の再開／許可された手渡し）。
+           見張りの一手が `fix` なら W に直させる。担当・段の分岐は `references/light-path.md`「CI 見張りの fix からの戻し方」に従う（最新判断が軽いなら同じ worktree の新しい W を `段: spec`、通常経路の既存 W は `段: implement` の再開／許可された手渡し）。
            軽い通し方から戻す起動指示には `ci-watch.md`「7. 直し方」に従うこと（最初の push の前に手順 3）を入れる。仕様化途中の push では見張りに戻らず、通常経路を進めて (3b) の return を受けてから `wait` → `next` に戻る。
            通常経路の既存 W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け、
            `ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、
@@ -183,7 +183,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       重複で降りた → 取り直さず主に報告
       review-incomplete → reviewer を再起動しない。`agent-review:pending` のまま Gate Result の残差を報告して工程を止め、合格処理へ進まない
       failed 後の W 起動／再開前に、最新 CI 用引き継ぎが可なら `references/handover.md`「起動／再開前の無効化と再許可」に従い不可を投稿し、投稿成功後だけ指示する
-      軽い通し方の failed → W を `段: spec` で新規起動。条件外と通常の failed の戻し方は `references/decision-criteria.md` Step B。以後 G は前提確認と重さ判定から
+      軽い通し方の failed → W を `段: spec` で新規起動。条件外と通常の failed の戻し方は `references/light-path.md`。以後 G は前提確認と重さ判定から
       failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））で決める。モデルを上げるのは実装品質起因のときだけで、上げるのは決める役か実行役の一方だけ（実行側は `request --phase implement --failure executor`、判断側は `request --phase decider --failure judgment`（ゲートの 1 回目は `first`）の返す model で起こし、model が変われば新しい thread に手渡す。定義は「モデル」節の昇格トリップワイヤーの段落）。
            仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）。段 A だけなら W を据え置きで再開する
            → W を再開（再開指示に `段: implement`。再開前に測る。上限超のあとの扱いは (3) と同じく正本に従う）→ W の修正のあと、failed の Gate Result の `次の段:` どおりの G を新しく起こして再レビュー（順 3 だけなら照合と振り分け、それ以外は前提確認と重さ判定。
@@ -331,7 +331,7 @@ unmanned で複数 change に割れた場合（W が change 単位で子 issue �
 
 unmanned で W の return に質問文・理由が含まれるとき、本体（憲法のメイン自身）が受け取り、質問を Discord へ代理送信する。記録先の `needs-approval` を維持してそのサイクルを終了する。
 
-**仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。文言合わせの通し方（1 ループの (1)。判定基準は `references/decision-criteria.md` Step B）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる。
+**仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。文言合わせの通し方（1 ループの (1)。判定基準は `references/spec-decision.md` Step B）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる。
 
 channel が interactive と違うのは次の点だけで、それ以外の工程と記録は interactive と同じ。W・R1 の起動指示の実行モードには interactive と書く（W・R1 の手順の分岐は channel でも interactive 側をとり、主に聞くのは W・R1 の return を受けた本体がチャンネルで行う）。違う点: 主に聞く先と主への発言の宛先がチャンネルになる（`references/channel.md` の「channel の聞き方」「channel の主への発言」）・保留からの再開の案内がチャンネルの返事になる（`references/handover.md` と G の依頼文）・リスク許容をチャンネルで受けるのは返事を確かめられるときだけ（`references/channel.md` の「channel のリスク許容」）・エピックは `route` を呼ばずサブエージェント方式で回す（`references/epic.md` の「回し方」）。
 
@@ -366,7 +366,7 @@ channel が interactive と違うのは次の点だけで、それ以外の工�
 ## 参照
 
 - 役割の指示書: `references/roles/worker/`（W。索引は `references/roles/worker.md`）・`references/roles/spec-reviewer.md`（R1）・`references/roles/gate-runner.md`（G）
-- 仕様化要否・change 分割・残量モードの判定基準: `references/decision-criteria.md`
+- 判定基準: 仕様化と change 分割は `references/spec-decision.md`、軽い通し方は `references/light-path.md`、残量モードは `references/decision-criteria.md`
 - エピックの条件・作り方・回し方・完了条件: `references/epic.md`。エピックの子が主の返事を待って止まるときの子の側の手順: `references/epic-child-stop.md`
 - 昇格トリップワイヤーの常駐ルールテンプレート: `plugins/dev-workflow/templates/escalation-tripwires.md`
 - G の手順書: pr-review-gate の段のファイル（`skills/pr-review-gate/stages/` と `declarations.md`。索引は `skills/pr-review-gate/SKILL.md`、G が時点ごとに読むファイルは `references/roles/gate-runner.md` の表。記録先の探索順・仕様宣言の照合は据え置き）

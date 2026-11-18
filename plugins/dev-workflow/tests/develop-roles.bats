@@ -218,7 +218,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 @test "worker: split judgement is based on the issue text, and unmanned splits into child issues with blocked_by" {
   grep -q 'dependencies/blocked_by' "$W_SPEC"
-  grep -q 'references/decision-criteria.md' "$W_SPEC"
+  grep -q 'references/spec-decision.md' "$W_SPEC"
 }
 
 # ===== spec-reviewer.md =====

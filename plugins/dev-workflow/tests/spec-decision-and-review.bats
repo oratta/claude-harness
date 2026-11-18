@@ -16,7 +16,7 @@ setup() {
   WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker/spec.md"
   REF="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
   FIX_CHECK="${PLUGIN_DIR}/skills/develop/references/fix-check.md"
-  CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  CRITERIA="${PLUGIN_DIR}/skills/develop/references/spec-decision.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }

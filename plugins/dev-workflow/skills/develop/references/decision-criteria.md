@@ -1,8 +1,6 @@
 # 判定基準リファレンス（develop スキル）
 
-W の指示書（`references/roles/worker/spec.md`）の仕様化判断（Step B）・分割判定（Step C）と、本体のモデル選択（`SKILL.md`「モデル」）で使う判定基準の詳細版。
-
-**事前判定は仮決めにすぎない**。誤分類は昇格トリップワイヤー（`plugins/dev-workflow/templates/escalation-tripwires.md`）が実行中に修正するので、入口で精密に当てようとしない。
+本体（オーケストレータ）が読む。本体のモデル選択（`SKILL.md`「モデル」）で使う残量モード・共有枠モード、サブエージェントのコンテキスト上限と手渡しの許可、モード不変ルールの詳細版。仕様化判断（Step B）と分割判定（Step C）は `references/spec-decision.md`、軽い通し方は `references/light-path.md`、W と G の return の 1 行目の宣言は `references/return-declaration.md`。
 
 ## 残量モード `FABLE_BUDGET_MODE`
 

@@ -13,7 +13,7 @@ channel の本体は AskUserQuestion を呼ばない。主に聞くときは、�
 
 **読み替えの規則**: develop と、develop から読む次の文書に書かれた「interactive は AskUserQuestion で聞く」（候補を提示して選ばせる・承認を得る・判断を仰ぐを含む）は、channel ではこの聞き方に読む。各文書には書き足さない（同じ規則を複数の文書に書くと、直すときに片方が漏れる）。例外は `commands/develop.md` の 5 か所だけ（冒頭の実行モードの段落・引数の分岐 ②⑤・issueify のヒアリング・issueify の承認ゲート）。入口の分岐で主に聞く場面なので、その場に「channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばない」と短く書いてよい。書くのは何をするかだけで、宛先・URL の添え方・文面は書かず、この節の聞き方に従う。対象は `plugins/dev-workflow/` からの相対パスで次の 11 個で、`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で AskUserQuestion に触れるファイルの全部（develop の SKILL.md とこのファイルと、手順として読まれない hook の 2 ファイル `hooks/hooks.json` と `scripts/unattended-ask-guard.sh` を除く。漏れは `tests/develop-channel-mode.bats` が見つける）。
 
-- `skills/develop/references/decision-criteria.md`
+- `skills/develop/references/spec-decision.md`
 - `skills/develop/references/epic-child-stop.md`
 - `skills/develop/references/fix-check.md`
 - `skills/develop/references/roles/spec-reviewer.md`
