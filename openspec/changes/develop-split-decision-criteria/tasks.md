@@ -45,13 +45,13 @@
 
 ## 9. 全体の確かめ
 
-- [ ] 9.1 `git grep -n decision-criteria plugins tests` の残りが、本体向けの規則（コンテキスト上限の本体向けの部分・手渡しの許可・残量モードの表・自動導出・モード不変ルール）を指すものと `CHANGELOG.md`・`changes/` の記録だけであることを目で確かめる。確かめ方: 残った行の一覧を PR 本文に貼る。触る範囲: なし（確認のみ）
+- [x] 9.1 `git grep -n decision-criteria plugins tests` の残りが、本体向けの規則（コンテキスト上限の本体向けの部分・手渡しの許可・残量モードの表・自動導出・モード不変ルール）を指すものと `CHANGELOG.md`・`changes/` の記録だけであることを目で確かめる。確かめ方: 残った行の一覧を PR 本文に貼る。触る範囲: なし（確認のみ）
 - [ ] 9.2 `scripts/test.sh`（リポジトリ全体の bats と Python のスイート）が緑。`tests/develop-startup-budget.bats` が SKILL.md の付け替えで予算を外れたら `tests/develop-startup-budget.txt` の値を実測に合わせる。確かめ方: `scripts/test.sh` が exit 0。触る範囲: tests/develop-startup-budget.txt:1-3
 - [ ] 9.3 切り出し後の場面ごとの字数を、切り出し前と同じ定義（場面ごとのファイルを cat でつないで `wc -m`。SubagentStart の hook の注入文は数えない）で測り、前後の表をエピック #1682 にコメントし、PR 本文にも載せる（予算の判定はバイト数で単位が違うことを書く）。確かめ方: エピックのコメントの URL がある。触る範囲: なし（記録のみ）
-- [ ] 9.4 `plugins/dev-workflow/changes/1683.md` に変更の記録を書く。確かめ方: ファイルがあり、`bats tests/plugin-release-convention.bats` が緑。触る範囲: plugins/dev-workflow/changes/1683.md（新規）
+- [x] 9.4 `plugins/dev-workflow/changes/1683.md` に変更の記録を書く。確かめ方: ファイルがあり、`bats tests/plugin-release-convention.bats` が緑。触る範囲: plugins/dev-workflow/changes/1683.md（新規）
 
-- [ ] 9.5 `./scripts/lint.sh` が exit 0。確かめ方: 終了コードと出力の末尾を PR 本文に載せる。触る範囲: なし（確認のみ。落ちたら原因のファイルを直す）
-- [ ] 9.6 移した段落ごとに、移した先・読み手・その読み手がその場面でそのファイルを読む根拠（そのファイルを読ませる指示書の `<パス>:<行>`。例: W の段 spec なら `worker/spec.md` が `spec-decision.md` を名指しする行、本体なら SKILL.md の参照の行）を表にして PR 本文に書く。あわせてタスク 2.1 で置き換えた箇所の前後の文の対の表を載せる。確かめ方: 表の行が、`DC` から移した小節（Step B の各小節・軽い通し方の各段落・Step C・判定に使わない材料・宣言の各箇条）を 1 つ残らず含み、根拠の行を開くとそのファイルの名指しがある。触る範囲: なし（記録のみ）
+- [x] 9.5 `./scripts/lint.sh` が exit 0。確かめ方: 終了コードと出力の末尾を PR 本文に載せる。触る範囲: なし（確認のみ。落ちたら原因のファイルを直す）
+- [x] 9.6 移した段落ごとに、移した先・読み手・その読み手がその場面でそのファイルを読む根拠（そのファイルを読ませる指示書の `<パス>:<行>`。例: W の段 spec なら `worker/spec.md` が `spec-decision.md` を名指しする行、本体なら SKILL.md の参照の行）を表にして PR 本文に書く。あわせてタスク 2.1 で置き換えた箇所の前後の文の対の表を載せる。確かめ方: 表の行が、`DC` から移した小節（Step B の各小節・軽い通し方の各段落・Step C・判定に使わない材料・宣言の各箇条）を 1 つ残らず含み、根拠の行を開くとそのファイルの名指しがある。触る範囲: なし（記録のみ）
 
 ## Workflow follow-up
 
