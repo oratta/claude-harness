@@ -89,6 +89,8 @@ TBD - created by archiving change owner-question-canonical-style. Update Purpose
 
 この要件の守備範囲は、上のファイルの文面である。上に無いファイルで見つかった自前の書き方は、見つかったときに足す。この要件の完了条件にはしない。
 
+エピックの親の共通の書き分けは epic-loop.md の「主への報告」に一度宣言し、停止・マージ待ち・サブエージェント方式の手順はこの宣言を読むよう指示する（MUST）。各手順末に同じ宣言を複写することは要求しない。
+
 #### Scenario: 参照先に旧い型の写しが残っていない
 - **WHEN** 上のファイルを `目的 → いま取り組んでいる場所`・`決めてほしいこと・推奨・受け入れるリスク`・`「飲めるか」を 1 問だけ` で検索する
 - **THEN** どれも見つからず、各ファイルに `readable.md` か `communication-style` への参照、またはその参照を持つ epic-loop.md の「主への報告」を読む指示があり、`readable.md` を指す箇所はどれも `~/.claude/output-styles/readable.md` の形である
@@ -97,7 +99,6 @@ TBD - created by archiving change owner-question-canonical-style. Update Purpose
 - **WHEN** `stages/hold.md` の「主に承認を求めてよい」節と、casting の `SKILL.md` の返信前チェックを読む
 - **THEN** どちらも、自分の判定が正本の主に聞く理由の 3 つのどれに当たるかを示している
 
-エピックの親の共通の書き分けは epic-loop.md の「主への報告」に一度宣言し、停止・マージ待ち・サブエージェント方式の手順はこの宣言を読むよう指示する（MUST）。各手順末に同じ宣言を複写することは要求しない。
 
 ### Requirement: 主に聞く理由に論点の有無を書く
 `output-styles/readable.md` の節 3 と `rules/communication-style.md` の 3 番目は、どちらも論点の定義と書き分けを持たなければならない（MUST）。書き分けは論点の項目に書く。

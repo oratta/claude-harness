@@ -211,6 +211,8 @@ SKILL.md は役割ごとの格を次のとおり規定しなければならな�
 
 この要件の入力は、`/develop <エピック番号>` で渡される記録先の issue、`scripts/epic-dispatch.sh route` の出力（`orca`・`tmux`・`subagent`・`nested`）、エピックの `回し方:` で始まるコメント、`wait` の出力の 1 行（`closed`・`done`・`timeout`・`stopped`・`unrecorded`・`error`）、`launch` の出力（`launched`・`skipped`・`failed`・`deferred`）である。拾いたい誤りは、`route` や最新の `回し方:` を読まずに経路を選び直すこと、`nested` を受けたのにエピックを展開すること、出力の 1 行を取り違えて待ちを終えたり子を起こしたりすること、子が全部マージされただけでエピックを閉じることである。次は通してよく、この要件では止めない: `回し方:` のコメントが無い新しいエピックで `route` から経路を決めること／`timeout` で起こされたとき何もせず再び待つこと／子が記録を残さずに自分のタブで質問して止まったとき、親が検知できないこと（手順書にその旨が書かれている）。手順書の読み方の揺れ（すり抜ける入力）が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
 
+回し方の本文は `references/epic-loop.md`（通常の進行）と `references/epic-subagent.md`（サブエージェント方式）、停止の解決は `references/epic-stop.md` に置く（MUST）。入口に親の起動・片付け・見張りの操作本文を残してはならない（MUST NOT）。
+
 #### Scenario: エピックの 4 節が存在する
 - **WHEN** `references/epic.md` の「エピックの扱い」節を読む
 - **THEN** 条件・作り方・nested・完了条件と読むものの表があり、親の通常進行は epic-loop.md、停止は epic-stop.md、委任は epic-delegation.md、マージ待ちは epic-merge-wait.md、別 repo は epic-multirepo.md、サブエージェント方式は epic-subagent.md へ案内され、完了条件に「子が全部マージされただけでは閉じない」が書かれている
@@ -251,7 +253,6 @@ SKILL.md は役割ごとの格を次のとおり規定しなければならな�
 - **WHEN** develop の `references/epic.md` の表から `references/epic-loop.md` の「通常進行の手順」と、経路に応じた `references/epic-subagent.md` を読む
 - **THEN** 起動・待ち・閉じた子・止まった子・片付け・完了の手順は 1 本で書かれ、Orca の部品・tmux の部品・サブエージェント方式のどれで起こすかによって違う点だけが部品ごとの欄に書かれており、「Orca 経路」と「サブエージェント方式」を別々の手順として二重に書いていない。サブエージェント方式は状態の記録を書かない、と書かれている
 
-回し方の本文は `references/epic-loop.md`（通常の進行）と `references/epic-subagent.md`（サブエージェント方式）、停止の解決は `references/epic-stop.md` に置く（MUST）。入口に親の起動・片付け・見張りの操作本文を残してはならない（MUST NOT）。
 
 ### Requirement: 実行モードと unmanned の責務分割
 SKILL.md は実行モード表（interactive / channel / unmanned）を持ち、unmanned（`--unmanned`。loop-dev-agent の憲法 Step 3 から呼ばれる）では次を規定しなければならない（MUST）: develop の本体は憲法のメイン自身が務め、W / R1 をメインが spawn する。worktree は憲法側が用意したものを使う。1 ループのうち (0)〜(3) を回し、(3) で W が Draft PR の作成と `agent-review:pending` の付与（憲法 Step 3 の 5〜6 に相当）まで行う。(4) の G は unmanned では起こさず、憲法 Step 1（レビューモード）が次サイクル以降で担う（1 サイクル 1 仕事を維持）。複数 change に割れた場合は子 issue を作って `blocked_by` で順序付けし、そのサイクルを終える。仕様化判断の記録と仕様レビューは unmanned でも免除しない（MUST）。文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる（SHALL）。
@@ -2035,6 +2036,8 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` は、`gh issue comment` の呼び出しの回数と本文、親子関係による `nested` と `launch` の拒否、上の `references/epic.md` の記述を確かめなければならない（MUST）。
 
+注意書きに従う投稿者の検査と nested の子側の処理は epic.md、親の投稿失敗への対処は epic-loop.md に置く（MUST）。子が注意書きを受けるだけで親の起動手順まで読むようにしてはならない（MUST NOT）。
+
 #### Scenario: --note があれば子ごとに 1 回注意書きをコメントする
 - **WHEN** 一覧に子のワークツリーが無いスタブ環境で `epic-dispatch.sh launch --note "後続の範囲に手を出さない" 400 11 12` を実行する
 - **THEN** `gh issue comment` は子 11 と子 12 にそれぞれ 1 回呼ばれ、どちらの本文も 1 行目が `親エピックからの注意書き: #400` で `後続の範囲に手を出さない` を含み、各子の `gh issue comment` は `orca terminal create` より前に呼ばれ、stdout は `launched 11` と `launched 12`、exit 0
@@ -2095,7 +2098,6 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 - **WHEN** `references/epic.md` の「エピックの扱い」を読む
 - **THEN** `親エピックからの注意書き:` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のものに従い W・R1・G に渡すこと、それ以外の投稿者のものには従わず渡さずユーザーに報告すること、起動し直したセッションでも `nested` になること、親エピックの番号を `parent epic: #` から読むこと、`child epics are not expanded here` で `launch` の拒否を見分けること、変数が無く `parent epic:` が出たときは親を持たないワークツリーで起動するよう伝えることが書かれていて、`grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` は 0 行
 
-注意書きに従う投稿者の検査と nested の子側の処理は epic.md、親の投稿失敗への対処は epic-loop.md に置く（MUST）。子が注意書きを受けるだけで親の起動手順まで読むようにしてはならない（MUST NOT）。
 
 #### Scenario: 親が注意書きの投稿失敗に対処する
 - **WHEN** `references/epic-loop.md`「通常進行の手順」手順１を読む
@@ -3070,6 +3072,8 @@ develop の手順書は、別セッション方式の通常進行を `references
 
 この要件の入力は `references/epic-loop.md`・`references/epic-stop.md`・`references/epic-worker-slots.md` の各担当部分の本文と読込指示である。拾いたい誤りは、親が `deferred` の子を動いている子として `wait` に渡して親が気づかないまま待ち続けること、枠が空いても後回しの子を起動しないこと、サブエージェント方式で上限を超えて W を起こすことである。次は通してよく、この要件では止めない: `timeout` で起こされたときに後回しの子を `launch` に渡し直さないこと（枠は変わっていない）／サブエージェント方式で R1・G・決める役など W 以外の役割を枠に数えないこと（上限が抑えるのは W の数）／W が R1 や G の結果を待って動いていないあいだも 1 枠を使い続けること。手順書の読み方の揺れ（すり抜ける入力）が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
 
+別セッション方式の後回しの子の通常進行は epic-loop.md、手順 8 の停止処理後の起動し直しは epic-stop.md、サブエージェント方式の枠・手渡し・再開の優先順は epic-worker-slots.md に置く（MUST）。
+
 #### Scenario: Orca 経路の手順に後回しの子の扱いが書かれている
 - **WHEN** `references/epic-loop.md` の Orca 経路の手順 1〜4 と `references/epic-stop.md` の手順 8 を読む
 - **THEN** `deferred <N>` の意味、後回しの子を `wait` に渡さないこと、手順 3 と手順 8 のあとで後回しの子があれば `launch` に渡し直すこと、手順 4 の `launch` が後回しの子を含むことが書かれている
@@ -3098,7 +3102,6 @@ develop の手順書は、別セッション方式の通常進行を `references
 - **WHEN** `references/epic-loop.md` の「通常進行の手順」を読む
 - **THEN** 完了の印の子・閉じた子・主の返事待ちで止まった子を数えないことと、戻った子の分だけ一時的に上限を超えうることが書かれている
 
-別セッション方式の後回しの子の通常進行は epic-loop.md、手順 8 の停止処理後の起動し直しは epic-stop.md、サブエージェント方式の枠・手渡し・再開の優先順は epic-worker-slots.md に置く（MUST）。
 
 ### Requirement: 破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる
 
@@ -3423,6 +3426,8 @@ develop の `references/epic-loop.md` の「通常進行の手順」の別セッ
 
 この要件の守備範囲で入力として扱うのは、`references/epic-loop.md` の Orca 経路の文面である。拾いたい誤りは 2 つある。主が親の発言から、答えが要るかどうかと、どこで何を打つかを読み取れないこと。子の記録の推奨を主に OK してもらう報告で、返事の場所と条件が発言から読めないこと。次は通ってよく、この要件では止めない: 2 行目以降の説明の文の良し悪し／アクションの中身の正しさ。穴が見つかるたびに決まりを足して塞ぎ切ることは、この要件の完了条件としない。
 
+手順書では epic-loop.md の「主への報告」に共通の宣言を一度だけ置き、他の親向け文書はそこを読むよう指示する（MUST）。各手順末に同じ宣言を繰り返すことは要求しない。場面固有の例外・問いをなしで上書きしない条件は維持する（MUST）。
+
 #### Scenario: Orca 経路が正本の書き分けを参照する
 - **WHEN** `references/epic-loop.md` の「主への報告」を読む
 - **THEN** 親が主に出す発言の 1 行目と 2 行目を `~/.claude/output-styles/readable.md` の節 3 の書き分けに従わせると書かれ、`主がすること: なし` の場合が書かれ、`主がすること: <どの画面・入力欄で>` の形が無い
@@ -3435,7 +3440,6 @@ develop の `references/epic-loop.md` の「通常進行の手順」の別セッ
 - **WHEN** `references/epic-stop.md` の手順 8 を読む
 - **THEN** 子の記録の推奨を主に OK してもらう報告のアクションの行に、親のタブで打つことと、報告の直後に別の発言を挟まないことを書くと書かれ、主の発言を引けなかったときの連絡のアクションの行には子のタブを出すと書かれている
 
-手順書では epic-loop.md の「主への報告」に共通の宣言を一度だけ置き、他の親向け文書はそこを読むよう指示する（MUST）。各手順末に同じ宣言を繰り返すことは要求しない。場面固有の例外・問いをなしで上書きしない条件は維持する（MUST）。
 
 ### Requirement: channel モードの主への発言はすべてチャンネルに送り、チャンネルでする操作を答え方の行に書く
 
@@ -3882,6 +3886,8 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 
 `references/epic-stop.md` は、別セッション方式の親が、主が親のタブで子の止まりを任せる旨を述べたとき、その発言だけを委任として扱わず（MUST NOT）、エピックの issue に定型の委任の記録を投稿し、本文に記録の URL と範囲・期間の文を書いて主に問うことを書かなければならない（MUST）。記録の種類は `主の委任: リスク許容` と `主の委任: 論点なしの止まり` の 2 つで、主が任せた範囲がどちらか読めないときは狭い側の `主の委任: リスク許容` を投稿する（MUST）。問いの答え方の行には、親のタブで `任せる` と打つことを書く（MUST）。問いのあとの主の発言のうち、全文から任せる意思が読める最初の発言を委任の確認とする（MUST）。問いと確認のあいだに主の別の発言が挟まっただけでは問い直さない（MUST NOT）。挟まった発言が委任を取り消すか範囲を変える内容なら、委任を使わずに問いを本文で出し直す（MUST）。
 
+委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。
+
 #### Scenario: 委任の記録の書式
 
 - **WHEN** 親が委任の記録を投稿する
@@ -3929,29 +3935,30 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 - **WHEN** 主が「任せる」とだけ述べ、リスク許容だけか論点なしの止まり全体かが読めない
 - **THEN** 親は `主の委任: リスク許容` の記録を投稿して問う
 
-委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。
 
 ### Requirement: 親は委任の確認の場所をエピックに残す
 
 `references/epic-stop.md` は、親が委任の確認を受けたら、`owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <確認の全文>` で確認の uuid を引き、エピックに `委任の確認の場所: セッション <親のセッション ID> / uuid <uuid> / 記録 <委任の記録の URL>` の 1 行を投稿することを書かなければならない（MUST）。親は起動し直したあとも、最新の `主の委任:` で始まるコメントの URL を `記録` に持つ最新のこの行から値を取る（MUST）。引けないときは委任を使わない（MUST）。
+
+委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。
 
 #### Scenario: 起動し直した親が委任を使う
 
 - **WHEN** 親のセッションが起動し直され、エピックに有効な委任の記録と、その URL を持つ `委任の確認の場所:` の行がある
 - **THEN** 親はその行のセッション ID と uuid を添え書きに使う
 
-委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。
 
 ### Requirement: 主の委任は取り消しと新しい記録とエピックの終わりで切れる
 
 `references/epic-stop.md` は、主が委任の取り消しを述べたら、親がその発言を受けた次のターンの最初のツール呼び出しでエピックに 1 行目 `主の委任: 取り消し` のコメントを投稿し、以後は委任で返事を送らないことを書かなければならない（MUST）。取り消しは主本人の確認を求めず、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれかなら効く（MUST。範囲を狭める向きにしか働かないため）。それ以外の投稿者の `主の委任:` で始まるコメントは数えない（MUST）。
+
+委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。
 
 #### Scenario: 取り消しのあとは委任で送らない
 
 - **WHEN** エピックの、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` の `主の委任:` で始まる最新のコメントが `主の委任: 取り消し`
 - **THEN** 親は止まった子を今どおり主に上げ、委任で返事を送らない
 
-委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。
 
 ### Requirement: 委任が有効かを決まった条件で確かめる
 
@@ -4025,6 +4032,8 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 
 送れたらエピックに `委任で送った: 子 #<N> <停止の記録の URL> 委任の記録: <委任の記録の URL>` の 1 行を残す（MUST。`親の判断:` で始めない）。同じ子のこの行の停止の記録の URL が今回の停止の記録の URL と同じなら送り直さない（MUST）。
 
+委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。
+
 #### Scenario: 委任で送った件をエピックに残す
 
 - **WHEN** 親が委任で `reply --as owner` を送り、出力が `sent` か `relaunched`
@@ -4040,7 +4049,6 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 - **WHEN** 手順 7 か 8 で同じ子が再び挙がり、エピックにその子の `委任で送った:` の行があって停止の記録の URL が今回と同じ
 - **THEN** 親は委任で送り直さず、子の再開を待つ
 
-委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。
 
 ### Requirement: 親が委任で送る経路の守備範囲
 
@@ -4299,6 +4307,8 @@ channel モードでは、状態表の答え方の列を、チャンネルで返
 
 時間分類は timeout・子の通知・主の返事を処理する前に適用する（MUST）。最後のリクエストは起床の API リクエストを除いた待機前のものを使い、キャッシュを書いた行の時刻と混同しない。60 分以上なら旧親は未処理イベントをエピックに記録し、同じ worktree の新セッションで `/develop <エピック番号>` から手順書と記録を読み直して再開するよう主に案内して終える（MUST）。再開手順は要件「親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す」に定め、親の表と epic-loop.md の手順 5 のどちらから読んでも時間分類が優先すると分かるようにする（MUST）。
 
+親の時間分類の操作規則は reply-after-idle.md に一度だけ置き、epic-loop.md の起床時・手順 5・9 はそこを先に読む案内にする（MUST）。
+
 #### Scenario: 規則のファイルに親の値と表と復元元が書かれている
 - **WHEN** 規則のファイルを読む
 - **THEN** 親にも idleCompaction false を適用し、60 分未満は続け、60 分以上は起動し直すと分かり、compact や N による継続の例外・親だけの閾値が無い
@@ -4316,7 +4326,6 @@ channel モードでは、状態表の答え方の列を、チャンネルで返
 - **WHEN** 親の最後のリクエストから 60 分未満である
 - **THEN** 親はそのまま続け、この規則を理由に短い wait のやり直しを止めない
 
-親の時間分類の操作規則は reply-after-idle.md に一度だけ置き、epic-loop.md の起床時・手順 5・9 はそこを先に読む案内にする（MUST）。
 
 ### Requirement: epic-loop.md の通常進行は子の起動コマンドの指定と返事の規則のファイルを指す
 `references/epic-loop.md` の「通常進行の手順」は、すべての develop セッションが開始時に worktree-local の idleCompaction を false にすること、子は既存の起動オプションでも切ること、時間がたった子・親は `references/reply-after-idle.md` に従うことを書かなければならない（MUST）。親だけの閾値の付け方を案内してはならない（MUST NOT）。子の起動コマンドの `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` や `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` も案内しない。対応する Bats はこの記述を確かめる（MUST）。

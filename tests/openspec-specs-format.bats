@@ -81,3 +81,89 @@ setup() {
   [ "$status" -eq 1 ]
   grep -qF '#### Scenario: depleted は中位を上限にし、最安の役はそのままにする' "$f"
 }
+
+# #1695: PR #1690 の追加段落は、シナリオではなく同じ要件の本文に置く。
+# CLI が無い CI でも、openspec show の text / rawText の境界を検査する。
+@test "epic reference paragraphs belong to requirement text before scenarios" {
+  python3 - "$SPECS_DIR" <<'PYTHON'
+import json
+import sys
+from pathlib import Path
+
+cases = json.loads(r'''[
+  [
+    "dev-workflow-develop",
+    "エピックの条件・作り方・回し方・完了条件を規定する",
+    "回し方の本文は `references/epic-loop.md`（通常の進行）と `references/epic-subagent.md`（サブエージェント方式）、停止の解決は `references/epic-stop.md` に置く（MUST）。入口に親の起動・片付け・見張りの操作本文を残してはならない（MUST NOT）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "エピックの子への注意書きと子であることを、起動し直したセッションにも引き継ぐ",
+    "注意書きに従う投稿者の検査と nested の子側の処理は epic.md、親の投稿失敗への対処は epic-loop.md に置く（MUST）。子が注意書きを受けるだけで親の起動手順まで読むようにしてはならない（MUST NOT）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる",
+    "別セッション方式の後回しの子の通常進行は epic-loop.md、手順 8 の停止処理後の起動し直しは epic-stop.md、サブエージェント方式の枠・手渡し・再開の優先順は epic-worker-slots.md に置く（MUST）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う",
+    "手順書では epic-loop.md の「主への報告」に共通の宣言を一度だけ置き、他の親向け文書はそこを読むよう指示する（MUST）。各手順末に同じ宣言を繰り返すことは要求しない。場面固有の例外・問いをなしで上書きしない条件は維持する（MUST）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "親は主の委任を、定型の委任の記録への主の直接の確認で受ける",
+    "委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "親は委任の確認の場所をエピックに残す",
+    "委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "主の委任は取り消しと新しい記録とエピックの終わりで切れる",
+    "委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "親は有効な委任が効く止まりにだけ、委任で許容を送る",
+    "委任の定型と有効性・種類別の適用条件の正本は `references/epic-delegation.md` とし、この親の操作手順から適用前に読む（MUST）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "親が長く待ったあとは親の表で続けるか起動し直すかを決める",
+    "親の時間分類の操作規則は reply-after-idle.md に一度だけ置き、epic-loop.md の起床時・手順 5・9 はそこを先に読む案内にする（MUST）。"
+  ],
+  [
+    "owner-question-style",
+    "主に問いを返す各所は正本を参照し、固有の事柄だけを残す",
+    "エピックの親の共通の書き分けは epic-loop.md の「主への報告」に一度宣言し、停止・マージ待ち・サブエージェント方式の手順はこの宣言を読むよう指示する（MUST）。各手順末に同じ宣言を複写することは要求しない。"
+  ]
+]''')
+errors = []
+for capability, title, paragraph in cases:
+    spec = (Path(sys.argv[1]) / capability / "spec.md").read_text()
+    requirement = spec.split("### Requirement: " + title + "\n", 1)[1].split("\n### Requirement:", 1)[0]
+    text, separator, scenarios = requirement.partition("#### Scenario:")
+    if not separator or text.count(paragraph) != 1 or paragraph in scenarios:
+        errors.append(f"{capability}: {title}: paragraph must appear once in text and never in scenarios")
+assert not errors, "\n".join(errors)
+print(f"{len(cases)} paragraphs in requirement text; none in scenario rawText")
+PYTHON
+}
+
+@test "epic child argument scope names both same-repo and multirepo procedures" {
+  python3 - "$SPECS_DIR/dev-workflow-epic-state/spec.md" <<'PYTHON'
+import sys
+from pathlib import Path
+
+spec = Path(sys.argv[1]).read_text()
+requirement = spec.split("### Requirement: 子を owner/repo#番号 で識別し、同じリポジトリの子は番号だけで書く\n", 1)[1].split("\n### Requirement:", 1)[0]
+text = requirement.split("#### Scenario:", 1)[0]
+scope = next(p for p in text.split("\n\n") if p.startswith("この要件の守備範囲"))
+for reference in ("references/epic-loop.md", "references/epic-multirepo.md"):
+    assert f"`{reference}`" in scope, f"missing argument source: {reference}"
+PYTHON
+}
