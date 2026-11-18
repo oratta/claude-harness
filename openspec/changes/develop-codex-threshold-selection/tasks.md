@@ -8,7 +8,7 @@
 
 ## 2. Codex の余裕が 10 以上で `claude-write-codex-review` を期待していた既存のテストを直す
 
-- [ ] 2.1 両 provider に余裕がある入力（Codex 10・20・30 など）で `claude-write-codex-review` を期待していた箇所の Codex の値を基準未満（例 5）に変え、新しい行のケース（Codex 10 以上 → `codex-standard`・`codex-headroom-meets-threshold`）を受け入れの表に足す。`python3 -m unittest plugins/dev-workflow/tests/test_codex_develop.py plugins/dev-workflow/tests/test_model_resolution_current.py` が exit 0。触る範囲: plugins/dev-workflow/tests/test_codex_develop.py:390-402、plugins/dev-workflow/tests/test_codex_develop.py:884-905、plugins/dev-workflow/tests/test_codex_develop.py:1083-1130（`automatic_off_case` と Codex オフの検査）、plugins/dev-workflow/tests/test_codex_develop.py:1195-1209、plugins/dev-workflow/tests/test_model_resolution_current.py:55-60（`MARGINS` の `auto:claude-write-codex-review` は (20, 10) なので Codex を基準未満にする。executor と model の固定値は変えない）
+- [ ] 2.1 両 provider に余裕がある入力（Codex 10・20・30 など）で `claude-write-codex-review` を期待していた箇所の Codex の値を基準未満（例 5）に変え、新しい行のケース（Codex 10 以上 → `codex-standard`・`codex-headroom-meets-threshold`）を受け入れの表に足す。`python3 -m unittest plugins/dev-workflow/tests/test_codex_develop.py plugins/dev-workflow/tests/test_model_resolution_current.py` が exit 0。触る範囲: plugins/dev-workflow/tests/test_codex_develop.py:390-402、plugins/dev-workflow/tests/test_codex_develop.py:884-905、plugins/dev-workflow/tests/test_codex_develop.py:1083-1130（`automatic_off_case` と Codex オフの検査）、plugins/dev-workflow/tests/test_codex_develop.py:1195-1209、plugins/dev-workflow/tests/test_model_resolution_current.py:55-60、plugins/dev-workflow/tests/test_model_resolution_current.py:126（`MARGINS` の `auto:claude-write-codex-review` は (20, 10)、`auto:codex-standard` は (-5, 30) で理由 `only-codex-has-headroom`、`MARGINS.get` の既定も (20, 10)。どれも Codex を基準未満（5）にして、今の理由のまま表の各行を引く。executor と model の固定値は変えない）
 
 ## 3. 文書と変更の記録
 
@@ -17,7 +17,7 @@
 
 ## 4. 結合の確認
 
-- [ ] 4.1 `openspec validate develop-codex-threshold-selection --type change --strict` と `scripts/test.sh dev-workflow`（または repo の既存の実行方法）が exit 0。開始済みの工程を切り替えない既存の検査（develop-handover.bats など SKILL.md の「開始済み role は途中で切り替えない」を見るもの）が変わらず通ること
+- [ ] 4.1 `openspec validate develop-codex-threshold-selection --type change --strict` と `scripts/test.sh dev-workflow`（または repo の既存の実行方法）が exit 0。開始済みの工程を切り替えない既存の検査（`plugins/dev-workflow/tests/model-escalation-policy.bats:308` の「a resume calls request again and compares tiers without reselecting」）が変わらず通ること
 
 ## Workflow follow-up
 
