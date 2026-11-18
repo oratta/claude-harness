@@ -3730,8 +3730,11 @@ infer_ready() {
   printf '%s\n' "$l" | grep -qF '2 行目を `アクション:` で始まるアクションの行'
   printf '%s\n' "$l" | grep -qF '主がこのセッションで次にすること:'
   ! printf '%s\n' "$l" | grep -qF '<どの画面・入力欄で> <何を打つ・押す>' || return 1
-  for n in 2 3 4 5 6; do
-    printf '%s\n' "$r" | grep "^$n\. " | grep -qF '上の書き分けの規定に従う'
+  # 書き分けは loop の正本で一度規定し、各場面は処理前にそこを読む。
+  grep -qF '## 主への報告' "$PLUGIN_DIR/skills/develop/references/epic-loop.md"
+  local doc
+  for doc in epic-stop epic-merge-wait epic-subagent; do
+    grep -F 'references/epic-loop.md' "$PLUGIN_DIR/skills/develop/references/$doc.md" | grep -qF '主への報告'
   done
   s8="$(printf '%s\n' "$r" | grep '^8\. ')"
   printf '%s\n' "$s8" | grep -F 'アクションの行' | grep -qF '親のタブ'
@@ -3997,7 +4000,7 @@ orca_cmd_scripts() {
   p="$(run_section | grep -E '^8\. ')"
   printf '%s\n' "$p" | grep -F '照らす前に' | grep -F '親の判断: 子 #N 通した' | grep -F '.claude/casting/project.md' | grep -qF '既に一度通していれば覆さずに主に上げる'
   printf '%s\n' "$p" | grep -qF '待ちに入る通知の本文に、まだ上げていない止まった子の番号を 1 行書く'
-  q="$(run_section | grep -E '^7\. ')"
+  q="$(run_section | grep -E '^7\. '; cat "$PLUGIN_DIR/skills/develop/references/epic-stop.md")"
   printf '%s\n' "$q" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）、待ちに入る'
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   printf '%s\n' "$r" | grep -qF '破壊的操作や聖域を止めた hook は「決まりで主の承認が要る」に当たる'
@@ -4074,7 +4077,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -qF '主の発言: <要旨>'
   printf '%s\n' "$l" | grep -qF '親の判断では広げない'
   printf '%s\n' "$l" | grep -F 'OWNER・MEMBER・COLLABORATOR' | grep -qF '最新の 1 件'
-  q="$(run_section | grep -E '^7\. ')"
+  q="$(run_section | grep -E '^7\. '; cat "$PLUGIN_DIR/skills/develop/references/epic-stop.md")"
   printf '%s\n' "$q" | grep -F '`子の PR トークン権限:`' | grep -qF '既定値で投稿'
 }
 
@@ -4369,8 +4372,8 @@ orca_cmd_scripts() {
 @test "reply-after-idle: all sessions disable idle and parents relaunch at 60 minutes (#1385)" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -E '^\| 親 \|' "$f" | grep -qF 'false'
-  grep -E '^\| 親の最後のリクエストから 60 分未満 \|' "$f" | grep -qF 'そのまま続ける'
-  grep -E '^\| 親の最後のリクエストから 60 分以上 \|' "$f" | grep -F '起動し直す' | grep -qF '会話量によらず'
+  grep -E '^\| 親の最後のリクエストから 60 分未満、または時刻不明で長時間経過を確認できない \|' "$f" | grep -qF 'そのまま続ける'
+  grep -E '^\| 親の最後のリクエストから 60 分以上 \|' "$f" | grep -F '起動し直す' | grep -qF 'compact の有無と会話量で例外にしない'
   parent="$(sed -n '/^## 親への適用/,$p' "$f")"
   run printf '%s\n' "$parent"
   [[ "$output" != *'120,000'* ]] || return 1
@@ -5218,7 +5221,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 @test "skill: Orca route steps 3, 4 and 8 launch the deferred children again" {
   r="$(run_section)"
   for k in 3 8; do
-    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子が残っていれば、2 に戻る前に依存の解けた開いた子'
+    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -Eq '後回しの子が残っていれば、(`references/epic-loop.md` の手順 )?2 に戻る前に依存の解けた開いた子'
   done
   printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子もここに含まれる'
 }
@@ -5509,7 +5512,7 @@ resolve_relaunch_count() {
 }
 
 @test "skill: the subagent route stops on a bad max-parallel setting" {
-  printf '%s\n' "$(subagent_para)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる。手順 6 と同じ）'
+  printf '%s\n' "$(subagent_para)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる。`references/epic-loop.md` の手順 6 と同じ）'
 }
 
 # --- adopt ---

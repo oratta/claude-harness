@@ -1276,7 +1276,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "skill: a stop that is not a question is dismissed and goes back to the wait, in steps 8 and 7" {
   p="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
-  printf '%s\n' "$p" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`scripts/epic-dispatch.sh dismiss <N>` を呼んでから 2 に戻る'
+  printf '%s\n' "$p" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`scripts/epic-dispatch.sh dismiss <N>` を呼んでから `references/epic-loop.md` の手順 2 に戻る'
   printf '%s\n' "$p" | grep -qF '`dismiss` の出力が `skipped` か `failed` でも主に上げない'
   p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p7" | grep -qF '手順 8 と同じく `dismiss` で戻して出し直さない'
@@ -1858,7 +1858,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   p8="$(grep -E '^8\. `stopped <N>...`' "$EPIC")"
   printf '%s\n' "$p8" | grep -qF '上げた子ごとに `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ'
   printf '%s\n' "$p8" | grep -qF '**マージ待ちの子** と **PR トークン上限の子** の手順で主に上げた場合を含む'
-  printf '%s\n' "$p8" | grep -qF '`skipped <N> ...`・`failed <N> ...` は主に上げずに 2 に戻る'
+  printf '%s\n' "$p8" | grep -qF '`skipped <N> ...`・`failed <N> ...` は主に上げずに `references/epic-loop.md` の手順 2 に戻る'
   p7="$(grep -E '^7\. ' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p7" | grep -qF '報告を出し直した子には、待ちに入る前に手順 8 と同じく `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ。'
   p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
