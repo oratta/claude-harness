@@ -7757,9 +7757,9 @@ from pathlib import Path
 import sys
 plugin = Path(sys.argv[1]).resolve()
 repo = plugin.parent.parent
-text = '\n'.join(p.read_text() for p in (plugin / 'skills/develop/references').glob('epic*.md'))
-p7 = text.split('\n7. ')[1].split('\n8. ')[0]
-p8 = text.split('\n8. ')[1].split('\n\n')[0]
+refs = plugin / 'skills/develop/references'
+p7, = (line for line in (refs / 'epic-loop.md').read_text().splitlines() if line.startswith('7. '))
+p8, = (line for line in (refs / 'epic-stop.md').read_text().splitlines() if line.startswith('8. '))
 for term in ['保存した元セッション ID・uuid', '最新の停止記録 URL', '真正性と対象']:
     assert term in p7, term
 for term in ['--locate "<保存した元セッション ID>"', '保存した uuid', '全文', 'timestamp',
