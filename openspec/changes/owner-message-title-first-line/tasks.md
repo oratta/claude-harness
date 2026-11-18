@@ -19,5 +19,5 @@
 
 - [x] 3.0 spec の Scenario「実機で親の報告が正本の型になり、理由の無い止まりは上がらない」を `claude -p --plugin-dir` で取り直し、主に上げた報告の 1 行目が題名・2 行目が `アクション:` の行であることを確かめる（結果は変更の記録に書く）。触る範囲: なし（確認のみ）
 
-- [ ] 3.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/develop-channel-mode.bats plugins/dev-workflow/tests/develop-handover.bats plugins/dev-workflow/tests/develop-skill.bats` を通す。触る範囲: なし（確認のみ）
+- [x] 3.1 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/develop-channel-mode.bats plugins/dev-workflow/tests/develop-handover.bats plugins/dev-workflow/tests/develop-skill.bats` を通す。触る範囲: なし（確認のみ）
 - [x] 3.2 変更の記録 `plugins/dev-workflow/changes/1671.md` にこの change の分を足す。触る範囲: plugins/dev-workflow/changes/1671.md
