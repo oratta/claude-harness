@@ -1,0 +1,36 @@
+# Tasks
+
+行番号は固定 main e10f0a98 時点。各タスクの編集前に該当範囲と design.md の移動表を読む。R1 APPROVE と、本体による規模超過の見込み・既存 open PR の順序の確認より前に実装しない。全体を 1 PR にまとめ、各群の関係テストをその群で直す。
+
+## 1. 共通指示と前提確認の読込を分ける
+
+- [ ] 1.1 三表・補足・要約受領を gate-triage.md（区画は gate-triage-partitions.md）へ移し、gate-runner を共通契約と条件付きの読む表にする。経路・Status・共通 Gate Result を保存し、develop-roles / develop-adapter-review-routing の関係テストで段ごとの接続を確認する。触る範囲: plugins/dev-workflow/skills/develop/references/roles/gate-runner.md:1-125、plugins/dev-workflow/skills/pr-review-gate/stages/gate-triage.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/gate-triage-partitions.md（新規）、plugins/dev-workflow/tests/develop-roles.bats:1-1244、plugins/dev-workflow/tests/develop-adapter-review-routing.bats:1-273
+- [ ] 1.2 軽い通し方・区画詳細・needs-reviewer を条件付き詳細に移す。HEAD 固定後の確認、600 行以下でも区画判定コマンドを走らせること、payload の逐語保存を pr-review-gate-skill / index の検査で確認する。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/prepare.md:17-177、plugins/dev-workflow/skills/pr-review-gate/stages/prepare-light.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/prepare-partitions.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/prepare-reviewer.md（新規）、plugins/dev-workflow/tests/pr-review-gate-skill.bats:1-2533、plugins/dev-workflow/tests/pr-review-gate-index.bats:1-113
+
+## 2. 照合で条件付きの本文を分ける
+
+- [ ] 2.1 順 3、止めない指摘と候補探し、エピック固有処理、収束、failed の昇格、コメント分割を design の先へ移す。親探索を段 B より先にすること、混在の処理順、再レビューの周数、失敗の上限を保存し、pr-review-gate-skill / long-comment の関係テストで確認する。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/triage.md:13-258、plugins/dev-workflow/skills/pr-review-gate/stages/triage-row3.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/triage-nonblocking.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/triage-epic.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/triage-convergence.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/triage-escalation.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/comment-parts.md（新規）、plugins/dev-workflow/tests/pr-review-gate-skill.bats:1-2533、plugins/dev-workflow/tests/pr-review-gate-long-comment.bats:1-361
+- [ ] 2.2 既存の review-run / reviewer-brief と新しい正本間の重複を参照にする。従来経路や行無しの既定は保存する。規則本文から除いた経緯が停止条件・コマンド・守備範囲でないことを差分確認し、index と develop-roles を通す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/review-run.md:1-120、plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md:1-76、plugins/dev-workflow/skills/develop/references/roles/gate-runner.md:25-125、plugins/dev-workflow/tests/pr-review-gate-index.bats:1-113、plugins/dev-workflow/tests/develop-roles.bats:1-1244
+
+## 3. 合格・保留の条件付き詳細を分ける
+
+- [ ] 3.1 issue 承認済み・引き継ぎ・exit 4 の判定役・論点なしの本文を分け、宣言から合格までの判定順を保存する。pr-review-gate-spec-declaration と関係テストで旧条件の存在・条件付き参照を確認する。触る範囲: plugins/dev-workflow/skills/pr-review-gate/declarations.md:71-119、plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:17-124、plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:162-172、plugins/dev-workflow/skills/pr-review-gate/stages/issue-approved.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/carryover.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/carryover-judge.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/no-point-check.md（新規）、plugins/dev-workflow/tests/pr-review-gate-spec-declaration.bats:1-222、plugins/dev-workflow/tests/pr-review-gate-skill.bats:1-2533
+- [ ] 3.2 許容の記録の形ごとの真正性確認と、文言合わせ専用の検査を条件付きにし、pass の共通実測・Ready 化・passed の順を保つ。spec-wording-sync-light-path と関係テストを通す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:57-309、plugins/dev-workflow/skills/pr-review-gate/stages/authenticity.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/authenticity-conversation.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/authenticity-relayed.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/authenticity-delegated.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/pass-wording.md（新規）、plugins/dev-workflow/tests/spec-wording-sync-light-path.bats:1-411、plugins/dev-workflow/tests/pr-review-gate-skill.bats:1-2533
+- [ ] 3.3 保留の復帰表・4 分類を分け、各 Status の return を逐語保存する。条件付き詳細から戻る段と needs-approval の扱いを関係テストで確認する。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/hold.md:126-200、plugins/dev-workflow/skills/pr-review-gate/stages/hold-resume.md（新規）、plugins/dev-workflow/skills/pr-review-gate/stages/hold-categories.md（新規）、plugins/dev-workflow/tests/pr-review-gate-skill.bats:1-2533、plugins/dev-workflow/tests/develop-roles.bats:1-1244
+
+## 4. 参照と検査を移動に追従させる
+
+- [ ] 4.1 索引・各入口と、design の付け替え一覧にある参照だけを更新する。develop/SKILL.md と epic 系はパス・参照節以外を変えない。rg で旧節の参照を列挙し、移動表と対応を確認する。ほかのテストが旧場所を固定しているときも意味の検査を保存して連結対象へ直す。触る範囲: plugins/dev-workflow/skills/pr-review-gate/SKILL.md:16-53、plugins/dev-workflow/skills/develop/SKILL.md:70-205（参照先のみ）、plugins/dev-workflow/skills/develop/references/epic.md:88-92（参照先のみ）、plugins/dev-workflow/skills/develop/references/roles/worker/implement.md:1-46（参照先のみ）、plugins/dev-workflow/skills/develop/references/roles/worker/finish.md:1-13（参照先のみ）、plugins/dev-workflow/references/subagent-waiting.md:1-153（参照先のみ）、plugins/dev-workflow/references/codex-develop.md:1-71（参照先のみ）、plugins/dev-workflow/tests/pr-review-gate-index.bats:1-113、plugins/dev-workflow/tests/develop-roles.bats:1-1244
+- [ ] 4.2 移動前の宣言・return の期待文字列を固定 main から fixture に保存し、全雛形の一致を新しい回帰テストで確認する。コマンド・守備範囲・停止条件の対応表も作り、欠落が無いことを検査する。文言テストの「移動は通る／全体から消すと落ちる」の fixture を追加する。触る範囲: tests/gate-contract-preservation.bats（新規）、tests/fixtures/gate-contracts/（新規）、plugins/dev-workflow/tests/pr-review-gate-skill.bats:1-2533、plugins/dev-workflow/tests/develop-roles.bats:1-1244
+- [ ] 4.3 基礎 5 場面、条件付き詳細、複合条件の和集合、一括経路に予算を足す。design の正常・境界・超過・不在・不正一覧の fixture を走らせ、詳細を増やしたときに落ちることを確認する。値は実装後の実測以上かつ 1.1 倍以下にし、既存 injection-budget は変えない。触る範囲: tests/gate-reading-budget.bats（新規）、tests/gate-reading-budget.txt（新規）、tests/develop-worker-stage-budget.bats:1-209（declarations の読む先が変わる場合のみ）、tests/develop-worker-stage-budget.txt:1-3（その実測が変わる場合のみ）
+
+## 5. 統合の確認と記録
+
+- [ ] 5.1 関係 bats、新しい予算・契約テスト、./scripts/test.sh、./scripts/lint.sh を実行し、コマンド・exit code を記録する。Claude 呼び出しを禁止された worker は lint 内の claude plugin validate を実行せず、未実行のチェックとして本体に返す。通っていないものを成功にしない。触る範囲: scripts/test.sh:1-402（実行のみ）、scripts/lint.sh:1-147（実行のみ）、plugins/dev-workflow/changes/1687.md（新規）
+- [ ] 5.2 固定 main の before と実装 HEAD の after を同じ範囲で wc -m で測る。design の before 表・移動表・実行証拠と、規模超過・削らず残した分岐を変更記録にまとめる。OpenSpec strict validate と git diff --check を通す。触る範囲: plugins/dev-workflow/changes/1687.md（新規）、openspec/changes/split-gate-stage-reading/design.md:1-145（計測結果の追記のみ）
+
+## Workflow follow-up
+
+- implement の return の後、coordinator の指示で finish へ進む。仕様を同期・archive し、Closes #1687 を書いた Draft PR を 1 本作る。PR 本文には基礎 5 場面と条件別の前後の字数、移動表、チェック結果を載せる。
+- 最後に親 #1682 に同じ前後の字数をコメントする。#580 と PR #1436 を閉じるか主へ確認する。どちらも worker が勝手に閉じない。
+- この PR は主がマージする。merge も auto-merge の有効化も行わない。
