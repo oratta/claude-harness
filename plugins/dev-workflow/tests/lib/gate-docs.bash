@@ -7,6 +7,7 @@ gate_test_docs() {
   local helper
   helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gate-docs.py"
   python3 -B "$helper" "$PLUGIN_DIR" "$BATS_TEST_TMPDIR" > /dev/null
+  ALL_GATE_DOCS="$BATS_TEST_TMPDIR/gate-docs/ALL.md"
   for name in GATE DECLARATIONS PREPARE TRIAGE PASS_STAGE HOLD; do
     if [ -n "${!name:-}" ]; then
       printf -v "$name" '%s' "$BATS_TEST_TMPDIR/gate-docs/$name.md"

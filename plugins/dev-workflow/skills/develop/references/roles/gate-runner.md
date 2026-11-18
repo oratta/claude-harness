@@ -16,7 +16,7 @@ develop の本体から `subagent_type: dev-workflow:gate-runner` で**名前付
 
 | 段（起動指示の `段:`） | 読むファイル |
 |---|---|
-| 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare-reviewer.md`（adapter 経路はここで `needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/triage-convergence.md` の収束ルールの節と「W の修正後の再レビュー」の入力） |
+| 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare.md`（adapter 経路は payload を組むときに `stages/prepare-reviewer.md` を追加し、`needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/triage-convergence.md` の収束ルールの節と「W の修正後の再レビュー」の入力） |
 | 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md`（要約・補足受領では `stages/gate-triage.md` を追加。戻した指摘が順 3 だけの修正のあとは、加えて `stages/prepare.md` の手順 1） |
 | 合格処理（手順 3・3-b・4・5。引き継ぎの判定と論点なしの確認の受領を含む） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるときは `stages/carryover.md`、保留を返すとき・`needs-carryover-judge` を返すとき・`needs-no-point-check` を返すときは加えて `stages/hold.md`） |
 | 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md`（切り出しの確認に「切り出す」と答えられたときは加えて `stages/triage-nonblocking.md` の置き場所の段落・候補探しと `stages/triage-epic.md` の段 C の節） |
@@ -98,7 +98,7 @@ G が `工程中断:` で返したら、本体は同じ段の新しい G を起�
 
 照合と振り分けの G の return の仕分け欄に `条件の確認待ち` の質問文があれば、G を起こした側（develop では本体）は、その質問文と `条件の確認待ち` の PR コメントの URL を主への次の報告にそのまま載せる（無人運用（loop-dev-agent）では記録先にコメントする）。
 
-**条件の答えを受け取ったとき（本体の作業。G を起こさない）**: 照合と振り分けの G が 1 行目 `条件の確認待ち` の PR コメントを残した指摘（止めない指摘の振り分け表の段 B で、G が条件を決められなかったもの。return の仕分け欄に質問文がある）について、主が条件を答えたら、答えを受け取ったセッション（develop では本体）が次を行う: 答えを 1 行にして、エピックの本文（親が別リポジトリなら親のリポジトリの本文（`stages/triage-nonblocking.md` の段 C の段落）。エピックに属さない PR では記録先の本文）の節 `## 条件の答え` に足す（節が無ければ作る）、`条件の確認待ち` のコメントに答えを返信する、確認待ちの指摘を `stages/triage-nonblocking.md` の段 B の表から当て直す（段 A には戻さない。当て直しはサブエージェントに任せてよい）。PR がマージ済みでも行う。ラベル・周・宣言には触れず、Gate Result も作らない。足した行は、以後のレビュアーの依頼文に入れる（`stages/reviewer-brief.md` の入口）。
+**条件の答えを受け取ったとき（本体の作業。G を起こさない）**: 照合と振り分けの G が 1 行目 `条件の確認待ち` の PR コメントを残した指摘（止めない指摘の振り分け表の段 B で、G が条件を決められなかったもの。return の仕分け欄に質問文がある）について、主が条件を答えたら、答えを受け取ったセッション（develop では本体）が次を行う: 答えを 1 行にして、エピックの本文（親が別リポジトリなら親のリポジトリの本文（`stages/triage-epic.md` の段 C の段落）。エピックに属さない PR では記録先の本文）の節 `## 条件の答え` に足す（節が無ければ作る）、`条件の確認待ち` のコメントに答えを返信する、確認待ちの指摘を `stages/triage-nonblocking.md` の段 B の表から当て直す（段 A には戻さない。当て直しはサブエージェントに任せてよい）。PR がマージ済みでも行う。ラベル・周・宣言には触れず、Gate Result も作らない。足した行は、以後のレビュアーの依頼文に入れる（`stages/reviewer-brief.md` の入口）。
 
 ## モデル（本体が spawn 時に決める）
 

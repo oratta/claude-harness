@@ -194,7 +194,7 @@ check_table() {
 @test "long comment (#1571): every definition of the review-tables comment carries the same three heading lines" {
   gate="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
   received="$(grep -F '**レビュアーの要約受領**' "$TRIAGE")"
-  supplement="$(grep -F '補足の `needs-reviewer` を返す前に、元の三表' "$gate")"
+  supplement="$(grep -F '補足の `needs-reviewer` を返す前に、元の三表' "${PLUGIN_DIR}/skills/pr-review-gate/stages/gate-triage.md")"
   input_row="$(grep -E '^\| レビューの三表と補足済み回数' "$gate")"
   [ -n "$received" ] && [ -n "$supplement" ] && [ -n "$input_row" ]
   for line in "$received" "$supplement" "$input_row"; do
@@ -273,7 +273,7 @@ check_table() {
 }
 
 @test "long comment (#1249): the worker brief points at the rule and at stopping" {
-  grep -F '「コメント長の上限を超えるとき（三表と順 3 の一覧）」' "$IMPLEMENT" | grep -qF 'stages/triage.md'
+  grep -F '「コメント長の上限を超えるとき（三表と順 3 の一覧）」' "$IMPLEMENT" | grep -qF 'stages/comment-parts.md'
   grep -F '「コメント長の上限を超えるとき（三表と順 3 の一覧）」' "$IMPLEMENT" | grep -qF '投稿も push もせず'
 }
 

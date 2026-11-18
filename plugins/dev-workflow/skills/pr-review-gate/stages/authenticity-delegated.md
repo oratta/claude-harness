@@ -1,5 +1,7 @@
 # authenticity-delegated — pr-review-gate
 
+本文の「上の「親経由で受けた許容（親経由で受領）の真正性確認」の 1」は `stages/authenticity-relayed.md` の同名節の 1 を指す。
+
 **主の委任で親経由に受けた許容（親経由で受領（委任））の真正性確認。** エピックの子で、主が親のセッションでこのエピックのリスク許容を親に任せ（develop の `references/epic.md` の **主の委任**）、親が末尾に ` [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]` を添えて送ってきたときは、develop の本体が `owner-reply-check.sh --delegated` の終了コード 0 を確かめてから値（親のセッション ID・確認の uuid・`MATCH:` の timestamp・委任の記録の URL・停止の記録の URL・`MATCH:` の全文）を渡す。宣言コメントに次の 1 行を追記する（`<日時>` は `MATCH:` の行の timestamp、`<原文>` はその行の全文。行頭は `主の回答: 許容` のままにし、手順 3-c の「前の宣言の選び方」がこの記録を主の直接の回答として拾えるようにする）:
 
 ```

@@ -110,5 +110,5 @@ adapter 経路・Codex 不可・オフ・light の needs-reviewer の出口で�
 ## 出口
 
 - 手順 1 で主の許容待ちが残っていて `needs-approval` を付けたままにしたら、`stages/hold.md`（手順 6）を続ける。
-- 2-0 まで済んだらレビューを起こす。レビューを起動する側（develop 以外の本体、従来経路の G）は `stages/review-run.md` を読む。レビュアーに渡す指示は `stages/reviewer-brief.md` にある。develop の G（adapter 経路）はこのファイルの「G として動くとき（develop）」節の needs-reviewer を return する。
+- 2-0 まで済んだらレビューを起こす。レビューを起動する側（develop 以外の本体、従来経路の G）は `stages/review-run.md` を読む。レビュアーに渡す指示は `stages/reviewer-brief.md` にある。develop の G（adapter 経路）は`stages/prepare-reviewer.md` の「G として動くとき（develop）」節の needs-reviewer を return する。
 - レビュー結果を受け取ったら、指摘が残っていれば `stages/triage.md`、残っていなければ `declarations.md`（手順 3・3-b）へ進む。

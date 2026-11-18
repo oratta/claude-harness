@@ -243,7 +243,7 @@ table5() { step5 | grep '^| '; }
 # 手順 5 に書かれた照合のコマンド（DEC= の行から、要件名の突き合わせの行まで）を抜き出して fixture で実行する。
 # gh は fixture を返す偽物に差し替え、archive 済みの差分は一時ディレクトリに置く。
 light_cmds() {
-  step5 | LC_ALL=C awk '/^DEC=/{f=1} f{print} f && /^grep -h .*Requirement: /{exit}'
+  step5 | LC_ALL=C awk '/^```bash$/{bash=1; next} /^```$/{bash=0; next} bash && /^DEC=/{f=1} bash && f{print} bash && f && /^grep -h .*Requirement: /{exit}'
 }
 
 install_fake_gh() {

@@ -192,7 +192,7 @@ setup() {
 
 # 「### <N>. 」から次の「### 」見出しまでを切り出す（「#### 」の小見出しでは区切らない）
 # 否定の検査（その文言がスキルのどこにも無いこと）は索引だけでなく段のファイル全部で見る
-gate_all() { cat "$SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
+gate_all() { cat "$ALL_GATE_DOCS"; }
 
 # 手順が置かれた段のファイルは、索引（SKILL.md）の手順番号の対応表から引く（索引の表そのものも検査する）
 step_file() {
@@ -645,6 +645,11 @@ nonblocking_para() {
   nonblocking_section | awk -v h="**$1" 'index($0, h)==1 {f=1; print; next} f&&/^\*\*/{exit} f'
 }
 
+# Parent lookup stays before stage B; stage C's body lives in its own file.
+parent_fetch() {
+  awk '/issues\/<記録先 issue の番号>\/parent/{f=1} f&&/^\*\*段 B/{exit} f' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-nonblocking.md"
+}
+
 has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して落とす
   local body="$1" t
   shift
@@ -803,7 +808,8 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
 }
 
 @test "nonblocking triage (#985): stage C sorts by the relation to existing issues and checks the author of outside candidates" {
-  c="$(nonblocking_para '段 C（')"
+  c="$(parent_fetch)
+$(nonblocking_para '段 C（')"
   [ -n "$c" ] || { echo "no stage C paragraph"; return 1; }
   has_all "$c" 'issues/<記録先 issue の番号>/parent' 'その子 issue の受け入れ条件に足す' 'その issue をエピックの子に足す' \
     'この指摘だけの新しい子 issue を作る' '当たる issue が無い' '外の PR のマージ後に着手' \
@@ -818,7 +824,8 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   [ -f "$spec" ] || spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
   req="$(awk '/^### Requirement: エピックの完了条件に効く指摘は既存 issue との関係で分ける（段 C）/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
   [ -n "$req" ] || { echo "no stage C requirement"; return 1; }
-  c="$(nonblocking_para '段 C（')"
+  c="$(parent_fetch)
+$(nonblocking_para '段 C（')"
   has_all "$req" "--jq '{number,repository_url}'" 'HTTP 404' '1 回だけやり直し' '`--epic` を付けず' '全候補を `other`' 'sub_issues' '段 D の参考コメントで済ませず'
   has_all "$c" "--jq '{number,repository_url}'" 'HTTP 404' '1 回だけやり直し' '`--epic` を付けず' '全候補を `other`' 'sub_issues' '段 D の参考コメントで済ませず'
   # 候補探しの前に取る・失敗時の例外が段 D・段 E の行と候補探しにある
@@ -833,7 +840,8 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   [ -f "$spec" ] || spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
   req="$(awk '/^### Requirement: エピックの完了条件に効く指摘は既存 issue との関係で分ける（段 C）/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
   [ -n "$req" ] || { echo "no stage C requirement"; return 1; }
-  c="$(nonblocking_para '段 C（')"
+  c="$(parent_fetch)
+$(nonblocking_para '段 C（')"
   for body in "$req" "$c"; do
     has_all "$body" "--jq '{number,repository_url}' 2>&1" '段 B の前に済ませる' 'やり直しの出力も同じ判定にかける' \
       'このときの答えは記録先の本文に足す' '-X POST repos/<親のリポジトリ>/issues/<親の番号>/sub_issues -F sub_issue_id=<id>' \
@@ -841,10 +849,15 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   done
   if printf '%s\n' "$c" | grep -qF '候補探しの前に済ませる'; then echo "stale: 候補探しの前"; return 1; fi
   # 条件の答えを読み書きする文の 1 句は、spec・gate-runner.md・reviewer-brief.md で同じ
-  phrase='親が別リポジトリなら親のリポジトリの本文（`stages/triage.md` の段 C の段落）'
+  phrase='親が別リポジトリなら親のリポジトリの本文'
   has_all "$(awk '/^### Requirement: 条件を主に聞くときは条件だけを聞き/{f=1;next} /^### Requirement: /{f=0} f' "$spec")" "$phrase" || return 1
   has_all "$(cat "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md")" "$phrase" || return 1
   has_all "$(cat "$REVIEWER_BRIEF")" "$phrase" || return 1
+  grep -F "$phrase" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md" | grep -qF '`stages/triage-epic.md` の段 C の段落'
+  grep -q '^\*\*段 C（' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-epic.md"
+  parent_line="$(grep -nF 'issues/<記録先 issue の番号>/parent' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-nonblocking.md" | cut -d: -f1)"
+  b_line="$(grep -n '^\*\*段 B（' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-nonblocking.md" | cut -d: -f1)"
+  [ "$parent_line" -lt "$b_line" ]
 }
 
 @test "nonblocking triage (#1011): the epic number exclude and the truncation rerun need the parent in the same repository, same wording in triage.md and the spec" {
@@ -949,7 +962,7 @@ triage_section() {
 
 # 仕分け表の中の「**順 N（…）**」段落。次の太字見出しの段落の手前まで
 triage_row_section() {
-  triage_section | awk -v n="$1" '$0 ~ "^\\*\\*順 " n "（"{f=1; print; next} f&&/^\*\*/{exit} f'
+  cat "$TRIAGE" | awk -v n="$1" '$0 ~ "^\\*\\*順 " n "（"{f=1; print; next} f&&/^\*\*/{exit} f'
 }
 
 @test "triage (#354): the triage table sits right after the all-round verdict, once, with six rows in order" {
@@ -1262,7 +1275,7 @@ triage_row_section() {
   echo "$summary" | grep -qF "全ヒットが ${floor} 行を超える語"
   echo "$summary" | grep -qF "全ヒットが ${floor} 行以下の語は要約にしない"
   reviewer_block | grep '^2\. `照合表`:' | grep -qF "全ヒットが ${floor} 行を超える語"
-  grep -qF "${floor} 行以下の語は全行の表で出し直す" "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+  grep -qF "${floor} 行以下の語は全行の表で出し直す" "${PLUGIN_DIR}/skills/pr-review-gate/stages/gate-triage.md"
 }
 
 @test "review inventory (#355): inconsistency location and priority output fail closed on missing tables" {
@@ -1356,7 +1369,7 @@ step3c_body() {
   grep -q '^#### 3-b\. ' "$(step_file 3-b)"
   grep -q '^#### 3-c\. ' "$(step_file 3-c)"
   grep -q '^### 4\. ' "$(step_file 4)"
-  [ "$(step_file 3-c)" = "$HOLD" ]
+  [ "$(step_file 3-c)" = "${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md" ]
 }
 
 @test "carryover (#441): 3-c runs risk-carryover-check.sh and names the 4 conditions" {
@@ -1827,7 +1840,7 @@ step5_body() { awk '/^### 5\. /{f=1} /^### 6\. /{f=0} f' "${PASS_STAGE}"; }
 # --- Requirement: issue が目的として書いた効果は issue で承認済みとして主に聞き直さない（#723） ---
 
 # 手順 3 の「issue で承認済み」の節（`#### issue で承認済み` から `#### 3-b.` の直前まで）
-issue_approved_section() { awk '/^#### issue で承認済み/{f=1} /^#### 3-b\./{f=0} f' "$DECLARATIONS"; }
+issue_approved_section() { awk '/^#### issue で承認済み/{f=1} /^\*\*issue で承認済みの確かめ直し/{f=0} /^#### 3-b\./{f=0} f' "$DECLARATIONS"; }
 
 @test "issue approved (#723): declarations.md names the state and limits it to the 3 categories" {
   [ "$(grep -c 'issue で承認済み' "$DECLARATIONS")" -ge 1 ]
@@ -2186,7 +2199,8 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
 }
 
 @test "nonblocking triage (#1498): stage C checks whether the child is in progress before adding, and splits off a new child if so" {
-  c="$(nonblocking_para '段 C（')"
+  c="$(parent_fetch)
+$(nonblocking_para '段 C（')"
   has_all "$c" '足す前に、その子 issue が作業中か' '`develop 開始`' '`実行モード:`' \
     '--json comments' 'gh pr list' '--state open' 'in:body' '`Closes` / `Fixes` / `Refs #<番号>`' \
     '足さず' '新しい子 issue' '作業中の子の番号' '主に聞かない' 'スクリプトは作らない'
@@ -2195,7 +2209,8 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
 }
 
 @test "nonblocking triage (#1498): stage C retries a failed gh call once, treats it as in progress, and links the two children" {
-  c="$(nonblocking_para '段 C（')"
+  c="$(parent_fetch)
+$(nonblocking_para '段 C（')"
   has_all "$c" 'どちらかの呼び出しが 0 以外で終わったら 1 回だけやり直し' '作業中と同じに扱って新しい子 issue を作る' \
     '作業中の子の PR のマージ後に着手' '作業中の子には新しい子の番号をコメントで書く' '受け入れ条件は編集しない'
   root="$BATS_TEST_DIRNAME/../../../openspec"
