@@ -12,12 +12,12 @@
 
 ## 3. 文書と変更の記録
 
-- [ ] 3.1 `references/codex-develop.md`「起動と role 解決」の構成の選び方を表の順に書き直し（Codex が基準以上なら Claude を問わず `codex-standard`、基準は `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT`・既定 10・不正値は blocked）、`git grep -n 'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT' plugins/dev-workflow/references/codex-develop.md` が 1 件以上。`skills/develop/SKILL.md` の「Role profile の選択」は正本を指すだけなので、規則の文が無いことを確かめて変えない（構成の列挙に食い違いがあれば合わせる）。触る範囲: plugins/dev-workflow/references/codex-develop.md:11、plugins/dev-workflow/skills/develop/SKILL.md:26
-- [ ] 3.2 `plugins/dev-workflow/changes/1677.md` を書く（何が変わったか・設定の名前と既定・置き場を環境変数にした理由・戻し方）。触る範囲: plugins/dev-workflow/changes/1677.md（新規）
+- [x] 3.1 `references/codex-develop.md`「起動と role 解決」の構成の選び方を表の順に書き直し（Codex が基準以上なら Claude を問わず `codex-standard`、基準は `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT`・既定 10・不正値は blocked）、`git grep -n 'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT' plugins/dev-workflow/references/codex-develop.md` が 1 件以上。`skills/develop/SKILL.md` の「Role profile の選択」は正本を指すだけなので、規則の文が無いことを確かめて変えない（構成の列挙に食い違いがあれば合わせる）。触る範囲: plugins/dev-workflow/references/codex-develop.md:11、plugins/dev-workflow/skills/develop/SKILL.md:26、plugins/dev-workflow/docs/codex-develop.md:24（実装時に同じ規則の文が見つかったので足した）
+- [x] 3.2 `plugins/dev-workflow/changes/1677.md` を書く（何が変わったか・設定の名前と既定・置き場を環境変数にした理由・戻し方）。触る範囲: plugins/dev-workflow/changes/1677.md（新規）
 
 ## 4. 結合の確認
 
-- [ ] 4.1 `openspec validate develop-codex-threshold-selection --type change --strict` と `scripts/test.sh dev-workflow`（または repo の既存の実行方法）が exit 0。開始済みの工程を切り替えない既存の検査（`plugins/dev-workflow/tests/model-escalation-policy.bats:308` の「a resume calls request again and compares tiers without reselecting」）が変わらず通ること
+- [x] 4.1 `openspec validate develop-codex-threshold-selection --type change --strict` と `scripts/test.sh dev-workflow`（または repo の既存の実行方法）が exit 0。開始済みの工程を切り替えない既存の検査（`plugins/dev-workflow/tests/model-escalation-policy.bats:308` の「a resume calls request again and compares tiers without reselecting」）が変わらず通ること
 
 ## Workflow follow-up
 
