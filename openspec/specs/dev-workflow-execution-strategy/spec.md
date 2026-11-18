@@ -40,7 +40,9 @@ TBD - created by archiving change dev-workflow-execution-strategy. Update Purpos
 - **THEN** 判定は conserve と同一に振る舞い、ユーザー自身の Fable 利用（/model 切替等）を妨げる指示を出さない
 
 ### Requirement: Step B 基準の重心移動
-develop スキルの `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の仕様化要否（Step B）は、「設計判断・トレードオフを含むか（= 意図と決定の記録価値があるか)」を一次基準としなければならない（SHALL）。受け入れ条件が記録先（issue または Draft PR 本文）に明記された機械的な振る舞い変更は、記録先とテストを記録として spec 化を省略できる。テスト作成の必須性は、軽い通し方（`dev-workflow-spec-review` の「些細な修正は軽い通し方で新しいテストと W の起動を省く」Requirement）を除くいかなる判定でも緩めてはならない（MUST NOT）。軽い通し方では、記録先に書いた既存のテストかチェックのコマンドを走らせることが新しいテストの代わりになる（SHALL）。unmanned モードの「迷ったら spec 化に倒す」は維持する。
+develop スキルの `plugins/dev-workflow/skills/develop/references/spec-decision.md` の仕様化要否（Step B）は、「設計判断・トレードオフを含むか（= 意図と決定の記録価値があるか)」を一次基準としなければならない（SHALL）。受け入れ条件が記録先（issue または Draft PR 本文）に明記された機械的な振る舞い変更は、記録先とテストを記録として spec 化を省略できる。テスト作成の必須性は、軽い通し方（`dev-workflow-spec-review` の「些細な修正は軽い通し方で新しいテストと W の起動を省く」Requirement）を除くいかなる判定でも緩めてはならない（MUST NOT）。軽い通し方では、記録先に書いた既存のテストかチェックのコマンドを走らせることが新しいテストの代わりになる（SHALL）。unmanned モードの「迷ったら spec 化に倒す」は維持する。
+
+この判定の守備範囲は次のとおりとする。①入力の出どころは、記録先の本文（受け入れ条件・機能単位。Draft PR が記録先なら PR 本文）と、W が投稿する仕様化判断のコメント（1 行目と理由）である。W は協力的だが、一次基準を甘く読み、設計判断を含む変更を「機械的な振る舞い変更」と読むことがある前提で扱う。②拾いたい誤りは、複数案からの選択を含む変更をコード直行にすること、軽い通し方以外の判定でテスト作成を省くこと、unmanned で判断がつかないのにコード直行にすることである。③次はこの判定を通ることを許す: 設計判断の有無の線引きが割れる変更で W がどちらかに倒したもの（「する」なら R1、「しない」なら PR レビューが見る）。理由の行が Step B のどの条件に当たるかを短く書いただけのもの。④ここに挙げた以外の通り方は見つけるたびに条件を足し、穴を塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 機械的な振る舞い変更は spec を省略できる
 - **WHEN** 受け入れ条件が記録先に明記され、設計判断（トレードオフの選択）を含まない振る舞い変更を interactive で判定する
@@ -91,7 +93,7 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/decision-cr
 - **THEN** 共有枠モードは depleted に導出される（ok にならない）
 
 #### Scenario: depleted でも最安の役は上げない
-- **WHEN** `SHARED_BUDGET_MODE=depleted` の状態で decision-criteria の共有枠モードの表と、`session-tripwires.sh` が注入する `depleted` の効果の文を読む
+- **WHEN** `SHARED_BUDGET_MODE=depleted` の状態で decision-criteria の残量モードと共有枠モードの優先順位の表の共有枠モードの行と、`session-tripwires.sh` が注入する `depleted` の効果の文を読む
 - **THEN** どちらも explore と summarize を最安のまま残し、それ以外の役の上限を中位とする。「全役割 Sonnet 固定」の語を含まない
 
 ### Requirement: サブエージェントのコンテキスト上限と手渡し
@@ -745,3 +747,21 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 - **WHEN** 同じ壊れた表のコピーで、`subagent_type: dev-workflow:worker`・`model: opus` の呼び出しをコピーの guard に通す
 - **THEN** 無出力・終了コード 0 で通る
+
+### Requirement: 残量モードと共有枠モードの優先順位の表は 1 か所に置く
+
+Fable 残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`）の値ごとの効果と、両者と事前分類が重なったときの優先順位（①共有枠モード ②その範囲内で事前分類による決める役 ③Fable 残量モード）は、`plugins/dev-workflow/skills/develop/references/decision-criteria.md` の 1 つの表に置かなければならない（MUST）。この表と同じ形の表を他のファイルに置いてはならない（MUST NOT）。値ごとの効果の文は、`scripts/session-tripwires.sh` が注入する効果の文と食い違ってはならない（MUST NOT）。
+
+#### Scenario: 表は decision-criteria.md だけにある
+
+- **WHEN** develop 配下の手順書と `plugins/dev-workflow/references/model-tiers.md` から、残量モードと共有枠モードの値ごとの効果を表の行で並べた箇所を探す
+- **THEN** `decision-criteria.md` の 1 つの表だけが見つかる
+
+### Requirement: 他のファイルは残量モードと共有枠モードの優先順位を 1 行で指す
+
+`skills/develop/references/pre-classification.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`plugins/dev-workflow/references/model-tiers.md` は、優先順位を言い換えて書いてはならず（MUST NOT）、適用は `codex-develop.py request` が行うことと、表が `decision-criteria.md` にあることを 1 行で指さなければならない（MUST）。`skills/develop/references/roles/gate-runner.md` の本文にある同じ言い換えはこの要件の対象外とする（`gate-runner.md` の本文はゲートの手順書を割る別の変更が直す。この変更では参照先のパスだけを直す）。
+
+#### Scenario: 他のファイルは 1 行で指す
+
+- **WHEN** `pre-classification.md`・`spec-reviewer.md`・`worker/common.md`・`model-tiers.md` を読む
+- **THEN** 優先順位の言い換えが無く、`request` が適用することと `decision-criteria.md` の表への参照が 1 行で書かれている
