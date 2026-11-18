@@ -149,7 +149,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
       次に起こす段は Gate Result の Status と `次の段:` だけで決める（止める指摘が残っているか・戻した指摘の仕分け・復帰手順の行き先を本体は判断しない）。
            G が `工程中断:` で返したら同じ段の新しい G を起こし、前任の return 全文と起動指示の入力を渡す
            （起こしてよい条件は references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」の「手渡しの許可」）
-      4 つの段で pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / needs-fix-check / review-incomplete / needs-carryover-judge / 重複で降りた / 次の段へ」
+      4 つの段で pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / needs-fix-check / review-incomplete / needs-carryover-judge / needs-no-point-check / 重複で降りた / 次の段へ」
       次の段へ → `次の段:` の G を新しく起こす（照合と振り分けが止める指摘なしで終われば合格処理。保留の解除は合格処理か前提確認と重さ判定）。仕分け欄に `条件の確認待ち` の質問文があれば主へ届ける（gate-runner.md）
       合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
       passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
@@ -202,6 +202,9 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            本体は判定を受けて自分で宣言を投稿せず、ラベルを付けず、主に聞かない（引き継ぐか主に聞くかは合格処理の G が決める）。
            ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び needs-carryover-judge を返したときは、
            判定役を起こし直さず、投稿した記録の URL を添えて主に聞く（G 側の止めが外れたときに opus の判定役を繰り返し起こさないため）
+      needs-no-point-check → 論点なしの宣言を決める役の確認に回す（`stages/hold.md` 6-0 が正本）。本体は PR トークン上限を測り、subagent_type: dev-workflow:decider・model: `opus` の確認役に
+           宣言の本文と PR の差分だけを渡し、確認の記録を PR に投稿して合格処理の G を新しく起こす。SHARED_BUDGET_MODE=depleted なら起こさず `論点なしの確認: 判断できない` を投稿する。
+           本体はラベルを付けず、主に聞かない。同じ宣言・同じ HEAD で再び返ったら確認役を起こし直さず、記録の URL を添えて主に聞く
       needs-decider → 仕分け表の順 6（同じ型の再発）。本体が subagent_type: dev-workflow:decider を `request --phase decider` が返した `model` で起こし、
            入力に decider.md の入力契約どおり、記録先の本文・判断に必要な関連コメント（`仕様化判断:` の記録・G の仕分けの PR コメント・順 3 の一覧表の
            PR コメントがあればそれ）・同じ型の指摘と前の周の指摘の原文・対象ファイルのパス・G の仕分け欄・W の直近の return を貼って、「この PR の中で
@@ -298,7 +301,7 @@ PR トークン上限: <権限>
 
 ## モデル
 
-役割ごとのモデルは、`codex-develop.py request` が役割と入力（事前分類・設計判断・失敗・自動実行かどうか）と残量モードから格（最安・中位・上位・最上位）を決めて返す。格は提供元と構成によらず同じで、格からモデル名への対応は `references/model-tier-map.json` の 1 か所にある（下の表の括弧内は Claude での値）。本体の判断は `request` に渡す入力（「Role profile の選択」節）だけで、返った `model` を使い、新しい起動の `model` を文章の規則で計算し直さない。V と引き継ぎの判定役だけは `request` を通らず、表の値を明示する。
+役割ごとのモデルは、`codex-develop.py request` が役割と入力（事前分類・設計判断・失敗・自動実行かどうか）と残量モードから格（最安・中位・上位・最上位）を決めて返す。格は提供元と構成によらず同じで、格からモデル名への対応は `references/model-tier-map.json` の 1 か所にある（下の表の括弧内は Claude での値）。本体の判断は `request` に渡す入力（「Role profile の選択」節）だけで、返った `model` を使い、新しい起動の `model` を文章の規則で計算し直さない。V と引き継ぎの判定役と論点なしの確認役だけは `request` を通らず、表の値を明示する。
 
 | 役割 | 既定の格 | 上げる条件 |
 |---|---|---|
@@ -307,6 +310,7 @@ PR トークン上限: <権限>
 | G（`dev-workflow:gate-runner`） | 中位（`sonnet`） | 上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う |
 | V（画面確認役。`general-purpose`） | 中位（`sonnet`） | 上げない。`request` を通らない |
 | 引き継ぎの判定役（`needs-carryover-judge` を受けて本体が起こす） | 上位（`opus`） | 上げも下げもしない（種別は `dev-workflow:decider`。`request` を通らず、残量モードによらず `opus` を明示する）。`SHARED_BUDGET_MODE=depleted` のときは起こさない（「判断できない」の記録を投稿して主に聞く側に倒す。(4) の needs-carryover-judge） |
+| 論点なしの確認役（`needs-no-point-check` を受けて本体が起こす） | 上位（`opus`） | 引き継ぎの判定役と同じ（`dev-workflow:decider`・`request` を通らない・depleted のときは起こさない） |
 | G が要求するレビュアー（読んで判断する役） | 上位（`opus`） | 既定の種別は `dev-workflow:reviewer`。レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `--pre-class` を渡し、返った `role: decider` で `subagent_type: dev-workflow:decider` として起動する（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では `request` が返した `model` を使い、推奨モデルは参考値。(4) の ③） |
 
 W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 本も無く、昇格ラダーの Sonnet 段が構造的に通っていなかったため。W は事前分類と失敗ループで `opus` まで上がる。W の上限を `opus` にしたのは、Fable が消費するのはターン数（会話履歴の cache 読込）で、実装・修正ループは 1 件で数十〜数百ターン回るため。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担う。読んで判断する役（R1・レビュアー）が Fable に当たるときは `dev-workflow:decider` で起こす — Fable を渡せる `subagent_type` はこれだけで、判定は `scripts/agent-model-guard.sh` が行う。
