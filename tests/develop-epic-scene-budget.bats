@@ -131,6 +131,9 @@ check_naming() {
   if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent)\.md` を読' "$root/$R/epic-child-stop.md"; then
     echo 'child reads parent operations' >&2; rc=1
   fi
+  if grep -Eq '親の開始時に.*epic-(stop|merge-wait|multirepo|subagent)\.md` を読' "$root/$R/epic-loop.md"; then
+    echo 'parent startup reads scene-only operations unconditionally' >&2; rc=1
+  fi
   return "$rc"
 }
 copy_real() {
@@ -239,4 +242,16 @@ fixture_budget() {
   printf '\n`references/epic-loop.md` を読む。\n' >> "$r/$R/epic-child-stop.md"
   run check_naming "$r"
   [ "$status" -eq 1 ]
+}
+
+@test "regress: unconditional scene operations at parent startup fail" {
+  local r="$BATS_TEST_TMPDIR/r" target
+  copy_real "$r"
+  for target in stop merge-wait multirepo subagent; do
+    cp "$PLUGIN_DIR/$R/epic-loop.md" "$r/$R/epic-loop.md"
+    printf '\n親の開始時に `references/epic-%s.md` を読む。\n' "$target" >> "$r/$R/epic-loop.md"
+    run check_naming "$r"
+    [ "$status" -eq 1 ] || { echo "$target survived" >&2; return 1; }
+    [[ "$output" == *'parent startup reads scene-only operations unconditionally'* ]]
+  done
 }
