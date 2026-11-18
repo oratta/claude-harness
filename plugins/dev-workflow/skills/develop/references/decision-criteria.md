@@ -2,32 +2,28 @@
 
 本体（オーケストレータ）が読む。本体のモデル選択（`SKILL.md`「モデル」）で使う残量モード・共有枠モード、サブエージェントのコンテキスト上限と手渡しの許可、モード不変ルールの詳細版。仕様化判断（Step B）と分割判定（Step C）は `references/spec-decision.md`、軽い通し方は `references/light-path.md`、W と G の return の 1 行目の宣言は `references/return-declaration.md`。
 
-## 残量モード `FABLE_BUDGET_MODE`
+## 残量モード `FABLE_BUDGET_MODE` と共有枠モード `SHARED_BUDGET_MODE`
 
-サブスクの Fable 枠の残り具合を表す環境変数。役割（W / R1 / G）の既定モデルと昇格上限を決める。**明示設定が最優先**で、未設定時はセッション記録と usage snapshot の実効値からの自動導出結果を用いる（後述）。導出もできなければ `conserve` 扱い（安全側）。settings.json の `env` ブロックで明示的に固定することもできる。
+**Fable 残量モード `FABLE_BUDGET_MODE`**: サブスクの Fable 枠の残り具合を表す環境変数。役割（W / R1 / G）の既定モデルと昇格上限を決める。**明示設定が最優先**で、未設定時はセッション記録と usage snapshot の実効値からの自動導出結果を用いる（後述）。導出もできなければ `conserve` 扱い（安全側）。settings.json の `env` ブロックで明示的に固定することもできる。
 
-| 値 | 意味 | 効果 |
-|---|---|---|
-| `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | **どの役割の既定も上げない**。役割表の既定どおりで、Fable が使われる経路は決める役（`subagent_type: dev-workflow:decider`）だけ。余った Fable 枠は人間の対話と verify に回す（abundant を役割の既定引き上げに使うと、消費ペースが遅い週ほど大半の実行が Fable に流れ、温存のつもりが最大消費の経路になる） |
-| `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/pre-classification.md`）のマージ権限・層間契約・課金/法務に当たる場合、読んで判断する役（R1 / G が要求するレビュアー）だけ `subagent_type: dev-workflow:decider` で Fable（聖域パスだけでは上げない）。実行役（W）はどの分類でも `opus` 止まり |
-| `reserve` | Fable 枠を人間用に温存 | conserve に加えて、**自動実行（unmanned / cron / loop 経由）では Fable をいかなる役割でも使わない**。昇格ラダーは Opus 上限。Opus でも2連続失敗が続く問題は `needs-approval` で人間に返す。interactive は conserve と同一 |
-| `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー5） |
+**共有枠モード `SHARED_BUDGET_MODE`**: 全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は active スロットの実効値から自動導出（式は `scripts/usage_view.py` の 1 か所、セッションへの注入は `scripts/session-tripwires.sh`）。
+
+優先順位の表（正本はこの 1 つ）。上の段ほど優先し、下の段は上の段が許す範囲の中でだけ効く（Fable 残量モードと共有枠モードが食い違うときは共有枠モードの下限が勝つ。例: `throttled` なら R1 も Sonnet 起点）。新しい起動への適用は `codex-develop.py request` が行う。
+
+| 段 | 値 | 意味・導出 | 効果 |
+|---|---|---|---|
+| ①共有枠モード | `ok` | データ無し、または消費が週の経過ペース以下 | 制約なし。役割表の既定どおり |
+| ①共有枠モード | `throttled` | `weekly_all_pct` が週経過% より大きい（このペースだと週末までに枠が尽きる） | W / R1 / G と G が要求するレビュアーの既定を **Sonnet** に落とす。昇格上限 Opus。`abundant` の押し上げは無効 |
+| ①共有枠モード | `depleted` | `weekly_all_pct > 90` | 全役割 Sonnet 上限・昇格なし。事前分類に当たっても Fable / Opus を使わない（枠が無いので使えば全員が止まる） |
+| ②事前分類 | マージ権限・層間契約・課金/法務 | `references/pre-classification.md` の表（聖域パスだけでは当たらない） | ①の範囲内で、読んで判断する役（R1 / G が要求するレビュアー）を `subagent_type: dev-workflow:decider` で起こす。そのモデルは③が決める。実行役（W）は上げない |
+| ③Fable 残量モード | `abundant` | Fable が余っている（消費が週の経過ペースより遅い） | **どの役割の既定も上げない**。役割表の既定どおりで、Fable が使われる経路は決める役（`subagent_type: dev-workflow:decider`）だけ。余った Fable 枠は人間の対話と verify に回す（abundant を役割の既定引き上げに使うと、消費ペースが遅い週ほど大半の実行が Fable に流れ、温存のつもりが最大消費の経路になる） |
+| ③Fable 残量モード | `conserve` | 使い切りそう / 消費が週の経過ペースより速い（既定） | 役割表の既定どおり（W = Sonnet、R1 = Opus、G = Sonnet）。事前分類（`references/pre-classification.md`）のマージ権限・層間契約・課金/法務に当たる場合、読んで判断する役（R1 / G が要求するレビュアー）だけ `subagent_type: dev-workflow:decider` で Fable（聖域パスだけでは上げない）。実行役（W）はどの分類でも `opus` 止まり |
+| ③Fable 残量モード | `reserve` | Fable 枠を人間用に温存 | conserve に加えて、**自動実行（unmanned / cron / loop 経由）では Fable をいかなる役割でも使わない**。昇格ラダーは Opus 上限。Opus でも2連続失敗が続く問題は `needs-approval` で人間に返す。interactive は conserve と同一 |
+| ③Fable 残量モード | `exhausted` | Fable 週次枠を実質使い切った（`fable_weekly_pct > 90`、または明示宣言） | **reserve と異なり interactive を含む全経路で Fable を一切使わない**（枠が実際に無いため）。昇格ラダーは Opus 上限。加えて rate-limit 実エラーで reactive に Opus へ降格する（`escalation-tripwires.md` トリップワイヤー5） |
 
 `reserve` と `exhausted` の差: reserve は「温存」で自動実行のみ Fable を禁じ interactive は自由。exhausted は「枠が実際に無い」ため interactive を含む全経路で禁じる。
 
-**Fable 残量モードは総量を絞る装置ではない。** 4 段のどれも Fable と Opus のあいだで役割を付け替えるだけで、Fable が尽きた日に同じ W が Opus に落ちて走れば消費は減らない（2026-09-04 の実測: Fable 枯渇日が週で最も消費が大きかった）。総量を絞るのは次の共有枠モードとコンテキスト上限。
-
-## 共有枠モード `SHARED_BUDGET_MODE`
-
-全モデル共通の週次枠（`weekly_all_pct`）の残り具合。Fable 残量モードと独立に導出され、**役割の既定モデルの下限**を決める。明示 env が最優先、未設定時は active スロットの実効値から自動導出（式は `scripts/usage_view.py` の 1 か所、セッションへの注入は `scripts/session-tripwires.sh`）。
-
-| 値 | 導出 | 効果 |
-|---|---|---|
-| `ok` | データ無し、または消費が週の経過ペース以下 | 制約なし。役割表の既定どおり |
-| `throttled` | `weekly_all_pct` が週経過% より大きい（このペースだと週末までに枠が尽きる） | W / R1 / G と G が要求するレビュアーの既定を **Sonnet** に落とす。昇格上限 Opus。`abundant` の押し上げは無効 |
-| `depleted` | `weekly_all_pct > 90` | 全役割 Sonnet 上限・昇格なし。事前分類に当たっても Fable / Opus を使わない（枠が無いので使えば全員が止まる） |
-
-Fable 残量モードと共有枠モードが食い違うときは**共有枠モードの下限が勝つ**（例: `throttled` なら R1 も Sonnet 起点）。
+**Fable 残量モードは総量を絞る装置ではない。** 4 段のどれも Fable と Opus のあいだで役割を付け替えるだけで、Fable が尽きた日に同じ W が Opus に落ちて走れば消費は減らない。総量を絞るのは共有枠モードとコンテキスト上限。
 
 `haiku` の役割（explore と summarize）は `throttled` でも `depleted` でも `haiku` のまま（上限なので最安を上げない）。
 

@@ -94,8 +94,8 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -qF '`model: fable`' "$PRE"
   grep -q '最初から' "$PRE"
   grep -qF 'AGENT_MODEL' "$PRE"
-  grep -qF 'FABLE_BUDGET_MODE=reserve' "$PRE"
-  grep -qF 'exhausted' "$PRE"
+  # 残量モードの上限は言い換えず decision-criteria.md の優先順位の表を指す（#1683）
+  grep -qF '優先順位の表は `skills/develop/references/decision-criteria.md`' "$PRE"
 }
 
 @test "worker: fallback record format points back to pr-review-gate" {
@@ -278,14 +278,15 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 @test "reviewer: spawned with explicit model, default opus, fable via pre-classification.md" {
   grep -q 'model' "$REVIEWER"
-  grep -q '`opus`' "$REVIEWER"
+  grep -q '`model: opus`' "$REVIEWER"
   grep -qE '事前分類.*fable|fable.*事前分類' "$REVIEWER"
   grep -q 'pre-classification.md' "$REVIEWER"
 }
 
 @test "reviewer: reserve only for automatic runs, exhausted for all paths" {
-  grep -qE 'reserve.*自動実行' "$REVIEWER"
-  grep -qE 'exhausted.*(全経路|すべて)' "$REVIEWER"
+  # 値ごとの上限は decision-criteria.md の優先順位の表が正本で、R1 の指示書はそこを 1 行で指す（#1683）
+  grep -qF '優先順位の表は `skills/develop/references/decision-criteria.md`' "$REVIEWER"
+  grep -qE 'interactive の `reserve` は `conserve` と同一' "$REVIEWER"
 }
 
 @test "reviewer: return format has Spec Review Result with BLOCKER / SHOULD_FIX / NOTE" {

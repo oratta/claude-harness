@@ -31,7 +31,7 @@ Claude entry は account=`current` と非空の effort を要求する。別 Cla
 
 ## 残量モードによる降格（`fable` のみ対象）
 
-残量モード `FABLE_BUDGET_MODE` の定義と導出の正本は `plugins/dev-workflow/skills/develop/references/decision-criteria.md`。ワークフロー側の適用は次の 2 行に閉じる:
+残量モード `FABLE_BUDGET_MODE` の定義と導出の正本は `plugins/dev-workflow/skills/develop/references/decision-criteria.md`。Agent の起動では残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`。ワークフロー側の適用は次の 2 行に閉じる:
 
 - `reserve` の**自動実行**（unmanned / cron / loop 経由）では、`fable` ティアを `'opus'` として渡す（interactive では降格しない）
 - `exhausted` では **全経路**で `fable` ティアを `'opus'` として渡す（枠が実際に無いため）

@@ -23,6 +23,7 @@ setup() {
   PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  BUDGET_POINTER='残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`'
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
@@ -99,9 +100,8 @@ setup() {
   echo "$sec" | grep -qF '`model: opus`'
   echo "$sec" | grep -qF 'references/pre-classification.md'
   echo "$sec" | grep -qF '聖域パスだけでは上げない'
-  echo "$sec" | grep -qF '`reserve` は自動実行のみ'
-  echo "$sec" | grep -qF '`exhausted` は全経路で `opus` 上限'
-  echo "$sec" | grep -qF '`sonnet` 上限'
+  # 優先順位の言い換えは decision-criteria.md の表への 1 行に替えた（#1683）
+  echo "$sec" | grep -qF "$BUDGET_POINTER"
   ! echo "$sec" | grep -qF '`sonnet` 固定' || return 1
 }
 
@@ -109,7 +109,7 @@ setup() {
   grep -F '| `depleted`' "$CRITERIA" | grep -qF 'Sonnet 上限'
   ! grep -F '| `depleted`' "$CRITERIA" | grep -qF 'Sonnet 固定' || return 1
   grep -qF '`haiku` の役割（explore と summarize）は `throttled` でも `depleted` でも `haiku` のまま' "$CRITERIA"
-  grep -qF '`sonnet` 上限' "$PRE"
+  grep -qF "$BUDGET_POINTER" "$PRE"
 }
 
 @test "shared budget: the throttled row lowers the reviewer G requests to Sonnet, as request does" {
@@ -120,8 +120,25 @@ setup() {
 }
 
 @test "pre-classification: budget mode still caps escalation" {
-  grep -qF 'FABLE_BUDGET_MODE=reserve' "$PRE"
-  grep -qF 'exhausted' "$PRE"
+  grep -qF "$BUDGET_POINTER" "$PRE"
+  grep -F '| `reserve`' "$CRITERIA" | grep -qF '自動実行'
+  grep -F '| `exhausted`' "$CRITERIA" | grep -qF '全経路'
+}
+
+# #1683: 優先順位の表は decision-criteria.md の 1 つだけ。他の 4 ファイルは言い換えず 1 行で指す。
+@test "budget modes: one priority table in decision-criteria, four files point at it in one line" {
+  [ "$(grep -c '^| ①共有枠モード |' "$CRITERIA")" -eq 3 ]
+  [ "$(grep -c '^| ②事前分類 |' "$CRITERIA")" -eq 1 ]
+  [ "$(grep -c '^| ③Fable 残量モード |' "$CRITERIA")" -eq 4 ]
+  ! grep -qF '## 共有枠モード `SHARED_BUDGET_MODE`' "$CRITERIA" || return 1
+  local f
+  for f in "$PRE" "${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md" \
+           "${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md" "${PLUGIN_DIR}/references/model-tiers.md"; do
+    ! grep -qF '①共有枠モード' "$f" || { echo "restated: $f" >&2; return 1; }
+    [ "$(grep -cF "$BUDGET_POINTER" "$f")" -eq 1 ] || { echo "no pointer: $f" >&2; return 1; }
+  done
+  # 表の行は他のファイルに無い
+  ! grep -rlF '| `throttled` |' "${PLUGIN_DIR}/skills/develop" "${PLUGIN_DIR}/references/model-tiers.md" | grep -v 'decision-criteria.md' || return 1
 }
 
 # --- ルール2: エスカレーション（failed → 修正実装）は pr-review-gate にある ---
