@@ -66,6 +66,23 @@ develop/SKILL.md と epic.md 系で付け替える箇所（e10f0a98。本文の�
 
 prepare / review / triage / pass / hold の入口、declarations と gate-runner の読む表、プラグイン内の引用元（worker/implement、worker/finish、references/subagent-waiting、references/codex-develop 等）も検索し、移動した節を直接名指ししているものだけ付け替える。宣言・return 雛形の文字列は例外として保存する。
 
+### Codex の本文注入も担当する段に揃える
+
+現行の scripts/codex-develop.py:648-688 の prompt() は、phase gate で共通の gate-runner.md と return-declaration.md に加えて、索引・declarations・6 段の本文を常に注入する。ファイルを分けるだけでは Codex の入力は段別にならないため、dev-workflow-develop の既存要件「Codex に渡す正本の一覧を段のファイルに合わせる」も改定する。この注入の変更と test_codex_develop.py の回帰検査は #1687 の範囲（今回の再開指示で明示）。
+
+新しい CLI 引数や段は足さず、既存の起動指示の `レビュー経路: adapter` と `段: <段の名前>` から選ぶ。前の Gate Result や引用されたレビュー要約の `段:` / `次の段:` を担当段として取らない。共通注入は skills/develop/references/roles/gate-runner.md と skills/develop/references/return-declaration.md の 2 ファイルとし、次の入口とそこから無条件で読むファイルだけを加える。
+
+| 起動指示の段 | skills/pr-review-gate/ からの基礎注入 |
+|---|---|
+| 前提確認と重さ判定 | stages/prepare.md |
+| 照合と振り分け | stages/triage.md |
+| 合格処理 | declarations.md、stages/pass.md |
+| 保留の解除 | stages/hold.md |
+
+他段の入口、索引、条件付き詳細は先回りして注入しない。条件付き詳細は G が入口の条件を確認して Read し、予算の追加 profile に数える。review は計測上の場面であり、adapter の phase gate の段として扱わない。phase review の正本（gate-runner.md・return-declaration.md・reviewer-brief.md）は維持する。`レビュー経路: 従来` と行無しの既定には現行の一括注入を残し、一括 profile で索引も含めて計測する。これらを削る根拠にはしない。
+
+test_codex_develop.py は request を生成して実際の prompt の CANONICAL SOURCE の集合・各本文・sha256 を確認する。4 段それぞれで必要な本文が入り、不要な入口・索引・条件付き詳細が入らないこと、前の Gate Result に異なる段があっても担当段が変わらないこと、従来・行無し・phase review の経路が保たれることを検査する。Codex / Claude の起動自体は要らない。
+
 ### 廃止候補は不在を証明できたものだけ除く
 
 現 main の develop/SKILL.md:30,51、gate-runner.md:25-36,113、review-run.md は develop 外の従来経路と行無しの既定を明示している。従来経路・一括 Gate Result を廃止する根拠にはならないため、この仕様では保存し、必要時だけ読む配置にする。キャッシュ済み利用者の書式不一致の既定も呼び出し元不在を証明できていない。return-declaration.md や共通の停止条件を変えない。削る経緯は規則の理由・条件・許す誤りを含まない日付・過去の実測等に限定し、何を除いたかを差分で確認する。
@@ -76,7 +93,13 @@ prepare / review / triage / pass / hold の入口、declarations と gate-runner
 
 基礎 profile は共通 3 ファイル + 当該段の入口と、その入口から必ず読むファイル。追加 profile は軽い通し方、区画、三表の補足・部分コメント、順 3、止めない指摘とエピック、周の終わり・failed、持ち越しと判定役、issue 承認、論点なし、許容の 4 形、文言合わせ、保留の解除・切り出し、一括の従来経路を測る。同一 profile 内で同じファイルを二度数えない。複合条件は該当する先の和集合をその段の最大 profile にも含める。読む表とテストの一覧が一致すること、条件付き詳細の全ファイルが少なくとも 1 つの profile に入ることを検査する。新しいファイルを計測外に置いて通さない。
 
+上の共通 3 ファイルは Claude の G のファイル読込 profile。Codex は agent 定義を注入しないため別の profile 群とする。codex-develop.py の prompt() で生成した固定入力の prompt 全体（共通 2 ファイル、段の本文、CANONICAL SOURCE 行と sha256、adapter の定型指示、固定 REQUEST を含む）を wc -m / wc -c で測る。注入予定の一覧を別に足すだけで済ませず、生成物から正本の一覧と本文を取り出して読む表と照合し、欠落・余分・重複を落とす。条件付き profile はこの prompt に実際に追加で読むファイルを足し、既に注入したファイルは二度数えない。4 段・各条件・複合条件・従来の一括を検査し、不要な段を再び注入する変更も落とす。phase review も既存経路の生成 prompt と reviewer 向けの追加読込を別に測る。
+
+固定 REQUEST は `Dispatch HEAD: e10f0a9896d82d0b86c0f7a10becb70c4983bc63`、`レビュー経路: adapter`、`段: <段の名前>` をそれぞれ 1 行（末尾 LF あり）、state の cwd はテスト専用の `/gate-reading-fixture` とする。従来は経路を `従来`、段を `一括（従来経路）` に置き換える。phase review は同じ HEAD と経路の 2 行だけにする。この固定部分を前後で同じにし、実行ごとに変わる PR 本文・レビュー結果・ログなどの長さは予算に含めない。固定入力による計測であって、全実行の総トークン数の保証ではないと報告に明記する。
+
 予算の checker の異常系は使い捨ての fixture で作る。正常、実測が予算 +1 バイト、境界ちょうど、予算が実測の 1.1 倍を超える場合、ファイル不在、未知・欠落・重複 profile、不正な数値、条件付き詳細の増加を検査する。文言テストは gate 配下と develop の関係手順書を連結して意味のある規則を検査する形に直す。移動しただけで落とさず、規則を消せば落ちることを fixture で確かめる。
+
+文言検査の守備範囲: 入力は pr-review-gate 配下の .md と develop の関係手順書を連結した本文（回帰検査では同じ構成の fixture）。既存の文言検査が確認する規則の文字列が、連結対象の全体から欠落した誤りを拾う。例えば「同じ停止条件の文が別段専用の詳細にだけ残り、本来の入口から参照されない」入力や、「必要な文が残る一方で逆の指示も別の段落にある」入力は文言検査を通ることを許す。到達・条件は関係テスト、量は予算、意味はレビューでも確かめる。これらの穴を文言検査で塞ぎ切ることは完了条件にしない。これは量を測る予算検査とは別の守備範囲である。
 
 予算の守備範囲: 入力は profile のファイル一覧と本文・予算値。大きさ超過・不在・一覧の欠落を拾う。同じ字数で本文が入れ替わること、短い案内に誤った条件を書くこと、自然文の参照を機械が解釈しきれないことは通り得る。親が受け入れた残りとして仕様レビューと PR レビューで見る。規則の正しさを予算だけで保証しない。
 
@@ -111,6 +134,17 @@ review 行は従来経路でレビューを自分で起こす場面に追加し�
 ```
 
 後の表は同じ共通定義・全ファイル単位・同一ファイルの重複除外で実装 HEAD から測り、基礎 5 行と追加した条件 profile の内訳を PR に書く。before が同じ大きいファイルに合流していた条件 profile は、上の before の和集合を対応する値とする。PR には移動表の各行の「元の段落／新しい先／読む条件」も記録し、最後に #1682 に前後の表をコメントする。
+
+### Codex の変更前の生成入力
+
+上のファイル合計とは別に、前節の固定入力で現行 prompt() を直接呼んだ結果。対象コードと注入元の本文は固定 main e10f0a98 と dispatch HEAD ee0f55ff で同一。4 段とも共通 2 ファイル + 索引・宣言・6 段の計 10 ファイルが入り、正本本文だけでは 138,041 字 / 296,023 バイト、固定 prompt 全体は次のとおり。after も同じ方法で測り、条件付き読込の追加分と分けて PR・親への表に載せる。
+
+| 段 | 固定 prompt 全体の字数 | バイト数 |
+|---|---:|---:|
+| 前提確認と重さ判定 | 141,303 | 299,317 |
+| 照合と振り分け | 141,301 | 299,311 |
+| 合格処理 | 141,298 | 299,302 |
+| 保留の解除 | 141,299 | 299,305 |
 
 ## Risks / Trade-offs
 

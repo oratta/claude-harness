@@ -23,6 +23,46 @@ gate-runner.md に残すのは、役割と入力、レビュー経路の判別�
 - **WHEN** この変更の PR の prepare・review・triage・pass・hold の読むファイルを、固定した変更前 main と実装後の HEAD で測る
 - **THEN** UTF-8 ロケールの wc -m の字数とファイルごとの内訳が PR 本文に記録されている。条件付き詳細も数え、減少量や 15K トークンの目標を合否に使わない
 
+### Requirement: Codex に渡す正本の一覧を段のファイルに合わせる
+
+`plugins/dev-workflow/scripts/codex-develop.py` は、phase `gate` の adapter 経路では、起動指示の `段: <段の名前>` に従って、共通の `skills/develop/references/roles/gate-runner.md` と `skills/develop/references/return-declaration.md`、および次の段の入口とそこから無条件で読むファイルだけを正本として注入しなければならない（MUST）。前の Gate Result や引用された要約の `段:` / `次の段:` を今回の担当段として扱ってはならない（MUST NOT）。
+
+| 起動指示の段 | `skills/pr-review-gate/` から加える入口 |
+|---|---|
+| 前提確認と重さ判定 | `stages/prepare.md` |
+| 照合と振り分け | `stages/triage.md` |
+| 合格処理 | `declarations.md`・`stages/pass.md` |
+| 保留の解除 | `stages/hold.md` |
+
+adapter の phase gate に索引 `skills/pr-review-gate/SKILL.md`、他段の入口、条件付き詳細を先回りして注入してはならない（MUST NOT）。G は条件が成り立ったときだけ入口が指す詳細を読み、その追加読込も予算と字数報告に含めなければならない（MUST）。新しい CLI 引数・段は足さず、段の選択には既存の起動指示を使う（SHALL）。
+
+`レビュー経路: 従来` と経路の行無しの既定には、現行の索引・6 段・declarations と共通 2 ファイルの一括注入を残さなければならない（MUST）。phase `review` の request には `skills/develop/references/roles/gate-runner.md`、`skills/develop/references/return-declaration.md` と `skills/pr-review-gate/stages/reviewer-brief.md` を正本として含めなければならない（MUST）。phase review を G の段としては扱わず、レビューの担い手・段の遷移・宣言と return の書式を変えてはならない（MUST NOT）。
+
+#### Scenario: review phase の正本
+
+- **WHEN** `codex-develop.py` で phase `review` の request を作る
+- **THEN** prompt に `CANONICAL SOURCE skills/pr-review-gate/stages/reviewer-brief.md` と `CANONICAL SOURCE skills/develop/references/roles/gate-runner.md` があり、`変更点の一覧`・`照合表`・`ハンク被覆` を含む
+
+#### Scenario: gate phase の正本
+
+- **WHEN** adapter 経路の 4 段それぞれの phase gate request を生成する
+- **THEN** prompt の CANONICAL SOURCE の集合が共通 2 ファイルと表の当該段のファイル、および無条件で読むファイルに一致し、各本文と sha256 が正本と一致する。索引・他段の入口・条件付き詳細は注入されず、同じ正本の重複注入も無い
+
+#### Scenario: 前の結果にある段を誤って使わない
+
+- **WHEN** 起動指示の担当段が「合格処理」で、添付した前の Gate Result に `段: 照合と振り分け` と `次の段: 合格処理` がある phase gate request を生成する
+- **THEN** 合格処理の入口を注入し、triage.md を注入しない
+
+#### Scenario: 条件付き詳細を読む
+
+- **WHEN** 合格処理の G が注入された入口で「通し方: 文言合わせ」の条件を確認する
+- **THEN** その時点で pass-wording.md を読み、通常の合格処理にはその本文を先回りして注入しない。条件付き予算は固定生成 prompt と追加で読む詳細の合計を検査する
+
+#### Scenario: 従来経路と行無しの既定を保つ
+
+- **WHEN** `レビュー経路: 従来` または経路の行無しの phase gate request を生成する
+- **THEN** 現行の一括注入の正本が残り、その生成 prompt と条件付きの追加読込を一括 profile で測る
+
 ### Requirement: 既存要件が gate-runner.md に置いた内容のうち段に移したものは段のファイルを指す
 
 既存要件が `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` に置く・含む・書くと定めた内容のうち、段の入口または条件付き詳細の「G として動くとき（develop）」節へ移すものは、移した先のその節を指すものとして読まなければならない（MUST）。移すものと移し先は次のとおりとする（MUST）。
