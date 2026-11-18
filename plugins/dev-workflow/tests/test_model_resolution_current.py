@@ -52,8 +52,9 @@ EXPECTED = {
         ('claude', 'opus'), ('claude', 'fable'), ('claude', 'haiku'), ('claude', 'haiku')),
 }
 # Feed provider evidence to the real automatic selector (no network or personal usage).
-MARGINS = {'auto:claude-write-codex-review': (20, 10),
-           'auto:codex-standard': (-5, 30), 'auto:claude-default': (20, -5)}
+# Codex stays below the all-Codex threshold (default 10) so each row keeps its pre-#1677 reason.
+MARGINS = {'auto:claude-write-codex-review': (20, 5),
+           'auto:codex-standard': (-5, 5), 'auto:claude-default': (20, -5)}
 REASONS = {'auto:claude-write-codex-review': 'both-providers-have-headroom',
            'auto:codex-standard': 'only-codex-has-headroom',
            'auto:claude-default': 'only-claude-has-headroom'}
@@ -123,7 +124,7 @@ class Fixture(unittest.TestCase):
                 '--account-home', 'current=' + str(self.home), '--out', str(self.out)]
         if not configuration.startswith('auto:'):
             args.extend(['--profile', configuration])
-        claude_margin, codex_margin = MARGINS.get(configuration, (20, 10))
+        claude_margin, codex_margin = MARGINS.get(configuration, (20, 5))
         with patch.dict(os.environ, {'FABLE_BUDGET_MODE': fable,
                                      'SHARED_BUDGET_MODE': shared,
                                      'CLAUDE_CONFIG_DIR': str(self.root),
