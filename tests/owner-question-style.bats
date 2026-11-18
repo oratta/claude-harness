@@ -43,18 +43,23 @@ referrers() {
     rules/perspective-casting.md
 }
 
-@test "canonical: section 3 lists the six steps in order" {
-  local s steps
+@test "canonical: section 3 defines the items in four groups and the table of places" {
+  local s t
   s="$(section3)"
   [ -n "$s" ]
-  steps="$(printf '%s\n' "$s" | grep -E '^[1-6]\. ')"
-  [ "$(printf '%s\n' "$steps" | wc -l | tr -d ' ')" -eq 6 ]
-  printf '%s\n' "$steps" | sed -n 1p | grep -qE '^1\. \*\*質問'
-  printf '%s\n' "$steps" | sed -n 2p | grep -qE '^2\. \*\*主に聞く理由'
-  printf '%s\n' "$steps" | sed -n 3p | grep -qE '^3\. \*\*いま困っていること'
-  printf '%s\n' "$steps" | sed -n 4p | grep -qE '^4\. \*\*推奨と根拠'
-  printf '%s\n' "$steps" | sed -n 5p | grep -qE '^5\. \*\*受け入れるリスク'
-  printf '%s\n' "$steps" | sed -n 6p | grep -qE '^6\. \*\*答え方'
+  for t in 'してほしいこと' 'アクションを取るための情報' 'エネルギーを使うかを決める情報' 'どこで答えるか' \
+    '題名' 'アクション' '目的' '詳細' '論点' '推奨と根拠' 'リスク' '緊急度' 'ブロック' 'アクションに付けるリンク'; do
+    printf '%s\n' "$s" | grep -E '^\| ' | grep -qF -- "$t" || { echo "group table lacks: $t"; return 1; }
+  done
+  for t in '対話のセッション' 'チャットで 1 件ずつ出す依頼' 'チャットで何件かまとめて出す一覧' \
+    '依頼を並べる画面' '画面の詳細' '頼んだエージェント' '待っている日数' \
+    '空の項目は書かない' '6 行まで' '60 字まで' '40 字まで' '120 字まで'; do
+    printf '%s\n' "$s" | grep -E '^\| ' | grep -qF -- "$t" || { echo "place table lacks: $t"; return 1; }
+  done
+  printf '%s\n' "$s" | grep -qF '書けない項目は「—」'
+  printf '%s\n' "$s" | grep -qF '全部の項目が読める場所へのリンク'
+  printf '%s\n' "$s" | grep -qF '論点の有無より優先'
+  printf '%s\n' "$s" | grep -qF '`<項目名>: <中身>`'
 }
 
 @test "canonical: three reasons to ask and proceed without asking otherwise" {
@@ -78,11 +83,14 @@ referrers() {
   printf '%s\n' "$s" | grep -qF '番号で物を指さず'
   printf '%s\n' "$s" | grep -qF '区切って下に置く'
   printf '%s\n' "$s" | grep -qF '確かめ済み'
+  printf '%s\n' "$s" | grep -qF '一覧の中では答えを求めない'
 }
 
 @test "canonical: first line rule, answers excluded, examples are fenced" {
   local s; s="$(section3)"
-  printf '%s\n' "$s" | grep -qF '1 行目を質問にし'
+  printf '%s\n' "$s" | grep -qF '1 行目を題名にし'
+  printf '%s\n' "$s" | grep -qF '2 行目を `アクション:` で始まる'
+  ! printf '%s\n' "$s" | grep -qF '1 行目を質問にし' || return 1
   printf '%s\n' "$s" | grep -qF '`主がすること: なし`'
   printf '%s\n' "$s" | grep -qF '主の質問に答える発言'
   [ $(( $(printf '%s\n' "$s" | grep -c '^```') % 2 )) -eq 0 ]
@@ -99,18 +107,24 @@ referrers() {
   section3 | grep -qF '聖域（'
 }
 
-@test "canonical and short: the old five-step form is gone" {
-  ! grep -qF '目的 → いま取り組んでいる場所' "$READABLE" || return 1
-  ! grep -qF 'これを飲めるならAで進める' "$READABLE" || return 1
-  ! grep -qF '目的 → いま取り組んでいる場所' "$SHORT" || return 1
-  ! grep -qF 'これを飲めるならAで進める' "$SHORT" || return 1
+@test "canonical and short: the old five-step and six-step forms are gone" {
+  local f t
+  for f in "$READABLE" "$SHORT"; do
+    for t in '目的 → いま取り組んでいる場所' 'これを飲めるならAで進める' '質問 → 主に聞く理由' \
+      'OK すると何が起きるか' 'いま困っていること' 'Discord' '住人'; do
+      ! grep -qF -- "$t" "$f" || { echo "$f keeps: $t"; return 1; }
+    done
+  done
   ! grep -qF '判断依頼は背景から' "$READABLE" || return 1
+  ! grep -qF '判断依頼は質問から' "$READABLE" || return 1
 }
 
-@test "short: item 3 keeps the order, the three reasons and not asking without a reason" {
-  local s; s="$(short3)"
+@test "short: item 3 keeps the item names, the three reasons and not asking without a reason" {
+  local s t; s="$(short3)"
   [ -n "$s" ]
-  printf '%s\n' "$s" | grep -qF '質問 → 主に聞く理由 → 困りごと → 推奨と根拠 → リスク（被害・頻度） → 答え方'
+  for t in '題名' 'アクション' '目的' '詳細' '論点' '推奨と根拠' 'リスク' '緊急度' 'ブロック' '`アクション:`'; do
+    printf '%s\n' "$s" | grep -qF -- "$t" || { echo "short lacks: $t"; return 1; }
+  done
   printf '%s\n' "$s" | grep -qF '主の側にしか答えが無い'
   printf '%s\n' "$s" | grep -qF '決まりで主の承認が要る'
   printf '%s\n' "$s" | grep -qF '主の手でしかできない操作'
@@ -176,10 +190,10 @@ issue1209_terms() {
     '持っていない観点を足すと結論がよくなる点' \
     '論点あり' \
     '論点なし（決まりで聞いている）' \
-    'OK すると何が起きるかを中身で書いた質問' \
+    '題名は依頼の形にし、質問にしない' \
+    '作業の言葉で書かない' \
     '番号で物を指さず' \
     '末尾の URL にだけ置く' \
-    '困りごとが無いときは書かない' \
     '推奨を選ぶことで新たに生じるもの'
 }
 
@@ -206,10 +220,35 @@ issue1209_terms() {
       fi
       continue
     fi
-    if [ "$in" -eq 1 ]; then lines=$((lines + 1)); continue; fi
+    if [ "$in" -eq 1 ]; then
+      lines=$((lines + 1))
+      if [ "$lines" -eq 1 ]; then
+        case "$l" in *'？'|*'?') echo "first line is a question: $l"; return 1 ;; esac
+      fi
+      if [ "$lines" -eq 2 ]; then
+        [[ "$l" == 'アクション:'* ]] || { echo "second line is not the action line: $l"; return 1; }
+      fi
+      continue
+    fi
     if [[ "$l" == *'論点なし'* && "$l" == *'実例'* ]]; then marked=1; fi
   done <<<"$s"
   [ "$n" -eq 2 ] || { echo "rewritten examples: $n"; return 1; }
+}
+
+@test "issue1671: only the dialogue session shortens a request without a point to discuss" {
+  local s; s="$(section3)"
+  printf '%s\n' "$s" | grep -qF '論点なしの依頼を短く省くのは対話のセッションだけ'
+  printf '%s\n' "$s" | grep -qF '題名・アクション・論点・推奨の 4 行'
+  printf '%s\n' "$s" | grep -qF '目的を足して 5 行'
+  printf '%s\n' "$s" | grep -F 'チャットで 1 件ずつ出す依頼と依頼を並べる画面の詳細では' | grep -F '論点なしでも' | grep -qF '緊急度・ブロックを含む全部の項目'
+}
+
+@test "issue1671: the short version has the four-line and five-line dialogue forms and points at the table" {
+  local s; s="$(short3)"
+  printf '%s\n' "$s" | grep -qF '対話のセッション'
+  printf '%s\n' "$s" | grep -qF '題名・アクション・論点・推奨の 4 行'
+  printf '%s\n' "$s" | grep -qF '5 行'
+  printf '%s\n' "$s" | grep -qF '使う場所ごとの項目と長さの表'
 }
 
 @test "issue1209: perspective-casting step 2 says the view needed for the decision" {
