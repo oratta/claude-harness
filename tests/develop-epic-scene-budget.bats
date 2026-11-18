@@ -231,7 +231,7 @@ fixture_budget() {
   run check_naming "$r"
   [ "$status" -eq 1 ]
   cp "$PLUGIN_DIR/$R/epic.md" "$r/$R/epic.md"
-  printf '\nreferences/epic-loop.md を読む。\n' >> "$r/$R/epic-child-stop.md"
+  printf '\n`references/epic-loop.md` を読む。\n' >> "$r/$R/epic-child-stop.md"
   run check_naming "$r"
   [ "$status" -eq 1 ]
 }

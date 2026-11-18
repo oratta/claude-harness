@@ -558,7 +558,7 @@ refute() {
   [ -f "$EPIC" ]
   [ -f "$EPIC_CHILD_STOP" ]
   local p
-  for p in '### 条件' '### 作り方' 'epic-loop.md' '### 完了条件' '**経路の決め方**' '**エピックである子を外す**' \
+  for p in '### 条件' '### 作り方' '### 完了条件' '**経路の決め方**' '**エピックである子を外す**' \
            '**部品ごとの欄**' 'sub_issues_summary' 'dependencies/blocked_by -F issue_id' 'epic-dispatch.sh route <子>'; do
     grep -qF -- "$p" "$EPIC" || { echo "移設先に無い: $p" >&2; return 1; }
     if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
@@ -570,6 +570,9 @@ refute() {
 }
 
 @test "epic move (#1219): references inside the moved files point back to SKILL.md or to each other" {
+  grep -qF '`references/epic-loop.md`' "$SKILL"
+  grep -qF '`references/epic-loop.md`' "$SKILL_DIR/references/epic.md"
+  [ -f "$PLUGIN_DIR/skills/develop/references/epic-loop.md" ]
   grep -qF '`references/handover.md` の「新しいセッションでの再開」の手順 2' "$EPIC_CHILD_STOP"
   grep -qF '`references/epic-stop.md` の手順 8' "$EPIC_CHILD_STOP"
   grep -qF '子の側の手順は `references/epic-child-stop.md`' "$EPIC"
