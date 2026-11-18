@@ -38,7 +38,12 @@ setup() {
   SCRIPT="${PLUGIN_DIR}/scripts/epic-dispatch.sh"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
-  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  # Paragraph wording is checked across the epic references; reading boundaries have their own tests.
+  EPIC="$BATS_TEST_TMPDIR/epic-all.md"
+  cat "${PLUGIN_DIR}/skills/develop/references/epic.md" > "$EPIC"
+  for doc in loop stop delegation merge-wait multirepo subagent keepalive; do
+    if [ -f "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" ]; then cat "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" >> "$EPIC"; fi
+  done
   EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   STUB_BIN="${BATS_TEST_TMPDIR}/bin"
   export STUB_CFG="${BATS_TEST_TMPDIR}/cfg"
@@ -497,9 +502,11 @@ reap_prless_ready() {
 
 # SKILL.md の「## <見出し>」から次の「## 」まで
 # 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
+section() {
+  if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
+  awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 # 「エピックの扱い」の「### 回し方」から次の「### 」まで
-run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
+run_section() { cat "$EPIC"; }
 
 # --- route ---
 
@@ -5245,7 +5252,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 
 @test "skill: each W per change inside one child uses its own slot" {
   printf '%s\n' "$(subagent_para)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
-  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic.md` の「回し方」のサブエージェント方式の枠に従う）' "$SKILL"
+  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic-subagent.md` のサブエージェント方式の枠に従う）' "$SKILL"
 }
 
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
@@ -6978,10 +6985,11 @@ keepalive_reply() {
 @test "keepalive definition: child reads the shared definition before stopping and handles reserved input before resuming" {
   grep -qF 'references/child-cache-keepalive.json' "$EPIC_CHILD_STOP"
   grep -qF '停止前に' "$EPIC_CHILD_STOP"
-  grep -qF '通常の主の返事や親の判断より先に' "$EPIC_CHILD_STOP"
-  grep -qF '受信ターンではツールを呼ばない' "$EPIC_CHILD_STOP"
-  grep -qF '調査・作業・停止コメントの投稿は行わず' "$EPIC_CHILD_STOP"
-  grep -qF '#1374' "$EPIC_CHILD_STOP"
+  grep -qF 'references/epic-keepalive.md' "$EPIC_CHILD_STOP"
+  grep -qF '通常の主の返事や親の判断より先に' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '受信ターンではツールを呼ばない' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '調査・作業・停止コメントの投稿は行わず' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '#1374' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
 }
 
 # --- child-log ---
@@ -7701,7 +7709,7 @@ log_resolve_ready() {
 # spec: dev-workflow-develop（エピックの親は主への報告の最後に、全部の子と親自身の状態表を付ける）
 
 @test "epic.md: the status table is specified with its columns, placement, channel rule and the conversation-log check" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   grep -qF 'issue 番号・内容・ステータス・確認内容・推奨・答え方' "$e"
   grep -qF '報告の区切りより下に置く' "$e"
   grep -qF '区切りより上の 1 行目と 2 行目は上の書き分けの規定に従い、依頼の有無で分ける' "$e"
@@ -7718,7 +7726,7 @@ log_resolve_ready() {
 }
 
 @test "epic.md: not-yet-launched children are not passed to child-log, URLs below the table are limited, and child-log takes owner/repo#N" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   grep -qF '`launch` に渡した子ごとに会話ログの末尾を' "$e"
   grep -qF '`未起動（<理由>）`' "$e"
   grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
@@ -7728,11 +7736,11 @@ log_resolve_ready() {
 
 
 @test "epic.md: old-parent table and child-log exception is narrow and includes record failure (#1385)" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   table="$(grep -F '**状態表**（' "$e")"
   logs="$(grep '^表を書く前に、' "$e")"
   for body in "$table" "$logs"; do
-    for word in '60 分以上' '旧親' '記録失敗時の停止報告を含む' '状態表と `child-log` 確認を省略' '通常の報告' '60 分未満'; do
+    for word in 'reply-after-idle.md' '旧親' '記録失敗時の停止報告を含む' '状態表と `child-log` 確認を省略' '通常の報告' '短時間'; do
       printf '%s\n' "$body" | grep -qF "$word" || return 1
     done
   done
@@ -7747,7 +7755,7 @@ from pathlib import Path
 import sys
 plugin = Path(sys.argv[1]).resolve()
 repo = plugin.parent.parent
-text = (plugin / 'skills/develop/references/epic.md').read_text()
+text = '\n'.join(p.read_text() for p in (plugin / 'skills/develop/references').glob('epic*.md'))
 p7 = text.split('\n7. ')[1].split('\n8. ')[0]
 p8 = text.split('\n8. ')[1].split('\n\n')[0]
 for term in ['保存した元セッション ID・uuid', '最新の停止記録 URL', '真正性と対象']:

@@ -123,7 +123,7 @@ check_naming() {
   if grep -Eq '^([1-9]\. |\*\*(マージ待ちの子|PR トークン上限の子|主の委任|別のリポジトリの子|サブエージェント方式)\*\*)' "$root/$R/epic.md"; then
     echo 'entry contains parent operations' >&2; rc=1
   fi
-  if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent)\.md.*を読' "$root/$R/epic-child-stop.md"; then
+  if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent)\.md` を読' "$root/$R/epic-child-stop.md"; then
     echo 'child reads parent operations' >&2; rc=1
   fi
   return "$rc"

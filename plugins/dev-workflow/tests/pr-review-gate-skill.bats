@@ -2107,9 +2107,10 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
 }
 
 @test "delegated reply (#1293): the strings in pass.md are the same as epic.md and epic-child-stop.md" {
-  epic="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  epic="$BATS_TEST_DIRNAME/../skills/develop/references/epic-delegation.md"
   child="$BATS_TEST_DIRNAME/../skills/develop/references/epic-child-stop.md"
-  for f in "$epic" "$child"; do
+  grep -qF 'references/epic-delegation.md' "$child"
+  for f in "$epic"; do
     grep -qF "$PRG_DELEG_VALID6" "$f" || { echo "valid6 missing in $f"; return 1; }
     grep -qF "$PRG_DELEG_STOP4" "$f" || { echo "stop4 missing in $f"; return 1; }
   done

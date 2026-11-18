@@ -10,7 +10,12 @@ setup() {
   REF="$PLUGIN_DIR/skills/develop/references"
   PASS="$REF/parent-pass-criteria.md"
   MERGE="$REF/parent-merge-criteria.md"
-  EPIC="$REF/epic.md"
+  # Paragraph wording is checked across the epic references; reading boundaries have their own tests.
+  EPIC="$BATS_TEST_TMPDIR/epic-all.md"
+  cat "${REF}/epic.md" > "$EPIC"
+  for doc in loop stop delegation merge-wait multirepo subagent keepalive; do
+    if [ -f "${REF}/epic-$doc.md" ]; then cat "${REF}/epic-$doc.md" >> "$EPIC"; fi
+  done
   CHILD="$REF/epic-child-stop.md"
 }
 
@@ -77,7 +82,8 @@ step8() { grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC"; }
 }
 
 @test "pass criteria and child stop (#1653): both list the 11/16, 11/12 and 11/13 cases as not passing" {
-  for f in "$PASS" "$CHILD"; do
+  grep -qF 'references/parent-pass-criteria.md' "$CHILD"
+  for f in "$PASS"; do
     grep -F '2026-11-16' "$f" | grep -F 'ログ' >/dev/null || { echo "no 11/16 in $f"; return 1; }
     grep -F '2026-11-12' "$f" | grep -F '手順書' | grep -F '主の作業' >/dev/null || { echo "no 11/12 in $f"; return 1; }
     grep -F '2026-11-13' "$f" | grep -F '推奨' | grep -F '順' >/dev/null || { echo "no 11/13 in $f"; return 1; }
@@ -91,7 +97,7 @@ step8() { grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC"; }
   [ "$status" -eq 1 ]
   printf '%s\n' "$s" | grep -F '主に上げるのは' | grep -F '根拠' | grep -qF '示せなければ通す'
   # 照らし直しより先に委任で送るかを確かめる
-  printf '%s\n' "$s" | grep -F '主に上げる前に、まず下の **主の委任** の段落の「委任で送る」に当たるかを確かめ' >/dev/null
+  printf '%s\n' "$s" | grep -F '主に上げる前に、まず `references/epic-delegation.md` を読んでから下の **主の委任** の段落の「委任で送る」に当たるかを確かめ' >/dev/null
 }
 
 @test "merge criteria (#1653): owner-info condition accepts the no-point check only with a delegation" {
@@ -161,7 +167,7 @@ item() { grep -F -- "- **$1**" "$2"; }
   risk="$(item '委任が効く止まり' "$EPIC" | grep -oE '\*\*リスク許容の止まり\*\*.*論点なしと書く。\*\*聖域' | sed 's/。\*\*聖域$//')"
   [ -n "$risk" ]
   grep -qF -- "$risk" "$PASSMD"
-  grep -qF -- "$risk" "$CHILD"
+  grep -qF 'references/epic-delegation.md' "$CHILD"
   grep -qF '`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど' "$PASSMD"
 }
 

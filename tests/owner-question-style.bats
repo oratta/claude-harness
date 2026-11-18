@@ -162,7 +162,7 @@ referrers() {
     if grep -qF '目的 → いま取り組んでいる場所' "${REPO_ROOT}/$f"; then echo "old order: $f"; return 1; fi
     if grep -qF '決めてほしいこと・推奨・受け入れるリスク' "${REPO_ROOT}/$f"; then echo "old items: $f"; return 1; fi
     if grep -qF '「飲めるか」を 1 問だけ' "${REPO_ROOT}/$f"; then echo "old ask: $f"; return 1; fi
-    grep -qE 'readable\.md|communication-style' "${REPO_ROOT}/$f" || { echo "no reference: $f"; return 1; }
+    grep -qE 'readable\.md|communication-style|references/epic-loop\.md' "${REPO_ROOT}/$f" || { echo "no reference: $f"; return 1; }
   done < <(referrers)
 }
 
@@ -297,7 +297,7 @@ issue1209_terms() {
 }
 
 @test "issue1209: the parent's step 8 and the merge-wait example follow the canonical form" {
-  local e="${REPO_ROOT}/plugins/dev-workflow/skills/develop/references/epic.md"
+  local e="${REPO_ROOT}/plugins/dev-workflow/skills/develop/references/epic-stop.md"
   local c="${REPO_ROOT}/plugins/dev-workflow/references/ci-watch.md"
   ! grep -qF '親経由のリスク許容の依頼' "$e" || return 1
   grep -E '^8\. ' "$e" | grep -qF '論点'
