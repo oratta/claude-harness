@@ -11,7 +11,7 @@ setup() {
 
 R=skills/develop/references
 
-# scene_files <段> — その段で W が読むファイルを 1 行 1 件で出す。知らない段は 1。
+# scene_files <場面> — その場面で読むファイルを 1 行 1 件で出す。知らない段は 1。
 SCENES="nested-entry nested-stop parent-start parent-stopped nested-delegated parent-delegated parent-merge-wait parent-merge-delegated parent-multirepo parent-subagent"
 scene_files() {
   case "$1" in
@@ -29,22 +29,22 @@ scene_files() {
   esac
 }
 
-# check_format <budget-file> — 全行が "<段> <先頭ゼロなしの正整数>" で、段が spec / implement / finish の
-# どれかで重複が無く、3 段とも揃っていること。違反は stderr に出して 1。
+# check_format <budget-file> — 全行が "<場面> <先頭ゼロなしの正整数>" で、固定した
+# 10 場面のどれかで重複が無く、全場面が揃っていること。違反は stderr に出して 1。
 check_format() {
   local f=$1 n=0 line stage seen=" "
   [ -f "$f" ] || { echo "予算ファイルが無い: $f" >&2; return 1; }
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
     if ! printf '%s' "$line" | grep -Eq '^(nested-entry|nested-stop|parent-start|parent-stopped|nested-delegated|parent-delegated|parent-merge-wait|parent-merge-delegated|parent-multirepo|parent-subagent) [1-9][0-9]*$'; then
-      echo "予算ファイル $n 行目の形が違う（'<段> <バイト数>' のみ。段は spec / implement / finish）: $line" >&2
+      echo "予算ファイル $n 行目の形が違う（'<段> <バイト数>' のみ。場面は固定した 10 キー）: $line" >&2
       return 1
     fi
     stage=${line% *}
     case "$seen" in *" $stage "*) echo "予算ファイルに段の重複: $stage" >&2; return 1 ;; esac
     seen="$seen$stage "
   done < "$f"
-  [ "$n" -eq 10 ] || { echo "予算ファイルの段が 3 つ揃っていない（$n 行）" >&2; return 1; }
+  [ "$n" -eq 10 ] || { echo "予算ファイルの場面が 10 個揃っていない（$n 行）" >&2; return 1; }
 }
 
 # scene_total <root> <段> — 一覧のファイルを足したバイト数。無いファイルがあれば stderr に出して 1。
@@ -113,6 +113,11 @@ epic-child-stop.md epic-keepalive.md
 epic-child-stop.md parent-pass-criteria.md
 reply-after-idle.md epic-keepalive.md
 epic-keepalive.md child-cache-keepalive.json
+parent-pass-criteria.md epic-stop.md
+parent-pass-criteria.md epic-delegation.md
+parent-merge-criteria.md epic-stop.md
+parent-merge-criteria.md epic-merge-wait.md
+parent-merge-criteria.md epic-delegation.md
 EDGES
 }
 check_naming() {

@@ -333,7 +333,7 @@ unmanned で W の return に質問文・理由が含まれるとき、本体（
 
 **仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。文言合わせの通し方（1 ループの (1)。判定基準は `references/spec-decision.md` Step B）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる。
 
-channel が interactive と違うのは次の点だけで、それ以外の工程と記録は interactive と同じ。W・R1 の起動指示の実行モードには interactive と書く（W・R1 の手順の分岐は channel でも interactive 側をとり、主に聞くのは W・R1 の return を受けた本体がチャンネルで行う）。違う点: 主に聞く先と主への発言の宛先がチャンネルになる（`references/channel.md` の「channel の聞き方」「channel の主への発言」）・保留からの再開の案内がチャンネルの返事になる（`references/handover.md` と G の依頼文）・リスク許容をチャンネルで受けるのは返事を確かめられるときだけ（`references/channel.md` の「channel のリスク許容」）・エピックは `route` を呼ばずサブエージェント方式で回す（`references/epic.md` の「回し方」）。
+channel が interactive と違うのは次の点だけで、それ以外の工程と記録は interactive と同じ。W・R1 の起動指示の実行モードには interactive と書く（W・R1 の手順の分岐は channel でも interactive 側をとり、主に聞くのは W・R1 の return を受けた本体がチャンネルで行う）。違う点: 主に聞く先と主への発言の宛先がチャンネルになる（`references/channel.md` の「channel の聞き方」「channel の主への発言」）・保留からの再開の案内がチャンネルの返事になる（`references/handover.md` と G の依頼文）・リスク許容をチャンネルで受けるのは返事を確かめられるときだけ（`references/channel.md` の「channel のリスク許容」）・エピックは `route` を呼ばずサブエージェント方式で回す（`references/epic-subagent.md`）。
 
 ### モードの決め方
 

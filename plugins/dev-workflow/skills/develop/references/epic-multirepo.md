@@ -1,6 +1,6 @@
 # 別リポジトリの子を扱う親（develop）
 
-別 repo の子を扱う前に読む。通常の手順は `references/epic-loop.md`、停止は `references/epic-stop.md`、マージ待ちは `references/epic-merge-wait.md`。
+別 repo の子を扱う前に読む。通常の手順 1〜7・9 は `references/epic-loop.md`、停止の手順 8 は `references/epic-stop.md`、マージ待ちは `references/epic-merge-wait.md`。以下の手順番号はこの対応で読む。
 
 **別のリポジトリの子（複数リポジトリのエピック）**: エピックの子が親と別のリポジトリにあるときは、上の手順を次のとおり読み替える。表に無い呼び出しの形・書式・判定は、同じリポジトリの子では変えない。
 
