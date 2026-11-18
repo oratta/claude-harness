@@ -224,7 +224,7 @@ line_count() { printf '%s' "$1" | grep -c '' ; }
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
-ctx = json.loads(sys.argv[1])["additionalContext"]
+ctx = json.loads(sys.argv[1])["hookSpecificOutput"]["additionalContext"]
 assert ctx.startswith("[memory] "), ctx[:80]
 assert "昇格トリップワイヤー" in ctx
 PY
@@ -233,7 +233,7 @@ PY
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
-ctx = json.loads(sys.argv[1])["additionalContext"]
+ctx = json.loads(sys.argv[1])["hookSpecificOutput"]["additionalContext"]
 assert "[memory]" not in ctx
 PY
 }
@@ -563,7 +563,7 @@ PY
   [ "$status" -eq 0 ]
   python3 - "$output" "$I1" <<'PY'
 import json, sys
-ctx = json.loads(sys.argv[1])["additionalContext"]
+ctx = json.loads(sys.argv[1])["hookSpecificOutput"]["additionalContext"]
 assert ctx.startswith("[memory] "), ctx[:80]
 assert ("done.md ← " + sys.argv[2]) in ctx.splitlines()[0], ctx.splitlines()[0]
 assert "昇格トリップワイヤー" in ctx

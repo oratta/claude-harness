@@ -28,7 +28,8 @@
 #   - 記録済みの CLAUDE_PLUGIN_ROOT と一致 → 無出力で即 exit（毎プロンプト走るので
 #     軽さ優先。この経路では python3 を起動せず、find による掃除も行わない）。
 #   - 不一致 → session-tripwires.sh を呼んで本文を作り（本文の single source of
-#     truth は templates/escalation-tripwires.md、生成ロジックは複製しない）、
+#     truth は templates/escalation-tripwires.md、生成ロジックは複製しない）、その出力の
+#     hookSpecificOutput.additionalContext を取り出して、UserPromptSubmit の
 #     hookSpecificOutput.additionalContext として出力する。
 #   - 全経路 fail-soft（無出力・exit 0）。プロンプト送信は絶対にブロックしない。
 set -uo pipefail
@@ -86,7 +87,8 @@ def label(p):
     return os.path.basename(p.rstrip("/")) or p
 
 try:
-    ctx = (json.loads(os.environ["BODY"]) or {}).get("additionalContext") or ""
+    # session-tripwires.sh は SessionStart の hookSpecificOutput の形で出す（#1673）。トップレベルは読まない
+    ctx = ((json.loads(os.environ["BODY"]) or {}).get("hookSpecificOutput") or {}).get("additionalContext") or ""
 except Exception:
     ctx = ""
 if not ctx:

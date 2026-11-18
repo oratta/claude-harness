@@ -8,7 +8,8 @@
 # ブロック（「## Fable 残量モード（自動導出）」から共有枠モードの効果の行まで）だけを JSON でなく
 # 本文テキストで出す。この範囲では usage-probe・メモリ索引の検知・トリップワイヤー節の抽出を
 # 行わず、親向けの「W を再開する前に測る」行も出さない。テンプレートが無くても出す。
-# 未設定・それ以外の値のときは従来どおり。
+# 未設定・それ以外の値のときは {"hookSpecificOutput": {"hookEventName": "SessionStart",
+# "additionalContext": <本文>}} の JSON を出す（トップレベルに additionalContext を置かない。#1673）。
 #
 # 残量モードの式（明示 env の優先・閾値の比較）は usage_view.py の budget_mode_details の 1 か所に
 # あり、ここでは結果を表示するだけで写しを持たない。usage_view.py は CLAUDE_PLUGIN_ROOT ではなく
@@ -154,5 +155,9 @@ budget = "\n".join(lines)
 notice = (os.environ.get("MEMORY_NOTICE") or "").strip()
 head = notice + "\n\n" if notice else ""
 
-print(json.dumps({"additionalContext": head + budget + "\n\n" + tripwire}, ensure_ascii=False))
+# Claude Code が SessionStart の文脈に足すのは hookSpecificOutput の形だけ（トップレベルの
+# additionalContext は hook の記録に残るだけで文脈に入らない。#1673）
+print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                         "additionalContext": head + budget + "\n\n" + tripwire}},
+                 ensure_ascii=False))
 PY

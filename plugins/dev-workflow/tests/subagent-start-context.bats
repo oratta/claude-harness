@@ -209,15 +209,31 @@ default_of() {
   [ -e "$USAGE_PROBE_STATE" ]
 }
 
-@test "session-tripwires: unknown TRIPWIRES_SCOPE keeps the legacy JSON output" {
-  run env TRIPWIRES_SCOPE=something-else "$TRIPWIRES"
-  [ "$status" -eq 0 ]
+# assert_session_shape — 直前の run の出力が SessionStart の形で、本文に節と残量ブロックを持つ
+assert_session_shape() {
   python3 - "$output" <<'PY'
 import json, sys
-ctx = json.loads(sys.argv[1])["additionalContext"]
+d = json.loads(sys.argv[1])
+assert "additionalContext" not in d, sorted(d)
+h = d["hookSpecificOutput"]
+assert h["hookEventName"] == "SessionStart", h.get("hookEventName")
+ctx = h["additionalContext"]
 assert "昇格トリップワイヤー" in ctx
+assert "## Fable 残量モード（自動導出）" in ctx
 assert "subagent-context.sh" in ctx
 PY
+}
+
+@test "session-tripwires: unset TRIPWIRES_SCOPE emits the SessionStart hookSpecificOutput shape" {
+  run env -u TRIPWIRES_SCOPE "$TRIPWIRES"
+  [ "$status" -eq 0 ]
+  assert_session_shape
+}
+
+@test "session-tripwires: unknown TRIPWIRES_SCOPE also emits the SessionStart hookSpecificOutput shape" {
+  run env TRIPWIRES_SCOPE=something-else "$TRIPWIRES"
+  [ "$status" -eq 0 ]
+  assert_session_shape
 }
 
 @test "hooks.json: SubagentStart entry runs subagent-start-context.sh for the three roles" {
