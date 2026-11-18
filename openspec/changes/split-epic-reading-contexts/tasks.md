@@ -20,7 +20,7 @@
 
 ## 4. 統合確認と実装段の記録
 
-- [ ] 4.1 既存・新規の Bats が git 追跡対象にある状態で `./scripts/test.sh` と `./scripts/lint.sh` を実行し、終了コードを記録する。OpenSpec strict 検証と `git diff --check` も通す。親子の各場面から読込先をたどり、子に親専用の操作本文を新たに読ませないことと、G 本文・基準の例・出力語を変えていないことを差分で確認する。触る範囲: 本 change の手順書・参照・Bats・delta 全体（検査のみ）
+- [x] 4.1 既存・新規の Bats が git 追跡対象にある状態で `./scripts/test.sh` と `./scripts/lint.sh` を実行し、終了コードを記録する。OpenSpec strict 検証と `git diff --check` も通す。親子の各場面から読込先をたどり、子に親専用の操作本文を新たに読ませないことと、G 本文・基準の例・出力語を変えていないことを差分で確認する。触る範囲: 本 change の手順書・参照・Bats・delta 全体（検査のみ）
 - [ ] 4.2 子の停止・委任の parent-pass-criteria.md は例の節指定でも全文を含め、design の R1 修正後の分割前集合を基準にする。main e10f0a98 と実装後の集合を UTF-8 の `wc -m`・`wc -c` で再測定し、同じ共通起動分の定義で前後表を作る。#1682 に実装段のコメントを投稿し、PR 用に段落ごとの移設先・読む場面・案内元と残した互換分岐を実装の return にまとめる。変更記録も作る。確認: コメント URL、前後表、段落対応表、残した分岐と根拠がそろっていること。触る範囲: plugins/dev-workflow/changes/1684.md（新規）、GitHub issue #1682 の実装段のコメント、実装段の return（PR 本文用の記録）
 
 ## Workflow follow-up
@@ -31,3 +31,6 @@
 ## 実装担当の記録（試行 2）
 
 - 4.2 の測定・前後表・段落対応・互換分岐・変更記録は `plugins/dev-workflow/changes/1684.md` に用意済み。今回の dispatch に従い、#1682 への投稿と URL の記録は coordinator が行うため、4.2 全体のチェックは投稿まで残す。
+
+- 統合検査: 単一の `./scripts/test.sh` は新規 Bats の assertion guard 2 件で exit 1。その 5 行に `|| return 1` を加え、`bats tests/bats-assertion-guard.bats tests/develop-epic-scene-budget.bats tests/develop-startup-budget.bats tests/develop-worker-stage-budget.bats` は 36 件・exit 0。最終の全件再検査は CI と同じ `TEST_SHARD=1/4`〜`4/4 ./scripts/test.sh` で各 exit 0（1318 / 1311 / 1310 / 1311 件）。git 追跡下の全 167 スイート・5250 件と和集合が一致し、重複・欠落・除外 0。
+- `./scripts/lint.sh`、`./scripts/test-auto-merge-workflow.sh`（145 件）、`openspec validate split-epic-reading-contexts --type change --strict`、`git diff --check f7ec7c4a HEAD` は exit 0。最終再測定で全 10 予算と変更記録の表の完全一致を確認した。
