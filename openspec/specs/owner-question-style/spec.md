@@ -77,7 +77,7 @@ TBD - created by archiving change owner-question-canonical-style. Update Purpose
 - `plugins/dev-workflow/skills/develop/SKILL.md`（保留の行の主への案内）
 - `plugins/dev-workflow/skills/develop/references/handover.md`（保留の依頼の出し直し・主への案内）
 - `plugins/dev-workflow/skills/develop/references/channel.md`（channel の聞き方と主への発言）
-- `plugins/dev-workflow/skills/develop/references/epic-loop.md`（親の報告の共通宣言）と同ディレクトリの `epic-stop.md`（手順 8 の報告）・`epic-merge-wait.md`・`epic-subagent.md`（共通宣言を読む指示と場面固有の事項）
+- `plugins/dev-workflow/skills/develop/references/epic-loop.md`（親の報告の共通宣言）と `plugins/dev-workflow/skills/develop/references/epic-stop.md`（手順 8 の報告）・`plugins/dev-workflow/skills/develop/references/epic-merge-wait.md`・`plugins/dev-workflow/skills/develop/references/epic-subagent.md`（共通宣言を読む指示と場面固有の事項）
 - `plugins/dev-workflow/skills/develop/references/epic-child-stop.md`（子の停止の記録と主への問いの型）
 - `plugins/dev-workflow/skills/pr-review-gate/stages/hold.md`（手順 6 の主への確認依頼・切り出しの確認・主に承認を求めてよい 4 分類）
 - `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`（動作確認の依頼）

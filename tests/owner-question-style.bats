@@ -32,7 +32,10 @@ referrers() {
     plugins/dev-workflow/skills/develop/SKILL.md \
     plugins/dev-workflow/skills/develop/references/handover.md \
     plugins/dev-workflow/skills/develop/references/channel.md \
-    plugins/dev-workflow/skills/develop/references/epic.md \
+    plugins/dev-workflow/skills/develop/references/epic-loop.md \
+    plugins/dev-workflow/skills/develop/references/epic-stop.md \
+    plugins/dev-workflow/skills/develop/references/epic-merge-wait.md \
+    plugins/dev-workflow/skills/develop/references/epic-subagent.md \
     plugins/dev-workflow/skills/develop/references/epic-child-stop.md \
     plugins/dev-workflow/skills/pr-review-gate/stages/hold.md \
     plugins/dev-workflow/skills/pr-review-gate/stages/pass.md \

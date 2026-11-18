@@ -62,5 +62,5 @@
 | dev-workflow-epic-state:661 | サブエージェント方式は状態の記録を書かない | `epic-subagent.md` |
 | dev-workflow-pr-token-budget:144 | 本体は spawn と再開の前に測り、上限超なら止まる | `epic-stop.md` |
 | harness-public-private-split:287 | 載せない行の基準に起動部品の 1 つとして並べた行を含める | `epic-loop.md`、`parent-pass-criteria.md` |
-| owner-question-style:73 | 主に問いを返す各所は正本を参照し、固有の事柄だけを残す | `epic-child-stop.md`、`epic-loop.md`、`epic-merge-wait.md`、`epic-stop.md`、`epic-subagent.md` |
+| owner-question-style:73 | 主に問いを返す各所は正本を参照し、固有の事柄だけを残す | `plugins/dev-workflow/skills/develop/references/epic-child-stop.md`、`plugins/dev-workflow/skills/develop/references/epic-loop.md`、`plugins/dev-workflow/skills/develop/references/epic-merge-wait.md`、`plugins/dev-workflow/skills/develop/references/epic-stop.md`、`plugins/dev-workflow/skills/develop/references/epic-subagent.md` |
 | dev-workflow-develop:5367 | 主の側にしか答えが無いとする前に 3 つを確かめる | 子の確認を保持し、例の本文は parent-pass-criteria.md、子から参照 |
