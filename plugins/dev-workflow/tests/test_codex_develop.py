@@ -1192,6 +1192,17 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                     if str(path.relative_to(m.ROOT)) not in expected:
                         self.assertNotIn(path.read_text(), text)
 
+    def test_gate_launch_ignores_a_quoted_stage(self):
+        self.input.write_text('レビュー経路: adapter\n段: 前提確認と重さ判定\n'
+                              '> 段: 合格処理\n```markdown\n段: 保留の解除\n```\n')
+        target = self.root / 'quoted-stage.json'
+        self.call_profile('codex-standard', phase='gate', out=target)
+        text = json.loads(target.read_text())['prompt']
+        self.assertEqual(re.findall(r'^CANONICAL SOURCE (\S+) sha256=', text, re.M), [
+            'skills/develop/references/roles/gate-runner.md',
+            'skills/develop/references/return-declaration.md',
+            'skills/pr-review-gate/stages/prepare.md'])
+
     def test_gate_legacy_and_missing_route_keep_the_bulk_sources(self):
         for instructions in ('段: 合格処理\n', 'レビュー経路: 従来\n段: 一括（従来経路）\n'):
             self.input.write_text(instructions)
