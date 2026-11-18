@@ -37,7 +37,7 @@
 
 ## 7. 規則本文から経緯を削る
 
-- [ ] 7.1 規則本文に混ざった日付・実測値・issue 番号の経緯を削る。照合される 1 行目の書式・守備範囲の段落・`subagent-waiting.md` の雛形のコードは変えない。確かめ方: 列挙したファイルの規則本文に経緯の日付と実測値が無く、`bats plugins/dev-workflow/tests/` の該当スイートが緑。触る範囲: plugins/dev-workflow/skills/develop/references/decision-criteria.md:159、plugins/dev-workflow/skills/develop/references/decision-criteria.md:179、plugins/dev-workflow/skills/develop/references/decision-criteria.md:210、plugins/dev-workflow/references/subagent-waiting.md:1-153、plugins/dev-workflow/skills/develop/references/roles/worker/common.md:15、plugins/dev-workflow/skills/develop/references/fix-check.md:7、plugins/dev-workflow/skills/develop/references/fix-check.md:36、plugins/dev-workflow/references/model-tiers.md:52、plugins/dev-workflow/references/model-tiers.md:64、plugins/dev-workflow/references/model-tiers.md:80、plugins/dev-workflow/agents/decider.md:1-42
+- [x] 7.1 規則本文に混ざった日付・実測値・issue 番号の経緯を削る。照合される 1 行目の書式・守備範囲の段落・`subagent-waiting.md` の雛形のコードは変えない。確かめ方: 列挙したファイルの規則本文に経緯の日付と実測値が無く、`bats plugins/dev-workflow/tests/` の該当スイートが緑。触る範囲: plugins/dev-workflow/skills/develop/references/decision-criteria.md:159、plugins/dev-workflow/skills/develop/references/decision-criteria.md:179、plugins/dev-workflow/skills/develop/references/decision-criteria.md:210、plugins/dev-workflow/references/subagent-waiting.md:1-153、plugins/dev-workflow/skills/develop/references/roles/worker/common.md:15、plugins/dev-workflow/skills/develop/references/fix-check.md:7、plugins/dev-workflow/skills/develop/references/fix-check.md:36、plugins/dev-workflow/references/model-tiers.md:52、plugins/dev-workflow/references/model-tiers.md:64、plugins/dev-workflow/references/model-tiers.md:80、plugins/dev-workflow/agents/decider.md:1-42
 
 ## 8. W が段ごとに読むファイルの合計に予算を置く（Decision 7）
 
