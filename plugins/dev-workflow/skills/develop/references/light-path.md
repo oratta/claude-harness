@@ -1,6 +1,6 @@
-# 軽い通し方（本体だけが読む）
+# 軽い通し方（本体が読む。CI 見張りの fix から起きた W も「CI 見張りの fix からの戻し方」を読む）
 
-仕様化判断（Step B）で「仕様化しない」になる変更のうち、本体が W を起こさずに直す通し方と、G の failed や CI 見張りの fix から通常の通し方へ戻す手順。本体だけが読む。仕様化判断と分割判定の基準は `references/spec-decision.md`、記録の行の書式は `references/roles/spec-reviewer.md`「判断記録の契約」。
+仕様化判断（Step B）で「仕様化しない」になる変更のうち、本体が W を起こさずに直す通し方と、G の failed や CI 見張りの fix から通常の通し方へ戻す手順。本体が読む。CI 見張りの fix から `段: spec` で起きた W は「CI 見張りの fix からの戻し方」を読む（`references/roles/worker/spec.md`「CI fix から起きた場合の先行確認」）。仕様化判断と分割判定の基準は `references/spec-decision.md`、記録の行の書式は `references/roles/spec-reviewer.md`「判断記録の契約」。
 
 ## 仕様化しないが軽く通す（軽い通し方）
 

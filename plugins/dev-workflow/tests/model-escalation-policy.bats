@@ -135,6 +135,10 @@ setup() {
   for f in "$PRE" "${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md" \
            "${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md" "${PLUGIN_DIR}/references/model-tiers.md"; do
     if grep -qF '①共有枠モード' "$f"; then echo "restated: $f" >&2; return 1; fi
+    # 表の行の効果（値ごとの扱い）を言い換えて書かない
+    if grep -qE 'FABLE_BUDGET_MODE=(abundant|conserve|reserve|exhausted)|interactive の `reserve`' "$f"; then
+      echo "restated effect: $f" >&2; return 1
+    fi
     [ "$(grep -cF "$BUDGET_POINTER" "$f")" -eq 1 ] || { echo "no pointer: $f" >&2; return 1; }
   done
   # 表の行は他のファイルに無い

@@ -283,10 +283,13 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -q 'pre-classification.md' "$REVIEWER"
 }
 
-@test "reviewer: reserve only for automatic runs, exhausted for all paths" {
+@test "reviewer: budget modes point at the priority table in decision-criteria.md" {
   # 値ごとの上限は decision-criteria.md の優先順位の表が正本で、R1 の指示書はそこを 1 行で指す（#1683）
+  grep -qF '適用は `codex-develop.py request` が行う' "$REVIEWER"
   grep -qF '優先順位の表は `skills/develop/references/decision-criteria.md`' "$REVIEWER"
-  grep -qE 'interactive の `reserve` は `conserve` と同一' "$REVIEWER"
+  # 表の行（reserve の interactive の扱いなど）を言い換えて書かない
+  run grep -cE 'interactive の `reserve`' "$REVIEWER"
+  [ "$output" = "0" ]
 }
 
 @test "reviewer: return format has Spec Review Result with BLOCKER / SHOULD_FIX / NOTE" {

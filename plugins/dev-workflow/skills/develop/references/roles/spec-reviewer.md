@@ -31,7 +31,7 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 - 記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行（上の「判断記録の契約」）があるときは、本体は R1 を spawn しない。R1 が起こされるのは、この行が無い `仕様化判断: する` のときだけ
 - **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。値は `codex-develop.py request --phase spec-review` が返す `model` を使う。既定は `subagent_type: general-purpose` に `model: opus`。仕様が `references/pre-classification.md` の「重要実装の事前分類」表の分類（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合は `--pre-class` を渡し、`request` が返す `role: decider` で **`subagent_type: dev-workflow:decider` で spawn する**（`general-purpose` に `model: fable` を付けない。`scripts/agent-model-guard.sh` が拒否する）。聖域パスだけでは上げない。ただし共有枠モードが上限を先に決める（次項）
-- 残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`。interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので決める役として立ててよい）
+- 残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`
 - R1 は**読み取り専用**。仕様ファイル・コードを一切変更しない（修正は本体が W を再開して行わせる）
 
 ## レビュアーへの入力
