@@ -9,6 +9,8 @@
 #
 # spec: dev-workflow-model-escalation-policy, dev-workflow-develop
 
+load lib/develop-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -295,9 +297,9 @@ model_section() {
 }
 
 @test "model section: new spawns use the model request returned and are not recalculated" {
-  sec="$(model_section)"
+  sec="$(codex_procedures)"
   echo "$sec" | grep -qF 'codex-develop.py request'
-  echo "$sec" | grep -qF '新しい起動の `model` を文章の規則で計算し直さない'
+  echo "$sec" | grep -qF '返った `model` で Agent を起動する'
 }
 
 @test "model section: budget modes are named but their value-by-value effects stay in decision-criteria" {
@@ -315,7 +317,7 @@ model_section() {
 }
 
 @test "role profile section: request gets the tier inputs on every route, including Claude default" {
-  sec="$(awk 'index($0,"## Role profile の選択")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL")"
+  sec="$(codex_procedures)"
   echo "$sec" | grep -qF 'Claude 既定の経路を含む全経路'
   for flag in '--pre-class' '--design-judgment' '--failure' '--unmanned'; do
     echo "$sec" | grep -qF -- "$flag" || { echo "missing $flag"; return 1; }
@@ -327,7 +329,7 @@ model_section() {
 }
 
 @test "role profile section: a resume calls request again and compares tiers without reselecting" {
-  sec="$(awk 'index($0,"## Role profile の選択")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL")"
+  sec="$(codex_procedures)"
   # #424: 呼び直しは今回の格の入力（失敗ループの段なら --failure の値を含む）で行う
   echo "$sec" | grep -qF '同じ phase と、今回の再開に当たる格の入力'
   echo "$sec" | grep -qF 'thread の格'

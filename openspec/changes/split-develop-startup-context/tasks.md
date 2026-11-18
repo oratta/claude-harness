@@ -8,7 +8,7 @@
 
 ## 1. 対応表を用意する
 
-- [ ] 1.1 基準 HEAD の三ファイルの字数／bytes、段落の移動元→行き先、削除する重複の既存正本、単発 issue のどの場面なら読まなくてよいか、必読として残す規則の対応表を変更記録へ作る。確認: `git show <基準HEAD>:<path>` と `LC_ALL=en_US.UTF-8 wc -m`／`wc -c` の再現コマンドがあり、issue #1685 の対象段落を網羅する。触る範囲: plugins/dev-workflow/changes/1685.md（新規）、plugins/dev-workflow/skills/develop/SKILL.md:1-375（読取）、plugins/dev-workflow/commands/develop.md:1-78（読取）、plugins/dev-workflow/references/codex-develop.md:1-71（読取）
+- [x] 1.1 基準 HEAD の三ファイルの字数／bytes、段落の移動元→行き先、削除する重複の既存正本、単発 issue のどの場面なら読まなくてよいか、必読として残す規則の対応表を変更記録へ作る。確認: `git show <基準HEAD>:<path>` と `LC_ALL=en_US.UTF-8 wc -m`／`wc -c` の再現コマンドがあり、issue #1685 の対象段落を網羅する。触る範囲: plugins/dev-workflow/changes/1685.md（新規）、plugins/dev-workflow/skills/develop/SKILL.md:1-375（読取）、plugins/dev-workflow/commands/develop.md:1-78（読取）、plugins/dev-workflow/references/codex-develop.md:1-71（読取）
 
 ## 2. 本体の場面限定手順を移す
 
@@ -27,6 +27,8 @@
 - [ ] 4.2 全体の `./scripts/test.sh` と `./scripts/lint.sh`、新規予算・入口の退行検査・OpenSpec strict 検証を実行し、各 exit code を記録する。三ファイルと切り出し先の字数／bytes、先頭位置の換算、段落別の読込場面の対応表を更新して PR 本文用の根拠を揃え、親 #1682 に三ファイルの前後の字数をコメントする。確認: 全受け入れ条件の証拠が変更記録と測定コメントにあり、対象外の本文・スクリプトへの差分が無い。触る範囲: plugins/dev-workflow/changes/1685.md（新規）、openspec/changes/split-develop-startup-context/tasks.md（進捗更新）、scripts/test.sh:1-40（実行入口）、scripts/lint.sh:1-24（実行入口）
 
 ## Workflow follow-up
+
+- implement 中断: 1.1 完了、2.1〜3.2 は本文・テストを編集中、4.1〜4.2 未完了。作業項目の増加0回。文言検査の移動対応後、モデルラダーの同じテストが2連続で失敗したため common.md の失敗ループで return。最新の関連400件は397成功・3失敗。詳細と引継ぎ入力は `plugins/dev-workflow/changes/1685.md` の実装途中の検証記録を参照。全体 test と lint の合格は未確認。
 
 - R1 の APPROVE を issue #1685 で確認してから実装へ進む。今回は仕様 artifact までで return する。
 - 終了の段で archive により四 capability の main specs に delta を同期する。同期後の配置参照を再検証する（openspec/specs/dev-workflow-develop/spec.md、dev-workflow-pr-token-budget/spec.md、dev-workflow-spec-review/spec.md、dev-workflow-pr-review-gate/spec.md）。

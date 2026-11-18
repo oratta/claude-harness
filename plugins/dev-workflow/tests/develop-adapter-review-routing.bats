@@ -9,6 +9,8 @@
 #
 # spec: dev-workflow-develop
 
+load lib/develop-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -29,7 +31,8 @@ setup() {
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
 
 # develop SKILL.md の (4) ブロック（「(4) G を」からコードブロックの終わりまで）
-step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
+step4() { develop_procedures; }
+startup_step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "docs (#405): model example and explanation accept families and exact IDs" {
   grep -qF '<sol|luna|astra などの系統名、または完全なCodexモデルID>' "$USER_DOC"
@@ -187,7 +190,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 }
 
 @test "develop (#385): step (4) always writes the adapter route line and never writes the legacy value" {
-  s="$(step4)"
+  s="$(startup_step4)"
   [ -n "$s" ] || { echo "no (4) block"; return 1; }
   echo "$s" | grep -qF '常に `レビュー経路: adapter`'
   echo "$s" | grep -qF '`レビュー経路: 従来` は書かない'
@@ -195,15 +198,15 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "develop (#385): step (4) re-selects phase review, records dispatch before starting the reviewer, and hands results to G" {
   s="$(step4)"
-  echo "$s" | grep -qF 'codex-develop.py request --phase review'
-  echo "$s" | grep -qF '構成・reason・両 provider の margin・各 fetched_at'
+  echo "$s" | grep -qF 'phase `review` の投げ先を選び直す'
+  codex_procedures | grep -qF '両 margin / fetched_at'
   echo "$s" | grep -qF 'dispatch 記録'
   echo "$s" | grep -qF '投稿に成功するまでレビュアーを起動しない'
   echo "$s" | grep -qF 'executor / model・dispatch 記録のコメント URL を G に渡す'
   echo "$s" | grep -qF 'Claude の G は照合と振り分けの G を新しく起こし'
   echo "$s" | grep -qF 'Codex の G は新しい phase gate'
   # 順序: 選び直し → 記録 → 起動 → G に渡す
-  a="$(echo "$s" | grep -nF 'request --phase review' | head -1 | cut -d: -f1)"
+  a="$(echo "$s" | grep -nF 'phase `review` の投げ先を選び直す' | head -1 | cut -d: -f1)"
   b="$(echo "$s" | grep -nF '投稿に成功するまで' | head -1 | cut -d: -f1)"
   c="$(echo "$s" | grep -nF 'G に渡す' | head -1 | cut -d: -f1)"
   [ "$a" -le "$b" ] && [ "$b" -le "$c" ]

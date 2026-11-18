@@ -690,10 +690,10 @@ $(cat "$rd")"
 
 @test "develop SKILL.md (#354): step (4) handles needs-decider with the verdict-and-reasons contract" {
   sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
-  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
+  step4="$(develop_procedures)"
   [ -n "$step4" ] || { echo "no step (4) block"; return 1; }
   echo "$step4" | grep -qF 'passed / failed / 保留 / needs-reviewer / needs-decider'
-  nd="$(echo "$step4" | awk '/^      needs-decider →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  nd="$(develop_status needs-decider)"
   [ -n "$nd" ] || { echo "no needs-decider line in step (4)"; return 1; }
   for token in 'dev-workflow:decider' 'マージ可否と同じ可否と根拠の形で問う' '同じ型の指摘' '前の周の指摘' '対象ファイルのパス' '仕分け欄' '全部列挙してから直す' '切り出す' '照合と振り分けの G を新しく起こして渡す' '代理投稿しない'; do
     echo "$nd" | grep -qF "$token" || { echo "missing: $token"; return 1; }
@@ -772,7 +772,7 @@ $(cat "$rd")"
 
 @test "develop SKILL.md (#355): review-incomplete stops without a fresh reviewer and supplement payload is conditional" {
   sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
-  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
+  step4="$(develop_procedures)"
   echo "$step4" | grep -qF 'review-incomplete'
   echo "$step4" | grep -qF 'reviewer を再起動しない'
   echo "$step4" | grep -qF 'agent-review:pending'
@@ -787,8 +787,8 @@ $(cat "$rd")"
 
 @test "develop SKILL.md (#358): needs-decider passes the record body, related comments and W's last return, and branches on the first line" {
   sk="${PLUGIN_DIR}/skills/develop/SKILL.md"
-  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$sk")"
-  nd="$(echo "$step4" | awk '/^      needs-decider →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  step4="$(develop_procedures)"
+  nd="$(develop_status needs-decider)"
   [ -n "$nd" ] || { echo "no needs-decider line in step (4)"; return 1; }
   for token in '記録先の本文' '関連コメント' 'W の直近の return' '`裁定: 可`' '`裁定: 否`' '`不足: <足りないもの>`' \
     '1 行目で分岐' '裁定として扱わず' '1 回だけ依頼し直す' '裁定なし（入力不足）' '3 形のどれにも一致しなければ'; do
@@ -1048,8 +1048,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   loop="$(section "$skill" '1 ループ')"
   if echo "$loop" | grep -qE '/opsx:(ff|apply|verify|archive)'; then return 1; fi
   echo "$loop" | grep -qF 'openspec new change'
-  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:worker'
-  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:gate-runner'
+  codex_procedures | grep -qF 'dev-workflow:worker'
+  codex_procedures | grep -qF 'dev-workflow:gate-runner'
   grep -E '^\| \*\*openspec' "$skill" | grep -qF 'openspec --version'
   if grep -E '^\| (仕様レビュアー|R1|G が要求するレビュアー)' "$skill" | grep -qE 'dev-workflow:(worker|gate-runner)'; then return 1; fi
   if grep -qE '(`worker` role|`gate` role|W の phase|G の phase)[^、。]*general-purpose' "$codex"; then return 1; fi
@@ -1095,8 +1095,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   if echo "$fb" | grep -qF 'Agent ツール（`general-purpose`）'; then return 1; fi
   if grep -qF 'Agent ツール（`general-purpose`）' "$review_run"; then return 1; fi
   # develop SKILL.md: Agent ツールの行・(4) の ③・モデル表のレビュアー行
-  grep -E '^\| \*\*Agent' "$skill" | grep -qF 'dev-workflow:reviewer'
-  grep -F 'executor が claude なら Agent ツールで' "$skill" | grep -qF 'dev-workflow:reviewer'
+  codex_procedures | grep -qF 'dev-workflow:reviewer'
+  codex_procedures | grep -qF 'レビュアーは `dev-workflow:reviewer`'
   row="$(grep -E '^\| G が要求するレビュアー' "$skill")"
   echo "$row" | grep -qF 'dev-workflow:reviewer'
   if echo "$row" | grep -qF 'subagent_type: general-purpose'; then return 1; fi

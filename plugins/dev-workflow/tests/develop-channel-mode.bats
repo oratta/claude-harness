@@ -11,6 +11,8 @@
 #
 # spec: dev-workflow-develop, dev-workflow-pr-review-gate
 
+load lib/develop-docs
+
 setup() {
   # 正規表現の [^。] などは UTF-8 ロケールが前提（#662）
   export LC_ALL=C.UTF-8
@@ -57,7 +59,7 @@ refute() {
 # --- 実行モードの表と決め方 ---
 
 @test "mode table: channel row runs (0)-(4) and asks in the channel without AskUserQuestion" {
-  local s; s="$(section '実行モード')"
+  local s; s="$(develop_procedures)"
   local row; row="$(printf '%s\n' "$s" | grep -F '| **channel**')"
   [ -n "$row" ]
   printf '%s\n' "$row" | grep -qF '(0)〜(4)'
@@ -77,7 +79,7 @@ refute() {
 }
 
 @test "start comment: Role profile section lists the mode line and the channel reply check line" {
-  local s; s="$(section 'Role profile の選択')"
+  local s; s="$(codex_procedures)"
   printf '%s\n' "$s" | grep -qF '`実行モード:`'
   printf '%s\n' "$s" | grep -qF '`チャンネルの返事の確認:`'
 }
@@ -172,7 +174,7 @@ refute() {
 }
 
 @test "mode passed to W and R1: channel passes interactive, the branch stays interactive" {
-  local s; s="$(section '実行モード')"
+  local s; s="$(develop_procedures)"
   printf '%s\n' "$s" | grep -qF 'W・R1 の起動指示の実行モードには interactive と書く'
   grep -qF 'channel の本体は interactive と渡す' "${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md"
 }

@@ -22,3 +22,19 @@ develop_docs() {
   cat "$p"/references/*.md
   cat "$p/templates/escalation-tripwires.md"
 }
+
+# #1685: 本体の文言検査はこの狭い集合を使う。否定検査の範囲は呼出し側で維持する。
+develop_procedures() {
+  local p="${1:-$_DEVELOP_DOCS_PLUGIN_DIR}"
+  cat "$p/skills/develop/SKILL.md"
+  find "$p/skills/develop/references" -type f -name '*.md' | LC_ALL=C sort | while IFS= read -r f; do cat "$f"; done
+}
+
+codex_procedures() {
+  develop_procedures "${1:-$_DEVELOP_DOCS_PLUGIN_DIR}"
+  cat "${1:-$_DEVELOP_DOCS_PLUGIN_DIR}/references/codex-develop.md"
+}
+
+develop_status() {
+  develop_procedures | awk -v s="$1" '$0 ~ "^[[:space:]]*" s " →" {f=1; print; next} f && /^## / {exit} f'
+}
