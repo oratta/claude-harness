@@ -41,7 +41,7 @@
 
 ## 8. W が段ごとに読むファイルの合計に予算を置く（Decision 7）
 
-- [ ] 8.1 `tests/develop-worker-stage-budget.txt`（1 行 1 段: `<段> <バイト数>`）と `tests/develop-worker-stage-budget.bats` を作る。段ごとの一覧は spec「W が段ごとに読むファイルの合計に予算を置く」のシナリオどおり。判定は `wc -c` で上下両方向（予算超えと、予算が実測の 1.1 倍超えで落ちる）。`worker/common.md` が `return-declaration.md` を、`worker/spec.md` が `spec-decision.md` を、`worker/finish.md` が `skills/pr-review-gate/declarations.md` を名指ししていることと、W の段のファイルと `common.md` が `decision-criteria.md` を読むよう指していないことも確かめる。異常系は使い捨ての root と予算ファイルで作る（`develop-startup-budget.bats` の前例）。確かめ方: `bats tests/develop-worker-stage-budget.bats` が緑で、予算超え・1.1 倍超え・名指しの欠落の 3 つの異常系のテストが落ちる側を確かめている。触る範囲: tests/develop-worker-stage-budget.txt（新規）、tests/develop-worker-stage-budget.bats（新規）、tests/develop-startup-budget.bats:1-120（前例。読むだけ）
+- [x] 8.1 `tests/develop-worker-stage-budget.txt`（1 行 1 段: `<段> <バイト数>`）と `tests/develop-worker-stage-budget.bats` を作る。段ごとの一覧は spec「W が段ごとに読むファイルの合計に予算を置く」のシナリオどおり。判定は `wc -c` で上下両方向（予算超えと、予算が実測の 1.1 倍超えで落ちる）。`worker/common.md` が `return-declaration.md` を、`worker/spec.md` が `spec-decision.md` を、`worker/finish.md` が `skills/pr-review-gate/declarations.md` を名指ししていることと、W の段のファイルと `common.md` が `decision-criteria.md` を読むよう指していないことも確かめる。異常系は使い捨ての root と予算ファイルで作る（`develop-startup-budget.bats` の前例）。確かめ方: `bats tests/develop-worker-stage-budget.bats` が緑で、予算超え・1.1 倍超え・名指しの欠落の 3 つの異常系のテストが落ちる側を確かめている。触る範囲: tests/develop-worker-stage-budget.txt（新規）、tests/develop-worker-stage-budget.bats（新規）、tests/develop-startup-budget.bats:1-120（前例。読むだけ）
 
 ## 9. 全体の確かめ
 
