@@ -2114,14 +2114,14 @@ deleg_reads_canonical() {
 }
 
 @test "delegated reply (#1293): pass reads canonical validity and risk conditions before judging" {
-  deleg_reads_canonical "$SKILL_DIR/stages/pass.md"
+  deleg_reads_canonical "$PASS_STAGE"
   body="$(deleg_check_body)"
   echo "$body" | grep -qF 'G が扱うのはリスク許容の止まりだけ'
   echo "$body" | grep -qF '今確かめている委任の形の記録の行だけは除く'
 }
 
 @test "delegated reply (#1293): removing the canonical reference fails" {
-  sed 's|references/epic-delegation.md|gone.md|g' "$SKILL_DIR/stages/pass.md" > "$BATS_TEST_TMPDIR/pass.md"
+  sed 's|references/epic-delegation.md|gone.md|g' "$PASS_STAGE" > "$BATS_TEST_TMPDIR/pass.md"
   run deleg_reads_canonical "$BATS_TEST_TMPDIR/pass.md"
   [ "$status" -ne 0 ]
 }
@@ -2134,6 +2134,13 @@ deleg_reads_canonical() {
   grep -qF "$PRG_DELEG_STOP4" "$epic"
   grep -qF "$PRG_DELEG_RECOMMEND" "$epic"
   grep -qF '⑤②の宣言が `論点なし — ` の行を持ち、停止の記録の `主に聞く理由:` が論点なしと書く' "$epic"
+}
+
+@test "delegated reply (#1293): the full validity and stop conditions live only in epic-delegation.md, gate included" {
+  d="$PLUGIN_DIR/skills/develop/references"; g="$PLUGIN_DIR/skills/pr-review-gate"
+  [ "$(grep -lF "$PRG_DELEG_VALID6" "$d"/*.md "$g"/*.md "$g"/stages/*.md | wc -l | tr -d ' ')" = 1 ]
+  [ "$(grep -lF "$PRG_DELEG_STOP4" "$d"/*.md "$g"/*.md "$g"/stages/*.md | wc -l | tr -d ' ')" = 1 ]
+  grep -qF "$PRG_DELEG_VALID6" "$d/epic-delegation.md"
 }
 
 @test "delegated reply (#1293): step 5 checks the stop record is the latest one and runs --delegated" {

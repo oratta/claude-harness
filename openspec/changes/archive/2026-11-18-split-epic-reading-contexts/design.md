@@ -10,7 +10,7 @@
 
 **Goals:** エピック固有の読込を場面で分け、移した段落へその場面の読み手から到達できることを示す。判断規則は同じ条件のまま共通正本へ寄せ、位置の検査を予算と参照接続の検査に置き換える。
 
-**Non-Goals:** #1685 の SKILL.md の節の移動・削除、#1686 のスクリプト化・epic-dispatch.sh の出力語の説明の削除、#1687 のゲート本文整理。実装スクリプト・出力語・返事の添え書き・権限や判断条件の変更。仕様化段での手順書分割・Bats 編集・エピックへの字数コメント。
+**Non-Goals:** #1685 の SKILL.md の節の移動・削除、#1686 のスクリプト化・epic-dispatch.sh の出力語の説明の削除、#1687 のゲート本文整理（委任の判定条件を正本の読込に変える部分を除く）。実装スクリプト・出力語・返事の添え書き・権限や判断条件の変更。仕様化段での手順書分割・Bats 編集・エピックへの字数コメント。
 
 ## Decisions
 
@@ -48,7 +48,7 @@
 | W の占有・返却・手渡し・再開優先順 | epic-worker-slots.md | 親の subagent と nested の子の W 並列が読む。親の起動・片付け・見張りは含めない |
 | 声かけの固定文字列・返事の型というデータ | plugins/dev-workflow/references/child-cache-keepalive.json | 既存の script と keepalive。JSON の値や読み方・スクリプト動作は変えない |
 
-ゲート `stages/pass.md:147` 等の判定本文は #1687 の範囲なので、その複写はこの変更で削らない。参照パス `references/epic.md` → `references/epic-delegation.md` のみ付け替える。正本一本化の検査対象は develop 側の手順書であり、ゲートに残す同じ条件は既存どおり確かめる（#1687 が整理するまでの境界）。ゲートを含めて重複がゼロになったとは報告しない。
+ゲート stages/pass.md は委任の有効性 6 条件と種類別条件の本文を持たず、判定前に develop の references/epic-delegation.md「委任が有効か」「委任が効く止まり」のリスク許容の止まりを読む。G がリスク許容だけを扱う境界と、検査中の委任記録行の除外は pass.md に残す。真正性確認の他の操作は変えない。pass の複写を残すと AC3（判定の正本を 1 ファイルにする）を満たせず、pass を正本にすると delta の正本指定に反するため。ゲート配下を変えるので人によるマージが要る。#1687 はこれ以外のゲート本文の整理を扱う。
 
 `SKILL.md` の epic の節を指す参照は、同じ節の位置の付け替えだけにする。PR トークン上限の子→stop、サブエージェントの枠→worker-slots、注意書き検査→entry、条件・作り方→entry、別セッションの回し方→loop。入口の読む条件は残し、entry の表が次の必要な文書を案内する。spec-decision.md のエピック化の参照は入口のまま保持する。`plugins/dev-workflow/references/commit-and-pr-operations.md:18` のマージ待ちの参照は merge-wait へ付け替える。channel.md・handover.md・fix-check.md 等も参照先を走査し、移した節を指す場合だけ同様に更新する。`references/ci-watch.md` は現状 child-stop への参照で完結しており、実物の照合で古い epic の参照がなければ変更しない。
 
@@ -63,17 +63,18 @@
 | nested-entry | R/epic.md |
 | nested-stop | nested-entry ＋ R/epic-child-stop.md ＋ R/epic-keepalive.md ＋ references/child-cache-keepalive.json ＋ R/parent-pass-criteria.md（例の参照でも全文） |
 | parent-start | R/epic.md ＋ R/epic-loop.md |
-| parent-stopped | parent-start ＋ R/epic-stop.md ＋ R/epic-child-stop.md（記録の形）＋ R/parent-pass-criteria.md ＋ R/reply-after-idle.md ＋ R/epic-keepalive.md |
+| parent-stopped | parent-start ＋ R/epic-stop.md ＋ R/epic-child-stop.md（記録の形）＋ R/parent-pass-criteria.md ＋ R/reply-after-idle.md ＋ R/epic-keepalive.md ＋ R/epic-keepalive-watch.md |
 | nested-delegated | nested-stop ＋ R/epic-delegation.md |
 | parent-delegated | parent-stopped ＋ R/epic-delegation.md |
 | parent-merge-wait | parent-stopped ＋ R/epic-merge-wait.md ＋ R/parent-merge-criteria.md |
 | parent-merge-delegated | parent-merge-wait ＋ R/epic-delegation.md |
 | parent-multirepo | parent-start ＋ R/epic-multirepo.md |
-| parent-subagent | R/epic.md ＋ R/epic-subagent.md ＋ R/epic-loop.md（子エピックの事前除外・報告規定の全ファイルを保守的に計上） |
+| parent-subagent | R/epic.md ＋ R/epic-subagent.md ＋ R/epic-worker-slots.md ＋ R/epic-loop.md（子エピックの事前除外・報告規定の全ファイルを保守的に計上） |
+| nested-workers | nested-entry ＋ R/epic-worker-slots.md |
 
 nested-stop は `主に聞く理由:` を書く前に読む parent-pass-criteria.md 全文を含み、nested-delegated もこれを引き継ぐ。例の正本と子に残す (a)–(c) は変えない。委任は記録があるとき／受けるときだけ、merge はマージ待ちだけ、multirepo は別 repo の子があるときだけ追加する。子の同一 repo / 別 repo の親の返事の頭は child-stop だけで受けられるので、子に multirepo を読ませない。subagent の PR トークン上限では stop を必要時に追加する。上の基本・追加集合は合成可能とし、複合場面は和集合を用いる。
 
-予算の正本は新規 `tests/develop-epic-scene-budget.txt`、検査は新規 `tests/develop-epic-scene-budget.bats`。形式は `<上表のキー> <先頭ゼロなし正整数bytes>` の全 10 行・重複なし。**各初期上限は、実装後に上表のファイルを `wc -c` で足した値ちょうど（余白 0 bytes）に固定する。** 仕様化時点の未分割ファイルの値を上限に流用せず、実装時に確定する実測整数をコミットする。これは値の選択を後回しにするのでなく、式 `budget(scene) = sum(final_file_bytes)` を全キーに指定するもの。削減目標の数字は置かない。予算を実装前に任意の低い数字へ決める案は、削減量を合否にしない方針に反するため採らない。
+予算の正本は新規 `tests/develop-epic-scene-budget.txt`、検査は新規 `tests/develop-epic-scene-budget.bats`。形式は `<上表のキー> <先頭ゼロなし正整数bytes>` の全 11 行・重複なし。**各初期上限は、実装後に上表のファイルを `wc -c` で足した値ちょうど（余白 0 bytes）に固定する。** 仕様化時点の未分割ファイルの値を上限に流用せず、実装時に確定する実測整数をコミットする。これは値の選択を後回しにするのでなく、式 `budget(scene) = sum(final_file_bytes)` を全キーに指定するもの。削減目標の数字は置かない。予算を実装前に任意の低い数字へ決める案は、削減量を合否にしない方針に反するため採らない。
 
 検査は #1683 と同じく実測 > 予算で失敗、予算 > 実測の 1.1 倍でも失敗。実測を自動で予算へ書き戻してから検査してはならない。集合は Bats の関数に固定し、txt からファイルを抜いて通せないようにする。txt の書式・全キー・ファイル欠落・1 byte 超過・ちょうど上限・1.1 倍境界・未知キー・重複・不足を使い捨て root で検査する。必要ファイルの案内が entry とその場面の入口にあること、nested から parent-only の手順を読む指定が無いこと、stop/merge/multirepo/subagent を親開始時に無条件で読ませていないことも実ファイルと参照を消した fixture で検査する。
 
@@ -106,7 +107,7 @@ R1 の計上漏れの修正に伴い、子の停止の分割前の比較集合�
 | plugins/dev-workflow/tests/develop-skill.bats | 移した節の案内を新パスで確認。deleg_para / child_reply_item の重複全文要求を、共有正本の条件と親子からの参照に変更。親の時間分類と声かけの重複を要求しない |
 | plugins/dev-workflow/tests/parent-merge.bats | merge の処理は移設後も存在し、基準参照・HEAD の照合・コメント→ラベル順・子へ印を付けさせないことを確認。epic.md の旧位置は要求しない |
 | plugins/dev-workflow/tests/owner-escalation-narrowing.bats | step8 / 委任段落の固定位置を外す。親と子に同じ委任本文がある検査を、共有正本と参照に変える。child-stop と parent-pass の重複した日付つき例を両方に要求せず、例の正本 parent-pass と子の参照、子の (a)–(c) の確認は維持 |
-| plugins/dev-workflow/tests/pr-review-gate-skill.bats | ゲートの判定文と、移動した共有正本の条件の一致を確認。child-stop の同文複写は要求せず共有正本参照を確認。ゲート本文は編集しない |
+| plugins/dev-workflow/tests/pr-review-gate-skill.bats | pass.md が判定前に共有正本を読む指示、参照を消すと落ちること、正本に全条件があり、ゲートを含めて全文が 1 ファイルだけにあること |
 | plugins/dev-workflow/tests/develop-channel-mode.bats | エピックの channel の既存条件と新参照を develop のどこかで検査 |
 | plugins/dev-workflow/tests/git-destructive-guard.bats:2454–2463 | 手順 5 の旧 sed 切出しをやめ、loop から検知条件・画面で止まる限界を読めることを確認。guard のテストは維持 |
 | tests/owner-question-style.bats | 移設先にも正本参照と固有事項があることを確かめ、報告規定を各手順に繰り返す要求を外す |
@@ -126,7 +127,7 @@ R1 の計上漏れの修正に伴い、子の停止の分割前の比較集合�
 - owner-question-style: 共通の書き分けは loop の「主への報告」、固有の子の記録と親への返事は child-stop、止まりの報告は stop。
 - harness-public-private-split: 起動部品の欄は loop、別 repo の登録の欄は multirepo。既存の公開／非公開基準は変えない。
 
-本文に「同じ文」がある委任二要件は、条件は丸ごと残しても、手順書の配置契約は共有正本とそれを読む指示に改める。G の同じ判定本文は #1687 まで保つ。声かけの JSON 共有要件にも手順の正本を加え、挙動を変えない。
+本文に「同じ文」がある委任二要件は、条件は丸ごと残しても、手順書の配置契約は共有正本とそれを読む指示に改める。G も判定前に共有正本を読む。声かけの JSON 共有要件にも手順の正本を加え、挙動を変えない。
 
 ### 7. 経緯・例と、役目を終えた分岐の確認
 
@@ -146,7 +147,7 @@ R1 の計上漏れの修正に伴い、子の停止の分割前の比較集合�
 
 - 移動で参照が切れる → 旧段落ごとの移設先・入口・読み手を PR の対応表へ書き、参照接続の Bats と delta の照合、archive 後の現行 specs の旧参照走査を行う。
 - 全文一致を弱めた検査では場面の混入を見落とし得る → 予算・案内の検査に加え、PR レビューで読む場面を確認する。字数だけでの入れ替えは主が受け入れた残り。
-- G の判定文の複写が一時的に残る → G の本文を変えず共有正本と同じ条件であることを既存テストで維持し、#1687 の範囲を守る。
+- G の判定が正本の読込に依存する → 参照を消すと落ちる検査と、全文が 1 ファイルだけにある検査で守る。
 - 共通の起動ファイルに含まれる場面限定の説明は残る → 追加読込と共通分の和集合を両方報告し、#1685 の効果と混同しない。
 
 ## Migration Plan

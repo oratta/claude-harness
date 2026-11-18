@@ -1133,8 +1133,7 @@ refute() {
 
 # --- Requirement: 親は主の委任を…受ける／委任が有効か／委任が効く止まり／委任で許容を送る／子は委任の返事を確かめてから G に渡す（#1293） ---
 # 照合の対象は references/epic.md・references/epic-child-stop.md の文だけで、openspec の spec の文言は照合しない。
-# 「委任が有効か」の 6 条件と「委任が効く止まり」の 4 条件は、epic.md・epic-child-stop.md・pr-review-gate の pass.md に
-# 同じ文字列で入れる（pass.md 側は pr-review-gate-skill.bats が同じ文字列で検査する）。
+# 「委任が有効か」の 6 条件と「委任が効く止まり」の 4 条件は epic-delegation.md にだけ置き、epic-child-stop.md と pr-review-gate の pass.md は判定前にそれを読む（pass.md の読込指示は pr-review-gate-skill.bats が検査する）。
 
 DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1 行目が `主の委任: リスク許容` なら 1〜4 行目が、`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
 DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
@@ -1421,16 +1420,26 @@ xrepo_block() { cat "$SKILL_DIR/references/epic-multirepo.md" | awk '/^\*\*別�
   printf '%s\n' "$w" | grep -qF '親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）:'
 }
 
-@test "skill (cross-repo): step 6 reports the new failed reasons and stops, step 1 warns about --base across repositories" {
-  s6="$(section 'エピックの扱い' "$EPIC" | grep -F '6. `wait` の')"
+@test "skill (cross-repo): step 6 sends failed children in another repository to multirepo, which reports the new reasons and stops; step 1 warns about --base across repositories" {
+  loop="$SKILL_DIR/references/epic-loop.md"
+  multi="$SKILL_DIR/references/epic-multirepo.md"
+  s6="$(grep -F '6. `wait` の' "$loop")"
+  [ "$(printf '%s\n' "$s6" | grep -c .)" = 1 ]
+  printf '%s\n' "$s6" | grep -qF '`failed` の子をサブエージェント方式にも別の部品にも自動で振り替えない'
+  printf '%s\n' "$s6" | grep -qF '別のリポジトリの子の `failed` は、`references/epic-multirepo.md` の「epic-loop.md 手順６の読み替え」を読んで扱う'
+  x6="$(awk '/^## epic-loop\.md 手順６の読み替え$/{f=1; next} /^## /{f=0} f' "$multi")"
+  [ -n "$x6" ]
   for r in no-clone ambiguous-clone not-in-orca no-push permission-lookup-failed base-lookup-failed; do
-    printf '%s\n' "$s6" | grep -qF "$r" || { echo "missing: $r"; false; }
+    printf '%s\n' "$x6" | grep -qF "\`$r\`" || { echo "missing in multirepo: $r"; false; }
+    if grep -qF "\`$r\`" "$loop"; then echo "left in loop: $r"; false; fi
   done
-  printf '%s\n' "$s6" | grep -qF 'サブエージェント方式に自動で振り替えない'
-  s1="$(section 'エピックの扱い' "$EPIC" | grep -F '1. `scripts/epic-dispatch.sh launch')"
+  printf '%s\n' "$x6" | grep -qF '主に報告して止まる（サブエージェント方式に自動で振り替えない）'
+  printf '%s\n' "$x6" | grep -qF '`EPIC_DISPATCH_CLONES` の設定か `git clone` を主に頼む'
+  printf '%s\n' "$x6" | grep -qF 'stderr の `gh` の認証アカウントと子のリポジトリを添える'
+  s1="$(grep -F '1. `scripts/epic-dispatch.sh launch' "$loop")"
   printf '%s\n' "$s1" | grep -qF '1 回の `launch` の全部の子に掛かる'
   printf '%s\n' "$s1" | grep -qF 'epic-multirepo.md'
-  grep -qF '`launch` をリポジトリごとに分ける' "$SKILL_DIR/references/epic-multirepo.md"
+  grep -qF '`launch` をリポジトリごとに分ける' "$multi"
 }
 
 @test "skill: a denial report from W is handled by writing a permit and resuming, or escalating to the owner (#1135)" {

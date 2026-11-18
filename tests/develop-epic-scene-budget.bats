@@ -12,39 +12,40 @@ setup() {
 R=skills/develop/references
 
 # scene_files <場面> — その場面で読むファイルを 1 行 1 件で出す。知らない段は 1。
-SCENES="nested-entry nested-stop parent-start parent-stopped nested-delegated parent-delegated parent-merge-wait parent-merge-delegated parent-multirepo parent-subagent"
+SCENES="nested-entry nested-stop parent-start parent-stopped nested-delegated parent-delegated parent-merge-wait parent-merge-delegated parent-multirepo parent-subagent nested-workers"
 scene_files() {
   case "$1" in
     nested-entry) printf '%s\n' "$R/epic.md" ;;
     nested-stop) scene_files nested-entry; printf '%s\n' "$R/epic-child-stop.md" "$R/epic-keepalive.md" references/child-cache-keepalive.json "$R/parent-pass-criteria.md" ;;
     parent-start) scene_files nested-entry; printf '%s\n' "$R/epic-loop.md" ;;
-    parent-stopped) scene_files parent-start; printf '%s\n' "$R/epic-stop.md" "$R/epic-child-stop.md" "$R/parent-pass-criteria.md" "$R/reply-after-idle.md" "$R/epic-keepalive.md" ;;
+    parent-stopped) scene_files parent-start; printf '%s\n' "$R/epic-stop.md" "$R/epic-child-stop.md" "$R/parent-pass-criteria.md" "$R/reply-after-idle.md" "$R/epic-keepalive.md" "$R/epic-keepalive-watch.md" ;;
     nested-delegated) scene_files nested-stop; printf '%s\n' "$R/epic-delegation.md" ;;
     parent-delegated) scene_files parent-stopped; printf '%s\n' "$R/epic-delegation.md" ;;
     parent-merge-wait) scene_files parent-stopped; printf '%s\n' "$R/epic-merge-wait.md" "$R/parent-merge-criteria.md" ;;
     parent-merge-delegated) scene_files parent-merge-wait; printf '%s\n' "$R/epic-delegation.md" ;;
     parent-multirepo) scene_files parent-start; printf '%s\n' "$R/epic-multirepo.md" ;;
-    parent-subagent) scene_files parent-start; printf '%s\n' "$R/epic-subagent.md" ;;
+    parent-subagent) scene_files parent-start; printf '%s\n' "$R/epic-subagent.md" "$R/epic-worker-slots.md" ;;
+    nested-workers) scene_files nested-entry; printf '%s\n' "$R/epic-worker-slots.md" ;;
     *) return 1 ;;
   esac
 }
 
 # check_format <budget-file> — 全行が "<場面> <先頭ゼロなしの正整数>" で、固定した
-# 10 場面のどれかで重複が無く、全場面が揃っていること。違反は stderr に出して 1。
+# 11 場面のどれかで重複が無く、全場面が揃っていること。違反は stderr に出して 1。
 check_format() {
   local f=$1 n=0 line stage seen=" "
   [ -f "$f" ] || { echo "予算ファイルが無い: $f" >&2; return 1; }
   while IFS= read -r line || [ -n "$line" ]; do
     n=$((n + 1))
-    if ! printf '%s' "$line" | grep -Eq '^(nested-entry|nested-stop|parent-start|parent-stopped|nested-delegated|parent-delegated|parent-merge-wait|parent-merge-delegated|parent-multirepo|parent-subagent) [1-9][0-9]*$'; then
-      echo "予算ファイル $n 行目の形が違う（'<段> <バイト数>' のみ。場面は固定した 10 キー）: $line" >&2
+    if ! printf '%s' "$line" | grep -Eq '^(nested-entry|nested-stop|parent-start|parent-stopped|nested-delegated|parent-delegated|parent-merge-wait|parent-merge-delegated|parent-multirepo|parent-subagent|nested-workers) [1-9][0-9]*$'; then
+      echo "予算ファイル $n 行目の形が違う（'<段> <バイト数>' のみ。場面は固定した 11 キー）: $line" >&2
       return 1
     fi
     stage=${line% *}
     case "$seen" in *" $stage "*) echo "予算ファイルに段の重複: $stage" >&2; return 1 ;; esac
     seen="$seen$stage "
   done < "$f"
-  [ "$n" -eq 10 ] || { echo "予算ファイルの場面が 10 個揃っていない（$n 行）" >&2; return 1; }
+  [ "$n" -eq 11 ] || { echo "予算ファイルの場面が 11 個揃っていない（$n 行）" >&2; return 1; }
 }
 
 # scene_total <root> <段> — 一覧のファイルを足したバイト数。無いファイルがあれば stderr に出して 1。
@@ -91,16 +92,18 @@ epic.md epic-child-stop.md
 epic.md epic-merge-wait.md
 epic.md epic-delegation.md
 epic.md epic-keepalive.md
+epic.md epic-worker-slots.md
+epic.md epic-keepalive-watch.md
 epic-loop.md epic-stop.md
 epic-loop.md epic-subagent.md
 epic-loop.md epic-multirepo.md
 epic-loop.md reply-after-idle.md
-epic-loop.md epic-keepalive.md
+epic-loop.md epic-keepalive-watch.md
 epic-stop.md epic-child-stop.md
 epic-stop.md parent-pass-criteria.md
 epic-stop.md epic-delegation.md
 epic-stop.md epic-merge-wait.md
-epic-stop.md epic-keepalive.md
+epic-stop.md epic-keepalive-watch.md
 epic-stop.md epic-loop.md
 epic-merge-wait.md parent-merge-criteria.md
 epic-merge-wait.md epic-delegation.md
@@ -108,11 +111,15 @@ epic-merge-wait.md epic-loop.md
 epic-merge-wait.md epic-multirepo.md
 epic-subagent.md epic-loop.md
 epic-subagent.md epic-stop.md
+epic-subagent.md epic-worker-slots.md
 epic-child-stop.md epic-delegation.md
 epic-child-stop.md epic-keepalive.md
 epic-child-stop.md parent-pass-criteria.md
 reply-after-idle.md epic-keepalive.md
+reply-after-idle.md epic-keepalive-watch.md
 epic-keepalive.md child-cache-keepalive.json
+epic-keepalive-watch.md epic-keepalive.md
+epic-keepalive-watch.md child-cache-keepalive.json
 parent-pass-criteria.md epic-stop.md
 parent-pass-criteria.md epic-delegation.md
 parent-merge-criteria.md epic-stop.md
@@ -128,8 +135,19 @@ check_naming() {
   if grep -Eq '^([1-9]\. |\*\*(マージ待ちの子|PR トークン上限の子|主の委任|別のリポジトリの子|サブエージェント方式)\*\*)' "$root/$R/epic.md"; then
     echo 'entry contains parent operations' >&2; rc=1
   fi
-  if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent)\.md` を読' "$root/$R/epic-child-stop.md"; then
-    echo 'child reads parent operations' >&2; rc=1
+  local f
+  for f in epic-child-stop.md epic-keepalive.md epic-worker-slots.md; do
+    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md` を読' "$root/$R/$f"; then
+      echo "child reads parent operations: $f" >&2; rc=1
+    fi
+  done
+  for f in epic-keepalive.md epic-worker-slots.md; do
+    if grep -Eq 'epic-dispatch\.sh (launch|reap|clear|wait|adopt)' "$root/$R/$f"; then
+      echo "child file contains parent launch/cleanup: $f" >&2; rc=1
+    fi
+  done
+  if grep -Eq '3000 秒以上|TTL' "$root/$R/epic-keepalive.md"; then
+    echo 'child keepalive contains parent watch' >&2; rc=1
   fi
   if grep -Eq '親の開始時に.*epic-(stop|merge-wait|multirepo|subagent)\.md` を読' "$root/$R/epic-loop.md"; then
     echo 'parent startup reads scene-only operations unconditionally' >&2; rc=1
@@ -173,6 +191,13 @@ fixture_budget() {
   ! grep -qF '60 分以上: timeout' "$r/epic-loop.md" || return 1
   grep -qF '型どおり' "$r/epic-keepalive.md"
   ! grep -qF 'request_template' "$r/epic-child-stop.md" || return 1
+  [ "$(grep -lF '3000 秒以上 3600 秒未満' "$r"/*.md | wc -l | tr -d ' ')" = 1 ]
+  grep -qF '3000 秒以上 3600 秒未満' "$r/epic-keepalive-watch.md"
+  [ "$(grep -lF '`scripts/epic-dispatch.sh max-parallel` を 1 回呼んでその値を上限にし' "$r"/*.md | wc -l | tr -d ' ')" = 1 ]
+  grep -qF '`scripts/epic-dispatch.sh max-parallel` を 1 回呼んでその値を上限にし' "$r/epic-worker-slots.md"
+  grep -qF '一回確認（`--interval 0 --timeout 0`）と片付け待ちだけの wait では送らない' "$r/epic-keepalive-watch.md"
+  grep -qF '入力を消去しない' "$r/epic-keepalive-watch.md"
+  grep -qF '`references/epic-loop.md` 手順５に従う' "$r/epic-keepalive-watch.md"
 }
 @test "regress: exact budget and same size content substitution pass" {
   fixture
@@ -242,6 +267,21 @@ fixture_budget() {
   printf '\n`references/epic-loop.md` を読む。\n' >> "$r/$R/epic-child-stop.md"
   run check_naming "$r"
   [ "$status" -eq 1 ]
+  cp "$PLUGIN_DIR/$R/epic-child-stop.md" "$r/$R/epic-child-stop.md"
+  printf '\n`references/epic-keepalive-watch.md` を読む。\n' >> "$r/$R/epic-worker-slots.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'child reads parent operations: epic-worker-slots.md'* ]] || return 1
+  cp "$PLUGIN_DIR/$R/epic-worker-slots.md" "$r/$R/epic-worker-slots.md"
+  printf '\n`scripts/epic-dispatch.sh reap` を呼ぶ。\n' >> "$r/$R/epic-keepalive.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'child file contains parent launch/cleanup: epic-keepalive.md'* ]] || return 1
+  cp "$PLUGIN_DIR/$R/epic-keepalive.md" "$r/$R/epic-keepalive.md"
+  printf '\nTTL が切れる前に送る。\n' >> "$r/$R/epic-keepalive.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'child keepalive contains parent watch'* ]] || return 1
 }
 
 @test "regress: unconditional scene operations at parent startup fail" {
