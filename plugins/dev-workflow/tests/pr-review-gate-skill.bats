@@ -10,6 +10,8 @@
 #
 # spec: dev-workflow-pr-review-gate
 
+load lib/develop-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -2000,9 +2002,11 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
 }
 
 @test "issue approved (#723): develop (4) passed line relays the issue-approved line to the owner before CI watch" {
-  line="$(grep -F '`issue で承認済み:`' "$DEVELOP_SKILL")"
+  local procedures
+  procedures="$(develop_procedures)"
+  line="$(grep -F '`issue で承認済み:`' <<< "$procedures")"
   echo "$line" | grep -qF 'CI の見張り' || { echo "$line"; return 1; }
-  echo "$line" | grep -qF '1 回'
+  echo "$line" | grep -qE '1[[:space:]]*回'
   echo "$line" | grep -qF 'stages/pass.md'
 }
 
@@ -2237,7 +2241,11 @@ deleg_reads_canonical() {
   grep -qF -- "$s" "$spec"
   grep -qF '自分でゲートを回すセッションは、G を起こした側を兼ねる。' "$TRIAGE"
   grep -qF '自分でゲートを回すセッションは、G を起こした側を兼ねる。' "$spec"
-  grep -F '次の段へ → `次の段:`' "$DEVELOP_SKILL" | grep -qF '`条件の確認待ち` の質問文があれば主へ届ける（gate-runner.md）'
+  local procedures
+  procedures="$(develop_procedures)"
+  grep -F '次の段へ → `次の段:`' <<< "$procedures" |
+    grep -F '`条件の確認待ち` の質問文があれば主へ届ける' |
+    grep -qF 'references/roles/gate-runner.md'
 }
 
 # ===== 周の終わりに残った止める指摘の条件を先に確かめる（issue #1486）=====
