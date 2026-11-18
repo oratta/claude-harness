@@ -21,14 +21,14 @@
 | ファイル | 読み手・読む場面 | 移す／残す内容（旧 epic.md の行） |
 |---|---|---|
 | epic.md | 親子の入口、エピック化の判断、注意書きの受信、子が範囲外の問題を見つけたとき | 読むものの表、条件・作り方（5–21）、nested の子側の扱い（29）、注意書きの author_association 検査（31 の子側）、両経路共通の子 issue 追加・stack PR（159–162）、完了の意味（164–166）。親の起動・片付け・見張りの操作本文は置かない |
-| epic-loop.md | 別セッション方式の親、開始と通常の進行・復元 | 経路（25・27）、起動と子の状態と部品（31–45 の親側）、報告・状態表・ログ優先（46–72）、clear、手順 1–7・9（79–87・90）、closed の確認と待ちの終了条件（121–123）、モデル・CLD_DEFAULT_ARGS・上限の仕様（149–153）、完了時の片付け（168–170）。手順 7 に埋まった停止解決は epic-stop.md を読む指示へ置き換える |
+| epic-loop.md | 別セッション方式の親、開始と通常の進行・復元 | 経路（25・27）、起動と子の状態と部品（31–45 の親側）、子エピックの事前除外・待ち受け・完了報告（27・121–123）、報告・状態表・ログ優先（46–72）、clear、手順 1–7・9（79–87・90）、closed の確認と待ちの終了条件（121–123）、モデル・CLD_DEFAULT_ARGS・上限の仕様（149–153）、完了時の片付け（168–170）。手順 7 に埋まった停止解決は epic-stop.md を読む指示へ置き換える |
 | epic-stop.md | 親、stopped / pending-owner の停止を処理する直前。サブエージェント方式の本体が PR トークン権限に照らすとき | 手順 8（88）、今回の止まった理由の唯一の定義、停止と過去判断の照合、通す／主に上げる・返事・told・判例記録、PR トークン上限の子（127）。委任の記録・確認・取り消しを行う親の操作と、委任での送信・二重送信防止もここに移す（92–120 の親側） |
 | epic-delegation.md | 親が委任を受ける／取り消すとき、親子が委任を適用するとき | 委任の二つの記録の定型、確認と期間の意味、失効・取り消しの効き方、委任が有効かの 6 条件、効く止まりの種類別条件（92–120 の共有契約）。記録投稿・返信の操作本文は epic-stop.md へ。子には親の手順を読ませず共有判定だけ読ませる |
 | epic-merge-wait.md | 親、今回の止まった理由が PR のマージ待ちのとき | マージ待ちの前提確認・決める役への入力・HEAD 再取得・印とコメントの順・失敗時の扱い（125）。条件の正本は parent-merge-criteria.md のまま。専用ファイルにすることでプロンプトである基準本文を膨らませない |
 | epic-multirepo.md | 親、別リポジトリの子があるとき | 別リポジトリの読み替え表・clone と名前の扱い（129–147）、手順 1・6 などに混ざる別 repo 固有の補足。entry / loop / stop / merge の該当箇所から読む |
-| epic-subagent.md | 親、route=subagent（unmanned・channel を含む）のとき、子の中で W を並列に起こすとき | サブエージェント方式・枠・再開優先順・別 repo の子を起こさない扱い（157）。状態記録を作らないこと、状態表は loop の報告規定への参照。別セッションの起動・片付けは読ませない |
+| epic-subagent.md | 親、route=subagent（unmanned・channel を含む）のとき、子の中で W を並列に起こすとき | サブエージェント方式・枠・再開優先順・別 repo の子を起こさない扱い（157）。状態記録を作らないこと、子エピックの事前除外と状態表は loop の共通規定・報告規定への参照。別セッションの起動・片付けは読ませない |
 | epic-keepalive.md | 子が停止する前、親が停止済みの子の声かけを扱う場面 | 共有の予約文の受信契約と自動送信の適用条件・除外・期限・通常の一行往復だけの保証。旧 epic.md:63・173、epic-child-stop.md:7、reply-after-idle.md:63–69 を集約する。親への手動の起動・見張り・片付けの指示は置かない |
-| epic-child-stop.md（既存） | nested の子、停止前・親からの返事受信時 | 子の停止記録の形、質問ツールを使わない読み替え、定型の止まり、relayed / delegated の確認と再開。委任条件の複写と声かけ本文を共有正本への読込指示にする。親の停止解決は載せない |
+| epic-child-stop.md（既存） | nested の子、停止前・親からの返事受信時 | 子の停止記録の形、質問ツールを使わない読み替え、定型の止まり、relayed / delegated の確認と再開。委任条件の複写と声かけ本文を共有正本への読込指示にする。`主に聞く理由:` を書く前に parent-pass-criteria.md「例」を読む指定を置く。親の停止解決は載せない |
 | reply-after-idle.md（既存） | 共通入口の設定、親の起床直後、子へ実際の返事を送る前 | 親の時間分類の正本。旧 epic.md:74–77 のみにある未処理イベント・stderr / exit code・元発言の場所・記録失敗の扱いをここへ補い、表と本文で同じ分岐を二重に書かない。起動し直した親の復元操作は loop、返事送信は stop に参照する。声かけの本文は keepalive への参照にする |
 
 番号の 8 は epic-stop.md へ移しても維持する。loop に 8 の操作本文を残さず「stopped / pending は epic-stop.md を読む」を置く。1–7・9 の番号も維持し、文書を跨ぐ手順番号は必ずファイル名を添える。通常進行の手順 7 は pending-owner の取得までを書き、停止の照合・解決は stop を先に読む指示とし、その条件を繰り返さない。
@@ -57,7 +57,7 @@
 | 予算キー | 分割後の集合 |
 |---|---|
 | nested-entry | R/epic.md |
-| nested-stop | nested-entry ＋ R/epic-child-stop.md ＋ R/epic-keepalive.md ＋ references/child-cache-keepalive.json |
+| nested-stop | nested-entry ＋ R/epic-child-stop.md ＋ R/epic-keepalive.md ＋ references/child-cache-keepalive.json ＋ R/parent-pass-criteria.md（例の参照でも全文） |
 | parent-start | R/epic.md ＋ R/epic-loop.md |
 | parent-stopped | parent-start ＋ R/epic-stop.md ＋ R/epic-child-stop.md（記録の形）＋ R/parent-pass-criteria.md ＋ R/reply-after-idle.md ＋ R/epic-keepalive.md |
 | nested-delegated | nested-stop ＋ R/epic-delegation.md |
@@ -65,15 +65,15 @@
 | parent-merge-wait | parent-stopped ＋ R/epic-merge-wait.md ＋ R/parent-merge-criteria.md |
 | parent-merge-delegated | parent-merge-wait ＋ R/epic-delegation.md |
 | parent-multirepo | parent-start ＋ R/epic-multirepo.md |
-| parent-subagent | R/epic.md ＋ R/epic-subagent.md ＋ R/epic-loop.md（報告規定の全ファイルを保守的に計上） |
+| parent-subagent | R/epic.md ＋ R/epic-subagent.md ＋ R/epic-loop.md（子エピックの事前除外・報告規定の全ファイルを保守的に計上） |
 
-委任は記録があるとき／受けるときだけ、merge はマージ待ちだけ、multirepo は別 repo の子があるときだけ追加する。子の同一 repo / 別 repo の親の返事の頭は child-stop だけで受けられるので、子に multirepo を読ませない。subagent の PR トークン上限では stop を必要時に追加する。上の基本・追加集合は合成可能とし、複合場面は和集合を用いる。
+nested-stop は `主に聞く理由:` を書く前に読む parent-pass-criteria.md 全文を含み、nested-delegated もこれを引き継ぐ。例の正本と子に残す (a)–(c) は変えない。委任は記録があるとき／受けるときだけ、merge はマージ待ちだけ、multirepo は別 repo の子があるときだけ追加する。子の同一 repo / 別 repo の親の返事の頭は child-stop だけで受けられるので、子に multirepo を読ませない。subagent の PR トークン上限では stop を必要時に追加する。上の基本・追加集合は合成可能とし、複合場面は和集合を用いる。
 
 予算の正本は新規 `tests/develop-epic-scene-budget.txt`、検査は新規 `tests/develop-epic-scene-budget.bats`。形式は `<上表のキー> <先頭ゼロなし正整数bytes>` の全 10 行・重複なし。**各初期上限は、実装後に上表のファイルを `wc -c` で足した値ちょうど（余白 0 bytes）に固定する。** 仕様化時点の未分割ファイルの値を上限に流用せず、実装時に確定する実測整数をコミットする。これは値の選択を後回しにするのでなく、式 `budget(scene) = sum(final_file_bytes)` を全キーに指定するもの。削減目標の数字は置かない。予算を実装前に任意の低い数字へ決める案は、削減量を合否にしない方針に反するため採らない。
 
 検査は #1683 と同じく実測 > 予算で失敗、予算 > 実測の 1.1 倍でも失敗。実測を自動で予算へ書き戻してから検査してはならない。集合は Bats の関数に固定し、txt からファイルを抜いて通せないようにする。txt の書式・全キー・ファイル欠落・1 byte 超過・ちょうど上限・1.1 倍境界・未知キー・重複・不足を使い捨て root で検査する。必要ファイルの案内が entry とその場面の入口にあること、nested から parent-only の手順を読む指定が無いこと、stop/merge/multirepo/subagent を親開始時に無条件で読ませていないことも実ファイルと参照を消した fixture で検査する。
 
-予算はファイルごとの全文の増加を検出し、読込指示の意味や同量の文の入れ替わりは検出しない。場面を分ける意味は仕様レビューと PR の段落対応表で確認する（主が #1682 で受け入れた残り）。`tests/injection-budget.txt` は変更しない。既存の startup 予算を変える必要があれば、参照パスの長さの変化による差だけを扱い、理由を PR 本文に書く。
+**守備範囲**: 入力は Bats に固定した集合、実ファイル全文、独立した txt のキーと上限値。上限超過・必要ファイル欠落・書式不正・未知キー・重複・不足・緩すぎる上限を検出する。読込指示の意味や同じ字数かつ同じバイト数の文の入れ替わりは検出せず、参照接続検査に違反しなければ予算検査が通ることを許す。すり抜ける入力をすべて塞ぐことは完了条件にしない。場面を分ける意味は仕様レビューと PR の段落対応表で確認する（主が #1682 で受け入れた残り）。`tests/injection-budget.txt` は変更しない。既存の startup 予算を変える必要があれば、参照パスの長さの変化による差だけを扱い、理由を PR 本文に書く。
 
 ### 4. 切り出し前の測定（main e10f0a98）
 
@@ -82,9 +82,11 @@
 | 場面 | 分割前のエピック追加読込 | wc -m | wc -c | 共通起動分も一度だけ含む wc -m / wc -c |
 |---|---|---:|---:|---:|
 | 子 nested の入口 | R/epic.md | 49622 | 108099 | 122102 / 253653 |
-| 子 nested の停止 | R/epic.md, R/epic-child-stop.md, references/child-cache-keepalive.json | 59781 | 131910 | 132261 / 277464 |
+| 子 nested の停止 | R/epic.md, R/epic-child-stop.md, references/child-cache-keepalive.json, R/parent-pass-criteria.md | 70959 | 160374 | 143439 / 305928 |
 | 親の開始 | R/epic.md | 49622 | 108099 | 122102 / 253653 |
 | 親が子の停止を処理 | R/epic.md, R/epic-child-stop.md, R/parent-pass-criteria.md, R/reply-after-idle.md | 80310 | 180453 | 143180 / 305423 |
+
+R1 の計上漏れの修正に伴い、子の停止の分割前の比較集合にも parent-pass-criteria.md 全文（11178 字 / 28464 bytes）を含めて測り直した。旧値 59781 字 / 131910 bytes は同ファイルを含まなかったため、この表の比較値には使わない。分割前には子の例が child-stop にもあるが、分割後と同じ参照依存を含める比較基準として全文を保守的に計上する。他の 3 場面は集合と値が変わらない。
 
 共通起動分 C は `skills/develop/SKILL.md`・`commands/develop.md`・`references/codex-develop.md`・`R/reply-after-idle.md` の和集合で 72480 字 / 145554 bytes。先行 #1683 の起動 3 ファイルの比較にはなかった共通設定の Read を、今回は全文計上して明示した。parent-stopped にも含まれる reply-after-idle は二重に数えない。入口で reply-after-idle の設定節を読む既存指定は #1685 の対象に踏み込まず維持する。エピック固有の入口で子に新たに親の手順を読ませないことを今回の読込境界とする。
 
@@ -124,7 +126,7 @@
 
 ### 7. 経緯・例と、役目を終えた分岐の確認
 
-意味を変えない削除は、epic 本文の日付・過去の実測・issue 番号の説明（状態表の実例、上限既定値の過去 RSS など）、繰り返す報告の書き分け指定、child-stop の (a)–(c) の後の三つの事例。後者は parent-pass-criteria.md「例」に同じ趣旨の全文があるので子からその節を参照する。(a)–(c) の確認自体は子にも残す。parent-pass / parent-merge の例・判断条件は削らず、参照パスだけ付け替える。委任の定型の固定行は文字列契約なので削らない。固定部分の外にある根拠の経緯を削る場合も定型の判定行数・値は変えない。
+意味を変えない削除は、epic 本文の日付・過去の実測・issue 番号の説明（状態表の実例、上限既定値の過去 RSS など）、繰り返す報告の書き分け指定、child-stop の (a)–(c) の後の三つの事例。後者は parent-pass-criteria.md「例」に同じ趣旨の全文があるので子が `主に聞く理由:` を書く前にその節を読む指定にする。この依存は nested-stop / nested-delegated の集合・予算に全文を含め、前後の測定も同じ規則で数える。(a)–(c) の確認自体は子にも残す。parent-pass / parent-merge の例・判断条件は削らず、参照パスだけ付け替える。委任の定型の固定行は文字列契約なので削らない。固定部分の外にある根拠の経緯を削る場合も定型の判定行数・値は変えない。
 
 | 消す候補の分岐 | 調べる根拠 | 今回の判断 |
 |---|---|---|

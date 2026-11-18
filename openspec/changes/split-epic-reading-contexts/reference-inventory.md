@@ -7,7 +7,7 @@
 | destructive-git-hook:620 | 別セッションの子の停止検知の条件を案内する | `epic-loop.md` |
 | dev-workflow-develop:201 | エピックの条件・作り方・回し方・完了条件を規定する | `epic-delegation.md`、`epic-loop.md`、`epic-merge-wait.md`、`epic-multirepo.md`、`epic-stop.md`、`epic-subagent.md`、`epic.md` |
 | dev-workflow-develop:608 | epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う | `epic-loop.md` |
-| dev-workflow-develop:739 | エピックの並列起動は 1 段で止める | `epic.md` の入口に残る参照を維持（delta 不要） |
+| dev-workflow-develop:739 | エピックの並列起動は 1 段で止める | 子の nested は `epic.md`、親の子エピック除外・待ち受け・完了報告は `epic-loop.md`。delta で本文・scenario・存在検査の参照先を更新 |
 | dev-workflow-develop:1726 | epic-dispatch.sh は完了の印を付け、印の付いた子のワークスペースを片付ける | `epic-loop.md` |
 | dev-workflow-develop:1930 | Orca 経路の本体は印が付いた子のワークスペースを片付ける | `epic-loop.md` |
 | dev-workflow-develop:1984 | develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする | `epic-loop.md` |
