@@ -160,7 +160,9 @@ item() { grep -F -- "- **$1**" "$2"; }
 }
 
 @test "gate pass (#1653): the delegation checks match epic.md word for word" {
-  PASSMD="$PLUGIN_DIR/skills/pr-review-gate/stages/pass.md"
+  PASSMD="$PLUGIN_DIR/skills/pr-review-gate/stages/authenticity-delegated.md"
+  grep -qF 'stages/authenticity.md' "$PLUGIN_DIR/skills/pr-review-gate/stages/pass.md"
+  grep -qF 'stages/authenticity-delegated.md' "$PLUGIN_DIR/skills/pr-review-gate/stages/authenticity.md"
   risk="$(item '委任が効く止まり' "$EPIC" | grep -oE '\*\*リスク許容の止まり\*\*.*論点なしと書く。\*\*聖域' | sed 's/。\*\*聖域$//')"
   [ -n "$risk" ]
   grep -qF -- "$risk" "$PASSMD"
