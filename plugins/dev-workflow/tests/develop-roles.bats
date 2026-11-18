@@ -308,7 +308,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   # パスと Markdown の閉じバッククォートを許容し、「読んでから」「も読む」「開く」も拾う。
   # 「読まない」「読まず」を含む行（否定の明示）と索引の所在説明は拾わない。
   local hits
-  hits=$(gate_all | grep -E 'SKILL\.md`?[[:space:]]*(を|も)[[:space:]]*(Read|読|開)' | grep -vE '読ま(ない|ず)' || true)
+  hits=$(gate_scope | grep -E 'SKILL\.md`?[[:space:]]*(を|も)[[:space:]]*(Read|読|開)' | grep -vE '読ま(ない|ず)' || true)
   if [ -n "$hits" ]; then
     echo "G の指示書に SKILL.md を読む肯定の指示がある: $hits" >&2
     return 1
@@ -373,7 +373,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 @test "gate-runner (#354): row-5 findings return as on-hold for split-off confirmation, not proposing a third round" {
   grep -q '切り出しの確認' "$GATE"
   grep -q '3周目を提案しない' "${HOLD}"
-  ! gate_all | grep -qF '2周目キャップ' || return 1
+  ! gate_scope | grep -qF '2周目キャップ' || return 1
 }
 
 @test "gate-runner (#281): round field covers round 3+ after owner go-ahead and full review line counts" {
@@ -382,7 +382,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner (#281): no high-severity-only third round permission remains" {
-  ! gate_all | grep -qF '新規の高深刻度 blocking のみ' || return 1
+  ! gate_scope | grep -qF '新規の高深刻度 blocking のみ' || return 1
 }
 
 @test "gate-runner (#354): resume covers the owner's answer to the split-off confirmation" {
@@ -426,11 +426,11 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -F '| G（`dev-workflow:gate-runner`）' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF '中位（`sonnet`）'
   grep -F '| G が要求するレビュアー' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF '上位（`opus`）'
   grep -F '| G が要求するレビュアー' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF 'subagent_type: dev-workflow:decider'
-  ! gate_all | grep -q 'マージ条件・聖域・層間契約' || return 1
-  ! gate_all | grep -q '聖域・層間契約による' || return 1
-  ! gate_all | grep -qE '実装品質起因なら.*`model: fable`' || return 1
+  ! gate_scope | grep -q 'マージ条件・聖域・層間契約' || return 1
+  ! gate_scope | grep -q '聖域・層間契約による' || return 1
+  ! gate_scope | grep -qE '実装品質起因なら.*`model: fable`' || return 1
   # 旧ラダー（実行役を 1 段ずつ上げる）は残さず、決める役の種別で上げる
-  ! gate_all | grep -q '1 段上' || return 1
+  ! gate_scope | grep -q '1 段上' || return 1
   grep -F '| R1（' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF 'subagent_type: dev-workflow:decider'
   grep -qF '一方だけ' "${TRIAGE}"
   grep -qF '実行役を最上位の格に上げない' "${TRIAGE}"
@@ -592,7 +592,7 @@ $(cat "$rd")"
 }
 
 @test "gate-runner (#352): needs-reviewer does not tell G to continue with step 3 unconditionally" {
-  ! gate_all | grep -q '手順 3 以降を続ける' || return 1
+  ! gate_scope | grep -q '手順 3 以降を続ける' || return 1
   n="$(section "${PREPARE}" 'needs-reviewer')"
   echo "$n" | grep -qF '「レビュアーの要約受領」'
 }
@@ -652,7 +652,7 @@ $(cat "$rd")"
   for token in 'マージ後に何を起こすか' '見積もり' '固定費' '推奨'; do
     echo "$line" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
-  ! gate_all | grep -qF '続けるか、範囲外として閉じるか' || return 1
+  ! gate_scope | grep -qF '続けるか、範囲外として閉じるか' || return 1
 }
 
 @test "gate-runner (#354): Status has needs-decider and a section says what the main session receives" {

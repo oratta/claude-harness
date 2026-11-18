@@ -7,6 +7,7 @@ gate_test_docs() {
   local helper
   helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gate-docs.py"
   python3 -B "$helper" "$PLUGIN_DIR" "$BATS_TEST_TMPDIR" > /dev/null
+  GATE_SCOPE_DOCS="$BATS_TEST_TMPDIR/gate-docs/GATE_SCOPE.md"
   ALL_GATE_DOCS="$BATS_TEST_TMPDIR/gate-docs/ALL.md"
   for name in GATE DECLARATIONS PREPARE TRIAGE PASS_STAGE HOLD; do
     if [ -n "${!name:-}" ]; then
@@ -14,3 +15,6 @@ gate_test_docs() {
     fi
   done
 }
+
+# Negative rules addressed specifically to G retain their original complete scope.
+gate_scope() { cat "$GATE_SCOPE_DOCS"; }

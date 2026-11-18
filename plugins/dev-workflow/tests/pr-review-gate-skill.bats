@@ -77,14 +77,14 @@ setup() {
 # --- Requirement: スキルはリポ非依存で、flatmate 固有の仕組みには条件分岐で対応する ---
 
 @test "portability: no hardcoded flatmate repo URL" {
-  ! gate_all | grep -q 'genetta-inc/flatmate' || return 1
+  ! gate_scope | grep -q 'genetta-inc/flatmate' || return 1
 }
 
 @test "portability: no reference to flatmate-only machinery" {
-  ! gate_all | grep -q 'pending-mirror\.sh' || return 1
-  ! gate_all | grep -q 'pending-owner\.md' || return 1
-  ! gate_all | grep -q 'channel-reply-policy' || return 1
-  ! gate_all | grep -q 'agent-loop-steps\.md' || return 1
+  ! gate_scope | grep -q 'pending-mirror\.sh' || return 1
+  ! gate_scope | grep -q 'pending-owner\.md' || return 1
+  ! gate_scope | grep -q 'channel-reply-policy' || return 1
+  ! gate_scope | grep -q 'agent-loop-steps\.md' || return 1
 }
 
 @test "portability: degraded behavior for repos without auto-merge is specified" {
@@ -482,12 +482,12 @@ convergence_section() {
 }
 
 @test "convergence (#349): the per-round general rule is gone and step 2-1 refers to the all-round verdict" {
-  ! gate_all | grep -qF '欠陥ありなら PR コメントに再現手順と修正点を書き' || return 1
+  ! gate_scope | grep -qF '欠陥ありなら PR コメントに再現手順と修正点を書き' || return 1
   line="$(step21_section | grep -F '止める指摘が残ったら')"
   [ -n "$line" ] || { echo "no stop-finding branch line in step 2-1"; return 1; }
   echo "$line" | grep -qF '「マージを止めるかの判定（全周共通）」'
   echo "$line" | grep -qF '仕分け表'
-  ! gate_all | grep -qF '1周目は PR コメントに止める指摘を書き' || return 1
+  ! gate_scope | grep -qF '1周目は PR コメントに止める指摘を書き' || return 1
 }
 
 @test "convergence (#281): unquotable findings go through the non-stopping triage table and proceed to passed" {
@@ -511,7 +511,7 @@ convergence_section() {
   echo "$sec" | grep -qF '順 6'
   echo "$sec" | grep -qF '`needs-fix-check`'
   echo "$sec" | grep -qF '順 2〜4 をそのまま使わない'
-  ! gate_all | grep -qF '続けるか、範囲外として閉じるか' || return 1
+  ! gate_scope | grep -qF '続けるか、範囲外として閉じるか' || return 1
 }
 
 @test "convergence (#281): unmanned operation (loop-dev-agent) also stops" {
@@ -534,11 +534,11 @@ convergence_section() {
   [ -n "$line" ] || { echo "no decider paragraph for row 6"; return 1; }
   echo "$line" | grep -qF '`dev-workflow:decider`'
   echo "$line" | grep -qF '止めるかどうかは全周共通の判定で G が決める'
-  ! gate_all | grep -qF '関与しない' || return 1
+  ! gate_scope | grep -qF '関与しない' || return 1
 }
 
 @test "convergence (#281): no high-severity permission for a third round remains" {
-  ! gate_all | grep -qE '3周目に入ってよいのは.*高深刻度|新規の高深刻度 blocking のみ' || return 1
+  ! gate_scope | grep -qE '3周目に入ってよいのは.*高深刻度|新規の高深刻度 blocking のみ' || return 1
 }
 
 @test "convergence (#354): step 6 recovery table has a split-off confirmation row covering both answers" {
@@ -549,7 +549,7 @@ convergence_section() {
   echo "$row" | grep -q 'agent-review:failed'
   [ "$(echo "$row" | grep -c 'needs-approval.*を外す')" -eq 2 ]
   grep -qE '^### 6\. 保留処理（.*切り出しの確認）' "${HOLD}"
-  ! gate_all | grep -qF '2周目キャップ' || return 1
+  ! gate_scope | grep -qF '2周目キャップ' || return 1
 }
 
 @test "approval classes (#354): row 1 asks whether to split the defect off, with a recommendation and an estimate" {
@@ -622,8 +622,8 @@ reviewer_block() {
 }
 
 @test "verdict (#349): no text splits the verdict by round" {
-  ! gate_all | grep -qF 'この一般則は1周目に適用する' || return 1
-  ! gate_all | grep -qE '一般則|収束ルールが優先' || return 1
+  ! gate_scope | grep -qF 'この一般則は1周目に適用する' || return 1
+  ! gate_scope | grep -qE '一般則|収束ルールが優先' || return 1
 }
 
 @test "verdict (#349): round-1 failed keeps non-stopping findings as a list and defers follow-up issues to step 3" {
@@ -941,7 +941,7 @@ $(nonblocking_para '段 C（')"
   [ "$(echo "$req" | grep -cF '主が切り出すと答えて follow-up issue に切ったもの')" -eq 2 ]
   [ "$(echo "$req" | grep -cF '順 3 の集合一致で閉じたもの')" -eq 2 ]
   [ "$(echo "$req" | grep -cF '周の終わりの止める指摘の条件で閉じたもの')" -eq 2 ]
-  ! gate_all | grep -qF '範囲外として閉じ' || return 1
+  ! gate_scope | grep -qF '範囲外として閉じ' || return 1
 }
 
 @test "codex rubric (#349): measured as applied, so step 2-1 maps the Codex rubric onto the fixed format" {
@@ -2019,7 +2019,7 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
   line="$(grep -F '`issue で承認済み:`' "$DEVELOP_SKILL")"
   echo "$line" | grep -qF 'CI の見張り' || { echo "$line"; return 1; }
   echo "$line" | grep -qF '1 回'
-  echo "$line" | grep -qF 'stages/pass.md'
+  echo "$line" | grep -qF 'stages/issue-approved.md'
 }
 
 # --- Requirement: 合格条件はエピックの親経由で受けた許容を、親の会話ログで確かめて受け付ける（#1059） ---

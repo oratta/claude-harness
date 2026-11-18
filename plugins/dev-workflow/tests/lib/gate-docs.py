@@ -79,3 +79,8 @@ text = text[:index] + expand(detail.split('## 段ごとの起動と入力')[0], 
 paths = sorted(gate.rglob('*.md')) + sorted((plugin / 'skills/develop/references').rglob('*.md'))
 paths += [plugin / 'skills/develop/SKILL.md']
 (dest / 'ALL.md').write_text('\n'.join(p.read_text() for p in paths))
+
+# Prohibitions addressed to G exclude the coordinator / R1's different instructions.
+# Still scan every gate file, so moving a forbidden G instruction cannot evade it.
+scoped = sorted(gate.rglob('*.md')) + [plugin / 'skills/develop/references/roles/gate-runner.md']
+(dest / 'GATE_SCOPE.md').write_text('\n'.join(p.read_text() for p in scoped))
