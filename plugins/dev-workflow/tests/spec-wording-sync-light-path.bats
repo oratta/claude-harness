@@ -202,7 +202,8 @@ table5() { step5 | grep '^| '; }
   row="$(table5 | grep '^| `仕様化判断: する`＋`通し方: 文言合わせ` の行あり |')"
   echo "$row" | grep -qE '仕様レビュー:` のコメントは照合しない'
   echo "$row" | grep -q '仕様レビュー: 省いた（文言合わせ。'
-  echo "$row" | grep -q 'openspec/changes/archive/\*-<change-name>/specs/\*/spec.md'
+  echo "$row" | grep -qF 'openspec/changes/archive/????-??-??-<change-name>/specs/*/spec.md'
+  echo "$row" | grep -q 'MODIFIED Requirements'
   echo "$row" | grep -q 'ちょうど 1 つ'
   echo "$row" | grep -q 'ADDED'
   echo "$row" | grep -q 'REMOVED'
@@ -215,6 +216,12 @@ table5() { step5 | grep '^| '; }
 
 @test "step 5: plain 'yes' row still demands the APPROVE review" {
   table5 | grep '^| `仕様化判断: する`（`通し方: 文言合わせ` の行なし） |' | grep -q 'APPROVE'
+}
+
+@test "step 5: plain 'yes' row requires the APPROVE form of the declaration and rejects the skipped form" {
+  row="$(table5 | grep '^| `仕様化判断: する`（`通し方: 文言合わせ` の行なし） |')"
+  echo "$row" | grep -qF '仕様宣言は `仕様レビュー: APPROVE（` で始まる'
+  echo "$row" | grep -qF '`仕様レビュー: 省いた` の形は不合格'
 }
 
 @test "step 5: a PR without the wording-sync line cannot pass with the skipped form" {
@@ -293,8 +300,11 @@ DELTA_OK='## MODIFIED Requirements
 @test "step 5 commands: extracted block has the count, the fix lines and the three measurements" {
   light_cmds | grep -q "grep -cx '通し方: 文言合わせ'"
   light_cmds | grep -q "grep '^直す文: '"
-  light_cmds | grep -q 'ls openspec/changes/archive/\*-"\$CHANGE"/specs/\*/spec.md'
+  light_cmds | grep -qF 'G=openspec/changes/archive/????-??-??-"$CHANGE"/specs/*/spec.md'
+  light_cmds | grep -qF 'ls $G 2>/dev/null | wc -l'
   light_cmds | grep -qF "grep -cE '^## (ADDED|REMOVED|RENAMED) Requirements'"
+  light_cmds | grep -qF "grep -c '^## MODIFIED Requirements' \$G"
+  light_cmds | grep -qF "grep -c '^### Requirement: ' \$G"
   light_cmds | grep -qF "grep -h '^### Requirement: '"
   # 0 件のとき grep -c は終了コード 1 を返すので、出力の値で判定すると書いてある
   step5 | grep -qE '終了コードではなく出力'
@@ -355,6 +365,40 @@ DELTA_OK='## MODIFIED Requirements
   printf '%s\n' "$DELTA_OK" > "$BATS_TEST_TMPDIR/work/openspec/changes/archive/2026-10-12-demo-change/specs/other/spec.md"
   run_light
   [ "$(echo "$output" | sed -n 4p | tr -d ' ')" = "2" ]
+}
+
+@test "step 5 commands: a sibling change whose name ends with the same words is not counted" {
+  write_pages "$DEC_LIGHT"
+  mkdir -p "$BATS_TEST_TMPDIR/work/openspec/changes/archive/2026-10-12-longrun-exec-demo-change/specs/demo"
+  printf '%s\n' "$DELTA_OK" > "$BATS_TEST_TMPDIR/work/openspec/changes/archive/2026-10-12-longrun-exec-demo-change/specs/demo/spec.md"
+  run_light
+  [ "$(echo "$output" | sed -n 4p | tr -d ' ')" = "0" ]
+}
+
+@test "step 5 commands: the right change is counted once even when a sibling change exists" {
+  write_pages "$DEC_LIGHT"
+  write_delta "$DELTA_OK"
+  mkdir -p "$BATS_TEST_TMPDIR/work/openspec/changes/archive/2026-10-12-longrun-exec-demo-change/specs/demo"
+  printf '%s\n' "$DELTA_OK" > "$BATS_TEST_TMPDIR/work/openspec/changes/archive/2026-10-12-longrun-exec-demo-change/specs/demo/spec.md"
+  run_light
+  [ "$(echo "$output" | sed -n 4p | tr -d ' ')" = "1" ]
+}
+
+@test "step 5 commands: a delta with no MODIFIED heading and no requirement is visible as zero counts" {
+  write_pages "$DEC_LIGHT"
+  write_delta "# 空の差分"
+  run_light
+  [ "$(echo "$output" | sed -n 4p | tr -d ' ')" = "1" ]
+  [ "$(echo "$output" | sed -n 6p | tr -d ' ')" = "0" ]
+  [ "$(echo "$output" | sed -n 7p | tr -d ' ')" = "0" ]
+}
+
+@test "step 5 commands: a normal delta has one MODIFIED heading and at least one requirement" {
+  write_pages "$DEC_LIGHT"
+  write_delta "$DELTA_OK"
+  run_light
+  [ "$(echo "$output" | sed -n 6p | tr -d ' ')" = "1" ]
+  [ "$(echo "$output" | sed -n 7p | tr -d ' ')" -ge 1 ]
 }
 
 @test "step 5 commands: latest decision without the line counts zero (falls back to the plain 'yes' row)" {
