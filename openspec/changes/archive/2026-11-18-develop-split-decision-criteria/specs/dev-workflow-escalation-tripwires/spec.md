@@ -56,3 +56,54 @@ python3 が無い・入力が JSON でない・`agent_type` が無い・残量�
 #### Scenario: hooks.json の SubagentStart エントリ
 - **WHEN** `plugins/dev-workflow/hooks/hooks.json` をパースする
 - **THEN** SubagentStart エントリが存在し、matcher が `^dev-workflow:(worker|reviewer|gate-runner)$`、command が `${CLAUDE_PLUGIN_ROOT}` 経由で `scripts/subagent-start-context.sh` を指している
+
+### Requirement: SessionStart で残量モードを自動導出注入
+`scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、active スロットの実効値（`usage-session-records` capability の「記録と snapshot から実効値を求める」。active スロットは `usage-account-registry` の active スロットの判定規則で起動環境から求める）から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。snapshot のトップレベルのミラーを導出に使ってはならない（MUST NOT）。導出の式と優先順位（明示 env > データ無し > 90% 超 > 週経過との比較）は変えず、式は `scripts/usage_view.py` の 1 か所にだけ置く（SHALL）。`session-tripwires.sh` は閾値の比較も明示 env の優先も自分で行わず、モード・出どころ（明示 env / 既定（usage データなし）/ 自動導出）・表示する値を `usage_view.py` から得なければならない（MUST）。`usage_view.py` は `CLAUDE_PLUGIN_ROOT` ではなく `session-tripwires.sh` 自身のディレクトリから読み込む。各モードの効果の文は `skills/develop/references/decision-criteria.md` の残量モードと共有枠モードの優先順位の表と `model-tier-resolution` の要件「残量モードを格に適用する」に一致させる（SHALL）。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する（未知の値もその値のまま提示し、効果の文は安全側の扱いを示す）。例外として、`usage_view.py` を読み込めないとき（ファイルが無い・壊れている）は明示 env も読まず、`conserve` / `ok` を出どころ `既定（usage_view.py を読めない）` として提示し、hook を止めない（SHALL）。明示 env の優先の判定も式の一部で、`session-tripwires.sh` に写しを残さないためである。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。
+
+**守備範囲（残量モードの導出）**: ①入力の出どころは、明示 env（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE`）と、`usage_view.py` が求める active スロットの実効値（`usage-session-records` の規則でセッション記録と snapshot から求めた値）だけである。snapshot やセッション記録を直接読む経路を足さない。②拾いたい誤りは、式が 2 か所にあって注入されるモードと `codex-develop.py request` が格に当てるモードがずれること、別スロットや snapshot のトップレベルのミラーの値でモードを決めること、欠測を 0% と読んで `abundant` / `ok` に倒すことである。③通してよい入力: 未知の明示値（提示はその値のまま、正規化後のモードは `conserve` / `throttled`）、空白だけの明示値（未設定と同じ）、Fable の欠測（明示 env が無く、active スロットの実効値の `fable_weekly_pct` が求まらなければ `conserve`。値があっても週経過が求まらなければ `abundant` にしない）、共有枠の欠測（明示 env が無く、セッション記録と snapshot の双方から週次の実効値が求まらなければ `ok`）、`usage_view.py` を読み込めない場合（明示 env も読まず `conserve` / `ok`）。値の妥当性（数値か・0..100 か・リセットを跨いだか）の検査は `usage-session-records` の規則に任せ、ここで重ねない。④この導出で入力の穴が見つかるたびに塞ぎ切ることを、この要件の完了条件にしない。
+
+`scripts/agent-model-guard.sh` の fork 拒否判定で使う共有枠モードも、active スロットの実効値から同じ式で導出しなければならない（SHALL）。
+
+#### Scenario: 導出モードと残量% を注入する
+- **WHEN** active スロットの実効値が求まる状態で SessionStart スクリプトを実行する
+- **THEN** additionalContext に導出された残量モードと Fable 残量%（100 − 実効値の `fable_weekly_pct`）が含まれる
+
+#### Scenario: 明示 env が導出を上書きする
+- **WHEN** `FABLE_BUDGET_MODE` を明示設定して SessionStart スクリプトを実行する
+- **THEN** additionalContext は導出値ではなく明示された値を現在モードとして提示する
+
+#### Scenario: probe 失敗でもトリップワイヤーは載る
+- **WHEN** snapshot もセッション記録も無い / probe が失敗する状態で SessionStart スクリプトを実行する
+- **THEN** 昇格トリップワイヤー節は従来どおり注入され、残量モードは conserve 既定として提示される
+
+#### Scenario: 使用量 API が 429 を返し続けても共有枠モードはセッション記録から導出する
+- **WHEN** snapshot が無く、active スロットの鍵のセッション記録に週次 95% がある状態で SessionStart スクリプトを実行する
+- **THEN** additionalContext の共有枠モードは `depleted`（自動導出）になる
+
+#### Scenario: 古い snapshot の Fable 値はリセット時刻で読む
+- **WHEN** 2 日前に取得した snapshot の active スロットが Fable 95%・リセット時刻が現在より前である状態で SessionStart スクリプトを実行する
+- **THEN** Fable を 0% として導出し、`exhausted` にならない
+
+#### Scenario: 導出を usage_view.py から得る
+- **WHEN** モードを固定値で返す偽の `usage_view.py` を置いた scripts ディレクトリから `session-tripwires.sh` を実行する
+- **THEN** additionalContext の残量モードと共有枠モードは偽物が返した値になる
+
+#### Scenario: depleted の効果の文は最安を上げない
+- **WHEN** `SHARED_BUDGET_MODE=depleted` で `session-tripwires.sh` を実行する
+- **THEN** `depleted` の効果の文は、最安の役（explore と summarize）はそのままで、それ以外の役は中位（sonnet）が上限・昇格なしと読め、「全役割 sonnet 固定」の語を含まない
+
+#### Scenario: throttled の効果の文は最安を上げない
+- **WHEN** `SHARED_BUDGET_MODE=throttled` で `session-tripwires.sh` を実行する
+- **THEN** `throttled` の効果の文は、上げていない役の既定を中位に落とし上限を上位とし、最安の役はそのままと読める
+
+#### Scenario: 未知の明示値は提示とモードが分かれる
+- **WHEN** `FABLE_BUDGET_MODE=foo`、`SHARED_BUDGET_MODE=bar` で `session-tripwires.sh` を実行する
+- **THEN** additionalContext は `foo`（明示 env）と `bar`（明示 env）を提示し、効果の文はそれぞれ conserve 相当・throttled 相当で扱う旨を示す。同じ env の `budget_modes` は `conserve` と `throttled` を返す
+
+#### Scenario: usage_view.py を読み込めなければ明示 env も読まずに既定を出す
+- **WHEN** `usage_view.py` の無い（または import で例外を出す）scripts ディレクトリから、`FABLE_BUDGET_MODE=exhausted`、`SHARED_BUDGET_MODE=depleted` を設定して `session-tripwires.sh` を実行する
+- **THEN** exit code 0 で、additionalContext は `conserve` と `ok` を出どころ `既定（usage_view.py を読めない）` として提示し、昇格トリップワイヤー節は従来どおり注入される
+
+#### Scenario: fork の共有枠判定もセッション記録を使う
+- **WHEN** snapshot が無く、active スロットの鍵のセッション記録に週次 95% がある状態で、`SHARED_BUDGET_MODE` 未設定のまま `subagent_type: fork` の Agent 呼び出しを agent-model-guard に渡す
+- **THEN** guard は共有枠モード `depleted` として fork を拒否する

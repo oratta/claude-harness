@@ -9,7 +9,7 @@
 - `decision-criteria.md` を、読む場面ごとに次の 4 ファイルに分ける。
   - `skills/develop/references/return-declaration.md`（新規。W と G が読む）: return の 1 行目の宣言（`工程完了:` / `工程中断:`）の書式と選び方、通知・強制停止を受けたときの W と G の振る舞い。宣言の書式の文は一字一句変えない
   - `skills/develop/references/spec-decision.md`（新規。W が `段: spec` で読み、本体も読む）: Step B（仕様化する／しない・文言合わせの通し方・記録・変えないもの・迷ったら）と Step C（分割判定）と「判定に使わない材料」
-  - `skills/develop/references/light-path.md`（新規。本体だけが読む）: Step B の「仕様化しないが軽く通す」と、G の failed と CI 見張りの fix からの戻し方。`handover.md`「CI 見張りの修正担当の引き継ぎ」と重なる手順（W を把握しない本体の読み取り、起動前の無効化と再許可）は `handover.md` に寄せ、こちらは分岐と参照だけにする
+  - `skills/develop/references/light-path.md`（新規。本体が読む。CI 見張りの fix からの戻し方は CI fix から起きた W も読む）: Step B の「仕様化しないが軽く通す」と、G の failed と CI 見張りの fix からの戻し方。`handover.md`「CI 見張りの修正担当の引き継ぎ」と重なる手順（W を把握しない本体の読み取り、起動前の無効化と再許可）は `handover.md` に寄せ、こちらは分岐と参照だけにする
   - `skills/develop/references/decision-criteria.md`（残す。本体だけが読む）: コンテキスト上限の本体向けの部分（2 経路・閾値の環境変数・再開前チェック・手渡しの許可・停止確認と終端・途中計測の仕組み・fail-open）と、残量モードと共有枠モード（優先順位を 1 つの表にまとめる）・自動導出・モード不変ルール
 - W と G の指示書（`worker/common.md`・`worker/spec.md`・`roles/gate-runner.md`）が「読め」と指すのを `return-declaration.md` と `spec-decision.md` に付け替え、`decision-criteria.md` を読む指示を無くす。`gate-runner.md` は参照先のパスの付け替えだけで本文は変えない（本文の縮小は #1687）
 - 残量モードと共有枠モードの優先順位の表は `decision-criteria.md` 1 か所に置き、`pre-classification.md`・`spec-reviewer.md`・`worker/common.md`・`plugins/dev-workflow/references/model-tiers.md` は 1 行の要旨と参照にする

@@ -115,8 +115,8 @@ R1 は本体が `model` を明示して spawn しなければならない（MUST
 - **THEN** `model` を明示すること、既定が `opus` であること、マージ権限・層間契約・課金/法務に当たれば `dev-workflow:decider` で spawn し、聖域パスだけでは上げないことが書かれている
 
 #### Scenario: 残量モードの扱いが既存規定と一致する
-- **WHEN** SKILL.md または `references/roles/spec-reviewer.md` の残量モードの記述を読む
-- **THEN** `reserve` は自動実行のみ、`exhausted` は全経路で `opus` 上限、と書き分けられている
+- **WHEN** `references/roles/spec-reviewer.md` の残量モードの記述と `references/decision-criteria.md` の優先順位の表を読む
+- **THEN** `spec-reviewer.md` は適用が `codex-develop.py request` であることと表への参照を 1 行で書き、表の `reserve` の行は自動実行のみ、`exhausted` の行は全経路で `opus` 上限と書き分けられている
 
 #### Scenario: R1 のモデル選択が指す表
 
@@ -138,7 +138,7 @@ develop スキルは、仕様化判断が「する」になった変更のうち
 
 この判定の守備範囲は次のとおりとする。①入力の出どころは、記録先の受け入れ条件と、W が書く仕様化判断のコメントである。W は協力的だが、受け入れ条件を甘く読んで「書けている」とすることがある前提で扱う。②拾いたい誤りは、受け入れ条件に直す文が書かれていない変更に当てること、新しい要件を足す変更や設計の選択がある変更に当てること、R1 に差し戻された change を切り替えて仕様レビューを避けることである。③次はこの判定を通ることを許す: 受け入れ条件の指定があいまいで、W が「書けている」と読んだ変更。`## MODIFIED Requirements` の中で要件の文を落とす・直す範囲より広く書き換える差分（見るのは実装後レビューだけになる。主が受け入れたリスク）。R1 の差し戻しのあとの切り替え（指示書で禁じるが、機械では止めない）。④ここに挙げた以外の通り方は見つけるたびに条件を足し、穴を塞ぎ切ることを完了条件にしない。
 
-#### Scenario: decision-criteria.md の Step B に通し方が書かれている
+#### Scenario: spec-decision.md の Step B に通し方が書かれている
 - **WHEN** `references/spec-decision.md` の「Step B」の節を読む
 - **THEN** 文言合わせの通し方の小節があり、成果物が仕様の差分 1 ファイルだけであること、R1 の仕様レビューを省くこと、当てる条件が「どの仕様のどの文をどう直すか」が記録先の受け入れ条件に書けていることであること、書けていなければ artifact 一式と R1 に戻すこと、`通し方: 文言合わせ` の行で記録することが書かれている
 
@@ -253,7 +253,7 @@ R1 が自分で決めるときの根拠は、エピックと記録先の本文�
 ### Requirement: 些細な修正は軽い通し方で新しいテストと W の起動を省く
 develop スキルは、仕様化判断が「しない」になる変更のうち、typo・lint 指摘の修正・コメントの修正・フォーマットの変更・ワンライナー fix・挙動を変えない設定値の変更のどれか 1 種類だけでできていて、既存のテストかチェックのコマンドで確かめられる変更に、新しいテストの作成と W の起動を省く通し方（以下「軽い通し方」）を持たなければならない（MUST）。記録先・仕様化判断の記録・pr-review-gate は省いてはならない（MUST NOT）。当てる条件・省くもの・残すものの正本は `references/light-path.md` に置き（MUST）、記録の書式の正本は `references/roles/spec-reviewer.md` の「判断記録の契約」に置く（MUST）。
 
-#### Scenario: Step B に軽い通し方の小節がある
+#### Scenario: Step B が light-path.md の軽い通し方を指す
 - **WHEN** `references/spec-decision.md` の Step B「仕様化しない（コード直行）」の小節と `references/light-path.md` を読む
 - **THEN** `spec-decision.md` の「仕様化しない（コード直行）」の小節が、軽い通し方の正本として `light-path.md` を 1 行で指しており、`light-path.md` には軽い通し方の小節があり、当てる条件（6 種類のどれか 1 つだけ・既存のテストかチェックで確かめられる）・省くもの（新しいテストの作成と W の起動）・残すもの（記録先・判断の記録・pr-review-gate）の 3 点が書かれている
 

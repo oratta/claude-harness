@@ -39,7 +39,7 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/spec-decisi
 - **THEN** 共有枠モードは depleted に導出される（ok にならない）
 
 #### Scenario: depleted でも最安の役は上げない
-- **WHEN** `SHARED_BUDGET_MODE=depleted` の状態で decision-criteria の残量モードと共有枠モードの優先順位の表の共有枠モードの行と、`session-tripwires.sh` が注入する `depleted` の効果の文を読む
+- **WHEN** `SHARED_BUDGET_MODE=depleted` の状態で decision-criteria の残量モードと共有枠モードの優先順位の表の共有枠モードの行と、表の下の `haiku` の役割の行と、`session-tripwires.sh` が注入する `depleted` の効果の文を読む
 - **THEN** どちらも explore と summarize を最安のまま残し、それ以外の役の上限を中位とする。「全役割 Sonnet 固定」の語を含まない
 
 ## ADDED Requirements
