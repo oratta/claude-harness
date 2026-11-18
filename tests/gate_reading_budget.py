@@ -1,0 +1,253 @@
+"""Byte budgets for file reads and actual Codex prompts (no model invocation).
+
+Input: explicit plans, source bodies and budgets. Catch excess, missing files,
+incomplete inventories and malformed prompts. Equal-size prose substitutions,
+wrong natural-language conditions and unreachable rules still require review.
+Fixed REQUEST excludes variable PR bodies/logs; this is no total-token guarantee.
+"""
+import hashlib
+import importlib.util
+import json
+import re
+import shutil
+import sys
+import tempfile
+from pathlib import Path
+
+PLUGIN = Path('plugins/dev-workflow')
+GATE = 'skills/pr-review-gate/'
+COMMON = ['skills/develop/references/roles/gate-runner.md',
+          'skills/develop/references/return-declaration.md']
+BASE = {
+    'prepare': ['stages/prepare.md'],
+    'review': ['stages/review-run.md', 'stages/reviewer-brief.md'],
+    'triage': ['stages/triage.md'],
+    'pass': ['declarations.md', 'stages/pass.md'],
+    'hold': ['stages/hold.md'],
+}
+# Each condition is a union: multiple references to the same file count once.
+CONDITIONS = {
+    'prepare': {
+        'light': ['prepare-light'], 'partitions': ['prepare-partitions'],
+        'reviewer': ['prepare-reviewer'], 'rereview': ['triage-convergence'],
+        'approval-wait': ['hold', 'hold-categories'],
+    },
+    'review': {
+        'fallback': ['prepare-reviewer'], 'partitions': ['prepare-partitions'],
+        'summary': ['gate-triage'], 'comments': ['gate-triage', 'comment-parts'],
+    },
+    'triage': {
+        'summary': ['gate-triage'],
+        'partitions': ['gate-triage', 'gate-triage-partitions'],
+        'supplement': ['gate-triage', 'prepare-reviewer'],
+        'comments': ['gate-triage', 'comment-parts'],
+        'row3': ['triage-row3', 'prepare'],
+        'nonblocking': ['triage-nonblocking'],
+        'epic': ['triage-nonblocking', 'triage-epic'],
+        'convergence': ['triage-convergence'], 'failed': ['triage-escalation'],
+    },
+    'pass': {
+        'issue-approved': ['issue-approved'],
+        'carryover': ['hold', 'carryover', 'authenticity'],
+        'judge': ['hold', 'carryover', 'carryover-judge', 'authenticity'],
+        'no-point': ['hold', 'no-point-check'],
+        'risk-link': ['hold', 'authenticity'],
+        'risk-conversation': ['hold', 'authenticity', 'authenticity-conversation'],
+        'risk-relayed': ['hold', 'authenticity', 'authenticity-relayed'],
+        'risk-delegated': ['hold', 'authenticity', 'authenticity-relayed', 'authenticity-delegated'],
+        'wording': ['pass-wording'],
+    },
+    'hold': {
+        'carryover': ['carryover', 'authenticity'],
+        'judge': ['carryover', 'carryover-judge', 'authenticity'],
+        'no-point': ['no-point-check'], 'resume': ['hold-resume'],
+        'categories': ['hold-categories'],
+        'split': ['hold-resume', 'triage-nonblocking', 'triage-epic'],
+    },
+}
+STAGES = dict(zip(['prepare', 'triage', 'pass', 'hold'],
+                 ['前提確認と重さ判定', '照合と振り分け', '合格処理', '保留の解除']))
+LEGACY = ['SKILL.md', 'declarations.md'] + ['stages/' + n + '.md' for n in
+    ['prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold']]
+HEADER = re.compile(r'\n\nCANONICAL SOURCE (\S+) sha256=([0-9a-f]{64})\n')
+
+
+def load_adapter(root):
+    spec = importlib.util.spec_from_file_location('gate_budget_adapter',
+                root / PLUGIN / 'scripts/codex-develop.py')
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def verify_prompt(text, expected, read):
+    matches = list(HEADER.finditer(text))
+    names = [m[1] for m in matches]
+    assert len(names) == len(set(names)), ('duplicate source', names)
+    assert set(names) == set(expected), ('source set', names, expected)
+    for i, match in enumerate(matches):
+        body = text[match.end():matches[i + 1].start() if i + 1 < len(matches) else len(text)]
+        source = read(match[1])
+        assert body == source, ('source body', match[1])
+        assert hashlib.sha256(source.encode()).hexdigest() == match[2], ('sha256', match[1])
+    return set(names)
+
+
+def plans():
+    result = {}
+    for stage, base in BASE.items():
+        result[stage] = [GATE + p for p in base]
+        for condition, names in CONDITIONS[stage].items():
+            result[stage + '-' + condition] = result[stage] + [GATE + 'stages/' + n + '.md' for n in names]
+        result[stage + '-max'] = sorted(set(p for key, paths in result.items()
+            if key == stage or key.startswith(stage + '-') for p in paths))
+    result['legacy-all'] = [GATE + p for p in LEGACY]
+    all_details = sorted(set(p for paths in result.values() for p in paths))
+    result['legacy-all-max'] = all_details
+    # The legacy caller can encounter each conditional path as well.
+    for stage in BASE:
+        for condition in CONDITIONS[stage]:
+            result['legacy-' + stage + '-' + condition] = result['legacy-all'] + result[stage + '-' + condition]
+    return {k: sorted(set(v)) for k, v in result.items()}
+
+
+def validate_inventory(root, plan):
+    files = {str(p.relative_to(root / PLUGIN)) for p in (root / PLUGIN / GATE).rglob('*.md')}
+    covered = set(p for paths in plan.values() for p in paths)
+    assert files == covered, ('unmeasured/missing files', files - covered, covered - files)
+    # Every planned detail must actually be referenced by a procedure (not only by the index).
+    refs = '\n'.join(p.read_text() for p in (root / PLUGIN / GATE / 'stages').glob('*.md'))
+    refs += (root / PLUGIN / COMMON[0]).read_text()
+    detail = covered - {GATE + p for p in LEGACY}
+    for path in detail:
+        assert '`stages/' + Path(path).name + '`' in refs, ('unreferenced detail', path)
+    gate = (root / PLUGIN / COMMON[0]).read_text()
+    for stage in STAGES:
+        # The stage's own row must contain exactly its declared base gate files.
+        row = next(line for line in gate.splitlines() if line.startswith('| ' + STAGES[stage]))
+        start = row.split('（', 1)[0] if '（' in row else row
+        assert STAGES[stage] in start
+        for p in BASE[stage]:
+            assert '`' + p + '`' in row, (stage, p)
+
+
+def measure(root, adapter=None):
+    plan = plans()
+    validate_inventory(root, plan)
+    read = lambda name: (root / PLUGIN / name).read_text()
+    adapter = adapter or load_adapter(root)
+    prompts = {}
+    for stage in BASE.keys() | {'legacy-all'}:
+        phase = 'review' if stage == 'review' else 'gate'
+        req = 'Dispatch HEAD: e10f0a9896d82d0b86c0f7a10becb70c4983bc63\nレビュー経路: '
+        req += ('従来' if stage == 'legacy-all' else 'adapter') + '\n'
+        if stage != 'review':
+            req += '段: ' + ('一括（従来経路）' if stage == 'legacy-all' else STAGES[stage]) + '\n'
+        expected = COMMON + ([GATE + 'stages/reviewer-brief.md'] if stage == 'review' else
+            [GATE + p for p in LEGACY] if stage == 'legacy-all' else [GATE + p for p in BASE[stage]])
+        prompt = adapter.prompt(phase, req, {'cwd': '/gate-reading-fixture'})
+        injected = verify_prompt(prompt, expected, read)
+        prompts[stage] = (prompt, injected)
+    result = {}
+    for key, paths in plan.items():
+        stage = 'legacy-all' if key.startswith('legacy-') else key.split('-', 1)[0]
+        prompt, injected = prompts[stage]
+        claude_paths = sorted(set(['agents/gate-runner.md'] + COMMON + paths))
+        result['claude/' + key] = ''.join(read(p) for p in claude_paths)
+        # phase review injects reviewer-brief only. review-run is a caller-side file.
+        extra = set(paths) - injected
+        if stage == 'review':
+            extra.discard(GATE + 'stages/review-run.md')
+        result['codex/' + key] = prompt + ''.join(read(p) for p in sorted(extra))
+    return result
+
+
+def parse_budgets(text, expected):
+    values = {}
+    for line in text.splitlines():
+        if line.startswith('#') or not line.strip():
+            continue
+        match = re.fullmatch(r'(\S+) ([1-9][0-9]*)', line)
+        assert match, ('invalid budget', line)
+        name, value = match.groups()
+        assert name not in values, ('duplicate profile', name)
+        values[name] = int(value)
+    assert set(values) == set(expected), ('profile inventory', set(values) ^ set(expected))
+    return values
+
+
+def check(values, budgets):
+    for name, text in values.items():
+        actual = len(text.encode())
+        budget = budgets[name]
+        assert actual <= budget, (name, actual, budget, 'over budget')
+        assert budget * 10 <= actual * 11, (name, actual, budget, 'more than 1.1x')
+
+
+def must_fail(fn):
+    try:
+        fn()
+    except (AssertionError, FileNotFoundError):
+        return
+    raise AssertionError('negative fixture unexpectedly passed')
+
+
+def fixtures(root):
+    values = {'profile': '日本語'}
+    actual = len(values['profile'].encode())
+    check(values, {'profile': actual})  # exact boundary
+    must_fail(lambda: check(values, {'profile': actual - 1}))  # +1 byte
+    must_fail(lambda: check(values, {'profile': actual * 2}))
+    for malformed in ['unknown 9', '', 'profile 9\nprofile 9', 'profile NaN', 'profile -1', 'profile 0']:
+        must_fail(lambda: parse_budgets(malformed, values))
+    assert parse_budgets('profile 9', values) == {'profile': 9}
+    body = '本文\n'; name = COMMON[0]
+    prompt = '\n\nCANONICAL SOURCE ' + name + ' sha256=' + hashlib.sha256(body.encode()).hexdigest() + '\n' + body
+    verify_prompt(prompt, [name], lambda _: body)
+    for bad in ['', prompt + prompt, prompt.replace('本文', '別文'), prompt.replace('sha256=', 'sha256=0')]:
+        must_fail(lambda: verify_prompt(bad, [name], lambda _: body))
+    must_fail(lambda: verify_prompt(prompt, [], lambda _: body))
+    with tempfile.TemporaryDirectory() as tmp:
+        fixture = Path(tmp)
+        shutil.copytree(root / PLUGIN / 'skills', fixture / PLUGIN / 'skills')
+        shutil.copytree(root / PLUGIN / 'agents', fixture / PLUGIN / 'agents')
+        # Reuse the real adapter code but read canonical sources in the fixture.
+        adapter = load_adapter(root)
+        adapter.ROOT = fixture / PLUGIN
+        plan = plans()
+        validate_inventory(fixture, plan)
+        added = fixture / PLUGIN / GATE / 'stages/unmeasured.md'
+        added.write_text('new conditional detail')
+        must_fail(lambda: validate_inventory(fixture, plan))
+        added.unlink()
+        target = fixture / PLUGIN / GATE / 'stages/prepare-light.md'
+        baseline = target.read_bytes()
+        budgets = {k: len(v.encode()) for k, v in measure(fixture, adapter).items()}
+        check(measure(fixture, adapter), budgets)
+        target.write_bytes(baseline + b'x')
+        must_fail(lambda: check(measure(fixture, adapter), budgets))
+        target.unlink()
+        must_fail(lambda: measure(fixture, adapter))
+        target.write_bytes(baseline)
+        canonical = fixture / PLUGIN / COMMON[0]
+        canonical.unlink()
+        must_fail(lambda: measure(fixture, adapter))
+
+
+
+def main():
+    mode, root = sys.argv[1], Path(sys.argv[2]).resolve()
+    if mode == 'fixtures':
+        fixtures(root)
+        return
+    values = measure(root)
+    if mode == 'measure':
+        print(json.dumps({k: [len(v), len(v.encode())] for k, v in values.items()}, ensure_ascii=False, indent=2))
+    else:
+        budgets = parse_budgets((root / 'tests/gate-reading-budget.txt').read_text(), values)
+        check(values, budgets)
+        print(f'{len(values)} profiles: byte budgets and canonical inventories passed')
+
+
+if __name__ == '__main__':
+    main()

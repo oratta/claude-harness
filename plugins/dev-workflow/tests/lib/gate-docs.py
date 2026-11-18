@@ -76,5 +76,6 @@ text = text[:index] + expand(detail.split('## 段ごとの起動と入力')[0], 
 (dest / 'GATE.md').write_text(text)
 
 # Wording-presence input covers every gate file, including newly moved details.
-paths = sorted(gate.rglob('*.md')) + [plugin / 'skills/develop/references/roles/gate-runner.md']
+paths = sorted(gate.rglob('*.md')) + sorted((plugin / 'skills/develop/references').rglob('*.md'))
+paths += [plugin / 'skills/develop/SKILL.md']
 (dest / 'ALL.md').write_text('\n'.join(p.read_text() for p in paths))
