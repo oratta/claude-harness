@@ -20,6 +20,7 @@
 ### Modified Capabilities
 
 - `dev-workflow-escalation-tripwires`: 要件「SessionStart hook がトリップワイヤーを常駐注入する」の出力の JSON の形を `hookSpecificOutput` 入りに改め、シナリオで `hookEventName` を確かめる
+- `dev-workflow-escalation-tripwires`: 要件「SubagentStart hook が dev-workflow の役に運用情報を注入する」の「`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外のときの出力は従来と変えない」を、出力の形は SessionStart の要件に従い、本文の中身と `subagent-budget` の本文テキスト出力は変えない、に改める。シナリオ「SessionStart の出力は変わらない」は名前を保ち（本文の中身が変わらないことを指す）、中身を`hookSpecificOutput.hookEventName` と `hookSpecificOutput.additionalContext` を見る形にする
 
 ## Impact
 
