@@ -39,67 +39,7 @@
     {
       "source": "skills/pr-review-gate/stages/hold.md",
       "line": 27,
-      "text": "bash <plugin>/scripts/risk-carryover-check.sh <前 HEAD> <新しい HEAD> <前の宣言の根拠ファイル>...   # --base の既定は origin/main。手順 1 の fetch と main の取り込みの後に回す"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "# 出力: CARRYOVER=yes|if-rereviewed|if-judged|no / MAIN_MERGES=<件数> / PR_COMMITS=<merge commit でない PR 自身の commit の件数>"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#       / RESOLVED_FILES=<衝突解消したファイル。無ければ none>"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#       / RESOLVED_OUTSIDE_ALLOWLIST=<許可リストの条件を満たさない衝突解消のファイル。1 行 1 件>"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#       / EVIDENCE_MAIN_ONLY=<前後で変わったが PR 自身の差分は同じで、PR 自身の commit が触れていない根拠ファイル。1 行 1 件>"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#       / EVIDENCE_PR_CHANGED=<PR 自身の差分が前後で違うか、PR 自身の commit が触れた根拠ファイル。1 行 1 件>"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#       / EVIDENCE_DIFF_LINES=<EVIDENCE_PR_CHANGED のファイルの前後の diff の追加と削除の合計。無ければ 0> / NG: <引き継げない理由>"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "# 終了コード: 0 = 無条件で引き継げる（PR_COMMITS=0 = main の取り込みだけなら、許可リスト外の衝突解消があっても 0。根拠ファイルは比べず EVIDENCE_MAIN_ONLY・EVIDENCE_PR_CHANGED の行を出さない）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#             / 3 = PR 全体を見た取り直しのレビューを経ていれば引き継げる（下の条件 1）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#             / 4 = 根拠ファイルの PR 自身の差分が前後で違うか、PR 自身の commit が根拠ファイルに触れた（下の「終了コード 4 の判定役」に比べさせる）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#             / 1 = 引き継げない / 2 = 引数・環境の不備（引き継げない側に倒す）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "# PR 自身の差分 = 各 HEAD と base の merge-base からのそのファイルの差分（main から入った変更を含まない）。比べ方は行の位置を見ないので、"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/hold.md",
-      "line": 27,
-      "text": "#   PR 自身の commit が根拠ファイルに触れたら差分が同じでも 4 にする（行を動かしただけの修正を main 由来と取り違えないため）"
+      "text": "```bash\nbash <plugin>/scripts/risk-carryover-check.sh <前 HEAD> <新しい HEAD> <前の宣言の根拠ファイル>...   # --base の既定は origin/main。手順 1 の fetch と main の取り込みの後に回す\n# 出力: CARRYOVER=yes|if-rereviewed|if-judged|no / MAIN_MERGES=<件数> / PR_COMMITS=<merge commit でない PR 自身の commit の件数>\n#       / RESOLVED_FILES=<衝突解消したファイル。無ければ none>\n#       / RESOLVED_OUTSIDE_ALLOWLIST=<許可リストの条件を満たさない衝突解消のファイル。1 行 1 件>\n#       / EVIDENCE_MAIN_ONLY=<前後で変わったが PR 自身の差分は同じで、PR 自身の commit が触れていない根拠ファイル。1 行 1 件>\n#       / EVIDENCE_PR_CHANGED=<PR 自身の差分が前後で違うか、PR 自身の commit が触れた根拠ファイル。1 行 1 件>\n#       / EVIDENCE_DIFF_LINES=<EVIDENCE_PR_CHANGED のファイルの前後の diff の追加と削除の合計。無ければ 0> / NG: <引き継げない理由>\n# 終了コード: 0 = 無条件で引き継げる（PR_COMMITS=0 = main の取り込みだけなら、許可リスト外の衝突解消があっても 0。根拠ファイルは比べず EVIDENCE_MAIN_ONLY・EVIDENCE_PR_CHANGED の行を出さない）\n#             / 3 = PR 全体を見た取り直しのレビューを経ていれば引き継げる（下の条件 1）\n#             / 4 = 根拠ファイルの PR 自身の差分が前後で違うか、PR 自身の commit が根拠ファイルに触れた（下の「終了コード 4 の判定役」に比べさせる）\n#             / 1 = 引き継げない / 2 = 引数・環境の不備（引き継げない側に倒す）\n# PR 自身の差分 = 各 HEAD と base の merge-base からのそのファイルの差分（main から入った変更を含まない）。比べ方は行の位置を見ないので、\n#   PR 自身の commit が根拠ファイルに触れたら差分が同じでも 4 にする（行を動かしただけの修正を main 由来と取り違えないため）\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/hold.md",
@@ -149,17 +89,7 @@
     {
       "source": "skills/pr-review-gate/stages/pass.md",
       "line": 106,
-      "text": "bash <plugin>/scripts/owner-reply-check.sh <セッション ID> <原文>"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 106,
-      "text": "# 出力: 一致した主の発言ごとに MATCH: <timestamp> <本文の全文> / 最後に MATCHES=<件数>"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 106,
-      "text": "# 終了コード: 0 = 主の発言として実在する / 1 = 実在しない / 2 = 確かめられない（引数の不備・この PC に会話ログが無い）"
+      "text": "```bash\nbash <plugin>/scripts/owner-reply-check.sh <セッション ID> <原文>\n# 出力: 一致した主の発言ごとに MATCH: <timestamp> <本文の全文> / 最後に MATCHES=<件数>\n# 終了コード: 0 = 主の発言として実在する / 1 = 実在しない / 2 = 確かめられない（引数の不備・この PC に会話ログが無い）\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",
@@ -168,8 +98,18 @@
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 132,
+      "text": "   ```bash\n   bash <plugin>/scripts/owner-reply-check.sh --relayed <セッション ID> <uuid> <停止の記録の作成日時> <停止の記録の URL>\n   # 出力: 通れば MATCH: <timestamp> <本文の全文> と MATCHES=1 / 通らなければ REASON=<理由> と MATCHES=0\n   # 終了コード: 0 = 通る / 1 = 通らない / 2 = 確かめられない（引数の不備・この PC に親の会話ログが無い）\n   # REASON: not-found（その uuid の行が無い）/ not-owner（主の入力でない行。ツールの結果・親の発言・要約・hook の差し込み・決まった頭の打ち込み）/ not-after（停止の記録より前の発言）/ not-asked（停止の記録より後でその行より前に、URL を書いた親の発言が無い）/ not-direct（URL を書いた最後の親の発言とその行のあいだに、別の主の発言がある）\n   ```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
       "line": 148,
       "text": "```\n主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 159,
+      "text": "   ```bash\n   bash <plugin>/scripts/owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時>\n   # 出力: 通れば MATCH: <timestamp> <本文の全文> と MATCHES=1 / 通らなければ REASON=<理由> と MATCHES=0\n   # 終了コード: 0 = 通る / 1 = 通らない / 2 = 確かめられない（引数の不備・この PC に親の会話ログが無い）\n   # REASON: not-found（その uuid の行が無い）/ not-owner（主の入力でない行）/ not-after（委任の記録より後でない発言）/ not-asked（委任の記録より後でその行より前に、委任の記録の URL を書いた親の発言が無い）/ not-before（停止の記録より前でない発言）。委任の記録の URL を書いた親の発言とその行のあいだに別の主の発言が挟まっても並び順では落とさない（issue #1653。挟まった別の話の発言を確認として拾わないよう、MATCH 行の全文から任せる意思を読む）\n   ```"
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",
@@ -179,152 +119,22 @@
     {
       "source": "skills/pr-review-gate/stages/pass.md",
       "line": 186,
-      "text": "HEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 186,
-      "text": "gh api repos/$R/issues/$N/comments --jq \\"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 186,
-      "text": "  \"[.[] | select(.body | contains(\\\"$HEAD_SHA\\\")) | .body | split(\\\"\\n\\\")[0]]\""
+      "text": "```bash\nHEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')\ngh api repos/$R/issues/$N/comments --jq \\\n  \"[.[] | select(.body | contains(\\\"$HEAD_SHA\\\")) | .body | split(\\\"\\n\\\")[0]]\"\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",
       "line": 197,
-      "text": "ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')"
+      "text": "```bash\nISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')\nREC=${ISSUE:-$N}   # 記録先の番号: issue 参照があればその issue、無ければ PR 自身\n# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する。\n# コメントは 30 件でページが切れるので --paginate --slurp で全ページを取り（--slurp は --jq と併用不可なので jq へパイプ）、add で 1 配列にしてから「最新 1 件」を選ぶ\ngh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様化判断: (する|しない)$\"))] | last | .body | split(\"\\n\")[0]'\ngh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様レビュー: (APPROVE|REQUEST_CHANGES)$\"))] | last | .body | split(\"\\n\")[0]'\n# 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）\nbash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし\n# 文言合わせの通し方かどうかは、同じ最新の仕様化判断のコメントの本文（2 行目以降）で見分ける\nDEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様化判断: (する|しない)$\"))] | last | .body')\nWAY=$(printf '%s\\n' \"$DEC\" | grep -cx '通し方: 文言合わせ')   # 1 以上なら文言合わせの通し方。0 件のとき grep の終了コードは 1 になるので、終了コードではなく出力の値で判定する\nFIXES=$(printf '%s\\n' \"$DEC\" | grep '^直す文: ')             # 直す要件ごとに 1 行\necho \"$WAY\"; printf '%s\\n' \"$FIXES\""
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "REC=${ISSUE:-$N}   # 記録先の番号: issue 参照があればその issue、無ければ PR 自身"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する。"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "# コメントは 30 件でページが切れるので --paginate --slurp で全ページを取り（--slurp は --jq と併用不可なので jq へパイプ）、add で 1 配列にしてから「最新 1 件」を選ぶ"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様化判断: (する|しない)$\"))] | last | .body | split(\"\\n\")[0]'"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様レビュー: (APPROVE|REQUEST_CHANGES)$\"))] | last | .body | split(\"\\n\")[0]'"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "# 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "bash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "# 文言合わせの通し方かどうかは、同じ最新の仕様化判断のコメントの本文（2 行目以降）で見分ける"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様化判断: (する|しない)$\"))] | last | .body')"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "WAY=$(printf '%s\\n' \"$DEC\" | grep -cx '通し方: 文言合わせ')   # 1 以上なら文言合わせの通し方。0 件のとき grep の終了コードは 1 になるので、終了コードではなく出力の値で判定する"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "FIXES=$(printf '%s\\n' \"$DEC\" | grep '^直す文: ')             # 直す要件ごとに 1 行"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "echo \"$WAY\"; printf '%s\\n' \"$FIXES\""
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "# ここから下の 3 本は WAY が 1 以上のときだけ実行する。場所は PR の HEAD の作業ツリー（git rev-parse HEAD の出力が $HEAD_SHA と一致すること）。CHANGE には仕様宣言が指す change 名を入れる"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "ls openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md | wc -l          # ちょうど 1（archive 済みで、差分が 1 ファイル）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "grep -cE '^## (ADDED|REMOVED|RENAMED) Requirements' openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md   # 0（ここも終了コードではなく出力の値で判定する）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 197,
-      "text": "grep -h '^### Requirement: ' openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md | sed 's/^### Requirement: //' | while IFS= read -r REQ; do printf '%s\\n' \"$FIXES\" | grep -qF \"「${REQ}」\" || echo \"直す文に無い要件: ${REQ}\"; done   # 何も出力されなければ、要件名はすべて直す文の行にある"
+      "line": 211,
+      "text": "# ここから下の 3 本は WAY が 1 以上のときだけ実行する。場所は PR の HEAD の作業ツリー（git rev-parse HEAD の出力が $HEAD_SHA と一致すること）。CHANGE には仕様宣言が指す change 名を入れる\nls openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md | wc -l          # ちょうど 1（archive 済みで、差分が 1 ファイル）\ngrep -cE '^## (ADDED|REMOVED|RENAMED) Requirements' openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md   # 0（ここも終了コードではなく出力の値で判定する）\ngrep -h '^### Requirement: ' openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md | sed 's/^### Requirement: //' | while IFS= read -r REQ; do printf '%s\\n' \"$FIXES\" | grep -qF \"「${REQ}」\" || echo \"直す文に無い要件: ${REQ}\"; done   # 何も出力されなければ、要件名はすべて直す文の行にある\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",
       "line": 241,
-      "text": "gh api repos/$R/issues/$N --jq '.labels[].name'   # needs-approval が無いことを確認（あれば上のとおり）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "DRAFT=$(gh api repos/$R/pulls/$N --jq .draft)"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "case \"$DRAFT\" in true|false) ;; *) echo \"draft を取得できない（$DRAFT）。passed を付けずに中断する\" >&2; exit 1 ;; esac"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "if [ \"$DRAFT\" = true ]; then   # Draft なら Ready にする。失敗したら passed を付けずに中断する"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "  gh pr ready $N --repo $R || { echo \"gh pr ready に失敗。passed を付けずに中断する\" >&2; exit 1; }"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "fi"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "gh api -X DELETE repos/$R/issues/$N/labels/agent-review:pending"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "gh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認（ラベル）"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/pass.md",
-      "line": 241,
-      "text": "gh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）"
+      "text": "```bash\ngh api repos/$R/issues/$N --jq '.labels[].name'   # needs-approval が無いことを確認（あれば上のとおり）\nDRAFT=$(gh api repos/$R/pulls/$N --jq .draft)\ncase \"$DRAFT\" in true|false) ;; *) echo \"draft を取得できない（$DRAFT）。passed を付けずに中断する\" >&2; exit 1 ;; esac\nif [ \"$DRAFT\" = true ]; then   # Draft なら Ready にする。失敗したら passed を付けずに中断する\n  gh pr ready $N --repo $R || { echo \"gh pr ready に失敗。passed を付けずに中断する\" >&2; exit 1; }\nfi\ngh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'\ngh api -X DELETE repos/$R/issues/$N/labels/agent-review:pending\ngh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認（ラベル）\ngh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",
@@ -333,38 +143,38 @@
     },
     {
       "source": "skills/pr-review-gate/stages/prepare.md",
-      "line": 100,
-      "text": "gh pr diff $N --name-only                       # 変更ファイル一覧"
+      "line": 28,
+      "text": "   ```bash\n   if gh api repos/$R/issues/$N --jq '.labels[].name' | grep -qx 'agent-review:passed'; then   # passed が付いていたら\n     gh api -X DELETE repos/$R/issues/$N/labels/agent-review:passed                           # 外して\n     if [ \"$(gh api repos/$R/pulls/$N --jq .draft)\" = false ]; then gh pr ready --undo $N --repo $R; fi   # 非 Draft なら Draft に戻す\n   fi\n   ```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 35,
+      "text": "   ```bash\n   ISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')\n   if [ -n \"$ISSUE\" ]; then gh api repos/$R/issues/$ISSUE --jq '.body'; else gh api repos/$R/pulls/$N --jq '.body'; fi\n   ```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 41,
+      "text": "   ```bash\n   HEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')\n   ```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 47,
+      "text": "   ```bash\n   DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.author_association | IN(\"OWNER\", \"MEMBER\", \"COLLABORATOR\")) | select(.body | split(\"\\n\")[0] | test(\"^仕様化判断: (する|しない)$\"))] | last | .body')\n   LIGHT=$(printf '%s\\n' \"$DEC\" | grep -cx '通し方: 軽い')\n   if [ \"$LIGHT\" -ge 1 ]; then\n     printf '%s\\n' \"$DEC\" | head -1\n     KIND=$(printf '%s\\n' \"$DEC\" | sed -n 's/^種類: //p')\n     printf '%s\\n' \"$KIND\"\n     CHECK_COUNT=$(printf '%s\\n' \"$DEC\" | grep -c '^確かめ方: ')\n     printf '%s\\n' \"$CHECK_COUNT\"\n     FILES=$(gh api --paginate repos/$R/pulls/$N/files --jq '.[] | \"\\(.additions) \\(.deletions) \\(.filename)\"' | grep -vE ' ([^ ]*/)?changes/[0-9]+\\.md$')\n     SPEC_COUNT=$(printf '%s\\n' \"$FILES\" | grep -c ' openspec/')\n     printf '%s\\n' \"$SPEC_COUNT\"\n     printf '%s\\n' \"$FILES\" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}'\n     KIND_COUNT=$(printf '%s\\n' \"$DEC\" | grep -c '^種類: ')\n     printf '種類の行数=%s\\n' \"$KIND_COUNT\"\n     MACHINE_RESULT=条件内\n     [ \"$(printf '%s\\n' \"$DEC\" | head -1)\" = '仕様化判断: しない' ] &&\n       [ \"$KIND_COUNT\" -eq 1 ] && [ \"$CHECK_COUNT\" -eq 1 ] &&\n       [ \"$(printf '%s\\n' \"$DEC\" | grep -c '^確かめ方: .')\" -eq 1 ] &&\n       [ \"$SPEC_COUNT\" -eq 0 ] || MACHINE_RESULT=条件外\n     case \"$KIND\" in\n       typo|lint|コメント|フォーマット|設定値) ;;\n       'ワンライナー fix')\n         read -r COUNT ADDED DELETED <<< \"$(printf '%s\\n' \"$FILES\" | awk 'NF {n++; a+=$1; d+=$2} END {print n+0, a+0, d+0}')\"\n         [ \"$COUNT\" -eq 1 ] && [ \"$ADDED\" -le 1 ] && [ \"$DELETED\" -le 1 ] || MACHINE_RESULT=条件外 ;;\n       *) MACHINE_RESULT=条件外 ;;\n     esac\n     printf 'MACHINE_RESULT=%s\\n' \"$MACHINE_RESULT\"\n     if [ \"$MACHINE_RESULT\" = 条件外 ]; then\n       printf '%s\\n' '軽い通し方の確認: 条件外' \"対象 HEAD: $HEAD_SHA\" '機械で測る点: 条件外'\n       printf '%s\\n' 'Status: failed' '次の段: 前提確認と重さ判定' '原因: 軽い通し方の条件外'\n     fi\n   fi\n   ```"
     },
     {
       "source": "skills/pr-review-gate/stages/prepare.md",
       "line": 100,
-      "text": "gh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除）"
+      "text": "```bash\ngh pr diff $N --name-only                       # 変更ファイル一覧\ngh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除）\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/prepare.md",
       "line": 121,
-      "text": "f=\"$(mktemp)\""
-    },
-    {
-      "source": "skills/pr-review-gate/stages/prepare.md",
-      "line": 121,
-      "text": "gh api repos/$R/pulls/$N/files --paginate --jq '.[] | \"\\(.additions + .deletions)\\t\\(.filename)\"' > \"$f\" || { echo \"gh api 失敗: 区画を推測せず止める\"; exit 1; }"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/prepare.md",
-      "line": 121,
-      "text": "${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh < \"$f\""
+      "text": "```bash\nf=\"$(mktemp)\"\ngh api repos/$R/pulls/$N/files --paginate --jq '.[] | \"\\(.additions + .deletions)\\t\\(.filename)\"' > \"$f\" || { echo \"gh api 失敗: 区画を推測せず止める\"; exit 1; }\n${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh < \"$f\"\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/prepare.md",
       "line": 131,
-      "text": "gh api -X POST repos/$R/issues/$N/comments \\"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/prepare.md",
-      "line": 131,
-      "text": "  -f body=\"$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\\n固定 HEAD: %s\\n合計: 12 行\\n区画: なし\\n担当セッション: %s' \"$HEAD\" \"${CLAUDE_CODE_SESSION_ID:-不明}\")\""
+      "text": "```bash\ngh api -X POST repos/$R/issues/$N/comments \\\n  -f body=\"$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\\n固定 HEAD: %s\\n合計: 12 行\\n区画: なし\\n担当セッション: %s' \"$HEAD\" \"${CLAUDE_CODE_SESSION_ID:-不明}\")\"\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/prepare.md",
@@ -389,12 +199,7 @@
     {
       "source": "skills/pr-review-gate/stages/triage.md",
       "line": 166,
-      "text": "gh api -X POST repos/$R/issues/$N/comments \\"
-    },
-    {
-      "source": "skills/pr-review-gate/stages/triage.md",
-      "line": 166,
-      "text": "  -f body='決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）'"
+      "text": "```bash\ngh api -X POST repos/$R/issues/$N/comments \\\n  -f body='決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）'\n```"
     },
     {
       "source": "skills/pr-review-gate/stages/triage.md",
@@ -404,12 +209,7 @@
     {
       "source": "skills/pr-review-gate/stages/triage.md",
       "line": 235,
-      "text": "body=\"$(gh api repos/$R/issues/comments/<コメント ID> --jq .body)\""
-    },
-    {
-      "source": "skills/pr-review-gate/stages/triage.md",
-      "line": 235,
-      "text": "printf '%s\\n' \"$body\" | tail -n +4 >> <table-file>"
+      "text": "```bash\nbody=\"$(gh api repos/$R/issues/comments/<コメント ID> --jq .body)\"\nprintf '%s\\n' \"$body\" | tail -n +4 >> <table-file>\n```"
     }
   ]
 }

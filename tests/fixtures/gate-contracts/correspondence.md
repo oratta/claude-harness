@@ -14,18 +14,6 @@ The parent-fetch paragraph at triage:106 is preserved as three original fragment
 | fence | skills/pr-review-gate/declarations.md:137 | skills/pr-review-gate/declarations.md |
 | fence | skills/pr-review-gate/declarations.md:147 | skills/pr-review-gate/declarations.md |
 | fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
-| fence | skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md |
 | fence | skills/pr-review-gate/stages/hold.md:56 | skills/pr-review-gate/stages/carryover.md |
 | fence | skills/pr-review-gate/stages/hold.md:83 | skills/pr-review-gate/stages/carryover-judge.md |
 | fence | skills/pr-review-gate/stages/hold.md:107 | skills/pr-review-gate/stages/no-point-check.md |
@@ -35,58 +23,30 @@ The parent-fetch paragraph at triage:106 is preserved as three original fragment
 | fence | skills/pr-review-gate/stages/pass.md:54 | skills/pr-review-gate/stages/pass.md |
 | fence | skills/pr-review-gate/stages/pass.md:91 | skills/pr-review-gate/stages/authenticity.md |
 | fence | skills/pr-review-gate/stages/pass.md:100 | skills/pr-review-gate/stages/authenticity-conversation.md |
-| fence | skills/pr-review-gate/stages/pass.md:106 | skills/pr-review-gate/stages/authenticity-conversation.md, skills/pr-review-gate/stages/issue-approved.md |
-| fence | skills/pr-review-gate/stages/pass.md:106 | skills/pr-review-gate/stages/authenticity-conversation.md |
 | fence | skills/pr-review-gate/stages/pass.md:106 | skills/pr-review-gate/stages/authenticity-conversation.md |
 | fence | skills/pr-review-gate/stages/pass.md:123 | skills/pr-review-gate/stages/authenticity-relayed.md |
+| fence | skills/pr-review-gate/stages/pass.md:132 | skills/pr-review-gate/stages/authenticity-relayed.md |
 | fence | skills/pr-review-gate/stages/pass.md:148 | skills/pr-review-gate/stages/authenticity-delegated.md |
+| fence | skills/pr-review-gate/stages/pass.md:159 | skills/pr-review-gate/stages/authenticity-delegated.md |
 | fence | skills/pr-review-gate/stages/pass.md:172 | skills/pr-review-gate/stages/issue-approved.md |
-| fence | skills/pr-review-gate/stages/pass.md:186 | skills/pr-review-gate/stages/prepare.md, skills/pr-review-gate/stages/pass.md |
 | fence | skills/pr-review-gate/stages/pass.md:186 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:186 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/prepare.md, skills/pr-review-gate/stages/pass.md |
 | fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass-wording.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass-wording.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass-wording.md |
-| fence | skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass-wording.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/declarations.md, skills/pr-review-gate/SKILL.md, skills/pr-review-gate/stages/triage-row3.md, skills/pr-review-gate/stages/comment-parts.md, skills/pr-review-gate/stages/prepare-partitions.md, skills/pr-review-gate/stages/triage.md, skills/pr-review-gate/stages/prepare.md, skills/pr-review-gate/stages/prepare-light.md, skills/pr-review-gate/stages/triage-escalation.md, skills/pr-review-gate/stages/gate-triage.md, skills/pr-review-gate/stages/reviewer-brief.md, skills/pr-review-gate/stages/pass.md, skills/pr-review-gate/stages/review-run.md, skills/pr-review-gate/stages/triage-convergence.md, skills/pr-review-gate/stages/gate-triage-partitions.md, skills/develop/references/light-path.md, skills/develop/references/spec-decision.md, skills/develop/references/parent-pass-criteria.md, skills/develop/references/epic-child-stop.md, skills/develop/references/epic.md, skills/develop/references/fix-check.md, skills/develop/references/decision-criteria.md, skills/develop/references/reply-after-idle.md, skills/develop/references/handover.md, skills/develop/references/channel.md, skills/develop/references/roles/gate-runner.md, skills/develop/references/roles/spec-reviewer.md, skills/develop/references/roles/worker.md, skills/develop/references/roles/worker/implement.md, skills/develop/references/roles/worker/common.md, skills/develop/references/roles/worker/finish.md, skills/develop/references/roles/worker/spec.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
-| fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
+| fence | skills/pr-review-gate/stages/pass.md:211 | skills/pr-review-gate/stages/pass-wording.md |
 | fence | skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md |
 | fence | skills/pr-review-gate/stages/pass.md:295 | skills/pr-review-gate/stages/pass.md |
+| fence | skills/pr-review-gate/stages/prepare.md:28 | skills/pr-review-gate/stages/prepare.md |
+| fence | skills/pr-review-gate/stages/prepare.md:35 | skills/pr-review-gate/stages/prepare.md |
+| fence | skills/pr-review-gate/stages/prepare.md:41 | skills/pr-review-gate/stages/prepare.md |
+| fence | skills/pr-review-gate/stages/prepare.md:47 | skills/pr-review-gate/stages/prepare-light.md |
 | fence | skills/pr-review-gate/stages/prepare.md:100 | skills/pr-review-gate/stages/prepare.md |
-| fence | skills/pr-review-gate/stages/prepare.md:100 | skills/pr-review-gate/stages/prepare.md |
 | fence | skills/pr-review-gate/stages/prepare.md:121 | skills/pr-review-gate/stages/prepare.md |
-| fence | skills/pr-review-gate/stages/prepare.md:121 | skills/pr-review-gate/stages/prepare.md |
-| fence | skills/pr-review-gate/stages/prepare.md:121 | skills/pr-review-gate/stages/prepare.md |
-| fence | skills/pr-review-gate/stages/prepare.md:131 | skills/pr-review-gate/stages/prepare.md, skills/pr-review-gate/stages/triage-escalation.md |
 | fence | skills/pr-review-gate/stages/prepare.md:131 | skills/pr-review-gate/stages/prepare.md |
 | fence | skills/pr-review-gate/stages/prepare.md:150 | skills/pr-review-gate/stages/prepare-reviewer.md |
 | fence | skills/pr-review-gate/stages/review-run.md:40 | skills/pr-review-gate/stages/review-run.md |
 | fence | skills/pr-review-gate/stages/review-run.md:76 | skills/pr-review-gate/stages/review-run.md |
 | fence | skills/pr-review-gate/stages/reviewer-brief.md:25 | skills/pr-review-gate/stages/reviewer-brief.md |
-| fence | skills/pr-review-gate/stages/triage.md:166 | skills/pr-review-gate/stages/prepare.md, skills/pr-review-gate/stages/triage-escalation.md |
 | fence | skills/pr-review-gate/stages/triage.md:166 | skills/pr-review-gate/stages/triage-escalation.md |
 | fence | skills/pr-review-gate/stages/triage.md:181 | skills/pr-review-gate/stages/triage.md |
-| fence | skills/pr-review-gate/stages/triage.md:235 | skills/pr-review-gate/stages/comment-parts.md |
 | fence | skills/pr-review-gate/stages/triage.md:235 | skills/pr-review-gate/stages/comment-parts.md |
 | prose | skills/develop/references/roles/gate-runner.md:54 | skills/pr-review-gate/stages/gate-triage.md |
 | prose | skills/develop/references/roles/gate-runner.md:77 | skills/develop/references/roles/gate-runner.md |
@@ -509,6 +469,10 @@ Additional negative/exit constraints (しない・禁止・不可・失敗・戻
 | prose | skills/pr-review-gate/stages/triage.md:246 | skills/pr-review-gate/stages/comment-parts.md |
 | prose | skills/pr-review-gate/stages/triage.md:247 | skills/pr-review-gate/stages/comment-parts.md |
 | prose | skills/pr-review-gate/stages/triage.md:251 | skills/pr-review-gate/stages/comment-parts.md |
+| prose | skills/pr-review-gate/stages/prepare.md:22 | skills/pr-review-gate/stages/prepare.md |
+| prose | skills/pr-review-gate/stages/pass.md:226 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:232 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/hold.md:142 | skills/pr-review-gate/stages/hold-resume.md |
 
 Reference-only exceptions: gate-runner:19 adds the conditional prepare-reviewer source; prepare:184 redirects the needs-reviewer return to prepare-reviewer. Those routing conditions and exits remain checked by related bats.
 
@@ -545,3 +509,30 @@ The expected prose below was updated only where the referenced file or section m
 | skills/pr-review-gate/stages/hold.md:200 | ∅ → （`stages/hold.md`） |
 | skills/pr-review-gate/stages/triage.md:99 | 段 → このファイルの、エピックに属するかを記録先; C → issue; ∅ → 親から決める |
 | skills/pr-review-gate/stages/triage.md:121 | 段 → このファイルの、エピックに属するかを記録先; C → issue; ∅ → 親から決める |
+
+## Gate round 1 block and stop-condition additions (#1687)
+
+Each fenced template is one expectation holding the whole fence (indentation and line breaks included), so editing, deleting or reordering any line inside it fails. Fixed main is the revision above.
+
+| Fixed source:line | Current location | Change |
+|---|---|---|
+| skills/pr-review-gate/stages/prepare.md:28 | skills/pr-review-gate/stages/prepare.md | indented fence added as one block |
+| skills/pr-review-gate/stages/prepare.md:35 | skills/pr-review-gate/stages/prepare.md | indented fence added as one block |
+| skills/pr-review-gate/stages/prepare.md:41 | skills/pr-review-gate/stages/prepare.md | indented fence added as one block |
+| skills/pr-review-gate/stages/prepare.md:47 | skills/pr-review-gate/stages/prepare-light.md | indented fence added as one block |
+| skills/pr-review-gate/stages/pass.md:132 | skills/pr-review-gate/stages/authenticity-relayed.md | indented fence added as one block |
+| skills/pr-review-gate/stages/pass.md:159 | skills/pr-review-gate/stages/authenticity-delegated.md | indented fence added as one block |
+| skills/pr-review-gate/stages/hold.md:27 | skills/pr-review-gate/stages/carryover.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/pass.md:106 | skills/pr-review-gate/stages/authenticity-conversation.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/pass.md:186 | skills/pr-review-gate/stages/pass.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/pass.md:241 | skills/pr-review-gate/stages/pass.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/prepare.md:100 | skills/pr-review-gate/stages/prepare.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/prepare.md:121 | skills/pr-review-gate/stages/prepare.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/prepare.md:131 | skills/pr-review-gate/stages/prepare.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/triage.md:166 | skills/pr-review-gate/stages/triage-escalation.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/triage.md:235 | skills/pr-review-gate/stages/comment-parts.md | per-line entries merged into one whole-fence block |
+| skills/pr-review-gate/stages/pass.md:197 | skills/pr-review-gate/stages/pass.md (lines 197–210 of the fixed fence), skills/pr-review-gate/stages/pass-wording.md (lines 211–215) | intended split: the record/spec checks stay in pass.md, the wording-sync checks move to pass-wording.md; each contiguous part is one block |
+| skills/pr-review-gate/stages/prepare.md:22–27 | skills/pr-review-gate/stages/prepare.md | stop-condition paragraph added as one prose block (lines already listed one by one stay) |
+| skills/pr-review-gate/stages/pass.md:226–230 | skills/pr-review-gate/stages/pass.md | stop-condition paragraph added as one prose block (lines already listed one by one stay) |
+| skills/pr-review-gate/stages/pass.md:232–239 | skills/pr-review-gate/stages/pass.md | stop-condition paragraph added as one prose block (lines already listed one by one stay) |
+| skills/pr-review-gate/stages/hold.md:142–144 | skills/pr-review-gate/stages/hold-resume.md | stop-condition paragraph added as one prose block (lines already listed one by one stay) |

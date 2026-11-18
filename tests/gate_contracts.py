@@ -99,6 +99,40 @@ def main(mode, root):
                 pass
             else:
                 raise AssertionError('global deletion escaped the real wording checker')
+        # Whole fences and stop paragraphs: mutate a copy of the real procedures.
+        with tempfile.TemporaryDirectory() as tmp:
+            fixture = Path(tmp)
+            shutil.copytree(root / 'tests/fixtures/gate-contracts',
+                            fixture / 'tests/fixtures/gate-contracts')
+            shutil.copytree(root / 'plugins/dev-workflow/skills',
+                            fixture / 'plugins/dev-workflow/skills')
+            stages = fixture / 'plugins/dev-workflow/skills/pr-review-gate/stages'
+            check_contracts(fixture)
+            ready = ('if [ "$DRAFT" = true ]; then   # Draft なら Ready にする。失敗したら passed を付けずに中断する\n'
+                     '  gh pr ready $N --repo $R || { echo "gh pr ready に失敗。passed を付けずに中断する" >&2; exit 1; }\n'
+                     'fi\n')
+            label = "gh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'\n"
+            for name, old, changed in [
+                # The light-path failed output in an indented fence.
+                ('prepare-light', "'Status: failed' '次の段: 前提確認と重さ判定'",
+                 "'Status: failed' '次の段: 合格処理'"),
+                # A stop condition paragraph line.
+                ('pass', '**PR が Draft なら Ready にしてから `agent-review:passed` を付ける**（この順序を入れ替えない）。\n', ''),
+                # Reorder lines inside the passed-label block (label before Ready).
+                ('pass', ready + label, label + ready),
+            ]:
+                path = stages / (name + '.md')
+                baseline = path.read_text()
+                assert old in baseline, (name, old)
+                path.write_text(baseline.replace(old, changed, 1))
+                try:
+                    check_contracts(fixture)
+                except AssertionError:
+                    pass
+                else:
+                    raise AssertionError(('mutation escaped the wording checker', name, old))
+                path.write_text(baseline)
+            check_contracts(fixture)
 
 
 if __name__ == '__main__':

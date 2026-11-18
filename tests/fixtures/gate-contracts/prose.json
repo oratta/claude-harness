@@ -1699,6 +1699,26 @@
       "source": "skills/pr-review-gate/stages/triage.md",
       "line": 251,
       "text": "**1 行で部分に収まらないとき**: 1 行だけで部分に収まらない行（ミニファイされたファイルのヒットなど）があれば、そのコメントを投稿しない。W は投稿も push もせず、return で本体に報告する。G は補足の `needs-reviewer` を返さず、Status `review-incomplete` で return する（回数の記録が残らないまま補足を頼むと、補足済み回数が 0 に戻るため）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 22,
+      "text": "   このとき **`needs-approval` の要否も判断する** — 保留理由が解消しているなら\n   `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外し、\n   まだ主の許容待ちが残っているなら**付けたまま**にして手順6を続行する。黙って持ち越さない。\n2. **stale な `agent-review:passed` を必ず外す**（理由はこのファイルの「前提と理由」の stale passed）。外してからレビューを始める（合格なら手順5で付け直す）。\n   passed を外したら、PR が Draft でなければ `gh pr ready --undo` で Draft に戻す（手順5の合格処理で Ready にした PR に commit が積まれた取り直しのあいだ、周回ごとに CI を走らせないため。次の合格で Ready に戻る）。\n   passed が付いていなかったとき（初回のゲート・failed からの再レビュー・保留からの再開）は Draft に戻さない（人間が非 Draft で作った PR を、failed や保留のまま Draft に残さないため）:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 226,
+      "text": "**`needs-approval` が付いていないことを、Ready 化より前に確認する。** auto-merge は `needs-approval` を\nBLOCKING_LABELS に含むため無審査マージにはならないが、**passed と併存すると\n「合格済みなのに永久にマージされないスタック」**になり、Ready 化だけ済ませると保留中の PR が Draft でなくなる。\n保留理由が解消しているなら `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外してから進む。\n解消していないなら**そもそも合格処理をしない**（手順6に戻る）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 232,
+      "text": "**PR が Draft なら Ready にしてから `agent-review:passed` を付ける**（この順序を入れ替えない）。\npassed を先に付けると、その labeled イベントは PR が draft なので auto-merge workflow にスキップされる。\nReady 化で CI が走るリポでは CI 完了で拾い直されるが、CI を Draft 中に済ませて Ready 化では走らせないリポでは\n次の判定が日次の schedule まで来ず、合格からマージまで最大 24 時間待つ。\nDraft でない PR（人間が作った PR など）には Ready 化を行わない。\n**Ready 化に失敗したら passed を付けずに止まる**（下の断片は非 0 で終わる）。draft のまま passed を付けると\nその labeled イベントはスキップされて消費され、あとで Ready 化をやり直しても新しい labeled は起きないため、\nReady 化で CI が走らないリポでは日次の schedule まで拾われない。`draft` が取れなかったときも同じく止まる。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 142,
+      "text": "- **`needs-approval` を黙って持ち越さない。** 上の表のどの経路を通っても、その時点で\n  「保留理由が解消したか」を必ず判断し、**外す / 付けたままにする のどちらかを明示的に選ぶ**。\n  判断を書かずに次の工程へ進むことを禁じる（放置すると、合格しても auto-merge されないスタック PR になる）。"
     }
   ],
   "commands": [
