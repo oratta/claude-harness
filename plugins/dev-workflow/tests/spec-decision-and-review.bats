@@ -16,7 +16,8 @@ setup() {
   WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker/spec.md"
   REF="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
   FIX_CHECK="${PLUGIN_DIR}/skills/develop/references/fix-check.md"
-  CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  CRITERIA="${PLUGIN_DIR}/skills/develop/references/spec-decision.md"
+  BUDGET_DC="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
@@ -363,8 +364,10 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
 }
 
 @test "review model: reserve only for automatic runs, exhausted for all paths" {
-  { section "$SKILL" 'モデル'; cat "$REF"; } | grep -qE 'reserve.*自動実行'
-  { section "$SKILL" 'モデル'; cat "$REF"; } | grep -qE 'exhausted.*(全経路|すべて)'
+  # 値ごとの上限は decision-criteria.md の優先順位の表が正本（#1683）。R1 の指示書はそこを 1 行で指す
+  grep -qF '優先順位の表は `skills/develop/references/decision-criteria.md`' "$REF"
+  grep -F '| `reserve`' "$BUDGET_DC" | grep -qF '自動実行'
+  grep -F '| `exhausted`' "$BUDGET_DC" | grep -qF '全経路'
 }
 
 # --- 配布 ---

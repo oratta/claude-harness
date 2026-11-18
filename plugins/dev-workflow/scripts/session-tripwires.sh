@@ -107,7 +107,7 @@ except Exception:
 mode, source = modes["fable"]["shown"], modes["fable"]["source"]
 shared, shared_source = modes["shared"]["shown"], modes["shared"]["source"]
 
-# 効果の文は decision-criteria.md の残量モード表・共有枠モード表と、model-tier-resolution の
+# 効果の文は decision-criteria.md の残量モードと共有枠モードの優先順位の表と、model-tier-resolution の
 # 「残量モードを格に適用する」の格の語（最安・中位・上位・最上位）に合わせ、Claude のモデル名を添える。
 EFFECT = {
     "abundant": "どの役割の既定も上げない（Fable が使われる経路は決める役 subagent_type: dev-workflow:decider だけ）。余った Fable 枠は人間の対話と verify に回す。",

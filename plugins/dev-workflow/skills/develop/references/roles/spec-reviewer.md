@@ -20,8 +20,8 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 |---|---|
 | 判断記録の 1 行目 | 正規表現 `^仕様化判断: (する|しない)$` に完全一致。太字・全角コロン・末尾句点などの装飾を含めない |
 | レビュー結果の 1 行目 | 正規表現 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$` に完全一致。照合側は**最新のレビュー結果**が APPROVE であることを見る（件数ではない） |
-| 文言合わせの通し方の行 | 正規表現 `^通し方: 文言合わせ$` に完全一致する 1 行を、仕様化判断（`する`）のコメントの 2 行目以降に置く。直す要件ごとに `直す文: <spec のパス>「<要件名>」— <どう直すか>` の形の行を 1 行ずつ書く。この行がある判断では本体は R1 を起こさず、記録先に `仕様レビュー:` のコメントは無い。照合側は最新の仕様化判断のコメントの本文からこの行を読む。当てる条件の正本は `references/decision-criteria.md` Step B |
-| 軽い通し方の行 | 本体が `仕様化判断: しない` のコメントの 2 行目以降に、`^通し方: 軽い$`・`^種類: (typo|lint|コメント|フォーマット|ワンライナー fix|設定値)$`・`^確かめ方: .+` に当たる行を各 1 行置く。確かめ方は既存のテストかチェックのコマンド 1 つ。この行がある判断では R1 は起こされない。照合側は pr-review-gate の前提確認の段で最新の仕様化判断のコメントの本文から読む。当てる条件は `references/decision-criteria.md` Step B |
+| 文言合わせの通し方の行 | 正規表現 `^通し方: 文言合わせ$` に完全一致する 1 行を、仕様化判断（`する`）のコメントの 2 行目以降に置く。直す要件ごとに `直す文: <spec のパス>「<要件名>」— <どう直すか>` の形の行を 1 行ずつ書く。この行がある判断では本体は R1 を起こさず、記録先に `仕様レビュー:` のコメントは無い。照合側は最新の仕様化判断のコメントの本文からこの行を読む。当てる条件の正本は `references/spec-decision.md` Step B |
+| 軽い通し方の行 | 本体が `仕様化判断: しない` のコメントの 2 行目以降に、`^通し方: 軽い$`・`^種類: (typo|lint|コメント|フォーマット|ワンライナー fix|設定値)$`・`^確かめ方: .+` に当たる行を各 1 行置く。確かめ方は既存のテストかチェックのコマンド 1 つ。この行がある判断では R1 は起こされない。照合側は pr-review-gate の前提確認の段で最新の仕様化判断のコメントの本文から読む。当てる条件は `references/light-path.md` |
 | 記録先 | 元 issue のコメント。issue が無い依頼では Draft PR 自身のコメント（develop の入口 0。軽い通し方だけ本体が、それ以外は W が先に作る） |
 | 照合のしかた | `gh api --paginate --slurp … | jq -r 'add | …'` で**全ページ**を取り（`--slurp` は `--jq` と併用できない）、`body | split("\n")[0] | test("^…$")` のように**1 行目を切り出してから**正規表現に掛け、`last` で最新 1 件を選ぶ（jq の `^` `$` は文字列全体の先頭・末尾にしか掛からない。コメントは 30 件でページが切れる） |
 | 同接頭辞のコメントが複数あるとき | 作成日時が**最新の 1 件**を正とする（判定のやり直しを許す） |
@@ -31,7 +31,7 @@ R1 は develop の本体が spawn するサブエージェント（W とは別�
 
 - 記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行（上の「判断記録の契約」）があるときは、本体は R1 を spawn しない。R1 が起こされるのは、この行が無い `仕様化判断: する` のときだけ
 - **モデルは必ず明示する**（Agent ツールの `model` パラメータ）。値は `codex-develop.py request --phase spec-review` が返す `model` を使う。既定は `subagent_type: general-purpose` に `model: opus`。仕様が `references/pre-classification.md` の「重要実装の事前分類」表の分類（マージ権限・層間契約・課金/法務。正本はそこ）に当たる場合は `--pre-class` を渡し、`request` が返す `role: decider` で **`subagent_type: dev-workflow:decider` で spawn する**（`general-purpose` に `model: fable` を付けない。`scripts/agent-model-guard.sh` が拒否する）。聖域パスだけでは上げない。ただし共有枠モードが上限を先に決める（次項）
-- モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 上限・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類（マージ権限・層間契約・課金/法務）による `dev-workflow:decider`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限。このとき種別は `dev-workflow:decider` のまま `model: opus` に落とす）。適用は `request` が行い、正本は `references/decision-criteria.md`。 interactive の `reserve` は `conserve` と同一に扱う（仕様レビューは verify 側の役割なので決める役として立ててよい）。`throttled` では事前分類に当たっても `opus` 止まり、`depleted` では `sonnet`
+- 残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`
 - R1 は**読み取り専用**。仕様ファイル・コードを一切変更しない（修正は本体が W を再開して行わせる）
 
 ## レビュアーへの入力

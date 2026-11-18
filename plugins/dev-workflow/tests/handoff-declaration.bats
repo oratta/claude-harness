@@ -1,7 +1,8 @@
 #!/usr/bin/env bats
 #
 # 手渡し規則の正本（`skills/develop/references/decision-criteria.md` の
-# 「コンテキスト上限（サブエージェントの手渡し）」節）が①〜④を現に規定していることの検査
+# 「コンテキスト上限（サブエージェントの手渡し）」節と、W と G の宣言を持つ
+# `skills/develop/references/return-declaration.md` の 2 か所。#1683）が①〜④を現に規定していることの検査
 #
 # 2026-09 の事故（バックグラウンドコマンド待ちで idle になっていた前任 W を「工程を終えた」と
 # 誤認して手渡し、同じ worktree に新旧 2 人の W が並んだ）を受けて、判定材料を本体側の内容
@@ -21,6 +22,7 @@
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  RETURN_DECL="${PLUGIN_DIR}/skills/develop/references/return-declaration.md"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
 }
 
@@ -28,8 +30,8 @@ setup() {
 # `## ` だけで止めると、節のあとに続く `### ` 小節まで巻き込む（正本の節では残量モードの 2 小節が
 # 入り、正本の本文がその小節へ移動しても `criteria:` 系が緑のままになる。PR #253 のレビュー指摘）。
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^#{2,3} /{f=0} f' "$1"; }
-# decision-criteria.md のコンテキスト上限節（＝正本）
-cap_sec() { section "$CRITERIA" 'コンテキスト上限（サブエージェントの手渡し）'; }
+# 正本 = decision-criteria.md のコンテキスト上限節（本体向け）＋ return-declaration.md の全文（W と G の宣言。#1683）
+cap_sec() { section "$CRITERIA" 'コンテキスト上限（サブエージェントの手渡し）'; cat "$RETURN_DECL"; }
 role_sec() { section "$SKILL" '本体の役割'; }
 
 # ---------------------------------------------------------------------------

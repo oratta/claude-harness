@@ -6,7 +6,7 @@ develop スキルが、仕様化要否の判断を機械照合できる書式で
 ## Requirements
 
 ### Requirement: 仕様化要否の判定結果を固定書式で issue に記録する
-develop スキルの W の指示書（`references/roles/worker/spec.md`。記録する前に実装へ進まない規則は `references/roles/worker/common.md`「実装に入る前の確認」）は、仕様化要否を判定した直後に、その結果を記録先（元 issue。issue が無い場合は Draft PR）のコメントとして記録する手順を明記しなければならない（MUST）。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致し（装飾・全角コロン・末尾句点を含めない）（MUST）、2 行目以降に判定理由（`references/decision-criteria.md` のどの条件に当たったか）を書く（MUST）。同接頭辞のコメントが複数あるときは作成日時が最新の 1 件を正とし（SHALL）、この記録は interactive / unmanned の両モードで行い（MUST）、記録せずに分割判定・実装へ進んではならない（MUST NOT）。後続の照合で PR から元 issue を解決する規則（PR 本文中で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`、大文字小文字不問。見つからなければ PR 自身のコメントを見る）は `references/roles/spec-reviewer.md` の「判断記録の契約」に定義する（SHALL）。
+develop スキルの W の指示書（`references/roles/worker/spec.md`。記録する前に実装へ進まない規則は `references/roles/worker/common.md`「実装に入る前の確認」）は、仕様化要否を判定した直後に、その結果を記録先（元 issue。issue が無い場合は Draft PR）のコメントとして記録する手順を明記しなければならない（MUST）。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致し（装飾・全角コロン・末尾句点を含めない）（MUST）、2 行目以降に判定理由（`references/spec-decision.md` のどの条件に当たったか）を書く（MUST）。同接頭辞のコメントが複数あるときは作成日時が最新の 1 件を正とし（SHALL）、この記録は interactive / unmanned の両モードで行い（MUST）、記録せずに分割判定・実装へ進んではならない（MUST NOT）。後続の照合で PR から元 issue を解決する規則（PR 本文中で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`、大文字小文字不問。見つからなければ PR 自身のコメントを見る）は `references/roles/spec-reviewer.md` の「判断記録の契約」に定義する（SHALL）。
 
 #### Scenario: worker/spec.md に記録手順と正規表現がある
 - **WHEN** `references/roles/worker/spec.md` の仕様化判断の節を読む
@@ -115,8 +115,8 @@ R1 は本体が `model` を明示して spawn しなければならない（MUST
 - **THEN** `model` を明示すること、既定が `opus` であること、マージ権限・層間契約・課金/法務に当たれば `dev-workflow:decider` で spawn し、聖域パスだけでは上げないことが書かれている
 
 #### Scenario: 残量モードの扱いが既存規定と一致する
-- **WHEN** SKILL.md または `references/roles/spec-reviewer.md` の残量モードの記述を読む
-- **THEN** `reserve` は自動実行のみ、`exhausted` は全経路で `opus` 上限、と書き分けられている
+- **WHEN** `references/roles/spec-reviewer.md` の残量モードの記述と `references/decision-criteria.md` の優先順位の表を読む
+- **THEN** `spec-reviewer.md` は適用が `codex-develop.py request` であることと表への参照を 1 行で書き、表の `reserve` の行は自動実行のみ、`exhausted` の行は全経路で `opus` 上限と書き分けられている
 
 #### Scenario: R1 のモデル選択が指す表
 
@@ -124,7 +124,7 @@ R1 は本体が `model` を明示して spawn しなければならない（MUST
 - **THEN** 事前分類表の参照先が `references/pre-classification.md` である
 
 ### Requirement: 仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く
-develop スキルは、仕様化判断が「する」になった変更のうち、既存の仕様の文言を実装に合わせて直すだけの変更に、成果物を仕様の差分 1 ファイルだけにして R1 の仕様レビューを省く通し方（以下「文言合わせの通し方」）を持たなければならない（MUST）。対象・当てる条件・省くものの正本は `references/decision-criteria.md` の Step B に置き（MUST）、W の手順は `references/roles/worker/spec.md` に、記録の書式は `references/roles/spec-reviewer.md` の「判断記録の契約」に置く（MUST）。対象・当てる条件の正本は `decision-criteria.md`、記録の書式の正本は `spec-reviewer.md` とし、`worker/spec.md` は正本を指して要約だけを書く。要約が正本と食い違ってはならない（MUST NOT）。
+develop スキルは、仕様化判断が「する」になった変更のうち、既存の仕様の文言を実装に合わせて直すだけの変更に、成果物を仕様の差分 1 ファイルだけにして R1 の仕様レビューを省く通し方（以下「文言合わせの通し方」）を持たなければならない（MUST）。対象・当てる条件・省くものの正本は `references/spec-decision.md` の Step B に置き（MUST）、W の手順は `references/roles/worker/spec.md` に、記録の書式は `references/roles/spec-reviewer.md` の「判断記録の契約」に置く（MUST）。対象・当てる条件の正本は `spec-decision.md`、記録の書式の正本は `spec-reviewer.md` とし、`worker/spec.md` は正本を指して要約だけを書く。要約が正本と食い違ってはならない（MUST NOT）。
 
 **対象**: 次をすべて満たす変更に限る（MUST）。①`openspec/specs/` の既存の要件の文を、実装に合わせて直すだけである ②新しい要件を足さない・要件を消さない・要件の名前を変えない（差分は `## MODIFIED Requirements` だけで書ける） ③設計の選択が無い（直し方が 1 つに決まっている） ④直す要件が 1 つの capability の spec に収まる（差分が 1 ファイルになる）。
 
@@ -138,8 +138,8 @@ develop スキルは、仕様化判断が「する」になった変更のうち
 
 この判定の守備範囲は次のとおりとする。①入力の出どころは、記録先の受け入れ条件と、W が書く仕様化判断のコメントである。W は協力的だが、受け入れ条件を甘く読んで「書けている」とすることがある前提で扱う。②拾いたい誤りは、受け入れ条件に直す文が書かれていない変更に当てること、新しい要件を足す変更や設計の選択がある変更に当てること、R1 に差し戻された change を切り替えて仕様レビューを避けることである。③次はこの判定を通ることを許す: 受け入れ条件の指定があいまいで、W が「書けている」と読んだ変更。`## MODIFIED Requirements` の中で要件の文を落とす・直す範囲より広く書き換える差分（見るのは実装後レビューだけになる。主が受け入れたリスク）。R1 の差し戻しのあとの切り替え（指示書で禁じるが、機械では止めない）。④ここに挙げた以外の通り方は見つけるたびに条件を足し、穴を塞ぎ切ることを完了条件にしない。
 
-#### Scenario: decision-criteria.md の Step B に通し方が書かれている
-- **WHEN** `references/decision-criteria.md` の「Step B」の節を読む
+#### Scenario: spec-decision.md の Step B に通し方が書かれている
+- **WHEN** `references/spec-decision.md` の「Step B」の節を読む
 - **THEN** 文言合わせの通し方の小節があり、成果物が仕様の差分 1 ファイルだけであること、R1 の仕様レビューを省くこと、当てる条件が「どの仕様のどの文をどう直すか」が記録先の受け入れ条件に書けていることであること、書けていなければ artifact 一式と R1 に戻すこと、`通し方: 文言合わせ` の行で記録することが書かれている
 
 #### Scenario: worker/spec.md が同じ通し方の手順を持つ
@@ -163,7 +163,7 @@ develop スキルは、仕様化判断が「する」になった変更のうち
 - **THEN** W は手を止めて return し、`通し方:` の行の無い `仕様化判断: する` を投稿し直して artifact 一式を作り、R1 のレビューを受ける
 
 #### Scenario: R1 に差し戻された change は切り替えない
-- **WHEN** `references/roles/worker/spec.md` と `references/decision-criteria.md` の文言合わせの通し方の記述を読む
+- **WHEN** `references/roles/worker/spec.md` と `references/spec-decision.md` の文言合わせの通し方の記述を読む
 - **THEN** R1 を一度起こした change をあとから文言合わせの通し方に切り替えてはならないことが書かれている
 
 ### Requirement: 仕様レビューの BLOCKER は指摘の条件がいつ成り立つかを決めてから残す
@@ -251,11 +251,11 @@ R1 が自分で決めるときの根拠は、エピックと記録先の本文�
 - **THEN** 守備範囲として、指摘の出どころ・拾いたい誤り・通すことを許す例・判定の誤りが 1 件も無いことを完了条件にしないことが書かれている
 
 ### Requirement: 些細な修正は軽い通し方で新しいテストと W の起動を省く
-develop スキルは、仕様化判断が「しない」になる変更のうち、typo・lint 指摘の修正・コメントの修正・フォーマットの変更・ワンライナー fix・挙動を変えない設定値の変更のどれか 1 種類だけでできていて、既存のテストかチェックのコマンドで確かめられる変更に、新しいテストの作成と W の起動を省く通し方（以下「軽い通し方」）を持たなければならない（MUST）。記録先・仕様化判断の記録・pr-review-gate は省いてはならない（MUST NOT）。当てる条件・省くもの・残すものの正本は `references/decision-criteria.md` の Step B の小節に置き（MUST）、記録の書式の正本は `references/roles/spec-reviewer.md` の「判断記録の契約」に置く（MUST）。
+develop スキルは、仕様化判断が「しない」になる変更のうち、typo・lint 指摘の修正・コメントの修正・フォーマットの変更・ワンライナー fix・挙動を変えない設定値の変更のどれか 1 種類だけでできていて、既存のテストかチェックのコマンドで確かめられる変更に、新しいテストの作成と W の起動を省く通し方（以下「軽い通し方」）を持たなければならない（MUST）。記録先・仕様化判断の記録・pr-review-gate は省いてはならない（MUST NOT）。当てる条件・省くもの・残すものの正本は `references/light-path.md` に置き（MUST）、記録の書式の正本は `references/roles/spec-reviewer.md` の「判断記録の契約」に置く（MUST）。
 
-#### Scenario: Step B に軽い通し方の小節がある
-- **WHEN** `references/decision-criteria.md` の Step B を読む
-- **THEN** 「仕様化しない（コード直行）」の小節と同じ並びに軽い通し方の小節があり、当てる条件（6 種類のどれか 1 つだけ・既存のテストかチェックで確かめられる）・省くもの（新しいテストの作成と W の起動）・残すもの（記録先・判断の記録・pr-review-gate）の 3 点が書かれている
+#### Scenario: Step B が light-path.md の軽い通し方を指す
+- **WHEN** `references/spec-decision.md` の Step B「仕様化しない（コード直行）」の小節と `references/light-path.md` を読む
+- **THEN** `spec-decision.md` の「仕様化しない（コード直行）」の小節が、軽い通し方の正本として `light-path.md` を 1 行で指しており、`light-path.md` には軽い通し方の小節があり、当てる条件（6 種類のどれか 1 つだけ・既存のテストかチェックで確かめられる）・省くもの（新しいテストの作成と W の起動）・残すもの（記録先・判断の記録・pr-review-gate）の 3 点が書かれている
 
 #### Scenario: 6 種類に入らない「しない」の変更には当てない
 - **WHEN** 変更が振る舞いの変わらない内部リファクタ、依存の版上げ、または受け入れ条件が明記された機械的な振る舞い変更である
@@ -284,10 +284,10 @@ develop スキルは、仕様化判断が「しない」になる変更のうち
 - **THEN** 分類はこれを止めず、pr-review-gate のレビュアーが差分と一緒に見る
 
 ### Requirement: テスト作成の必須の例外は軽い通し方だけにする
-`references/decision-criteria.md` の「どの判定でも変えないもの」は、テスト作成が必須であることを残したうえで、例外が軽い通し方だけであることと、軽い通し方では `確かめ方:` の既存のテストかチェックを走らせることが新しいテストの代わりになることを書かなければならない（MUST）。W が起こされる経路では、どの判定でもテスト作成を省いてはならない（MUST NOT）。
+`references/spec-decision.md` の「どの判定でも変えないもの」は、テスト作成が必須であることを残したうえで、例外が軽い通し方だけであることと、軽い通し方では `確かめ方:` の既存のテストかチェックを走らせることが新しいテストの代わりになることを書かなければならない（MUST）。W が起こされる経路では、どの判定でもテスト作成を省いてはならない（MUST NOT）。
 
 #### Scenario: 必須の行に例外が書かれている
-- **WHEN** `references/decision-criteria.md` の「どの判定でも変えないもの」を読む
+- **WHEN** `references/spec-decision.md` の「どの判定でも変えないもの」を読む
 - **THEN** 「テスト作成は全経路で必須」の文と同じ段落に、例外が軽い通し方だけであることと、`確かめ方:` のコマンドを走らせることが代わりになることが書かれている
 
 ### Requirement: 軽い通し方の判断は本体が判断のコメントの 2 行目以降に 3 行を足して記録する
@@ -302,10 +302,10 @@ develop スキルは、仕様化判断が「しない」になる変更のうち
 - **THEN** これまでどおり W がテストを先に書いて実装する判断として扱う
 
 ### Requirement: 軽い通し方では本体が直し、仕様宣言までを行ってから G を起こす
-軽い通し方では、本体は (1)〜(3) の W を起こさず、判断の記録のあとに自分で直し、`確かめ方:` のコマンドを走らせて終了コード 0 を確かめ、commit・push し、PR を Draft のまま用意し（issue が記録先なら `Closes #<issue>` を本文に書く）、仕様宣言を「変更なし＋理由」形で投稿してから、unmanned を除き (4) の G を起こさなければならない（MUST）。unmanned では G を起こさず `agent-review:pending` を付けてサイクルを終えなければならない（MUST）。手順の正本は `references/decision-criteria.md` の Step B の軽い通し方の小節に置く（MUST）。
+軽い通し方では、本体は (1)〜(3) の W を起こさず、判断の記録のあとに自分で直し、`確かめ方:` のコマンドを走らせて終了コード 0 を確かめ、commit・push し、PR を Draft のまま用意し（issue が記録先なら `Closes #<issue>` を本文に書く）、仕様宣言を「変更なし＋理由」形で投稿してから、unmanned を除き (4) の G を起こさなければならない（MUST）。unmanned では G を起こさず `agent-review:pending` を付けてサイクルを終えなければならない（MUST）。手順の正本は `references/light-path.md` に置く（MUST）。
 
 #### Scenario: 本体の手順が書かれている
-- **WHEN** `references/decision-criteria.md` の軽い通し方の小節を読む
+- **WHEN** `references/light-path.md` を読む
 - **THEN** 判断の記録・直す・`確かめ方:` のコマンドを走らせる・commit と push・Draft の PR・「変更なし＋理由」形の仕様宣言・G を起こす、の順の手順が書かれている
 
 ### Requirement: 記録先がまだ無い会話の依頼では、本体が軽い通し方を決めてから Draft PR を作る
@@ -334,5 +334,5 @@ develop スキルは、仕様化判断が「しない」になる変更のうち
 - **THEN** 本体は主に聞かず、軽い通し方を当てずに W を `段: spec` で起こす
 
 #### Scenario: unmanned でも同じ条件で当たる
-- **WHEN** `references/decision-criteria.md` の軽い通し方の小節を読む
+- **WHEN** `references/light-path.md` を読む
 - **THEN** interactive・channel・unmanned で同じ条件を使うことと、unmanned では本体が Draft PR の作成と `agent-review:pending` の付与を行うことが書かれている

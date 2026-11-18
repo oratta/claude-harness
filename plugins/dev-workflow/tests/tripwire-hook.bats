@@ -99,7 +99,7 @@ PY
   echo "$(ctx_of conserve)" | grep -qF 'opus 止まり'
 }
 
-# 共有枠モードの効果の文は decision-criteria の共有枠モードの表と model-tier-resolution の
+# 共有枠モードの効果の文は decision-criteria の優先順位の表の共有枠モードの行と model-tier-resolution の
 # 「残量モードを格に適用する」に合わせる。最安の役（haiku）を上げる読み方をさせない（#1622）。
 # spec: dev-workflow-escalation-tripwires / dev-workflow-execution-strategy
 @test "injection: shared-mode effects follow the tier rule and never raise the cheapest roles" {

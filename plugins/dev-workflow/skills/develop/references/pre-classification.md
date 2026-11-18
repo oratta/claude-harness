@@ -19,6 +19,5 @@ W の既定モデルは `sonnet`（役割表の正本は `SKILL.md`「モデル�
 
 **読んで判断する役は種別で上げる。** R1（仕様レビュー）と G が要求するレビュアーがマージ権限・層間契約・課金/法務に当たるときは、`request` が `role: decider` を返すので `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` を付けない（ガードが拒否する）。聖域パスだけではレビューを上げない。当たらなければ従来どおり `opus`。
 
-- **残量モードが優先する**: `FABLE_BUDGET_MODE=reserve` の自動実行と `exhausted` の全経路では、決める役も `dev-workflow:decider` のまま `model: opus` を上限とする（`skills/develop/references/decision-criteria.md` の残量モード表がそのまま効く）。共有枠モード `SHARED_BUDGET_MODE=depleted` では事前分類に当たっても `sonnet` 上限。適用は `request` が行う
-- `FABLE_BUDGET_MODE=abundant` はどの役割の既定も押し上げない。Fable が使われる経路は決める役（`dev-workflow:decider`）だけ
+- 残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`
 - Fable がレート制限等で使えなかったときのフォールバック記録の形式は pr-review-gate スキルの「修正サイクルのモデル昇格」が正本。ここでは再掲しない

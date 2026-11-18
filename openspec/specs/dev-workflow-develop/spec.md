@@ -27,7 +27,7 @@ SKILL.md は本体（メインセッション）の役割を「役割 W / R1 / G
 
 #### Scenario: Edit の禁止の例外は軽い通し方だけ
 - **WHEN** SKILL.md の「本体の役割」節の禁止事項を読む
-- **THEN** 「本体は Edit でコードを書かない」の箇所に、例外が軽い通し方だけであることと、その正本が `references/decision-criteria.md` Step B であることが書かれている
+- **THEN** 「本体は Edit でコードを書かない」の箇所に、例外が軽い通し方だけであることと、その正本が `references/light-path.md` であることが書かれている
 
 #### Scenario: W の再開は profile role と executor に従う
 - **WHEN** SKILL.md の 1 ループと profile 経路の記述を読む
@@ -52,7 +52,7 @@ SKILL.md は本体（メインセッション）の役割を「役割 W / R1 / G
 - **THEN** 本体はこれらを並列に起こしてよく、同一 worktree 制約には抵触しない
 
 ### Requirement: 入口 0 は記録先を決める
-SKILL.md は 1 ループの最初の工程「入口 0」として記録先の決め方を規定しなければならない（MUST）: issue があれば（番号・URL・自然文マッチ）それを記録先にする。無ければ issue を切らず、W が worktree を用意された直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする。この Draft PR は仕様化判断を記録する**前**に存在していなければならない（MUST。記録先が無い状態で判定を先に進めない）。Draft PR を記録先にする場合、受け入れ条件は PR 本文（位置づけ・動作確認ポイント）に書かなければならず（MUST）、受け入れ条件自体を省いてはならない（MUST NOT）。記録先を PR にした場合、PR 本文に `Closes` / `Fixes` / `Refs #N` の issue 参照を書いてはならない（MUST NOT。書くと pr-review-gate の照合先がその issue に移る。エピックの子は子 issue が記録先なので `Closes #子` を書く）。仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（SHALL）。仕様宣言（`対象 HEAD:` 付き。書式の正本は pr-review-gate スキル手順 3-b）は記録先が issue か Draft PR かにかかわらず常に **PR コメント**に置き、記録先が issue のときに issue コメントへ置いてはならない（MUST NOT。pr-review-gate 手順 5 は PR のコメントで 3 見出しを照合し、`対象 HEAD:` 規約は PR の HEAD に紐づくため）。軽い通し方（`dev-workflow-spec-review` の「些細な修正は軽い通し方で新しいテストと W の起動を省く」Requirement）を当てる場合だけは例外で、記録先が無いときは本体が Draft PR を作る（SHALL）。そのときの順序は、本体が依頼から受け入れ条件を整理する → その受け入れ条件で軽い通し方を当てるかを決める → 当てるなら本体が空 commit・push・`gh pr create --draft` で Draft PR を開き受け入れ条件を本文に書く → 仕様化判断を Draft PR のコメントに記録する、の 1 通りとし（MUST）、当てないなら本体は Draft PR を作らずに W を起こし、W がこれまでどおり作る（SHALL）。SKILL.md は入口 0 にこの例外と順序を、正本（`references/decision-criteria.md` Step B）を指す形で書かなければならない（MUST）。SKILL.md はこの分離（記録先に置くもの＝仕様化判断・仕様レビュー結果、PR コメントに置くもの＝仕様宣言）を入口 0 に明記しなければならない（MUST）。issue を切るのは追跡・キュー・議論が要るとき（エピック／無人キュー／判断を残す議論）に限ることを明記する（SHALL）。
+SKILL.md は 1 ループの最初の工程「入口 0」として記録先の決め方を規定しなければならない（MUST）: issue があれば（番号・URL・自然文マッチ）それを記録先にする。無ければ issue を切らず、W が worktree を用意された直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする。この Draft PR は仕様化判断を記録する**前**に存在していなければならない（MUST。記録先が無い状態で判定を先に進めない）。Draft PR を記録先にする場合、受け入れ条件は PR 本文（位置づけ・動作確認ポイント）に書かなければならず（MUST）、受け入れ条件自体を省いてはならない（MUST NOT）。記録先を PR にした場合、PR 本文に `Closes` / `Fixes` / `Refs #N` の issue 参照を書いてはならない（MUST NOT。書くと pr-review-gate の照合先がその issue に移る。エピックの子は子 issue が記録先なので `Closes #子` を書く）。仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（SHALL）。仕様宣言（`対象 HEAD:` 付き。書式の正本は pr-review-gate スキル手順 3-b）は記録先が issue か Draft PR かにかかわらず常に **PR コメント**に置き、記録先が issue のときに issue コメントへ置いてはならない（MUST NOT。pr-review-gate 手順 5 は PR のコメントで 3 見出しを照合し、`対象 HEAD:` 規約は PR の HEAD に紐づくため）。軽い通し方（`dev-workflow-spec-review` の「些細な修正は軽い通し方で新しいテストと W の起動を省く」Requirement）を当てる場合だけは例外で、記録先が無いときは本体が Draft PR を作る（SHALL）。そのときの順序は、本体が依頼から受け入れ条件を整理する → その受け入れ条件で軽い通し方を当てるかを決める → 当てるなら本体が空 commit・push・`gh pr create --draft` で Draft PR を開き受け入れ条件を本文に書く → 仕様化判断を Draft PR のコメントに記録する、の 1 通りとし（MUST）、当てないなら本体は Draft PR を作らずに W を起こし、W がこれまでどおり作る（SHALL）。SKILL.md は入口 0 にこの例外と順序を、正本（`references/light-path.md`）を指す形で書かなければならない（MUST）。SKILL.md はこの分離（記録先に置くもの＝仕様化判断・仕様レビュー結果、PR コメントに置くもの＝仕様宣言）を入口 0 に明記しなければならない（MUST）。issue を切るのは追跡・キュー・議論が要るとき（エピック／無人キュー／判断を残す議論）に限ることを明記する（SHALL）。
 
 #### Scenario: issue が無い依頼は Draft PR が記録先になる
 - **WHEN** 会話で依頼された変更に対応する issue が無い
@@ -68,10 +68,10 @@ SKILL.md は 1 ループの最初の工程「入口 0」として記録先の決
 
 #### Scenario: 軽い通し方では記録先の Draft PR を本体が作る
 - **WHEN** SKILL.md の入口 0 を読む
-- **THEN** 記録先が無い依頼に軽い通し方を当てるときだけ本体が Draft PR を作ることと、受け入れ条件の整理 → 軽い通し方の判断 → Draft PR の作成 → 仕様化判断の記録の順序が、`references/decision-criteria.md` Step B を指して書かれている
+- **THEN** 記録先が無い依頼に軽い通し方を当てるときだけ本体が Draft PR を作ることと、受け入れ条件の整理 → 軽い通し方の判断 → Draft PR の作成 → 仕様化判断の記録の順序が、`references/light-path.md` を指して書かれている
 
 ### Requirement: 1 ループは W→R1→W→G の順で回る
-SKILL.md は 1 issue（または 1 Draft PR）の 1 ループを次の順で規定しなければならない（MUST）: (0) 記録先の確定 →（軽い通し方の分岐: 本体は (1) の W を起こす前に記録先の本文（記録先が無い依頼では、上の「入口 0 は記録先を決める」の例外の順序どおり、Draft PR を作る前に本体が整理した受け入れ条件）から軽い通し方を当てるかを決め、当てるなら (1)〜(3) の W を起こさず、`references/decision-criteria.md` Step B の軽い通し方の小節の手順どおり、判断の記録・直す・`確かめ方:` のコマンドの実行・commit と push・Draft の PR・仕様宣言までを本体が行って (4) へ進む（SHALL）。迷ったら当てず (1) へ進む）→ (1) W が仕様化判断の記録・分割判定・openspec CLI による change の作成（`openspec new change` と artifact の直書き）まで行い return（仕様化しない判定なら (3) へ直行。文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）なら、W は仕様の差分 1 ファイルだけを書いて return し、本体は記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があることを確かめてから (2) を飛ばして (3) へ進む）→ (2) R1 が別コンテキストで仕様レビューし、結果を記録先にコメントして return（R1 を `subagent_type: dev-workflow:decider` で起こした場合は R1 が投稿できないため、本体が return を同じ書式で代理投稿する）。REQUEST_CHANGES なら W を SendMessage で再開して修正し R1 を再開して差分再レビュー（既定 2 周。2 周目以降の周の終わりに BLOCKER が残れば、下の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement の直し方の判定を通し、「決まっている」で PR トークン上限の内側なら主に聞かず次の周を回し、そうでなければ `needs-approval`）→ **(3) W を再開して実装以降を回す。(3) は 2 段に分かれ、(3a) 実装（`tasks.md` を TDD で。直行なら TDD。文言合わせの通し方なら W が (1) の return に書いた作業項目を TDD で）・verify（`openspec validate --strict`）まで行って return、本体が計測し、W の return の `画面確認:` の行が `要る` なら画面確認役 V を起こしてから（下の「画面確認役 V は (3a) と (3b) の間に本体が必要時だけ起こす」Requirement）、(3b) `openspec archive`・PR を Draft のまま用意（無ければ Draft で作成）・仕様宣言まで行って return する（下の「W の (3) は 2 回の return に分かれる」Requirement）** → 文言合わせの通し方では、本体は G を起こす前に、記録先の最新の仕様化判断のコメントの `直す文:` の行が archive 済みの差分の要件名と一致することを確かめる（SHALL） → (4) G が pr-review-gate の手順 1〜5 を実行し `passed` / `failed` / `保留` / `needs-reviewer` / `needs-decider` / `needs-fix-check` / `review-incomplete` のいずれかを return。PR の Ready 化は G が手順 5 の合格処理で行い（Draft なら Ready にしてから `agent-review:passed` を付ける）、W は行ってはならない（MUST NOT）。
+SKILL.md は 1 issue（または 1 Draft PR）の 1 ループを次の順で規定しなければならない（MUST）: (0) 記録先の確定 →（軽い通し方の分岐: 本体は (1) の W を起こす前に記録先の本文（記録先が無い依頼では、上の「入口 0 は記録先を決める」の例外の順序どおり、Draft PR を作る前に本体が整理した受け入れ条件）から軽い通し方を当てるかを決め、当てるなら (1)〜(3) の W を起こさず、`references/light-path.md` の軽い通し方の手順どおり、判断の記録・直す・`確かめ方:` のコマンドの実行・commit と push・Draft の PR・仕様宣言までを本体が行って (4) へ進む（SHALL）。迷ったら当てず (1) へ進む）→ (1) W が仕様化判断の記録・分割判定・openspec CLI による change の作成（`openspec new change` と artifact の直書き）まで行い return（仕様化しない判定なら (3) へ直行。文言合わせの通し方（`dev-workflow-spec-review` の「仕様の文言合わせは仕様の差分 1 ファイルだけで通し仕様レビューを省く」Requirement）なら、W は仕様の差分 1 ファイルだけを書いて return し、本体は記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があることを確かめてから (2) を飛ばして (3) へ進む）→ (2) R1 が別コンテキストで仕様レビューし、結果を記録先にコメントして return（R1 を `subagent_type: dev-workflow:decider` で起こした場合は R1 が投稿できないため、本体が return を同じ書式で代理投稿する）。REQUEST_CHANGES なら W を SendMessage で再開して修正し R1 を再開して差分再レビュー（既定 2 周。2 周目以降の周の終わりに BLOCKER が残れば、下の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement の直し方の判定を通し、「決まっている」で PR トークン上限の内側なら主に聞かず次の周を回し、そうでなければ `needs-approval`）→ **(3) W を再開して実装以降を回す。(3) は 2 段に分かれ、(3a) 実装（`tasks.md` を TDD で。直行なら TDD。文言合わせの通し方なら W が (1) の return に書いた作業項目を TDD で）・verify（`openspec validate --strict`）まで行って return、本体が計測し、W の return の `画面確認:` の行が `要る` なら画面確認役 V を起こしてから（下の「画面確認役 V は (3a) と (3b) の間に本体が必要時だけ起こす」Requirement）、(3b) `openspec archive`・PR を Draft のまま用意（無ければ Draft で作成）・仕様宣言まで行って return する（下の「W の (3) は 2 回の return に分かれる」Requirement）** → 文言合わせの通し方では、本体は G を起こす前に、記録先の最新の仕様化判断のコメントの `直す文:` の行が archive 済みの差分の要件名と一致することを確かめる（SHALL） → (4) G が pr-review-gate の手順 1〜5 を実行し `passed` / `failed` / `保留` / `needs-reviewer` / `needs-decider` / `needs-fix-check` / `review-incomplete` のいずれかを return。PR の Ready 化は G が手順 5 の合格処理で行い（Draft なら Ready にしてから `agent-review:passed` を付ける）、W は行ってはならない（MUST NOT）。
 
 G が `review-incomplete` を return したとき、本体は新しい reviewer を起動せず、`agent-review:pending` のまま残差を報告して工程を止めなければならない（MUST）。`needs-reviewer` が一周目照合の補足要求である場合、本体は fresh reviewer に固定 HEAD・元の三表・残差・補足済み回数を渡し、同じレビューの不足分だけを補わせなければならず（MUST）、レビューを最初からやり直させてはならない（MUST NOT）。
 
@@ -95,7 +95,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 #### Scenario: 軽い通し方は W を起こさず (4) へ進む
 - **WHEN** SKILL.md の 1 ループの (0) と (1) の間を読む
-- **THEN** 本体が (1) の W を起こす前に軽い通し方を当てるかを決め、当てるなら (1)〜(3) の W を起こさず本体が直して (4) へ進むこと（unmanned では G を起こさず `agent-review:pending` を付けて終える）と、手順の正本が `references/decision-criteria.md` Step B であることが書かれている
+- **THEN** 本体が (1) の W を起こす前に軽い通し方を当てるかを決め、当てるなら (1)〜(3) の W を起こさず本体が直して (4) へ進むこと（unmanned では G を起こさず `agent-review:pending` を付けて終える）と、手順の正本が `references/light-path.md` であることが書かれている
 
 #### Scenario: 軽い通し方の条件外の failed は W を段 spec で起こす
 - **WHEN** G が failed を `原因: 軽い通し方の条件外` で return する
@@ -172,7 +172,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 - **THEN** 禁止が書かれたうえで、decider 経路の R1 は待ちを伴う作業を持たない旨が添えられており、実行できない待ちループの手順を探しに行かずに済む
 
 ### Requirement: 役割のモデルは事前分類と残量モードで決める
-SKILL.md は役割ごとの格を次のとおり規定しなければならない（MUST。格の語と決め方は `model-tier-resolution` が定め、括弧内の名前は Claude での値）。「モデル」節は規則の説明と `codex-develop.py request` への参照とし、構成名を使った経路ごとのモデル名の書き分けを書いてはならない（MUST NOT）。本体は `request` が返した `model` を使い、新しい起動の `model` を文章の規則で計算し直してはならない（MUST NOT）。W は既定 中位（`sonnet`）、記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含むか、実行側が原因の失敗ループでの昇格か、事前分類（聖域パス・マージ権限・層間契約・課金/法務）に当たれば 上位（`opus`）。**W を `fable` で spawn してはならない**（MUST NOT。実行役の上限は `opus` で、強制層は `scripts/agent-model-guard.sh`）。R1 は既定 上位（`opus`）、仕様がマージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する（聖域パスだけでは上げない）。G は既定 中位（`sonnet`）で上げない（G の仕事は照合・ラベル操作で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う）。G が要求するレビュアーは既定 上位（`opus`）、対象がマージ条件・層間契約・課金/法務に触れれば `dev-workflow:decider`。従来経路では G の `needs-reviewer` が示す推奨 model に従い、adapter 経路では phase `review` の `request` が返した `model`（残量上限を適用済み）を使い、G の推奨 model は参考値として扱わなければならない（MUST）。役割の格は残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）の上限に従わなければならない（MUST。新しい起動への適用は `request` が行う）。2 つのモードの値ごとの効果は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の残量モードと共有枠モードの表 1 か所で定める（その表では、`abundant` はどの役割の既定も上げず、`reserve` は自動実行のみ、`exhausted` は全経路で `opus` 上限、`throttled` は W / R1 / G の既定を `sonnet` に落として昇格上限 `opus`、`depleted` は全役割 `sonnet` 上限で `haiku` はそのままで、Fable 残量モードと食い違えば共有枠モードが勝つ。これは SKILL.md が書く中身ではない）。SKILL.md の「モデル」節は 2 つのモードの名前（`FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`）と、効果がその表にあることだけを書かなければならない（MUST。値ごとの効果を再掲してはならない。同じ規則を 2 か所に書くと、直すときに片方が漏れて食い違うため）。実行戦略の 3 分岐（solo / delegate+verify / workflow 型）の記述と決定論的シグナルの収集コマンドは develop に存在してはならない（MUST NOT）。昇格トリップワイヤー（同じテストが 2 連続で落ちた・同じ箇所を 2 回書き直した）は、失敗の原因が判断側か実行側かで決める役と実行役のどちらか一方だけを上げるラダー（正本は `templates/escalation-tripwires.md`）として残す（SHALL）。本体は W / G を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測らなければならない（MUST）。上限超過（exit 2）を検知したあとの扱い（送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目にどちらの宣言を置くか・前任が動作中のまま交代させるときの手順）について、SKILL.md は本文を書かず、`plugins/dev-workflow/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」への参照だけを置かなければならない（MUST。正本の位置・参照だけにする面の一覧・テストの形は `dev-workflow-execution-strategy` が規定する）。
+SKILL.md は役割ごとの格を次のとおり規定しなければならない（MUST。格の語と決め方は `model-tier-resolution` が定め、括弧内の名前は Claude での値）。「モデル」節は規則の説明と `codex-develop.py request` への参照とし、構成名を使った経路ごとのモデル名の書き分けを書いてはならない（MUST NOT）。本体は `request` が返した `model` を使い、新しい起動の `model` を文章の規則で計算し直してはならない（MUST NOT）。W は既定 中位（`sonnet`）、記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含むか、実行側が原因の失敗ループでの昇格か、事前分類（聖域パス・マージ権限・層間契約・課金/法務）に当たれば 上位（`opus`）。**W を `fable` で spawn してはならない**（MUST NOT。実行役の上限は `opus` で、強制層は `scripts/agent-model-guard.sh`）。R1 は既定 上位（`opus`）、仕様がマージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する（聖域パスだけでは上げない）。G は既定 中位（`sonnet`）で上げない（G の仕事は照合・ラベル操作で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う）。G が要求するレビュアーは既定 上位（`opus`）、対象がマージ条件・層間契約・課金/法務に触れれば `dev-workflow:decider`。従来経路では G の `needs-reviewer` が示す推奨 model に従い、adapter 経路では phase `review` の `request` が返した `model`（残量上限を適用済み）を使い、G の推奨 model は参考値として扱わなければならない（MUST）。役割の格は残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）の上限に従わなければならない（MUST。新しい起動への適用は `request` が行う）。2 つのモードの値ごとの効果は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の残量モードと共有枠モードの表 1 か所で定める（その表では、`abundant` はどの役割の既定も上げず、`reserve` は自動実行のみ、`exhausted` は全経路で `opus` 上限、`throttled` は W / R1 / G の既定を `sonnet` に落として昇格上限 `opus`、`depleted` は全役割 `sonnet` 上限で `haiku` はそのままで、Fable 残量モードと食い違えば共有枠モードが勝つ。これは SKILL.md が書く中身ではない）。SKILL.md の「モデル」節は 2 つのモードの名前（`FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`）と、効果がその表にあることだけを書かなければならない（MUST。値ごとの効果を再掲してはならない。同じ規則を 2 か所に書くと、直すときに片方が漏れて食い違うため）。実行戦略の 3 分岐（solo / delegate+verify / workflow 型）の記述と決定論的シグナルの収集コマンドは develop に存在してはならない（MUST NOT）。昇格トリップワイヤー（同じテストが 2 連続で落ちた・同じ箇所を 2 回書き直した）は、失敗の原因が判断側か実行側かで決める役と実行役のどちらか一方だけを上げるラダー（正本は `templates/escalation-tripwires.md`）として残す（SHALL）。本体は W / G を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測らなければならない（MUST）。上限超過（exit 2）を検知したあとの扱い（送ってはならない SendMessage・手渡しを行ってよい条件・前任が動作中のまま交代させるときの手順）について、SKILL.md は本文を書かず、`plugins/dev-workflow/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」への参照だけを置かなければならない（MUST。return の 1 行目にどちらの宣言を置くかの正本は `plugins/dev-workflow/skills/develop/references/return-declaration.md` で、SKILL.md はその本文も書かない。正本の位置・参照だけにする面の一覧・テストの形は `dev-workflow-execution-strategy` が規定する）。
 
 この要件の守備範囲で入力として扱うのは、G の起動・再開指示にある `レビュー経路:`、G の `needs-reviewer` が示す推奨 model、phase `review` の `request` が返す `model` である。防ぐ誤りは、経路ごとの決定元を取り違えること、`request` が返した model を G の推奨 model で上書きすること、新しい起動の `model` を本体が文章の規則で計算し直すことである。一方、`request` が `sonnet` を返して G が `opus` を推奨していても、`request` の値を採用することは許容する。任意の不正な経路・model・残量モード入力を検出して塞ぎ切ることは、この要件の完了条件としない。
 
@@ -301,26 +301,50 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 - **WHEN** `commands/develop.md` の実行の文を読む
 - **THEN** SKILL.md「実行モード」の決め方でモードを決めること、印もチャンネルの依頼も無ければ interactive（既定）であること、`--unmanned` をこのコマンドから使わないことが書かれている
 
-### Requirement: コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く
+### Requirement: コンテキスト上限の規則の本文は、本体向けを decision-criteria.md に、W と G の宣言を return-declaration.md に置く
 
-コンテキスト計測の規則の本文——2 経路（本体が再開前に測る／起動の途中で hook が測る）・閾値の環境変数（`DEV_WORKFLOW_CONTEXT_CAP`＝通知、`DEV_WORKFLOW_CONTEXT_HARD_CAP`＝強制停止、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off`＝全解除）・通知を受けたときの振る舞い・強制停止中にできること・return の 1 行目の書き分け——は、`references/decision-criteria.md`「コンテキスト上限」の節に置かなければならない（MUST）。
+コンテキスト計測の規則の本文は、読み手で 2 つのファイルに分けて置かなければならない（MUST）。
 
-`references/roles/worker/common.md`・`skills/develop/SKILL.md`・`references/roles/gate-runner.md`・`templates/escalation-tripwires.md`・`plugins/dev-workflow/README.md` は、その節への**ポインタと、その役割固有の動作だけ**を書かなければならない（MUST）。ポインタを書くのは `worker/common.md` であり、索引 `references/roles/worker.md`・`references/roles/worker/` の他 3 本（`spec.md`・`implement.md`・`finish.md`）・`references/pre-classification.md` はポインタを持たなくてよい（この 5 本には再掲の禁止だけを掛ける）。上のどのファイルも、閾値の数値・環境変数名・通知や強制停止の振る舞いを言い換えて再掲してはならない（MUST NOT）。同じ規則を複数のファイルに言い換えて置くと、次に閾値や振る舞いが変わったときにどれかが取り残されるためである（`README.md` を対象に含めるのは、プラグインの概観であっても閾値の数値を書けば取り残される対象になるため。実際に着手時点の `README.md` には `150K tokens` の再掲があった）。
+- 本体が読む部分——2 経路（本体が再開前に測る／起動の途中で hook が測る）・閾値の環境変数（`DEV_WORKFLOW_CONTEXT_CAP`＝通知、`DEV_WORKFLOW_CONTEXT_HARD_CAP`＝強制停止、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off`＝全解除）と停止確認の終端の環境変数・再開前チェックの測り方・上限超のときの扱い・手渡しの許可・どちらの書式にも一致しない return の扱い・前任が動作中に交代させる場合・停止確認と終端・途中計測の仕組みと fail-open——は、`references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の節に置く（MUST）
+- W と G が return を書くときに読む部分——return の 1 行目の宣言（`工程完了: <工程名>` / `工程中断: <理由>`）の書式と選び方、通知を受けたときと強制停止に当たったときの W と G の振る舞い、途中停止したときの 1 行目、G が強制停止に当たったとき——は、`references/return-declaration.md` に置く（MUST）。閾値の数値と環境変数名は `decision-criteria.md` の表にだけ置き、`return-declaration.md` に書いてはならない（MUST NOT）
+
+`return-declaration.md` へ移すとき、宣言義務の箇条（`工程完了: <工程名>` と `工程中断: <理由>` の 2 つの書式の行と、成果一覧を書いていてもバックグラウンドコマンドが完了していなければ `工程完了:` を宣言しないという但し書きの段落）は一字一句変えてはならない（MUST NOT）。それ以外の移す文（通知を受けたら・強制停止に当たったら・途中停止したときの 1 行目・G が強制停止に当たったとき）は、次の 3 種類の置き換えだけをしてよく（MAY）、規則の中身（何をするか・何をしないか・1 行目をどちらにするか）を変えてはならない（MUST NOT）: ①環境変数名（`DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP`）と「上の表の」を、「通知」「強制停止」の語と `decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の表への参照に置き換える ②移す前のファイルの中を指す参照（「上の『手渡しの許可』」など）を、`decision-criteria.md` の節名と項目名を付けた参照に置き換える ③規則に混ざった経緯（issue 番号・実測値）を削る。置き換えた箇所はすべて、置き換える前と後の文を対にして PR 本文に載せなければならない（MUST）。
+
+`decision-criteria.md` の節の冒頭は、W と G の宣言の書式が `return-declaration.md` にあることを 1 行で指さなければならない（MUST）。
+
+W と G の指示書（`references/roles/worker/common.md`・`references/roles/gate-runner.md`）は、return を書く前に `return-declaration.md` を読むよう指さなければならず（MUST）、`decision-criteria.md` を読むよう指してはならない（MUST NOT）。W の段のファイル（`references/roles/worker/spec.md`・`implement.md`・`finish.md`）と `agents/worker.md`・`agents/gate-runner.md` も `decision-criteria.md` を読むよう指してはならない（MUST NOT）。
+
+`references/roles/worker/common.md`・`skills/develop/SKILL.md`・`references/roles/gate-runner.md`・`templates/escalation-tripwires.md`・`plugins/dev-workflow/README.md` は、上の 2 つのファイルへの**ポインタと、その役割固有の動作だけ**を書かなければならない（MUST）。ポインタを書くのは `worker/common.md` であり、索引 `references/roles/worker.md`・`references/roles/worker/` の他 3 本（`spec.md`・`implement.md`・`finish.md`）・`references/pre-classification.md` はポインタを持たなくてよい（この 5 本には再掲の禁止だけを掛ける）。上のどのファイルも、閾値の数値・環境変数名・通知や強制停止の振る舞いを言い換えて再掲してはならない（MUST NOT）。同じ規則を複数のファイルに言い換えて置くと、次に閾値や振る舞いが変わったときにどれかが取り残されるためである（`README.md` を対象に含めるのは、プラグインの概観であっても閾値の数値を書けば取り残される対象になるため。実際に着手時点の `README.md` には `150K tokens` の再掲があった）。
 
 #### Scenario: 規則の本文が decision-criteria.md にある
 
 - **WHEN** `references/decision-criteria.md` のコンテキスト上限の節を読む
-- **THEN** 2 経路・3 つの環境変数・通知時と強制停止時の振る舞い・return の 1 行目の書き分けが、そこだけで完結して書かれている
+- **THEN** 2 経路・3 つの環境変数・再開前チェック・手渡しの許可・停止確認と終端が、そこだけで完結して書かれており、W と G の宣言の書式が `return-declaration.md` にあることが 1 行で指されている
+
+#### Scenario: W と G の宣言が return-declaration.md にある
+
+- **WHEN** `references/return-declaration.md` を読む
+- **THEN** return の 1 行目の 2 つの書式と選び方・通知時と強制停止時の振る舞い・途中停止したときの 1 行目が書かれており、閾値の数値と環境変数名は無い
+
+#### Scenario: 宣言の書式は分ける前と一字一句同じ
+
+- **WHEN** 分ける前の `decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」節の宣言義務の箇条（`工程完了:` と `工程中断:` の 2 つの書式とその但し書き）と、`return-declaration.md` の同じ箇条を比べる
+- **THEN** 文が一字一句同じである
+
+#### Scenario: W と G は decision-criteria.md を読まない
+
+- **WHEN** `agents/worker.md`・`references/roles/worker/` の 4 本・`agents/gate-runner.md`・`references/roles/gate-runner.md` から、読む指示を grep で拾う
+- **THEN** `decision-criteria.md` を読む指示が無く、`return-declaration.md` を読む指示が `worker/common.md` と `gate-runner.md` にある
 
 #### Scenario: 他の面はポインタだけ
 
 - **WHEN** `SKILL.md` / `references/roles/worker/common.md` / `references/roles/gate-runner.md` / `templates/escalation-tripwires.md` / `README.md` を読む
-- **THEN** `references/decision-criteria.md`「コンテキスト上限」への参照があり、閾値の数値や環境変数名の再掲が無い
+- **THEN** `references/decision-criteria.md`「コンテキスト上限」か `references/return-declaration.md` への参照があり、閾値の数値や環境変数名の再掲が無い
 
 #### Scenario: ポインタを持たない面は再掲だけを禁じる
 
 - **WHEN** 索引 `references/roles/worker.md` / `references/roles/worker/` の `spec.md`・`implement.md`・`finish.md` / `references/pre-classification.md` を読む
-- **THEN** 閾値の数値や環境変数名の再掲が無い（`decision-criteria.md`「コンテキスト上限」への参照は求めない）
+- **THEN** 閾値の数値や環境変数名の再掲が無い（参照は求めない）
 
 ### Requirement: 途中停止したときの return の 1 行目
 
@@ -333,14 +357,16 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 途中計測の通知は役割で出し分けないため、`tasks.md` を持たない受け手（仕様化しない依頼の W、pr-review-gate の手順を回す G）にも同じ文言が届く。したがって「tasks グループ」が何を指すかを次のとおり定めなければならない（MUST）: `tasks.md` があればそのとき進めていた章のグループ、無ければ本体から渡された作業項目、G は pr-review-gate の手順 1〜5 を 1 グループとみなす。
 
+この判定の守備範囲は次のとおりとする。①入力の出どころは、W / G が書く return の 1 行目と、そのとき進めていた tasks グループ（上の定めで決まる単位）の項目が済んでいるかの W / G 自身の申告である。本体はこの 1 行目だけで手渡しの可否を決め、`tasks.md` のチェック欄や差分と突き合わせない。②拾いたい誤りは、強制停止で止まったのに `工程完了:` と書くこと、通知を受けて締めたときに項目が残っているのに `工程完了:` と書くこと、1 行目を 2 つの書式のどちらにも一致させないことである（一致しない 1 行目は本体が `工程中断:` として扱うので手渡しは起きない）。③次はこの判定を通ることを許す: 済んでいない項目を済んだと申告した `工程完了:`（手渡し先は前任の return と記録先とファイルの現状から再出発し、未コミット差分を確かめる）。`tasks.md` のチェックを付け忘れたまま項目が済んでいる `工程完了:`。④ここに挙げた以外の通り方は見つけるたびに条件を足し、穴を塞ぎ切ることを完了条件にしない。
+
 #### Scenario: 強制停止は常に工程中断
 
-- **WHEN** `references/decision-criteria.md` のコンテキスト上限の節を読む
+- **WHEN** `references/return-declaration.md` を読む
 - **THEN** 強制停止で止まった場合は成果があっても `工程中断:` にする、と書かれている
 
 #### Scenario: 通知は tasks の残りで決める
 
-- **WHEN** 同じ節を読む
+- **WHEN** 同じファイルを読む
 - **THEN** 通知を受けて締める場合は、そのとき進めていた tasks グループが全部済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:` にする、と書かれており、`tasks.md` が無い場合に何を 1 グループとみなすかも書かれている
 
 ### Requirement: 手渡し先は未コミット差分を先に確認する
@@ -391,7 +417,7 @@ SKILL.md は「前提」節として、Agent ツール（`model` 明示・名前
 
 この要件の守備範囲で入力として扱うのは、対象リポジトリの PR・push で起動する `.github/workflows/*.yml` / `*.yaml` のジョブの `run:` ステップと、変えたファイルの一覧である。拾いたい誤りは、CI が流す静的検査を W が取りこぼすこと（PR #489 の shellcheck）と、変えたファイルを名前で参照するテストの失敗をゲートより後まで持ち越すことである。変えたファイルを別のスクリプト経由で間接的に読むテストを関係するテストとして拾えないことは、この要件では止めない（CI とゲート合格後の CI の見張りが拾う）。次は通ってよく、この要件では止めない: `matrix` / `services` / `env` / `if:` 条件により CI の実行環境と手元の実行結果が食い違うこと、CI ランナー固有の環境に依存する検査、環境セットアップの `run:` ステップを検査コマンドと誤って実行すること。取りこぼしが見つかるたびに塞ぎ切ることは、この要件の完了条件としない。CI が実際に落ちるかどうかは、G が pr-review-gate 手順 4 で対象 HEAD の CI の結果を証拠として見ることに加え、ゲート合格後の CI の見張り（`references/ci-watch.md`）が拾う。auto-merge を配備したリポジトリでは必須チェックが緑になるまでマージされない。
 
-`skills/develop/SKILL.md` は、(3a) の return を受けてから (3b) を指示する SendMessage を送るまでのあいだに、本体が `scripts/subagent-context.sh <W の名前>` を実行してコンテキスト量を測ることを書かなければならない（MUST）。上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本である（再掲の禁止は既存の Requirement「コンテキスト上限の規則の本文は decision-criteria.md 1 箇所に置く」が規定しており、ここでは重ねて規定しない）。
+`skills/develop/SKILL.md` は、(3a) の return を受けてから (3b) を指示する SendMessage を送るまでのあいだに、本体が `scripts/subagent-context.sh <W の名前>` を実行してコンテキスト量を測ることを書かなければならない（MUST）。上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」、return の 1 行目の宣言は `references/return-declaration.md` が正本である（再掲の禁止は既存の Requirement「コンテキスト上限の規則の本文は、本体向けを decision-criteria.md に、W と G の宣言を return-declaration.md に置く」が規定しており、ここでは重ねて規定しない）。
 
 本体は次に指示する工程を、**自分が (3a) を指示したか (3b) を指示したかで決めなければならない**（MUST）。工程名の文字列照合で決めてはならない（MUST NOT）。
 
@@ -774,7 +800,7 @@ develop の `references/epic.md`「エピックの扱い」は次を規定しな
 - **THEN** stdout は `failed 11` と `skipped 11` の2行、`orca worktree create` は子 11 について 1 回だけ呼ばれ、`failed` が 1 件あるため exit code は 1
 
 ### Requirement: G が passed を返したら本体が CI を見張る
-`skills/develop/SKILL.md` の (4) は、G が `passed` を return したあと、本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始めることを書かなければならない（MUST）。G の `passed` の return に `issue で承認済み:` の行があれば、本体は見張りを始める前に、主へその行（宣言コメントの URL・当たった分類・引用した issue の文）を 1 回伝えなければならない（MUST。pr-review-gate 手順 5 の事後報告。auto-merge 配備リポではマージまで主との会話が起きないため、本体の手順に置かないと報告が起きない）。見張りの一手が `fix` のときは、本体が W に直させる（MUST）。担当と段の分岐は `references/decision-criteria.md` Step B の軽い通し方の小節に定め、SKILL.md の passed 分岐と共有 reference の直し方から参照できなければならない（MUST）。軽い通し方（記録先の最新の仕様化判断に `通し方: 軽い` の行がある PR）では、本体が同じ worktree に W を `段: spec` で新しく起こし、PR・記録先・`fix` の観測（`ci-fail` または `conflict` と失敗したチェック・run などの修正材料）を渡す（SHALL）。起動指示には `plugins/dev-workflow/references/ci-watch.md`「7. 直し方」に従うこと（最初の push の前に手順 3 の passed 解除・Draft 化・pending 付与）と、`ci-fail` の関係確認を仕様化判断の再投稿より先に行うことを含める（SHALL）。存在しない W の再開や本体による直接修正をしてはならない（MUST NOT）。新しい W は、`ci-fail` では仕様化判断の手順に入る前に共有手順「7. 直し方」手順 2 の失敗ログと PR 差分の関係確認を行い、同文書「5. `--unrelated` を渡す基準」で差分と無関係と判断できた場合は、仕様化判断を投稿し直さず、artifact 作成・修正・push をせずにチェック名と根拠を本体へ返さなければならない（MUST）。この場合は最新の `通し方: 軽い` の判断を保持し、passed 解除・Draft 化・pending 付与にも進まず、本体が同じ PR・同じ状態ファイルで既存の `next --unrelated <チェック名> --after-fix` を 1 回だけ実行してその一手に従う（SHALL）。関係がある場合、または無関係と判断できない場合は、この確認のあと、実装前に同じ記録先へ `通し方:` の行の無い仕様化判断を投稿し直す（SHALL。「する」か「しない」かは W が決め直す）。`conflict` はこの無関係返却の対象とせず、従来どおり判断を投稿し直す（SHALL）。修正に進む場合、以後は通常の通し方で、仕様化するなら artifact 一式と R1 の APPROVE を経て実装し、どちらの判断でもテストを書き、修正を同じ PR に積む（SHALL）。同じ記録先へ `通し方: 軽い` を投稿し直してはならない（MUST NOT）。通常経路で既存 W がある場合（軽い通し方から既に通常へ戻った PR を含む）は、W を `段: implement` で再開し、再開か手渡しかは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」に従う（SHALL）。この場合は CI 見張りの `fix` だけを理由に `段: spec` へ戻したり仕様化判断を投稿し直したりしない（SHALL）。軽い通し方から戻した W の仕様化途中の push では見張りに戻らず、通常経路の (1) → R1（仕様化する場合）→ (3a) → (3b) を進め、(3b) の return を受けてから `wait` → `next` に戻る（SHALL）。通常経路の既存 W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け（CI のやり直し・再度の直しもここで処理する）、`ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、G が再び `passed` を返したら見張りの続き（reference の「`ready` を受けたあと」）に進むこと、合格するまでマージ待ち・マージ依頼に進まないことを書く（MUST）。見張りの中身は reference を参照し、SKILL.md に言い換えて再掲してはならない（MUST NOT）。
+`skills/develop/SKILL.md` の (4) は、G が `passed` を return したあと、本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始めることを書かなければならない（MUST）。G の `passed` の return に `issue で承認済み:` の行があれば、本体は見張りを始める前に、主へその行（宣言コメントの URL・当たった分類・引用した issue の文）を 1 回伝えなければならない（MUST。pr-review-gate 手順 5 の事後報告。auto-merge 配備リポではマージまで主との会話が起きないため、本体の手順に置かないと報告が起きない）。見張りの一手が `fix` のときは、本体が W に直させる（MUST）。担当と段の分岐は `references/light-path.md` の「CI 見張りの fix からの戻し方」に定め、SKILL.md の passed 分岐と共有 reference の直し方から参照できなければならない（MUST）。軽い通し方（記録先の最新の仕様化判断に `通し方: 軽い` の行がある PR）では、本体が同じ worktree に W を `段: spec` で新しく起こし、PR・記録先・`fix` の観測（`ci-fail` または `conflict` と失敗したチェック・run などの修正材料）を渡す（SHALL）。起動指示には `plugins/dev-workflow/references/ci-watch.md`「7. 直し方」に従うこと（最初の push の前に手順 3 の passed 解除・Draft 化・pending 付与）と、`ci-fail` の関係確認を仕様化判断の再投稿より先に行うことを含める（SHALL）。存在しない W の再開や本体による直接修正をしてはならない（MUST NOT）。新しい W は、`ci-fail` では仕様化判断の手順に入る前に共有手順「7. 直し方」手順 2 の失敗ログと PR 差分の関係確認を行い、同文書「5. `--unrelated` を渡す基準」で差分と無関係と判断できた場合は、仕様化判断を投稿し直さず、artifact 作成・修正・push をせずにチェック名と根拠を本体へ返さなければならない（MUST）。この場合は最新の `通し方: 軽い` の判断を保持し、passed 解除・Draft 化・pending 付与にも進まず、本体が同じ PR・同じ状態ファイルで既存の `next --unrelated <チェック名> --after-fix` を 1 回だけ実行してその一手に従う（SHALL）。関係がある場合、または無関係と判断できない場合は、この確認のあと、実装前に同じ記録先へ `通し方:` の行の無い仕様化判断を投稿し直す（SHALL。「する」か「しない」かは W が決め直す）。`conflict` はこの無関係返却の対象とせず、従来どおり判断を投稿し直す（SHALL）。修正に進む場合、以後は通常の通し方で、仕様化するなら artifact 一式と R1 の APPROVE を経て実装し、どちらの判断でもテストを書き、修正を同じ PR に積む（SHALL）。同じ記録先へ `通し方: 軽い` を投稿し直してはならない（MUST NOT）。通常経路で既存 W がある場合（軽い通し方から既に通常へ戻った PR を含む）は、W を `段: implement` で再開し、再開か手渡しかは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」に従う（SHALL）。この場合は CI 見張りの `fix` だけを理由に `段: spec` へ戻したり仕様化判断を投稿し直したりしない（SHALL）。軽い通し方から戻した W の仕様化途中の push では見張りに戻らず、通常経路の (1) → R1（仕様化する場合）→ (3a) → (3b) を進め、(3b) の return を受けてから `wait` → `next` に戻る（SHALL）。通常経路の既存 W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け（CI のやり直し・再度の直しもここで処理する）、`ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、G が再び `passed` を返したら見張りの続き（reference の「`ready` を受けたあと」）に進むこと、合格するまでマージ待ち・マージ依頼に進まないことを書く（MUST）。見張りの中身は reference を参照し、SKILL.md に言い換えて再掲してはならない（MUST NOT）。
 
 **復帰判定の守備範囲**: 入力は CI 見張りが返した `fix` の観測（`ci-fail` / `conflict`、チェック・run など）、記録先（issue または Draft PR）の最新の仕様化判断、本体が把握している W の有無と再開・手渡しの可否である。この判定は、存在しない W の再開、本体による直接修正、軽い判断を残したままの implement 起動、古い判断に基づく通常復帰後の spec 再起動を拾うために、担当・起動段・判断記録の接続を定める。CI 失敗と PR 差分の因果関係まで保証するものではなく、見張りが `fix` と判定した失敗を W がログ確認後に差分と無関係と判断し、修正・push せず本体へ返し、共有手順の `next --unrelated <チェック名> --after-fix` に進むことを許す。軽い通し方から起きた新しい W では、この関係確認は通常判断の再投稿より前に行い、無関係と判明した失敗では最新判断だけを通常化してはならない（MUST NOT）。完了条件は上記の接続を手順と関係テストで確認することであり、観測や W の判断に残る穴をすべて塞ぎ切ることを完了条件にしてはならない（MUST NOT）。
 
@@ -834,7 +860,7 @@ G の指示書 `skills/develop/references/roles/gate-runner.md` は、G が CI �
 
 #### Scenario: spec 段の一般手順より先に CI 失敗の関係を確認する
 - **WHEN** 軽い通し方の CI fix から新しい W を起こす指示と `roles/worker/spec.md` を読む
-- **THEN** decision-criteria.md の復帰手順へ接続し、`ci-fail` の関係確認を仕様化判断の投稿より先に行い、無関係なら判断記録の手順へ入らず返すことが一意に定まる
+- **THEN** light-path.md の復帰手順へ接続し、`ci-fail` の関係確認を仕様化判断の投稿より先に行い、無関係なら判断記録の手順へ入らず返すことが一意に定まる
 
 ### Requirement: G は段ごとに要るファイルだけを読む
 
@@ -1358,7 +1384,7 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 
 `worker/common.md` の「コンテキスト上限と手渡し」の節は、手渡しで起こされた W に向けて、前任の要点は読む場所の案内であり、編集する前には該当範囲を自分で読んで確かめることを書かなければならない（MUST）。要点を判断の根拠として読み替えてよいと書いてはならない（MUST NOT）。
 
-`references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の節が成果一覧を列挙する箇所（`工程完了:` の説明と、通知を受けたときの振る舞い）は W / G 共通の定義なので、「読んだコードの要点」を「W の場合のみ必須」という条件付きで含まなければならない（MUST）。G に必須と読める無条件の追記をしてはならない（MUST NOT。G は段ごとに新しく起こされ、`工程中断:` の return を同じ段の新しい G に渡す既存の経路はこの欄を前提にしないため）。書式（1 行の形・上限行数）は `worker/common.md` を正本とし、`decision-criteria.md` に再掲してはならない（MUST NOT。上限を変えたときに片方が取り残されるため）。
+`references/return-declaration.md` が成果一覧を列挙する箇所（`工程完了:` の説明と、通知を受けたときの振る舞い）は W / G 共通の定義なので、「読んだコードの要点」を「W の場合のみ必須」という条件付きで含まなければならない（MUST）。G に必須と読める無条件の追記をしてはならない（MUST NOT。G は段ごとに新しく起こされ、`工程中断:` の return を同じ段の新しい G に渡す既存の経路はこの欄を前提にしないため）。書式（1 行の形・上限行数）は `worker/common.md` を正本とし、`return-declaration.md` に再掲してはならない（MUST NOT。上限を変えたときに片方が取り残されるため）。
 
 #### Scenario: worker/common.md の手渡しの節に欄と書式がある
 - **WHEN** `references/roles/worker/common.md` の「コンテキスト上限と手渡し」の節を読む
@@ -1373,7 +1399,7 @@ interactive の本体は主への依頼に「返事は新しいセッション�
 - **THEN** どちらにも「読んだコードの要点」を書くことが含まれている
 
 #### Scenario: 手渡しの入力の定義に欄の名前がある
-- **WHEN** `references/decision-criteria.md` の「コンテキスト上限（サブエージェントの手渡し）」の節を読む
+- **WHEN** `references/return-declaration.md` を読む
 - **THEN** 成果一覧を列挙する 2 箇所がどちらも「読んだコードの要点」を「W の場合のみ必須」の条件付きで含み、書式は `worker/common.md` を参照していて、上限行数の数値は書かれていない
 
 ### Requirement: (1) で作業項目ごとに触る範囲を書く
@@ -1429,11 +1455,11 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 - `implement.md`（実装と検証。(3a) と、G の failed や CI の見張りの `fix` を受けた修正）: (3a) 実装＋verify
 - `finish.md`（仕上げ。(3b)）: (3b) archive＋PR＋仕様宣言
 
-どの段でも要る規則（W がしないこと・実装に入る前の確認・昇格トリップワイヤー・コンテキスト上限と手渡し）は `common.md` に置き、それを使う全部の段から読める位置になければならない（MUST。1 つの段のファイルにだけ置いて、他の段で効かなくしてはならない）。1 回の起動で読む字数に上限は置かない。字数を減らすことを配置の理由にしてはならず（MUST NOT）、節の置き場所は、その節を使う段と読み手（W か本体か）で決める。`worker/` の 4 本・索引・`references/pre-classification.md` の `## ` 見出しは、このうち 1 ファイルにだけなければならない（MUST。同じ節を 2 か所に書かない）。移すときに手順の中身（規則・書式・コマンド・閾値）を変えてはならない（MUST NOT）。段をまたぐ参照はファイル名と節名で書き、中身を言い換えて再掲してはならない（MUST NOT）。
+どの段でも要る規則（W がしないこと・実装に入る前の確認・昇格トリップワイヤー・コンテキスト上限と手渡し）は `common.md` に置き、それを使う全部の段から読める位置になければならない（MUST。1 つの段のファイルにだけ置いて、他の段で効かなくしてはならない）。節の置き場所は、その節を使う段と読み手（W か本体か）で決める（MUST）。W が段ごとに読むファイルの合計の予算は「W が段ごとに読むファイルの合計に予算を置く」の要件が定める。`worker/` の 4 本・索引・`references/pre-classification.md` の `## ` 見出しは、このうち 1 ファイルにだけなければならない（MUST。同じ節を 2 か所に書かない）。移すときに手順の中身（規則・書式・コマンド・閾値）を変えてはならない（MUST NOT）。段をまたぐ参照はファイル名と節名で書き、中身を言い換えて再掲してはならない（MUST NOT）。
 
 「(3) をこれより細かく切らない」の箇条（手渡しの固定分と、実装の途中で交代させたときに後任が Red のテストから再出発する理由）は、develop の `SKILL.md` の (3) に置かなければならない（MUST）。SKILL.md はこれを理由の正本として持ち、索引 `references/roles/worker.md` や `references/roles/worker/` の指示書を理由の正本として指してはならない（MUST NOT）。
 
-この要件の回帰テスト（`plugins/dev-workflow/tests/develop-worker-stages.bats`）の守備範囲は次のとおりとする。入力は索引 `references/roles/worker.md`・`worker/` の 4 本・`references/pre-classification.md` のファイルの中身で、拾うのは、索引の中のコードブロック・段の表が指すファイルの不在・昇格トリップワイヤーの節が `common.md` に無いこと・同じ `## ` 見出し行が 2 ファイル以上にあること、である。次はテストを通ってしまい、この要件の回帰テストでは止めない: 見出しを変えて同じ節を別のファイルに書いたもの、見出し以外の本文で規則を言い換えて再掲したもの、移すときに規則・書式・コマンド・閾値の文言を変えたもの、索引がコードブロックを使わずに旧 worker.md の節から移し先への対応表を持つもの、W が段のファイル以外（`decision-criteria.md` の節など）を読む分。これらは PR レビューで見る。この穴をテストで塞ぎ切ることは完了条件にしない。
+この要件の回帰テスト（`plugins/dev-workflow/tests/develop-worker-stages.bats`）の守備範囲は次のとおりとする。入力は索引 `references/roles/worker.md`・`worker/` の 4 本・`references/pre-classification.md` のファイルの中身で、拾うのは、索引の中のコードブロック・段の表が指すファイルの不在・昇格トリップワイヤーの節が `common.md` に無いこと・同じ `## ` 見出し行が 2 ファイル以上にあること、である。次はテストを通ってしまい、この要件の回帰テストでは止めない: 見出しを変えて同じ節を別のファイルに書いたもの、見出し以外の本文で規則を言い換えて再掲したもの、移すときに規則・書式・コマンド・閾値の文言を変えたもの、索引がコードブロックを使わずに旧 worker.md の節から移し先への対応表を持つもの、W が段のファイル以外（`references/return-declaration.md`・`references/spec-decision.md` など）を読む分。これらは PR レビューで見る。この穴をテストで塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 索引が中身を持たない
 
@@ -1480,7 +1506,7 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 重要実装の事前分類（聖域パス・マージ権限・層間契約・課金/法務の表と、W の上限・読んで判断する役の種別・残量モードの優先の説明）は、`plugins/dev-workflow/skills/develop/references/pre-classification.md` に置かなければならない（MUST）。このファイルが事前分類の正本であり、`worker/` の 4 本と索引に表を再掲してはならない（MUST NOT）。
 
-事前分類を参照する次の箇所は `references/pre-classification.md` を指さなければならず（MUST）、事前分類について索引 `references/roles/worker.md` や `references/roles/worker/` の指示書を指してはならない（MUST NOT）: develop の `SKILL.md` の (1) の spawn の行と「モデル」の役割表・`references/roles/spec-reviewer.md`・`references/decision-criteria.md` の残量モード表・pr-review-gate の `stages/triage.md`・`plugins/dev-workflow/references/model-tiers.md`・`plugins/dev-workflow/README.md`。
+事前分類を参照する次の箇所は `references/pre-classification.md` を指さなければならず（MUST）、事前分類について索引 `references/roles/worker.md` や `references/roles/worker/` の指示書を指してはならない（MUST NOT）: develop の `SKILL.md` の (1) の spawn の行と「モデル」の役割表・`references/roles/spec-reviewer.md`・`references/decision-criteria.md` の残量モードと共有枠モードの優先順位の表・pr-review-gate の `stages/triage.md`・`plugins/dev-workflow/references/model-tiers.md`・`plugins/dev-workflow/README.md`。
 
 #### Scenario: 表が 1 か所にある
 
@@ -1525,7 +1551,7 @@ W の手順の本文は `skills/develop/references/roles/worker/` の次の 4 �
 
 ### Requirement: Codex の W の phase には共通と段のファイルを正本として渡す
 
-`plugins/dev-workflow/scripts/codex-develop.py` は、Codex の W の phase に次の正本を付けなければならない（MUST）: `spec` は `skills/develop/references/roles/worker/common.md` と `worker/spec.md`、`implement` と `finish` は `worker/common.md` とそれぞれ `worker/implement.md`・`worker/finish.md`、`explore` と `summarize` は `worker/common.md` だけ。`skills/develop/references/decision-criteria.md` を付けることは変えない（MUST）。索引 `roles/worker.md` を正本として付けてはならない（MUST NOT）。
+`plugins/dev-workflow/scripts/codex-develop.py` は、Codex の W の phase に次の正本を付けなければならない（MUST）: `spec` は `skills/develop/references/roles/worker/common.md` と `worker/spec.md`、`implement` と `finish` は `worker/common.md` とそれぞれ `worker/implement.md`・`worker/finish.md`、`explore` と `summarize` は `worker/common.md` だけ。どの phase にも `skills/develop/references/decision-criteria.md` の代わりに `skills/develop/references/return-declaration.md` を付け（MUST）、`spec` にはさらに `skills/develop/references/spec-decision.md` を付ける（MUST）。`decision-criteria.md` を付けてはならない（MUST NOT。分けたあとは本体だけが使う規則のファイルのため）。索引 `roles/worker.md` を正本として付けてはならない（MUST NOT）。
 
 #### Scenario: phase ごとの正本
 
@@ -3235,7 +3261,7 @@ develop の `references/epic.md`「エピックの扱い」→「回し方」の
 
 channel の本体は AskUserQuestion を呼んではならない（MUST NOT）。主に聞くときは、依頼の届いたチャンネル（依頼の発言の開きタグの `chat_id`）にチャンネルの返信ツールで質問を送り、そのターンを終えなければならない（MUST）。依頼がチャンネルから届いていないときは、そのセッションの運用が決める主への連絡先に送り、連絡先が分からなければ記録先に質問をコメントして `needs-approval` を付けて止まる（MUST）。記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限・仕様レビューの条件の問い）は先に PR か記録先のコメントに書き、チャンネルの質問にそのコメントのフル URL を添える（MUST）。
 
-`skills/develop/references/channel.md` の「channel の聞き方」は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/decision-criteria.md`・`skills/develop/references/epic-child-stop.md`・`skills/develop/references/fix-check.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`commands/synced-skills-slim.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md と `skills/develop/references/channel.md` と、手順として読まれない hook の 2 ファイル（`hooks/hooks.json` と `scripts/unattended-ask-guard.sh`。spec `unattended-ask-hook`）を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。入口の分岐で主に聞く場面なので、channel.md の読み替えの規則の例外としてその場にも書く）。
+`skills/develop/references/channel.md` の「channel の聞き方」は、develop と develop から読む文書の「interactive は AskUserQuestion で聞く」を、channel ではこの聞き方に読むと 1 か所に書き、対象の文書（`skills/develop/references/spec-decision.md`・`skills/develop/references/epic-child-stop.md`・`skills/develop/references/fix-check.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`templates/escalation-tripwires.md`・`commands/develop.md`・`commands/work-issue.md`・`commands/synced-skills-slim.md`・`skills/issueify/SKILL.md`）を、`plugins/dev-workflow/` からの相対パスの 1 つの形で挙げなければならない（MUST）。`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く。`changes/` は変更の記録で、手順として読まれない）で `AskUserQuestion` を含むファイルは、SKILL.md と `skills/develop/references/channel.md` と、手順として読まれない hook の 2 ファイル（`hooks/hooks.json` と `scripts/unattended-ask-guard.sh`。spec `unattended-ask-hook`）を除いてすべて、`plugins/dev-workflow/` からの相対パスがそのまま（バッククォートで囲んだ形で）この列挙に載っていなければならず（MUST）、bats で確かめる（SHALL。読み替えを 1 か所に書く方式は、列挙が漏れると漏れた文書の本体の手順が AskUserQuestion に流れるため）。`commands/develop.md` は、引数の分岐 ②⑤ の候補の提示と issueify フォールバックの承認が channel ではチャンネルでの質問になることを、その場にも書かなければならない（MUST。入口の分岐で主に聞く場面なので、channel.md の読み替えの規則の例外としてその場にも書く）。
 
 この要件の守備範囲は、channel で本体が AskUserQuestion に流れる経路を develop の文面から無くすことである。拾いたい誤りは、develop の手順のどこかが channel の本体に AskUserQuestion を呼ばせること。develop 以外のスキル（wt-clean など）が AskUserQuestion を呼ぶことと、本体が文面に反して呼ぶことを機械的に止めることは、この要件の範囲に入れない（無人の印 `DEV_WORKFLOW_UNATTENDED` のあるセッションでは spec `unattended-ask-hook` の hook が止める。印が無く、チャンネルの依頼だけで channel になったセッションは、この要件の文面の規則だけが止める）。穴が見つかるたびに検査を足して塞ぎ切ることを、この要件の完了条件にしない（MUST NOT）。
 
@@ -4674,7 +4700,7 @@ wait は声かけの送信・返事だけを理由に stdout の行を追加し�
 ### Requirement: unmanned の W は質問を直接送らず本体へ返す
 unmanned で仕様の発明が 2 回に達した、または change の割り方が判断できないほど曖昧なとき、W は Discord（MCP・CLI とも）へ直接送信してはならない（MUST NOT）。W は質問文・理由を return に含め、記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return しなければならない（MUST）。`worker/` 配下と `agents/worker.md` の Discord の記述は、W は送らず本体が送る否定文脈に限る（MUST）。worker の tools に Discord の道具を追加してはならない（MUST NOT）。
 
-**守備範囲**: 静的検査の入力元は、対象指示書（`worker/` 配下・`references/decision-criteria.md`・`SKILL.md` の実行モードの説明）と agent 定義（`agents/worker.md`）である。拾う誤りは、W による Discord 直接送信指示の再混入と、質問文・理由・needs-approval・経緯コメント・return などの return 契約の欠落とする。Discord 記述の分類では、例えば「W は Discord に送信せず、質問文を本体に返す」は直接送信指示として検出せず、検査を通る入力として許す（return 契約の充足は別途確認する）。自然文のあらゆる言い換えによるすり抜けを塞ぎ切ることは完了条件にしない。指定の grep 結果の全行確認を併用し、実際の Discord の配送成功はこの静的検査の対象にしない。
+**守備範囲**: 静的検査の入力元は、対象指示書（`worker/` 配下・`references/spec-decision.md`・`SKILL.md` の実行モードの説明）と agent 定義（`agents/worker.md`）である。拾う誤りは、W による Discord 直接送信指示の再混入と、質問文・理由・needs-approval・経緯コメント・return などの return 契約の欠落とする。Discord 記述の分類では、例えば「W は Discord に送信せず、質問文を本体に返す」は直接送信指示として検出せず、検査を通る入力として許す（return 契約の充足は別途確認する）。自然文のあらゆる言い換えによるすり抜けを塞ぎ切ることは完了条件にしない。指定の grep 結果の全行確認を併用し、実際の Discord の配送成功はこの静的検査の対象にしない。
 
 #### Scenario: 仕様の発明が 2 回に達した
 - **WHEN** unmanned の W が記録先に無い仕様上の決定を埋めた回数が 2 回に達する
@@ -4693,7 +4719,7 @@ unmanned で仕様の発明が 2 回に達した、または change の割り方
 - **THEN** `Read, Edit, Write, Bash, Grep, Glob, TaskStop` のままで、Discord の道具を追加していない
 
 #### Scenario: 分割判定の正本も同じ送信主体を指す
-- **WHEN** `references/decision-criteria.md` の「割り方が判断できないほど曖昧な場合」の unmanned の説明を読む
+- **WHEN** `references/spec-decision.md` の「割り方が判断できないほど曖昧な場合」の unmanned の説明を読む
 - **THEN** W の質問文・理由の return と needs-approval・経緯コメント、および本体の代理送信の責務分担と整合し、W に直接送信を要求していない
 
 ### Requirement: 仕様レビューの残った指摘は直し方の判定の前に条件を確かめる
@@ -5287,7 +5313,7 @@ develop/SKILL.md の failed 後の W 起動／再開手順と handover.md を読
 
 ### Requirement: 通常判断で W を把握しない本体は許可された手渡しで implement 担当を用意する
 
-最新の仕様化判断が通常経路で、本体が既存 W を把握しない場合、decision-criteria.md の CI fix 分岐は、handover.md の CI 用手順へ渡さなければならない（MUST）。本体は最新の引き継ぎの対象一致、必要情報、手渡し許可の根拠を確認できた場合だけ、新しい W を `段: implement` で起こす（MUST）。既存判断と必要な R1 APPROVE を維持し、fix だけを理由に spec へ戻したり仕様化判断を再投稿したりしない（MUST NOT）。ci-watch.md 9 の再起動と 2 の指示による再開の fix にも同じ分岐を適用する（SHALL）。
+最新の仕様化判断が通常経路で、本体が既存 W を把握しない場合、light-path.md の CI fix 分岐は、handover.md の CI 用手順へ渡さなければならない（MUST）。本体は最新の引き継ぎの対象一致、必要情報、手渡し許可の根拠を確認できた場合だけ、新しい W を `段: implement` で起こす（MUST）。既存判断と必要な R1 APPROVE を維持し、fix だけを理由に spec へ戻したり仕様化判断を再投稿したりしない（MUST NOT）。ci-watch.md 9 の再起動と 2 の指示による再開の fix にも同じ分岐を適用する（SHALL）。
 
 #### Scenario: 起動し直した本体が通常経路の CI 失敗を受ける
 - **WHEN** ci-watch.md 9 から `ci-fail` の fix に進む本体が W を把握せず、PR コメント全ページから得た最新の CI 用引き継ぎに必要情報と手渡し可の根拠があり、PR・HEAD・ブランチ・worktree が現在の対象と一致している
@@ -5440,3 +5466,55 @@ SKILL.md「モデル」節の失敗ループの段落は、`request` の `--fail
 
 - **WHEN** `論点なしの止まり` の有効な委任があり、停止の記録の頭と `推奨:` と `主に聞く理由:` が条件どおり
 - **THEN** 親は委任で送り、`主に聞く理由:` の書き誤りはこの判定では止めない
+
+### Requirement: W が段ごとに読むファイルの合計に予算を置く
+
+W が段ごとに読むファイルの合計の大きさに予算を置き、超えたら検査が落ちなければならない（MUST）。予算は `tests/develop-worker-stage-budget.txt`（1 行 1 段: `<段> <バイト数>`）に置き、検査は `tests/develop-worker-stage-budget.bats` が行う（MUST）。守備範囲は「W の段ごとに読むファイルの一覧を手順書の名指しと突き合わせる」の段落に従う。検査は段ごとに固定した読むファイルの一覧で合計を測る（MUST。一覧は下のシナリオ「段ごとに測るファイル」のとおり。パスは `plugins/dev-workflow/skills/develop/references/` から、`agents/` と `skills/` で始まるものは `plugins/dev-workflow/` から）。
+
+#### Scenario: 段ごとに測るファイル
+
+- **WHEN** `develop-worker-stage-budget.bats` が各段の合計を測る
+- **THEN** spec の段は `agents/worker.md`・`roles/worker/common.md`・`roles/worker/spec.md`・`spec-decision.md`・`return-declaration.md` を足す
+- **AND** implement の段は `agents/worker.md`・`roles/worker/common.md`・`roles/worker/implement.md`・`return-declaration.md` を足す
+- **AND** finish の段は `agents/worker.md`・`roles/worker/common.md`・`roles/worker/finish.md`・`skills/pr-review-gate/declarations.md`・`return-declaration.md` を足す
+
+#### Scenario: 段の合計が予算を超える
+
+- **WHEN** `worker/common.md` に文を足して、spec の段の合計が予算を超える
+- **THEN** `develop-worker-stage-budget.bats` が、段の名前・実測・予算を出して落ちる
+
+### Requirement: W の段ごとの予算はバイト数で上下両方向に判定する
+
+W の段ごとの予算の単位はバイト数（`wc -c`）としなければならない（MUST。字数はロケールで値が変わり、CI と手元でずれるため）。判定は上下両方向で、実測が予算を超えたら落ち、予算が実測の 1.1 倍を超えても落ちなければならない（MUST。減らした変更に予算の引き下げを求め、削った分が次の増加の余地として残らないようにするため）。G の段ごとの予算はこの要件の対象外とする。守備範囲は「W の段ごとに読むファイルの一覧を手順書の名指しと突き合わせる」の段落に従う。
+
+#### Scenario: 予算が実測から離れすぎる
+
+- **WHEN** 予算が実測の 1.1 倍を超えている
+- **THEN** 検査が落ち、予算の引き下げを求める
+
+### Requirement: W の段ごとに読むファイルの一覧を手順書の名指しと突き合わせる
+
+一覧が手順書とずれないよう、`worker/common.md` が `return-declaration.md` を、`worker/spec.md` が `spec-decision.md` を、`worker/finish.md` が `skills/pr-review-gate/declarations.md` を名指ししていることを検査しなければならない（MUST）。
+
+**守備範囲**（この要件と「W が段ごとに読むファイルの合計に予算を置く」「W の段ごとの予算はバイト数で上下両方向に判定する」の 3 要件に共通で当てる）: 入力は一覧のファイルの中身と予算ファイル。拾う誤りは、合計が予算を超えて増えることと、手順書が新しいファイルを読ませ始めたのに一覧を直さないことのうち名指しの検査で分かるもの。同じ大きさでの中身の入れ替えと、一覧に無いファイルを読ませる指示の追加は通る（エピック #1682 で主が受け入れた残り。仕様レビューと PR レビューが見る）。穴を塞ぎ切ることを完了条件にしない。
+
+#### Scenario: 手順書が名指しをやめる
+
+- **WHEN** `worker/spec.md` から `spec-decision.md` を名指しする文を消す
+- **THEN** `develop-worker-stage-budget.bats` が、名指しが見つからないファイルの名前を出して落ちる
+
+### Requirement: 軽い通し方と CI 修正からの戻し方は light-path.md に置き、CI 修正担当の引き継ぎの手順は handover.md に寄せる
+
+本体が読む（CI 見張りの fix からの戻し方は CI fix から起きた W も読む）軽い通し方（当てる条件・本体の手順・途中で外れたとき・G の failed からの戻し方・CI 見張りの fix からの戻し方・守備範囲）は `skills/develop/references/light-path.md` に置かなければならない（MUST）。W が `段: spec` で読むファイル（`references/spec-decision.md`）に軽い通し方の手順を置いてはならない（MUST NOT）。
+
+CI 見張りの fix からの戻し方のうち、通常判断で W を把握しない本体が引き継ぎを読む手順と、W を起動・再開する前に最新の可を不可として投稿し、工程完了か停止確認のあとで可へ戻す手順は、`references/handover.md`「CI 見張りの修正担当の引き継ぎ」を正本とし、`light-path.md` は分岐と節名への参照だけを書かなければならない（MUST）。`light-path.md` にこの 2 つの手順を言い換えて再掲してはならない（MUST NOT）。
+
+#### Scenario: 引き継ぎの手順は handover.md だけにある
+
+- **WHEN** `light-path.md` の「CI 見張りの fix からの戻し方」を読む
+- **THEN** 通常判断で W を把握しない本体の分岐と、起動・再開前の無効化と再許可は、`handover.md` の節名への参照で書かれている
+
+#### Scenario: W の段 spec のファイルに軽い通し方の手順が無い
+
+- **WHEN** `spec-decision.md` を読む
+- **THEN** 軽い通し方の本体の手順が無く、`light-path.md` への参照がある

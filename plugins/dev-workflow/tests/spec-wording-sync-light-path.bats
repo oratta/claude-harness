@@ -6,10 +6,12 @@
 # ゲートの照合コマンドが fixture で期待どおりに振る舞うことを確かめる。
 # spec: dev-workflow-spec-review / dev-workflow-develop / dev-workflow-pr-review-gate
 
+load lib/develop-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
-  CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  CRITERIA="${PLUGIN_DIR}/skills/develop/references/spec-decision.md"
   REVIEWER="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
   W_SPEC="${PLUGIN_DIR}/skills/develop/references/roles/worker/spec.md"
   W_COMMON="${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md"
@@ -80,8 +82,9 @@ step5() { LC_ALL=C awk '/^### 5\. /{f=1} /^## (G として動くとき|出口)/{
   section "$W_SPEC" '仕様化判断' | grep -q '通し方: 文言合わせ'
   section "$W_SPEC" '仕様化判断' | grep -q '直す文:'
   section "$W_SPEC" '仕様化判断' | grep -qE 'gh (issue|pr) comment.*通し方: 文言合わせ.*直す文: '
-  section "$W_SPEC" '仕様化判断' | grep -qE '文言合わせ.*decision-criteria.md'
-  section "$W_SPEC" '仕様化判断' | grep -qE '迷ったら当てない'
+  section "$W_SPEC" '仕様化判断' | grep -qE '文言合わせ.*spec-decision.md'
+  # 迷ったときの倒し方は W の要約から spec-decision.md「判定に迷ったら」へ移した（#1683）
+  develop_docs | grep -qE '文言合わせの通し方を当てるかどうかで迷ったら.*主に聞かず、当てない側'
 }
 
 @test "worker/spec: spec section writes only the delta file and no proposal/design/tasks" {
@@ -131,7 +134,7 @@ step5() { LC_ALL=C awk '/^### 5\. /{f=1} /^## (G として動くとき|出口)/{
   loop_sec | grep -qE '通し方: 文言合わせ.*R1 の工程を飛ばし.*段: implement'
   loop_sec | grep -qE 'return の文面ではなく'
   loop_sec | grep -qE '行が無ければ.*段: spec.*R1 の工程を通す'
-  loop_sec | grep -q 'references/decision-criteria.md` Step B'
+  loop_sec | grep -q 'references/spec-decision.md` Step B'
 }
 
 @test "loop: (2) names the wording-sync path as the only exception, (3a) uses --type change" {

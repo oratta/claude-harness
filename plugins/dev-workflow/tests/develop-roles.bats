@@ -34,6 +34,7 @@ setup() {
 gate_all() { cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
 # W の否定の検査（その文言が W の指示書のどこにも無いこと）は索引・worker/ の 4 本・pre-classification.md の全部で見る（#556）
 worker_all() { cat "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "$PRE"; }
+load lib/develop-docs
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
 
 @test "roles: all three role files exist" {
@@ -93,8 +94,8 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   grep -qF '`model: fable`' "$PRE"
   grep -q '最初から' "$PRE"
   grep -qF 'AGENT_MODEL' "$PRE"
-  grep -qF 'FABLE_BUDGET_MODE=reserve' "$PRE"
-  grep -qF 'exhausted' "$PRE"
+  # 残量モードの上限は言い換えず decision-criteria.md の優先順位の表を指す（#1683）
+  grep -qF '優先順位の表は `skills/develop/references/decision-criteria.md`' "$PRE"
 }
 
 @test "worker: fallback record format points back to pr-review-gate" {
@@ -217,7 +218,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 @test "worker: split judgement is based on the issue text, and unmanned splits into child issues with blocked_by" {
   grep -q 'dependencies/blocked_by' "$W_SPEC"
-  grep -q 'references/decision-criteria.md' "$W_SPEC"
+  grep -q 'references/spec-decision.md' "$W_SPEC"
 }
 
 # ===== spec-reviewer.md =====
@@ -277,14 +278,18 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 
 @test "reviewer: spawned with explicit model, default opus, fable via pre-classification.md" {
   grep -q 'model' "$REVIEWER"
-  grep -q '`opus`' "$REVIEWER"
+  grep -q '`model: opus`' "$REVIEWER"
   grep -qE '事前分類.*fable|fable.*事前分類' "$REVIEWER"
   grep -q 'pre-classification.md' "$REVIEWER"
 }
 
-@test "reviewer: reserve only for automatic runs, exhausted for all paths" {
-  grep -qE 'reserve.*自動実行' "$REVIEWER"
-  grep -qE 'exhausted.*(全経路|すべて)' "$REVIEWER"
+@test "reviewer: budget modes point at the priority table in decision-criteria.md" {
+  # 値ごとの上限は decision-criteria.md の優先順位の表が正本で、R1 の指示書はそこを 1 行で指す（#1683）
+  grep -qF '適用は `codex-develop.py request` が行う' "$REVIEWER"
+  grep -qF '優先順位の表は `skills/develop/references/decision-criteria.md`' "$REVIEWER"
+  # 表の行（reserve の interactive の扱いなど）を言い換えて書かない
+  run grep -cE 'interactive の `reserve`' "$REVIEWER"
+  [ "$output" = "0" ]
 }
 
 @test "reviewer: return format has Spec Review Result with BLOCKER / SHOULD_FIX / NOTE" {
@@ -460,8 +465,14 @@ extract_context_cap_section() {
 
 @test "context cap: the canonical section holds the thresholds, the routes and the return prefixes" {
   dc="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  rd="${PLUGIN_DIR}/skills/develop/references/return-declaration.md"
   section="$(extract_context_cap_section "$dc")"
   [ -n "$section" ] || { echo "section not found in decision-criteria.md"; return 1; }
+  # 節の冒頭で W と G の宣言の置き場所（return-declaration.md）を指す（#1683）
+  echo "$section" | grep -qF 'references/return-declaration.md' || { echo "no pointer to return-declaration.md"; return 1; }
+  # 正本は節（本体向け）と return-declaration.md（W と G の宣言）の 2 か所（#1683）
+  section="${section}
+$(cat "$rd")"
   # 3 つの環境変数と 2 つの既定値
   for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000; do
     echo "$section" | grep -q -- "$token" || { echo "missing in the context cap section: $token"; return 1; }
@@ -485,8 +496,11 @@ extract_context_cap_section() {
   for f in "${faces[@]}"; do
     [ -f "$f" ] || { echo "missing face: $f"; return 1; }
     # 正本への参照があること
-    grep -q 'decision-criteria.md' "$f" || { echo "no pointer to decision-criteria.md: $f"; return 1; }
-    grep -q 'コンテキスト上限' "$f" || { echo "no reference to the context cap section: $f"; return 1; }
+    # decision-criteria.md「コンテキスト上限」か return-declaration.md を指す（#1683）
+    if ! grep -q 'return-declaration.md' "$f"; then
+      grep -q 'decision-criteria.md' "$f" || { echo "no pointer to decision-criteria.md or return-declaration.md: $f"; return 1; }
+      grep -q 'コンテキスト上限' "$f" || { echo "no reference to the context cap section: $f"; return 1; }
+    fi
     # 閾値の数値・環境変数名の再掲が無いこと
     for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000 150K; do
       if grep -q -- "$token" "$f"; then
@@ -1193,4 +1207,38 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   L=$(grep -F -- '- **レビュアーの要約受領**: `stages/triage.md`' "${ROLES}/gate-runner.md")
   [ -n "$L" ] || return 1
   echo "$L" | grep -qF '三表の照合より先に、その一覧表のコメント（`## 一覧（順 3）`）を `stages/triage.md` の順 3 の 2 段で照合する' || return 1
+}
+
+# 文言の検査を「develop 配下の手順書のどこかにあること」で確かめる共通の関数（#1683）
+@test "develop_docs: finds a sentence in the develop docs and not a sentence that does not exist (#1683)" {
+  develop_docs | grep -qF '**事前判定は仮決めにすぎない**' || return 1
+  if develop_docs | grep -qF 'この文は develop 配下のどの手順書にも無い（#1683 の検査用）'; then return 1; fi
+}
+
+# W と G が return に書く宣言は return-declaration.md に置き、閾値の環境変数名と移す前のファイルの中を指す句を持たない（#1683）
+@test "return-declaration.md carries the declaration without env names or in-file references to decision-criteria (#1683)" {
+  RD="${PLUGIN_DIR}/skills/develop/references/return-declaration.md"
+  [ -f "$RD" ] || return 1
+  grep -qF '  - `工程完了: <工程名>`（例: `工程完了: 仕様化まで`、`工程完了: 実装＋verify`）' "$RD" || return 1
+  grep -qF '  - `工程中断: <理由>`（例: `工程中断: テスト完了待ち`）' "$RD" || return 1
+  grep -qF '成果一覧を書いていても、そのバックグラウンドコマンドが完了していなければ `工程完了:` を宣言してはならない' "$RD" || return 1
+  grep -qF '**強制停止で止まった場合は、成果を書いていても必ず `工程中断:`**' "$RD" || return 1
+  if grep -qF 'DEV_WORKFLOW_' "$RD"; then echo "環境変数名がある" >&2; return 1; fi
+  if grep -qF '上の表' "$RD"; then echo "「上の表」がある" >&2; return 1; fi
+  if grep -qF '上の「手渡しの許可」' "$RD"; then echo "「上の「手渡しの許可」」がある" >&2; return 1; fi
+  # 本体向けの節は decision-criteria.md に残り、冒頭で return-declaration.md を指す
+  DC="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  section "$DC" 'コンテキスト上限（サブエージェントの手渡し）' | grep -qF 'references/return-declaration.md' || return 1
+  if grep -qF '**W / G 側の宣言義務**' "$DC"; then echo "宣言義務が decision-criteria.md に残っている" >&2; return 1; fi
+}
+
+# W と G は decision-criteria.md を読まない。return を書く前に読むのは return-declaration.md（#1683）
+@test "W and G instructions do not tell to read decision-criteria.md and point to return-declaration.md (#1683)" {
+  for f in "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "${PLUGIN_DIR}/agents/worker.md" "$GATE" "${PLUGIN_DIR}/agents/gate-runner.md"; do
+    if grep -F 'decision-criteria.md' "$f" | grep -qF '読'; then
+      echo "decision-criteria.md を読ませる文がある: $f" >&2; return 1
+    fi
+  done
+  grep -F 'return-declaration.md' "$W_COMMON" | grep -qF '読' || return 1
+  grep -F 'return-declaration.md' "$GATE" | grep -qF '読' || return 1
 }

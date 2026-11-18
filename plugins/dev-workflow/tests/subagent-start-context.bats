@@ -64,7 +64,9 @@ default_of() {
   [[ "$ctx" == *"SHARED_BUDGET_MODE"* ]] || return 1
   [[ "$ctx" == *"DEV_WORKFLOW_CONTEXT_CAP"* ]] || return 1
   [[ "$ctx" == *"DEV_WORKFLOW_CONTEXT_HARD_CAP"* ]] || return 1
-  [[ "$ctx" == *"decision-criteria.md"* ]] || return 1
+  # 案内する正本は W と G が読む return-declaration.md。本体向けの decision-criteria.md は案内しない（#1683）
+  [[ "$ctx" == *"skills/develop/references/return-declaration.md"* ]] || return 1
+  [[ "$ctx" != *"decision-criteria.md"* ]] || return 1
   # 親向けの「再開前に測る」行は渡さない
   [[ "$ctx" != *"subagent-context.sh"* ]] || return 1
 }
