@@ -2488,3 +2488,22 @@ no_point_section() { awk '/^#### 6-0\. 論点なしの宣言の確認/{f=1;print
     printf '%s\n' "$scope" | grep -qF '`論点なしの確認:` の記録（投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のもの）' || { echo "scope not narrowed: $spec"; return 1; }
   done
 }
+
+@test "issue1671: declarations, hold and pass do not point at the request with the old form words" {
+  local f t
+  for f in "$DECLARATIONS" "$HOLD" "$PASS_STAGE"; do
+    for t in '答え方' '3〜4 行' 'OK すると何が起きるかを中身で書いた質問'; do
+      ! grep -qF -- "$t" "$f" || { echo "$f keeps: $t"; return 1; }
+    done
+  done
+}
+
+@test "issue1671: hold.md writes a no-point request in the short form and takes the line count from section 3" {
+  local l
+  l="$(grep -E '^3\. 主への確認依頼は' "$HOLD")"
+  [ -n "$l" ]
+  printf '%s\n' "$l" | grep -qF '論点なしの短い形'
+  printf '%s\n' "$l" | grep -qF '行数は `~/.claude/output-styles/readable.md` の節 3 の論点の無い依頼の決まりに従い'
+  printf '%s\n' "$l" | grep -qF '宣言を写さない'
+  printf '%s\n' "$l" | grep -qF 'アクションの行に畳み'
+}
