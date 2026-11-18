@@ -26,6 +26,10 @@
 - **WHEN** epic.md の共通規則と epic-subagent.md を読む
 - **THEN** 共通規則は別セッション方式とサブエージェント方式の両方に適用すると分かる。サブエージェント方式がいつでも使えること、同方式に別セッション方式の kept 後の本体 worktree を消す操作は無いことが分かる。別リポジトリの子を起こさない制約と W ごとの隔離 worktree の規定は維持される
 
+#### Scenario: 声かけの後の通常の再開判定を確認できる
+- **WHEN** 親が epic-keepalive-watch.md の停止中の子へのキャッシュ維持の説明を読む
+- **THEN** 実際の返事が来たときの再開判定は reply-after-idle.md「そのまま送るか、起動し直すか（子）」への参照から確認できる。声かけの送信条件と子の再開判定は変わらない
+
 #### Scenario: 指定されたテストと公開版分類の説明が現在の配置を指す
 - **WHEN** epic-dispatch.bats・parent-merge.bats の回し方の所在を説明するコメントと、docs/public-private-split.md の「差し替え可能な起動部品の1つとして Orca を並べた行」の説明を読む
-- **THEN** コメントは epic-loop.md の通常進行・同時に動く子の上限と epic-subagent.md の該当段落を指す。docs の現行説明は epic-loop.md「部品ごとの欄」を指し、過去の行番号を保存した履歴表は現行参照と区別される。公開版分類の値は変わらない
+- **THEN** epic-dispatch.bats のコメントは epic-loop.md の通常進行・同時に動く子の上限と epic-subagent.md の該当段落を指す。parent-merge.bats の「マージ待ちの子」の所在説明コメントは epic-merge-wait.md「マージ待ちの子」を指す。docs の現行説明は epic-loop.md「部品ごとの欄」を指し、過去の行番号を保存した履歴表は現行参照と区別される。公開版分類の値は変わらない
