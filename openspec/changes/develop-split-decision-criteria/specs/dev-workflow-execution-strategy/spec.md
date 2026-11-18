@@ -46,12 +46,14 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/spec-decisi
 
 Fable 残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`）の値ごとの効果と、両者と事前分類が重なったときの優先順位（①共有枠モード ②その範囲内で事前分類による決める役 ③Fable 残量モード）は、`plugins/dev-workflow/skills/develop/references/decision-criteria.md` の 1 つの表に置かなければならない（MUST）。この表と同じ形の表を他のファイルに置いてはならない（MUST NOT）。値ごとの効果の文は、`scripts/session-tripwires.sh` が注入する効果の文と食い違ってはならない（MUST NOT）。
 
-`skills/develop/references/pre-classification.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`plugins/dev-workflow/references/model-tiers.md` は、優先順位を言い換えて書いてはならず（MUST NOT）、適用は `codex-develop.py request` が行うことと、表が `decision-criteria.md` にあることを 1 行で指さなければならない（MUST）。`skills/develop/references/roles/gate-runner.md` の本文にある同じ言い換えはこの要件の対象外とする（`gate-runner.md` の本文はゲートの手順書を割る別の変更が直す。この変更では参照先のパスだけを直す）。
-
 #### Scenario: 表は decision-criteria.md だけにある
 
 - **WHEN** develop 配下の手順書と `plugins/dev-workflow/references/model-tiers.md` から、残量モードと共有枠モードの値ごとの効果を表の行で並べた箇所を探す
 - **THEN** `decision-criteria.md` の 1 つの表だけが見つかる
+
+### Requirement: 他のファイルは残量モードと共有枠モードの優先順位を 1 行で指す
+
+`skills/develop/references/pre-classification.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`plugins/dev-workflow/references/model-tiers.md` は、優先順位を言い換えて書いてはならず（MUST NOT）、適用は `codex-develop.py request` が行うことと、表が `decision-criteria.md` にあることを 1 行で指さなければならない（MUST）。`skills/develop/references/roles/gate-runner.md` の本文にある同じ言い換えはこの要件の対象外とする（`gate-runner.md` の本文はゲートの手順書を割る別の変更が直す。この変更では参照先のパスだけを直す）。
 
 #### Scenario: 他のファイルは 1 行で指す
 

@@ -412,27 +412,39 @@ unmanned で仕様の発明が 2 回に達した、または change の割り方
 
 ### Requirement: W が段ごとに読むファイルの合計に予算を置く
 
-W が段ごとに読むファイルの合計の大きさに予算を置き、超えたら検査が落ちなければならない（MUST）。予算は `tests/develop-worker-stage-budget.txt`（1 行 1 段: `<段> <バイト数>`）に置き、検査は `tests/develop-worker-stage-budget.bats` が行う（MUST）。段ごとに読むファイル（`plugins/dev-workflow/` から）は次のとおりとし、検査はこの一覧で合計を測る（MUST）。
+W が段ごとに読むファイルの合計の大きさに予算を置き、超えたら検査が落ちなければならない（MUST）。予算は `tests/develop-worker-stage-budget.txt`（1 行 1 段: `<段> <バイト数>`）に置き、検査は `tests/develop-worker-stage-budget.bats` が行う（MUST）。検査は段ごとに固定した読むファイルの一覧で合計を測る（MUST。一覧は下のシナリオ「段ごとに測るファイル」のとおり。パスは `plugins/dev-workflow/skills/develop/references/` から、`agents/` と `skills/` で始まるものは `plugins/dev-workflow/` から）。
 
-| 段 | 読むファイル |
-|---|---|
-| spec | `agents/worker.md`・`skills/develop/references/roles/worker/common.md`・`skills/develop/references/roles/worker/spec.md`・`skills/develop/references/spec-decision.md`・`skills/develop/references/return-declaration.md` |
-| implement | `agents/worker.md`・`worker/common.md`・`worker/implement.md`・`return-declaration.md` |
-| finish | `agents/worker.md`・`worker/common.md`・`worker/finish.md`・`skills/pr-review-gate/declarations.md`・`return-declaration.md` |
+#### Scenario: 段ごとに測るファイル
 
-単位はバイト数（`wc -c`）とする（MUST。字数はロケールで値が変わり、CI と手元でずれるため）。判定は上下両方向で、実測が予算を超えたら落ち、予算が実測の 1.1 倍を超えても落ちる（MUST。減らした変更に予算の引き下げを求め、削った分が次の増加の余地として残らないようにするため）。一覧が手順書とずれないよう、`worker/common.md` が `return-declaration.md` を、`worker/spec.md` が `spec-decision.md` を、`worker/finish.md` が `skills/pr-review-gate/declarations.md` を名指ししていることも検査する（MUST）。
-
-**守備範囲**: 入力は上の一覧のファイルの中身と予算ファイル。拾う誤りは、W が段ごとに読むファイルの合計が予算を超えて増えることと、W の手順書が一覧に無いファイルを新しく読ませ始めたのに一覧を直さないことのうち、名指しの検査で分かるもの。同じ大きさでの中身の入れ替え（本体向けの規則が同じ量だけ W のファイルに入る）・一覧に無いファイルを読ませる指示の追加は通る（エピック #1682 で主が受け入れた残り。仕様レビューと PR レビューが見る）。G の段ごとの予算はこの要件の対象外とする。
+- **WHEN** `develop-worker-stage-budget.bats` が各段の合計を測る
+- **THEN** spec の段は `agents/worker.md`・`roles/worker/common.md`・`roles/worker/spec.md`・`spec-decision.md`・`return-declaration.md` を足す
+- **AND** implement の段は `agents/worker.md`・`roles/worker/common.md`・`roles/worker/implement.md`・`return-declaration.md` を足す
+- **AND** finish の段は `agents/worker.md`・`roles/worker/common.md`・`roles/worker/finish.md`・`skills/pr-review-gate/declarations.md`・`return-declaration.md` を足す
 
 #### Scenario: 段の合計が予算を超える
 
 - **WHEN** `worker/common.md` に文を足して、spec の段の合計が予算を超える
 - **THEN** `develop-worker-stage-budget.bats` が、段の名前・実測・予算を出して落ちる
 
+### Requirement: W の段ごとの予算はバイト数で上下両方向に判定する
+
+W の段ごとの予算の単位はバイト数（`wc -c`）としなければならない（MUST。字数はロケールで値が変わり、CI と手元でずれるため）。判定は上下両方向で、実測が予算を超えたら落ち、予算が実測の 1.1 倍を超えても落ちなければならない（MUST。減らした変更に予算の引き下げを求め、削った分が次の増加の余地として残らないようにするため）。G の段ごとの予算はこの要件の対象外とする。
+
 #### Scenario: 予算が実測から離れすぎる
 
 - **WHEN** 予算が実測の 1.1 倍を超えている
 - **THEN** 検査が落ち、予算の引き下げを求める
+
+### Requirement: W の段ごとに読むファイルの一覧を手順書の名指しと突き合わせる
+
+一覧が手順書とずれないよう、`worker/common.md` が `return-declaration.md` を、`worker/spec.md` が `spec-decision.md` を、`worker/finish.md` が `skills/pr-review-gate/declarations.md` を名指ししていることを検査しなければならない（MUST）。
+
+**守備範囲**: 入力は一覧のファイルの中身と予算ファイル。拾う誤りは、合計が予算を超えて増えることと、手順書が新しいファイルを読ませ始めたのに一覧を直さないことのうち名指しの検査で分かるもの。同じ大きさでの中身の入れ替えと、一覧に無いファイルを読ませる指示の追加は通る（エピック #1682 で主が受け入れた残り。仕様レビューと PR レビューが見る）。
+
+#### Scenario: 手順書が名指しをやめる
+
+- **WHEN** `worker/spec.md` から `spec-decision.md` を名指しする文を消す
+- **THEN** `develop-worker-stage-budget.bats` が、名指しが見つからないファイルの名前を出して落ちる
 
 ### Requirement: 軽い通し方と CI 修正からの戻し方は light-path.md に置き、CI 修正担当の引き継ぎの手順は handover.md に寄せる
 
