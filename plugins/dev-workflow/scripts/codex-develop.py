@@ -6,6 +6,7 @@ from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
+import math
 import os
 from pathlib import Path
 import select
@@ -118,11 +119,35 @@ def read_budget_modes(now=None):
     return usage_view.budget_modes(slot, now)
 
 
-def select_configuration(claude_margin, codex_margin, codex_enabled=True):
+# Codex at or above this margin takes every role whatever Claude has (issue #1677). The
+# default matches flatmate's ACCOUNT_ALLOC_MIN_SURPLUS_PCT.
+ALL_CODEX_THRESHOLD_SETTING = 'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'
+ALL_CODEX_THRESHOLD_DEFAULT = 10
+
+
+def all_codex_threshold():
+    """The all-Codex threshold; an invalid value stops the selection instead of using 10."""
+    name = ALL_CODEX_THRESHOLD_SETTING
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == '':
+        return ALL_CODEX_THRESHOLD_DEFAULT
+    try:
+        value = float(raw)
+    except ValueError:
+        raise RuntimeError(f'automatic selection cannot read {name}: must be a number') from None
+    if not math.isfinite(value) or not 0 <= value <= 100:
+        raise RuntimeError(f'automatic selection cannot read {name}: must be between 0 and 100')
+    return int(value) if value.is_integer() else value
+
+
+def select_configuration(claude_margin, codex_margin, codex_enabled=True,
+                         threshold=ALL_CODEX_THRESHOLD_DEFAULT):
     # Codex off (accounts.json "codex"."enabled": false) is the user's setting, not a
     # headroom result, so it has its own reason whatever the margins are.
     if not codex_enabled:
         return 'claude-default', 'codex-off'
+    if codex_margin is not None and codex_margin >= threshold:
+        return 'codex-standard', 'codex-headroom-meets-threshold'
     claude_ok, codex_ok = (claude_margin is not None and claude_margin >= 0,
                            codex_margin is not None and codex_margin >= 0)
     if claude_ok and codex_ok:
@@ -335,6 +360,7 @@ def _run_usage_probe(snapshot_path):
 
 def automatic_selection(mapping, now=None):
     config_dir, snapshot_path = usage_paths()
+    threshold = all_codex_threshold()
     _run_usage_probe(snapshot_path)
     now = int(time.time()) if now is None else now
     claude = claude_usage_evidence(snapshot_path, now)
@@ -351,7 +377,8 @@ def automatic_selection(mapping, now=None):
              'fetched_at': best[3].get('fetched_at') if best else None}
     if not codex_enabled:
         codex['enabled'] = False
-    selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled)
+    selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled,
+                                           threshold)
     return selected, {'selection_mode': 'automatic', 'configuration': selected,
         'reason': reason,
         'claude': {'account': claude['account'], 'margin': claude['margin'],
