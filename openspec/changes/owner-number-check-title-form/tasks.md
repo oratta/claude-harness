@@ -12,4 +12,4 @@
 ## 3. 確認と記録
 
 - [x] 3.1 `bats plugins/dev-workflow/tests/owner-message-number-check.bats plugins/dev-workflow/tests/hook-python-invocation.bats tests/hook-python-isolation.bats` を通す。触る範囲: なし（確認のみ）
-- [ ] 3.2 変更の記録 `plugins/dev-workflow/changes/1671.md` にこの change の分を足す。触る範囲: plugins/dev-workflow/changes/1671.md
+- [x] 3.2 変更の記録 `plugins/dev-workflow/changes/1671.md` にこの change の分を足す。触る範囲: plugins/dev-workflow/changes/1671.md
