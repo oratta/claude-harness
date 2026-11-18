@@ -135,9 +135,12 @@ check_naming() {
   if grep -Eq '^([1-9]\. |\*\*(マージ待ちの子|PR トークン上限の子|主の委任|別のリポジトリの子|サブエージェント方式)\*\*)' "$root/$R/epic.md"; then
     echo 'entry contains parent operations' >&2; rc=1
   fi
+  if grep -Eq '^\*\*マージ待ちの子\*\*' "$root/$R/epic-loop.md"; then
+    echo 'parent loop contains merge-wait operations' >&2; rc=1
+  fi
   local f
   for f in epic-child-stop.md epic-keepalive.md epic-worker-slots.md; do
-    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md` を読' "$root/$R/$f"; then
+    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md`( の)?( ?手順 [0-9]+)? を読' "$root/$R/$f"; then
       echo "child reads parent operations: $f" >&2; rc=1
     fi
   done
@@ -188,7 +191,10 @@ fixture_budget() {
   local r="$PLUGIN_DIR/$R"
   [ "$(grep -lF '委任の記録が、①' "$r"/*.md | wc -l | tr -d ' ')" = 1 ]
   grep -qF '委任の記録が、①' "$r/epic-delegation.md"
-  ! grep -qF '60 分以上: timeout' "$r/epic-loop.md" || return 1
+  [ "$(grep -lF '| 親の最後のリクエストから 60 分以上 |' "$r"/*.md | wc -l | tr -d ' ')" = 1 ]
+  grep -qF '| 親の最後のリクエストから 60 分以上 |' "$r/reply-after-idle.md"
+  ! grep -qF '60 分以上: timeout' "$r"/*.md || return 1
+  [ "$(grep -lF '型どおり' "$r"/*.md | wc -l | tr -d ' ')" = 1 ]
   grep -qF '型どおり' "$r/epic-keepalive.md"
   ! grep -qF 'request_template' "$r/epic-child-stop.md" || return 1
   [ "$(grep -lF '3000 秒以上 3600 秒未満' "$r"/*.md | wc -l | tr -d ' ')" = 1 ]
@@ -268,6 +274,16 @@ fixture_budget() {
   run check_naming "$r"
   [ "$status" -eq 1 ]
   cp "$PLUGIN_DIR/$R/epic-child-stop.md" "$r/$R/epic-child-stop.md"
+  printf '\n`references/epic-stop.md` の手順 8 を読む。\n' >> "$r/$R/epic-child-stop.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'child reads parent operations: epic-child-stop.md'* ]] || return 1
+  cp "$PLUGIN_DIR/$R/epic-child-stop.md" "$r/$R/epic-child-stop.md"
+  printf '\n**マージ待ちの子**: 親のマージ処理。\n' >> "$r/$R/epic-loop.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'parent loop contains merge-wait operations'* ]] || return 1
+  cp "$PLUGIN_DIR/$R/epic-loop.md" "$r/$R/epic-loop.md"
   printf '\n`references/epic-keepalive-watch.md` を読む。\n' >> "$r/$R/epic-worker-slots.md"
   run check_naming "$r"
   [ "$status" -eq 1 ]
