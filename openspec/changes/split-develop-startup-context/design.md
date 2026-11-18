@@ -36,6 +36,8 @@ gate-result.md は、既存の fix-check.md、light-path.md、handover.md、ci-w
 
 `commands/develop.md` は `skills/develop/SKILL.md` と `references/codex-develop.md` の絶対パスを探して必読にする責任を維持する。明示指定時だけ codex-develop-explicit.md を読む境界も変えない。SKILL.md の役割表・工程管理・G への `レビュー経路: adapter` の起動指示は provider 解決の重複とは扱わず、本体の契約として残す。
 
+既存要件「失敗の段は `--failure` で request に渡し、返った model を使う」も MODIFIED に含める。三つの Scenario 名と動作条件（first／executor／judgment の対応、request が返した model の使用、model が変わる昇格時の fresh thread）を保ち、SKILL.md「モデル」節の本文指定を、操作前に必読とした codex-develop.md の本文で確認する契約へ置き換える。分類の定義として escalation-tripwires.md を参照することは保ち、そこから model を読み取る指示は禁止のままとする。
+
 解決ロジックを別の新規ファイルに置く案は、正本として既に指定された codex-develop.md をさらに経由地にするため採らない。既存スクリプトや profile 設定・model 対応表は変更しない。
 
 ### 3. 先頭には復帰後も要る骨格を置く
@@ -53,6 +55,8 @@ SKILL.md の先頭は役割表、本体の禁止事項（軽い通し方の既�
 一方、必要時に読めるかは別の構造検査で守る。起動の三ファイルが正本を名指しすること、SKILL.md の Status の全行・空 return／通常の拒否報告での必読指示、核心規則の先頭位置、provider 解決本文の一元化を検査する。実際に規則を別ファイルへ移した使い捨て fixture が内容検査を通り、規則を消す・必読参照を外す・予算を超える fixture が落ちる退行検査を用意する。
 
 起動時の三値は既存の `tests/develop-startup-budget.txt` のまま実測バイト数まで下げる（上限超過／1.1 倍を超える余白の拒否を維持）。三つの切り出し先には別の `tests/develop-orchestrator-reference-budget.txt` と対応 bats でファイル別の同じ上下判定を付ける。既存の起動予算に条件付きファイルを混ぜると「起動時の三ファイル」という集合が崩れるため別にする。
+
+検査要件の本文に入力元・拾う誤り・許す範囲外の具体例を明記する。同じ字数・バイト数の場面限定段落を入れ替え、内容・入口・先頭位置・一元化・各ファイルの予算がすべて保たれる fixture は通ることを許す。これは #1682 の OWNER が許容した残りであり、場面に合う配置や文の意味・実エージェントの読解の全てを機械で保証すること、穴を塞ぎ切ることは完了条件にしない。
 
 ### 5. 既存仕様は場所の指定だけを追従させる
 

@@ -463,6 +463,21 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 - **WHEN** `bash scripts/test.sh` を実行する
 - **THEN** `gate-runner.md`・`SKILL.md` とその必読先・`codex-develop.md`・`pr-review-gate/stages/triage.md`・`pr-review-gate/stages/review-run.md` の上記文言を照合する bats を含めて exit 0 になる
 
+### Requirement: 失敗の段は `--failure` で request に渡し、返った model を使う
+SKILL.md「モデル」節は、失敗ループで起動・再開を扱う前に `plugins/dev-workflow/references/codex-develop.md` の「起動と role 解決」を必ず読むよう指示しなければならない（MUST）。対応する失敗ループの本文は同 reference の一つの正本へ集約し、SKILL.md には再掲してはならない（MUST NOT）。この必読参照先は、`request` の `--failure` の各値がどの失敗の段に当たるか（`first` = 1 回目の失敗、`executor` = 2 回目で実行側が原因、`judgment` = 2 回目で判断側が原因）を書かなければならない（MUST）。決める役と実行役の model は、その段の `--failure` を渡した `request` が返した値を使うと書かなければならず（MUST）、決める役の model を `templates/escalation-tripwires.md` の文面から読み取る指示を書いてはならない（MUST NOT。判断側・実行側の分類の定義を読む先として同テンプレートを指すことは許す）。実行側の昇格は「W を上位で再開」ではなく、格が上がって model が変わるなら新しい thread に手渡す、と書かなければならない（MUST。細目の正本は `references/codex-develop.md`）。
+
+#### Scenario: `--failure` の値と段の対応が書かれている
+- **WHEN** SKILL.md「モデル」節と、そこから操作前の必読にした `plugins/dev-workflow/references/codex-develop.md` の失敗ループの本文を読む
+- **THEN** SKILL.md に操作前の必読指示があり、参照先に `--failure first`・`--failure executor`・`--failure judgment` のそれぞれが、1 回目の失敗・2 回目の実行側・2 回目の判断側に当たると書かれている
+
+#### Scenario: decider の model を文面から読まない
+- **WHEN** SKILL.md「モデル」節と、そこから操作前の必読にした `plugins/dev-workflow/references/codex-develop.md` の失敗ループの本文を読む
+- **THEN** SKILL.md と必読参照先には「decider の `model` の段は `templates/escalation-tripwires.md` を Read して従う」の形の文が無く、必読参照先に `request` が返した model を使うと書かれている
+
+#### Scenario: 実行側の昇格は新しい thread
+- **WHEN** SKILL.md「モデル」節と、そこから操作前の必読にした `plugins/dev-workflow/references/codex-develop.md` の失敗ループの本文を読む
+- **THEN** 必読参照先に、実行側の昇格で model が変わるときは SendMessage で再開せず新しい thread に手渡すと書かれ、`references/codex-develop.md` を細目の正本として指している
+
 ## ADDED Requirements
 
 ### Requirement: 起動時の先頭に本体の骨格と読み直しの指示を置く
@@ -493,6 +508,8 @@ SKILL.md は PR トークン上限・G の状態別分岐・W の空 return と�
 
 手順の文言の bats は、develop 配下の手順書集合のどこかに規則があることを確かめ、移動だけで落ちてはならない（MUST NOT）。Codex 固有の規則は正本 codex-develop.md を対象に加える。入口から正本への必読参照、核心規則の先頭位置、役割解決本文の一元化は別に検査しなければならない（MUST）。起動時の三ファイルと切り出し先にはファイル別の実測バイト予算を置き、超過と実測の 1.1 倍を超える余白を拒否する（MUST）。
 
+**守備範囲**: 入力元は、リポジトリの `plugins/dev-workflow/skills/develop/SKILL.md` と `skills/develop/references/**/*.md` の手順書集合（後者も同 plugin 配下）、Codex 固有の規則では `plugins/dev-workflow/references/codex-develop.md`、入口の `plugins/dev-workflow/commands/develop.md`、起動時の三ファイルと切り出し先の予算ファイル、およびそれらの使い捨て fixture である。拾う誤りは、検査対象の規則の欠落、入口の必読参照の欠落、核心規則の先頭 5,000 トークン範囲からの逸脱、役割解決本文の重複、バイト予算の超過と実測の 1.1 倍を超える余白である。内容・必読参照・先頭位置・一元化の検査を満たしたまま、場面限定の二つの段落を同じ字数・バイト数で別の手順書間で入れ替え、各ファイルの予算も変わらない場合は、読む場面に合わない配置になっても検査を通ることを許す（#1682 の OWNER の決定）。字数・バイト数が同じ入替えや、存在する文の意味・実エージェントの読解まで機械で保証し、範囲外の穴を全て塞ぎ切ることは完了条件にしない。
+
 #### Scenario: 文を移すだけなら検査が通る
 - **WHEN** 使い捨て fixture で必要な規則を develop の別の手順書へ移し、読む場面からの参照を保つ
 - **THEN** 内容検査が通る。一方、規則を手順書集合から消した fixture は落ちる
@@ -504,6 +521,10 @@ SKILL.md は PR トークン上限・G の状態別分岐・W の空 return と�
 #### Scenario: 起動時と条件付きの予算を守る
 - **WHEN** 起動時の三ファイルまたは切り出した手順書の複製を予算より 1 byte 大きくする、または予算を実測の 1.1 倍より大きくする
 - **THEN** 対応する予算検査が落ちる。commands/develop.md が SKILL.md と codex-develop.md を名指しする既存検査も維持される
+
+#### Scenario: 同じ量の入替えによる配置の誤りは残りとして受け入れる
+- **WHEN** 使い捨て fixture で、検査対象の規則・必読参照・先頭位置・役割解決の一元化を保ち、場面限定の段落を同じ字数・バイト数で手順書間で入れ替え、各ファイルの実測と予算を変えない
+- **THEN** 文言・入口・先頭位置・一元化・予算の検査が通ることを許す。場面に合わない配置をこの入替えだけで検出することや、守備範囲外の穴を塞ぎ切ることは完了条件にしない
 
 ### Requirement: 切り出し後の読む量と段落の行き先を記録する
 
