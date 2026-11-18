@@ -2,7 +2,7 @@
 
 develop の本体（オーケストレータ）から `subagent_type: dev-workflow:worker` で名前付き spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned。channel の本体は interactive と渡す）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）・その工程の段を示す `段:` の行（`段: spec` / `段: implement` / `段: finish`）。
 
-W は**このファイルと、`段:` が指す段のファイル**（`worker/spec.md` / `worker/implement.md` / `worker/finish.md`）を読んで動く（`SKILL.md` は本体向け）。判定基準の詳細は `skills/develop/references/decision-criteria.md`。
+W は**このファイルと、`段:` が指す段のファイル**（`worker/spec.md` / `worker/implement.md` / `worker/finish.md`）を読んで動く（`SKILL.md` は本体向け）。仕様化判断と分割判定の基準は `skills/develop/references/spec-decision.md`、return の 1 行目の宣言は `skills/develop/references/return-declaration.md`。
 
 ## W がしないこと
 
@@ -20,7 +20,7 @@ W は**このファイルと、`段:` が指す段のファイル**（`worker/sp
 
 - 仕様化判断（1 行目 `仕様化判断: する` または `仕様化判断: しない`）が記録先に記録される前に実装へ進まない（記録の書式と手順は `worker/spec.md`「仕様化判断（opsx / openspec の要否）と記録」）
 - 仕様化した場合は、R1 の APPROVE が記録先に記録されるまで実装に進まない。仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを確認してから実装に入る
-- 例外は文言合わせの通し方だけ。記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があるときは、R1 が起こされないので APPROVE を求めない。W は本体の再開指示や前任の return の文面ではなく、記録先のコメントでその行を確かめてから実装に入る（通し方の定義は `skills/develop/references/decision-criteria.md` Step B）
+- 例外は文言合わせの通し方だけ。記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があるときは、R1 が起こされないので APPROVE を求めない。W は本体の再開指示や前任の return の文面ではなく、記録先のコメントでその行を確かめてから実装に入る（通し方の定義は `skills/develop/references/spec-decision.md` Step B）
 
 ## 昇格トリップワイヤー（W が return で報告する）
 
@@ -33,9 +33,7 @@ W は**このファイルと、`段:` が指す段のファイル**（`worker/sp
 
 ## コンテキスト上限と手渡し（本体が測る。W は工程ごとに return する）
 
-W は再開のたびに全履歴を読み直すので、履歴は畳まれずに伸び続ける。本体は W を SendMessage で再開する前に毎回 `scripts/subagent-context.sh <W の名前>` で測る（exit 2 が上限超）。加えて、W 自身の起動の途中でも hook がコンテキストを測り、上限を超えると締めを通知し、さらに越えると編集系ツールと `Bash` を拒否する（何が拒否されるかは正本）。強制停止中は commit もできないため、未コミット差分の後片付けは本体が行う。閾値と全解除の環境変数・2 経路・通知や強制停止に当たったときの振る舞いは正本にある。
-
-上限超を検知したあとの扱いも、W が return の 1 行目に置く宣言の書式とどちらを選ぶかの義務も、本体から停止を指示されたときの動き方も、すべて `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本である。W の指示書（`worker/` のファイル）には書かない（同じ規則を複数の面に書くと、直すときに片方が漏れ、食い違った規則に従って二重 spawn などの事故が起きる）。**W は return を書く前に正本（`skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」）を読み、そこに書かれた書式で宣言する。**
+コンテキストは本体が再開の前に測り、W 自身の起動の途中でも hook が測る（測り方と上限を超えたときの本体の扱いは本体向けの規則で、W の指示書には書かない）。**W は return を書く前に `skills/develop/references/return-declaration.md` を読み、そこに書かれた書式で 1 行目を宣言する**（通知・強制停止を受けたときの振る舞いも同じファイル）。
 
 そのうえで、W 自身の動き方は次の 3 つ。
 

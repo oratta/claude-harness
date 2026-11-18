@@ -461,8 +461,14 @@ extract_context_cap_section() {
 
 @test "context cap: the canonical section holds the thresholds, the routes and the return prefixes" {
   dc="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  rd="${PLUGIN_DIR}/skills/develop/references/return-declaration.md"
   section="$(extract_context_cap_section "$dc")"
   [ -n "$section" ] || { echo "section not found in decision-criteria.md"; return 1; }
+  # 節の冒頭で W と G の宣言の置き場所（return-declaration.md）を指す（#1683）
+  echo "$section" | grep -qF 'references/return-declaration.md' || { echo "no pointer to return-declaration.md"; return 1; }
+  # 正本は節（本体向け）と return-declaration.md（W と G の宣言）の 2 か所（#1683）
+  section="${section}
+$(cat "$rd")"
   # 3 つの環境変数と 2 つの既定値
   for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000; do
     echo "$section" | grep -q -- "$token" || { echo "missing in the context cap section: $token"; return 1; }
@@ -486,8 +492,11 @@ extract_context_cap_section() {
   for f in "${faces[@]}"; do
     [ -f "$f" ] || { echo "missing face: $f"; return 1; }
     # 正本への参照があること
-    grep -q 'decision-criteria.md' "$f" || { echo "no pointer to decision-criteria.md: $f"; return 1; }
-    grep -q 'コンテキスト上限' "$f" || { echo "no reference to the context cap section: $f"; return 1; }
+    # decision-criteria.md「コンテキスト上限」か return-declaration.md を指す（#1683）
+    if ! grep -q 'return-declaration.md' "$f"; then
+      grep -q 'decision-criteria.md' "$f" || { echo "no pointer to decision-criteria.md or return-declaration.md: $f"; return 1; }
+      grep -q 'コンテキスト上限' "$f" || { echo "no reference to the context cap section: $f"; return 1; }
+    fi
     # 閾値の数値・環境変数名の再掲が無いこと
     for token in DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_CONTEXT_TRIPWIRE 150000 220000 150K; do
       if grep -q -- "$token" "$f"; then
@@ -1200,4 +1209,32 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
 @test "develop_docs: finds a sentence in the develop docs and not a sentence that does not exist (#1683)" {
   develop_docs | grep -qF '**事前判定は仮決めにすぎない**' || return 1
   if develop_docs | grep -qF 'この文は develop 配下のどの手順書にも無い（#1683 の検査用）'; then return 1; fi
+}
+
+# W と G が return に書く宣言は return-declaration.md に置き、閾値の環境変数名と移す前のファイルの中を指す句を持たない（#1683）
+@test "return-declaration.md carries the declaration without env names or in-file references to decision-criteria (#1683)" {
+  RD="${PLUGIN_DIR}/skills/develop/references/return-declaration.md"
+  [ -f "$RD" ] || return 1
+  grep -qF '  - `工程完了: <工程名>`（例: `工程完了: 仕様化まで`、`工程完了: 実装＋verify`）' "$RD" || return 1
+  grep -qF '  - `工程中断: <理由>`（例: `工程中断: テスト完了待ち`）' "$RD" || return 1
+  grep -qF '成果一覧を書いていても、そのバックグラウンドコマンドが完了していなければ `工程完了:` を宣言してはならない' "$RD" || return 1
+  grep -qF '**強制停止で止まった場合は、成果を書いていても必ず `工程中断:`**' "$RD" || return 1
+  if grep -qF 'DEV_WORKFLOW_' "$RD"; then echo "環境変数名がある" >&2; return 1; fi
+  if grep -qF '上の表' "$RD"; then echo "「上の表」がある" >&2; return 1; fi
+  if grep -qF '上の「手渡しの許可」' "$RD"; then echo "「上の「手渡しの許可」」がある" >&2; return 1; fi
+  # 本体向けの節は decision-criteria.md に残り、冒頭で return-declaration.md を指す
+  DC="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  section "$DC" 'コンテキスト上限（サブエージェントの手渡し）' | grep -qF 'references/return-declaration.md' || return 1
+  if grep -qF '**W / G 側の宣言義務**' "$DC"; then echo "宣言義務が decision-criteria.md に残っている" >&2; return 1; fi
+}
+
+# W と G は decision-criteria.md を読まない。return を書く前に読むのは return-declaration.md（#1683）
+@test "W and G instructions do not tell to read decision-criteria.md and point to return-declaration.md (#1683)" {
+  for f in "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "${PLUGIN_DIR}/agents/worker.md" "$GATE" "${PLUGIN_DIR}/agents/gate-runner.md"; do
+    if grep -F 'decision-criteria.md' "$f" | grep -qF '読'; then
+      echo "decision-criteria.md を読ませる文がある: $f" >&2; return 1
+    fi
+  done
+  grep -F 'return-declaration.md' "$W_COMMON" | grep -qF '読' || return 1
+  grep -F 'return-declaration.md' "$GATE" | grep -qF '読' || return 1
 }

@@ -8,7 +8,7 @@
 #
 # 残量モードの導出式は usage_view.py の 1 か所だけにあり（session-tripwires.sh はその結果を出す）、
 # ここに複製しない。
-# 途中計測の扱いの規則は decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」が
+# 途中計測を受けたときの W と G の扱いと return の 1 行目の書式は return-declaration.md が
 # 正本なので、ここでは hook 実行時の値と案内だけを出し、規則を言い換えない。
 #
 # agent_type は matcher に加えてここでも照合する（matcher が効かない・手で実行された・別の設定から
@@ -73,8 +73,7 @@ else:
 # サブエージェントは ${CLAUDE_PLUGIN_ROOT} を展開できないので、解決済みのパスで案内する
 root = os.environ.get("CLAUDE_PLUGIN_ROOT") or "${CLAUDE_PLUGIN_ROOT}"
 lines.append("- 通知や強制停止に当たったときの扱いと return の 1 行目の書式の正本は "
-             f"`{root}/skills/develop/references/decision-criteria.md`"
-             "「コンテキスト上限（サブエージェントの手渡し）」")
+             f"`{root}/skills/develop/references/return-declaration.md`")
 
 parts = []
 budget = (os.environ.get("BUDGET") or "").strip()

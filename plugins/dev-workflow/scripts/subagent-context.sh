@@ -19,8 +19,9 @@
 # ＝ そのリクエストがモデルに読ませたコンテキスト全量。develop の本体は W / G を
 # SendMessage で再開する前にこれを実行する（上限は既定 DEV_WORKFLOW_CONTEXT_CAP=150000）。
 # exit 2 を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい
-# 条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）の正本は
-# skills/develop/references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」。
+# 条件・前任が動作中のまま交代させる手順）の正本は
+# skills/develop/references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」、
+# W と G が return の 1 行目に置く宣言の正本は skills/develop/references/return-declaration.md。
 # このスクリプトには書かない。正本を読むまで手渡さない。
 #
 # 探索: ${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/*/*/subagents/ 内の metadata の name 完全一致と従来の名前 glob。

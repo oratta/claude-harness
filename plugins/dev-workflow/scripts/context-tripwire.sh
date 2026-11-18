@@ -7,8 +7,9 @@
 #   全解除   DEV_WORKFLOW_CONTEXT_TRIPWIRE=off
 #
 # 理由: 本体が SendMessage で再開する直前にしか測られないので、1 起動の中で膨らむぶんは
-# 誰も止めない（実測で W が 497,552 トークンに達した）。規範の正本は
-# skills/develop/references/decision-criteria.md「コンテキスト上限」。
+# 誰も止めない。規範の正本は、閾値と本体の扱いが
+# skills/develop/references/decision-criteria.md「コンテキスト上限」、通知・強制停止を受けた
+# W と G の扱いが skills/develop/references/return-declaration.md。
 #
 # 計測対象は payload の transcript_path そのものではない。transcript_path は hook が発火した
 # セッション（サブエージェントの中でも親）のトランスクリプトを指すので、その親ディレクトリと
