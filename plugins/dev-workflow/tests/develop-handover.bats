@@ -152,6 +152,14 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
   handover_section | grep '^2\. ' | grep -qF 'CLAUDE_CODE_SESSION_ID'
 }
 
+@test "handover: guidance goes in the action line (line 2), not a last answer line" {
+  s="$(handover_section)"
+  printf '%s' "$s" | grep -qF '依頼のアクションの行（2 行目。1 行目と 2 行目の書き分けは `~/.claude/output-styles/readable.md` の節 3）'
+  printf '%s' "$s" | grep -qF 'この案内は依頼のアクションの行に書く'
+  printf '%s' "$s" | grep -qF '1 行目は題名にし、2 行目のアクションの行にこのチャンネルで何を返すかを書く'
+  run grep -nE '最後の答え方|1 行目と最後の行|1 行目は質問' <<<"$s"; [ "$status" -eq 1 ]
+}
+
 # 保留の依頼の出し直し（issue #724）
 @test "resend: with no new information a repeated notice does not rewrite the request" {
   handover_section | grep -qF '**依頼の出し直し**'
