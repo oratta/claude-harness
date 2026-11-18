@@ -3718,19 +3718,23 @@ infer_ready() {
   [ -n "$l" ]
   printf '%s\n' "$l" | grep -qF 'ターンを終えるとき'
   printf '%s\n' "$l" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
-  printf '%s\n' "$l" | grep -qF '答え方の行'
+  printf '%s\n' "$l" | grep -qF '1 行目と 2 行目'
+  printf '%s\n' "$l" | grep -qF '1 行目を題名（依頼の形。質問にしない）'
+  printf '%s\n' "$l" | grep -qF '2 行目を `アクション:` で始まるアクションの行'
   printf '%s\n' "$l" | grep -qF '主がこのセッションで次にすること:'
   ! printf '%s\n' "$l" | grep -qF '<どの画面・入力欄で> <何を打つ・押す>' || return 1
   for n in 2 3 4 5 6; do
     printf '%s\n' "$r" | grep "^$n\. " | grep -qF '上の書き分けの規定に従う'
   done
   s8="$(printf '%s\n' "$r" | grep '^8\. ')"
-  printf '%s\n' "$s8" | grep -F '答え方の行' | grep -qF '親のタブ'
+  printf '%s\n' "$s8" | grep -F 'アクションの行' | grep -qF '親のタブ'
   printf '%s\n' "$s8" | grep -qF '別の発言を挟まず'
-  printf '%s\n' "$s8" | grep -qF '答え方の行には、子のタブでリスク許容を打つことを書く'
-  printf '%s\n' "$s8" | grep -qF '`failed <N> <段>` なら主に報告する（主の操作が要れば問いの形にし、要らなければ 1 行目を `主がすること: なし` にする）'
+  printf '%s\n' "$s8" | grep -qF 'アクションの行には、子のタブでリスク許容を打つことを書く'
+  printf '%s\n' "$s8" | grep -qF '`failed <N> <段>` なら主に報告する（主の操作が要れば依頼の形（題名とアクションの行）にし、要らなければ 1 行目を `主がすること: なし` にする）'
   printf '%s\n' "$r" | grep -qF '手順 7 と完了条件で待ちを終えるときの報告、**マージ待ちの子** の `reply` の `failed` の報告'
-  printf '%s\n' "$r" | grep '^2\. ' | grep -qF '待ちに入る通知を `主がすること: なし` で始めず、1 行目に問いの質問を、最後の行に答え方を繰り返す'
+  printf '%s\n' "$r" | grep '^2\. ' | grep -qF '待ちに入る通知を `主がすること: なし` で始めず、1 行目に問いの題名を、2 行目にアクションの行を繰り返す'
+  # 旧い書き分けの語が残らない
+  run grep -nE '最後の答え方|1 行目と最後の行|問いの質問|答え方の行' <<<"$r"; [ "$status" -eq 1 ]
 }
 
 @test "skill: Orca route watches for done marks and reaps marked children" {
@@ -3960,11 +3964,16 @@ orca_cmd_scripts() {
   [ -n "$p" ]
   run grep -F '同じ項目名のまま' <<<"$p"; [ "$status" -eq 1 ]
   # 記録の項目と正本の段の対応
-  printf '%s\n' "$p" | grep -qF '`止まった理由:` を質問に'
-  printf '%s\n' "$p" | grep -qF '`主に聞く理由:` を主に聞く理由に'
-  printf '%s\n' "$p" | grep -qF '`前提:` をいま困っていることに'
+  printf '%s\n' "$p" | grep -qF '`止まった理由:` を題名（依頼の形に直し、質問にしない）と詳細に'
+  printf '%s\n' "$p" | grep -qF '`主に聞く理由:` を論点（論点ありなら論点、論点なしなら推奨どおりでよい旨と決まりが守るもの）に'
+  printf '%s\n' "$p" | grep -qF '`前提:` を詳細に'
   printf '%s\n' "$p" | grep -qF '`推奨:` と `推奨の根拠:` を推奨と根拠に'
-  printf '%s\n' "$p" | grep -qF '`受け入れるリスク:` を受け入れるリスクに'
+  printf '%s\n' "$p" | grep -qF '`受け入れるリスク:` をリスクにする'
+  printf '%s\n' "$p" | grep -qF 'アクションの行は記録に無いので親が書く'
+  printf '%s\n' "$p" | grep -F '使う項目と長さは正本の使う場所の表に従う' | grep -F '対話のセッション' | grep -qF 'チャットで 1 件ずつ出す依頼'
+  printf '%s\n' "$p" | grep -qF 'ブロックには返事を待って止まっている子を書く'
+  printf '%s\n' "$p" | grep -qF '正本の論点の無い依頼の決まりに従う'
+  run grep -nE 'を質問に|をいま困っていることに|3〜4 行' <<<"$p"; [ "$status" -eq 1 ]
   printf '%s\n' "$p" | grep -qF '項目名を見出しや語としてそのまま主に渡さず'
   printf '%s\n' "$p" | grep -qF '主の言葉に直す'
   printf '%s\n' "$p" | grep -F '複数' | grep -qF '1 通で上げるのは 1 件'
@@ -7695,7 +7704,10 @@ log_resolve_ready() {
   e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
   grep -qF 'issue 番号・内容・ステータス・確認内容・推奨・答え方' "$e"
   grep -qF '報告の区切りより下に置く' "$e"
-  grep -qF '区切りより上の本文の最後の行は上の書き分けの規定のとおり答え方のまま' "$e"
+  grep -qF '区切りより上の 1 行目と 2 行目は上の書き分けの規定に従い、依頼の有無で分ける' "$e"
+  grep -qF '依頼がある報告は、1 行目を今回いちばん先に答えてほしい 1 件の題名、2 行目をその 1 件のアクションの行にする' "$e"
+  grep -qF '依頼が無い報告は 1 行目を `主がすること: なし` にし、2 行目に `アクション:` の行を書かない' "$e"
+  ! grep -qF '区切りより上の本文の最後の行' "$e" || return 1
   grep -qF '前回の報告から片付いたもの' "$e"
   grep -qF '会話ログの末尾を `scripts/epic-dispatch.sh child-log' "$e"
   grep -qF '会話ログを優先する' "$e"
