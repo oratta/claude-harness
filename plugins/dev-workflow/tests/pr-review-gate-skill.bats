@@ -1671,6 +1671,10 @@ judge_body() {
   grep -F -- '`- 根拠ファイル:`' "$DECLARATIONS" | grep -F 'PR 自身の差分' | grep -qF '判定役'
 }
 
+@test "carryover (#1495): declarations.md evidence-file line says the PR's-own-diff comparison is skipped for PR_COMMITS=0" {
+  grep -F -- '`- 根拠ファイル:`' "$DECLARATIONS" | grep -qF 'main を取り込む merge commit だけが積まれたとき（PR_COMMITS=0）は比べない'
+}
+
 @test "carryover (#1238): the evidence line records the PR's own commits and main-only evidence changes" {
   block="$(step3c_body | awk '/^```[a-z]+$/{b=1; next} b&&/^```$/{b=0; next} b{next} /^```$/{f=!f; next} f')"
   line="$(echo "$block" | grep '^引き継ぎの根拠: ')"
