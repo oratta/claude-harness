@@ -620,7 +620,11 @@ def write(path, value):
 
 def prompt(phase, instructions, state):
     role, source = PHASES[phase]
-    docs = [('agents/decider.md' if phase == 'decider' else 'skills/develop/references/roles/' + ('gate-runner.md' if phase == 'review' else source)), 'skills/develop/references/decision-criteria.md']
+    # return の 1 行目の宣言は return-declaration.md、仕様化判断と分割判定は spec-decision.md が正本（#1683）。
+    # decision-criteria.md は本体（coordinator）向けの規則なので phase には付けない。
+    docs = [('agents/decider.md' if phase == 'decider' else 'skills/develop/references/roles/' + ('gate-runner.md' if phase == 'review' else source)), 'skills/develop/references/return-declaration.md']
+    if phase == 'spec':
+        docs.append('skills/develop/references/spec-decision.md')
     if source in ('worker/spec.md', 'worker/implement.md', 'worker/finish.md'):
         # W の phase は全段で読む common.md と段のファイルを正本にする（explore / summarize は common.md だけ）
         docs.insert(0, 'skills/develop/references/roles/worker/common.md')

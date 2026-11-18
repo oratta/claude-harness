@@ -1013,7 +1013,12 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 for source in sources[phase]:
                     self.assertIn('CANONICAL SOURCE ' + source + ' ', text)
                 self.assertNotIn('CANONICAL SOURCE skills/develop/references/roles/worker.md ', text)
-                self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
+                self.assertIn('CANONICAL SOURCE skills/develop/references/return-declaration.md', text)
+                self.assertNotIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
+                if phase == 'spec':
+                    self.assertIn('CANONICAL SOURCE skills/develop/references/spec-decision.md', text)
+                else:
+                    self.assertNotIn('CANONICAL SOURCE skills/develop/references/spec-decision.md', text)
                 if phase == 'gate':
                     for doc in ('SKILL.md', 'declarations.md', 'stages/prepare.md', 'stages/review-run.md',
                                 'stages/reviewer-brief.md', 'stages/triage.md', 'stages/pass.md', 'stages/hold.md'):
@@ -1041,7 +1046,9 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 if phase in ('explore', 'summarize'):
                     for stage in ('spec', 'implement', 'finish'):
                         self.assertNotIn('CANONICAL SOURCE skills/develop/references/roles/worker/' + stage + '.md', text)
-                self.assertIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
+                self.assertIn('CANONICAL SOURCE skills/develop/references/return-declaration.md', text)
+                self.assertNotIn('CANONICAL SOURCE skills/develop/references/decision-criteria.md', text)
+                self.assertNotIn('CANONICAL SOURCE skills/develop/references/spec-decision.md', text)
                 if phase == 'review':
                     self.assertIn('CANONICAL SOURCE skills/pr-review-gate/stages/reviewer-brief.md', text)
 
