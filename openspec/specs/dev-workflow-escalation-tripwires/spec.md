@@ -97,11 +97,11 @@ dev-workflow プラグインは、作業役（develop スキルの W、または
 - **THEN** ここまでの編集内容と判明した事実を引き継ぎ情報として渡し、作業をやり直さない
 
 ### Requirement: SessionStart hook がトリップワイヤーを常駐注入する
-dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart イベント（matcher: `startup|clear|compact`）で注入スクリプトを起動しなければならない（SHALL）。コマンドパスは `${CLAUDE_PLUGIN_ROOT}` を使用する。スクリプトは `templates/escalation-tripwires.md` の「## 昇格トリップワイヤー」節を抽出し、`{"additionalContext": "<節の本文>"}` の JSON を stdout に出力する（single source of truth: 本文の複製を hook 側に持たない）。`TRIPWIRES_SCOPE` が未設定のとき、テンプレートが見つからない・節が抽出できない場合は無出力・exit 0 で終了しなければならない（MUST NOT block session start）。`TRIPWIRES_SCOPE=subagent-budget` のときの出力は要件「SubagentStart hook が dev-workflow の役に運用情報を注入する」が定める。
+dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart イベント（matcher: `startup|clear|compact`）で注入スクリプトを起動しなければならない（SHALL）。コマンドパスは `${CLAUDE_PLUGIN_ROOT}` を使用する。スクリプトは `templates/escalation-tripwires.md` の「## 昇格トリップワイヤー」節を抽出し、`{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "<節の本文>"}}` の JSON を stdout に出力する（single source of truth: 本文の複製を hook 側に持たない）。`additionalContext` をトップレベルに置いてはならない（MUST NOT。Claude Code はトップレベルの `additionalContext` を SessionStart の文脈に足さない）。`TRIPWIRES_SCOPE` が未設定のとき、テンプレートが見つからない・節が抽出できない場合は無出力・exit 0 で終了しなければならない（MUST NOT block session start）。`TRIPWIRES_SCOPE=subagent-budget` のときの出力は要件「SubagentStart hook が dev-workflow の役に運用情報を注入する」が定める。
 
 #### Scenario: 注入 JSON が節を含む
 - **WHEN** `CLAUDE_PLUGIN_ROOT` をプラグインルートに設定してスクリプトを実行する
-- **THEN** stdout は valid JSON で、`additionalContext` に「昇格トリップワイヤー」「規模超過」「失敗ループ」「仕様の発明」を含む
+- **THEN** stdout は valid JSON で、`hookSpecificOutput.hookEventName` が `SessionStart`、`hookSpecificOutput.additionalContext` に「昇格トリップワイヤー」「規模超過」「失敗ループ」「仕様の発明」を含み、トップレベルに `additionalContext` を持たない
 
 #### Scenario: テンプレート欠損時は fail-soft
 - **WHEN** `TRIPWIRES_SCOPE` 未設定で、`CLAUDE_PLUGIN_ROOT` をテンプレートの無いディレクトリに設定してスクリプトを実行する
@@ -416,7 +416,7 @@ dev-workflow プラグインは `hooks/hooks.json` に SubagentStart のエン�
 - worker と gate-runner: Fable 残量モードと共有枠モード（現在値・出どころ・効果）、途中計測の閾値の現在値
 - reviewer: 途中計測の閾値の現在値だけ（Fable 残量モードと共有枠モードを含めてはならない（MUST NOT））
 
-残量モードの導出は `scripts/session-tripwires.sh` を通して `scripts/usage_view.py` の 1 か所の式で行い、式を別の場所に複製してはならない（MUST NOT）。導出の守備範囲は要件「SessionStart で残量モードを自動導出注入」の段落に従う。`session-tripwires.sh` は環境変数 `TRIPWIRES_SCOPE=subagent-budget` のとき残量モードのブロックだけを本文のテキストで出し、その範囲では usage-probe を実行しない（SHALL）。`subagent-budget` のときの出力範囲は、`## Fable 残量モード（自動導出）` の見出しから共有枠モードの効果の行までで、親向けの「W を SendMessage で再開する前に `subagent-context.sh` で測る」行・メモリ索引の検知行・昇格トリップワイヤー節を含めてはならない（MUST NOT）。この範囲はテンプレートが無くても出す（SHALL）。`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外の値のときの `session-tripwires.sh` の出力は従来と変えない（SHALL）。
+残量モードの導出は `scripts/session-tripwires.sh` を通して `scripts/usage_view.py` の 1 か所の式で行い、式を別の場所に複製してはならない（MUST NOT）。導出の守備範囲は要件「SessionStart で残量モードを自動導出注入」の段落に従う。`session-tripwires.sh` は環境変数 `TRIPWIRES_SCOPE=subagent-budget` のとき残量モードのブロックだけを本文のテキストで出し、その範囲では usage-probe を実行しない（SHALL）。`subagent-budget` のときの出力範囲は、`## Fable 残量モード（自動導出）` の見出しから共有枠モードの効果の行までで、親向けの「W を SendMessage で再開する前に `subagent-context.sh` で測る」行・メモリ索引の検知行・昇格トリップワイヤー節を含めてはならない（MUST NOT）。この範囲はテンプレートが無くても出す（SHALL）。`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外の値のときの `session-tripwires.sh` の出力の JSON の形は要件「SessionStart hook がトリップワイヤーを常駐注入する」に従い（`hookSpecificOutput.hookEventName` が `SessionStart`、本文は `hookSpecificOutput.additionalContext`）、本文の中身は従来と変えない（SHALL）。`subagent-budget` のときの本文テキストの出力も変えない（SHALL）。
 
 途中計測の行は、hook 実行時の `DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` の実効値（未設定なら `scripts/context-tripwire.sh` と同じ既定値）と、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除されているかを示し、扱いの規則は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」を読むよう案内する（SHALL）。規則の言い換えを本文に書いてはならない（MUST NOT）。
 
@@ -457,8 +457,8 @@ python3 が無い・入力が JSON でない・`agent_type` が無い・残量�
 - **THEN** stdout は `## Fable 残量モード` で始まる本文テキストで、`subagent-context.sh` を含まず、usage-probe の実行痕（probe の状態ファイル・snapshot の書き込み）が残らない
 
 #### Scenario: SessionStart の出力は変わらない
-- **WHEN** `TRIPWIRES_SCOPE` を設定せずに `session-tripwires.sh` を実行する
-- **THEN** 出力は従来どおり `additionalContext` に昇格トリップワイヤー節と残量モードのブロックを含む JSON である
+- **WHEN** `TRIPWIRES_SCOPE` を設定せずに、または `subagent-budget` 以外の値（例: `something-else`）にして `session-tripwires.sh` を実行する
+- **THEN** 出力は JSON で、`hookSpecificOutput.hookEventName` が `SessionStart`、`hookSpecificOutput.additionalContext` に昇格トリップワイヤー節と残量モードのブロックを含み、トップレベルに `additionalContext` を持たない
 
 #### Scenario: hooks.json の SubagentStart エントリ
 - **WHEN** `plugins/dev-workflow/hooks/hooks.json` をパースする

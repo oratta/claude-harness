@@ -49,16 +49,24 @@ PY
   [ -x "$SCRIPT" ]
 }
 
-@test "script: outputs valid JSON additionalContext containing the tripwire section" {
+@test "script: outputs SessionStart hookSpecificOutput.additionalContext containing the tripwire section" {
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" "$SCRIPT"
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
 d = json.loads(sys.argv[1])
-ctx = d["additionalContext"]
+# Claude Code はトップレベルの additionalContext を SessionStart の文脈に足さない（#1673）
+assert "additionalContext" not in d, sorted(d)
+h = d["hookSpecificOutput"]
+assert h["hookEventName"] == "SessionStart", h.get("hookEventName")
+ctx = h["additionalContext"]
 for kw in ("昇格トリップワイヤー", "規模超過", "失敗ループ", "仕様の発明"):
     assert kw in ctx, kw
 PY
+  # 受け入れ条件と同じ判定（jq が無い環境では上の python の判定だけで見る）
+  if command -v jq >/dev/null 2>&1; then
+    printf '%s' "$output" | jq -e '.hookSpecificOutput.hookEventName=="SessionStart" and (.hookSpecificOutput.additionalContext|length>0)' >/dev/null
+  fi
 }
 
 @test "script: fail-soft when template is missing (exit 0, no output)" {
@@ -77,7 +85,7 @@ PY
         USAGE_SNAPSHOT="${TMPDIR_EMPTY}/nonexistent.json" \
         USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" "$SCRIPT"
     [ "$status" -eq 0 ]
-    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output"
   }
   for mode in abundant conserve; do
     out="$(ctx_of "$mode")"
@@ -98,7 +106,7 @@ PY
   effect_of() {  # $1=SHARED_BUDGET_MODE → その効果の行
     run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" SHARED_BUDGET_MODE="$1" "$SCRIPT"
     [ "$status" -eq 0 ] || return 1
-    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output" \
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output" \
       | grep -F -- "- $1 の効果:"
   }
   line="$(effect_of depleted)"
@@ -120,7 +128,7 @@ PY
   effect_of() {  # $1=FABLE_BUDGET_MODE → その効果の行
     run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" FABLE_BUDGET_MODE="$1" "$SCRIPT"
     [ "$status" -eq 0 ] || return 1
-    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output" \
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output" \
       | grep -F -- "- $1 の効果:"
   }
   line="$(effect_of conserve)"
@@ -146,7 +154,7 @@ ctx_at() {  # $1=snapshot $2=now → additionalContext
       USAGE_PROBE_RESPONSE_FILE="${TMPDIR_EMPTY}/nonexistent.json" \
       USAGE_PROBE_NOW="$2" "$SCRIPT"
   [ "$status" -eq 0 ] || return 1
-  python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+  python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output"
 }
 
 @test "derivation: the active slot's values drive the mode, not the top-level mirror or other slots" {
@@ -226,7 +234,7 @@ JSON
         USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" \
         USAGE_PROBE_NOW="$now" "$SCRIPT"
     [ "$status" -eq 0 ]
-    python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+    python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output"
   }
   # Fable は余っている（abundant）のに全モデル枠は週経過より速い → throttled が下限を決める
   mk "${work}/a.json" 30 80
@@ -257,7 +265,7 @@ copied_ctx() {  # $1=写した scripts ディレクトリ、残りは env の追
   local dir="$1"; shift
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" "$@" "${dir}/session-tripwires.sh"
   [ "$status" -eq 0 ] || return 1
-  python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output"
+  python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output"
 }
 
 @test "derivation: the modes come from usage_view.py next to the script, not a copy of the formula" {
@@ -301,7 +309,7 @@ FAKE
 @test "derivation: unknown explicit values are shown as written with the safe-side effect" {
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" FABLE_BUDGET_MODE=foo SHARED_BUDGET_MODE=bar "$SCRIPT"
   [ "$status" -eq 0 ]
-  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
+  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output")"
   echo "$out" | grep -qF "現在の FABLE_BUDGET_MODE: foo（明示 env）" || return 1
   echo "$out" | grep -qF "SHARED_BUDGET_MODE: bar（明示 env）" || return 1
   echo "$out" | grep -F -- "- foo の効果:" | grep -qF "conserve 相当" || return 1
@@ -319,7 +327,7 @@ FAKE
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
       USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
   [ "$status" -eq 0 ]
-  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
+  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output")"
   # additionalContext 全体ではなく注入行そのものを見る。全体で見ると、同じ文字列を持つ
   # トリップワイヤーテンプレートが連結されているため、注入行が旧文言のままでも緑になる
   line="$(echo "$out" | grep -F 'サブエージェントのコンテキスト上限:')"
@@ -335,7 +343,7 @@ FAKE
   run env CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR" USAGE_SNAPSHOT="${work}/missing.json" \
       USAGE_PROBE_RESPONSE_FILE="${work}/nonexistent.json" "$SCRIPT"
   [ "$status" -eq 0 ]
-  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$output")"
+  out="$(python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$output")"
   echo "$out" | grep -q "FABLE_BUDGET_MODE: conserve"
   echo "$out" | grep -q "SHARED_BUDGET_MODE: ok（既定（usage データなし））"
   rm -rf "$work"
