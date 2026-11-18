@@ -455,7 +455,7 @@ Additional negative/exit constraints (しない・禁止・不可・失敗・戻
 | prose | skills/pr-review-gate/stages/prepare.md:86 | skills/pr-review-gate/stages/prepare-light.md |
 | prose | skills/pr-review-gate/stages/prepare.md:88 | skills/pr-review-gate/stages/prepare-light.md |
 | prose | skills/pr-review-gate/stages/prepare.md:94 | skills/pr-review-gate/stages/prepare.md |
-| prose | skills/pr-review-gate/stages/prepare.md:119 | skills/pr-review-gate/stages/prepare-partitions.md |
+| prose | skills/pr-review-gate/stages/prepare.md:119 | skills/pr-review-gate/stages/prepare.md（ROOT の解決と入力の作り方）, skills/pr-review-gate/stages/prepare-partitions.md（区画の詰め方） |
 | prose | skills/pr-review-gate/stages/prepare.md:146 | skills/pr-review-gate/stages/prepare-reviewer.md |
 | prose | skills/pr-review-gate/stages/prepare.md:148 | skills/pr-review-gate/stages/prepare-reviewer.md |
 | prose | skills/pr-review-gate/stages/prepare.md:185 | skills/pr-review-gate/stages/prepare.md, skills/pr-review-gate/stages/review-run.md |
@@ -511,3 +511,37 @@ Additional negative/exit constraints (しない・禁止・不可・失敗・戻
 | prose | skills/pr-review-gate/stages/triage.md:251 | skills/pr-review-gate/stages/comment-parts.md |
 
 Reference-only exceptions: gate-runner:19 adds the conditional prepare-reviewer source; prepare:184 redirects the needs-reviewer return to prepare-reviewer. Those routing conditions and exits remain checked by related bats.
+
+## Gate round 1 reference changes (#1687)
+
+The expected prose below was updated only where the referenced file or section moved (compared after the alias normalization above). Rules, stop conditions, commands and templates are unchanged. prepare:119 is split into the part kept in prepare.md and the part kept in prepare-partitions.md (A7).
+
+| Fixed source:line | Reference change (normalized expected → current) |
+|---|---|
+| skills/pr-review-gate/stages/hold.md:5 | ・ → ）、`stages/triage.md`（ |
+| skills/pr-review-gate/stages/hold.md:195 | ∅ → `stages/hold.md` の; このファイル → `stages/hold.md`; 3-c → `stages/hold.md` |
+| skills/pr-review-gate/stages/pass.md:5 | ・ → ）、`stages/triage.md`（ |
+| skills/pr-review-gate/stages/pass.md:72 | 下 → `stages/pass.md` |
+| skills/pr-review-gate/stages/pass.md:73 | 下 → `stages/pass.md` |
+| skills/pr-review-gate/stages/pass.md:74 | 下 → `stages/pass.md` |
+| skills/pr-review-gate/stages/pass.md:75 | 下 → `stages/pass.md` |
+| skills/pr-review-gate/stages/pass.md:78 | 下 → `declarations.md`; ∅ → 「; ∅ → 」 |
+| skills/pr-review-gate/stages/prepare.md:5 | ・ → ）、`stages/triage.md`（ |
+| skills/pr-review-gate/stages/review-run.md:5 | ・ → ）、`stages/triage.md`（ |
+| skills/pr-review-gate/stages/reviewer-brief.md:5 | ・ → ）、`stages/triage.md`（ |
+| skills/pr-review-gate/stages/triage.md:15 | 下 → `stages/triage.md` |
+| skills/pr-review-gate/stages/triage.md:25 | 下 → `stages/triage.md` |
+| skills/pr-review-gate/stages/triage.md:66 | 上 → `stages/triage.md` |
+| skills/pr-review-gate/stages/triage.md:68 | 上 → `stages/triage.md` の止める指摘 |
+| skills/pr-review-gate/stages/triage.md:106 | この → ∅; ∅ → C |
+| skills/pr-review-gate/stages/triage.md:138 | 上 → `stages/triage.md`; 仕分け表 → こ; 直後 → ファイル; ∅ → （仕分け表そのものは `stages/triage.md`） |
+| skills/pr-review-gate/stages/triage.md:202 | 下 → `stages/triage.md`; ∅ → （三表と順 3 の一覧） |
+| skills/pr-review-gate/stages/triage.md:209 | p → `stages/t; -r → iag; view-gate 手順 2-1 → .md` |
+| skills/pr-review-gate/stages/triage.md:210 | 手順 2-1 → `stages/triage.md`; ∅ → `stages/triage.md` の |
+| skills/pr-review-gate/stages/hold.md:67 | ∅ → `; ∅ → ` |
+| skills/pr-review-gate/stages/hold.md:101 | 下 → `stages/hold.md` の手順 6; 下 → `stages/hold.md` の手順 6 |
+| skills/pr-review-gate/stages/hold.md:103 | 下 → `stages/hold.md` |
+| skills/pr-review-gate/stages/hold.md:123 | 下 → `stages/hold.md` の手順 6 |
+| skills/pr-review-gate/stages/hold.md:200 | ∅ → （`stages/hold.md`） |
+| skills/pr-review-gate/stages/triage.md:99 | 段 → このファイルの、エピックに属するかを記録先; C → issue; ∅ → 親から決める |
+| skills/pr-review-gate/stages/triage.md:121 | 段 → このファイルの、エピックに属するかを記録先; C → issue; ∅ → 親から決める |

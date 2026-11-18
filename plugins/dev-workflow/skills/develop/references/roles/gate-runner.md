@@ -12,7 +12,7 @@ develop の本体から `subagent_type: dev-workflow:gate-runner` で**名前付
 
 ## 時点ごとに読むファイル
 
-段のファイルのパスは `skills/pr-review-gate/` から書く。どの時点でも、表にないファイル（索引 `SKILL.md` を含む）は読まない。
+段のファイルのパスは `skills/pr-review-gate/` から書く。どの時点でも、表のファイルとそれらが条件付きで指す `stages/` の詳細のほかは読まない（索引 `SKILL.md` を含む）。
 
 | 段（起動指示の `段:`） | 読むファイル |
 |---|---|
@@ -66,7 +66,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 | 保留 | `保留の解除` |
 | passed / review-incomplete / 重複で降りた | `なし` |
 
-この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: 前提確認の軽い通し方の条件外の `failed` と `needs-reviewer` は `stages/prepare-reviewer.md`、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`、`needs-no-point-check` は `stages/hold.md`。
+この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: 前提確認の軽い通し方の条件外の `failed` は `stages/prepare-light.md` の「軽い通し方の条件外」、`needs-reviewer` は `stages/prepare-reviewer.md` の「G として動くとき（develop）」節、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`、`needs-no-point-check` は `stages/hold.md`。
 
 ## 段ごとの起動と入力
 
@@ -87,7 +87,7 @@ G は前の段の会話を持たない。段と段の間で渡すものは次の
 | レビューの三表と補足済み回数（補足を頼んだ時点で 1。コメントが無ければ 0） | 1 行目 `レビュー三表:` のコメント（`固定 HEAD: <40 桁>`・`一周目の区画: <なし \| n>`・`補足済み回数: <0 \| 1>` の行を持つ。補足の `needs-reviewer` を返す前に投稿する） | 照合と振り分け |
 | 振り分けの結果 | 既存の仕分けコメント | 照合と振り分け |
 
-段ごとの入力のうち、W の修正後の再レビュー（前提確認と重さ判定）は `stages/prepare.md`、決める役の裁定受領・直し方の判定の受領と順 3 だけの修正のあと（照合と振り分け）は `stages/triage.md`、保留の解除は `stages/hold.md`、保留の解除のあとの合格処理は `stages/pass.md` の、それぞれ「G として動くとき（develop）」節の「この段で起こされたときの入力」に従う。照合と振り分けの G がレビュアーの要約か補足レビューの結果を受け取ったときの分岐は、ここに置く。
+段ごとの入力のうち、W の修正後の再レビュー（前提確認と重さ判定）は `stages/prepare.md`、決める役の裁定受領・直し方の判定の受領と順 3 だけの修正のあと（照合と振り分け）は `stages/triage.md`、保留の解除は `stages/hold.md`、保留の解除のあとの合格処理は `stages/pass.md` の、それぞれ「G として動くとき（develop）」節の「この段で起こされたときの入力」に従う。
 
 照合と振り分けの G がレビュアーの要約・補足結果を受け取ったときは `stages/gate-triage.md` を読む。
 

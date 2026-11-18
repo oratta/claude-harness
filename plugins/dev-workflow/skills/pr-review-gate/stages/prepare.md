@@ -2,7 +2,7 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
-このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/review-run.md`（2-1 のレビュー実行者）、`stages/reviewer-brief.md`（2-1 のレビュアー向け指示）、`stages/triage.md`（2-1 の止める判定と仕分け・2-2）、`declarations.md`（手順 3・3-b）、`stages/pass.md`（手順 4・5）、`stages/hold.md`（手順 3-c・6）。
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/review-run.md`（2-1 のレビュー実行者）、`stages/reviewer-brief.md`（2-1 のレビュアー向け指示）、`stages/triage.md`（2-1 の止める判定と仕分け）、`stages/triage-escalation.md`（2-2）、`declarations.md`（手順 3・3-b）、`stages/pass.md`（手順 4・5）、`stages/hold.md`（手順 3-c・6）。
 
 ## 入口
 
@@ -18,7 +18,7 @@
 
 **着手前の重複チェック（手順 1 の 1 より前に行う）**: ラベルの操作や main の取り込みに入る前に、PR の現在の HEAD（`gh api repos/$R/pulls/$N --jq .head.sha`）と、最新の `レビュー重量:` コメントの `固定 HEAD:` と `担当セッション:` を見る。`固定 HEAD:` が現在の HEAD と一致し、`agent-review:passed` が付いておらず、`担当セッション:` が自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）と違う（行が無い・自分の ID が取れないときも違うとみなす）ときは、別のセッションの担当が同じ HEAD で着手済みなので、手順 1 以降を何もせず降り、降りた旨・着手済みコメントの URL・その `担当セッション:` の値を return に書く（develop の G は Status `重複で降りた`・`次の段: なし`）。それ以外（HEAD が動いた・コメントが無い・passed が付いている・`担当セッション:` が自分と同じ）は通常どおり進む。同じセッションの担当は、そのセッションの本体が自分の会話と `ListAgents` で確かめられるので、ここでは止めない。別のセッションの担当は、こちらから生きているかを確かめられず止めることもできないので、降りた return を受けた本体は取り直さずに主に報告する（develop の本体の動きは `skills/develop/references/roles/gate-runner.md` の段の表）。起動指示に `取り直し: 明示（理由）` の行がある起動と、前の段の `## Gate Result` を貼って起こされた起動（保留の解除のあと・W の修正後の再レビュー）は、同じ HEAD でも降りずに進む。develop を通さない本体が、主から前の担当は止まっていると聞いて自分で取り直すときも、自分に `取り直し: 明示（理由）` の行があるものとして扱う。確認と投稿は不可分でないので、ほぼ同時の起動は防げない（最後の止め役は手順 5 の HEAD 照合）。前のセッションの担当が参照できなくても生きている場合があり、そのまま待機している担当と同じ HEAD に二重で走る事故があった（#249）。
 
-1. PR に `agent-review:pending` が付いていることを確認（無ければ付ける）。**`agent-review:failed` からの再レビューもここが起点** — 修正を push したら `failed` を外して `pending` に戻し（`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:failed` → `-X POST ... -f 'labels[]=agent-review:pending'`）、手順1から全工程をやり直す（前回の合格部分を流用しない。唯一の例外は手順 3-c の主の許容の引き継ぎ（`stages/hold.md`）。ただし再レビューの範囲は手順2の収束ルールに従い**差分限定**。方式の書き換えの後は全体レビューにし、周回は数え続ける）。
+1. PR に `agent-review:pending` が付いていることを確認（無ければ付ける）。**`agent-review:failed` からの再レビューもここが起点** — 修正を push したら `failed` を外して `pending` に戻し（`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:failed` → `-X POST ... -f 'labels[]=agent-review:pending'`）、手順1から全工程をやり直す（前回の合格部分を流用しない。唯一の例外は手順 3-c の主の許容の引き継ぎ（`stages/carryover.md`）。ただし再レビューの範囲は手順2の収束ルールに従い**差分限定**。方式の書き換えの後は全体レビューにし、周回は数え続ける）。
    このとき **`needs-approval` の要否も判断する** — 保留理由が解消しているなら
    `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外し、
    まだ主の許容待ちが残っているなら**付けたまま**にして手順6を続行する。黙って持ち越さない。

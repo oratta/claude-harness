@@ -1052,7 +1052,7 @@ refute() {
 
 @test "ask-owner (#1035): out-of-scope filing defines search, record, pending condition and epic note" {
   s="$(section '主に聞かずに決めること')"
-  for token in 'triage.md' 'review-issue-candidates.sh' 'gh issue list' '`範囲外の問題の振り分け`' \
+  for token in 'stages/triage-nonblocking.md' 'review-issue-candidates.sh' 'gh issue list' '`範囲外の問題の振り分け`' \
                '`条件の確認待ち`' '`## 条件の答え`' '注意書き' 'needs-approval'; do
     echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
@@ -1807,7 +1807,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   s="$(section '主に聞かずに決めること')"
   c="$(echo "$s" | grep -F '候補探し:')"
   for token in '`--exclude` にエピックの番号も渡す' '(15 件で打ち切り。ほかにも一致あり)' \
-               '`--epic <エピック番号> --children-only`' '打ち切られたパスごとに 1 回を超えない' '`triage.md` の候補探しの段落'; do
+               '`--epic <エピック番号> --children-only`' '打ち切られたパスごとに 1 回を超えない' '`stages/triage-nonblocking.md` の候補探しの段落'; do
     echo "$c" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
   echo "$c" | grep -qF '下の 2 つ目' && { echo "dangling reference remains"; return 1; }

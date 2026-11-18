@@ -1394,7 +1394,7 @@ step3c_body() {
   line="$(step3c_body | grep -F '唯一の例外')"
   echo "$line" | grep -qF '主への質問だけ'
   echo "$line" | grep -qF '前回の合格部分を流用しない'
-  echo "$line" | grep -qF 'stages/triage.md'
+  echo "$line" | grep -qF '`stages/triage-convergence.md` の「W の修正後の再レビュー」'
   echo "$line" | grep -qF 'W の修正後の再レビュー'
   for w in '手順 2 のレビュー' '手順 4 の証拠' '仕様宣言'; do
     echo "$line" | grep -qF "$w" || { echo "missing: $w"; return 1; }
@@ -2308,7 +2308,7 @@ triage_line() {
 @test "nonblocking destinations (#1017): the three sites that send non-stopping findings on name the table, not an issue" {
   # 全周共通の判定の段落: 止めない指摘は表に通し、表を通さずに issue にしない
   l="$(triage_line '**マージを止めるかの判定（全周共通）**')"
-  has_all "$l" 'はマージを止めず、下の「止めない指摘の振り分け表」に通す（表を通さずに issue にしない）'
+  has_all "$l" 'はマージを止めず、`stages/triage-nonblocking.md` の「止めない指摘の振り分け表」に通す（表を通さずに issue にしない）'
   # 2周目の終わりの手順 2: 段 B から当てる
   l="$(convergence_section | grep -F '2. **止めない指摘')"
   [ -n "$l" ] || { echo "no round-end step 2"; return 1; }
@@ -2322,7 +2322,7 @@ triage_line() {
   l="$(triage_line '1周目で failed にするとき')"
   has_all "$l" 'follow-up issue はまだ切らない' '未解決の止めない指摘を振り分け表の段 B 以降に当て'
   l="$(grep -E '^\| 1 \|' "$TRIAGE")"
-  has_all "$l" '| 下の「止めない指摘の振り分け表」に回す（1周目は上の段落どおり failed の一覧に残す） |'
+  has_all "$l" '| `stages/triage-nonblocking.md` の「止めない指摘の振り分け表」に回す（1周目は上の段落どおり failed の一覧に残す） |'
 }
 
 @test "nonblocking destinations (#1017): the stage table sends each stage to its own destination" {
@@ -2445,9 +2445,13 @@ no_point_section() { awk '/^#### 6-0\. 論点なしの宣言の確認/{f=1;print
 @test "no-point (#1653): declarations step 3 names the decider as the only checker and lists the three outcomes" {
   grep -F '論点なしの確認' "$DECLARATIONS" | grep -qF 'dev-workflow:decider'
   grep -qF 'エピックの子でも決める役が確かめ、親は確かめない' "$DECLARATIONS"
-  grep -qF '通す → 手順 4・5' "$DECLARATIONS"
-  grep -qF '論点あり → 宣言を `論点あり — ` の形で投稿し直して手順 6' "$DECLARATIONS"
-  grep -qF '判断できない → 宣言を変えずに手順 6' "$DECLARATIONS"
+  # 結果ごとの後続は 6-0 の「結果ごとの後続」の項だけが正本（言い換えの 3 行は置かない）
+  grep -qF '確認の結果ごとの後続は、下の「6-0. 論点なしの宣言の確認」が正本' "$DECLARATIONS"
+  r="$(grep -F -- '- **結果ごとの後続**:' "$DECLARATIONS")"
+  echo "$r" | grep -qF '`通す` なら手順 6 に入らず `stages/pass.md` の手順 4・5 へ進む'
+  echo "$r" | grep -qF '`論点あり` なら G は宣言を `論点あり — ` の形で投稿し直して手順 6'
+  echo "$r" | grep -qF '`判断できない` なら宣言を変えずに手順 6'
+  [ "$(grep -cF '通す → 手順 4・5' "$DECLARATIONS")" -eq 0 ]
 }
 
 @test "no-point (#1653): hold.md step 6-0 has the check before asking the owner, with the roles that start the decider" {

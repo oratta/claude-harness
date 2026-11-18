@@ -16,7 +16,7 @@
 2. 主がその issue を承認した証拠が会話ログにあり、`owner-reply-check.sh` の終了コード 0 で確かめられる。証拠は下の起票の承認か、主が自分で打った `/develop <番号>` のどちらか。どちらの形でも、issue 本文の `lastEditedAt`（`gh api graphql -f query='{repository(owner:"<o>",name:"<r>"){issue(number:<N>){createdAt lastEditedAt}}}'`。未編集なら null）が null か、証拠の発言の timestamp より前であること（承認のあとに本文が書き換えられていないこと）
 3. 実装中に発覚した影響ではない（宣言の `- 検知時点:` が `issue 記載済み`）
 
-証拠の確かめ方（`owner-reply-check.sh` は `bash <plugin>/scripts/owner-reply-check.sh <セッション ID> <原文>` で回す。出力と終了コードの意味は `stages/pass.md` の手順 5「会話で受けた許容」の段落にある）:
+証拠の確かめ方（`owner-reply-check.sh` は `bash <plugin>/scripts/owner-reply-check.sh <セッション ID> <原文>` で回す。出力と終了コードの意味は `stages/authenticity-conversation.md` の「会話で受けた許容（会話で受領）の真正性確認」の段落にある）:
 
 - **`/develop <番号>`**: セッション ID は `$CLAUDE_CODE_SESSION_ID`（develop の G では本体のセッション）、原文は `<command-args><番号>` または `<command-args>#<番号>`。終了コード 0 で、`MATCH:` の全文が `<command-name>/dev-workflow:develop</command-name>`（または `/develop`）を含み、`<command-args>` の直後が `<番号>` または `#<番号>` で、その後ろが空白か `</command-args>` であることを確かめる（`7234` の中の `723` のような番号の部分一致を通さない）
 - **起票の承認**: 起票したセッション S の会話ログで、issue の URL（`https://github.com/<R>/issues/<N>`）が最初に現れる行より前にある主の発言のうち、最後のものを起票を承認した発言の候補とする（候補のままでは証拠にしない。下の提案の照合を通ったものだけを起票を承認した発言とする）。S を探すには、URL を含む会話ログを `grep -l '<URL>' "${OWNER_REPLY_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"/*/*.jsonl` で集める（`owner-reply-check.sh` が読むのと同じ場所。`subagents/` の下は見ない）。
@@ -38,7 +38,7 @@ issue で承認済み — issue #<N> の目的: 「<本文からの引用>」
 真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh 終了コード 0）
 ```
 
-当たった分類が 2 つ以上なら、1 行目を分類ごとに並べてよい（`issue で承認済み — <分類>: issue #<N> の目的: 「…」`）。追記の行頭を `主の回答: 許容` にしない（`stages/hold.md` の 3-c の「前の宣言の選び方」に拾われ、主の直接の回答ではない記録が引き継ぎの元になるのを避けるため）。条件を 1 つでも満たさなければ当てず、手順6で主に聞く（依頼に満たさなかった条件を添える）。
+当たった分類が 2 つ以上なら、1 行目を分類ごとに並べてよい（`issue で承認済み — <分類>: issue #<N> の目的: 「…」`）。追記の行頭を `主の回答: 許容` にしない（`stages/carryover.md` の 3-c の「前の宣言の選び方」に拾われ、主の直接の回答ではない記録が引き継ぎの元になるのを避けるため）。条件を 1 つでも満たさなければ当てず、手順6で主に聞く（依頼に満たさなかった条件を添える）。
 
 守備範囲: ①入力の出どころは、記録先の issue（本文・ラベル・`lastEditedAt`）と、ゲートが動いている PC の会話ログと、G の環境変数（`CLAUDE_CODE_SESSION_ID`・`EPIC_DISPATCH_PARENT_EPIC`）。G は協力的だが、目的でない文を目的として引用する・別の issue の `/develop` を拾う前提で扱う ②拾いたい誤りは、issue に書かれていない効果や 4 分類の影響を承認済みにすること、別の起票の提案への返事を対象 issue の承認として数えること、エージェントが起こしただけの issue を承認済みにすること、別セッション方式の親や無人ループの `/develop` を主の打ち込みとすること、番号の部分一致、承認のあとに書き換えられた本文の引用 ③通ることを許す入力は、別セッション方式の起動部品以外の仕組みが `EPIC_DISPATCH_PARENT_EPIC` を付けずに本体のターミナルへ打ち込んだ `/develop`（主の打ち込みと区別できない）と、ローカルの会話ログの改変・追記 ④ここに挙げた以外の経路は見つけるたびに検査を足し、穴を塞ぎ切ることを完了条件にしない。
 
@@ -49,7 +49,7 @@ issue で承認済み — issue #<N> の目的: 「<本文からの引用>」
 確かめ直し: 済 — 確認者 <エージェント名> / <日時>（手順 5）
 ```
 
-このとき `真正性確認: 済` の行は足さない（`stages/hold.md` の 3-c の「前の宣言の選び方」が見る行を増やさないため）。追記するのは、後から見て手順 5 で確かめ直したかが分かるようにするため。
+このとき `真正性確認: 済` の行は足さない（`stages/carryover.md` の 3-c の「前の宣言の選び方」が見る行を増やさないため）。追記するのは、後から見て手順 5 で確かめ直したかが分かるようにするため。
 
 無人運用（loop-dev-agent）と、主に事後報告を届ける先が無い経路（メインセッションで主と会話していない・develop の G でもない）では issue で承認済みを当てない（`declarations.md` 手順 3）。その経路でこの追記を見つけたら合格させず、手順6で保留にする。
 

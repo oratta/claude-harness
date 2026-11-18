@@ -2,7 +2,7 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
-このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/triage.md`（2-1 の止める判定と仕分け・2-2）、`declarations.md`（手順 3・3-b）、`stages/pass.md`（手順 4・5）。
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/triage.md`（2-1 の止める判定と仕分け）、`stages/triage-escalation.md`（2-2）、`declarations.md`（手順 3・3-b）、`stages/pass.md`（手順 4・5）。
 
 ## 入口
 
@@ -60,9 +60,9 @@
 
 保留の解除の G は、起動指示の前の段の `## Gate Result` ブロック（`次の段: 保留の解除`）と主の回答を受け取り、前の段の会話は持たない前提で PR コメントから保留の中身を読む。
 
-- **許容済みの PR で HEAD が動いたとき**: 取り直しの手順 3 で再び「主のリスク許容が必要」になったら、主に聞く前に pr-review-gate 手順 3-c（前の HEAD の許容の引き継ぎ）を試す（条件と書式は 3-c が正本。この場合は合格処理の G がこのファイルを読んで試す）。スクリプトが終了コード 4 を返し、3-c の「終了コード 4 の判定役」の回す条件を満たし、使える判定の記録が無いときは、合格処理の G は判定役を起こせないので Status `needs-carryover-judge` で返す（欄は上の「needs-carryover-judge のとき」）
+- **許容済みの PR で HEAD が動いたとき**: 取り直しの手順 3 で再び「主のリスク許容が必要」になったら、主に聞く前に pr-review-gate 手順 3-c（前の HEAD の許容の引き継ぎ）を試す（条件と書式は `stages/carryover.md` の 3-c が正本。この場合は合格処理の G が `stages/carryover.md` を読んで試す）。スクリプトが終了コード 4 を返し、`stages/carryover-judge.md` の「終了コード 4 の判定役」の回す条件を満たし、使える判定の記録が無いときは、合格処理の G は判定役を起こせないので Status `needs-carryover-judge` で返す（欄は上の「needs-carryover-judge のとき」）
 - **保留の解除**: オーナーの回答（許容する／しない・動作確認の結果・切り出しの確認への回答（切り出す／この PR で直す））を受けて pr-review-gate の復帰手順に従う。復帰手順が別の段の作業に進むときは、その作業を自分で行わず Status `次の段へ` で返す。許容したとき・切り出して残りが無いとき（ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無いとき）は `次の段: 合格処理`、許容せず代替案に切り替えて作り直すとき・切り出したあとに 1 周目の段 A に当たる未解決の指摘が残っているときは `agent-review:failed` に付け替えて failed（`次の段: 前提確認と重さ判定`）で返す。1 周目かは前の段の Gate Result の `周回:` で、段 A の有無は仕分けの PR コメントの「段 A・この PR で直す」の印で読み、印が無ければ段 A の指摘は無いものとして扱う（判定をやり直さない）。段 A が残って failed で返すときの欄は `stages/triage.md` の「failed のとき」を使い、残りが段 A だけなら原因分類は「段 A だけ（昇格なし）」、順 2〜4 も残っていれば手順 2-2 の表どおりとする。`次の段へ`・`次の段: 前提確認と重さ判定` は W の修正が要らないときだけに使う。未処理の順 6 が残っていれば failed に進まない（`needs-approval` を外して `needs-decider` で返す。処理順は pr-review-gate 手順 2-1 の混在の段落）
 
 ## 出口
 
-- 手順 6 の復帰手順の表に従う。表が「手順5へ」とする行は `stages/pass.md`、「手順2からやり直す」「手順3以降へ」とする行はそれぞれ `stages/prepare.md`・`declarations.md`、修正サイクルへ戻す行は `stages/triage.md`（failed の return）へ進む。
+- 手順 6 の復帰手順の表（`stages/hold-resume.md`）に従う。表が「手順5へ」とする行は `stages/pass.md`、「手順2からやり直す」「手順3以降へ」とする行はそれぞれ `stages/prepare.md`・`declarations.md`、修正サイクルへ戻す行は `stages/triage.md`（failed の return）へ進む。

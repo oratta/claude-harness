@@ -813,7 +813,7 @@ $(cat "$rd")"
   for key in '保留の解除' '決める役の裁定受領'; do
     line="$(grep -F -- "**$key**" "$HOLD" "$TRIAGE" | cut -d: -f2-)"
     [ -n "$line" ] || { echo "no line: $key"; return 1; }
-    echo "$line" | grep -qF 'pr-review-gate 手順 2-1 の混在の段落' || { echo "$key lacks mixed ref"; return 1; }
+    echo "$line" | grep -qE 'pr-review-gate 手順 2-1 の混在の段落|`stages/triage-convergence\.md` の混在の段落' || { echo "$key lacks mixed ref"; return 1; }
     echo "$line" | grep -qF 'failed に進まない' || { echo "$key lacks guard"; return 1; }
   done
   grep -F '**決める役の裁定受領**' "$TRIAGE" | grep -qF '裁定なし（入力不足）'
