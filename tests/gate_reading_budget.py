@@ -146,7 +146,8 @@ def measure(root, adapter=None):
             req += '段: ' + ('一括（従来経路）' if stage == 'legacy-all' else STAGES[stage]) + '\n'
         expected = COMMON + ([GATE + 'stages/reviewer-brief.md'] if stage == 'review' else
             [GATE + p for p in LEGACY] if stage == 'legacy-all' else [GATE + p for p in BASE[stage]])
-        prompt = adapter.prompt(phase, req, {'cwd': '/gate-reading-fixture'})
+        prompt = adapter.prompt(phase, req, {'cwd': '/gate-reading-fixture'},
+                                plugin_root='/gate-reading-plugin-fixture')
         injected = verify_prompt(prompt, expected, read)
         prompts[stage] = (prompt, injected)
     result = {}
@@ -236,8 +237,8 @@ def fixtures(root):
         target.write_bytes(baseline)
         # Corrupt real generated prompts through the same measurement entry point.
         original_prompt = adapter.prompt
-        def corrupted_prompt(phase, instructions, state):
-            return mutate(original_prompt(phase, instructions, state))
+        def corrupted_prompt(phase, instructions, state, **kwargs):
+            return mutate(original_prompt(phase, instructions, state, **kwargs))
         for mutate in [
             lambda text: text[:list(HEADER.finditer(text))[-1].start()],
             lambda text: text + text[list(HEADER.finditer(text))[-1].start():],

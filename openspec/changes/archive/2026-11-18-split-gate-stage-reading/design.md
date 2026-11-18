@@ -95,7 +95,7 @@ test_codex_develop.py は request を生成して実際の prompt の CANONICAL 
 
 上の共通 3 ファイルは Claude の G のファイル読込 profile。Codex は agent 定義を注入しないため別の profile 群とする。codex-develop.py の prompt() で生成した固定入力の prompt 全体（共通 2 ファイル、段の本文、CANONICAL SOURCE 行と sha256、adapter の定型指示、固定 REQUEST を含む）を wc -m / wc -c で測る。注入予定の一覧を別に足すだけで済ませず、生成物から正本の一覧と本文を取り出して読む表と照合し、欠落・余分・重複を落とす。条件付き profile はこの prompt に実際に追加で読むファイルを足し、既に注入したファイルは二度数えない。4 段・各条件・複合条件・従来の一括を検査し、不要な段を再び注入する変更も落とす。phase review も既存経路の生成 prompt と reviewer 向けの追加読込を別に測る。
 
-固定 REQUEST は `Dispatch HEAD: e10f0a9896d82d0b86c0f7a10becb70c4983bc63`、`レビュー経路: adapter`、`段: <段の名前>` をそれぞれ 1 行（末尾 LF あり）、state の cwd はテスト専用の `/gate-reading-fixture` とする。従来は経路を `従来`、段を `一括（従来経路）` に置き換える。phase review は同じ HEAD と経路の 2 行だけにする。この固定部分を前後で同じにし、実行ごとに変わる PR 本文・レビュー結果・ログなどの長さは予算に含めない。固定入力による計測であって、全実行の総トークン数の保証ではないと報告に明記する。
+固定 REQUEST は `Dispatch HEAD: e10f0a9896d82d0b86c0f7a10becb70c4983bc63`、`レビュー経路: adapter`、`段: <段の名前>` をそれぞれ 1 行（末尾 LF あり）、state の cwd はテスト専用の `/gate-reading-fixture`、prompt() の `plugin_root` は表示用の固定値 `/gate-reading-plugin-fixture` とする（生成 prompt の `Plugin root:` 行の字数を実行場所に依存させないため。正本の本文は従来どおり実際のプラグインルートから読む）。従来は経路を `従来`、段を `一括（従来経路）` に置き換える。phase review は同じ HEAD と経路の 2 行だけにする。この固定部分を前後で同じにし、実行ごとに変わる PR 本文・レビュー結果・ログなどの長さは予算に含めない。固定入力による計測であって、全実行の総トークン数の保証ではないと報告に明記する。
 
 予算の checker の異常系は使い捨ての fixture で作る。正常、実測が予算 +1 バイト、境界ちょうど、予算が実測の 1.1 倍を超える場合、ファイル不在、未知・欠落・重複 profile、不正な数値、条件付き詳細の増加を検査する。文言テストは gate 配下と develop の関係手順書を連結して意味のある規則を検査する形に直す。移動しただけで落とさず、規則を消せば落ちることを fixture で確かめる。
 

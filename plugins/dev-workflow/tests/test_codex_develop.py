@@ -1191,6 +1191,15 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 for path in (m.ROOT / 'skills/pr-review-gate').rglob('*.md'):
                     if str(path.relative_to(m.ROOT)) not in expected:
                         self.assertNotIn(path.read_text(), text)
+                # The cwd is a separate repository: conditional details resolve under the
+                # real plugin root, which is read-only and does not replace the cwd.
+                self.assertNotEqual(Path(self.cwd).resolve(), m.ROOT.resolve())
+                self.assertIn('Plugin root: ' + str(m.ROOT) + '\n', text)
+                self.assertIn('Work only in ' + str(Path(self.cwd).resolve()) + '.', text)
+                self.assertIn('Plugin root is read-only', text)
+                self.assertIn('`stages/foo.md` resolves to <Plugin root>/skills/pr-review-gate/stages/foo.md', text)
+                self.assertIn('`skills/...` resolves to <Plugin root>/skills/...', text)
+                self.assertIn('only the details an entry conditionally points to', text)
 
     def test_gate_launch_ignores_a_quoted_stage(self):
         self.input.write_text('レビュー経路: adapter\n段: 前提確認と重さ判定\n'
