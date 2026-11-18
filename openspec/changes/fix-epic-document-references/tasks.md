@@ -11,7 +11,7 @@
 
 ## 2. 統合確認
 
-- [ ] 2.1 `bats tests/develop-epic-scene-budget.bats`・`./scripts/test.sh`・`./scripts/lint.sh`・`openspec validate fix-epic-document-references --type change --strict` がすべて0であることを確認する。修正前 HEAD `89808b38` では固定集合の `child-cache-keepalive.json`（505 bytes）も含めると全11場面の余白は0（R1 の各505 bytes の余白という注記とは異なる。集計根拠は design.md）。全11場面の実測と予算を記録する。本体の再開判断（issue #1693「場面予算の超過」）に従い、`tests/develop-epic-scene-budget.txt` の全11場面の値を実測に合わせ、場面ごとの前後の値と理由を `plugins/dev-workflow/changes/1693.md` に残す。参照文をさらに削って相殺しない。固定集合・範囲外の規則・`tests/injection-budget.txt`・他の予算ファイルは変更しない。
+- [x] 2.1 `bats tests/develop-epic-scene-budget.bats`・`./scripts/test.sh`・`./scripts/lint.sh`・`openspec validate fix-epic-document-references --type change --strict` がすべて0であることを確認する。修正前 HEAD `89808b38` では固定集合の `child-cache-keepalive.json`（505 bytes）も含めると全11場面の余白は0（R1 の各505 bytes の余白という注記とは異なる。集計根拠は design.md）。全11場面の実測と予算を記録する。本体の再開判断（issue #1693「場面予算の超過」）に従い、`tests/develop-epic-scene-budget.txt` の全11場面の値を実測に合わせ、場面ごとの前後の値と理由を `plugins/dev-workflow/changes/1693.md` に残す。参照文をさらに削って相殺しない。固定集合・範囲外の規則・`tests/injection-budget.txt`・他の予算ファイルは変更しない。
 
 ## Workflow follow-up
 
