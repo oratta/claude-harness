@@ -34,6 +34,7 @@ setup() {
 gate_all() { cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
 # W の否定の検査（その文言が W の指示書のどこにも無いこと）は索引・worker/ の 4 本・pre-classification.md の全部で見る（#556）
 worker_all() { cat "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "$PRE"; }
+load lib/develop-docs
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
 
 @test "roles: all three role files exist" {
@@ -1193,4 +1194,10 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   L=$(grep -F -- '- **レビュアーの要約受領**: `stages/triage.md`' "${ROLES}/gate-runner.md")
   [ -n "$L" ] || return 1
   echo "$L" | grep -qF '三表の照合より先に、その一覧表のコメント（`## 一覧（順 3）`）を `stages/triage.md` の順 3 の 2 段で照合する' || return 1
+}
+
+# 文言の検査を「develop 配下の手順書のどこかにあること」で確かめる共通の関数（#1683）
+@test "develop_docs: finds a sentence in the develop docs and not a sentence that does not exist (#1683)" {
+  develop_docs | grep -qF '**事前判定は仮決めにすぎない**' || return 1
+  if develop_docs | grep -qF 'この文は develop 配下のどの手順書にも無い（#1683 の検査用）'; then return 1; fi
 }
