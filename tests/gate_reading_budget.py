@@ -123,12 +123,17 @@ def validate_inventory(root, plan):
         assert '`stages/' + Path(path).name + '`' in refs, ('unreferenced detail', path)
     gate = (root / PLUGIN / COMMON[0]).read_text()
     for stage in STAGES:
-        # The stage's own row must contain exactly its declared base gate files.
+        # Split the row into columns first: the stage-name column has its own parentheses.
         row = next(line for line in gate.splitlines() if line.startswith('| ' + STAGES[stage]))
-        start = row.split('（', 1)[0] if '（' in row else row
-        assert STAGES[stage] in start
-        for p in BASE[stage]:
-            assert '`' + p + '`' in row, (stage, p)
+        cells = [c.strip() for c in row.strip().strip('|').split('|')]
+        assert cells[0].startswith(STAGES[stage]), (stage, cells[0])
+        reads = cells[1]
+        before, _, inside = reads.partition('（')
+        paths = lambda text: set(re.findall(r'`([^`]+\.md)`', text))
+        # Unconditional reads are exactly BASE; conditional reads are a subset of CONDITIONS.
+        assert paths(before) == set(BASE[stage]), ('base reads differ', stage, paths(before))
+        allowed = {'stages/' + n + '.md' for names in CONDITIONS[stage].values() for n in names}
+        assert paths(inside) <= allowed, ('unknown conditional reads', stage, paths(inside) - allowed)
 
 
 def measure(root, adapter=None):
@@ -226,6 +231,20 @@ def fixtures(root):
         added.write_text('new conditional detail')
         must_fail(lambda: validate_inventory(fixture, plan))
         added.unlink()
+        # The stage table must match BASE before its parenthesis and CONDITIONS inside it.
+        runner = fixture / PLUGIN / COMMON[0]
+        runner_text = runner.read_text()
+        row = next(line for line in runner_text.splitlines() if line.startswith('| ' + STAGES['pass']))
+        for changed in [
+            row.replace('`stages/pass.md`', '`stages/pass.md` と `stages/pass-wording.md`', 1),
+            row.replace('`declarations.md` と `stages/pass.md`（', '`declarations.md`（`stages/pass.md`、', 1),
+            row.replace('`stages/carryover.md`', '`stages/carryover.md`・`stages/unknown-detail.md`', 1),
+        ]:
+            assert changed != row
+            runner.write_text(runner_text.replace(row, changed))
+            must_fail(lambda: validate_inventory(fixture, plan))
+        runner.write_text(runner_text)
+        validate_inventory(fixture, plan)
         target = fixture / PLUGIN / GATE / 'stages/prepare-light.md'
         baseline = target.read_bytes()
         budgets = {k: len(v.encode()) for k, v in measure(fixture, adapter).items()}
