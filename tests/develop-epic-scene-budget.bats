@@ -170,9 +170,9 @@ fixture_budget() {
   local r="$PLUGIN_DIR/$R"
   [ "$(grep -lF '委任の記録が、①' "$r"/*.md | wc -l | tr -d ' ')" = 1 ]
   grep -qF '委任の記録が、①' "$r/epic-delegation.md"
-  ! grep -qF '60 分以上: timeout' "$r/epic-loop.md"
+  ! grep -qF '60 分以上: timeout' "$r/epic-loop.md" || return 1
   grep -qF '型どおり' "$r/epic-keepalive.md"
-  ! grep -qF 'request_template' "$r/epic-child-stop.md"
+  ! grep -qF 'request_template' "$r/epic-child-stop.md" || return 1
 }
 @test "regress: exact budget and same size content substitution pass" {
   fixture
@@ -187,11 +187,11 @@ fixture_budget() {
   printf x >> "$BATS_TEST_TMPDIR/r/$R/epic.md"
   run check_budget "$BATS_TEST_TMPDIR/r" "$BATS_TEST_TMPDIR/b.txt"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"nested-entry"* ]]
+  [[ "$output" == *"nested-entry"* ]] || return 1
   rm "$BATS_TEST_TMPDIR/r/$R/parent-pass-criteria.md"
   run check_budget "$BATS_TEST_TMPDIR/r" "$BATS_TEST_TMPDIR/b.txt"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"parent-pass-criteria.md"* ]]
+  [[ "$output" == *"parent-pass-criteria.md"* ]] || return 1
 }
 @test "regress: exactly 1.1 times passes but one byte more fails" {
   fixture
@@ -252,6 +252,6 @@ fixture_budget() {
     printf '\n親の開始時に `references/epic-%s.md` を読む。\n' "$target" >> "$r/$R/epic-loop.md"
     run check_naming "$r"
     [ "$status" -eq 1 ] || { echo "$target survived" >&2; return 1; }
-    [[ "$output" == *'parent startup reads scene-only operations unconditionally'* ]]
+    [[ "$output" == *'parent startup reads scene-only operations unconditionally'* ]] || return 1
   done
 }
