@@ -133,7 +133,7 @@ review 行は従来経路でレビューを自分で起こす場面に追加し�
 } | LC_ALL=en_US.UTF-8 wc -m
 ```
 
-後の表は同じ共通定義・全ファイル単位・同一ファイルの重複除外で実装 HEAD から測り、基礎 5 行と追加した条件 profile の内訳を PR に書く。before が同じ大きいファイルに合流していた条件 profile は、上の before の和集合を対応する値とする。PR には移動表の各行の「元の段落／新しい先／読む条件」も記録し、最後に #1682 に前後の表をコメントする。
+後の表は同じ共通定義・全ファイル単位・同一ファイルの重複除外で実装 HEAD から測り、基礎 5 行と追加した条件 profile の内訳を PR に書く。内訳はファイル別に書く: 共通 3 本（`agents/gate-runner.md`・develop の `roles/gate-runner.md`・`return-declaration.md`）と基礎 5 場面の before／after のファイル名・各字数・合計、条件別 profile は基礎との差分のファイル一覧、Codex は固定 REQUEST・cwd・固定 Plugin root で生成した prompt と注入した正本を別表にする。before のファイルは移動先ではなく固定 main の元のファイルで数え、hook の注入は数えない。`python3 -B tests/gate_reading_report.py .` がこの表を再生成し、各ファイルの字数は `LC_ALL=en_US.UTF-8 wc -m` と一致する。before が同じ大きいファイルに合流していた条件 profile は、上の before の和集合を対応する値とする。PR には移動表の各行の「元の段落／新しい先／読む条件」も記録し、最後に #1682 に前後の表をコメントする。
 
 ### Codex の変更前の生成入力
 

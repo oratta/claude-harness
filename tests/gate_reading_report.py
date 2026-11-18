@@ -21,6 +21,9 @@ def compare(root):
     aliases = json.loads((fixtures / 'prose.json').read_text())['aliases']
     plan = budget.plans()
     result = {}
+    # Per-file breakdown: profile -> (before files, after files) and file -> chars.
+    files = {'before': {}, 'after': {}, 'claude': {}, 'codex': {}}
+    after_read = lambda name: (root / budget.PLUGIN / name).read_bytes().decode('utf-8')
 
     def git_source(name):
         return subprocess.check_output(
@@ -69,10 +72,23 @@ def compare(root):
                 original_path(p) for p in paths
                 if stage != 'legacy-all' or p != budget.GATE + 'SKILL.md'])
             before_claude = ''.join(read(p) for p in sorted(claude_paths))
+            after_paths = set(['agents/gate-runner.md'] + budget.COMMON + paths)
+            if stage == 'legacy-all':
+                after_paths.discard(budget.GATE + 'SKILL.md')
+            files['claude'][key] = (sorted(claude_paths), sorted(after_paths))
+            for p in claude_paths:
+                files['before'][p] = len(read(p))
+            for p in after_paths:
+                files['after'][p] = len(after_read(p))
+            # The profile total is exactly the sum of its distinct files.
+            assert sum(files['before'][p] for p in claude_paths) == len(before_claude), key
+            assert sum(files['after'][p] for p in after_paths) == len(after['claude/' + key]), key
             extra = {original_path(p) for p in paths} - injected
             if stage == 'review':
                 extra.discard(budget.GATE + 'stages/review-run.md')
             before_codex = prompt + ''.join(read(p) for p in sorted(extra))
+            files['codex'][key] = {'before_injected': sorted(injected), 'before_extra': sorted(extra),
+                                   'before_prompt': len(prompt)}
             for group, text in [('claude', before_claude), ('codex', before_codex)]:
                 current = after[group + '/' + key]
                 result[group + '/' + key] = {
@@ -86,7 +102,70 @@ def compare(root):
     for key, name in {**budget.STAGES, 'review': 'review',
                       'legacy-all': '一括（従来経路）'}.items():
         assert result['codex/' + key]['before'] == fixed['codex'][name], key
-    return result, plan
+    after_prompts = {}
+    adapter = budget.load_adapter(root)
+    for stage in [*budget.BASE, 'legacy-all']:
+        phase = 'review' if stage == 'review' else 'gate'
+        request = 'Dispatch HEAD: e10f0a9896d82d0b86c0f7a10becb70c4983bc63\nレビュー経路: '
+        request += ('従来' if stage == 'legacy-all' else 'adapter') + '\n'
+        if stage != 'review':
+            request += '段: ' + ('一括（従来経路）' if stage == 'legacy-all'
+                                else budget.STAGES[stage]) + '\n'
+        prompt = adapter.prompt(phase, request, {'cwd': '/gate-reading-fixture'},
+                                plugin_root='/gate-reading-plugin-fixture')
+        after_prompts[stage] = (len(prompt), sorted({m[1] for m in budget.HEADER.finditer(prompt)}))
+    files['after_prompts'] = after_prompts
+    files['head'] = subprocess.check_output(['git', '-C', str(root), 'rev-parse', 'HEAD'], text=True).strip()
+    return result, plan, files
+
+
+def render_files(result, plan, files):
+    short = lambda p: p.replace(budget.GATE, '')
+    common = ['agents/gate-runner.md'] + budget.COMMON
+    lines = [
+        'ファイル別内訳: before は固定 main `' + REVISION + '`、after は HEAD `' + files['head'] + '`。'
+        '字数は物理ファイルを UTF-8 で decode した文字数（`LC_ALL=en_US.UTF-8 wc -m` と同じ値）。'
+        '同じ profile の中で同じファイルは一度だけ数える。hook の注入（SessionStart 等）は数えない。',
+        '', '共通 3 本（Claude の全 profile に入る）:', '',
+        '| ファイル | before | after |', '|---|---:|---:|',
+    ]
+    for p in common:
+        lines.append(f"| {p} | {files['before'][p]:,} | {files['after'][p]:,} |")
+    for stage in budget.BASE:
+        before, after = files['claude'][stage]
+        lines += ['', f'Claude 基礎 `{stage}`（共通 3 本を除くファイル）:', '',
+                  '| before のファイル | 字数 | after のファイル | 字数 |', '|---|---:|---|---:|']
+        b = [p for p in before if p not in common]
+        a = [p for p in after if p not in common]
+        for i in range(max(len(b), len(a))):
+            cb = f"{short(b[i])} | {files['before'][b[i]]:,}" if i < len(b) else ' | '
+            ca = f"{short(a[i])} | {files['after'][a[i]]:,}" if i < len(a) else ' | '
+            lines.append(f'| {cb} | {ca} |')
+        value = result['claude/' + stage]
+        lines.append(f"| 合計（共通 3 本を含む） | {value['before'][0]:,} | | {value['after'][0]:,} |")
+    lines += ['', 'Claude 条件別 profile の基礎との差分（after で足すファイル。before は移動元のファイルで、'
+              '基礎に含まれていれば増えない）:', '',
+              '| profile | after で足すファイル（字数） | before で足すファイル |', '|---|---|---|']
+    for key in plan:
+        if key.startswith('legacy-') or key in budget.BASE:
+            continue
+        stage = key.split('-', 1)[0]
+        add_a = [p for p in files['claude'][key][1] if p not in files['claude'][stage][1]]
+        add_b = [p for p in files['claude'][key][0] if p not in files['claude'][stage][0]]
+        cell_a = '、'.join(f"{short(p)}（{files['after'][p]:,}）" for p in add_a) or 'なし'
+        cell_b = '、'.join(short(p) for p in add_b) or 'なし（基礎に含まれる）'
+        lines.append(f'| {key} | {cell_a} | {cell_b} |')
+    lines += ['', 'Codex（Claude とは別。固定 REQUEST・cwd `/gate-reading-fixture`、after は固定 Plugin root '
+              '`/gate-reading-plugin-fixture` で生成した prompt。prompt には定型文・REQUEST・ヘッダー・sha256 と注入した正本本文が入る）:', '',
+              '| 基礎 | before prompt | before に注入した正本 | after prompt | after に注入した正本 |',
+              '|---|---:|---|---:|---|']
+    for stage in [*budget.BASE, 'legacy-all']:
+        c = files['codex'][stage]
+        n, inj = files['after_prompts'][stage]
+        lines.append(f"| {stage} | {c['before_prompt']:,} | {'、'.join(short(p) for p in c['before_injected'])} | "
+                     f"{n:,} | {'、'.join(short(p) for p in inj)} |")
+    lines += ['', 'Codex の条件付き追加読込は prompt に注入されないファイルだけを数える（下の表の before追加・after追加）。']
+    return '\n'.join(lines)
 
 
 def render(result, plan):
@@ -123,4 +202,7 @@ def render(result, plan):
 
 
 if __name__ == '__main__':
-    print(render(*compare(Path(sys.argv[1] if len(sys.argv) > 1 else '.').resolve())))
+    result, plan, files = compare(Path(sys.argv[1] if len(sys.argv) > 1 else '.').resolve())
+    print(render(result, plan))
+    print()
+    print(render_files(result, plan, files))
