@@ -27,7 +27,7 @@
 
 ## 5. 統合の確認と記録
 
-- [ ] 5.1 関係 bats、新しい予算・契約テスト、./scripts/test.sh、./scripts/lint.sh を実行し、コマンド・exit code を記録する。Claude 呼び出しを禁止された worker は lint 内の claude plugin validate を実行せず、未実行のチェックとして本体に返す。通っていないものを成功にしない。触る範囲: scripts/test.sh:1-402（実行のみ）、scripts/lint.sh:1-147（実行のみ）、plugins/dev-workflow/changes/1687.md（新規）
+- [x] 5.1 関係 bats、新しい予算・契約テスト、./scripts/test.sh、./scripts/lint.sh を実行し、コマンド・exit code を記録する。Claude 呼び出しを禁止された worker は lint 内の claude plugin validate を実行せず、未実行のチェックとして本体に返す。通っていないものを成功にしない。触る範囲: scripts/test.sh:1-402（実行のみ）、scripts/lint.sh:1-147（実行のみ）、plugins/dev-workflow/changes/1687.md（新規）
 - [x] 5.2 固定 main の before と実装 HEAD の after を同じ範囲で wc -m で測る。Claude のファイル読込と Codex の固定生成 prompt・条件付き追加読込を別表にし、固定入力・定型文の算入・実行ごとに変わる入力は予算外である旨も記録する。design の before 表・移動表・実行証拠と、規模超過・削らず残した分岐を変更記録にまとめる。OpenSpec strict validate と git diff --check を通す。触る範囲: plugins/dev-workflow/changes/1687.md（新規）、openspec/changes/split-gate-stage-reading/design.md:1-179（計測結果の追記のみ）
 
 ## Workflow follow-up

@@ -8,6 +8,7 @@ gate_test_docs() {
   helper="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/gate-docs.py"
   python3 -B "$helper" "$PLUGIN_DIR" "$BATS_TEST_TMPDIR" > /dev/null
   GATE_SCOPE_DOCS="$BATS_TEST_TMPDIR/gate-docs/GATE_SCOPE.md"
+  # shellcheck disable=SC2034 # Consumed by gate_all in the caller tests sourcing this library.
   ALL_GATE_DOCS="$BATS_TEST_TMPDIR/gate-docs/ALL.md"
   for name in GATE DECLARATIONS PREPARE TRIAGE PASS_STAGE HOLD; do
     if [ -n "${!name:-}" ]; then
