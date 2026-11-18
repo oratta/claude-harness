@@ -2517,7 +2517,7 @@ no_point_section() { awk '/^#### 6-0\. 論点なしの宣言の確認/{f=1;print
   local f t
   for f in "$DECLARATIONS" "$HOLD" "$PASS_STAGE"; do
     for t in '答え方' '3〜4 行' 'OK すると何が起きるかを中身で書いた質問'; do
-      ! grep -qF -- "$t" "$f" || { echo "$f keeps: $t"; return 1; }
+      if grep -qF -- "$t" "$f"; then echo "$f keeps: $t"; return 1; fi
     done
   done
 }

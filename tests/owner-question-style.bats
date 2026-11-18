@@ -133,7 +133,7 @@ referrers() {
   for f in "$READABLE" "$SHORT"; do
     for t in '目的 → いま取り組んでいる場所' 'これを飲めるならAで進める' '質問 → 主に聞く理由' \
       'OK すると何が起きるか' 'いま困っていること' 'Discord' '住人'; do
-      ! grep -qF -- "$t" "$f" || { echo "$f keeps: $t"; return 1; }
+      if grep -qF -- "$t" "$f"; then echo "$f keeps: $t"; return 1; fi
     done
   done
   ! grep -qF '判断依頼は背景から' "$READABLE" || return 1
