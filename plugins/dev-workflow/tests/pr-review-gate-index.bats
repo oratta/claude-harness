@@ -103,6 +103,24 @@ step_headings() {
   done
 }
 
+@test "stages: each conditional detail opens with its read condition and ends with its exit" {
+  local count=0 f name first last
+  for f in "${GATE_DIR}"/stages/*.md; do
+    name="$(basename "$f" .md)"
+    case "$name" in prepare|review-run|reviewer-brief|triage|pass|hold) continue ;; esac
+    count=$((count + 1))
+    # 1 行目はタイトル、その次の非空行が「入口:」
+    [ "$(head -1 "$f")" = "# ${name} — pr-review-gate" ] || { echo "title: $name"; return 1; }
+    first="$(sed -n '2,$p' "$f" | grep -v '^[[:space:]]*$' | head -1)"
+    [[ "$first" == 入口:\ * ]] || { echo "entry not first: $name: $first"; return 1; }
+    last="$(grep -v '^[[:space:]]*$' "$f" | tail -1)"
+    [[ "$last" == 出口:\ * ]] || { echo "exit not last: $name: $last"; return 1; }
+    [ "$(grep -c '^入口: ' "$f")" -eq 1 ] || { echo "entry count: $name"; return 1; }
+    [ "$(grep -c '^出口: ' "$f")" -eq 1 ] || { echo "exit count: $name"; return 1; }
+  done
+  [ "$count" -eq 22 ] || { echo "detail count: $count"; return 1; }
+}
+
 # --- Requirement: develop 以外で本体がスキルを直接使うときは索引から段ごとに読む ---
 
 @test "index: direct-use section names prepare.md first and hold.md for resuming" {

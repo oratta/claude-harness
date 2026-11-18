@@ -1,5 +1,7 @@
 # triage-escalation — pr-review-gate
 
+入口: 指摘を W へ戻すときに失敗のラダーを当てるときだけ読む。
+
 #### 2-2. 修正サイクルのモデル昇格（failed → 修正実装）
 
 `agent-review:failed` に付け替えて修正サイクルへ戻すときは、**修正を書くサブエージェントのモデルを決めてから戻す**（Agent ツールの `model` パラメータ。PR を持っているセッション本体のモデルは変えない）。
@@ -30,3 +32,5 @@ gh api -X POST repos/$R/issues/$N/comments \
 ```
 
 1周目からモデルを上げる「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務。実行役はどの分類でも上位の格止まりで、読んで判断する役が分類に当たるときは `subagent_type: dev-workflow:decider`）は **develop スキルの references/pre-classification.md が正本** — このゲートでは再掲しない。
+
+出口: `stages/triage.md` の修正サイクルの処理へ戻る。

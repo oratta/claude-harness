@@ -1,5 +1,7 @@
 # carryover-judge — pr-review-gate
 
+入口: 終了コード 4 で本文の回付条件を満たすときだけ読む。
+
 ##### 終了コード 4 の判定役
 
 終了コード 4 は、根拠ファイルの PR 自身の差分が前後で違うか、PR 自身の commit が根拠ファイルに触れたことしか示さない。リスク宣言の中身が前と同じかは、作業の文脈を持たない判定役に比べさせる。
@@ -30,3 +32,5 @@
 
 
 return の欄は `stages/hold.md` の「G として動くとき（develop）」節にある。
+
+出口: `stages/carryover.md` の手順 3-c へ戻る。return の欄は `stages/hold.md` の「G として動くとき（develop）」節。
