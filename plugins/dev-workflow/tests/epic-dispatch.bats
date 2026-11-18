@@ -5189,15 +5189,13 @@ limit_para() { run_section | grep -E '^\*\*同時に動く子の上限\*\*'; }
 # 「回し方」の「**サブエージェント方式**」の段落
 subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*'; }
 
-@test "skill: the limit paragraph names the variable, the default formula and the measured RSS" {
+@test "skill: the limit paragraph names the variable, default formula and invalid values" {
   p="$(limit_para)"
   [ -n "$p" ]
   printf '%s\n' "$p" | grep -qF '`EPIC_DISPATCH_MAX_PARALLEL`'
   printf '%s\n' "$p" | grep -qF '物理メモリの GiB を 4 で割って切り捨てた値（最小 1。メモリ量を読めなければ 2）'
   printf '%s\n' "$p" | grep -qF '`scripts/epic-dispatch.sh max-parallel`'
-  printf '%s\n' "$p" | grep -qF '146〜404 MB'
-  printf '%s\n' "$p" | grep -qF '最大 564 MB'
-  printf '%s\n' "$p" | grep -qF '1.5 GiB は実測ではない'
+  printf '%s\n' "$p" | grep -qF '1 以上の整数。空・0・数字以外なら `launch` は使い方を出して exit 1'
 }
 
 @test "skill: the limit paragraph does not count done, closed and stopped children, and resumed children can go over on Orca" {
