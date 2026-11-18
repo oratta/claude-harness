@@ -46,8 +46,8 @@ setup() {
 @test "pre-classification: the first-round column has no fable (the worker's cap is opus)" {
   tbl="$(awk '/^## 重要実装の事前分類/{f=1} f && /^\| /{print} /^## 昇格トリップワイヤー/{f=0}' "$PRE")"
   [ -n "$tbl" ]
-  ! echo "$tbl" | grep -qF '`fable`' || return 1
-  echo "$tbl" | grep -qF '`opus`'
+  ! grep -qF '`fable`' <<<"$tbl" || return 1
+  grep -qF '`opus`' <<<"$tbl"
   grep -q '最初から' "$PRE"
   grep -qF 'W の上限は `opus`' "$PRE"
 }
@@ -67,7 +67,7 @@ setup() {
   for row in abundant conserve; do
     line="$(grep -F "| \`${row}\`" "$CRITERIA")"
     [ -n "$line" ]
-    echo "$line" | grep -qF 'dev-workflow:decider'
+    grep -qF 'dev-workflow:decider' <<<"$line"
   done
   grep -qF '実行役（W）はどの分類でも `opus` 止まり' "$CRITERIA"
 }
@@ -90,21 +90,21 @@ setup() {
   grep -qF '聖域パスだけではレビューを上げない' "$PRE"
   grep -qF 'マージ権限・層間契約・課金/法務に当たるときは' "$PRE"
   line="$(grep -F '| `conserve`' "$CRITERIA")"
-  echo "$line" | grep -qF 'マージ権限・層間契約・課金/法務に当たる'
-  echo "$line" | grep -qF '聖域パスだけでは上げない'
+  grep -qF 'マージ権限・層間契約・課金/法務に当たる' <<<"$line"
+  grep -qF '聖域パスだけでは上げない' <<<"$line"
 }
 
 @test "spec reviewer: the spawn uses the model and role request returned, keeping the wording of the spec" {
   R1_DOC="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
   sec="$(awk '/^## R1 の spawn/{f=1; next} /^## /{f=0} f' "$R1_DOC")"
-  echo "$sec" | grep -qF '`codex-develop.py request --phase spec-review` が返す `model`'
-  echo "$sec" | grep -qF '`role: decider`'
-  echo "$sec" | grep -qF '`model: opus`'
-  echo "$sec" | grep -qF 'references/pre-classification.md'
-  echo "$sec" | grep -qF '聖域パスだけでは上げない'
+  grep -qF '`codex-develop.py request --phase spec-review` が返す `model`' <<<"$sec"
+  grep -qF '`role: decider`' <<<"$sec"
+  grep -qF '`model: opus`' <<<"$sec"
+  grep -qF 'references/pre-classification.md' <<<"$sec"
+  grep -qF '聖域パスだけでは上げない' <<<"$sec"
   # 優先順位の言い換えは decision-criteria.md の表への 1 行に替えた（#1683）
-  echo "$sec" | grep -qF "$BUDGET_POINTER"
-  ! echo "$sec" | grep -qF '`sonnet` 固定' || return 1
+  grep -qF "$BUDGET_POINTER" <<<"$sec"
+  ! grep -qF '`sonnet` 固定' <<<"$sec" || return 1
 }
 
 @test "shared budget: depleted is a Sonnet cap and haiku stays haiku under both modes" {
@@ -158,73 +158,73 @@ setup() {
 
 @test "escalation: implementation-quality failures raise the decider or the executor, never both" {
   sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
-  echo "$sec" | grep -qF '実装品質起因'
-  echo "$sec" | grep -qF '決める役'
-  echo "$sec" | grep -qF '実行役'
-  echo "$sec" | grep -qF '一方だけ'
-  echo "$sec" | grep -qF 'dev-workflow:decider'
+  grep -qF '実装品質起因' <<<"$sec"
+  grep -qF '決める役' <<<"$sec"
+  grep -qF '実行役' <<<"$sec"
+  grep -qF '一方だけ' <<<"$sec"
+  grep -qF 'dev-workflow:decider' <<<"$sec"
   # 旧ラダー（実行役を 1 段ずつ sonnet → opus → fable）は残さない
-  ! echo "$sec" | grep -qF '`sonnet` → `opus` → `fable`' || return 1
+  ! grep -qF '`sonnet` → `opus` → `fable`' <<<"$sec" || return 1
   # 旧ラダーの表記「...で spawn する」だけを拒否する。現行文は同じ語順で
   # 「...で spawn しない」と続くため、"する" まで含めないと現行文自体に誤爆する。
-  ! echo "$sec" | grep -qF '修正実装を `model: fable` で spawn する' || return 1
+  ! grep -qF '修正実装を `model: fable` で spawn する' <<<"$sec" || return 1
   grep -qF '昇格は実装品質起因のときだけ' "${TRIAGE}"
 }
 
 @test "escalation (#1632): the 2-2 section names --failure executor / first / judgment and uses the model request returned" {
   sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
   [ -n "$sec" ]
-  echo "$sec" | grep -qF 'request --phase implement --failure executor'
-  echo "$sec" | grep -qF 'request --phase decider --failure first'
-  echo "$sec" | grep -qF -- '--failure judgment'
-  echo "$sec" | grep -qF '`request` が返した model'
-  echo "$sec" | grep -qF '新しい thread に手渡す'
-  echo "$sec" | grep -qF '一方だけ'
+  grep -qF 'request --phase implement --failure executor' <<<"$sec"
+  grep -qF 'request --phase decider --failure first' <<<"$sec"
+  grep -qF -- '--failure judgment' <<<"$sec"
+  grep -qF '`request` が返した model' <<<"$sec"
+  grep -qF '新しい thread に手渡す' <<<"$sec"
+  grep -qF '一方だけ' <<<"$sec"
 }
 
 @test "escalation (#1632): the 2-2 section no longer spawns the executor as opus or names opus -> fable as the rule" {
   sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
-  ! echo "$sec" | grep -qF '実行役を `opus` で spawn' || return 1
-  ! echo "$sec" | grep -qF '`opus` → `fable`' || return 1
-  ! echo "$sec" | grep -qF '実行役の上限は `opus`' || return 1
-  ! echo "$sec" | grep -qF '実行役はどの分類でも `opus` 止まり' || return 1
-  ! echo "$sec" | grep -qF 'model: opus' || return 1
+  ! grep -qF '実行役を `opus` で spawn' <<<"$sec" || return 1
+  ! grep -qF '`opus` → `fable`' <<<"$sec" || return 1
+  ! grep -qF '実行役の上限は `opus`' <<<"$sec" || return 1
+  ! grep -qF '実行役はどの分類でも `opus` 止まり' <<<"$sec" || return 1
+  ! grep -qF 'model: opus' <<<"$sec" || return 1
 }
 
 @test "escalation (#1632): the executor is never raised to the top tier and agent-model-guard.sh enforces it" {
   sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
-  echo "$sec" | grep -qF '実行役を最上位の格に上げない'
-  echo "$sec" | grep -qF 'agent-model-guard.sh'
+  grep -qF '実行役を最上位の格に上げない' <<<"$sec"
+  grep -qF 'agent-model-guard.sh' <<<"$sec"
 }
 
 @test "escalation (#1632): the decider enters at --failure first on the gate's first failed and --failure judgment from the second" {
   sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
-  echo "$sec" | grep -qF '1 回目の failed なら `--failure first`'
-  echo "$sec" | grep -qF '2 回目以降'
+  grep -qF '1 回目の failed なら `--failure first`' <<<"$sec"
+  grep -qF '2 回目以降' <<<"$sec"
   p="$(awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' "${TRIAGE}" | grep '^- 本体への提案:')"
-  echo "$p" | grep -qF 'request --phase decider --failure first'
-  echo "$p" | grep -qF '`--failure judgment`'
-  echo "$p" | grep -qF 'request --phase decider --failure'
+  grep -qF 'request --phase decider --failure first' <<<"$p"
+  grep -qF '`--failure judgment`' <<<"$p"
+  grep -qF 'request --phase decider --failure' <<<"$p"
 }
 
 @test "escalation: the two-round cap is given as the reason for raising on the first failed" {
   sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
-  echo "$sec" | grep -qF '2 周キャップ'
-  echo "$sec" | grep -qF '既定の最終周'
-  echo "$sec" | grep -qF '1 回目の failed'
-  echo "$sec" | grep -qF '直し方の判定'
+  grep -qF '2 周キャップ' <<<"$sec"
+  grep -qF '既定の最終周' <<<"$sec"
+  grep -qF '1 回目の failed' <<<"$sec"
+  grep -qF '直し方の判定' <<<"$sec"
 }
 
 @test "escalation (#1628): the failed proposal names --failure executor / judgment and uses the model request returned" {
   p="$(awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' "${TRIAGE}" | grep '^- 本体への提案:')"
   [ -n "$p" ]
-  echo "$p" | grep -qF 'request --phase implement --failure executor'
-  echo "$p" | grep -qF 'request --phase decider --failure'
-  echo "$p" | grep -qF '`request` が返した model'
-  echo "$p" | grep -qF '新しい thread に手渡す'
-  echo "$p" | grep -qF '一方だけ'
-  ! echo "$p" | grep -qF '`opus`' || return 1
-  ! echo "$p" | grep -qF '`fable`' || return 1
+  grep -qF 'request --phase implement --failure executor' <<<"$p"
+  grep -qF 'request --phase decider --failure' <<<"$p"
+  grep -qF '`request` が返した model' <<<"$p"
+  grep -qF '新しい thread に手渡す' <<<"$p"
+  grep -qF '一方だけ' <<<"$p"
+  ! grep -qF '`opus`' <<<"$p" || return 1
+  ! grep -qF '`fable`' <<<"$p" || return 1
   ! grep -qF 'W を `opus` で再開' "${TRIAGE}" || return 1
 }
 
@@ -285,7 +285,7 @@ model_section() {
   echo "$sec" | grep -F '| R1（読んで判断する役） |' | grep -qF '| 上位（`opus`） |'
   echo "$sec" | grep -F '| G（`dev-workflow:gate-runner`） |' | grep -qF '| 中位（`sonnet`） |'
   echo "$sec" | grep -F '| G が要求するレビュアー' | grep -qF '| 上位（`opus`） |'
-  echo "$sec" | grep -qF 'W の上限は `opus`'
+  grep -qF 'W の上限は `opus`' <<<"$sec"
   echo "$sec" | grep -F '| R1（読んで判断する役） |' | grep -qF 'dev-workflow:decider'
   echo "$sec" | grep -F '| G が要求するレビュアー' | grep -qF 'dev-workflow:decider'
 }
@@ -298,15 +298,15 @@ model_section() {
 
 @test "model section: new spawns use the model request returned and are not recalculated" {
   sec="$(codex_procedures)"
-  echo "$sec" | grep -qF 'codex-develop.py request'
-  echo "$sec" | grep -qF '返った `model` で Agent を起動する'
+  grep -qF 'codex-develop.py request' <<<"$sec"
+  grep -qF '返った `model` で Agent を起動する' <<<"$sec"
 }
 
 @test "model section: budget modes are named but their value-by-value effects stay in decision-criteria" {
   sec="$(model_section)"
-  echo "$sec" | grep -qF 'FABLE_BUDGET_MODE'
-  echo "$sec" | grep -qF 'SHARED_BUDGET_MODE'
-  echo "$sec" | grep -qF 'references/decision-criteria.md'
+  grep -qF 'FABLE_BUDGET_MODE' <<<"$sec"
+  grep -qF 'SHARED_BUDGET_MODE' <<<"$sec"
+  grep -qF 'references/decision-criteria.md' <<<"$sec"
   # 引き継ぎの判定役の行だけが例外: request を通らない役なので、depleted のときは起こさないことをその行に書く
   ! echo "$sec" | grep -vF '| 引き継ぎの判定役' | grep -qE 'abundant|reserve|exhausted|throttled|depleted' || return 1
   echo "$sec" | grep -F '| 引き継ぎの判定役' | grep -qF 'SHARED_BUDGET_MODE=depleted'
@@ -318,22 +318,22 @@ model_section() {
 
 @test "role profile section: request gets the tier inputs on every route, including Claude default" {
   sec="$(codex_procedures)"
-  echo "$sec" | grep -qF 'Claude 既定の経路を含む全経路'
+  grep -qF 'Claude 既定の経路を含む全経路' <<<"$sec"
   for flag in '--pre-class' '--design-judgment' '--failure' '--unmanned'; do
-    echo "$sec" | grep -qF -- "$flag" || { echo "missing $flag"; return 1; }
+    grep -qF -- "$flag" <<<"$sec" || { echo "missing $flag"; return 1; }
   done
-  echo "$sec" | grep -qF '`role: decider`'
+  grep -qF '`role: decider`' <<<"$sec"
   for field in requested_model tier_reason executed_tier tier_cap; do
-    echo "$sec" | grep -qF "\`$field\`" || { echo "missing $field"; return 1; }
+    grep -qF "\`$field\`" <<<"$sec" || { echo "missing $field"; return 1; }
   done
 }
 
 @test "role profile section: a resume calls request again and compares tiers without reselecting" {
   sec="$(codex_procedures)"
   # #424: 呼び直しは今回の格の入力（失敗ループの段なら --failure の値を含む）で行う
-  echo "$sec" | grep -qF '同じ phase と、今回の再開に当たる格の入力'
-  echo "$sec" | grep -qF 'thread の格'
-  echo "$sec" | grep -qF '選び直しには使わない'
+  grep -qF '同じ phase と、今回の再開に当たる格の入力' <<<"$sec"
+  grep -qF 'thread の格' <<<"$sec"
+  grep -qF '構成の選び直しにも使わない' <<<"$sec"
 }
 
 # --- バージョン ---

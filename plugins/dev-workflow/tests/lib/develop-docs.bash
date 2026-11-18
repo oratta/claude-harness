@@ -36,5 +36,5 @@ codex_procedures() {
 }
 
 develop_status() {
-  develop_procedures | awk -v s="$1" '$0 ~ "^[[:space:]]*" s " →" {f=1; print; next} f && /^## / {exit} f'
+  develop_procedures | awk -v s="$1" '$0 ~ "^[[:space:]]*" s " →" {f=1; print; next} f && /^## / {f=0} f'
 }
