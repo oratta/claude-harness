@@ -147,8 +147,10 @@ refute() {
   printf '%s\n' "$s" | grep -qF '端末に出すだけで済ませない'
   printf '%s\n' "$s" | grep -qF '`主がすること: なし`'
   printf '%s\n' "$s" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
-  printf '%s\n' "$s" | grep -qF '答え方の行'
+  printf '%s\n' "$s" | grep -qF '1 行目を題名（質問にしない）にし、2 行目のアクションの行'
   printf '%s\n' "$s" | grep -qF 'このチャンネルで何を返すか'
+  printf '%s\n' "$s" | grep -qF 'アクションの行に画面・タブ・入力欄'
+  run grep -nE '最後の答え方|1 行目と最後の行|答え方の行' <<<"$s"; [ "$status" -eq 1 ]
   printf '%s\n' "$s" | grep -F '末尾の PR に何を書くか' | grep -qF 'フル URL'
   ! printf '%s\n' "$s" | grep -qF 'PR #<N>' || return 1
   printf '%s\n' "$s" | grep -qF '画面・タブ・入力欄'

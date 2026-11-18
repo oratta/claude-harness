@@ -348,6 +348,38 @@ PY
   silent
 }
 
+@test "target: a title with an action line on line 2 is a target" {
+  msg_of "$(nl '手順書の PR #1712 をマージしてほしい' 'アクション: 下の PR のページでマージする')"
+  run_hook
+  local r
+  r="$(reason_of)"
+  has "$r" '行 1: #1712'
+}
+
+@test "target: a bold action label with a full-width colon on line 2 is a target" {
+  msg_of "$(nl '#1712 を入れてほしい' '**アクション：** このタブで『OK』と書く')"
+  run_hook
+  reason_of >/dev/null
+}
+
+@test "target: the word action in the middle of line 2 is not a target" {
+  msg_of "$(nl '#1712 を直した。' '次のアクション: なし')"
+  run_hook
+  silent
+}
+
+@test "target: an action line after a separator on line 2 is not a target" {
+  msg_of "$(nl '#1712 を入れてほしい' '---' 'アクション: このタブで『OK』と書く')"
+  run_hook
+  silent
+}
+
+@test "target: a no-action first line followed by an action line is skipped" {
+  msg_of "$(nl '主がすること: なし' 'アクション: #1712 をマージした')"
+  run_hook
+  silent
+}
+
 # ---------- 止める条件 ----------
 
 @test "condition 1: a number outside a URL above the separator is sent back even with a URL" {

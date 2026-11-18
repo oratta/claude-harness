@@ -62,7 +62,8 @@ class RequestFixture:
         })
         environ.start()
         self.addCleanup(environ.stop)
-        for key in ('CLAUDE_ACCOUNTS_FILE', 'USAGE_SESSIONS_DIR', 'CLAUDE_SECURESTORAGE_CONFIG_DIR'):
+        for key in ('CLAUDE_ACCOUNTS_FILE', 'USAGE_SESSIONS_DIR', 'CLAUDE_SECURESTORAGE_CONFIG_DIR',
+                    'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'):
             os.environ.pop(key, None)
 
     def write_profile(self, account):
@@ -389,9 +390,9 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
 
     def test_selection_table_and_zero_boundary(self):
         cases = [
-            (20, 10, 'claude-write-codex-review'),
+            (20, 5, 'claude-write-codex-review'),
             (20, -5, 'claude-default'),
-            (-5, 30, 'codex-standard'),
+            (-5, 5, 'codex-standard'),
             (-5, -5, 'claude-default'),
             (0, 0, 'claude-write-codex-review'),
         ]
@@ -400,6 +401,101 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 selected, reason = m.select_configuration(claude, codex)
                 self.assertEqual(selected, expected)
                 self.assertIsInstance(reason, str)
+
+    def test_selection_table_with_the_threshold(self):
+        # issue #1677: Codex at or above the threshold (default 10) wins whatever Claude has.
+        new = ('codex-standard', 'codex-headroom-meets-threshold')
+        cases = [
+            ((6.9, 65.3), new),
+            ((-5, 65.3), new),
+            ((None, 65.3), new),
+            ((6.9, 10), new),
+            ((6.9, 9.99), ('claude-write-codex-review', 'both-providers-have-headroom')),
+            ((6.9, 5), ('claude-write-codex-review', 'both-providers-have-headroom')),
+            ((-5, 5), ('codex-standard', 'only-codex-has-headroom')),
+            ((6.9, -1), ('claude-default', 'only-claude-has-headroom')),
+            ((6.9, None), ('claude-default', 'only-claude-has-headroom')),
+            ((-5, None), ('claude-default', 'no-provider-has-headroom')),
+        ]
+        for (claude, codex), expected in cases:
+            with self.subTest(claude=claude, codex=codex):
+                self.assertEqual(m.select_configuration(claude, codex), expected)
+        self.assertNotEqual(m.select_configuration(6.9, 65.3)[1], 'both-providers-have-headroom')
+        for claude, codex in ((6.9, 65.3), (-5, 5), (6.9, 5), (None, None)):
+            with self.subTest(off=(claude, codex)):
+                self.assertEqual(m.select_configuration(claude, codex, codex_enabled=False),
+                                 ('claude-default', 'codex-off'))
+
+    def test_threshold_argument_moves_the_boundary(self):
+        self.assertEqual(m.select_configuration(6.9, 20, threshold=30),
+                         ('claude-write-codex-review', 'both-providers-have-headroom'))
+        self.assertEqual(m.select_configuration(6.9, 30, threshold=30),
+                         ('codex-standard', 'codex-headroom-meets-threshold'))
+        self.assertEqual(m.select_configuration(6.9, 0, threshold=0),
+                         ('codex-standard', 'codex-headroom-meets-threshold'))
+
+    def test_threshold_setting_is_read_from_the_environment(self):
+        for raw, expected in ((None, 10), ('', 10), ('  ', 10), ('30', 30), ('0', 0),
+                              ('100', 100), ('12.5', 12.5)):
+            with self.subTest(raw=raw), patch.dict(os.environ, {}, clear=False):
+                os.environ.pop('DEVELOP_ALL_CODEX_MIN_MARGIN_PCT', None)
+                if raw is not None:
+                    os.environ['DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'] = raw
+                self.assertEqual(m.all_codex_threshold(), expected)
+        for raw in ('abc', '-1', '-0.5', '101', 'nan', 'inf'):
+            with self.subTest(raw=raw), \
+                    patch.dict(os.environ, {'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT': raw}, clear=False):
+                with self.assertRaisesRegex(RuntimeError, 'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'):
+                    m.all_codex_threshold()
+
+    def test_threshold_setting_changes_the_automatic_selection(self):
+        now = 2_000_000
+        snapshot_path = self.write_claude_snapshot({'default': self.snapshot(6.9, now=now)})
+        usages = {'a': self.snapshot(20, now=now, minutes=10080)}
+        for raw, expected in ((None, ('codex-standard', 'codex-headroom-meets-threshold')),
+                              ('30', ('claude-write-codex-review', 'both-providers-have-headroom'))):
+            env = {'USAGE_SNAPSHOT': str(snapshot_path)}
+            if raw is not None:
+                env['DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'] = raw
+            with self.subTest(raw=raw), patch.dict(os.environ, env, clear=False), \
+                    patch.object(m, '_run_usage_probe'), \
+                    patch.object(m, 'read_codex_usages', return_value=usages):
+                selected, evidence = m.automatic_selection({'a': '/a'}, now)
+            self.assertEqual((selected, evidence['reason']), expected)
+
+    def test_invalid_threshold_setting_blocks_automatic_selection(self):
+        now = 2_000_000
+        snapshot_path = self.write_claude_snapshot({'default': self.snapshot(6.9, now=now)})
+        usages = {'a': self.snapshot(45, now=now, minutes=10080)}
+        for raw in ('abc', '-1', '101', 'nan'):
+            with self.subTest(raw=raw), \
+                    patch.dict(os.environ, {'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT': raw,
+                                            'USAGE_SNAPSHOT': str(snapshot_path)}, clear=False), \
+                    patch.object(m, '_run_usage_probe'), \
+                    patch.object(m, 'read_codex_usages', return_value=usages):
+                with self.assertRaisesRegex(RuntimeError, 'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'):
+                    self.call_automatic(accounts=('a',))
+                self.assertFalse(self.out.exists())
+
+    def test_invalid_threshold_setting_exits_2_with_blocked(self):
+        env = dict(os.environ) | {'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT': 'abc',
+                                  'USAGE_SNAPSHOT': str(self.root / 'absent-snapshot.json')}
+        home = self.root / 'codex-a'
+        home.mkdir(exist_ok=True)
+        done = subprocess.run([sys.executable, str(SCRIPT), 'request', '--phase', 'implement',
+                               '--input', str(self.input), '--cwd', str(self.cwd),
+                               '--account-home', 'a=' + str(home), '--out', str(self.out)],
+                              env=env, capture_output=True, text=True, timeout=120)
+        self.assertEqual(done.returncode, 2, done.stderr)
+        result = json.loads(done.stdout)
+        self.assertEqual(result['status'], 'blocked')
+        self.assertIn('DEVELOP_ALL_CODEX_MIN_MARGIN_PCT', result['error'])
+        self.assertFalse(self.out.exists())
+
+    def test_explicit_profile_ignores_an_invalid_threshold_setting(self):
+        with patch.dict(os.environ, {'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT': 'abc'}, clear=False):
+            result = self.call_profile('codex-standard')
+        self.assertEqual(result['status'], 'request-written')
 
     def write_claude_snapshot(self, accounts, active='default'):
         path = self.root / 'claude-snapshot.json'
@@ -891,17 +987,21 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
         now = 2_000_000
         snapshot_path = self.root / 'acceptance-snapshot.json'
         cases = [
-            ('both-headroom', 20, 10, 0, 'claude-write-codex-review',
+            ('both-headroom', 20, 5, 0, 'claude-write-codex-review',
              'both-providers-have-headroom', 'claude', 'current'),
+            ('codex-meets-threshold', 6.9, 45, 0, 'codex-standard',
+             'codex-headroom-meets-threshold', 'codex', 'a'),
+            ('codex-meets-threshold-claude-blocked', -5, 45, 0, 'codex-standard',
+             'codex-headroom-meets-threshold', 'codex', 'a'),
             ('codex-blocked', 20, -5, 0, 'claude-default',
              'only-claude-has-headroom', 'claude', 'current'),
-            ('claude-blocked', -5, 30, 0, 'codex-standard',
+            ('claude-blocked', -5, 5, 0, 'codex-standard',
              'only-codex-has-headroom', 'codex', 'a'),
             ('both-blocked', -5, -5, 0, 'claude-default',
              'no-provider-has-headroom', 'claude', 'current'),
-            ('age-300', -5, 30, 300, 'codex-standard',
+            ('age-300', -5, 5, 300, 'codex-standard',
              'only-codex-has-headroom', 'codex', 'a'),
-            ('age-301', -5, 30, 301, 'codex-standard',
+            ('age-301', -5, 5, 301, 'codex-standard',
              'only-codex-has-headroom', 'codex', 'a'),
             ('age-one-day', 20, -5, 86400, 'claude-default',
              'only-claude-has-headroom', 'claude', 'current'),
@@ -1197,7 +1297,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 self.assertEqual(result['status'], 'request-written')
 
     def test_automatic_selection_is_identical_without_the_off_setting(self):
-        usages = {'a': self.snapshot(30, now=2_000_000, minutes=10080), 'b': None}
+        usages = {'a': self.snapshot(5, now=2_000_000, minutes=10080), 'b': None}
         outcomes = []
         for codex in ('none', 'absent', {'enabled': True}):
             if codex == 'none':
