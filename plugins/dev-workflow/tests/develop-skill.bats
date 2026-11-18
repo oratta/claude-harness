@@ -1310,7 +1310,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   grep -qF 'epic-keepalive-watch.md' "$f"
   grep -qF '止まった発言の uuid（`stop_uuid`）か主の返事待ちの停止記録があり未回答' "$SKILL_DIR/references/epic-keepalive-watch.md"
   grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200 秒。' "$SKILL_DIR/references/epic-keepalive-watch.md"
-  run grep -E '86400|24 時間' "$f"; [ "$status" -eq 1 ]
+  run grep -E '86400|24 時間' "$f" "$SKILL_DIR/references/epic-keepalive.md"; [ "$status" -eq 1 ]
   grep -E '^\| 親が通した判断 \|' "$f" | grep -qF '`発言 <uuid>`'
   grep -E '^\| 主の返事待ちの子 \|' "$f" | grep -qF '`stop_uuid` に対応する `親の判断:`'
 }
