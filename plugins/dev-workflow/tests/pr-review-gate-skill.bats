@@ -836,7 +836,7 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
       'このときの答えは記録先の本文に足す' '-X POST repos/<親のリポジトリ>/issues/<親の番号>/sub_issues -F sub_issue_id=<id>' \
       '親が見えず 404 になる場合' 'すでに親の子である同じ場所の issue があっても新しい子 issue ができること' || return 1
   done
-  ! printf '%s\n' "$c" | grep -qF '候補探しの前に済ませる' || { echo "stale: 候補探しの前"; return 1; }
+  if printf '%s\n' "$c" | grep -qF '候補探しの前に済ませる'; then echo "stale: 候補探しの前"; return 1; fi
   # 条件の答えを読み書きする文の 1 句は、spec・gate-runner.md・reviewer-brief.md で同じ
   phrase='親が別リポジトリなら親のリポジトリの本文（`stages/triage.md` の段 C の段落）'
   has_all "$(awk '/^### Requirement: 条件を主に聞くときは条件だけを聞き/{f=1;next} /^### Requirement: /{f=0} f' "$spec")" "$phrase" || return 1
