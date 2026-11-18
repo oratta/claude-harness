@@ -52,6 +52,15 @@ setup() {
   make_stub git
   make_stub sleep
   make_stub sysctl
+  # dispatch を通さずにスクリプトを直接呼んでも、本物の orca のワークツリーや tmux のセッションに届かないよう、
+  # テスト自身の PATH の先頭に「必ず失敗して呼び出しを残す」orca と tmux を置く（#1508）。
+  # dispatch は PATH を "$STUB_BIN:/usr/bin:/bin" に作り直すので、ここの守りは見えず、
+  # 「PATH に orca が無い」テストも今までどおり。orca / tmux が要るテストは make_stub で STUB_BIN に置く
+  GUARD_BIN="${BATS_TEST_TMPDIR}/guard-bin"
+  mkdir -p "$GUARD_BIN"
+  guard_stub orca
+  guard_stub tmux
+  export PATH="$GUARD_BIN:$PATH"
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
   unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
   unset CLD_DEFAULT_ARGS
@@ -103,6 +112,18 @@ on_poll() {
   local f; f="$(rec_of 1122 "$1")"
   printf 'jq -c --arg v %q %q %q > %q.tmp && mv %q.tmp %q\n' "${3#*=}" ".${3%%=*} = \$v" "$f" "$f" "$f" "$f" \
     > "$STUB_CFG/hook_$1_$2"
+}
+
+# 呼ばれたら必ず失敗（exit 99）し、呼び出しを ${STUB_LOG} に残すスタブを $GUARD_BIN に置く
+guard_stub() {
+  local name="$1"
+  {
+    echo '#!/bin/bash'
+    echo "{ printf '%s' '$name'; printf ' %q' \"\$@\"; echo; } >> \"\$STUB_LOG\""
+    echo "echo \"$name: guard stub (unstubbed call)\" >&2"
+    echo 'exit 99'
+  } > "$GUARD_BIN/$name"
+  chmod +x "$GUARD_BIN/$name"
 }
 
 # 共通の前半（ログへの追記）と、名前ごとの返り値の処理を持つスタブを置く
