@@ -134,7 +134,8 @@ def validate_inventory(root, plan):
 def measure(root, adapter=None):
     plan = plans()
     validate_inventory(root, plan)
-    read = lambda name: (root / PLUGIN / name).read_text()
+    # Preserve physical line endings for wc -c equivalent file-read budgets.
+    read = lambda name: (root / PLUGIN / name).read_bytes().decode('utf-8')
     adapter = adapter or load_adapter(root)
     prompts = {}
     for stage in BASE.keys() | {'legacy-all'}:
@@ -228,6 +229,11 @@ def fixtures(root):
         baseline = target.read_bytes()
         budgets = {k: len(v.encode()) for k, v in measure(fixture, adapter).items()}
         check(measure(fixture, adapter), budgets)
+        # A CRLF is two physical bytes; universal-newline reads must not hide one.
+        target.write_bytes(baseline + b'\r\n')
+        must_fail(lambda: check(measure(fixture, adapter),
+                                {name: limit + 1 for name, limit in budgets.items()}))
+        target.write_bytes(baseline)
         # Corrupt real generated prompts through the same measurement entry point.
         original_prompt = adapter.prompt
         def corrupted_prompt(phase, instructions, state):

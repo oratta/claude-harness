@@ -53,7 +53,7 @@ def compare(root):
         module.ROOT = plugin
 
         def read(name):
-            return (plugin / name).read_text()
+            return (plugin / name).read_bytes().decode('utf-8')
 
         for key, paths in plan.items():
             stage = 'legacy-all' if key.startswith('legacy-') else key.split('-', 1)[0]
