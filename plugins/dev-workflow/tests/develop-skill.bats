@@ -925,10 +925,11 @@ refute() {
   echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-carryover-judge'
   nc="$(echo "$step4" | awk '/^      needs-carryover-judge →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
   [ -n "$nc" ] || { echo "no needs-carryover-judge line in step (4)"; return 1; }
-  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/carryover-judge.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
     echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done
-  # 依頼の書き方と記録の書式は hold.md を正本にし、SKILL.md に再掲しない
+  grep -qF '終了コード 4 の判定役' "${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  # 依頼の書き方と記録の書式は carryover-judge.md を正本にし、SKILL.md に再掲しない
   ! echo "$nc" | grep -qF '前 HEAD: <40 桁' || return 1
 }
 
@@ -946,10 +947,11 @@ refute() {
   echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-no-point-check'
   nc="$(echo "$step4" | awk '/^      needs-no-point-check →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
   [ -n "$nc" ] || { echo "no needs-no-point-check line in step (4)"; return 1; }
-  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '宣言の本文と PR の差分だけ' '記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '6-0' 'SHARED_BUDGET_MODE=depleted' '`論点なしの確認: 判断できない`' 'ラベルを付けず' '主に聞かない' '同じ宣言・同じ HEAD' '起こし直さず'; do
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '宣言の本文と PR の差分だけ' '記録を PR に' '合格処理の G を新しく起こす' '`stages/no-point-check.md`' '6-0' 'SHARED_BUDGET_MODE=depleted' '`論点なしの確認: 判断できない`' 'ラベルを付けず' '主に聞かない' '同じ宣言・同じ HEAD' '起こし直さず'; do
     echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done
-  # 記録の書式は hold.md を正本にし、SKILL.md に再掲しない
+  grep -qF '6-0.' "${PLUGIN_DIR}/skills/pr-review-gate/stages/no-point-check.md"
+  # 記録の書式は no-point-check.md を正本にし、SKILL.md に再掲しない
   ! echo "$nc" | grep -qF '確認者: dev-workflow:decider（' || return 1
 }
 
@@ -993,7 +995,8 @@ refute() {
 
 @test "fix-check move (#1222): every reference to the section names references/fix-check.md" {
   local f line
-  for f in "$SKILL" "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md" \
+  grep -qF 'stages/triage-convergence.md' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  for f in "$SKILL" "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-convergence.md" \
            "${SKILL_DIR}/references/roles/spec-reviewer.md" "${SKILL_DIR}/references/roles/worker/spec.md"; do
     grep -qF '「レビューの周を主に聞かずに続ける（直し方の判定）」' "$f" || { echo "参照が無い: $f" >&2; return 1; }
     while IFS= read -r line; do
