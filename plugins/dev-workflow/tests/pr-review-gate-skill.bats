@@ -1017,8 +1017,8 @@ triage_row_section() {
 }
 
 @test "triage (#354): row 4 uses the same 30-line threshold as step 2-0 and no other line count" {
-  # 手順 2-0 は stages/prepare.md にあり、2-0 の後ろは段の後ろの節（G として動くとき）まで
-  grep -n '30 行' "$PREPARE" | awk -F: -v s="$(grep -n '^#### 2-0\. ' "$PREPARE" | cut -d: -f1)" -v e="$(grep -n '^## G として動くとき' "$PREPARE" | cut -d: -f1)" '$1>s && $1<e {ok=1} END{exit !ok}'
+  # 手順 2-0 は stages/prepare.md にあり、2-0 の後ろは段の後ろの節（2-0 より後で最初の G として動くとき）まで
+  grep -n '30 行' "$PREPARE" | awk -F: -v s="$(grep -n '^#### 2-0\. ' "$PREPARE" | cut -d: -f1)" -v e="$(grep -n '^## G として動くとき' "$PREPARE" | cut -d: -f1 | awk -v s="$(grep -n '^#### 2-0\. ' "$PREPARE" | cut -d: -f1)" '$1>s' | head -1)" '$1>s && $1<e {ok=1} END{exit !ok}'
   r="$(triage_row_section 4)"
   [ -n "$r" ] || { echo "no row-4 section"; return 1; }
   echo "$r" | grep -qF '直し方が行レベルで 30 行以内'
