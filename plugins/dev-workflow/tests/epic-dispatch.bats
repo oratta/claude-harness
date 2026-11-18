@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 # epic-dispatch.sh（エピックの子の経路判定・起動・待ち受け）の振る舞いを、
-# orca / gh / git / sleep を PATH 上のスタブにして確かめる。あわせて develop の SKILL.md
-# 「エピックの扱い」の回し方と「前提」表に、この経路の記述があることを確かめる。
+# orca / gh / git / sleep を PATH 上のスタブにして確かめる。あわせて develop の
+# references/epic-loop.md の通常進行と epic-subagent.md のサブエージェント方式に、この経路の記述があることを確かめる。
 #
 # スタブは自分の名前と引数（printf '%q'）を共通のログ（${STUB_LOG}）に 1 行ずつ追記する。
 # 返り値は $STUB_CFG の設定ファイルで切り替える:
@@ -505,7 +505,7 @@ reap_prless_ready() {
 section() {
   if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
   awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
-# 「エピックの扱い」の「### 回し方」から次の「### 」まで
+# epic-loop.md を含む場面別手順の全文集合
 run_section() { cat "$EPIC"; }
 
 # --- route ---
@@ -3747,6 +3747,46 @@ infer_ready() {
   run grep -nE '最後の答え方|1 行目と最後の行|問いの質問|答え方の行' <<<"$r"; [ "$status" -eq 1 ]
 }
 
+@test "1693: parent references name existing canonical sections" {
+  local refs="$PLUGIN_DIR/skills/develop/references" source target section
+  while IFS='|' read -r source target section; do
+    grep -F "$target" "$refs/$source" | grep -qF "$section"
+    grep -qF "$section" "$refs/$target"
+  done <<'REFS'
+epic-loop.md|reply-after-idle.md|親への適用
+epic-loop.md|epic-merge-wait.md|マージ待ちの子
+epic-stop.md|epic-loop.md|主への報告
+epic-stop.md|epic-merge-wait.md|マージ待ちの子
+epic-keepalive-watch.md|reply-after-idle.md|そのまま送るか、起動し直すか（子）
+REFS
+  [ "$(grep -F 'reply-after-idle.md' "$refs/epic-loop.md" | grep -cF '親への適用')" -ge 2 ]
+  ! grep -Eq '60 分|上の \*\*マージ待ちの子\*\*' "$refs/epic-loop.md" || return 1
+  ! grep -Eq '上の書き分けの規定|下の \*\*マージ待ちの子\*\*' "$refs/epic-stop.md" || return 1
+  ! grep -qF '上の通常の再開判定' "$refs/epic-keepalive-watch.md" || return 1
+}
+
+@test "1693: subagent availability and cleanup preserve worker isolation" {
+  local refs="$PLUGIN_DIR/skills/develop/references"
+  grep -qF 'いつでも使える' "$refs/epic-subagent.md"
+  grep -F 'kept' "$refs/epic-subagent.md" | grep -F '本体 worktree' | grep -qF '無い'
+  grep -qF '別のリポジトリの子は W に渡さない' "$refs/epic-subagent.md"
+  grep -qF 'isolation: "worktree"' "$refs/epic-subagent.md"
+  grep -F '**別セッション方式とサブエージェント方式に共通**' "$refs/epic.md"
+  ! grep -qF '両経路に共通' "$refs/epic.md" || return 1
+}
+
+@test "1693: test comments and current public classification name their destinations" {
+  local refs="$PLUGIN_DIR/skills/develop/references" comments
+  comments="$(grep '^#' "$BATS_TEST_FILENAME" | grep -v '^# spec:')"
+  printf '%s\n' "$comments" | grep -F 'epic-loop.md' | grep -qF '同時に動く子の上限'
+  printf '%s\n' "$comments" | grep -F 'epic-subagent.md' | grep -qF 'サブエージェント方式'
+  ! printf '%s\n' "$comments" | grep -Eq '「回し方」の|epic.md の回し方|「エピックの扱い」の回し方' || return 1
+  grep '^#' "$PLUGIN_DIR/tests/parent-merge.bats" | grep -F 'epic-merge-wait.md' | grep -qF 'マージ待ちの子'
+  grep -qF '**マージ待ちの子**' "$refs/epic-merge-wait.md"
+  grep -F -- '- **差し替え可能な起動部品の 1 つとして Orca を並べた行**:' "$PLUGIN_DIR/../../docs/public-private-split.md" | grep -F 'references/epic-loop.md' | grep -qF '部品ごとの欄'
+  grep -qF '部品ごとの欄' "$refs/epic-loop.md"
+}
+
 @test "skill: Orca route watches for done marks and reaps marked children" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -qF -- '--watch-done'
@@ -5184,9 +5224,9 @@ nothing_sent() {
 # spec: dev-workflow-develop（epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める /
 # 親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる）
 
-# 「回し方」の「**同時に動く子の上限**」の段落
+# epic-loop.md の「同時に動く子の上限」の段落
 limit_para() { run_section | grep -E '^\*\*同時に動く子の上限\*\*'; }
-# 「回し方」の「**サブエージェント方式**」の段落
+# epic-subagent.md の「サブエージェント方式」の段落
 subagent_para() { cat "$PLUGIN_DIR/skills/develop/references/epic-subagent.md"; }
 worker_slots() { cat "$PLUGIN_DIR/skills/develop/references/epic-worker-slots.md"; }
 
@@ -5715,7 +5755,7 @@ resolve_relaunch_count() {
 }
 
 # --- skill: 状態の記録（adopt・clear・Orca の印は写し） ---
-# spec: dev-workflow-develop（epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ）
+# spec: dev-workflow-develop（「epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ」。現行の所在は epic-loop.md）
 
 @test "skill: step 7 calls adopt before reap, pending-owner and launch, and separates ambiguous from an empty exit 1" {
   p="$(run_section | grep -E '^7\. `回し方: Orca`')"
