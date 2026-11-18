@@ -430,11 +430,14 @@ printf 'SELECTED=%s\n' \"\$DEC\""
 
 @test "ci handover entry: failed dispatch and read occasions invalidate before instructions" {
   local failed occasions section
-  failed="$(develop_status failed)"
+  failed="$(LC_ALL=C awk '/^## failed$/{f=1;next} /^## /{f=0} f' "$PLUGIN_DIR/skills/develop/references/gate-result.md")"
   occasions="$(LC_ALL=C awk '/^## 保留で止まるときの引き継ぎ/{f=1;next} /^## /{f=0} f' "$SKILL")"
   for section in "$failed" "$occasions"; do
-    printf '%s\n' "$section" | grep '最新 CI 用引き継ぎが可' | grep '起動／再開前' | grep 'handover.md' | grep -qF '起動／再開前の無効化と再許可'
-    printf '%s\n' "$section" | grep '不可を投稿' | grep -qF '投稿成功後だけ指示'
+    printf '%s\n' "$section" |
+      grep -F '最新 CI 用引き継ぎが可' |
+      grep -F '起動／再開前' |
+      grep -F 'handover.md' |
+      grep -q '起動／再開前の無効化と再許可.*不可を投稿.*投稿成功後だけ指示'
   done
 }
 
