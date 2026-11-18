@@ -6,10 +6,10 @@
 
 ## 2. spec
 
-- [ ] 2.1 main の spec への反映は archive で行う（delta は `specs/dev-workflow-pr-review-gate/spec.md`。要件 3 件の MODIFIED）。手順書の語句と delta の語句を同じにする。触る範囲: openspec/specs/dev-workflow-pr-review-gate/spec.md:2043、同:2134-2149、同:2229
+- [x] 2.1 main の spec への反映は archive で行う（delta は `specs/dev-workflow-pr-review-gate/spec.md`。要件 3 件の MODIFIED）。手順書の語句と delta の語句を同じにする。触る範囲: openspec/specs/dev-workflow-pr-review-gate/spec.md:2043、同:2134-2149、同:2229
 
 ## 3. 検査
 
 - [x] 3.1 bats に、反映した語句ごとの検査を足す（受け入れ条件 3・4 の語句: ` 2>&1`、「段 B の前に済ませる」、「やり直しの出力も同じ判定にかける」、「このときの答えは記録先の本文に足す」、`-X POST repos/<親のリポジトリ>/issues/<親の番号>/sub_issues -F sub_issue_id=<id>`、守備範囲の 2 件（「親が見えず 404 になる場合」を含む）、「親が別リポジトリなら親のリポジトリの本文」が 3 ファイルにある）。triage.md と、反映後の main の spec の両方を見る。触る範囲: plugins/dev-workflow/tests/pr-review-gate-skill.bats:633-700 の近く（段 C の既存の検査の隣）
-- [ ] 3.2 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` が exit 0
+- [x] 3.2 `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` が exit 0（32 番・34 番は main でも落ちる既存の失敗。今回の変更と無関係）
 - [x] 3.3 変更の記録 `plugins/dev-workflow/changes/1519.md` を書く（PR 本文に項目 1 の選択理由を 1 行書く）。触る範囲: plugins/dev-workflow/changes/1519.md（新規）
