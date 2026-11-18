@@ -11,6 +11,8 @@
 #
 # spec: dev-workflow-develop, dev-workflow-pr-review-gate
 
+load lib/gate-docs
+
 setup() {
   # 正規表現の [^。] などは UTF-8 ロケールが前提（#662）
   export LC_ALL=C.UTF-8
@@ -25,6 +27,7 @@ setup() {
   CHANNEL="${PLUGIN_DIR}/skills/develop/references/channel.md"
   CMD="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  gate_test_docs
 }
 
 # 「## <見出し>」から次の「## 」までを切り出す

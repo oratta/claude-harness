@@ -1165,6 +1165,43 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
         self.assertIn('補足済み回数', text)
         self.assertIn('review-incomplete', text)
 
+    def test_gate_adapter_request_injects_only_the_assigned_stage(self):
+        common = ['skills/develop/references/roles/gate-runner.md',
+                  'skills/develop/references/return-declaration.md']
+        stages = {
+            '前提確認と重さ判定': ['stages/prepare.md'],
+            '照合と振り分け': ['stages/triage.md'],
+            '合格処理': ['declarations.md', 'stages/pass.md'],
+            '保留の解除': ['stages/hold.md'],
+        }
+        for stage, docs in stages.items():
+            with self.subTest(stage=stage):
+                self.input.write_text('Dispatch HEAD: ' + 'a' * 40 + '\nレビュー経路: adapter\n段: ' + stage
+                                      + '\n\n## Gate Result\n- 段: 合格処理\n- 次の段: 保留の解除\n')
+                target = self.root / 'stage-contract.json'
+                self.call_profile('codex-standard', phase='gate', out=target)
+                text = json.loads(target.read_text())['prompt']
+                expected = common + ['skills/pr-review-gate/' + doc for doc in docs]
+                sources = re.findall(r'^CANONICAL SOURCE (\S+) sha256=([a-f0-9]{64})\n', text, re.M)
+                self.assertEqual([name for name, _ in sources], expected)
+                for name, digest in sources:
+                    content = (m.ROOT / name).read_text()
+                    self.assertEqual(digest, hashlib.sha256(content.encode()).hexdigest())
+                    self.assertIn('sha256=' + digest + '\n' + content, text)
+                for path in (m.ROOT / 'skills/pr-review-gate').rglob('*.md'):
+                    if str(path.relative_to(m.ROOT)) not in expected:
+                        self.assertNotIn(path.read_text(), text)
+
+    def test_gate_legacy_and_missing_route_keep_the_bulk_sources(self):
+        for instructions in ('段: 合格処理\n', 'レビュー経路: 従来\n段: 一括（従来経路）\n'):
+            self.input.write_text(instructions)
+            target = self.root / 'legacy-contract.json'
+            self.call_profile('codex-standard', phase='gate', out=target)
+            text = json.loads(target.read_text())['prompt']
+            names = re.findall(r'^CANONICAL SOURCE (\S+) sha256=', text, re.M)
+            self.assertEqual(len(names), 10)
+            self.assertIn('skills/pr-review-gate/SKILL.md', names)
+
     def test_request_file_mode_is_0600(self):
         self.call('--account-home', 'mapped=' + str(self.home))
         self.assertEqual(stat.S_IMODE(self.out.stat().st_mode), 0o600)

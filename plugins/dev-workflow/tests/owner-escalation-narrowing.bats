@@ -5,6 +5,8 @@
 # （parent-merge-criteria.md）、子の止まりの手順（epic-child-stop.md）の文を確かめる。
 # テスト名は ASCII のみ（bats はマルチバイトのテスト名を扱えない。既存スイートと同じ制約）。
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   REF="$PLUGIN_DIR/skills/develop/references"
@@ -12,6 +14,7 @@ setup() {
   MERGE="$REF/parent-merge-criteria.md"
   EPIC="$REF/epic.md"
   CHILD="$REF/epic-child-stop.md"
+  gate_test_docs
 }
 
 # 見出し（`**<名前>**:` で始まる段落）を 1 段落だけ出す

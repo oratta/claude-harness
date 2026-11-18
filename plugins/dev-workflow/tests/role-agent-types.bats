@@ -1,7 +1,10 @@
 #!/usr/bin/env bats
 
+load lib/gate-docs
+
 setup() {
   ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  gate_test_docs
 }
 
 @test "worker and gate-runner have exact restricted frontmatter" {

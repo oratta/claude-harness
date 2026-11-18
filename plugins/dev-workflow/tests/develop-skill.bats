@@ -8,6 +8,8 @@
 #
 # spec: dev-workflow-develop, dev-workflow-execution-strategy (REMOVED), dev-workflow-escalation-tripwires
 
+load lib/gate-docs
+
 setup() {
   # 文面検査の正規表現（[^。]* など）は多バイトを 1 文字として数える UTF-8 ロケールが前提。
   # LANG 未設定（C ロケール）だと [^。] が日本語の文字を構成するバイトを除外して空振りする（#662）
@@ -23,6 +25,7 @@ setup() {
   # 「レビューの周を主に聞かずに続ける（直し方の判定）」節は SKILL.md から references/ へ移した（#1222）
   FIX_CHECK="${SKILL_DIR}/references/fix-check.md"
   TRIPWIRES="${PLUGIN_DIR}/templates/escalation-tripwires.md"
+  gate_test_docs
 }
 
 # 「## <見出し>」から次の「## 」までを切り出す

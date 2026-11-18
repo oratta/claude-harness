@@ -8,6 +8,8 @@
 
 load lib/develop-docs
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
@@ -19,6 +21,7 @@ setup() {
   W_FINISH="${PLUGIN_DIR}/skills/develop/references/roles/worker/finish.md"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  gate_test_docs
 }
 
 # 「## <見出し>」で始まる節を、次の「## 」の手前まで切り出す（多バイトの見出しは index で比べる）

@@ -10,6 +10,8 @@
 #
 # spec: dev-workflow-pr-review-gate
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -24,6 +26,7 @@ setup() {
   DEVELOP_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
+  gate_test_docs
 }
 
 # --- Requirement: pr-review-gate スキルがプラグインとして全リポに配布される ---

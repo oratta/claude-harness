@@ -9,6 +9,8 @@
 
 bats_require_minimum_version 1.5.0
 
+load lib/gate-docs
+
 setup() {
   export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -16,6 +18,7 @@ setup() {
   IMPLEMENT="${PLUGIN_DIR}/skills/develop/references/roles/worker/implement.md"
   CHECKER="${PLUGIN_DIR}/scripts/review-hit-set.py"
   WORK="$(mktemp -d "${BATS_TEST_TMPDIR}/work.XXXXXX")"
+  gate_test_docs
 }
 
 section() {

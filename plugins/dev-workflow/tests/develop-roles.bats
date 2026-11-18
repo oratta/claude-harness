@@ -9,6 +9,8 @@
 #
 # spec: dev-workflow-develop, dev-workflow-spec-review
 
+load lib/gate-docs
+
 setup() {
   export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -28,6 +30,7 @@ setup() {
   PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
   REVIEWER="${ROLES}/spec-reviewer.md"
   GATE="${ROLES}/gate-runner.md"
+  gate_test_docs
 }
 
 # G の否定の検査（その文言が G の読むどこにも無いこと）は gate-runner.md と段のファイル全部で見る

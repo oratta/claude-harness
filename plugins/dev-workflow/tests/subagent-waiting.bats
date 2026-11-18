@@ -7,6 +7,8 @@
 # 手順書の契約は文言と、正本から抽出した雛形の実行の両方で検査する。
 # テスト名は ASCII のみ。
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -43,6 +45,7 @@ setup() {
   # 正本の「手順 1」の雛形を実際に走らせて検査するため、毎テストで抽出しておく。
   SNIP="${BATS_TEST_TMPDIR}/step1.sh"
   extract_step1 "$CANON" "$SNIP"
+  gate_test_docs
 }
 
 # 正本の「手順 1:」を含む ```bash ブロックを取り出す（push-guard-setup.bats と同じ手口）。

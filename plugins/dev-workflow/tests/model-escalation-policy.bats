@@ -9,6 +9,8 @@
 #
 # spec: dev-workflow-model-escalation-policy, dev-workflow-develop
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -26,6 +28,7 @@ setup() {
   BUDGET_POINTER='残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`'
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
+  gate_test_docs
 }
 
 # --- ルール1: 事前分類（1周目から Fable）は develop の pre-classification.md にある ---
