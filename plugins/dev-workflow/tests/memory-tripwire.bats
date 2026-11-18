@@ -26,6 +26,9 @@ setup() {
   )
   # 偽の gh: 呼ばれたら引数を gh.log に残し、gh-responses の「URL<TAB>応答」で決めた状態を返す。
   # 応答は "CLOSED COMPLETED" / "CLOSED NOT_PLANNED" / "OPEN" / "fail" / "hang"。載っていない URL は fail。
+  # hang は PID を spawned.pids に残してから exec sleep にする。sh のまま sleep を子に持つと、スクリプトが
+  # 打ち切りで gh の PID を止めても子の sleep が孤児で残る（Linux の dash）。exec なら止めた PID が sleep
+  # そのもので、止め損ねた分は teardown が spawned.pids の PID で回収する（wt_track_pid と同じ考え方）。
   mkdir -p "${WORK}/bin"
   cat > "${WORK}/bin/gh" <<'GH'
 #!/bin/sh
@@ -36,7 +39,7 @@ resp="$(awk -F '\t' -v u="$url" '$1 == u { print $2 }' "$w/gh-responses" 2>/dev/
 case "$resp" in
   "CLOSED "*) printf '{"state":"CLOSED","stateReason":"%s"}\n' "${resp#CLOSED }" ;;
   OPEN) printf '{"state":"OPEN","stateReason":""}\n' ;;
-  hang) sleep 30 ;;
+  hang) echo "$$" >> "$w/spawned.pids"; exec sleep 30 ;;
   *) echo "HTTP 401: Bad credentials" >&2; exit 1 ;;
 esac
 GH
@@ -55,6 +58,10 @@ teardown() {
   # 裏の確認が控えの横に置く目印（.lock）が消えるまで待ってから片付ける
   wait_bg "$CACHE" || true
   wait_bg "${WORK}/config/.memory-patches-cache.tsv" || true
+  # 偽の gh の hang が起こした sleep を、記録した PID だけで止める（pkill -f は使わない）
+  if [ -s "${WORK}/spawned.pids" ]; then
+    while read -r p; do [ -n "$p" ] && kill -9 "$p" 2>/dev/null || true; done < "${WORK}/spawned.pids"
+  fi
   chmod -R u+rw "$WORK" 2>/dev/null || true
   rm -rf "$WORK"
 }
