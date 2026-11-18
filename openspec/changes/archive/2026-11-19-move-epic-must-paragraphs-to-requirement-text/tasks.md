@@ -10,4 +10,4 @@
 ## 3. 検証と archive
 
 - [x] 3.1 `openspec validate move-epic-must-paragraphs-to-requirement-text --type change --strict` を通す。 触る範囲: openspec/changes/move-epic-must-paragraphs-to-requirement-text/（全体）
-- [ ] 3.2 (3b) の archive で delta を本体 spec に反映し、結果が commit d62d7b7c の本体 spec（空行 2 連続の整理を除く）と同じであることを `git diff d62d7b7c -- openspec/specs` で確かめる。 触る範囲: openspec/specs/（3 ファイル）
+- [x] 3.2 (3b) の archive で delta を本体 spec に反映し、結果が commit d62d7b7c の本体 spec（空行 2 連続の整理を除く）と同じであることを `git diff d62d7b7c -- openspec/specs` で確かめる。 触る範囲: openspec/specs/（3 ファイル）
