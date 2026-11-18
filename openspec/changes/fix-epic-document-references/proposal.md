@@ -25,6 +25,6 @@
 
 実装見積りは既存8ファイル。`plugins/dev-workflow/skills/develop/references/` の `epic-loop.md`・`epic-stop.md`・`epic-subagent.md`・`epic.md`・`epic-keepalive-watch.md`、`plugins/dev-workflow/tests/epic-dispatch.bats`・`parent-merge.bats`、`docs/public-private-split.md` に限定する。
 
-単一の参照整合の変更として1 PRで扱う。8ファイル > 5 の規模超過は本体が確認し、同じ受け入れ条件の参照修正として分割しないと判断済み（#1693 の issuecomment-6993166891）。既存の場面別バイト予算・読込集合は維持し、予算超過を予算値の引き上げで解決しない。
+単一の参照整合の変更として1 PRで扱う。8ファイル > 5 の規模超過は本体が確認し、同じ受け入れ条件の参照修正として分割しないと判断済み（#1693 の issuecomment-6993166891）。読込集合は維持する。実装後の本体判断（#1693 issuecomment-6993488451）に従い、場面別バイト予算は全11場面を実測値へ合わせ、前後の値と参照修正による増減の理由を変更記録に残す。
 
 `SKILL.md` 本体・`pr-review-gate/` 本文・`roles/gate-runner.md` 本文・`epic-dispatch.sh` 冒頭・`pass.md`・他の並行 issue の箇所は対象外。依存追加・API変更・公開版分類の変更は無い。
