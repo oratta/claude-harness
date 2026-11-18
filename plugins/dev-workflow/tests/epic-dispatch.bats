@@ -4148,7 +4148,19 @@ orca_cmd_scripts() {
     [ "$(printf '%s\n' "$row" | awk -F' \\| ' '{print NF}')" -ge 3 ] || { echo "no reason column: $c"; return 1; }
   done
   grep -F '| 実機操作でない |' "$f" | grep -qF '主の手でしかできない操作'
+  # 実機操作はエージェントの手で通せない操作に限る（#1654）。条件の行と通らない例の行を行単位で見る
+  for row in "$(grep -F '| 実機操作でない |' "$f")" "$(grep -F -e '- 実機操作（' "$f")"; do
+    [ -n "$row" ] || { echo "missing row"; return 1; }
+    if printf '%s\n' "$row" | grep -qF 'MFA・OAuth・ログイン'; then echo "old example: $row"; return 1; fi
+    printf '%s\n' "$row" | grep -qF 'CAPTCHA' || { echo "no CAPTCHA: $row"; return 1; }
+    printf '%s\n' "$row" | grep -qF 'ログイン済みのブラウザで押せる操作' || { echo "no logged-in browser: $row"; return 1; }
+  done
+  while IFS= read -r line; do
+    printf '%s\n' "$line" | grep -qF '入らない' || { echo "logged-in browser not excluded: $line"; return 1; }
+  done < <(grep -F 'ログイン済みのブラウザ' "$f")
   grep -F '| 聖域でない |' "$f" | grep -qF '決まりで主の承認が要る'
+  # 外部のアプリやサービスへの権限の付与（OAuth の認可）も聖域の側に入れる（P2-F1）
+  grep -F '| 聖域でない |' "$f" | grep -qF '外部への公開・送信・課金・外部のアプリやサービスへの権限の付与（OAuth の認可を含む）'
   grep -F '| 推奨がある |' "$f" | grep -qF '主の側にしか答えが無い'
   grep -F '| 繰り返していない |' "$f" | grep -qF '歯止め'
   # 試しの issue は外部への公開・送信に当たらない

@@ -824,6 +824,26 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
   [ "$(echo "$tbl" | grep -cF '親の取得が失敗し続けたときの「範囲で成り立つ」に当たった指摘は')" -eq 2 ]
 }
 
+@test "nonblocking triage (#1519): the stage C parent fetch wording (2>&1, before stage B, retry output, sub_issues request, scope) is the same in triage.md, the spec, gate-runner.md and reviewer-brief.md" {
+  # archive 前は change の delta spec、archive 後は main spec を読む
+  spec="${PLUGIN_ROOT}/openspec/changes/triage-parent-fetch-wording/specs/dev-workflow-pr-review-gate/spec.md"
+  [ -f "$spec" ] || spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
+  req="$(awk '/^### Requirement: エピックの完了条件に効く指摘は既存 issue との関係で分ける（段 C）/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
+  [ -n "$req" ] || { echo "no stage C requirement"; return 1; }
+  c="$(nonblocking_para '段 C（')"
+  for body in "$req" "$c"; do
+    has_all "$body" "--jq '{number,repository_url}' 2>&1" '段 B の前に済ませる' 'やり直しの出力も同じ判定にかける' \
+      'このときの答えは記録先の本文に足す' '-X POST repos/<親のリポジトリ>/issues/<親の番号>/sub_issues -F sub_issue_id=<id>' \
+      '親が見えず 404 になる場合' 'すでに親の子である同じ場所の issue があっても新しい子 issue ができること' || return 1
+  done
+  if printf '%s\n' "$c" | grep -qF '候補探しの前に済ませる'; then echo "stale: 候補探しの前"; return 1; fi
+  # 条件の答えを読み書きする文の 1 句は、spec・gate-runner.md・reviewer-brief.md で同じ
+  phrase='親が別リポジトリなら親のリポジトリの本文（`stages/triage.md` の段 C の段落）'
+  has_all "$(awk '/^### Requirement: 条件を主に聞くときは条件だけを聞き/{f=1;next} /^### Requirement: /{f=0} f' "$spec")" "$phrase" || return 1
+  has_all "$(cat "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md")" "$phrase" || return 1
+  has_all "$(cat "$REVIEWER_BRIEF")" "$phrase" || return 1
+}
+
 @test "nonblocking triage (#1011): the epic number exclude and the truncation rerun need the parent in the same repository, same wording in triage.md and the spec" {
   spec="${PLUGIN_ROOT}/openspec/specs/dev-workflow-pr-review-gate/spec.md"
   req="$(awk '/^### Requirement: 候補探しのスクリプトは/{f=1;next} /^### Requirement: /{f=0} f' "$spec")"
@@ -1649,6 +1669,10 @@ judge_body() {
   run grep -n '無変更' "$DECLARATIONS"
   [ "$status" -ne 0 ] || { echo "$output"; return 1; }
   grep -F -- '`- 根拠ファイル:`' "$DECLARATIONS" | grep -F 'PR 自身の差分' | grep -qF '判定役'
+}
+
+@test "carryover (#1495): declarations.md evidence-file line says the PR's-own-diff comparison is skipped for PR_COMMITS=0" {
+  grep -F -- '`- 根拠ファイル:`' "$DECLARATIONS" | grep -qF 'main を取り込む merge commit だけが積まれたとき（PR_COMMITS=0）は比べない'
 }
 
 @test "carryover (#1238): the evidence line records the PR's own commits and main-only evidence changes" {

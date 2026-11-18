@@ -70,6 +70,27 @@ referrers() {
   printf '%s\n' "$s" | grep -qF 'どれにも当たらなければ聞かずに自分で決めて進め、事後報告する'
 }
 
+@test "canonical: owner-hands-only ops are what the agent cannot pass, not logged-in browser clicks (#1654)" {
+  local s item
+  s="$(section3)"
+  item="$(printf '%s\n' "$s" | grep -E '^ *- 主の手でしかできない操作')"
+  [ "$(printf '%s\n' "$item" | wc -l | tr -d ' ')" -eq 1 ]
+  printf '%s\n' "$item" | grep -qF 'パスワード・MFA・CAPTCHA'
+  printf '%s\n' "$item" | grep -qF 'エージェントの手では通せない'
+  printf '%s\n' "$item" | grep -qF '人が押すと決まっているマージ'
+  ! printf '%s\n' "$item" | grep -qF 'MFA・ログイン・' || return 1
+  printf '%s\n' "$item" | grep -F 'ログイン済みのブラウザ' | grep -qF '入らない'
+}
+
+@test "canonical: acting in the owner's name outward or granting an outside app access is on the approval side (#1654)" {
+  local s item
+  s="$(section3)"
+  item="$(printf '%s\n' "$s" | grep -E '^ *- 決まりで主の承認が要る')"
+  [ "$(printf '%s\n' "$item" | wc -l | tr -d ' ')" -eq 1 ]
+  printf '%s\n' "$item" | grep -qF '主の名義で外へ公開・送信する・課金する・外部のアプリやサービスに権限を渡す（OAuth の認可を含む）操作'
+  printf '%s\n' "$item" | grep -qF '取り消せない操作'
+}
+
 @test "canonical: risk has three elements" {
   local s; s="$(section3)"
   printf '%s\n' "$s" | grep -qF '何が起きるか'
