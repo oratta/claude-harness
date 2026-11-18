@@ -12,6 +12,8 @@
 - 本体が読む部分——2 経路（本体が再開前に測る／起動の途中で hook が測る）・閾値の環境変数（`DEV_WORKFLOW_CONTEXT_CAP`＝通知、`DEV_WORKFLOW_CONTEXT_HARD_CAP`＝強制停止、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off`＝全解除）と停止確認の終端の環境変数・再開前チェックの測り方・上限超のときの扱い・手渡しの許可・どちらの書式にも一致しない return の扱い・前任が動作中に交代させる場合・停止確認と終端・途中計測の仕組みと fail-open——は、`references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の節に置く（MUST）
 - W と G が return を書くときに読む部分——return の 1 行目の宣言（`工程完了: <工程名>` / `工程中断: <理由>`）の書式と選び方、通知を受けたときと強制停止に当たったときの W と G の振る舞い、途中停止したときの 1 行目、G が強制停止に当たったとき——は、`references/return-declaration.md` に置く（MUST）。閾値の数値と環境変数名は `decision-criteria.md` の表にだけ置き、`return-declaration.md` に書いてはならない（MUST NOT）
 
+`return-declaration.md` へ移すとき、宣言義務の箇条（`工程完了: <工程名>` と `工程中断: <理由>` の 2 つの書式の行と、成果一覧を書いていてもバックグラウンドコマンドが完了していなければ `工程完了:` を宣言しないという但し書きの段落）は一字一句変えてはならない（MUST NOT）。それ以外の移す文（通知を受けたら・強制停止に当たったら・途中停止したときの 1 行目・G が強制停止に当たったとき）は、次の 3 種類の置き換えだけをしてよく（MAY）、規則の中身（何をするか・何をしないか・1 行目をどちらにするか）を変えてはならない（MUST NOT）: ①環境変数名（`DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP`）と「上の表の」を、「通知」「強制停止」の語と `decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の表への参照に置き換える ②移す前のファイルの中を指す参照（「上の『手渡しの許可』」など）を、`decision-criteria.md` の節名と項目名を付けた参照に置き換える ③規則に混ざった経緯（issue 番号・実測値）を削る。置き換えた箇所はすべて、置き換える前と後の文を対にして PR 本文に載せなければならない（MUST）。
+
 `decision-criteria.md` の節の冒頭は、W と G の宣言の書式が `return-declaration.md` にあることを 1 行で指さなければならない（MUST）。
 
 W と G の指示書（`references/roles/worker/common.md`・`references/roles/gate-runner.md`）は、return を書く前に `return-declaration.md` を読むよう指さなければならず（MUST）、`decision-criteria.md` を読むよう指してはならない（MUST NOT）。W の段のファイル（`references/roles/worker/spec.md`・`implement.md`・`finish.md`）と `agents/worker.md`・`agents/gate-runner.md` も `decision-criteria.md` を読むよう指してはならない（MUST NOT）。
@@ -84,7 +86,7 @@ SKILL.md は本体（メインセッション）の役割を「役割 W / R1 / G
 - **THEN** 本体はこれらを並列に起こしてよく、同一 worktree 制約には抵触しない
 
 ### Requirement: 入口 0 は記録先を決める
-SKILL.md は 1 ループの最初の工程「入口 0」として記録先の決め方を規定しなければならない（MUST）: issue があれば（番号・URL・自然文マッチ）それを記録先にする。無ければ issue を切らず、W が worktree を用意された直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする。この Draft PR は仕様化判断を記録する**前**に存在していなければならない（MUST。記録先が無い状態で判定を先に進めない）。Draft PR を記録先にする場合、受け入れ条件は PR 本文（位置づけ・動作確認ポイント）に書かなければならず（MUST）、受け入れ条件自体を省いてはならない（MUST NOT）。記録先を PR にした場合、PR 本文に `Closes` / `Fixes` / `Refs #N` の issue 参照を書いてはならない（MUST NOT。書くと pr-review-gate の照合先がその issue に移る。エピックの子は子 issue が記録先なので `Closes #子` を書く）。仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（SHALL）。仕様宣言（`対象 HEAD:` 付き。書式の正本は pr-review-gate スキル手順 3-b）は記録先が issue か Draft PR かにかかわらず常に **PR コメント**に置き、記録先が issue のときに issue コメントへ置いてはならない（MUST NOT。pr-review-gate 手順 5 は PR のコメントで 3 見出しを照合し、`対象 HEAD:` 規約は PR の HEAD に紐づくため）。軽い通し方（`dev-workflow-spec-review` の「些細な修正は軽い通し方で新しいテストと W の起動を省く」Requirement）を当てる場合だけは例外で、記録先が無いときは本体が Draft PR を作る（SHALL）。そのときの順序は、本体が依頼から受け入れ条件を整理する → その受け入れ条件で軽い通し方を当てるかを決める → 当てるなら本体が空 commit・push・`gh pr create --draft` で Draft PR を開き受け入れ条件を本文に書く → 仕様化判断を Draft PR のコメントに記録する、の 1 通りとし（MUST）、当てないなら本体は Draft PR を作らずに W を起こし、W がこれまでどおり作る（SHALL）。SKILL.md は入口 0 にこの例外と順序を、正本（`references/decision-criteria.md` Step B）を指す形で書かなければならない（MUST）。SKILL.md はこの分離（記録先に置くもの＝仕様化判断・仕様レビュー結果、PR コメントに置くもの＝仕様宣言）を入口 0 に明記しなければならない（MUST）。issue を切るのは追跡・キュー・議論が要るとき（エピック／無人キュー／判断を残す議論）に限ることを明記する（SHALL）。
+SKILL.md は 1 ループの最初の工程「入口 0」として記録先の決め方を規定しなければならない（MUST）: issue があれば（番号・URL・自然文マッチ）それを記録先にする。無ければ issue を切らず、W が worktree を用意された直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする。この Draft PR は仕様化判断を記録する**前**に存在していなければならない（MUST。記録先が無い状態で判定を先に進めない）。Draft PR を記録先にする場合、受け入れ条件は PR 本文（位置づけ・動作確認ポイント）に書かなければならず（MUST）、受け入れ条件自体を省いてはならない（MUST NOT）。記録先を PR にした場合、PR 本文に `Closes` / `Fixes` / `Refs #N` の issue 参照を書いてはならない（MUST NOT。書くと pr-review-gate の照合先がその issue に移る。エピックの子は子 issue が記録先なので `Closes #子` を書く）。仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（SHALL）。仕様宣言（`対象 HEAD:` 付き。書式の正本は pr-review-gate スキル手順 3-b）は記録先が issue か Draft PR かにかかわらず常に **PR コメント**に置き、記録先が issue のときに issue コメントへ置いてはならない（MUST NOT。pr-review-gate 手順 5 は PR のコメントで 3 見出しを照合し、`対象 HEAD:` 規約は PR の HEAD に紐づくため）。軽い通し方（`dev-workflow-spec-review` の「些細な修正は軽い通し方で新しいテストと W の起動を省く」Requirement）を当てる場合だけは例外で、記録先が無いときは本体が Draft PR を作る（SHALL）。そのときの順序は、本体が依頼から受け入れ条件を整理する → その受け入れ条件で軽い通し方を当てるかを決める → 当てるなら本体が空 commit・push・`gh pr create --draft` で Draft PR を開き受け入れ条件を本文に書く → 仕様化判断を Draft PR のコメントに記録する、の 1 通りとし（MUST）、当てないなら本体は Draft PR を作らずに W を起こし、W がこれまでどおり作る（SHALL）。SKILL.md は入口 0 にこの例外と順序を、正本（`references/light-path.md`）を指す形で書かなければならない（MUST）。SKILL.md はこの分離（記録先に置くもの＝仕様化判断・仕様レビュー結果、PR コメントに置くもの＝仕様宣言）を入口 0 に明記しなければならない（MUST）。issue を切るのは追跡・キュー・議論が要るとき（エピック／無人キュー／判断を残す議論）に限ることを明記する（SHALL）。
 
 #### Scenario: issue が無い依頼は Draft PR が記録先になる
 - **WHEN** 会話で依頼された変更に対応する issue が無い
@@ -264,6 +266,8 @@ G の指示書 `skills/develop/references/roles/gate-runner.md` は、G が CI �
 
 途中計測の通知は役割で出し分けないため、`tasks.md` を持たない受け手（仕様化しない依頼の W、pr-review-gate の手順を回す G）にも同じ文言が届く。したがって「tasks グループ」が何を指すかを次のとおり定めなければならない（MUST）: `tasks.md` があればそのとき進めていた章のグループ、無ければ本体から渡された作業項目、G は pr-review-gate の手順 1〜5 を 1 グループとみなす。
 
+この判定の守備範囲は次のとおりとする。①入力の出どころは、W / G が書く return の 1 行目と、そのとき進めていた tasks グループ（上の定めで決まる単位）の項目が済んでいるかの W / G 自身の申告である。本体はこの 1 行目だけで手渡しの可否を決め、`tasks.md` のチェック欄や差分と突き合わせない。②拾いたい誤りは、強制停止で止まったのに `工程完了:` と書くこと、通知を受けて締めたときに項目が残っているのに `工程完了:` と書くこと、1 行目を 2 つの書式のどちらにも一致させないことである（一致しない 1 行目は本体が `工程中断:` として扱うので手渡しは起きない）。③次はこの判定を通ることを許す: 済んでいない項目を済んだと申告した `工程完了:`（手渡し先は前任の return と記録先とファイルの現状から再出発し、未コミット差分を確かめる）。`tasks.md` のチェックを付け忘れたまま項目が済んでいる `工程完了:`。④ここに挙げた以外の通り方は見つけるたびに条件を足し、穴を塞ぎ切ることを完了条件にしない。
+
 #### Scenario: 強制停止は常に工程中断
 
 - **WHEN** `references/return-declaration.md` を読む
@@ -412,7 +416,7 @@ unmanned で仕様の発明が 2 回に達した、または change の割り方
 
 ### Requirement: W が段ごとに読むファイルの合計に予算を置く
 
-W が段ごとに読むファイルの合計の大きさに予算を置き、超えたら検査が落ちなければならない（MUST）。予算は `tests/develop-worker-stage-budget.txt`（1 行 1 段: `<段> <バイト数>`）に置き、検査は `tests/develop-worker-stage-budget.bats` が行う（MUST）。検査は段ごとに固定した読むファイルの一覧で合計を測る（MUST。一覧は下のシナリオ「段ごとに測るファイル」のとおり。パスは `plugins/dev-workflow/skills/develop/references/` から、`agents/` と `skills/` で始まるものは `plugins/dev-workflow/` から）。
+W が段ごとに読むファイルの合計の大きさに予算を置き、超えたら検査が落ちなければならない（MUST）。予算は `tests/develop-worker-stage-budget.txt`（1 行 1 段: `<段> <バイト数>`）に置き、検査は `tests/develop-worker-stage-budget.bats` が行う（MUST）。守備範囲は「W の段ごとに読むファイルの一覧を手順書の名指しと突き合わせる」の段落に従う。検査は段ごとに固定した読むファイルの一覧で合計を測る（MUST。一覧は下のシナリオ「段ごとに測るファイル」のとおり。パスは `plugins/dev-workflow/skills/develop/references/` から、`agents/` と `skills/` で始まるものは `plugins/dev-workflow/` から）。
 
 #### Scenario: 段ごとに測るファイル
 
@@ -428,7 +432,7 @@ W が段ごとに読むファイルの合計の大きさに予算を置き、超
 
 ### Requirement: W の段ごとの予算はバイト数で上下両方向に判定する
 
-W の段ごとの予算の単位はバイト数（`wc -c`）としなければならない（MUST。字数はロケールで値が変わり、CI と手元でずれるため）。判定は上下両方向で、実測が予算を超えたら落ち、予算が実測の 1.1 倍を超えても落ちなければならない（MUST。減らした変更に予算の引き下げを求め、削った分が次の増加の余地として残らないようにするため）。G の段ごとの予算はこの要件の対象外とする。
+W の段ごとの予算の単位はバイト数（`wc -c`）としなければならない（MUST。字数はロケールで値が変わり、CI と手元でずれるため）。判定は上下両方向で、実測が予算を超えたら落ち、予算が実測の 1.1 倍を超えても落ちなければならない（MUST。減らした変更に予算の引き下げを求め、削った分が次の増加の余地として残らないようにするため）。G の段ごとの予算はこの要件の対象外とする。守備範囲は「W の段ごとに読むファイルの一覧を手順書の名指しと突き合わせる」の段落に従う。
 
 #### Scenario: 予算が実測から離れすぎる
 
@@ -439,7 +443,7 @@ W の段ごとの予算の単位はバイト数（`wc -c`）としなければ�
 
 一覧が手順書とずれないよう、`worker/common.md` が `return-declaration.md` を、`worker/spec.md` が `spec-decision.md` を、`worker/finish.md` が `skills/pr-review-gate/declarations.md` を名指ししていることを検査しなければならない（MUST）。
 
-**守備範囲**: 入力は一覧のファイルの中身と予算ファイル。拾う誤りは、合計が予算を超えて増えることと、手順書が新しいファイルを読ませ始めたのに一覧を直さないことのうち名指しの検査で分かるもの。同じ大きさでの中身の入れ替えと、一覧に無いファイルを読ませる指示の追加は通る（エピック #1682 で主が受け入れた残り。仕様レビューと PR レビューが見る）。
+**守備範囲**（この要件と「W が段ごとに読むファイルの合計に予算を置く」「W の段ごとの予算はバイト数で上下両方向に判定する」の 3 要件に共通で当てる）: 入力は一覧のファイルの中身と予算ファイル。拾う誤りは、合計が予算を超えて増えることと、手順書が新しいファイルを読ませ始めたのに一覧を直さないことのうち名指しの検査で分かるもの。同じ大きさでの中身の入れ替えと、一覧に無いファイルを読ませる指示の追加は通る（エピック #1682 で主が受け入れた残り。仕様レビューと PR レビューが見る）。穴を塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 手順書が名指しをやめる
 
