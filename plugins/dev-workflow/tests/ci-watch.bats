@@ -15,6 +15,8 @@ LOST='The self-hosted runner lost communication with the server.'
 TIMED_OUT='The job running on runner mac-1 has exceeded the maximum execution time of 40 minutes.'
 CANCELED='The operation was canceled.'
 
+load lib/develop-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/ci-watch.sh"
@@ -553,10 +555,12 @@ resume_section() {
 
 @test "develop skill: resume notification points to section 9 without copying the decision" {
   local row
-  row="$(grep 'stopped.*killed' "$DEVELOP")"
+  body="$(develop_procedures)"
+  row="$(grep 'stopped.*killed' <<<"$body")"
   [ "$(printf '%s\n' "$row" | wc -l | tr -d ' ')" -eq 1 ]
   grep -qF 'references/ci-watch.md' <<<"$row"
-  grep -qF '9 に従う' <<<"$row"
+  grep -qF '全文を必ず Read' <<<"$row"
+  grep -q 'stopped.*killed.*9 に従う' "$REF"
   ! grep -qE 'CI 見張り終了:|gh pr view|--paginate|ci-watch.sh next' "$DEVELOP" || return 1
 }
 
@@ -585,11 +589,15 @@ resume_section() {
 }
 
 @test "develop skill: (4) hands passed to the main session's watch and loops fix through W and G" {
-  grep -qF 'references/ci-watch.md' "$DEVELOP"
-  grep -q 'passed → 本体が .*ci-watch.md.*見張りを始める' "$DEVELOP"
-  grep -q '`fix` なら W に直させ' "$DEVELOP"
-  grep -q 'W が push したら.*passed を外したまま.*`wait` → `next` を続け' "$DEVELOP"
-  grep -q '`ready` になってから前提確認と重さ判定の G を新しく起こして.*取り直させ' "$DEVELOP"
+  body="$(develop_procedures)"
+  grep -q 'passed → 本体が .*ci-watch.md.*見張りを始める' <<<"$body"
+  grep -qF 'ci-watch.md` 全文を必ず Read' <<<"$body"
+  grep -qF 'CI 見張りの fix からの戻し方' <<<"$body"
+  # 手順本体は既存正本へ集約。push 後は passed を外したまま wait/next、ready 後に再ゲート。
+  grep -q 'push したら.*`agent-review:passed` を外したまま.*`wait`' "$REF"
+  grep -q '`wait` → `next` を続け.*`ready` になってからゲートを取り直す' "$REF"
+  grep -qF '通常経路のゲート取り直しは前提確認と重さ判定の新しい G から' <<<"$body"
+
 }
 
 @test "gate-runner: G returns passed without starting the CI watch" {

@@ -59,8 +59,10 @@ light_section() {
   grep '入口 0 の例外' "$SKILL" | grep -q '整理 → 判定 → Draft PR → 判断の記録'
 }
 @test "loop: light failures dispatch a fresh spec worker before gate prepare" {
-  grep '軽い通し方の failed' "$SKILL" | grep -q '段: spec'
-  grep '軽い通し方の failed' "$SKILL" | grep -q 'light-path.md'
+  body="$(develop_procedures)"
+  grep '軽い通し方の failed' <<<"$body" | grep -q '段: spec'
+  body="$(develop_procedures)"
+  grep '軽い通し方の failed' <<<"$body" | grep -q 'light-path.md'
   # 条件外／通常の failed の詳細は正本に一本化し、SKILL から辿れること。
   light_section | grep '原因: 軽い通し方の条件外' | grep -q 'モデルを上げず'
   light_section | grep '通常のレビュー' | grep -q 'Gate Result.*仕分けコメントの URL'
@@ -133,16 +135,19 @@ light_ci_worker() {
 }
 
 @test "ci fix: develop entry points share dispatch rules and preserve the watch continuation" {
-  for file in "$SKILL" "$PLUGIN_DIR/references/ci-watch.md"; do
+  body="$(develop_procedures)"
+  grep 'fix' <<<"$body" | grep 'light-path.md' | grep -q 'CI 見張りの fix からの戻し方'
+  for file in "$PLUGIN_DIR/references/ci-watch.md"; do
     grep 'fix\|develop では W' "$file" | grep 'light-path.md' | grep -q 'CI 見張りの fix からの戻し方'
   done
-  grep 'CI 見張りの fix からの戻し方' "$SKILL" | grep -q '軽いなら同じ worktree の新しい W を `段: spec`.*既存 W は `段: implement`'
+  grep '同じ worktree に新しい W' <<<"$body" | grep -q '段: spec'
+  grep '通常経路の既存 W' <<<"$body" | grep -q '段: implement'
   section="$(ci_reentry)"
   for phrase in '同じ PR・同じ状態ファイル' 'wait` → `next' 'ready` 後に前提確認と重さ判定の G を新しく' '開始記録や修正回数はリセットしない'; do
     printf '%s\n' "$section" | grep -qF "$phrase"
   done
-  grep 'W が push したら' "$SKILL" | grep -q 'passed を外したまま同じ状態ファイル'
-  grep 'ready.*になってから前提確認と重さ判定の G を新しく' "$SKILL"
+  grep 'push したら' "$PLUGIN_DIR/references/ci-watch.md" | grep -q '`agent-review:passed` を外したまま同じ状態ファイル'
+  grep 'ready` 後に前提確認と重さ判定の G を新しく' <<<"$body"
   watch="$PLUGIN_DIR/references/ci-watch.md"
   for phrase in 'メインセッションが実装者のサブエージェント' 'next --unrelated <チェック名> --after-fix' 'gh pr ready --undo' 'agent-review:pending' '合格するまで `agent-review:passed` を付け直さない'; do
     grep -qF "$phrase" "$watch"
@@ -152,9 +157,8 @@ light_ci_worker() {
 @test "ci fix: fresh worker receives push safeguards and watch waits for finish return" {
   light="$(ci_reentry | grep '^- 最新の仕様化判断に')"
   printf '%s\n' "$light" | grep -q '起動指示.*ci-watch.md.*7.*最初の push.*3'
-  for file in "$CRITERIA" "$SKILL"; do
-    grep -q '仕様化途中の push.*見張りに戻らず.*(3b).*return.*wait` → `next' "$file"
-  done
+  body="$(develop_procedures)"
+  grep -q '仕様化途中の push.*見張りに戻らず.*(3b).*return.*wait` → `next' <<<"$body"
 }
 @test "ci fix: published and archived specs require safeguards before push and finish before watch" {
   local root="$PLUGIN_DIR/../../openspec" prefix
@@ -426,7 +430,7 @@ printf 'SELECTED=%s\n' \"\$DEC\""
 
 @test "ci handover entry: failed dispatch and read occasions invalidate before instructions" {
   local failed occasions section
-  failed="$(LC_ALL=C awk '/^      (failed 後|軽い通し方の failed →)/{f=1} /^      保留 →/{f=0} f' "$SKILL")"
+  failed="$(develop_status failed)"
   occasions="$(LC_ALL=C awk '/^## 保留で止まるときの引き継ぎ/{f=1;next} /^## /{f=0} f' "$SKILL")"
   for section in "$failed" "$occasions"; do
     printf '%s\n' "$section" | grep '最新 CI 用引き継ぎが可' | grep '起動／再開前' | grep 'handover.md' | grep -qF '起動／再開前の無効化と再許可'
