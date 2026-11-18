@@ -1,6 +1,6 @@
 # 現行仕様の参照移設一覧
 
-基準: main e10f0a98。要件名を識別子として保ち、本文と scenario の参照を変更する。delta は既存ブロック全文を含む。entry に残すものは不要な変更をしない。
+基準: main e10f0a98。本文と scenario の参照を変更し、旧配置を名指す３要件の改名対応を末尾に記録する。delta は既存ブロック全文を含む。entry に残すものは不要な変更をしない。
 
 | capability / 現行行 | 要件名 | 新しい参照先・扱い |
 |---|---|---|
@@ -20,9 +20,9 @@
 | dev-workflow-develop:2773 | Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る | `epic-loop.md`、`reply-after-idle.md` |
 | dev-workflow-develop:2829 | 起動し直した親は主の返事待ちの子を主に出し直す | `epic-loop.md`、`reply-after-idle.md` |
 | dev-workflow-develop:2965 | epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める | `epic-loop.md` |
-| dev-workflow-develop:3051 | 親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる | `epic-loop.md`、`epic-subagent.md` |
+| dev-workflow-develop:3051 | 親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる | `epic-loop.md`、`epic-stop.md`、親の方式は `epic-subagent.md`、共有枠は `epic-worker-slots.md` |
 | dev-workflow-develop:3198 | epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ | `epic-loop.md`、`epic.md`、`reply-after-idle.md` |
-| dev-workflow-develop:3326 | 別のリポジトリの子を含むエピックの回し方を epic.md に書く | `epic-child-stop.md`、`epic-multirepo.md`、`epic.md` |
+| dev-workflow-develop:3326 | 別のリポジトリの子を含むエピックの回し方を epic.md に書く | loop の経路・子エピック除外と通常進行、stop「停止の処理」手順８、merge-wait、multirepo の表・補足と「epic-loop.md 手順６の読み替え」、subagent、epic「nested と注意書き」、child-stop |
 | dev-workflow-develop:3402 | エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う | `epic-loop.md`、`epic-stop.md` |
 | dev-workflow-develop:3450 | 着手できる子が 1 件でも別セッション方式で回す | `epic-loop.md` |
 | dev-workflow-develop:3585 | 回し方の手順は推定した done も子の付けた done と同じに片付ける | `epic-loop.md` |
@@ -47,7 +47,7 @@
 | dev-workflow-develop:4375 | 親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す | `epic-loop.md` |
 | dev-workflow-develop:4421 | 手順 5 で気づけない子のことは最初に待ちに入る通知で一度だけ主に伝える | `epic-loop.md` |
 | dev-workflow-develop:4435 | timeout から外した確認は closed のときと待ちをやめる前に残し、片付け待ちだけの待ちは長い上限を明示する | `epic-loop.md` |
-| dev-workflow-develop:4556 | 子への声かけ文と返事の形は一か所の定義を共有する | `epic-child-stop.md`、`epic-keepalive.md`、`epic.md`、`reply-after-idle.md` |
+| dev-workflow-develop:4556 | 子への声かけ文と返事の形は一か所の定義を共有する | 子の受信契約は `epic-keepalive.md`、親の送信判定一式は `epic-keepalive-watch.md`、固定データは JSON。child-stop は受信だけ、loop・stop・reply-after-idle は該当時に watch を読む |
 | dev-workflow-develop:4944 | 記録の無い止まりを主に上げるときは最後の発言から組み立てる | `epic-stop.md` |
 | dev-workflow-develop:4992 | エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する | `epic-child-stop.md`、`epic-stop.md` |
 | dev-workflow-develop:5036 | 親は検知できない止まりを手順 5 と手順 2 に書く | `epic-loop.md` |
@@ -64,3 +64,13 @@
 | harness-public-private-split:287 | 載せない行の基準に起動部品の 1 つとして並べた行を含める | `epic-loop.md`、`parent-pass-criteria.md` |
 | owner-question-style:73 | 主に問いを返す各所は正本を参照し、固有の事柄だけを残す | `plugins/dev-workflow/skills/develop/references/epic-child-stop.md`、`plugins/dev-workflow/skills/develop/references/epic-loop.md`、`plugins/dev-workflow/skills/develop/references/epic-merge-wait.md`、`plugins/dev-workflow/skills/develop/references/epic-stop.md`、`plugins/dev-workflow/skills/develop/references/epic-subagent.md` |
 | dev-workflow-develop:5367 | 主の側にしか答えが無いとする前に 3 つを確かめる | 子の確認を保持し、例の本文は parent-pass-criteria.md、子から参照 |
+
+## P2-F5 の要件名の移設
+
+- epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ → epic-loop.md の通常進行は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ
+- 別のリポジトリの子を含むエピックの回し方を epic.md に書く → 別のリポジトリの子を含むエピックの読み替えを epic-multirepo.md に書く
+- epic.md の回し方は子の起動コマンドの指定と返事の規則のファイルを指す → epic-loop.md の通常進行は子の起動コマンドの指定と返事の規則のファイルを指す
+
+## 移設後の参照照合（P1-F2・F3、P2-F1〜F5、P4-F1〜F3、P6-5）
+
+通常進行・手順１〜７／９は epic-loop.md「通常進行の手順」、経路と子エピックの事前除外は loop の同名太字段落。停止解決・返事は epic-stop.md「停止の処理」手順８、マージ待ちはそこから epic-merge-wait.md へ回す。別 repo の読み替えは epic-multirepo.md の表・補足（独立した手順１／６ではない）。別 repo の子を W に渡さない規則は epic-subagent.md、子の親 repo へのコメントは epic.md「nested と注意書き」。note not posted to の対処は子の受信シナリオから分け、loop 手順１の独立シナリオで確認する。

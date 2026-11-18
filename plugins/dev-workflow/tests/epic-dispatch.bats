@@ -5187,7 +5187,8 @@ nothing_sent() {
 # 「回し方」の「**同時に動く子の上限**」の段落
 limit_para() { run_section | grep -E '^\*\*同時に動く子の上限\*\*'; }
 # 「回し方」の「**サブエージェント方式**」の段落
-subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*'; }
+subagent_para() { cat "$PLUGIN_DIR/skills/develop/references/epic-subagent.md"; }
+worker_slots() { cat "$PLUGIN_DIR/skills/develop/references/epic-worker-slots.md"; }
 
 @test "skill: the limit paragraph names the variable, default formula and invalid values" {
   p="$(limit_para)"
@@ -5235,7 +5236,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: the subagent route caps the total of W across children with max-parallel" {
-  p="$(subagent_para)"
+  p="$(worker_slots)"
   printf '%s\n' "$p" | grep -qF '`scripts/epic-dispatch.sh max-parallel` を 1 回呼んでその値を上限にし'
   printf '%s\n' "$p" | grep -qF 'エピックの全部の子をまたいで、枠を使っている W の総数をその上限までに抑える'
   printf '%s\n' "$p" | grep -qF '担う change のループが終わる（PR がマージされる・記録先が閉じる）か、主の返事待ちで保留に入るまで 1 枠を使う'
@@ -5244,7 +5245,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: the subagent route does not resume a W back from hold until a slot frees" {
-  p="$(subagent_para)"
+  p="$(worker_slots)"
   printf '%s\n' "$p" | grep -qF '0 なら起こさず再開もせずに待ちに回す'
   printf '%s\n' "$p" | grep -qF '空き枠が 0 なので A は待ちに回し'
   printf '%s\n' "$p" | grep -qF '本体が `needs-approval` を付けて主の返事を待つ場面（W の停止・G の保留のどちらも）'
@@ -5252,8 +5253,8 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: each W per change inside one child uses its own slot" {
-  printf '%s\n' "$(subagent_para)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
-  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic-subagent.md` のサブエージェント方式の枠に従う）' "$SKILL"
+  printf '%s\n' "$(worker_slots)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
+  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic-worker-slots.md` の枠に従う）' "$SKILL"
 }
 
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
@@ -5510,7 +5511,7 @@ resolve_relaunch_count() {
 }
 
 @test "skill: the subagent route stops on a bad max-parallel setting" {
-  printf '%s\n' "$(subagent_para)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる。`references/epic-loop.md` の手順 6 と同じ）'
+  printf '%s\n' "$(worker_slots)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる）'
 }
 
 # --- adopt ---
@@ -8718,4 +8719,8 @@ rejudge_ready() {
   [ "$output" = "expired 11" ]
   [ "$(calls '^judge 400 11')" -eq 1 ]
   [ "$(cat "$STUB_CFG/ghcount_11")" -ge 4 ]
+}
+
+@test "skill: parent subagent route reads shared worker slots" {
+  subagent_para | grep -qF 'references/epic-worker-slots.md'
 }

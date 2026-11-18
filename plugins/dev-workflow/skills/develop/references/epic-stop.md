@@ -1,6 +1,6 @@
 # 親が子の停止を扱うとき（develop）
 
-止まった子の処理前に読む。主への発言は `references/epic-loop.md`「主への報告」を先に読む。子の記録の形は `references/epic-child-stop.md`、声かけの扱いは `references/epic-keepalive.md` を読む。別 repo の子なら `references/epic-multirepo.md` も先に読む。
+止まった子の処理前に読む。主への発言は `references/epic-loop.md`「主への報告」を先に読む。子の記録の形は `references/epic-child-stop.md`、声かけの扱いは `references/epic-keepalive-watch.md` を読む。別 repo の子なら `references/epic-multirepo.md` も先に読む。
 
 ## 停止の処理
 

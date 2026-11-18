@@ -16,7 +16,7 @@
 
 ### 1. 入口と場面の分割
 
-パスは特記以外 `plugins/dev-workflow/skills/develop/references/` から。issue の 7 ファイル案を採用し、親子双方の声かけ契約だけを `epic-keepalive.md` として追加する。reply-after-idle.md 全体を子の停止時に読ませる案は、親の時間分類や見張りの説明まで子に入るため採らない。主な設計判断はこの読込境界と正本の分割一つで、複数 capability の delta は参照の追随であり独立 change に分けない。
+パスは特記以外 `plugins/dev-workflow/skills/develop/references/` から。issue の 7 ファイル案を採用し、W の枠規則を `epic-worker-slots.md`、子の声かけ受信契約を `epic-keepalive.md`、親の送信判定を `epic-keepalive-watch.md` として追加する。reply-after-idle.md 全体を子の停止時に読ませる案は、親の時間分類や見張りの説明まで子に入るため採らない。主な設計判断はこの読込境界と正本の分割一つで、複数 capability の delta は参照の追随であり独立 change に分けない。
 
 | ファイル | 読み手・読む場面 | 移す／残す内容（旧 epic.md の行） |
 |---|---|---|
@@ -26,8 +26,10 @@
 | epic-delegation.md | 親が委任を受ける／取り消すとき、親子が委任を適用するとき | 委任の二つの記録の定型、確認と期間の意味、失効・取り消しの効き方、委任が有効かの 6 条件、効く止まりの種類別条件（92–120 の共有契約）。記録投稿・返信の操作本文は epic-stop.md へ。子には親の手順を読ませず共有判定だけ読ませる |
 | epic-merge-wait.md | 親、今回の止まった理由が PR のマージ待ちのとき | マージ待ちの前提確認・決める役への入力・HEAD 再取得・印とコメントの順・失敗時の扱い（125）。条件の正本は parent-merge-criteria.md のまま。専用ファイルにすることでプロンプトである基準本文を膨らませない |
 | epic-multirepo.md | 親、別リポジトリの子があるとき | 別リポジトリの読み替え表・clone と名前の扱い（129–147）、手順 1・6 などに混ざる別 repo 固有の補足。entry / loop / stop / merge の該当箇所から読む |
-| epic-subagent.md | 親、route=subagent（unmanned・channel を含む）のとき、子の中で W を並列に起こすとき | サブエージェント方式・枠・再開優先順・別 repo の子を起こさない扱い（157）。状態記録を作らないこと、子エピックの事前除外と状態表は loop の共通規定・報告規定への参照。別セッションの起動・片付けは読ませない |
-| epic-keepalive.md | 子が停止する前、親が停止済みの子の声かけを扱う場面 | 共有の予約文の受信契約と自動送信の適用条件・除外・期限・通常の一行往復だけの保証。旧 epic.md:63・173、epic-child-stop.md:7、reply-after-idle.md:63–69 を集約する。親への手動の起動・見張り・片付けの指示は置かない |
+| epic-subagent.md | 親のサブエージェント方式 | 別 repo の子の除外・子の起動と完了コメント（155–157）。枠規則は複写せず worker-slots を読む |
+| epic-keepalive.md | 停止前の子 | 予約文・受信契約（173 の子側）、child-log の除外・保証（62）。親の送信判定は含めない |
+| epic-keepalive-watch.md | 声かけを扱う親 | 対象・TTL・期限・除外・端末状態・送信失敗（173 の親側）。一回確認と片付け待ちでは送らない・入力を消さない・timeout は loop 手順５に従う |
+| epic-worker-slots.md | 親のサブエージェント方式と nested の子の W 並列 | W の占有・返却・手渡し・空き枠確認・再開優先順・例（155–157 の共有枠規則）。親の起動・片付け・見張りは含めない |
 | epic-child-stop.md（既存） | nested の子、停止前・親からの返事受信時 | 子の停止記録の形、質問ツールを使わない読み替え、定型の止まり、relayed / delegated の確認と再開。委任条件の複写と声かけ本文を共有正本への読込指示にする。`主に聞く理由:` を書く前に parent-pass-criteria.md「例」を読む指定を置く。親の停止解決は載せない |
 | reply-after-idle.md（既存） | 共通入口の設定、親の起床直後、子へ実際の返事を送る前 | 親の時間分類の正本。旧 epic.md:74–77 のみにある未処理イベント・stderr / exit code・元発言の場所・記録失敗の扱いをここへ補い、表と本文で同じ分岐を二重に書かない。起動し直した親の復元操作は loop、返事送信は stop に参照する。声かけの本文は keepalive への参照にする |
 
@@ -41,12 +43,14 @@
 |---|---|---|
 | 主の委任の有効性・止まりに効く条件 | epic-delegation.md | stop・child-stop・merge-wait・parent-merge-criteria.md。共有の 6 条件と種類別条件は develop 配下ではこの 1 ファイルだけに置く |
 | 親の起床時の時間分類 | reply-after-idle.md「親への適用」 | loop のイベント振り分け・手順 5・9・報告の例外。閾値・時刻の出どころ・優先順を loop に複写しない |
-| 停止中の子への声かけの規則 | epic-keepalive.md | child-stop（停止前に読んで予約文を覚える）、reply-after-idle、loop / stop の停止済み子の説明 |
+| 停止中の子への声かけの受信契約・child-log の保証 | epic-keepalive.md | child-stop（停止前に読んで予約文を覚える）。親の見張り手順は含めない |
+| 声かけの送信判定一式 | epic-keepalive-watch.md | 親の loop / stop / reply-after-idle が該当場面で読む。条件を複写せず子からは読ませない |
+| W の占有・返却・手渡し・再開優先順 | epic-worker-slots.md | 親の subagent と nested の子の W 並列が読む。親の起動・片付け・見張りは含めない |
 | 声かけの固定文字列・返事の型というデータ | plugins/dev-workflow/references/child-cache-keepalive.json | 既存の script と keepalive。JSON の値や読み方・スクリプト動作は変えない |
 
 ゲート `stages/pass.md:147` 等の判定本文は #1687 の範囲なので、その複写はこの変更で削らない。参照パス `references/epic.md` → `references/epic-delegation.md` のみ付け替える。正本一本化の検査対象は develop 側の手順書であり、ゲートに残す同じ条件は既存どおり確かめる（#1687 が整理するまでの境界）。ゲートを含めて重複がゼロになったとは報告しない。
 
-`SKILL.md` の epic の節を指す参照は、同じ節の位置の付け替えだけにする。PR トークン上限の子→stop、サブエージェントの枠→subagent、注意書き検査→entry、条件・作り方→entry、別セッションの回し方→loop。入口の読む条件は残し、entry の表が次の必要な文書を案内する。spec-decision.md のエピック化の参照は入口のまま保持する。`plugins/dev-workflow/references/commit-and-pr-operations.md:18` のマージ待ちの参照は merge-wait へ付け替える。channel.md・handover.md・fix-check.md 等も参照先を走査し、移した節を指す場合だけ同様に更新する。`references/ci-watch.md` は現状 child-stop への参照で完結しており、実物の照合で古い epic の参照がなければ変更しない。
+`SKILL.md` の epic の節を指す参照は、同じ節の位置の付け替えだけにする。PR トークン上限の子→stop、サブエージェントの枠→worker-slots、注意書き検査→entry、条件・作り方→entry、別セッションの回し方→loop。入口の読む条件は残し、entry の表が次の必要な文書を案内する。spec-decision.md のエピック化の参照は入口のまま保持する。`plugins/dev-workflow/references/commit-and-pr-operations.md:18` のマージ待ちの参照は merge-wait へ付け替える。channel.md・handover.md・fix-check.md 等も参照先を走査し、移した節を指す場合だけ同様に更新する。`references/ci-watch.md` は現状 child-stop への参照で完結しており、実物の照合で古い epic の参照がなければ変更しない。
 
 ### 3. 場面別の読込集合とバイト予算
 

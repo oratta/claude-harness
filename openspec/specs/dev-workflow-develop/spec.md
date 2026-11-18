@@ -247,8 +247,8 @@ SKILL.md は役割ごとの格を次のとおり規定しなければならな�
 - **WHEN** `orca` が PATH にあり Orca 管理のワークツリーにいる channel の本体が `/develop <エピック番号>` を始める
 - **THEN** 本体は `route` を呼ばず、エピックに `回し方: サブエージェント（channel モード）` とコメントしてサブエージェント方式で回し、別の Claude Code セッションを起こさない
 
-#### Scenario: epic.md の回し方が起動部品の差し替えとして書かれている
-- **WHEN** develop の `references/epic.md` の表から `references/epic-loop.md` の回し方と、経路に応じた `references/epic-subagent.md` を読む
+#### Scenario: epic-loop.md の通常進行が起動部品の差し替えとして書かれている
+- **WHEN** develop の `references/epic.md` の表から `references/epic-loop.md` の「通常進行の手順」と、経路に応じた `references/epic-subagent.md` を読む
 - **THEN** 起動・待ち・閉じた子・止まった子・片付け・完了の手順は 1 本で書かれ、Orca の部品・tmux の部品・サブエージェント方式のどれで起こすかによって違う点だけが部品ごとの欄に書かれており、「Orca 経路」と「サブエージェント方式」を別々の手順として二重に書いていない。サブエージェント方式は状態の記録を書かない、と書かれている
 
 回し方の本文は `references/epic-loop.md`（通常の進行）と `references/epic-subagent.md`（サブエージェント方式）、停止の解決は `references/epic-stop.md` に置く（MUST）。入口に親の起動・片付け・見張りの操作本文を残してはならない（MUST NOT）。
@@ -778,7 +778,7 @@ develop の手順書は次を規定しなければならない（MUST）。子�
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC=420` の環境で `epic-dispatch.sh route '#11'` を実行する
 - **THEN** stderr に使い方が出て exit 1
 
-#### Scenario: epic.md に子エピックの扱いと完了報告が書かれている
+#### Scenario: epic の入口に子の扱い、loop に子エピック除外と完了報告が書かれている
 - **WHEN** 入口 `references/epic.md` の子側の扱いと `references/epic-loop.md` の親の共通規定を読む
 - **THEN** loop に sub-issue を持つ子を外して `後で別に起動するエピック: #N` とコメントすること、入口に `route` の `nested` を受けたら展開せず親エピックと自分の issue にコメントして止まること、`nested` と同じく `launch` の拒否でも止まり「親ワークツリーで開き直す」と報告しないこと、loop に `closed` で起こされたときの確認でその行がある子を待つ対象から外すこと（`timeout` で起こされたときの確認とは書かれていない）、完了報告に `後で別に起動するエピック:` の番号を載せることが書かれている
 
@@ -1930,7 +1930,7 @@ develop の SKILL.md は「ループの終わり」の節を持ち、次を規�
 - **THEN** 本体は結果を記録先にコメントし、`gh issue close <N> --reason completed` で閉じてから `epic-dispatch.sh mark` を呼び、主に閉じる操作も推奨の採否も渡さない
 
 ### Requirement: Orca 経路の本体は印が付いた子のワークスペースを片付ける
-develop の `references/epic-loop.md`「エピックの扱い」の Orca 経路は、次を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の Orca 経路の規定に加わる。
+develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経路は、次を規定しなければならない（MUST）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の Orca 経路の規定に加わる。
 
 - 本体は `epic-dispatch.sh wait` に、片付け待ちの子を `--watch-done <N>` で渡す（MUST）。片付け待ちの子は、`launch` に渡して `deferred` 以外を返したことのある子（閉じた子を含む）から、エピックに `子 #N のワークツリーを残した` で始まる行がある子と、このセッションで `reap` が `reaped <N>`（`branch-kept` を含む）か `gone <N>` を返した子と、本体が確かめて消した子（下の `kept` の扱い）を除いたものとする（MUST）。除いたあとにこのセッションの `launch` が `launched <N>` を返した子は片付け待ちに戻す（MUST。前のセッションで起動に失敗した子やワークツリーを手で消した子は `gone` になるが、起動し直すとワークツリーができるため）。除いた子は渡さない（MUST NOT。ワークツリーが無い子は印が付かず、`wait` が最長 6 時間待つため）
 - `done <N>...` で起こされたら、本体は `epic-dispatch.sh reap <N>...` を Bash で 1 回呼ぶ（MUST）。wt-clean を呼んではならない（MUST NOT）。子ごとの確認をオーナーに取ってはならない（MUST NOT。子が印を付けたことを承認として扱う）
@@ -1944,27 +1944,27 @@ develop の `references/epic-loop.md`「エピックの扱い」の Orca 経路�
 - `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わったら（stderr に `not in an Orca-managed worktree` などが出て、今のワークツリーを Orca から読めない）、`launch` の exit 1 と同じく、Orca の親ワークツリーで開き直すようユーザーに報告して止まる（MUST）。stderr が `usage:` を含むときは、stderr を添えて設定の誤りとして報告して止まる（MUST）
 
 #### Scenario: Orca 経路に片付けの手順が書かれている
-- **WHEN** `references/epic-loop.md` の「回し方」を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」を読む
 - **THEN** `wait` に `--watch-done` を付けること、`done` で起こされたら `reap` を 1 回呼ぶこと、`kept` の子は本体が未コミットの変更の有無と HEAD の取り込み済みを確かめ、満たせば消してエピックに `子 #N のワークツリーを確かめて消した（<理由>）`、満たさなければ残して `子 #N のワークツリーを残した（<理由>） — <満たさなかったこと>` とコメントし、どちらも主に聞かないこと、`not-done` は待ちを続けること、`reaped`・`gone` の子を片付け待ちから外すこと、開いている子が無くなったあとは確認待ちの子だけを待つこと、待ちをやめてよいのは `references/epic-loop.md` の待ちをやめてよい条件を満たしたときだけで、`timeout` で終わっても確認を通すまではやめないこと、やめる前に開いた子に主の返事待ちで止まった子が無いことを `wait --watch-stopped`・`pending-owner`・`needs-approval` ラベルで確かめること、再開時に `reap` を 1 回呼ぶことが書かれている
 
 #### Scenario: 片付けた子と消えた子は片付け待ちから外れる
-- **WHEN** `references/epic-loop.md` の「エピックの扱い」の「回し方」の手順 2〜4 を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」の手順 2〜4 を読む
 - **THEN** 片付け待ちの子から `reaped`（`branch-kept` を含む）と `gone` の子を除くことが、手順 2 の集合の定義と手順 3 に書かれ、除いたあとに `launched <N>` を返した子は戻すことが手順 2 に書かれている
 
 #### Scenario: 全 issue が閉じたあと最後の done を片付けたら待たずに終える
-- **WHEN** `references/epic-loop.md` の「エピックの扱い」の「回し方」の手順 3（`done <N>...` で起こされたときの手順）を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」の手順 3（`done <N>...` で起こされたときの手順）を読む
 - **THEN** `reap` のあと、動いている子か片付け待ちの子があれば手順 2 に戻ることと、どちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことが、手順 3 の中に書かれている（手順 4 の記述だけでは満たさない。全 issue が閉じたあとの最後の `done` では手順 4 が読まれないため）
 
 #### Scenario: 開いている子が無くなったとき確認待ちの子が無ければ待たずに終える
-- **WHEN** `references/epic-loop.md` の「エピックの扱い」の「回し方」の手順 4（`closed <N>...` で起こされたときの手順）を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」の手順 4（`closed <N>...` で起こされたときの手順）を読む
 - **THEN** 開いている子が無くなったあと、`reaped`・`gone` を外した片付け待ちの子が 0 件なら `wait` を呼ばずに待ちを終えること、`kept <N> not-done` の子が残っているときだけその子を `--watch-done` に渡して待つことが手順 4 に書かれている
 
 #### Scenario: 再開して動かす子も片付け待ちの子も無ければ待たずに終える
-- **WHEN** `references/epic-loop.md` の「エピックの扱い」の「回し方」の手順 7（`回し方: Orca` を引き継いで再開したときの手順）を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」の手順 7（`回し方: Orca` を引き継いで再開したときの手順）を読む
 - **THEN** `reap` と `launch` のあと、動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終え、完了条件の確認と報告がまだなら行うことが手順 7 に書かれている
 
 #### Scenario: --watch-stopped 付きの wait が Orca から読めずに終わったら親ワークツリーで開き直す
-- **WHEN** `references/epic-loop.md` の「エピックの扱い」の「回し方」の手順 6 を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」の手順 6 を読む
 - **THEN** `--watch-done` か `--watch-stopped` を付けた `wait` が stdout に何も出さず exit 1 で終わった場合に、報告に「親ワークツリーで開き直す」と書くことが書かれている
 
 #### Scenario: 残された子のワークツリーを本体が確かめて決める
@@ -1984,7 +1984,7 @@ develop の `references/epic-loop.md`「エピックの扱い」の Orca 経路�
 - **THEN** 本体は `<path>/LLM` があるので確認 (a) を満たさず、消さずに残して `子 #N のワークツリーを残した（llm-logs） — LLM/ が残っている` をコメントする
 
 ### Requirement: develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする
-`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。例外は 1 つだけで、要件「Orca 経路の本体は印が付いた子のワークスペースを片付ける」で本体が確かめて消すときの `orca worktree rm --worktree path:<path>` を、`references/epic-loop.md` の「エピックの扱い」の回し方の手順 3 に 1 回だけ書いてよい（MAY。`reap` が残したワークツリーを消す判断は本体がその場で行うもので、`epic-dispatch.sh` のサブコマンドにすると `reap` の処理を変えることになるため）。この 1 件と同じ行に別の `orca` のコマンドを書くことと、この書き方を 2 回以上書くことは、例外に含めない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
+`plugins/dev-workflow/skills/develop/` 配下のファイルは、`orca` を実行する書き方（`orca worktree ...`・`orca terminal ...` など、`orca` の直後に半角英小文字のサブコマンドが続く書き方）を含んではならない（MUST NOT）。例外は 1 つだけで、要件「Orca 経路の本体は印が付いた子のワークスペースを片付ける」で本体が確かめて消すときの `orca worktree rm --worktree path:<path>` を、`references/epic-loop.md` の「通常進行の手順」の手順 3 に 1 回だけ書いてよい（MAY。`reap` が残したワークツリーを消す判断は本体がその場で行うもので、`epic-dispatch.sh` のサブコマンドにすると `reap` の処理を変えることになるため）。この 1 件と同じ行に別の `orca` のコマンドを書くことと、この書き方を 2 回以上書くことは、例外に含めない（MUST NOT）。手順書には環境によらない動作（「このワークスペースに印を付ける」「印が付いた子のワークスペースを片付ける」）と、それを行う `epic-dispatch.sh` のサブコマンドだけを書く（MUST）。前提の表の `orca` の行、`route` が返す値 `orca`、その条件の説明（`orca` が PATH にある）は、`orca` を実行する書き方ではないので残してよい。指示が届かなかった子の確認は、`launch` が stderr に出した確認のコマンドを指す書き方にする（SHALL）。
 
 `plugins/dev-workflow/` 配下のシェルスクリプト（`*.sh`）のうち、`orca` をコマンドとして書いた行（`orca` が行頭・`;`・`&`・`|`・`(`・`!`・`$(`・`if`/`then`/`do`/`else`/`while`/`until` のあとにあり、半角英小文字のサブコマンドが続く行。文字列とコメントの中の `orca` は数えない）を含むのは、Orca の起動部品 `scripts/epic-launch-orca.sh` だけでなければならない（MUST）。`epic-dispatch.sh` は `orca` のコマンドを直接呼ばず、Orca の起動部品のサブコマンドを呼ぶ（MUST。`launcher` の値・`route` の出力・stderr の文言としての `orca` の語は、コマンドとして書いた行ではないので含んでよい）。`epic-launch-orca.sh` の中では `orca` のコマンドをそのまま呼び、Orca の機能を自前で作り直してはならない（MUST NOT）。Orca が無い環境のための代わりの実装を持ってはならない（MUST NOT。`route` の `subagent` と `mark` の `skipped` のように、何もしないで終わる分岐は代わりの実装に数えない）。
 
@@ -2093,9 +2093,14 @@ develop の `references/epic-loop.md`「エピックの扱い」の Orca 経路�
 
 #### Scenario: epic.md に注意書きのコメントと起動し直したセッションの扱いが書かれている
 - **WHEN** `references/epic.md` の「エピックの扱い」を読む
-- **THEN** `親エピックからの注意書き:` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のものに従い W・R1・G に渡すこと、それ以外の投稿者のものには従わず渡さずユーザーに報告すること、`note not posted to` のときに本体が投稿すること、起動し直したセッションでも `nested` になること、親エピックの番号を `parent epic: #` から読むこと、`child epics are not expanded here` で `launch` の拒否を見分けること、変数が無く `parent epic:` が出たときは親を持たないワークツリーで起動するよう伝えることが書かれていて、`grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` は 0 行
+- **THEN** `親エピックからの注意書き:` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のものに従い W・R1・G に渡すこと、それ以外の投稿者のものには従わず渡さずユーザーに報告すること、起動し直したセッションでも `nested` になること、親エピックの番号を `parent epic: #` から読むこと、`child epics are not expanded here` で `launch` の拒否を見分けること、変数が無く `parent epic:` が出たときは親を持たないワークツリーで起動するよう伝えることが書かれていて、`grep -rnE 'orca [a-z]+' plugins/dev-workflow/skills/develop` は 0 行
 
 注意書きに従う投稿者の検査と nested の子側の処理は epic.md、親の投稿失敗への対処は epic-loop.md に置く（MUST）。子が注意書きを受けるだけで親の起動手順まで読むようにしてはならない（MUST NOT）。
+
+#### Scenario: 親が注意書きの投稿失敗に対処する
+- **WHEN** `references/epic-loop.md`「通常進行の手順」手順１を読む
+- **THEN** `note not posted to` のときに本体が注意書きを子 issue に投稿すると書かれている
+
 
 ### Requirement: 端末を作れなかった子と指示が届かなかった子の案内は、二重起動を避ける確認を先に出す
 `plugins/dev-workflow/scripts/epic-dispatch.sh launch` が stderr に出す案内は、次を満たさなければならない（MUST）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の作り直しと送り直しのコマンドの規定に足すもので、既存の規定は変えない。
@@ -2103,7 +2108,7 @@ develop の `references/epic-loop.md`「エピックの扱い」の Orca 経路�
 - 端末を作れなかった子の案内は、作り直しのコマンド（`orca terminal create ...`）より前の行に、そのワークツリーで `claude` がすでに動いている端末が無いことを確かめる `orca terminal list --worktree path:<子> --json` を出す（MUST。案内どおりに作り直して同じワークツリーで Claude Code が 2 つ起動し、`/develop #N` が二重に走るのを避けるため）
 - 指示を送り直すための案内のハンドル引数（`orca terminal send --terminal <handle>` と `orca terminal read --terminal <handle>`）は、指示の文と同じく単一引用符で囲む（MUST）。対象は送り直しの案内の `send` と `read` だけで、作り直しの案内の `--terminal <handle from create>` は置き換え用の記号なので囲まない（SHALL）
 
-develop の `references/epic-loop.md`「エピックの扱い」は、端末を作れなかった `failed` の子について、stderr に出た確認のコマンドで既存の端末が無いことを確かめ、stderr の作り直しのコマンドで端末を作り、返ったハンドルに送信のコマンドを送って動き出したのを確かめてから再開する手順を書かなければならない（MUST。作り直さずに再開するとその子は `skipped` になり、`wait` が端末の無い子を親が気づかないまま待ち続けるため）。`orca` のコマンドは書かない（MUST NOT）。
+develop の `references/epic-loop.md` の「通常進行の手順」は、端末を作れなかった `failed` の子について、stderr に出た確認のコマンドで既存の端末が無いことを確かめ、stderr の作り直しのコマンドで端末を作り、返ったハンドルに送信のコマンドを送って動き出したのを確かめてから再開する手順を書かなければならない（MUST。作り直さずに再開するとその子は `skipped` になり、`wait` が端末の無い子を親が気づかないまま待ち続けるため）。`orca` のコマンドは書かない（MUST NOT）。
 
 この要件の守備範囲で入力として扱うのは、`launch` が端末の作成や送信に失敗した子の、子のワークツリーのパスとハンドルである。ハンドルは Orca が払い出す単純な識別子（`term-11` など）で、引用符で囲むのは表示の揃えのためであり、ハンドルに記号が入る場合の検知は範囲外とする。
 
@@ -2115,8 +2120,8 @@ develop の `references/epic-loop.md`「エピックの扱い」は、端末を�
 - **WHEN** 子 11 の `orca terminal send` が非 0 で終わるスタブ環境で `epic-dispatch.sh launch 400 11` を実行する
 - **THEN** stderr の送り直しのコマンドは `--terminal 'term-11'` を含み、確認のコマンドも `orca terminal read --terminal 'term-11'` を含む
 
-#### Scenario: epic.md に端末を作れなかった子の再開手順が書かれている
-- **WHEN** `references/epic-loop.md` の「エピックの扱い」を読む
+#### Scenario: epic-loop.md に端末を作れなかった子の再開手順が書かれている
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」を読む
 - **THEN** 端末を作れなかった `failed` の子について、既存の端末が無いことを確かめ、作り直して送り、動き出したのを確かめてから再開することが書かれている
 
 ### Requirement: Codex がオフのとき自動選択は Claude だけの構成を返し、明示指定は拒否する
@@ -2490,7 +2495,7 @@ PR のマージの可否はこの基準で通してはならない（MUST NOT。
 - **THEN** 実機操作の例がパスワード・MFA・CAPTCHA で、OAuth・ログイン・ダッシュボードの操作が例に無く、ログイン済みのブラウザで押せる操作は実機操作に入らないと書かれている
 
 ### Requirement: Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる
-develop の `references/epic-stop.md`「エピックの扱い」→「回し方」の Orca 経路の手順は、次を規定しなければならない（MUST）。この要件は、要件「エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する」の親の側のうち、`stopped` で起こされたら記録を読んでユーザーに報告する規定と、止まった子への返事の仕方を #1034 で決めるとする規定に優先する。
+develop の `references/epic-stop.md`「停止の処理」手順８の Orca 経路の手順は、次を規定しなければならない（MUST）。この要件は、要件「エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する」の親の側のうち、`stopped` で起こされたら記録を読んでユーザーに報告する規定と、止まった子への返事の仕方を #1034 で決めるとする規定に優先する。
 
 - 動いている子を待つ `wait` には、`--watch-stopped` に加えて `--resolve <エピック番号>` を付ける（MUST）。通すと判断された止まりは `wait` の中で返事が送られ、親は起こされない
 - `wait` の出力が `closed`・`done`・`stopped`・`unrecorded` の 1〜4 行であることを書く（MUST）。この 1〜4 行は `--resolve` を付けたときだけで、要件「エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する」の `closed`・`done`・`stopped` の 1〜3 行とする規定に優先する。`--resolve` を付けない `wait` の出力は従来どおり 1〜3 行であることも書く（MUST）
@@ -2740,7 +2745,7 @@ develop の SKILL.md の節「ループの終わり」の、PR を伴わない�
 この要件の守備範囲で入力として扱うのは、`orca terminal list --worktree path:<子> --json` の出力である。出どころは、launch が直前に worktree create で作った子のワークツリーに対する Orca 自身の出力で、人が手で打つ入力ではない。拾いたい誤りは、端末の数を取り違えて端末を増やすこと（一覧が読めないのを 0 個として作る、2 個以上なのに作る）と、シェルが idle のうちに最初の指示を送ってしまうことである。通してよい入力は、`result.terminals` が配列で、要素の `handle` が空でない文字列のもの（`agentIdentity` や `title` が無い要素を含む。使い回す端末の識別には起動後の `agentIdentity`・タイトルだけを使う）、および `Terminal 1` 以外のタイトルの端末である。一覧の形が変わったときの検知は範囲外とし、読めなければ `failed` として表に出すだけにする。入力の穴を塞ぎ切ることをこの要件の完了条件としない。
 
 ### Requirement: Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける
-develop の `references/epic-merge-wait.md`「エピックの扱い」→「回し方」は、Orca 経路の手順のあとに、マージ待ちで止まった子の扱いを規定しなければならない（MUST）。この要件は、要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」の `stopped` で主に上げるどちらの経路（一致する `親の判断:` が無いとき、と、判断が「主に上げる」・判断できなかったとき）にも、今回の止まった理由が `PR のマージ待ち（` で始まる子について優先する（主に上げる前にこの手順を行い、ここで主に上げると決まったものは同じ要件の報告の形で上げる）。手順 2 の文は変えない。手順 8 は、今回の止まった理由が `PR のマージ待ち（` で始まる止まりを照らし直さずこの手順に回す分岐を持つ。
+develop の `references/epic-merge-wait.md` は、epic-stop.md「停止の処理」手順８から回される、マージ待ちで止まった子の扱いを規定しなければならない（MUST）。この要件は、要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」の `stopped` で主に上げるどちらの経路（一致する `親の判断:` が無いとき、と、判断が「主に上げる」・判断できなかったとき）にも、今回の止まった理由が `PR のマージ待ち（` で始まる子について優先する（主に上げる前にこの手順を行い、ここで主に上げると決まったものは同じ要件の報告の形で上げる）。手順 2 の文は変えない。手順 8 は、今回の止まった理由が `PR のマージ待ち（` で始まる止まりを照らし直さずこの手順に回す分岐を持つ。
 
 - **気づく経路**: 子が最後の発言の末尾に `止まった理由: PR のマージ待ち（human-merge）: <PR の URL>` の行を書いて止まり、`wait --resolve` の判断がマージを通さないので親が `stopped` で起こされる経路に乗る。epic-dispatch.sh にマージ待ちを返す出力を足さない
 - **前提の確認**（`gh` で機械的に見る。どれかを満たさなければ決める役を起こさずに主に上げる。MUST）: 対象リポの PR の base ブランチの `.github/workflows/auto-merge.yml`（`gh api "repos/<owner>/<repo>/contents/.github/workflows/auto-merge.yml?ref=<PR の base ブランチ>" --jq .content | base64 -d`） に `parent-merge-approved` の語がある／PR が open で、見送りラベル（`human-merge`・`needs-human-merge`・`human-only`・`needs-approval`）のうち付いているのが `human-merge` だけ／`止まった理由:` の行の PR の本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` が子 issue の番号である／PR に、今の HEAD を `親が見た HEAD:` に持つ `親のマージ判断: 可` のコメントがまだ無い（あれば自動マージの処理の側が止めているので、`docs/auto-merge.md` の「親の判断の印を付けたのにマージされないとき」の調べ方を添えて上げる）
@@ -2787,7 +2792,7 @@ develop の `references/epic-merge-wait.md`「エピックの扱い」→「回�
 
 `skipped`・`notified`・`unrecorded` はどれも exit 0 で、stdout はちょうど 1 行とする（MUST）。`skipped` のときは子に何も送らず、エピックにも子 issue にも投稿してはならない（MUST NOT）。
 
-develop の `references/epic-loop.md`「エピックの扱い」→「回し方」の Orca 経路の手順 4 は、`closed <N>...` で起こされて `state_reason` が `completed` の子ごとに、`references/reply-after-idle.md` の表で起動し直すかを決めてから `scripts/epic-dispatch.sh notify-closed`（起動し直すなら `--relaunch`）を呼ぶと書かなければならない（MUST）。`notify-closed` は、依存が解けた子の `launch` より先に呼ぶと書く（MUST。`launch` が `failed` を返すと親は手順 6 で止まり、再開の手順 7 は `notify-closed` を呼ばないので、後ろに置くと閉じた子に送られないまま残る）。出力の扱いとして、`notified` と `skipped` は何もしない、`unrecorded` は stderr に出た投稿し直しのコマンドでエピックに 1 行を残す、`failed` は主に報告する（主に出す発言の 1 行目と最後の行は、要件「エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う」に従う）と書く（MUST）。`state_reason` が `completed` でない子には `notify-closed` を呼ばない（SHALL。作業されていない件に完了を促さない）。
+develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経路の手順 4 は、`closed <N>...` で起こされて `state_reason` が `completed` の子ごとに、`references/reply-after-idle.md` の表で起動し直すかを決めてから `scripts/epic-dispatch.sh notify-closed`（起動し直すなら `--relaunch`）を呼ぶと書かなければならない（MUST）。`notify-closed` は、依存が解けた子の `launch` より先に呼ぶと書く（MUST。`launch` が `failed` を返すと親は手順 6 で止まり、再開の手順 7 は `notify-closed` を呼ばないので、後ろに置くと閉じた子に送られないまま残る）。出力の扱いとして、`notified` と `skipped` は何もしない、`unrecorded` は stderr に出た投稿し直しのコマンドでエピックに 1 行を残す、`failed` は主に報告する（主に出す発言の 1 行目と最後の行は、要件「エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う」に従う）と書く（MUST）。`state_reason` が `completed` でない子には `notify-closed` を呼ばない（SHALL。作業されていない件に完了を促さない）。
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `orca` と `gh` で、上の振る舞い（止まった印のまま completed で閉じた子には返事が送られ、エピックに `親の判断: 子 #<child> 通した` で始まる 1 行が残ること、止まっていない子・既に完了の印の子・completed でない子・閉じていない子には何も送らずどこにも投稿しないこと、送れたがエピックへの投稿に失敗すると `unrecorded` を出すこと、送信の失敗で `failed` を出しエピックに投稿しないこと、引数の誤りで `orca` を呼ばないこと）と、手順 4 の文面が `notify-closed` を呼ぶこと、手順 4 の中で `notify-closed` が `launch` より先に現れることを確かめなければならない（MUST）。
 
@@ -2826,7 +2831,7 @@ develop の `references/epic-loop.md`「エピックの扱い」→「回し方�
 - **THEN** エピックの行は `親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した 発言 a-1 <URL>` である
 
 #### Scenario: 手順 4 は completed の子に notify-closed を呼ぶ
-- **WHEN** develop の `references/epic-loop.md`「回し方」の Orca 経路の手順 4 を読む
+- **WHEN** develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経路の手順 4 を読む
 - **THEN** `state_reason` が `completed` の子ごとに `scripts/epic-dispatch.sh notify-closed` を呼ぶことと、`unrecorded`・`failed` の扱いが書かれている
 - **AND** `notify-closed` は、依存が解けた子を `launch` するより前に書かれている
 
@@ -2971,7 +2976,7 @@ develop の `references/epic-loop.md`「エピックの扱い」→「回し方�
 
 `epic-dispatch.sh` はサブコマンド `max-parallel` を持ち、上の規則で決めた上限を stdout に数字 1 行で出して exit 0 で終わらなければならない（MUST）。`max-parallel` は `orca` も `gh` も `git` も呼んではならない（MUST NOT）。`EPIC_DISPATCH_MAX_PARALLEL` の値が誤っているときは上と同じく exit 1 で終わる。
 
-既定値の式は develop の `references/epic-loop.md` の「回し方」に書かなければならない（MUST）。規則本文に混ざる過去の日付・機種・RSS の実測値の経緯は残すことを要求しない。既定値の式・設定方法・数え方・重いビルドでは値を下げる案内は維持する（MUST）。
+既定値の式は develop の `references/epic-loop.md` の「通常進行の手順」に書かなければならない（MUST）。規則本文に混ざる過去の日付・機種・RSS の実測値の経緯は残すことを要求しない。既定値の式・設定方法・数え方・重いビルドでは値を下げる案内は維持する（MUST）。
 
 この要件の入力は、`EPIC_DISPATCH_MAX_PARALLEL` の値と、`EPIC_DISPATCH_MEMINFO_FILE` の値と、`sysctl` と `/proc/meminfo` が返す物理メモリ量である。拾いたい誤りは、設定が無いときに上限が無くなること、値の打ち間違い（`two`・`0`・空文字）で上限が無くなるか 0 になって何も起動しなくなることである。次は通してよく、この要件では止めない: 非常に大きい値（上限なしと同じに動く）／物理メモリが実際より大きく報告される環境／コンテナで物理メモリと使えるメモリが違う環境。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
@@ -2997,8 +3002,8 @@ develop の `references/epic-loop.md`「エピックの扱い」→「回し方�
 - **WHEN** `EPIC_DISPATCH_MAX_PARALLEL=0` または `EPIC_DISPATCH_MAX_PARALLEL=two` で `epic-dispatch.sh max-parallel` を実行する
 - **THEN** stderr に `EPIC_DISPATCH_MAX_PARALLEL` と使い方が出て exit 1
 
-#### Scenario: epic.md に既定値と根拠の実測値が書かれている
-- **WHEN** develop の `references/epic-loop.md`「回し方」を読む
+#### Scenario: epic-loop.md に既定値の式と設定方法が書かれている
+- **WHEN** develop の `references/epic-loop.md` の「通常進行の手順」を読む
 - **THEN** `EPIC_DISPATCH_MAX_PARALLEL`、既定値の式（物理メモリの GiB を 4 で割って切り捨て・最小 1・読めなければ 2）、上限の設定方法と枠を使う子の数え方が書かれている。過去の日付・機種・RSS の実測値を残すことは要求しない
 
 ### Requirement: epic-dispatch.sh launch は空いた枠の分だけ子を起動し、残りを deferred で出す
@@ -3053,17 +3058,17 @@ develop の `references/epic-loop.md`「エピックの扱い」→「回し方�
 - **THEN** `orca` も `git` も呼ばれず、stderr に使い方が出て exit 1
 
 ### Requirement: 親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる
-develop の手順書は、別セッション方式の通常進行を `references/epic-loop.md`、停止処理の手順 8 を `references/epic-stop.md`、サブエージェント方式を `references/epic-subagent.md` に分け、次を書かなければならない（MUST）。これは要件「エピックの条件・作り方・回し方・完了条件を規定する」の回し方を書き換えず、上限と後回しの子の扱いを足すものである（「解けた子を件数にかかわらず `launch` する」は、`launch` に渡す子の選び方として今までどおりで、件数を抑えるのは `launch` である）。
+develop の手順書は、別セッション方式の通常進行を `references/epic-loop.md`、停止処理の手順 8 を `references/epic-stop.md`、サブエージェント方式を `references/epic-worker-slots.md` に分け、次を書かなければならない（MUST）。これは要件「エピックの条件・作り方・回し方・完了条件を規定する」の回し方を書き換えず、上限と後回しの子の扱いを足すものである（「解けた子を件数にかかわらず `launch` する」は、`launch` に渡す子の選び方として今までどおりで、件数を抑えるのは `launch` である）。
 
 **Orca 経路**: `epic-loop.md` の手順 1 に、`launch` の出力に `deferred <N>`（上限に達したので起動しなかった子。後回しの子）があること、上限は `EPIC_DISPATCH_MAX_PARALLEL`（無ければ物理メモリから決める既定値）であることを書く。手順 2 に、後回しの子は `wait` の位置引数（動いている子）にも `--watch-done`（片付け待ちの子）にも入れないことを書く。`epic-loop.md` の手順 3（`done` を処理したあと）と `epic-stop.md` の手順 8（`stopped` を処理したあと）に、後回しの子が残っていれば、2 に戻る前に依存の解けた開いた子を `launch` に渡し直す（起動済みの子は `skipped`、枠がまだ無ければまた `deferred`）ことを書く。手順 4 の依存グラフを読み直して解けた子を `launch` する処理が後回しの子も含むことを書く。`completed` 以外で閉じたときも枠は空くので、見送りの子を前提にしていた子を除いて、後回しの子が残っていれば 2 に戻る前に依存の解けた開いた子を `launch` に渡し直すことを書く。後回しの子を `launch` に渡し直すときは、最初に渡したときと同じ `--note` を付けること（後回しの子には注意書きが投稿されていない）を書く。`launch` のあと動いている子も片付け待ちの子も 0 件なのに後回しの子が残るときは、`wait` を呼ばずに主に報告し、報告に `launch` の stderr の枠を使っている子の行を添えることを書く。後回しの子の一覧はどこにも保存せず、起動し直した親（手順 7）は依存の解けた開いた子を `launch` に渡した出力で後回しの子を知ることを書く。
 
-**サブエージェント方式**: `epic-subagent.md` に、開始時に `scripts/epic-dispatch.sh max-parallel` を 1 回呼んでその値を上限にし（exit 1 なら stderr を添えて設定の誤りとして報告して止まる）、エピックの全部の子をまたいで、枠を使っている W の総数をその上限までに抑えることを書く（MUST）。W 1 体（名前付きで起こし SendMessage で再開する 1 系列）は、起こしてから、その W が担う change のループが終わる（PR がマージされる・記録先が閉じる）か、主の返事待ちで保留に入るまで、1 枠を使う。主の返事待ちは本体が `needs-approval` を付けて待つ場面（W の停止・G の保留のどちらも）とし、そこで枠を返す。コンテキスト上限で手渡した後任の W は前任の枠を引き継ぐ。1 つの子の中で change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う。本体は、新しい子の最初の W を起こす前・同じ子の中で別の change の W を起こす前・保留から戻る W を再開する前に、そのつど空き枠（上限から枠を使っている W の数を引き、0 未満なら 0）を確かめ、空き枠が 0 なら起こさず再開もせずに待ちに回すことを書く（MUST）。枠が空いたら、待ちに回したもののうち、保留から戻る W の再開を先に、そのあと同じ子の中の別の change の W、そのあと依存の解けた新しい子の最初の W の順で起こすことを書く（SHALL。主の返事を受けた件と始まっている子を先に進めるため）。
+**サブエージェント方式**: `epic-worker-slots.md` に、開始時に `scripts/epic-dispatch.sh max-parallel` を 1 回呼んでその値を上限にし（exit 1 なら stderr を添えて設定の誤りとして報告して止まる）、エピックの全部の子をまたいで、枠を使っている W の総数をその上限までに抑えることを書く（MUST）。W 1 体（名前付きで起こし SendMessage で再開する 1 系列）は、起こしてから、その W が担う change のループが終わる（PR がマージされる・記録先が閉じる）か、主の返事待ちで保留に入るまで、1 枠を使う。主の返事待ちは本体が `needs-approval` を付けて待つ場面（W の停止・G の保留のどちらも）とし、そこで枠を返す。コンテキスト上限で手渡した後任の W は前任の枠を引き継ぐ。1 つの子の中で change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う。本体は、新しい子の最初の W を起こす前・同じ子の中で別の change の W を起こす前・保留から戻る W を再開する前に、そのつど空き枠（上限から枠を使っている W の数を引き、0 未満なら 0）を確かめ、空き枠が 0 なら起こさず再開もせずに待ちに回すことを書く（MUST）。枠が空いたら、待ちに回したもののうち、保留から戻る W の再開を先に、そのあと同じ子の中の別の change の W、そのあと依存の解けた新しい子の最初の W の順で起こすことを書く（SHALL。主の返事を受けた件と始まっている子を先に進めるため）。
 
-**Orca 経路と両経路に共通の数え方**（Orca 側は `epic-loop.md`、サブエージェント側は `epic-subagent.md` に置く）: 「枠を使っている子」に、完了の印の子・閉じた子・主の返事待ちで止まった子を数えないこと、その理由（止まった子はアイドルで、数えると主の返事が遅れるあいだ全体が止まる）を書く。Orca 経路では止まった子が戻るのは子のセッションの中なので親が止められず、戻った子の分だけ一時的に上限を超えうることを書く。サブエージェント方式では再開を本体が行うので、上の手順で再開前に空きを確かめ、上限を超えないことを書く。
+**Orca 経路と両経路に共通の数え方**（Orca 側は `epic-loop.md`、サブエージェント側は `epic-worker-slots.md` に置く）: 「枠を使っている子」に、完了の印の子・閉じた子・主の返事待ちで止まった子を数えないこと、その理由（止まった子はアイドルで、数えると主の返事が遅れるあいだ全体が止まる）を書く。Orca 経路では止まった子が戻るのは子のセッションの中なので親が止められず、戻った子の分だけ一時的に上限を超えうることを書く。サブエージェント方式では再開を本体が行うので、上の手順で再開前に空きを確かめ、上限を超えないことを書く。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats`（または `tests/develop-skill.bats`）は、`references/epic-loop.md` の通常進行、`references/epic-stop.md` の手順 8、`references/epic-subagent.md` の枠・手渡し・再開優先順の記述と、各場面に入る前の読込指示があることを確かめなければならない（MUST）。
+`plugins/dev-workflow/tests/epic-dispatch.bats`（または `tests/develop-skill.bats`）は、`references/epic-loop.md` の通常進行、`references/epic-stop.md` の手順 8、`references/epic-worker-slots.md` の枠・手渡し・再開優先順の記述と、各場面に入る前の読込指示があることを確かめなければならない（MUST）。
 
-この要件の入力は `references/epic-loop.md`・`references/epic-stop.md`・`references/epic-subagent.md` の各担当部分の本文と読込指示である。拾いたい誤りは、親が `deferred` の子を動いている子として `wait` に渡して親が気づかないまま待ち続けること、枠が空いても後回しの子を起動しないこと、サブエージェント方式で上限を超えて W を起こすことである。次は通してよく、この要件では止めない: `timeout` で起こされたときに後回しの子を `launch` に渡し直さないこと（枠は変わっていない）／サブエージェント方式で R1・G・決める役など W 以外の役割を枠に数えないこと（上限が抑えるのは W の数）／W が R1 や G の結果を待って動いていないあいだも 1 枠を使い続けること。手順書の読み方の揺れ（すり抜ける入力）が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
+この要件の入力は `references/epic-loop.md`・`references/epic-stop.md`・`references/epic-worker-slots.md` の各担当部分の本文と読込指示である。拾いたい誤りは、親が `deferred` の子を動いている子として `wait` に渡して親が気づかないまま待ち続けること、枠が空いても後回しの子を起動しないこと、サブエージェント方式で上限を超えて W を起こすことである。次は通してよく、この要件では止めない: `timeout` で起こされたときに後回しの子を `launch` に渡し直さないこと（枠は変わっていない）／サブエージェント方式で R1・G・決める役など W 以外の役割を枠に数えないこと（上限が抑えるのは W の数）／W が R1 や G の結果を待って動いていないあいだも 1 枠を使い続けること。手順書の読み方の揺れ（すり抜ける入力）が見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: Orca 経路の手順に後回しの子の扱いが書かれている
 - **WHEN** `references/epic-loop.md` の Orca 経路の手順 1〜4 と `references/epic-stop.md` の手順 8 を読む
@@ -3074,26 +3079,26 @@ develop の手順書は、別セッション方式の通常進行を `references
 - **THEN** 動いている子も片付け待ちの子も 0 件で後回しの子が残るとき、`wait` を呼ばずに `launch` の stderr を添えて主に報告することが書かれている
 
 #### Scenario: サブエージェント方式に同じ上限が書かれている
-- **WHEN** `references/epic-subagent.md` のサブエージェント方式の段落を読む
+- **WHEN** `references/epic-worker-slots.md` のサブエージェント方式の段落を読む
 - **THEN** `epic-dispatch.sh max-parallel` の値を上限に、子をまたいだ W の総数を抑えること、W 1 体が枠を使う期間、新しい子の W・同じ子の別の change の W・保留から戻る W のどれも起こす前に空き枠を確かめること、待ちに回したものを起こす順（再開 → 同じ子の別の change → 新しい子）が書かれている
 
 #### Scenario: 保留から戻る W は枠が空くまで再開しない
-- **WHEN** 上限 2 のサブエージェント方式で、子 A と子 B の W を起こし、A が主の返事待ちで保留に入ったので子 C の W を起こしたあと、主が A に返事をした（B・C の W はまだ動いている）場面を、`references/epic-subagent.md` の手順に当てはめる
+- **WHEN** 上限 2 のサブエージェント方式で、子 A と子 B の W を起こし、A が主の返事待ちで保留に入ったので子 C の W を起こしたあと、主が A に返事をした（B・C の W はまだ動いている）場面を、`references/epic-worker-slots.md` の手順に当てはめる
 - **THEN** 手順からは、A の W を再開せずに待ちに回し、B か C の W が枠を返したら（ループが終わるか保留に入ったら）A を新しい子より先に再開する、と読める。同時に枠を使う W は 2 体を超えない
 
 #### Scenario: 子の中で change ごとに W を起こすときも枠を使う
-- **WHEN** 上限 2 のサブエージェント方式で、子 A の W と子 B の W が動いているあいだに、子 A が 2 つの change に割れて 2 つめの change の W を起こそうとする場面を、`references/epic-subagent.md` の手順に当てはめる
+- **WHEN** 上限 2 のサブエージェント方式で、子 A の W と子 B の W が動いているあいだに、子 A が 2 つの change に割れて 2 つめの change の W を起こそうとする場面を、`references/epic-worker-slots.md` の手順に当てはめる
 - **THEN** 手順からは、空き枠が 0 なので 2 つめの change の W を起こさずに待ちに回し、枠が空いたら新しい子より先に起こす、と読める
 
 #### Scenario: Orca 経路で戻った子の扱いが書かれている
-- **WHEN** `references/epic-loop.md` の Orca 経路と `references/epic-subagent.md` のサブエージェント方式の枠の数え方を読む
+- **WHEN** `references/epic-loop.md` の Orca 経路と `references/epic-worker-slots.md` のサブエージェント方式の枠の数え方を読む
 - **THEN** Orca 経路では戻った子の分だけ一時的に上限を超えうること、サブエージェント方式では再開前に空きを確かめるので超えないことが書かれている
 
 #### Scenario: 枠を使っている子の数え方が書かれている
-- **WHEN** `references/epic-loop.md` の回し方を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」を読む
 - **THEN** 完了の印の子・閉じた子・主の返事待ちで止まった子を数えないことと、戻った子の分だけ一時的に上限を超えうることが書かれている
 
-別セッション方式の後回しの子の通常進行は epic-loop.md、手順 8 の停止処理後の起動し直しは epic-stop.md、サブエージェント方式の枠・手渡し・再開の優先順は epic-subagent.md に置く（MUST）。
+別セッション方式の後回しの子の通常進行は epic-loop.md、手順 8 の停止処理後の起動し直しは epic-stop.md、サブエージェント方式の枠・手渡し・再開の優先順は epic-worker-slots.md に置く（MUST）。
 
 ### Requirement: 破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる
 
@@ -3201,9 +3206,9 @@ develop の手順書は、別セッション方式の通常進行を `references
 - **WHEN** 子 11 の記録の `stop` が `stopped-seen`、子 12 が `resumed`、子 13 が `stopped` の状態で `epic-dispatch.sh pending-owner 11 12 13` を実行する
 - **THEN** stdout は `pending 11` の 1 行で、`orca worktree list` も `orca worktree set` も呼ばれない
 
-### Requirement: epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ
+### Requirement: epic-loop.md の通常進行は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ
 
-develop の `references/epic-loop.md`「エピックの扱い」→「回し方」の Orca 経路は、次を書かなければならない（MUST）。
+develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経路は、次を書かなければならない（MUST）。
 
 - 手順 7（`回し方: Orca` を引き継いだ再開）は、`reap` より前に、`launch` に渡したことのある子（エピックの状態ディレクトリにある記録の子と、エピックのコメントから分かる子を合わせたもの）で `scripts/epic-dispatch.sh adopt <エピック番号> <子>...` を 1 回呼び、そのあと `reap` → `pending-owner` → `launch` の順に進むと書く。`adopted` / `skipped` / `none` は何もせず、`failed <N> ambiguous` は主に聞かずにその子を残して進み、エピックに `子 #N の記録を取り込めなかった（ambiguous）` と 1 行コメントすると書く。`failed <N> state-unreadable`（その子の記録が読めない）も同じに、止まらずにその子を残して進み、`子 #N の記録を取り込めなかった（state-unreadable）` と 1 行コメントすると書く。理由の無い `failed <N>`（記録を書けなかった）は、stderr を添えて主に報告して止まると書く。`adopt` が stdout に何も出さず exit 1 で終わったら（`orca` が無い・一覧を読めない・origin を読めない）、stderr を添えて主に報告して止まると書く（`failed <N> ambiguous` の行を出して exit 1 で終わったときは止まらない）
 - 手順 3・4・7 の「動いている子と片付け待ちの子がどちらも 0 件なら `wait` を呼ばずに待ちを終える」箇所は、待ちを終える前に `scripts/epic-dispatch.sh clear <エピック番号>` を 1 回呼ぶと書く。`cleared` / `none` は何もせず、exit 1 は主に報告すると書く。`clear` は待ちを終えるときに 1 回だけ呼び、エピックを閉じるのを待たない
@@ -3218,17 +3223,17 @@ develop の `references/epic-loop.md`「エピックの扱い」→「回し方�
 
 #### Scenario: 手順 7 が adopt から始まる
 
-- **WHEN** `references/epic-loop.md` の回し方の手順 7 を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」の手順 7 を読む
 - **THEN** `adopt` を `reap`・`pending-owner`・`launch` より前に呼ぶと書いてあり、`failed <N> ambiguous` と、stdout に何も出さない exit 1 の扱いが書き分けてある
 
 #### Scenario: 待ちを終えるときに clear を呼ぶ
 
-- **WHEN** `references/epic-loop.md` の回し方の手順 3・4・7 のうち、`wait` を呼ばずに待ちを終える箇所を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」の手順 3・4・7 のうち、`wait` を呼ばずに待ちを終える箇所を読む
 - **THEN** どの箇所も待ちを終える前に `clear <エピック番号>` を 1 回呼ぶと書いてある
 
 #### Scenario: Orca の画面の印は写しだと書いてある
 
-- **WHEN** `references/epic-loop.md`「エピックの扱い」を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」を読む
 - **THEN** 子の状態の正本が状態の記録で、Orca の画面の印を手で変えても親の見張りに効かないと書いてある
 
 ### Requirement: 実行モードは引数・印・依頼の届き方で開始時に決める
@@ -3329,9 +3334,9 @@ channel の本体は、モードを決めた時点でセッションの環境に
 - **WHEN** `OWNER_REPLY_CHANNEL_SENDERS` のある channel の本体がリスク許容の保留で止まる
 - **THEN** チャンネルに送る依頼のアクションの行（2 行目）は、このチャンネルで返すことを案内し、返事を受けたら `owner-reply-check.sh` で確かめてから保留の解除の G に渡す
 
-### Requirement: 別のリポジトリの子を含むエピックの回し方を epic.md に書く
+### Requirement: 別のリポジトリの子を含むエピックの読み替えを epic-multirepo.md に書く
 
-develop の `references/epic-multirepo.md`「エピックの扱い」は、エピックの子がエピックと別のリポジトリにあるときの挙動を、既存の要件（子エピックの外し方・マージ待ちの子・子の側の手順・コメントの書式）の読み替えとして書かなければならない（MUST）。読み替えは次の表のとおりで、同じリポジトリの子の呼び出しの形・書式・判定は表の外では変えない（MUST）。既存の要件の本文は書き直さず、この要件が読み替えを持つ。
+develop の `references/epic-multirepo.md` の読み替え表・補足は、エピックの子がエピックと別のリポジトリにあるときの挙動を、既存の要件（子エピックの外し方・マージ待ちの子・子の側の手順・コメントの書式）の読み替えとして書かなければならない（MUST）。読み替えは次の表のとおりで、同じリポジトリの子の呼び出しの形・書式・判定は表の外では変えない（MUST）。既存の要件の本文は書き直さず、この要件が読み替えを持つ。
 
 | 既存の書き方 | 別のリポジトリの子での読み替え |
 |---|---|
@@ -3348,45 +3353,45 @@ develop の `references/epic-multirepo.md`「エピックの扱い」は、エ�
 | 手順 3 (b) の起点ブランチ | その子の記録の `base`（別のリポジトリの子は子のリポジトリの既定ブランチか `--base` の値）。親のリポジトリの `main` ではない |
 | `後で別に起動するエピック:` の行で子を外す照合（手順 2・`closed` の確認） | 別のリポジトリの子は `<owner>/<repo>#N` の形の行で照合する（同じリポジトリの子は `#N`） |
 | 子を `route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log` に渡す | 別のリポジトリの子は `<owner>/<repo>#N` の形で渡す（同じリポジトリの子は番号だけ） |
-| `references/epic-multirepo.md` の注意書き `親エピックからの注意書き: #<エピック番号>`、手順 1 の「起点は `origin/main`」 | 別のリポジトリの子は注意書きが `親エピックからの注意書き: <エピックの owner>/<repo>#<E>`（子のリポジトリの issue に残る）。起点は `--base` / `EPIC_DISPATCH_BASE`、無ければ子のリポジトリの既定ブランチ |
+| `references/epic.md`「nested と注意書き」の注意書き `親エピックからの注意書き: #<エピック番号>`、`references/epic-loop.md`「通常進行の手順」手順１の「起点は `origin/main`」 | 別のリポジトリの子は注意書きが `親エピックからの注意書き: <エピックの owner>/<repo>#<E>`（子のリポジトリの issue に残る）。起点は `--base` / `EPIC_DISPATCH_BASE`、無ければ子のリポジトリの既定ブランチ |
 | `stop-judge.sh <epic> <child>` の `<child>` は番号 | 番号か `<owner>/<repo>#<N>`。後者は子の本文・コメントを `repos/<o>/<r>/issues/<N>` から読み、エピックのコメントの過去の判断を `親の判断: 子 <o>/<r>#<N> ` で始まる行から探す。同じリポジトリの子は今までどおり。入力文の見出しも同じ呼び方にする |
 
 サブエージェント方式（unmanned・channel、または Orca 管理下でも tmux の中でもないときに選ばれる）では、別のリポジトリの子を W に渡してはならない（MUST。W は親のリポジトリに worktree を作るので、別のリポジトリの issue を親のリポジトリの PR として実装してしまう）。本体はエピックに `子 <owner>/<repo>#N は別のリポジトリなので別セッション方式でだけ起動する` と 1 行コメントし、その子と、その子を前提にする子を起こさずに、主に報告する（1 行目と最後の行は、`~/.claude/output-styles/readable.md` の節 3 の書き分けに従う）。
 
-`references/epic-multirepo.md` の手順 1 には、`--base` と `EPIC_DISPATCH_BASE` が 1 回の `launch` の全部の子に掛かること、リポジトリごとに既定ブランチが違う子を混ぜるときは `--base` を付けないか `launch` をリポジトリごとに分けることを書かなければならない（MUST）。手順 6 の `failed` の報告には、`failed <child> no-clone`（`EPIC_DISPATCH_CLONES` の設定か clone を主に頼む）・`ambiguous-clone`（候補のパス）・`not-in-orca`（`orca repo add` を主に頼む）・`no-push`・`permission-lookup-failed`・`base-lookup-failed`（stderr の `gh` の認証アカウントと子のリポジトリを添える）を足し、どれも主に報告して止まると書かなければならない（MUST。サブエージェント方式に自動で振り替えない）。
+`references/epic-multirepo.md` の起点ブランチの補足には、`--base` と `EPIC_DISPATCH_BASE` が 1 回の `launch` の全部の子に掛かること、リポジトリごとに既定ブランチが違う子を混ぜるときは `--base` を付けないか `launch` をリポジトリごとに分けることを書かなければならない（MUST）。同ファイルの「epic-loop.md 手順６の読み替え」の `failed` の報告には、`failed <child> no-clone`（`EPIC_DISPATCH_CLONES` の設定か clone を主に頼む）・`ambiguous-clone`（候補のパス）・`not-in-orca`（`orca repo add` を主に頼む）・`no-push`・`permission-lookup-failed`・`base-lookup-failed`（stderr の `gh` の認証アカウントと子のリポジトリを添える）を足し、どれも主に報告して止まると書かなければならない（MUST。サブエージェント方式に自動で振り替えない）。
 
 この要件の守備範囲で入力として扱うのは、`references/epic-multirepo.md` の手順書の文面と `stop-judge.sh` の引数である。拾いたい誤りは、別のリポジトリの子の依存や子エピックの判定を親のリポジトリに対して読み、解けていない子を起動したり、子エピックを展開したりすることである。次は通してよく、この要件では止めない: 前提の issue を `gh` が読めないとき（読めない前提は解けていないとして待つ。この change で決めた扱い）／エピック本文の子の表の書式の揺れ。表を手で直した結果の細かい食い違いを見つけるたびに検査を足すことは、この要件の完了条件としない。
 
 #### Scenario: 依存と子エピックの判定を子のリポジトリで読むと書いてある
-- **WHEN** `references/epic-multirepo.md` の「回し方」の経路の決め方と「エピックである子を外す」を読む
+- **WHEN** `references/epic-loop.md` の「経路の決め方」「エピックである子を外す」と、`references/epic-multirepo.md` の依存・子エピック判定の読み替え表を読む
 - **THEN** 別のリポジトリの子の `blocked_by` と `sub_issues_summary.total` を子のリポジトリで読むこと、前提の issue のリポジトリを `repository_url` から取ることが書いてある
 
 #### Scenario: 子の一覧の組み立てが書いてある
-- **WHEN** `references/epic-multirepo.md` の「エピックの扱い」を読む
+- **WHEN** `references/epic-multirepo.md` の読み替え表・補足を読む
 - **THEN** sub-issue の `repository_url` とエピック本文の子の表から子の一覧を組み立て、同じ子を 1 件に数えることが書いてある
 
 #### Scenario: 読み先が子のリポジトリだと書いてある
-- **WHEN** `references/epic-multirepo.md` の手順 3 (b)・手順 4・手順 8・マージ待ちの子・`後で別に起動するエピック:` の照合を読む
+- **WHEN** `references/epic-loop.md`「通常進行の手順」の手順３ (b)・４と照合、`references/epic-stop.md`「停止の処理」手順８、そこから回される `references/epic-merge-wait.md` と、各操作に対応する `references/epic-multirepo.md` の読み替え表を読む
 - **THEN** 手順 4 は別のリポジトリの子の `state_reason` を `repos/<子の owner>/<子の repo>/issues/<N>` で読むと書いてあり、手順 8 とマージ待ちの子は子 issue のコメントを子のリポジトリから読むと書いてあり、手順 3 (b) は起点を記録の `base` と書いてあり、`後で別に起動するエピック:` の照合は `<owner>/<repo>#N` の形と書いてある
 
 #### Scenario: 各サブコマンドへの渡し方が書いてある
-- **WHEN** `references/epic-multirepo.md` の「エピックの扱い」を読む
+- **WHEN** `references/epic-multirepo.md` の読み替え表・補足を読む
 - **THEN** 別のリポジトリの子を `route`・`launch`・`wait`・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log` に `<owner>/<repo>#N` で渡すと書いてある
 
 #### Scenario: サブエージェント方式では別のリポジトリの子を起こさない
-- **WHEN** `references/epic-multirepo.md` の「回し方」の「サブエージェント方式」を読む
+- **WHEN** `references/epic-subagent.md` の「サブエージェント方式」を読む
 - **THEN** 別のリポジトリの子を W に渡さず、エピックに 1 行残して、その子とそれを前提にする子を起こさずに主に報告すると書いてある
 
 #### Scenario: コメントの書式が書いてある
-- **WHEN** `references/epic-multirepo.md` の「エピックの扱い」を読む
+- **WHEN** `references/epic-multirepo.md` の読み替え表・補足を読む
 - **THEN** 別のリポジトリの子は `子 <owner>/<repo>#N`・`後で別に起動するエピック: <owner>/<repo>#N`・`親の判断: 子 <owner>/<repo>#N 通した` と書くことが書いてあり、同じリポジトリの子は今のままの書式で残っている
 
 #### Scenario: マージ待ちの子を子のリポジトリで扱うと書いてある
-- **WHEN** `references/epic-multirepo.md` の「回し方」の「マージ待ちの子」を読む
+- **WHEN** `references/epic-merge-wait.md` と `references/epic-multirepo.md` のマージ待ちの読み替え表を読む
 - **THEN** `auto-merge.yml` の取得・`親のマージ判断:` のコメント・`parent-merge-approved` のラベルを子のリポジトリの PR に付けること、認証アカウントが子のリポジトリで権限を持たないときは主に上げることが書いてある
 
 #### Scenario: 子の側が親エピックのリポジトリにコメントする
-- **WHEN** `references/epic-multirepo.md` の「回し方」の「`nested` を受けたセッション」を読む
+- **WHEN** `references/epic.md` の「nested と注意書き」を読む
 - **THEN** エピックが別のリポジトリにあるときは `gh issue comment <E> -R <エピックのリポジトリ>` で `後で別に起動するエピック: <owner>/<repo>#<自分>` を残すと書いてあり、`<E>` とリポジトリを `route` の stderr の `parent epic: <owner>/<repo>#<E>` から取ると書いてある
 
 #### Scenario: 親から届く返事の頭の新しい形を受ける
@@ -3394,7 +3399,7 @@ develop の `references/epic-multirepo.md`「エピックの扱い」は、エ�
 - **THEN** どちらも `親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）: ` と `主の返事（親エピック #<E>（<owner>/<repo>）経由）: ` を受けると書いてある
 
 #### Scenario: failed の新しい理由の報告が書いてある
-- **WHEN** `references/epic-multirepo.md` の手順 6 を読む
+- **WHEN** `references/epic-multirepo.md` の「epic-loop.md 手順６の読み替え」を読む
 - **THEN** `no-clone`・`ambiguous-clone`・`not-in-orca`・`no-push`・`permission-lookup-failed`・`base-lookup-failed` を主に報告して止まると書いてある
 
 #### Scenario: stop-judge.sh は owner/repo#番号 の子を受ける
@@ -3406,7 +3411,7 @@ develop の `references/epic-multirepo.md`「エピックの扱い」は、エ�
 - **THEN** 子の本文は今までと同じ `repos/{owner}/{repo}/issues/11` から読まれ、過去の判断は `親の判断: 子 #11 ` で探される
 
 ### Requirement: エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う
-develop の `references/epic-loop.md`「エピックの扱い」→「回し方」の別セッション方式（Orca・tmux。以下 Orca 経路）は、親が主に出す発言について、次を規定しなければならない（MUST）。対象は、Orca 経路で親がターンを終えるときに主に出す発言すべてで、次を含む。手順 2 で `wait` を背景で起動して待ちに入るときの通知、手順 3・4・8 を処理して手順 2 に戻るたびの発言、手順 4 の見送りの報告、手順 6 の `error`・`failed` の報告、手順 7 と完了条件で待ちを終えるときの報告、**マージ待ちの子** の `reply` の `failed` の報告、手順 8 の止まった子の報告。手順 5 の `timeout` で起こされたときは主に発言を書かない（要件「親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す」）。書くなら `主がすること: なし` の 1 行だけで、この書き分けに従う。主への問いが未回答のあいだは、その 1 行も書かない。
+develop の `references/epic-loop.md` の「通常進行の手順」の別セッション方式（Orca・tmux。以下 Orca 経路）は、親が主に出す発言について、次を規定しなければならない（MUST）。対象は、Orca 経路で親がターンを終えるときに主に出す発言すべてで、次を含む。手順 2 で `wait` を背景で起動して待ちに入るときの通知、手順 3・4・8 を処理して手順 2 に戻るたびの発言、手順 4 の見送りの報告、手順 6 の `error`・`failed` の報告、手順 7 と完了条件で待ちを終えるときの報告、**マージ待ちの子** の `reply` の `failed` の報告、手順 8 の止まった子の報告。手順 5 の `timeout` で起こされたときは主に発言を書かない（要件「親は wait の上限で起きたら子を調べ直さずに同じ wait を掛け直す」）。書くなら `主がすること: なし` の 1 行だけで、この書き分けに従う。主への問いが未回答のあいだは、その 1 行も書かない。
 
 - 1 行目と 2 行目は、`~/.claude/output-styles/readable.md` の節 3 が定める書き分けに従う（MUST）。判断・確認・操作を求める発言は 1 行目を題名（依頼の形。質問にしない）にし、2 行目を `アクション:` で始まるアクションの行にする。主の操作も判断も要らない報告は 1 行目を `主がすること: なし` にする（主の質問への答えは正本のとおり 1 行目に答えを書く）（手順 2 で待ちに入るときは普通こちら）。`references/epic-loop.md` は書き分けを写さず、正本を参照する（MUST）
 - 同じターンで主に問いを出したあとに手順 2 で待ちに入るときは、待ちに入る通知を `主がすること: なし` で始めない（MUST）。通知の 1 行目に問いの題名を、2 行目にアクションの行を繰り返す（直前の問いを `なし` で上書きしない）
@@ -3419,7 +3424,7 @@ develop の `references/epic-loop.md`「エピックの扱い」→「回し方�
 この要件の守備範囲で入力として扱うのは、`references/epic-loop.md` の Orca 経路の文面である。拾いたい誤りは 2 つある。主が親の発言から、答えが要るかどうかと、どこで何を打つかを読み取れないこと。子の記録の推奨を主に OK してもらう報告で、返事の場所と条件が発言から読めないこと。次は通ってよく、この要件では止めない: 2 行目以降の説明の文の良し悪し／アクションの中身の正しさ。穴が見つかるたびに決まりを足して塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: Orca 経路が正本の書き分けを参照する
-- **WHEN** `references/epic-loop.md` の「回し方」の Orca 経路の導入部を読む
+- **WHEN** `references/epic-loop.md` の「主への報告」を読む
 - **THEN** 親が主に出す発言の 1 行目と 2 行目を `~/.claude/output-styles/readable.md` の節 3 の書き分けに従わせると書かれ、`主がすること: なし` の場合が書かれ、`主がすること: <どの画面・入力欄で>` の形が無い
 
 #### Scenario: 待ちに入る通知が直前の問いを上書きしない
@@ -3456,7 +3461,7 @@ channel の本体は、主へのすべての発言を、要件「channel モー�
 - **THEN** 本体は差分の報告と続けるかの問いを、1 行目が題名で、2 行目のアクションの行がこのチャンネルで返すことを案内する発言としてチャンネルに送り、端末に出すだけで済ませない
 
 ### Requirement: 着手できる子が 1 件でも別セッション方式で回す
-`plugins/dev-workflow/scripts/epic-dispatch.sh` の `route` は、エピックの子のセッションでなく（`nested` でなく）、子の番号が 1 件以上あるときは、子の件数が何件でも、起動部品が使えれば `orca` か `tmux` を出さなければならない（MUST。順は要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の `route` の段落のとおり）。子が 0 件のとき、起動部品が使えないときは `subagent` を出す。`nested` の判定が先に行われること、`orca worktree current` を 1 回の `route` で 1 回だけ呼ぶこと、子の番号が数字でなければ exit 1 で終わることは変えない。develop の `references/epic-loop.md`「エピックの扱い」の「経路の決め方」は、`orca` になる条件として子の件数の下限（2 件以上など）を書いてはならない（MUST NOT）。着手できる子が 0 件のとき `subagent` になることと、エピックの子のセッションでは件数によらず `nested` になることは、`route` の実際の結果の説明として書いてよい。
+`plugins/dev-workflow/scripts/epic-dispatch.sh` の `route` は、エピックの子のセッションでなく（`nested` でなく）、子の番号が 1 件以上あるときは、子の件数が何件でも、起動部品が使えれば `orca` か `tmux` を出さなければならない（MUST。順は要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の `route` の段落のとおり）。子が 0 件のとき、起動部品が使えないときは `subagent` を出す。`nested` の判定が先に行われること、`orca worktree current` を 1 回の `route` で 1 回だけ呼ぶこと、子の番号が数字でなければ exit 1 で終わることは変えない。develop の `references/epic-loop.md` の「経路の決め方」は、`orca` になる条件として子の件数の下限（2 件以上など）を書いてはならない（MUST NOT）。着手できる子が 0 件のとき `subagent` になることと、エピックの子のセッションでは件数によらず `nested` になることは、`route` の実際の結果の説明として書いてよい。
 
 経路は `/develop <エピック番号>` の最初の開始時に 1 回決めて途中で変えず、再開時は `回し方:` で始まる最新のコメントから引き継ぎ、すでに `回し方: サブエージェント` と記録したエピックを途中で 別セッション方式に切り替える規則は置かない（SHALL。進行中のサブエージェント方式の子と 起動部品の子ワークツリーの子が混在する状態を扱う規則が無く、別セッション方式の手順の規定は別の変更が扱うため）。この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の `route` が `orca` を返す条件の規定、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の `route` の判定の規定、要件「エピックの子への注意書きと…引き継ぐ」の `route` の段落のうち、子の件数の条件に関わる部分に優先する。
 
@@ -3482,8 +3487,8 @@ channel の本体は、主へのすべての発言を、要件「channel モー�
 - **WHEN** `EPIC_DISPATCH_PARENT_EPIC=420` の環境で `orca` が PATH にあり Orca 管理のワークツリーにいるとき、`epic-dispatch.sh route 11` を実行する
 - **THEN** stdout は `nested` の 1 行で exit 0、`orca` は呼ばれない
 
-#### Scenario: epic.md の経路の決め方に orca になる条件としての件数の下限が書かれていない
-- **WHEN** `skills/develop/references/epic-loop.md` の「エピックの扱い」の「経路の決め方」を読む
+#### Scenario: epic-loop.md の経路の決め方に orca になる条件としての件数の下限が書かれていない
+- **WHEN** `skills/develop/references/epic-loop.md` の「通常進行の手順」の「経路の決め方」を読む
 - **THEN** `orca` になる条件が「`orca` が PATH にあり、本体が Orca 管理のワークツリーにいる」だけで書かれ（`tmux` になる条件は別に「`TMUX` が空でなく `tmux` が PATH にある」と書かれ）、`orca` になる条件として blocked されていない子の件数の下限（2 件以上など）が無く（着手できる子が 0 件のとき `subagent` になる旨の文はあってよい）、経路は最初の開始時に 1 回だけ決めて途中で変えないこと、再開時は `回し方:` のコメントから引き継ぐことは残っている
 
 #### Scenario: Orca 管理外でも tmux の中なら tmux を返す
@@ -3592,7 +3597,7 @@ develop の既存要件のうち見出しや本文が「Orca 経路」「`回し
 
 ### Requirement: 回し方の手順は推定した done も子の付けた done と同じに片付ける
 
-develop の `references/epic-loop.md`「エピックの扱い」→「回し方」の別セッション方式の手順は、次を書かなければならない（MUST）。
+develop の `references/epic-loop.md` の「通常進行の手順」の別セッション方式の手順は、次を書かなければならない（MUST）。
 
 - 手順 2 の `--watch-done` の説明に、`wait` は片付け待ちの子のうち、完了の印の無いまま記録先が `completed` で閉じてから `EPIC_DISPATCH_DONE_IDLE_SEC`（既定 1800 秒）以上たち、子のトランスクリプト（サブエージェントのものを含む）の最後の活動もそれ以上前の子を、LLM なしで完了と推定して `done <N>` を返すこと（`status` が `waiting` の子・止まった印の子・トランスクリプトが無い子は推定しない）
 - 手順 3 に、推定の `done` も子が付けた `done` と同じに `reap` を 1 回呼んで扱い、区別しないこと（片付けの安全確認は `reap` が行う）。同じ子が `closed` と `done` の両方の行に出たら、手順 4 を処理してから手順 3 の `reap` を呼ぶこと
@@ -3603,7 +3608,7 @@ develop の `references/epic-loop.md`「エピックの扱い」→「回し方�
 この要件の入力は、`wait` が返す `done <N>` と `closed <N>` の行、`notify-closed` が返す `skipped <N> not-stopped` である。拾いたい誤りは、推定の `done` を子の付けた `done` と区別して片付けを飛ばすこと、`skipped <N> not-stopped` の子について主にステータスを変えるよう頼むことである。次は通してよく、この要件では止めない: 推定の `done` を渡した `reap` が `kept` を返し、本体が確かめて残すこと（安全確認は `reap` が行う）／`status` が `waiting` の子やトランスクリプトの無い子が推定されないこと。推定の条件の細部の食い違いを見つけるたびに塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 回し方に推定の扱いが書かれている
-- **WHEN** `references/epic-loop.md` の「エピックの扱い」の「回し方」の手順 2〜4 を読む
+- **WHEN** `references/epic-loop.md` の「通常進行の手順」の手順 2〜4 を読む
 - **THEN** 手順 2 に `wait` が完了を推定する条件と `EPIC_DISPATCH_DONE_IDLE_SEC` が、手順 3 に推定の `done` も同じに `reap` することと、同じ子が `closed` と `done` の両方に出たら手順 4 を処理してから `reap` を呼ぶことが、手順 4 に `skipped <N> not-stopped` の子は `--watch-done` の推定で片付くことが書かれている
 
 ### Requirement: エピックの子は主にマージを頼むとき、マージ後の連絡を頼まない
@@ -4112,7 +4117,7 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 
 状態表は、表の上に確かめた時刻（JST）を書き、行を、まだ閉じていない全部の子 issue と親自身（エピックの番号）の 1 行ずつにし、列を `issue 番号・内容・ステータス・確認内容・推奨・答え方` にしなければならない（MUST）。確認内容は主に聞いていることの中身、答え方はどの画面で何を打つかを書き、答えが要らない行は `なし` と書く。
 
-#### Scenario: epic.md が表の列を規定する
+#### Scenario: epic-loop.md が表の列を規定する
 - **WHEN** `references/epic-loop.md` の状態表の規定を読む
 - **THEN** 確かめた時刻（JST）・親自身の行・列 `issue 番号・内容・ステータス・確認内容・推奨・答え方` が書かれ、答えが要らない行は `なし` と書くと書かれている
 
@@ -4146,7 +4151,7 @@ channel モードでは、状態表の答え方の列を、チャンネルで返
 
 待機前の最後のリクエストから 60 分以上経過した旧親の引き継ぎ・再開案内（エピックへの記録失敗時の停止報告を含む）に限り、要件「エピックの親は報告に付ける状態表を区切りより下に置く」の例外に従い、旧親は状態表と `child-log` 確認を省略しなければならない（MUST）。この義務は新親へ移し、新親は状態を復元後、上記のログ確認を行ってから状態表を書かなければならない（MUST）。通常の報告や 60 分未満の通知・返事の処理後の報告では、ログ確認を省略してはならない（MUST NOT）。
 
-#### Scenario: epic.md が会話ログの確認を表より前に置く
+#### Scenario: epic-loop.md が会話ログの確認を表より前に置く
 - **WHEN** `references/epic-loop.md` の状態表の規定を読む
 - **THEN** 別セッション方式では表を書く前に `child-log` で子の会話ログの末尾を読むこと、食い違えば会話ログを優先することが書かれている
 
@@ -4313,11 +4318,11 @@ channel モードでは、状態表の答え方の列を、チャンネルで返
 
 親の時間分類の操作規則は reply-after-idle.md に一度だけ置き、epic-loop.md の起床時・手順 5・9 はそこを先に読む案内にする（MUST）。
 
-### Requirement: epic.md の回し方は子の起動コマンドの指定と返事の規則のファイルを指す
-`references/epic-loop.md` の回し方は、すべての develop セッションが開始時に worktree-local の idleCompaction を false にすること、子は既存の起動オプションでも切ること、時間がたった子・親は `references/reply-after-idle.md` に従うことを書かなければならない（MUST）。親だけの閾値の付け方を案内してはならない（MUST NOT）。子の起動コマンドの `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` や `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` も案内しない。対応する Bats はこの記述を確かめる（MUST）。
+### Requirement: epic-loop.md の通常進行は子の起動コマンドの指定と返事の規則のファイルを指す
+`references/epic-loop.md` の「通常進行の手順」は、すべての develop セッションが開始時に worktree-local の idleCompaction を false にすること、子は既存の起動オプションでも切ること、時間がたった子・親は `references/reply-after-idle.md` に従うことを書かなければならない（MUST）。親だけの閾値の付け方を案内してはならない（MUST NOT）。子の起動コマンドの `CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS` や `EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS` も案内しない。対応する Bats はこの記述を確かめる（MUST）。
 
-#### Scenario: epic.md の回し方が起動コマンドの指定と規則のファイルを指す
-- **WHEN** references/epic-loop.md の回し方を読む
+#### Scenario: epic-loop.md の通常進行が起動コマンドの指定と規則のファイルを指す
+- **WHEN** references/epic-loop.md の「通常進行の手順」を読む
 - **THEN** 親・子を分けない開始時の設定と、子の --settings '{"idleCompaction":false}'、長時間待機後の共通方針が分かり、親だけの閾値の付け方を参照していない
 
 この要件は、要件「エピックの条件・作り方・回し方・完了条件を規定する」の回し方の段落のうち、epic-dispatch.sh が足すのは --model だけとする部分に優先する（足すのは --settings '{"idleCompaction":false}' と --model）。既存の子の起動・返事の動作は変えない。
@@ -4573,7 +4578,7 @@ Claude Code で develop を開始する本体は、役割別工程や返事待�
 
 ### Requirement: 子への声かけ文と返事の形は一か所の定義を共有する
 
-声かけの手順の正本は `references/epic-keepalive.md` とし、子は停止前にそこから予約文の受信契約と共通定義 `references/child-cache-keepalive.json` を読む（MUST）。epic.md・epic-child-stop.md・reply-after-idle.md は同じ規則を複写せずこの正本を案内する（MUST）。
+声かけの受信契約と child-log の除外・保証の正本は `references/epic-keepalive.md` とし、子は停止前にそこから予約文の受信契約と共通定義 `references/child-cache-keepalive.json` を読む（MUST）。親の送信判定一式（対象・TTL・期限・除外・端末状態・失敗時の扱い）の正本は `references/epic-keepalive-watch.md` とし、loop・stop・reply-after-idle は該当場面で読むよう案内する（MUST）。受信契約と送信条件を複写せず、子から watch を読ませてはならない（MUST NOT）。一回確認と片付け待ちだけの wait では送らないこと、入力を消去しないこと、timeout 後の一回の掛け直しは loop 手順５に従うことも watch に置く（MUST）。
 
 キャッシュ維持の声かけは、固定文・返事専用の接頭辞・順序付き欄名と区切りを一つの機械可読定義で持ち、送信・子の受信手順・発言の除外が共有しなければならない（MUST）。初期の欄名は #1374 の案の `待ち:`・`次:` とし、欄の意味の確定や調査による失敗検出を追加してはならない（MUST NOT）。返事は専用の接頭辞と各欄の短い値を持つ一行で、値に改行・区切り文字を含めない（SHALL）。
 
@@ -5545,11 +5550,11 @@ CI 見張りの fix からの戻し方のうち、通常判断で W を把握し
 
 #### Scenario: nested の子が開始して止まる
 - **WHEN** nested の子が注意書きを受け、後で主の返事待ちになる
-- **THEN** 入口で注意書きの信頼条件を確認し、停止前に epic-child-stop.md と epic-keepalive.md と共有 JSON を読み、`主に聞く理由:` を書く前に parent-pass-criteria.md の「例」を読む（読込量は同ファイル全文を数える）。親の起動・片付け・見張りの手順は読まない
+- **THEN** 入口で注意書きの信頼条件を確認し、停止前に epic-child-stop.md と epic-keepalive.md と共有 JSON を読み、`主に聞く理由:` を書く前に parent-pass-criteria.md の「例」を読む（読込量は同ファイル全文を数える）。W の並列枠が必要なら epic-worker-slots.md だけを追加し、親の起動・片付け・見張りの手順は読まない
 
 #### Scenario: 親が開始し停止した子を扱う
 - **WHEN** 別セッション方式の親が開始し、後で stopped または pending-owner の子を処理する
-- **THEN** 開始時は epic.md と epic-loop.md、停止解決に入る前は epic-stop.md と関連する子の記録契約・判断基準・時間分類・声かけの正本を読む。マージ待ち・委任・別 repo は該当時だけ追加する
+- **THEN** 開始時は epic.md と epic-loop.md、停止解決に入る前は epic-stop.md と関連する子の記録契約・判断基準・時間分類、および親の送信判定の正本 epic-keepalive-watch.md を読む。マージ待ち・委任・別 repo は該当時だけ追加する
 
 #### Scenario: 移した規則はその場面で読める
 - **WHEN** 親が委任を受ける、または子が委任の添え書きのある返事を受ける

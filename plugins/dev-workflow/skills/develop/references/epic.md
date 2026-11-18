@@ -32,9 +32,11 @@ develop の SKILL.md から移した節。読むのは、`/develop <エピック
 | 子が停止する前・親からの返事受信時 | `references/epic-child-stop.md` |
 | 親が PR のマージ待ちを扱う前 | `references/epic-merge-wait.md` |
 | 親が別リポジトリの子を扱う前 | `references/epic-multirepo.md` |
-| route=subagent・unmanned・channel・子の W 並列 | `references/epic-subagent.md`（親の開始・報告は loop も読む） |
+| 親のサブエージェント方式（route=subagent・unmanned・channel） | `references/epic-subagent.md`（親の開始・報告は loop も読む） |
+| nested の子が W を並列に起こす前 | `references/epic-worker-slots.md` |
 | 委任を受ける／取り消す／適用する前 | `references/epic-delegation.md`（親の操作は stop） |
-| 子が停止する前・親が停止済み子の声かけを扱う前 | `references/epic-keepalive.md` |
+| 子が停止する前 | `references/epic-keepalive.md` |
+| 親が停止済み子の声かけを扱う前 | `references/epic-keepalive-watch.md` |
 
 ### nested と注意書き
 

@@ -1308,9 +1308,9 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "reply-after-idle: the keepalive and the restore table read the stop's uuid and stop_at" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
-  grep -qF 'epic-keepalive.md' "$f"
-  grep -qF '止まった発言の uuid（`stop_uuid`）か主の返事待ちの停止記録があり未回答' "$SKILL_DIR/references/epic-keepalive.md"
-  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200 秒。' "$SKILL_DIR/references/epic-keepalive.md"
+  grep -qF 'epic-keepalive-watch.md' "$f"
+  grep -qF '止まった発言の uuid（`stop_uuid`）か主の返事待ちの停止記録があり未回答' "$SKILL_DIR/references/epic-keepalive-watch.md"
+  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200 秒。' "$SKILL_DIR/references/epic-keepalive-watch.md"
   run grep -E '86400|24 時間' "$f"; [ "$status" -eq 1 ]
   grep -E '^\| 親が通した判断 \|' "$f" | grep -qF '`発言 <uuid>`'
   grep -E '^\| 主の返事待ちの子 \|' "$f" | grep -qF '`stop_uuid` に対応する `親の判断:`'
@@ -1780,10 +1780,10 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   grep -qF '正常な一行の往復だけ' "$epic"
   grep -qF '予約文' "$epic"
   grep -qF '声かけの期限の基点' "$epic"
-  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒' "$epic"
+  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒' "$PLUGIN_DIR/skills/develop/references/epic-keepalive-watch.md"
   run grep -F '24 時間' "$epic"; [ "$status" -eq 1 ]
   grep -qF 'keepalive' "$epic"
-  local idle="$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  local idle="$PLUGIN_DIR/skills/develop/references/epic-keepalive-watch.md"
   grep -qF '3000 秒以上 3600 秒未満' "$idle"
   grep -qF '既定 43200 秒' "$idle"
   grep -qF '切替を観測するまで' "$idle"

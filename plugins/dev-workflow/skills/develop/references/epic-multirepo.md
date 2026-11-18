@@ -22,4 +22,8 @@
 
 別のリポジトリの子は、`launch` が子の clone（環境変数 `EPIC_DISPATCH_CLONES`、無ければ、Orca の部品なら Orca に登録済みのリポジトリ。tmux の部品は登録が要らない）に子のワークツリーを作り、親のワークツリーに親子の線を張る。記録の `repo` は子のリポジトリ、`parent_worktree` は親のワークツリーで、`wait`・`reap` は記録を読む。
 
-別のリポジトリの子の起点は、`--base` / `EPIC_DISPATCH_BASE` が無ければ子のリポジトリの既定ブランチ（親のリポジトリの `main` ではない）。リポジトリごとに既定ブランチが違う子を混ぜるときは `--base` を付けないか、`launch` をリポジトリごとに分ける。
+別のリポジトリの子の起点は、`--base` / `EPIC_DISPATCH_BASE` が無ければ子のリポジトリの既定ブランチ（親のリポジトリの `main` ではない）。リポジトリごとに既定ブランチが違う子を混ぜるときは `--base` を付けないか、`launch` をリポジトリごとに分ける。`--base` と `EPIC_DISPATCH_BASE` は 1 回の `launch` の全部の子に掛かる。
+
+## epic-loop.md 手順６の読み替え
+
+別のリポジトリの子の `failed <child> <理由>` の新しい理由も、主に報告して止まる（サブエージェント方式に自動で振り替えない）: `no-clone`（`EPIC_DISPATCH_CLONES` の設定か `git clone` を主に頼む）・`ambiguous-clone`（stderr の候補のパスを添える）・`not-in-orca`（Orca の部品のとき。Orca への clone の登録を主に頼む。stderr に登録のコマンドが出る。tmux の部品では登録は要らない）・`no-push`・`permission-lookup-failed`・`base-lookup-failed`（stderr の `gh` の認証アカウントと子のリポジトリを添える）。
