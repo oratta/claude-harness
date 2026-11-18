@@ -46,7 +46,7 @@
 ## 9. 全体の確かめ
 
 - [x] 9.1 `git grep -n decision-criteria plugins tests` の残りが、本体向けの規則（コンテキスト上限の本体向けの部分・手渡しの許可・残量モードの表・自動導出・モード不変ルール）を指すものと `CHANGELOG.md`・`changes/` の記録だけであることを目で確かめる。確かめ方: 残った行の一覧を PR 本文に貼る。触る範囲: なし（確認のみ）
-- [ ] 9.2 `scripts/test.sh`（リポジトリ全体の bats と Python のスイート）が緑。`tests/develop-startup-budget.bats` が SKILL.md の付け替えで予算を外れたら `tests/develop-startup-budget.txt` の値を実測に合わせる。確かめ方: `scripts/test.sh` が exit 0。触る範囲: tests/develop-startup-budget.txt:1-3
+- [x] 9.2 `scripts/test.sh`（リポジトリ全体の bats と Python のスイート）が緑。`tests/develop-startup-budget.bats` が SKILL.md の付け替えで予算を外れたら `tests/develop-startup-budget.txt` の値を実測に合わせる。確かめ方: `scripts/test.sh` が exit 0。触る範囲: tests/develop-startup-budget.txt:1-3
 - [x] 9.3 切り出し後の場面ごとの字数を、切り出し前と同じ定義（場面ごとのファイルを cat でつないで `wc -m`。SubagentStart の hook の注入文は数えない）で測り、前後の表をエピック #1682 にコメントし、PR 本文にも載せる（予算の判定はバイト数で単位が違うことを書く）。確かめ方: エピックのコメントの URL がある。触る範囲: なし（記録のみ）
 - [x] 9.4 `plugins/dev-workflow/changes/1683.md` に変更の記録を書く。確かめ方: ファイルがあり、`bats tests/plugin-release-convention.bats` が緑。触る範囲: plugins/dev-workflow/changes/1683.md（新規）
 
