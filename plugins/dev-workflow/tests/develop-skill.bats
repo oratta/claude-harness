@@ -16,7 +16,12 @@ setup() {
   SKILL_DIR="${PLUGIN_DIR}/skills/develop"
   SKILL="${SKILL_DIR}/SKILL.md"
   # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
-  EPIC="${SKILL_DIR}/references/epic.md"
+  # Paragraph wording is checked across the epic references; reading boundaries have their own tests.
+  EPIC="$BATS_TEST_TMPDIR/epic-all.md"
+  cat "${PLUGIN_DIR}/skills/develop/references/epic.md" > "$EPIC"
+  for doc in loop stop delegation merge-wait multirepo subagent keepalive; do
+    if [ -f "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" ]; then cat "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" >> "$EPIC"; fi
+  done
   EPIC_CHILD_STOP="${SKILL_DIR}/references/epic-child-stop.md"
   # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
   HANDOVER="${SKILL_DIR}/references/handover.md"
@@ -27,7 +32,9 @@ setup() {
 
 # 「## <見出し>」から次の「## 」までを切り出す
 # 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
+section() {
+  if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
+  awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$SKILL"; }
 
 # 「1 ループ」のコードブロックから工程の指示を切り出す。境界は**行頭の工程ラベル**だけで、
@@ -490,7 +497,7 @@ refute() {
   e="$(section 'エピックの扱い' "$EPIC")"
   echo "$e" | grep -q '^### 条件'
   echo "$e" | grep -q '^### 作り方'
-  echo "$e" | grep -q '^### 回し方'
+  echo "$e" | grep -qF 'epic-loop.md'
   echo "$e" | grep -q '^### 完了条件'
 }
 
@@ -551,7 +558,7 @@ refute() {
   [ -f "$EPIC" ]
   [ -f "$EPIC_CHILD_STOP" ]
   local p
-  for p in '### 条件' '### 作り方' '### 回し方' '### 完了条件' '**経路の決め方**' '**エピックである子を外す**' \
+  for p in '### 条件' '### 作り方' '### 完了条件' '**経路の決め方**' '**エピックである子を外す**' \
            '**部品ごとの欄**' 'sub_issues_summary' 'dependencies/blocked_by -F issue_id' 'epic-dispatch.sh route <子>'; do
     grep -qF -- "$p" "$EPIC" || { echo "移設先に無い: $p" >&2; return 1; }
     if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
@@ -563,8 +570,11 @@ refute() {
 }
 
 @test "epic move (#1219): references inside the moved files point back to SKILL.md or to each other" {
+  grep -qF '`references/epic-loop.md`' "$SKILL"
+  grep -qF '`references/epic-loop.md`' "$SKILL_DIR/references/epic.md"
+  [ -f "$PLUGIN_DIR/skills/develop/references/epic-loop.md" ]
   grep -qF '`references/handover.md` の「新しいセッションでの再開」の手順 2' "$EPIC_CHILD_STOP"
-  grep -qF '`references/epic.md` の「回し方」の別セッション方式の手順 8' "$EPIC_CHILD_STOP"
+  grep -qF '`references/epic-stop.md` の手順 8' "$EPIC_CHILD_STOP"
   grep -qF '子の側の手順は `references/epic-child-stop.md`' "$EPIC"
   # SKILL.md の他の節は移設先を指す（旧い節名の参照が残っていない）
   if grep -qF '「エピックの扱い」→「回し方」' "$SKILL"; then return 1; fi
@@ -741,7 +751,7 @@ refute() {
   s="$(section 'PR トークン上限')"
   echo "$s" | grep -qF '`子の PR トークン権限: <値>`'
   echo "$s" | grep -qF '既定 60000000'
-  echo "$s" | grep -F 'references/epic.md' | grep -qF '**PR トークン上限の子**'
+  echo "$s" | grep -F 'references/epic-stop.md' | grep -qF '**PR トークン上限の子**'
   echo "$s" | grep -F '別セッション方式の子' | grep -qF 'references/epic-child-stop.md'
   echo "$s" | grep -F 'サブエージェント方式' | grep -F '見込みを子の記録先にコメント' | grep -qF '照らす'
   echo "$s" | grep -F '照らす前に' | grep -qF '既定値で投稿'
@@ -1123,14 +1133,13 @@ refute() {
 
 # --- Requirement: 親は主の委任を…受ける／委任が有効か／委任が効く止まり／委任で許容を送る／子は委任の返事を確かめてから G に渡す（#1293） ---
 # 照合の対象は references/epic.md・references/epic-child-stop.md の文だけで、openspec の spec の文言は照合しない。
-# 「委任が有効か」の 6 条件と「委任が効く止まり」の 4 条件は、epic.md・epic-child-stop.md・pr-review-gate の pass.md に
-# 同じ文字列で入れる（pass.md 側は pr-review-gate-skill.bats が同じ文字列で検査する）。
+# 「委任が有効か」の 6 条件と「委任が効く止まり」の 4 条件は epic-delegation.md にだけ置き、epic-child-stop.md と pr-review-gate の pass.md は判定前にそれを読む（pass.md の読込指示は pr-review-gate-skill.bats が検査する）。
 
 DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1 行目が `主の委任: リスク許容` なら 1〜4 行目が、`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
 DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 DELEG_RECOMMEND='`推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 
-deleg_para() { awk '/^\*\*主の委任\*\*（手順 8 の続き/{f=1; print; next} f && /^`closed` で起こされたときの確認では/{f=0} f' "$EPIC"; }
+deleg_para() { cat "$SKILL_DIR/references/epic-stop.md" "$SKILL_DIR/references/epic-delegation.md"; }
 child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP"; }
 
 @test "delegated reply (#1293): epic.md has the delegation paragraph after step 8 and step 8 routes to it before the pass criteria" {
@@ -1173,7 +1182,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 }
 
 @test "delegated reply (#1293): revocation is posted at the first tool call of the next turn and counts only the three author associations" {
-  p="$(deleg_para | grep -F -- '- **取り消し**')"
+  p="$(deleg_para)"
   echo "$p" | grep -qF '1 行目 `主の委任: 取り消し`'
   echo "$p" | grep -qF '次のターンの最初のツール呼び出し'
   echo "$p" | grep -qF '`OWNER`・`MEMBER`・`COLLABORATOR` のどれかなら効く'
@@ -1183,13 +1192,13 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 @test "delegated reply (#1293): the six validity conditions and four stop conditions are the same string in epic.md and epic-child-stop.md" {
   deleg_para | grep -F -- '- **委任が有効か**' | grep -qF "$DELEG_VALID6"
   deleg_para | grep -F -- '- **委任が効く止まり**' | grep -qF "$DELEG_STOP4"
-  child_reply_item | grep -qF "$DELEG_VALID6"
-  child_reply_item | grep -qF "$DELEG_STOP4"
+  child_reply_item | grep -qF 'references/epic-delegation.md'
+  grep -qF "$DELEG_STOP4" "$SKILL_DIR/references/epic-delegation.md"
 }
 
 @test "delegated reply (#1293): the recommendation is judged by the full allow phrase (not the bare stem) in epic.md and epic-child-stop.md" {
   deleg_para | grep -qF "$DELEG_RECOMMEND"
-  child_reply_item | grep -qF "$DELEG_RECOMMEND"
+  child_reply_item | grep -qF '種類別条件'
 }
 
 @test "delegated reply (#1293): the parent sends with the delegation tag and records it without the parent-judgment prefix" {
@@ -1237,7 +1246,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 }
 
 @test "skill: step 7 of the Orca route re-presents children waiting for the owner before launch" {
-  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
+  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p" | grep -qF 'pending-owner'
   printf '%s\n' "$p" | grep -qF '記録の `stop` が `stopped-seen`'
   printf '%s\n' "$p" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）'
@@ -1266,9 +1275,9 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "skill: a stop that is not a question is dismissed and goes back to the wait, in steps 8 and 7" {
   p="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
-  printf '%s\n' "$p" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`scripts/epic-dispatch.sh dismiss <N>` を呼んでから 2 に戻る'
+  printf '%s\n' "$p" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`scripts/epic-dispatch.sh dismiss <N>` を呼んでから `references/epic-loop.md` の手順 2 に戻る'
   printf '%s\n' "$p" | grep -qF '`dismiss` の出力が `skipped` か `failed` でも主に上げない'
-  p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
+  p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p7" | grep -qF '手順 8 と同じく `dismiss` で戻して出し直さない'
 }
 
@@ -1283,7 +1292,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   grep -qF '親の判断: 子 #N 通した — <理由> 発言 <止まりの uuid か 不明>' "$EPIC"
   grep -F 'PR トークン上限を親の権限 <権限> まで上げた' "$EPIC" | grep -qF '発言 <止まりの uuid> <停止の記録の URL>'
   run grep -F '<理由> <停止の記録の URL>' "$EPIC"; [ "$status" -eq 1 ]
-  p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
+  p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p7" | grep -qF '`発言 <uuid>` が記録の `stop_uuid` と一致するもの'
   printf '%s\n' "$p7" | grep -qF '`pending <N> <uuid>`'
 }
@@ -1298,8 +1307,9 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "reply-after-idle: the keepalive and the restore table read the stop's uuid and stop_at" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
-  grep -qF '止まった発言の uuid（`stop_uuid`）か主の返事待ちの停止記録があり未回答' "$f"
-  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200 秒。' "$f"
+  grep -qF 'epic-keepalive-watch.md' "$f"
+  grep -qF '止まった発言の uuid（`stop_uuid`）か主の返事待ちの停止記録があり未回答' "$SKILL_DIR/references/epic-keepalive-watch.md"
+  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200 秒。' "$SKILL_DIR/references/epic-keepalive-watch.md"
   run grep -E '86400|24 時間' "$f"; [ "$status" -eq 1 ]
   grep -E '^\| 親が通した判断 \|' "$f" | grep -qF '`発言 <uuid>`'
   grep -E '^\| 主の返事待ちの子 \|' "$f" | grep -qF '`stop_uuid` に対応する `親の判断:`'
@@ -1312,7 +1322,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 }
 
 @test "skill: step 7 drops a pending child whose pass on the epic matches the latest stop record" {
-  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
+  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p" | grep -qF 'エピックのコメントの `親の判断: 子 #N 通した`'
   printf '%s\n' "$p" | grep -qF '停止の記録の URL が子の最新の `子の停止: 主の返事待ち` の URL と一致'
   printf '%s\n' "$p" | grep -qF '再報告から外す'
@@ -1339,7 +1349,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 # --- 別のリポジトリの子（cross-repo-children） ---
 # spec: dev-workflow-develop「別のリポジトリの子を含むエピックの回し方を epic.md に書く」
 
-xrepo_block() { section 'エピックの扱い' "$EPIC" | awk '/^\*\*別のリポジトリの子（複数リポジトリのエピック）\*\*/{f=1; print; next} /^子セッションは `launch` が/{f=0} f'; }
+xrepo_block() { cat "$SKILL_DIR/references/epic-multirepo.md" | awk '/^\*\*別のリポジトリの子（複数リポジトリのエピック）\*\*/{f=1; print; next} /^子セッションは `launch` が/{f=0} f'; }
 
 @test "skill (cross-repo): dependencies and sub-issue checks are read in the child's repository, the prerequisite's from repository_url" {
   b="$(xrepo_block)"
@@ -1410,15 +1420,26 @@ xrepo_block() { section 'エピックの扱い' "$EPIC" | awk '/^\*\*別のリ�
   printf '%s\n' "$w" | grep -qF '親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）:'
 }
 
-@test "skill (cross-repo): step 6 reports the new failed reasons and stops, step 1 warns about --base across repositories" {
-  s6="$(section 'エピックの扱い' "$EPIC" | grep -F '6. `wait` の')"
+@test "skill (cross-repo): step 6 sends failed children in another repository to multirepo, which reports the new reasons and stops; step 1 warns about --base across repositories" {
+  loop="$SKILL_DIR/references/epic-loop.md"
+  multi="$SKILL_DIR/references/epic-multirepo.md"
+  s6="$(grep -F '6. `wait` の' "$loop")"
+  [ "$(printf '%s\n' "$s6" | grep -c .)" = 1 ]
+  printf '%s\n' "$s6" | grep -qF '`failed` の子をサブエージェント方式にも別の部品にも自動で振り替えない'
+  printf '%s\n' "$s6" | grep -qF '別のリポジトリの子の `failed` は、`references/epic-multirepo.md` の「epic-loop.md 手順６の読み替え」を読んで扱う'
+  x6="$(awk '/^## epic-loop\.md 手順６の読み替え$/{f=1; next} /^## /{f=0} f' "$multi")"
+  [ -n "$x6" ]
   for r in no-clone ambiguous-clone not-in-orca no-push permission-lookup-failed base-lookup-failed; do
-    printf '%s\n' "$s6" | grep -qF "$r" || { echo "missing: $r"; false; }
+    printf '%s\n' "$x6" | grep -qF "\`$r\`" || { echo "missing in multirepo: $r"; false; }
+    if grep -qF "\`$r\`" "$loop"; then echo "left in loop: $r"; false; fi
   done
-  printf '%s\n' "$s6" | grep -qF 'サブエージェント方式に自動で振り替えない'
-  s1="$(section 'エピックの扱い' "$EPIC" | grep -F '1. `scripts/epic-dispatch.sh launch')"
+  printf '%s\n' "$x6" | grep -qF '主に報告して止まる（サブエージェント方式に自動で振り替えない）'
+  printf '%s\n' "$x6" | grep -qF '`EPIC_DISPATCH_CLONES` の設定か `git clone` を主に頼む'
+  printf '%s\n' "$x6" | grep -qF 'stderr の `gh` の認証アカウントと子のリポジトリを添える'
+  s1="$(grep -F '1. `scripts/epic-dispatch.sh launch' "$loop")"
   printf '%s\n' "$s1" | grep -qF '1 回の `launch` の全部の子に掛かる'
-  printf '%s\n' "$s1" | grep -qF '`launch` をリポジトリごとに分ける'
+  printf '%s\n' "$s1" | grep -qF 'epic-multirepo.md'
+  grep -qF '`launch` をリポジトリごとに分ける' "$multi"
 }
 
 @test "skill: a denial report from W is handled by writing a permit and resuming, or escalating to the owner (#1135)" {
@@ -1488,7 +1509,7 @@ retry_para() {
 # --- 起動部品の差し替え（epic-launcher-tmux） ---
 # spec: dev-workflow-develop（回し方は起動部品の差し替えとして 1 本で書く）
 
-run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{f=1} /^### 完了条件/{f=0} f'; }
+run_section() { cat "$EPIC"; }
 
 @test "launcher parts: the run section is one procedure with a per-part table and no Orca-route heading" {
   r="$(run_section)"
@@ -1518,7 +1539,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   printf '%s\n' "$r" | grep -qF '`launch` と `adopt` に環境変数 `EPIC_DISPATCH_LAUNCHER=<そのコメントの部品名'
   printf '%s\n' "$r" | grep -qF '別の部品にもサブエージェント方式にも振り替えず'
   printf '%s\n' "$r" | grep -qF '部品名を渡さない'
-  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
+  p="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p" | grep -qF '`回し方: tmux`'
   printf '%s\n' "$p" | grep -qF 'EPIC_DISPATCH_LAUNCHER=<部品名>'
 }
@@ -1619,8 +1640,9 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 @test "short rewait (#1324): step 5 only starts the same wait again without reading children or reporting" {
   p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
   [ -n "$p5" ]
-  printf '%s\n' "$p5" | grep -qF '60 分未満'
-  printf '%s\n' "$p5" | grep -qF '他の通知や主の返事が無い'
+  printf '%s\n' "$p5" | grep -qF 'reply-after-idle.md'
+  grep -qF '60 分未満' "$SKILL_DIR/references/reply-after-idle.md"
+  grep -qF '他の通知や主の返事が無い' "$SKILL_DIR/references/reply-after-idle.md"
   printf '%s\n' "$p5" | grep -qF '子 issue もエピックも読まず'
   printf '%s\n' "$p5" | grep -qF '主に報告もせず'
   printf '%s\n' "$p5" | grep -qF '直前と同じ引数の `wait` を `run_in_background: true` で再び 1 回起動してターンを終える'
@@ -1663,7 +1685,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$p4" | grep -F '`kept <N> not-done` の子だけを `--watch-done` に渡して' | grep -qF -- '`--timeout 21600`'
   p2="$(grep -E '^2\. `launched` と `skipped`' "$EPIC")"
   printf '%s\n' "$p2" | grep -F '動いている子が 0 件で片付け待ちの子だけを渡すとき' | grep -qF -- '`--timeout 21600`'
-  r="$(grep -F '片付け待ちの子だけを待つ' "$(dirname "$EPIC")/reply-after-idle.md")"
+  r="$(grep -F '片付け待ちの子だけを待つ' "$SKILL_DIR/references/reply-after-idle.md")"
   printf '%s\n' "$r" | grep -qF '（手順 2・4。'
 }
 
@@ -1748,7 +1770,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 }
 
 @test "parent resume (#1385): time classification precedes events and preserves all pending input" {
-  p="$(awk '/^\*\*親の起床時の時間分類/{f=1} f; f && /^1\. /{exit}' "$EPIC")"
+  p="$(cat "$SKILL_DIR/references/reply-after-idle.md")"
   [ -n "$p" ]
   for word in '手順 3〜8' '主の返事' '起床の API リクエストを除いた待機前' 'キャッシュを書いた行の時刻' '60 分以上' 'closed / done / stopped / unrecorded' '5m の 21600 秒' 'スリープ' '子を調べ直さず' 'wait を掛け直さず' 'worktree' 'stderr / exit code' '元セッション ID / 発言 uuid / 時刻' '/develop <エピック番号>' '記録に失敗' '未保存内容'; do
     printf '%s\n' "$p" | grep -qF "$word" || return 1
@@ -1763,14 +1785,14 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 }
 
 @test "epic cache keepalive: documents normal-only question preservation and malformed stop invariance" {
-  local epic="$PLUGIN_DIR/skills/develop/references/epic.md"
+  local epic="$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
   grep -qF '正常な一行の往復だけ' "$epic"
   grep -qF '予約文' "$epic"
   grep -qF '声かけの期限の基点' "$epic"
-  grep -qF '停止から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200＝12 時間。手順 5 の長い待ちと同じ値）未満' "$epic"
+  grep -qF '止まった時刻（`stop_at`。空なら記録の作成時刻）から `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒' "$PLUGIN_DIR/skills/develop/references/epic-keepalive-watch.md"
   run grep -F '24 時間' "$epic"; [ "$status" -eq 1 ]
   grep -qF 'keepalive' "$epic"
-  local idle="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  local idle="$PLUGIN_DIR/skills/develop/references/epic-keepalive-watch.md"
   grep -qF '3000 秒以上 3600 秒未満' "$idle"
   grep -qF '既定 43200 秒' "$idle"
   grep -qF '切替を観測するまで' "$idle"
@@ -1822,7 +1844,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 }
 
 @test "skill: step 7 and the parent criteria keep a stop with the reason line from being dismissed" {
-  p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC")"
+  p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p7" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ'
   ! printf '%s\n' "$p7" | grep -qF 'mark resumed' || return 1
   c="${SKILL_DIR}/references/parent-pass-criteria.md"
@@ -1845,8 +1867,8 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   p8="$(grep -E '^8\. `stopped <N>...`' "$EPIC")"
   printf '%s\n' "$p8" | grep -qF '上げた子ごとに `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ'
   printf '%s\n' "$p8" | grep -qF '**マージ待ちの子** と **PR トークン上限の子** の手順で主に上げた場合を含む'
-  printf '%s\n' "$p8" | grep -qF '`skipped <N> ...`・`failed <N> ...` は主に上げずに 2 に戻る'
-  p7="$(grep -E '^7\. ' "$EPIC")"
+  printf '%s\n' "$p8" | grep -qF '`skipped <N> ...`・`failed <N> ...` は主に上げずに `references/epic-loop.md` の手順 2 に戻る'
+  p7="$(grep -E '^7\. ' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p7" | grep -qF '報告を出し直した子には、待ちに入る前に手順 8 と同じく `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ。'
   p5="$(grep -E '^5\. `timeout <N>...`' "$EPIC")"
   printf '%s\n' "$p5" | grep -qF '`EPIC_DISPATCH_OWNER_WAIT_SEC`（秒。既定 43200＝12 時間）たつと `expired <N>...` で返る'

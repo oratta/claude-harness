@@ -17,7 +17,12 @@ setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
-  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  # Paragraph wording is checked across the epic references; reading boundaries have their own tests.
+  EPIC="$BATS_TEST_TMPDIR/epic-all.md"
+  cat "${PLUGIN_DIR}/skills/develop/references/epic.md" > "$EPIC"
+  for doc in loop stop delegation merge-wait multirepo subagent keepalive; do
+    if [ -f "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" ]; then cat "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" >> "$EPIC"; fi
+  done
   EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
   HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
@@ -29,9 +34,13 @@ setup() {
 
 # 「## <見出し>」から次の「## 」までを切り出す
 # 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
+section() {
+  if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
+  awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 # 「### <見出し>」から次の「## 」か「### 」までを切り出す
-subsection() { awk -v h="### $1" 'index($0, h)==1{f=1; print; next} /^##+ /{f=0} f' "${2:-$SKILL}"; }
+subsection() {
+  if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
+  awk -v h="### $1" 'index($0, h)==1{f=1; print; next} /^##+ /{f=0} f' "${2:-$SKILL}"; }
 # 1 ループの (4) を切り出す（列 0 の "(4) " から次の列 0 の工程ラベルか ``` まで）
 step4() { awk '/^\(4\)[[:space:]]/{f=1; print; next} f && (/^\([0-9]+\)[[:space:]]/ || /^```/){f=0} f' "$SKILL"; }
 # hold.md 手順 6 の 3 番目の項目
@@ -191,14 +200,14 @@ refute() {
 # --- エピック ---
 
 @test "epic: channel does not call route and does not start another session" {
-  local s; s="$(subsection '回し方' "$EPIC")"
+  local s; s="$(cat "$EPIC")"
   printf '%s\n' "$s" | grep -qF '`回し方: サブエージェント（channel モード）`'
   printf '%s\n' "$s" | grep -qF '別の Claude Code セッション'
   printf '%s\n' "$s" | grep -qF 'channel も `route` を呼ばず'
 }
 
 @test "epic: channel resuming an epic whose latest route note is Orca reports in the channel and stops" {
-  local s; s="$(subsection '回し方' "$EPIC")"
+  local s; s="$(cat "$EPIC")"
   printf '%s\n' "$s" | grep -qF 'channel で再開したエピックの最新の `回し方:` が Orca なら'
   printf '%s\n' "$s" | grep -qF 'または tmux なら'
   printf '%s\n' "$s" | grep -qF 'channel は別セッション方式を引き継がない'

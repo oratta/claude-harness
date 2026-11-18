@@ -2082,7 +2082,7 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
 
 # --- Requirement: 合格条件は主の委任で親経由に受けた許容を、委任の確認と記録で確かめて受け付ける（#1293） ---
 # 4 条件・6 条件・推奨の判定の文字列は develop-skill.bats の DELEG_STOP4・DELEG_VALID6・DELEG_RECOMMEND と同じ文字列にする
-# （epic.md・epic-child-stop.md・pass.md の 3 か所が同じ文で確かめるため）。
+# （epic-delegation.md を親・子・G が読むため）。
 
 PRG_DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1 行目が `主の委任: リスク許容` なら 1〜4 行目が、`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
 PRG_DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
@@ -2108,20 +2108,39 @@ deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許�
   [ "$relayed_line" -lt "$deleg_line" ]
 }
 
-@test "delegated reply (#1293): pass.md has the six validity conditions, four stop conditions and recommendation judgement as the same strings" {
-  body="$(deleg_check_body)"
-  echo "$body" | grep -qF "$PRG_DELEG_VALID6"
-  echo "$body" | grep -qF "$PRG_DELEG_STOP4"
-  echo "$body" | grep -qF "$PRG_DELEG_RECOMMEND"
+deleg_reads_canonical() {
+  grep -F 'references/epic-delegation.md' "$1" | grep -F '判定前に' | grep -qF '委任が有効か' || return 1
+  grep -F 'references/epic-delegation.md' "$1" | grep -F '判定前に' | grep -F '委任が効く止まり' | grep -qF 'リスク許容の止まり'
 }
 
-@test "delegated reply (#1293): the strings in pass.md are the same as epic.md and epic-child-stop.md" {
-  epic="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+@test "delegated reply (#1293): pass reads canonical validity and risk conditions before judging" {
+  deleg_reads_canonical "$PASS_STAGE"
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF 'G が扱うのはリスク許容の止まりだけ'
+  echo "$body" | grep -qF '今確かめている委任の形の記録の行だけは除く'
+}
+
+@test "delegated reply (#1293): removing the canonical reference fails" {
+  sed 's|references/epic-delegation.md|gone.md|g' "$PASS_STAGE" > "$BATS_TEST_TMPDIR/pass.md"
+  run deleg_reads_canonical "$BATS_TEST_TMPDIR/pass.md"
+  [ "$status" -ne 0 ]
+}
+
+@test "delegated reply (#1293): canonical keeps every validity and risk condition and child reads it" {
+  epic="$BATS_TEST_DIRNAME/../skills/develop/references/epic-delegation.md"
   child="$BATS_TEST_DIRNAME/../skills/develop/references/epic-child-stop.md"
-  for f in "$epic" "$child"; do
-    grep -qF "$PRG_DELEG_VALID6" "$f" || { echo "valid6 missing in $f"; return 1; }
-    grep -qF "$PRG_DELEG_STOP4" "$f" || { echo "stop4 missing in $f"; return 1; }
-  done
+  grep -qF 'references/epic-delegation.md' "$child"
+  grep -qF "$PRG_DELEG_VALID6" "$epic"
+  grep -qF "$PRG_DELEG_STOP4" "$epic"
+  grep -qF "$PRG_DELEG_RECOMMEND" "$epic"
+  grep -qF '⑤②の宣言が `論点なし — ` の行を持ち、停止の記録の `主に聞く理由:` が論点なしと書く' "$epic"
+}
+
+@test "delegated reply (#1293): the full validity and stop conditions live only in epic-delegation.md, gate included" {
+  d="$PLUGIN_DIR/skills/develop/references"; g="$PLUGIN_DIR/skills/pr-review-gate"
+  [ "$(grep -lF "$PRG_DELEG_VALID6" "$d"/*.md "$g"/*.md "$g"/stages/*.md | wc -l | tr -d ' ')" = 1 ]
+  [ "$(grep -lF "$PRG_DELEG_STOP4" "$d"/*.md "$g"/*.md "$g"/stages/*.md | wc -l | tr -d ' ')" = 1 ]
+  grep -qF "$PRG_DELEG_VALID6" "$d/epic-delegation.md"
 }
 
 @test "delegated reply (#1293): step 5 checks the stop record is the latest one and runs --delegated" {

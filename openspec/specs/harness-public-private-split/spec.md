@@ -286,7 +286,7 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 
 ### Requirement: 載せない行の基準に起動部品の 1 つとして並べた行を含める
 
-`docs/public-private-split.md` の「載せない行の基準」は、「差し替え可能な起動部品の 1 つとして Orca を並べた行」を載せない行に含めなければならない（MUST）。当たる行は、Orca を tmux など他の起動部品や方式と並べた 1 つとして書いていなければならず（MUST）、Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらない（MUST NOT）。develop の `references/epic.md` の「部品ごとの欄」の見出しと表は、この基準に当たる行として一覧に載せない。既存の基準の例「Orca や端末から起動した Claude Code」は一般の製品を並べた例で、この基準は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。
+`docs/public-private-split.md` の「載せない行の基準」は、「差し替え可能な起動部品の 1 つとして Orca を並べた行」を載せない行に含めなければならない（MUST）。当たる行は、Orca を tmux など他の起動部品や方式と並べた 1 つとして書いていなければならず（MUST）、Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらない（MUST NOT）。develop の `references/epic-loop.md` の「部品ごとの欄」の見出しと表は、この基準に当たる行として一覧に載せない。既存の基準の例「Orca や端末から起動した Claude Code」は一般の製品を並べた例で、この基準は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。
 
 この基準は `epic-launch-orca.sh` が公開版に決まる前提で当てるもので、#1129 で `epic-launch-orca.sh` は公開版に確定した。文書はこの前提が満たされたことを書かなければならず（MUST）、#1177 で外した行（節「起動部品の 1 つとして一覧から外した行」）は一覧に戻さない。節は外した行の場所の記録として残す。
 

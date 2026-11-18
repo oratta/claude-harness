@@ -77,7 +77,7 @@ TBD - created by archiving change owner-question-canonical-style. Update Purpose
 - `plugins/dev-workflow/skills/develop/SKILL.md`（保留の行の主への案内）
 - `plugins/dev-workflow/skills/develop/references/handover.md`（保留の依頼の出し直し・主への案内）
 - `plugins/dev-workflow/skills/develop/references/channel.md`（channel の聞き方と主への発言）
-- `plugins/dev-workflow/skills/develop/references/epic.md`（別セッション方式の親の発言の 1 行目・手順 8 の止まった子の報告の順）
+- `plugins/dev-workflow/skills/develop/references/epic-loop.md`（親の報告の共通宣言）と `plugins/dev-workflow/skills/develop/references/epic-stop.md`（手順 8 の報告）・`plugins/dev-workflow/skills/develop/references/epic-merge-wait.md`・`plugins/dev-workflow/skills/develop/references/epic-subagent.md`（共通宣言を読む指示と場面固有の事項）
 - `plugins/dev-workflow/skills/develop/references/epic-child-stop.md`（子の停止の記録と主への問いの型）
 - `plugins/dev-workflow/skills/pr-review-gate/stages/hold.md`（手順 6 の主への確認依頼・切り出しの確認・主に承認を求めてよい 4 分類）
 - `plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`（動作確認の依頼）
@@ -91,11 +91,13 @@ TBD - created by archiving change owner-question-canonical-style. Update Purpose
 
 #### Scenario: 参照先に旧い型の写しが残っていない
 - **WHEN** 上のファイルを `目的 → いま取り組んでいる場所`・`決めてほしいこと・推奨・受け入れるリスク`・`「飲めるか」を 1 問だけ` で検索する
-- **THEN** どれも見つからず、各ファイルに `readable.md` か `communication-style` への参照があり、`readable.md` を指す箇所はどれも `~/.claude/output-styles/readable.md` の形である
+- **THEN** どれも見つからず、各ファイルに `readable.md` か `communication-style` への参照、またはその参照を持つ epic-loop.md の「主への報告」を読む指示があり、`readable.md` を指す箇所はどれも `~/.claude/output-styles/readable.md` の形である
 
 #### Scenario: 4 分類と返信前チェックが 3 つの理由と対応する
 - **WHEN** `stages/hold.md` の「主に承認を求めてよい」節と、casting の `SKILL.md` の返信前チェックを読む
 - **THEN** どちらも、自分の判定が正本の主に聞く理由の 3 つのどれに当たるかを示している
+
+エピックの親の共通の書き分けは epic-loop.md の「主への報告」に一度宣言し、停止・マージ待ち・サブエージェント方式の手順はこの宣言を読むよう指示する（MUST）。各手順末に同じ宣言を複写することは要求しない。
 
 ### Requirement: 主に聞く理由に論点の有無を書く
 `output-styles/readable.md` の節 3 と `rules/communication-style.md` の 3 番目は、どちらも論点の定義と書き分けを持たなければならない（MUST）。書き分けは論点の項目に書く。

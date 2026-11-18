@@ -38,7 +38,12 @@ setup() {
   SCRIPT="${PLUGIN_DIR}/scripts/epic-dispatch.sh"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
-  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  # Paragraph wording is checked across the epic references; reading boundaries have their own tests.
+  EPIC="$BATS_TEST_TMPDIR/epic-all.md"
+  cat "${PLUGIN_DIR}/skills/develop/references/epic.md" > "$EPIC"
+  for doc in loop stop delegation merge-wait multirepo subagent keepalive; do
+    if [ -f "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" ]; then cat "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" >> "$EPIC"; fi
+  done
   EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   STUB_BIN="${BATS_TEST_TMPDIR}/bin"
   export STUB_CFG="${BATS_TEST_TMPDIR}/cfg"
@@ -497,9 +502,11 @@ reap_prless_ready() {
 
 # SKILL.md の「## <見出し>」から次の「## 」まで
 # 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
+section() {
+  if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
+  awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 # 「エピックの扱い」の「### 回し方」から次の「### 」まで
-run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
+run_section() { cat "$EPIC"; }
 
 # --- route ---
 
@@ -3723,8 +3730,11 @@ infer_ready() {
   printf '%s\n' "$l" | grep -qF '2 行目を `アクション:` で始まるアクションの行'
   printf '%s\n' "$l" | grep -qF '主がこのセッションで次にすること:'
   ! printf '%s\n' "$l" | grep -qF '<どの画面・入力欄で> <何を打つ・押す>' || return 1
-  for n in 2 3 4 5 6; do
-    printf '%s\n' "$r" | grep "^$n\. " | grep -qF '上の書き分けの規定に従う'
+  # 書き分けは loop の正本で一度規定し、各場面は処理前にそこを読む。
+  grep -qF '## 主への報告' "$PLUGIN_DIR/skills/develop/references/epic-loop.md"
+  local doc
+  for doc in epic-stop epic-merge-wait epic-subagent; do
+    grep -F 'references/epic-loop.md' "$PLUGIN_DIR/skills/develop/references/$doc.md" | grep -qF '主への報告'
   done
   s8="$(printf '%s\n' "$r" | grep '^8\. ')"
   printf '%s\n' "$s8" | grep -F 'アクションの行' | grep -qF '親のタブ'
@@ -3990,7 +4000,7 @@ orca_cmd_scripts() {
   p="$(run_section | grep -E '^8\. ')"
   printf '%s\n' "$p" | grep -F '照らす前に' | grep -F '親の判断: 子 #N 通した' | grep -F '.claude/casting/project.md' | grep -qF '既に一度通していれば覆さずに主に上げる'
   printf '%s\n' "$p" | grep -qF '待ちに入る通知の本文に、まだ上げていない止まった子の番号を 1 行書く'
-  q="$(run_section | grep -E '^7\. ')"
+  q="$(run_section | grep -E '^7\. '; cat "$PLUGIN_DIR/skills/develop/references/epic-stop.md")"
   printf '%s\n' "$q" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）、待ちに入る'
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   printf '%s\n' "$r" | grep -qF '破壊的操作や聖域を止めた hook は「決まりで主の承認が要る」に当たる'
@@ -4067,7 +4077,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -qF '主の発言: <要旨>'
   printf '%s\n' "$l" | grep -qF '親の判断では広げない'
   printf '%s\n' "$l" | grep -F 'OWNER・MEMBER・COLLABORATOR' | grep -qF '最新の 1 件'
-  q="$(run_section | grep -E '^7\. ')"
+  q="$(run_section | grep -E '^7\. '; cat "$PLUGIN_DIR/skills/develop/references/epic-stop.md")"
   printf '%s\n' "$q" | grep -F '`子の PR トークン権限:`' | grep -qF '既定値で投稿'
 }
 
@@ -4362,8 +4372,8 @@ orca_cmd_scripts() {
 @test "reply-after-idle: all sessions disable idle and parents relaunch at 60 minutes (#1385)" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -E '^\| 親 \|' "$f" | grep -qF 'false'
-  grep -E '^\| 親の最後のリクエストから 60 分未満 \|' "$f" | grep -qF 'そのまま続ける'
-  grep -E '^\| 親の最後のリクエストから 60 分以上 \|' "$f" | grep -F '起動し直す' | grep -qF '会話量によらず'
+  grep -E '^\| 親の最後のリクエストから 60 分未満、または時刻不明で長時間経過を確認できない \|' "$f" | grep -qF 'そのまま続ける'
+  grep -E '^\| 親の最後のリクエストから 60 分以上 \|' "$f" | grep -F '起動し直す' | grep -qF 'compact の有無と会話量で例外にしない'
   parent="$(sed -n '/^## 親への適用/,$p' "$f")"
   run printf '%s\n' "$parent"
   [[ "$output" != *'120,000'* ]] || return 1
@@ -5177,17 +5187,16 @@ nothing_sent() {
 # 「回し方」の「**同時に動く子の上限**」の段落
 limit_para() { run_section | grep -E '^\*\*同時に動く子の上限\*\*'; }
 # 「回し方」の「**サブエージェント方式**」の段落
-subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*'; }
+subagent_para() { cat "$PLUGIN_DIR/skills/develop/references/epic-subagent.md"; }
+worker_slots() { cat "$PLUGIN_DIR/skills/develop/references/epic-worker-slots.md"; }
 
-@test "skill: the limit paragraph names the variable, the default formula and the measured RSS" {
+@test "skill: the limit paragraph names the variable, default formula and invalid values" {
   p="$(limit_para)"
   [ -n "$p" ]
   printf '%s\n' "$p" | grep -qF '`EPIC_DISPATCH_MAX_PARALLEL`'
   printf '%s\n' "$p" | grep -qF '物理メモリの GiB を 4 で割って切り捨てた値（最小 1。メモリ量を読めなければ 2）'
   printf '%s\n' "$p" | grep -qF '`scripts/epic-dispatch.sh max-parallel`'
-  printf '%s\n' "$p" | grep -qF '146〜404 MB'
-  printf '%s\n' "$p" | grep -qF '最大 564 MB'
-  printf '%s\n' "$p" | grep -qF '1.5 GiB は実測ではない'
+  printf '%s\n' "$p" | grep -qF '1 以上の整数。空・0・数字以外なら `launch` は使い方を出して exit 1'
 }
 
 @test "skill: the limit paragraph does not count done, closed and stopped children, and resumed children can go over on Orca" {
@@ -5211,7 +5220,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 @test "skill: Orca route steps 3, 4 and 8 launch the deferred children again" {
   r="$(run_section)"
   for k in 3 8; do
-    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子が残っていれば、2 に戻る前に依存の解けた開いた子'
+    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -Eq '後回しの子が残っていれば、(`references/epic-loop.md` の手順 )?2 に戻る前に依存の解けた開いた子'
   done
   printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子もここに含まれる'
 }
@@ -5227,7 +5236,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: the subagent route caps the total of W across children with max-parallel" {
-  p="$(subagent_para)"
+  p="$(worker_slots)"
   printf '%s\n' "$p" | grep -qF '`scripts/epic-dispatch.sh max-parallel` を 1 回呼んでその値を上限にし'
   printf '%s\n' "$p" | grep -qF 'エピックの全部の子をまたいで、枠を使っている W の総数をその上限までに抑える'
   printf '%s\n' "$p" | grep -qF '担う change のループが終わる（PR がマージされる・記録先が閉じる）か、主の返事待ちで保留に入るまで 1 枠を使う'
@@ -5236,7 +5245,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: the subagent route does not resume a W back from hold until a slot frees" {
-  p="$(subagent_para)"
+  p="$(worker_slots)"
   printf '%s\n' "$p" | grep -qF '0 なら起こさず再開もせずに待ちに回す'
   printf '%s\n' "$p" | grep -qF '空き枠が 0 なので A は待ちに回し'
   printf '%s\n' "$p" | grep -qF '本体が `needs-approval` を付けて主の返事を待つ場面（W の停止・G の保留のどちらも）'
@@ -5244,8 +5253,8 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: each W per change inside one child uses its own slot" {
-  printf '%s\n' "$(subagent_para)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
-  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic.md` の「回し方」のサブエージェント方式の枠に従う）' "$SKILL"
+  printf '%s\n' "$(worker_slots)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
+  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic-worker-slots.md` の枠に従う）' "$SKILL"
 }
 
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
@@ -5502,7 +5511,7 @@ resolve_relaunch_count() {
 }
 
 @test "skill: the subagent route stops on a bad max-parallel setting" {
-  printf '%s\n' "$(subagent_para)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる。手順 6 と同じ）'
+  printf '%s\n' "$(worker_slots)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる）'
 }
 
 # --- adopt ---
@@ -6978,10 +6987,11 @@ keepalive_reply() {
 @test "keepalive definition: child reads the shared definition before stopping and handles reserved input before resuming" {
   grep -qF 'references/child-cache-keepalive.json' "$EPIC_CHILD_STOP"
   grep -qF '停止前に' "$EPIC_CHILD_STOP"
-  grep -qF '通常の主の返事や親の判断より先に' "$EPIC_CHILD_STOP"
-  grep -qF '受信ターンではツールを呼ばない' "$EPIC_CHILD_STOP"
-  grep -qF '調査・作業・停止コメントの投稿は行わず' "$EPIC_CHILD_STOP"
-  grep -qF '#1374' "$EPIC_CHILD_STOP"
+  grep -qF 'references/epic-keepalive.md' "$EPIC_CHILD_STOP"
+  grep -qF '通常の主の返事や親の判断より先に' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '受信ターンではツールを呼ばない' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '調査・作業・停止コメントの投稿は行わず' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '#1374' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
 }
 
 # --- child-log ---
@@ -7701,24 +7711,24 @@ log_resolve_ready() {
 # spec: dev-workflow-develop（エピックの親は主への報告の最後に、全部の子と親自身の状態表を付ける）
 
 @test "epic.md: the status table is specified with its columns, placement, channel rule and the conversation-log check" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   grep -qF 'issue 番号・内容・ステータス・確認内容・推奨・答え方' "$e"
   grep -qF '報告の区切りより下に置く' "$e"
-  grep -qF '区切りより上の 1 行目と 2 行目は上の書き分けの規定に従い、依頼の有無で分ける' "$e"
-  grep -qF '依頼がある報告は、1 行目を今回いちばん先に答えてほしい 1 件の題名、2 行目をその 1 件のアクションの行にする' "$e"
-  grep -qF '依頼が無い報告は 1 行目を `主がすること: なし` にし、2 行目に `アクション:` の行を書かない' "$e"
+  grep -qF '1 行目と 2 行目を `~/.claude/output-styles/readable.md` の節 3 の書き分けに従わせる' "$e"
+  grep -qF '複数の依頼があるときも区切りより上で上げるのは今回いちばん先に答えてほしい 1 件だけ' "$e"
+  grep -qF '依頼が無い報告に `アクション:` の行は書かない' "$e"
   ! grep -qF '区切りより上の本文の最後の行' "$e" || return 1
   grep -qF '前回の報告から片付いたもの' "$e"
   grep -qF '会話ログの末尾を `scripts/epic-dispatch.sh child-log' "$e"
   grep -qF '会話ログを優先する' "$e"
   grep -qF '`確かめられなかった`' "$e"
   grep -qF 'チャンネル以外の画面やタブは書かない' "$e"
-  grep -qF '上の**状態表**を付ける' "$e"
+  grep -qF '親が主に出す報告すべての最後に付ける' "$e"
   ! grep -qF 'MUST NOT 置き換え' "$e" || return 1
 }
 
 @test "epic.md: not-yet-launched children are not passed to child-log, URLs below the table are limited, and child-log takes owner/repo#N" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   grep -qF '`launch` に渡した子ごとに会話ログの末尾を' "$e"
   grep -qF '`未起動（<理由>）`' "$e"
   grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
@@ -7728,11 +7738,11 @@ log_resolve_ready() {
 
 
 @test "epic.md: old-parent table and child-log exception is narrow and includes record failure (#1385)" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   table="$(grep -F '**状態表**（' "$e")"
   logs="$(grep '^表を書く前に、' "$e")"
   for body in "$table" "$logs"; do
-    for word in '60 分以上' '旧親' '記録失敗時の停止報告を含む' '状態表と `child-log` 確認を省略' '通常の報告' '60 分未満'; do
+    for word in 'reply-after-idle.md' '旧親' '記録失敗時の停止報告を含む' '状態表と `child-log` 確認を省略' '通常の報告' '短時間'; do
       printf '%s\n' "$body" | grep -qF "$word" || return 1
     done
   done
@@ -7747,7 +7757,7 @@ from pathlib import Path
 import sys
 plugin = Path(sys.argv[1]).resolve()
 repo = plugin.parent.parent
-text = (plugin / 'skills/develop/references/epic.md').read_text()
+text = '\n'.join(p.read_text() for p in (plugin / 'skills/develop/references').glob('epic*.md'))
 p7 = text.split('\n7. ')[1].split('\n8. ')[0]
 p8 = text.split('\n8. ')[1].split('\n\n')[0]
 for term in ['保存した元セッション ID・uuid', '最新の停止記録 URL', '真正性と対象']:
@@ -8709,4 +8719,8 @@ rejudge_ready() {
   [ "$output" = "expired 11" ]
   [ "$(calls '^judge 400 11')" -eq 1 ]
   [ "$(cat "$STUB_CFG/ghcount_11")" -ge 4 ]
+}
+
+@test "skill: parent subagent route reads shared worker slots" {
+  subagent_para | grep -qF 'references/epic-worker-slots.md'
 }
