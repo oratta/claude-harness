@@ -10,8 +10,19 @@ gate_test_docs() {
   GATE_SCOPE_DOCS="$BATS_TEST_TMPDIR/gate-docs/GATE_SCOPE.md"
   # shellcheck disable=SC2034 # Consumed by gate_all in the caller tests sourcing this library.
   ALL_GATE_DOCS="$BATS_TEST_TMPDIR/gate-docs/ALL.md"
+  # Replace a variable only when it names the original file the joined copy stands in for.
+  # A variable pointing elsewhere (e.g. GATE at pr-review-gate/SKILL.md) keeps the real file.
+  local name original
   for name in GATE DECLARATIONS PREPARE TRIAGE PASS_STAGE HOLD; do
-    if [ -n "${!name:-}" ]; then
+    case "$name" in
+      GATE) original="skills/develop/references/roles/gate-runner.md" ;;
+      DECLARATIONS) original="skills/pr-review-gate/declarations.md" ;;
+      PREPARE) original="skills/pr-review-gate/stages/prepare.md" ;;
+      TRIAGE) original="skills/pr-review-gate/stages/triage.md" ;;
+      PASS_STAGE) original="skills/pr-review-gate/stages/pass.md" ;;
+      HOLD) original="skills/pr-review-gate/stages/hold.md" ;;
+    esac
+    if [ -n "${!name:-}" ] && [ "${!name}" -ef "$PLUGIN_DIR/$original" ]; then
       printf -v "$name" '%s' "$BATS_TEST_TMPDIR/gate-docs/$name.md"
     fi
   done

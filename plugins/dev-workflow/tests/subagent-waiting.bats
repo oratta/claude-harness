@@ -31,8 +31,10 @@ setup() {
   # 禁止語の検査対象＝サブエージェント（W / R1 / G）が手順として読む文書。
   # pr-review-gate は索引と段のファイルに分かれているので、1 つの文書として連結して検査する
   # （背景起動を書いた段と前景ポーリングを書いた段が別でも、スキル全体で併記されていればよい）。
-  GATE_ALL="${BATS_TEST_TMPDIR}/pr-review-gate-all.md"
-  cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" > "$GATE_ALL"
+  # 全ファイル（移した条件付きの詳細を含む）を連結した GATE_SCOPE_DOCS をそのまま使う。
+  # GATE は pr-review-gate の SKILL.md を指すので、gate_test_docs は置き換えない
+  gate_test_docs
+  GATE_ALL="$GATE_SCOPE_DOCS"
   # W の禁止語の検査は、索引・worker/ の 4 本・事前分類表の全部を連結して見る
   WORKER_ALL="${BATS_TEST_TMPDIR}/worker-all.md"
   cat "${ROLES}/worker.md" "${ROLES}/worker/common.md" "${ROLES}/worker/spec.md" "${ROLES}/worker/implement.md" "${ROLES}/worker/finish.md" "${PLUGIN_DIR}/skills/develop/references/pre-classification.md" > "$WORKER_ALL"
@@ -45,7 +47,6 @@ setup() {
   # 正本の「手順 1」の雛形を実際に走らせて検査するため、毎テストで抽出しておく。
   SNIP="${BATS_TEST_TMPDIR}/step1.sh"
   extract_step1 "$CANON" "$SNIP"
-  gate_test_docs
 }
 
 # 正本の「手順 1:」を含む ```bash ブロックを取り出す（push-guard-setup.bats と同じ手口）。
