@@ -1,0 +1,180 @@
+{
+  "revision": "0e7bf3f80d0241bd9582f7b89e5ec3f529f2139f",
+  "blocks": [
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 60,
+      "text": "```markdown\n## Gate Result\n- PR: #<N>（HEAD <SHA>）\n- 段: 前提確認と重さ判定 | 照合と振り分け | 合格処理 | 保留の解除 | 一括（従来経路）\n- Status: passed | failed | 保留 | needs-reviewer | needs-decider | needs-fix-check | review-incomplete | needs-carryover-judge | needs-no-point-check | 重複で降りた | 次の段へ\n- 次の段: 前提確認と重さ判定 | 照合と振り分け | 合格処理 | 保留の解除 | なし\n- レビュー重量: light | full（実行者: Codex | Task サブエージェント <model> | <executor>/<model>（adapter 経路））\n- Codex thread: <thread_id>（full で Codex を呼んだ周だけ。呼ばなかった周は省く。取れなかったら「取得できず」）\n- 周回: <1|2|3以降（直し方の判定・主の回答・決める役の裁定のどれかあり）>（全体レビューにした周は「（全体レビュー: 修正差分 N 行 / 前周指摘 M 行）」を添える）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 39,
+      "text": "```\n## リスク宣言\n対象 HEAD: <$HEAD_SHA 40桁フル>\nリスクなし — この変更でプロダクトのユーザーに及ぶ影響・データ喪失・課金/法務・外部公開面の変化・資格情報への接触・安全ゲートの弱体化・エージェント権限の拡張はいずれも無い。\n根拠: <変更範囲が何で、なぜ外部影響が閉じているか。1〜3行>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 48,
+      "text": "```\n## リスク宣言\n対象 HEAD: <$HEAD_SHA 40桁フル>\n主のリスク許容が必要。\n\n論点なし — 分類に当たったが、この変更を入れることで新たに生じるリスクは無い。決める役の確認で通す。\n論点あり — この変更を入れることで新たに生じるリスク: <誰に何が起きうるか>\n- 該当する観点: <7 観点のうち当たったもの>\n- 発生条件: <いつ起きるか。論点なしなら「なし」>\n- 起きたときの影響範囲と戻し方: <revert 可否・データが戻るか。論点なしなら「なし」>\n- 根拠ファイル: <パス>, <パス>\n- 検知時点: issue 記載済み / 実装中に発覚\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 111,
+      "text": "```\nissue で承認済み — issue #<N> の目的: 「<本文からの引用>」\n承認の証拠: <起票の承認 | /develop の打ち込み>（セッション <セッション ID> / <日時>）原文: <原文>\n真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh 終了コード 0）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 129,
+      "text": "```\n## 仕様宣言\n対象 HEAD: <$HEAD_SHA 40桁フル>\n仕様: 更新した — change <change-name>（archive 済み）／仕様レビュー: APPROVE（<issue コメントの URL>）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 137,
+      "text": "```\n## 仕様宣言\n対象 HEAD: <$HEAD_SHA 40桁フル>\n仕様: 更新した — change <change-name>（archive 済み）／仕様レビュー: 省いた（文言合わせ。<仕様化判断のコメントの URL>）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 147,
+      "text": "```\n## 仕様宣言\n対象 HEAD: <$HEAD_SHA 40桁フル>\n仕様: 変更なし — 理由: <なぜ spec が不要か。規範を持ちうるパス（docs/・.claude/ 等）に触れているなら、それでも規範が変わらない理由>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 27,
+      "text": "```bash\nbash <plugin>/scripts/risk-carryover-check.sh <前 HEAD> <新しい HEAD> <前の宣言の根拠ファイル>...   # --base の既定は origin/main。手順 1 の fetch と main の取り込みの後に回す\n# 出力: CARRYOVER=yes|if-rereviewed|if-judged|no / MAIN_MERGES=<件数> / PR_COMMITS=<merge commit でない PR 自身の commit の件数>\n#       / RESOLVED_FILES=<衝突解消したファイル。無ければ none>\n#       / RESOLVED_OUTSIDE_ALLOWLIST=<許可リストの条件を満たさない衝突解消のファイル。1 行 1 件>\n#       / EVIDENCE_MAIN_ONLY=<前後で変わったが PR 自身の差分は同じで、PR 自身の commit が触れていない根拠ファイル。1 行 1 件>\n#       / EVIDENCE_PR_CHANGED=<PR 自身の差分が前後で違うか、PR 自身の commit が触れた根拠ファイル。1 行 1 件>\n#       / EVIDENCE_DIFF_LINES=<EVIDENCE_PR_CHANGED のファイルの前後の diff の追加と削除の合計。無ければ 0> / NG: <引き継げない理由>\n# 終了コード: 0 = 無条件で引き継げる（PR_COMMITS=0 = main の取り込みだけなら、許可リスト外の衝突解消があっても 0。根拠ファイルは比べず EVIDENCE_MAIN_ONLY・EVIDENCE_PR_CHANGED の行を出さない）\n#             / 3 = PR 全体を見た取り直しのレビューを経ていれば引き継げる（下の条件 1）\n#             / 4 = 根拠ファイルの PR 自身の差分が前後で違うか、PR 自身の commit が根拠ファイルに触れた（下の「終了コード 4 の判定役」に比べさせる）\n#             / 1 = 引き継げない / 2 = 引数・環境の不備（引き継げない側に倒す）\n# PR 自身の差分 = 各 HEAD と base の merge-base からのそのファイルの差分（main から入った変更を含まない）。比べ方は行の位置を見ないので、\n#   PR 自身の commit が根拠ファイルに触れたら差分が同じでも 4 にする（行を動かしただけの修正を main 由来と取り違えないため）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 56,
+      "text": "```\n主の回答: 許容（引き継ぎ） — <元の直接の回答リンク>（<元の回答の日時>）\n引き継ぎ元: <前の HEAD の 40 桁フル SHA> の宣言 <前の宣言コメントのリンク>\n引き継ぎの根拠: risk-carryover-check.sh 終了コード <0・3・4 のどれか> — main の取り込み <件数> 件、PR 自身の commit <PR_COMMITS の値> 件、衝突解消 <none またはファイル>、許可リスト外 <none またはファイル>、根拠ファイル <diff は空のファイル / main からの変更だけ: EVIDENCE_MAIN_ONLY のファイル / 終了コード 4 のとき: PR 自身の差分が変わったか PR 自身の commit が触れた EVIDENCE_PR_CHANGED のファイル、差分 <EVIDENCE_DIFF_LINES の値> 行、判定 同じ <判定の記録のリンク> / PR_COMMITS=0 のとき: 比べず（PR 自身の commit 0 件）。該当するものを並べて書く>、取り直しのレビュー <終了コード 3 のとき・終了コード 4 で許可リスト外があるとき: 固定 HEAD <40 桁フル SHA>（周回 <値と注記>） <その レビュー重量 コメントのリンク>。終了コード 0 のとき: 不要。終了コード 4 で許可リスト外が none のときも不要>\n真正性確認: 済 — 確認者 <エージェント名> / <日時>（元の回答を再確認）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 83,
+      "text": "```text\n引き継ぎ判定: <同じ|変わった|判断できない>\n前 HEAD: <40 桁フル SHA>\n新しい HEAD: <40 桁フル SHA>\n前の宣言: <前の宣言コメントのリンク>\n根拠ファイル: <EVIDENCE_PR_CHANGED のファイル>, <ファイル>\n差分の行数: <EVIDENCE_DIFF_LINES の値>\n判定役: dev-workflow:decider / <モデル。起こさなかったときは「起こさず」> / 代理投稿 <投稿したセッションか本体の名前>\n理由: <判定役の返答の 2 行目以降。起こさなかったときはその理由>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 107,
+      "text": "```text\n判定: 論点なし|論点あり|判断できない\n理由: <1 行>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 114,
+      "text": "```text\n論点なしの確認: 通す|論点あり|判断できない\n対象 HEAD: <40 桁フル SHA>\n宣言: <宣言コメントの URL>\n確認者: dev-workflow:decider（<エージェント名>）\n根拠: <決める役の理由の 1 行>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 171,
+      "text": "```markdown\n### 保留のとき\n- 切り出しの確認（仕分け表の順 5。全周共通の判定で止める指摘が残り、順 1〜4 と順 6 のどれにも当たらない。周の数に関係なく、受け取ったその周で返す）: 引用した違反文（または例外 3 種のどれか）と対応する指摘、主への質問「この欠陥を残して切り出すか」と 4 点（欠陥がマージ後に何を起こすか・直す見積もり（行数・触るファイル・spec を変えるか）・別 issue にする固定費・推奨）。4 点は記録の項目で、本体が主に出す質問の文面は `~/.claude/output-styles/readable.md` の節 3 の型で書く。W の再開や3周目を提案しない。同じ周に順 2〜4 の指摘が混ざっていれば、それらも仕分け欄に載せて保留を先にする。1 周目の段 A に当たる指摘が混ざっていれば、仕分けの PR コメントと仕分け欄に「段 A・この PR で直す」と印を付ける。順 6 の指摘が混ざっていれば、主への質問には含めず仕分け欄に「順 6・未裁定」として載せる（この PR で裁定を使い切っていれば「切り出す」として質問に含める。処理順は pr-review-gate 手順 2-1 の混在の段落）\n- needs-approval の理由と、オーナーに依頼する 1 アクション（リスク許容の可否 / 動作確認の 3 点セット）\n\n### needs-carryover-judge のとき\n（手順 3-c の「終了コード 4 の判定役」の回す条件を満たし、使える判定の記録が無い。宣言は投稿せず、`needs-approval` も付けない。`次の段: 合格処理`）\n- 前 HEAD: <40 桁フル SHA> / 新しい HEAD: <40 桁フル SHA>\n- 前の宣言のコメントのリンク: <URL>\n- EVIDENCE_PR_CHANGED=: <ファイル>, <ファイル>\n- EVIDENCE_DIFF_LINES=: <値>\n\n### needs-no-point-check のとき\n（手順 6-0 の論点なしの確認に回す。宣言は投稿済みで、`needs-approval` は付けない。`次の段: 合格処理`）\n- 宣言のコメントのリンク: <URL>\n- 対象 HEAD: <40 桁フル SHA>\n- 該当する観点: <宣言の `- 該当する観点:` の値>\n- 変更ファイル: <PR の変更ファイル>, <ファイル>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 21,
+      "text": "```\n## 動作確認\n対象 HEAD: <$HEAD_SHA 40桁フル>\n\n| 受け入れ条件 | 実行した手順 | 結果 |\n|---|---|---|\n| <条件> | <再現可能な手順> | ✅ <観測した実際の出力/画面> |\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 54,
+      "text": "```\n## 動作確認: 主に依頼\n1. 自力検証できなかった理由: <何が足りなかったか。「面倒」「時間」は理由にならない>\n2. 主にやってほしい具体的手順: <URL・クリック順・期待される結果まで書く>\n3. 次回から自力検証できるようにする改善提案: <テスト整備・認証情報の登録・seed データ等。issue 化するならリンク>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 91,
+      "text": "```bash\ngh api repos/$R/issues/comments/<comment_id> --jq '.user.login'   # 主のアカウント名と一致すること\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 100,
+      "text": "```\n主の回答: 許容 — 会話で受領（セッション <セッション ID> / <日時>）原文: <原文>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 106,
+      "text": "```bash\nbash <plugin>/scripts/owner-reply-check.sh <セッション ID> <原文>\n# 出力: 一致した主の発言ごとに MATCH: <timestamp> <本文の全文> / 最後に MATCHES=<件数>\n# 終了コード: 0 = 主の発言として実在する / 1 = 実在しない / 2 = 確かめられない（引数の不備・この PC に会話ログが無い）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 123,
+      "text": "```\n主の回答: 許容 — 親経由で受領（親セッション <セッション ID> / 発言 <uuid> / <日時>）停止の記録: <URL> 原文: <原文>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 148,
+      "text": "```\n主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 172,
+      "text": "```\n確かめ直し: 済 — 確認者 <エージェント名> / <日時>（手順 5）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 186,
+      "text": "```bash\nHEAD_SHA=$(gh api repos/$R/pulls/$N --jq '.head.sha')\ngh api repos/$R/issues/$N/comments --jq \\\n  \"[.[] | select(.body | contains(\\\"$HEAD_SHA\\\")) | .body | split(\\\"\\n\\\")[0]]\"\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 197,
+      "text": "```bash\nISSUE=$(gh api repos/$R/pulls/$N --jq '.body' | grep -oiE '(closes|fixes|refs) #[0-9]+' | head -1 | grep -oE '[0-9]+')\nREC=${ISSUE:-$N}   # 記録先の番号: issue 参照があればその issue、無ければ PR 自身\n# jq の ^ $ は行頭・行末に掛からない（文字列全体の先頭・末尾）ので、1 行目を split で切り出してから照合する。\n# コメントは 30 件でページが切れるので --paginate --slurp で全ページを取り（--slurp は --jq と併用不可なので jq へパイプ）、add で 1 配列にしてから「最新 1 件」を選ぶ\ngh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様化判断: (する|しない)$\"))] | last | .body | split(\"\\n\")[0]'\ngh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様レビュー: (APPROVE|REQUEST_CHANGES)$\"))] | last | .body | split(\"\\n\")[0]'\n# 2 つ目の出力が「仕様レビュー: APPROVE」ちょうどであること（最新のレビュー結果が正。古い APPROVE の後に REQUEST_CHANGES が出ていれば不合格）\nbash <plugin>/scripts/spec-touch-check.sh $R $N   # SPEC_TOUCH / OPENSPEC_DIFF / 触れた規範パス。終了コード 2 = 規範パスに触れて openspec 差分なし\n# 文言合わせの通し方かどうかは、同じ最新の仕様化判断のコメントの本文（2 行目以降）で見分ける\nDEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.body | split(\"\\n\")[0] | test(\"^仕様化判断: (する|しない)$\"))] | last | .body')\nWAY=$(printf '%s\\n' \"$DEC\" | grep -cx '通し方: 文言合わせ')   # 1 以上なら文言合わせの通し方。0 件のとき grep の終了コードは 1 になるので、終了コードではなく出力の値で判定する\nFIXES=$(printf '%s\\n' \"$DEC\" | grep '^直す文: ')             # 直す要件ごとに 1 行\necho \"$WAY\"; printf '%s\\n' \"$FIXES\"\n# ここから下の 3 本は WAY が 1 以上のときだけ実行する。場所は PR の HEAD の作業ツリー（git rev-parse HEAD の出力が $HEAD_SHA と一致すること）。CHANGE には仕様宣言が指す change 名を入れる\nls openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md | wc -l          # ちょうど 1（archive 済みで、差分が 1 ファイル）\ngrep -cE '^## (ADDED|REMOVED|RENAMED) Requirements' openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md   # 0（ここも終了コードではなく出力の値で判定する）\ngrep -h '^### Requirement: ' openspec/changes/archive/*-\"$CHANGE\"/specs/*/spec.md | sed 's/^### Requirement: //' | while IFS= read -r REQ; do printf '%s\\n' \"$FIXES\" | grep -qF \"「${REQ}」\" || echo \"直す文に無い要件: ${REQ}\"; done   # 何も出力されなければ、要件名はすべて直す文の行にある\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 241,
+      "text": "```bash\ngh api repos/$R/issues/$N --jq '.labels[].name'   # needs-approval が無いことを確認（あれば上のとおり）\nDRAFT=$(gh api repos/$R/pulls/$N --jq .draft)\ncase \"$DRAFT\" in true|false) ;; *) echo \"draft を取得できない（$DRAFT）。passed を付けずに中断する\" >&2; exit 1 ;; esac\nif [ \"$DRAFT\" = true ]; then   # Draft なら Ready にする。失敗したら passed を付けずに中断する\n  gh pr ready $N --repo $R || { echo \"gh pr ready に失敗。passed を付けずに中断する\" >&2; exit 1; }\nfi\ngh api -X POST repos/$R/issues/$N/labels -f 'labels[]=agent-review:passed'\ngh api -X DELETE repos/$R/issues/$N/labels/agent-review:pending\ngh api repos/$R/issues/$N --jq '.labels[].name'   # 実測確認（ラベル）\ngh api repos/$R/pulls/$N --jq .draft              # 実測確認（Draft）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 295,
+      "text": "```markdown\n### passed のとき\nG は CI の見張りを始めずに `passed` を return する（背景タスクの完了で起こされないため。見張りは本体が `references/ci-watch.md` で行う）。\n- 付与ラベル: agent-review:passed（手順 5 の API 実測の結果）\n- Ready 化: 実施した | 対象外（元から非 Draft）（手順 5 で `draft` が `false` になったことを実測した結果）\n- コメント URL: リスク宣言 / 仕様宣言 / 動作確認証拠\n- issue で承認済み: <宣言コメントの URL> / <当たった分類> / 「<引用した issue の文>」（issue で承認済みで合格したときだけ書く。無ければ行ごと省く）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 100,
+      "text": "```bash\ngh pr diff $N --name-only                       # 変更ファイル一覧\ngh pr diff $N | grep -c '^[+-][^+-]'            # 変更行数（追加＋削除）\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 121,
+      "text": "```bash\nf=\"$(mktemp)\"\ngh api repos/$R/pulls/$N/files --paginate --jq '.[] | \"\\(.additions + .deletions)\\t\\(.filename)\"' > \"$f\" || { echo \"gh api 失敗: 区画を推測せず止める\"; exit 1; }\n${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh < \"$f\"\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 131,
+      "text": "```bash\ngh api -X POST repos/$R/issues/$N/comments \\\n  -f body=\"$(printf 'レビュー重量: light — docs のみ 12 行（挙動定義ファイルなし）\\n固定 HEAD: %s\\n合計: 12 行\\n区画: なし\\n担当セッション: %s' \"$HEAD\" \"${CLAUDE_CODE_SESSION_ID:-不明}\")\"\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 150,
+      "text": "```markdown\n## needs-reviewer\n- 判定: light | full（Codex 不可） | full（Codex オフ） | full（adapter 経路）\n- 根拠: <2-0 の判定材料（変更ファイル一覧・行数・挙動定義ファイルの有無）、full なら Codex が使えなかった理由、Codex オフなら `Codex オフ（設定）`>\n- PR 番号: #<N>\n- HEAD SHA: <40 桁フル SHA（手順 1 で固定したもの）>\n- 区画: <なし（二周目以降・差分限定・全体レビューの周は常に なし） | review-partitions.sh の出力の区画の一覧>\n- 選んだ経路: <full: exec / companion / バイナリ探索で不在、light: 未実行、adapter 経路: 未実行（adapter 経路）、Codex オフ: 未実行（Codex オフ）>\n- 実行コマンド: <full: 実際の探索・起動・待機コマンド、adapter 経路: 未実行（adapter 経路）、Codex オフ: python3 <plugin>/scripts/usage_view.py --codex-enabled → off>\n- 終了コード: <取得できた値 | 未取得 | 未実行（adapter 経路） | 未実行（Codex オフ）>\n- 出力の要点: <full: 実測した不可条件と応答、adapter 経路: 未実行（adapter 経路）、Codex オフ: Codex オフの設定により Codex を試していない>\n- 実待ち時間: <タイムアウト時の実測値、完了未確認、adapter 経路: 未実行（adapter 経路）、Codex オフ: 未実行（Codex オフ）>\n- 推奨モデル: opus（種別は dev-workflow:reviewer） | dev-workflow:decider（種別で指定する。`general-purpose` に `model: fable` は付けない）\n- 推奨モデルの根拠: <マージ条件・層間契約・課金/法務への接触の有無、usage snapshot の残量>\n- 受け入れ条件の所在: <issue #N 本文 | PR #N 本文>\n- レビュアーに渡す範囲: <diff の範囲（`gh pr diff N`）、再レビューなら前回指摘の一覧>\n- レビュアーに渡す指示: `skills/pr-review-gate/stages/reviewer-brief.md` の手順 2-1 のレビュアー向け指示ブロック（三表と固定書式）をそのまま貼る\n- 補足 payload（一周目照合の補足要求の場合だけ）: 固定 HEAD: <SHA> / 一周目の区画: <なし | n> / 元の三表: <変更点の一覧・照合表・ハンク被覆> / 残差: <不足項目を補足先の区画ごとに分ける> / 補足済み回数: 0\n- 補足指示（一周目照合の補足要求の場合だけ）: 元の三表を置き換えず、残差に挙げた不足した項目だけを補う\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 40,
+      "text": "```text\n対象 HEAD: <40 桁フル SHA>\nレビュー実行者: <Codex CLI | Task サブエージェント（full・実測した Codex 不可: 条件） | Task サブエージェント（full・Codex オフ） | <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）>\n選んだ経路: <exec | companion | バイナリ探索で不在 | 未実行（adapter 経路） | 未実行（Codex オフ）>\n実行コマンド: <実際の探索・起動・待機コマンド | 未実行（adapter 経路） | python3 <plugin>/scripts/usage_view.py --codex-enabled → off>\n終了コード: <取得値 | 未取得 | 未実行（adapter 経路） | 未実行（Codex オフ）>\n出力の要点: <完了結果 | 実測した不可条件と応答 | 未実行（adapter 経路） | Codex オフの設定により Codex を試していない>\n実待ち時間: <タイムアウト時の実測値、完了未確認 | 未実行（adapter 経路） | 未実行（Codex オフ）>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 76,
+      "text": "```text\nPC 識別子: <識別できる名前>\n日時: <タイムゾーン付き>\nバイナリのパス・バージョン: <探索と version の出力>\ncompanion 有無: <有 / 無>\n対象 HEAD・diff 範囲: <40 桁フル SHA、base..HEAD>\n経路・実行コマンド: <探索・起動・待機の実際のコマンド>\n完了状態・結果: <取得できた終了コードと出力の要点、タイムアウトは実待ち時間と完了未確認>\n可否 / 未確認: <レビュー完了を確認して可 / 三条件を実測して不可 / 未確認>\n残課題: <未確認事項、次の対応>\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/reviewer-brief.md",
+      "line": 25,
+      "text": "```text\n指摘は 1 件ごとに次の書式で書く。1 周目は、対象範囲で該当する指摘を全部列挙するまで止まらない。\n\n1 周目は指摘を書く前に、`変更点の一覧` → `照合表` → `ハンク被覆` → 三表の自己点検 → 指摘の順で出力する。\n\n1. `変更点の一覧`: この PR が新しく決めたルール・判定・用語を安定した変更点 ID 付きで列挙する。各変更点に対応する受け入れ条件 ID と検索語を書き、すべての受け入れ条件を 1 項目以上で被覆する。\n2. `照合表`: 変更点 ID ごとに下の共通一覧契約を使い、diff 外を含む全ヒットを書く。全ヒットが 10 行を超える語は、全行の代わりに下の全ヒット要約で返す。第 4 列の `扱い` は `一致` または `食い違い: <finding ID>` とする。\n3. `ハンク被覆`: 固定した PR diff の全ハンクを、ファイル・ハンクヘッダー・finding ID または `問題なし` の行で 1 回以上被覆する。\n\n区画を渡されたときは、その区画のファイルの全ハンクを読み、`変更点の一覧` と `ハンク被覆` は自分の区画のファイルを対象にする。`照合表` の検索範囲と全ヒットはリポジトリ全体のままにする。受け入れ条件は全文を読み、その区画に関わるものを `変更点の一覧` で被覆し、関わらないものは一覧の外に `区画の対象外: <受け入れ条件 ID>` と書く。すべての受け入れ条件の被覆と PR diff の全ハンクの被覆は、全区画の和集合で満たす。区画 k の変更点 ID と finding ID は `P<k>-` で始める。`検索コマンド:` には固定 HEAD の SHA を書かず文字どおり `<rev>` を書き、SHA は `修正前 SHA:` に書く。テスト・lint の再実行は区画 1 だけが行い、ほかの区画は再実行しなかったことを要約に書く。区画 1 が受け入れ条件の被覆の残差を補足するときだけ、残差の受け入れ条件の全文・全区画のファイル一覧とそれらのハンクを読んでよい。対応する変更は `P1-` の変更点 ID で補い、対応が無ければ `P1-` の finding を返す。\n\n**共通一覧契約（`照合表` と、`stages/triage.md` の仕分け表の順 3 の grep の語の経路の第 1 段）**: `修正前 SHA: <40 桁>`、`検索コマンド: git grep -n <語の指定> <rev> -- .`、`| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |` を必須とする。`検索コマンド:` の `<rev>` は語の指定と違って置き換えず、文字どおり `<rev>` と書く（実際の revision は G が `--repo` / `--head` で渡す。SHA は `修正前 SHA:` にだけ書く）。検索起点はリポジトリルートで固定 revision の全追跡対象パスを含め、サブディレクトリへの限定や追跡対象パスの除外を禁止する。本文は、元の `\\` を `\\\\`、次に `|` を `\\|`、次に backtick を `\\` + backtick に escape し、本文全体を backtick fence で囲む。fence は escape 後の本文内に現れる最長の連続 backtick より 1 個長くし、この逆順でだけ復号する。検索語には照合方式と論理結合の option だけを使い、`--max-count` / `--max-depth` などヒット件数・範囲を狭める option は禁止する。一周目は固定した対象 HEAD を修正前 SHA とし、第 4 列を `一致` / `食い違い: <finding ID>` にする。順 3 は W が修正に着手する直前の HEAD を修正前 SHA とし、第 4 列だけを `直した` / `該当しない: <理由>` に変える。両経路とも `plugins/dev-workflow/scripts/review-hit-set.py` で第 4 列を除く全ヒット集合を照合する。順 3 固有の修正後 HEAD に対する本文・件数・削除行の第 2 段も、同じスクリプトに `--head <HEAD の 40 桁 SHA>` を付けて回す（規則は順 3 の節）。順 3 の場合分けの軸は共通一覧契約の対象外で、`検索コマンド:` に軸と全域、`| 軸の値 | 扱い |` を書き、軸の全域との一致だけを検査する。\n\n**全ヒット要約（`照合表` だけ。順 3 の一覧は全行のまま）**: 語ごとに、本文を読む前に `git grep -n <語の指定> <rev> -- . | wc -l` で行数を測る。`<rev>` には `修正前 SHA:` の 40 桁をそのまま入れる（`git grep` の各行の先頭に打ち込んだ rev の文字列が出るので、短縮 SHA やブランチ名ではハッシュが合わない）。全ヒットが 10 行を超える語は、4 列の全行の代わりに `修正前 SHA: <40 桁>`、`検索コマンド: git grep -n <語の指定> <rev> -- .`（ここは文字どおり `<rev>`）、`全ヒット要約: <行数> 行 <ハッシュ>` を書く。`<行数>` は上のコマンドの値、`<ハッシュ>` は `git grep -n <語の指定> <rev> -- . | git hash-object --stdin` の出力をそのまま貼る。どちらもファイルへ書かず標準出力だけで完結する。全ヒットが 10 行以下の語は要約にしない。食い違いの行は共通一覧契約の 4 列の表にその行だけを載せ、`扱い` を `食い違い: <finding ID>` にする。食い違いが無ければ 4 列の表は省いてよい。件数の多い語は検索コマンドの全件を一度に読まず、`git grep -c <語の指定> <rev> -- .` のファイルごとの件数から入り、PR の差分に関わるファイルと用法が疑わしいファイルの本文を読む。読むときの絞り込みは `検索コマンド:` の行に持ち込まない。`review-hit-set.py` が検索コマンドを固定 SHA で再実行し、行数とハッシュを比べる。\n\n三表を自己点検してから指摘へ進む。保証範囲は `変更点の一覧` に載せた項目についてリポジトリ内の出現箇所をすべて照合したことまでで、一覧に載らなかった暗黙の変更を発見したことまでは保証しない。全ヒット要約で返した語の保証範囲は検索範囲と全ヒット集合の一致までで、すべてのヒットの本文を読んだことは保証しない。\n\n- 見出し: 命令形 1 行・80 字以内\n- 深刻度: `blocking` | `should` | `nit`（下の表）\n- 検証: `confirmed`（実行・テストで裏取り済み） | `plausible`（推測・未検証）\n- 根拠: 深刻度が `blocking` のとき必須。受け入れ条件、または PR が触れる openspec spec の原文の引用、または例外 3 種（安全機構の穴・データ破壊・無言の機能不全）のどれか。引用できる指摘でも例外 3 種に当たれば併記する\n- 受け入れ条件の要否: `要る: <受け入れ条件 ID または delta spec の要件名>`（直さないとその受け入れ条件または要件を満たせない） | `要らない`（直さなくても受け入れ条件と delta spec の要件をすべて満たせる）。受け入れ条件も delta spec も求めていない新しい部品・機能を足す提案は、行数によらず `要らない` にする。この印で見る範囲を狭めず、`要らない` の指摘も省かない。例外 3 種に当たる指摘も、受け入れ条件に要らなければ `要らない` と書き、例外 3 種に当たることは根拠の欄に書く\n- 場所: `file:line-range`（diff と重なる範囲で 10 行以内。ただし `照合表` で見つけた食い違いの指摘は、変更箇所と diff 外の既存箇所の 2 か所を書いてよく、少なくとも一方を diff と重ねる）\n- 何が起きるか: 「こういう条件だと、こうなる」の形で、条件と結果を書く。条件は、どの環境・入力・操作のときかが分かる具体的な 1 文にする。条件を書けないときは `条件を書けない` と書く\n- 直し方: 行レベルの置換コード、または 3 行以内の手順。そのとおりに直せばこの指摘が閉じるもの\n- 状態: 再レビューのときだけ付ける。`fixed` | `unresolved` | `wontfix`\n\n| 深刻度 | 定義 |\n|---|---|\n| `blocking` | 受け入れ条件または仕様の文に違反し、マージすると壊れる |\n| `should` | 直すべきだが、マージ後に issue で直せる |\n| `nit` | 好み・スタイル |\n\n再レビュー（差分限定）は、前回の指摘ごとに状態を付けて閉じたかを確かめるだけにし、新規の指摘を出さない（新規の `nit` も出さない。ただし例外 3 種＝安全機構の穴・データ破壊・無言の機能不全に当たる `blocking` は差分限定の周でも出してよい）。方式の書き換えのあとに PR 全体を見直す周でも、新規に出してよいのは `blocking` だけ。前回の「直し方」どおりに直した箇所を再指摘しない。直し方自体が誤っていたなら、レビュアー側の誤りとして前回の指摘を `wontfix` にし、理由を書く。\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 166,
+      "text": "```bash\ngh api -X POST repos/$R/issues/$N/comments \\\n  -f body='決める役モデル: opus（fable レート制限のためフォールバック。subagent_type は dev-workflow:decider のまま）'\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 181,
+      "text": "```markdown\n- 仕分け（指摘を受け取ったすべての周の return で必須。Status によらず書く）: pr-review-gate 手順 2-1 の仕分け表で指摘ごとに当てた順とその根拠（順 1・2 は違反文の引用・例外 3 種のどれか（安全機構の穴・データ破壊・無言の機能不全）。順 1 の指摘は、止めない指摘の振り分け表で当てた段と行き先も書く: 段 A は「この PR で直す」と、要る受け入れ条件の ID か delta spec の要件名、または当たる例外 3 種のどれか、捨てたなら理由の 1 行、issue にした・コメントで入れたなら follow-up issue またはコメントの URL、条件の確認待ちなら質問文。順 3 は集合一致で閉じた PR コメント URL。順 4 は W の記録「受け入れ条件の外・その場で直した・直し方 N 行」と当たる例外 3 種のどれか。順 6 の裁定を受けたら `決める役の裁定:` の内容）と、その PR コメント URL。止める指摘が無く、全件を振り分け表に通して `次の段へ` で返すときもここに書く。全周共通の判定で止める指摘が残り、順 5 に当たる場合は failed ではなく保留で返す（下）\n- 効果測定（二周目以降に新しく出た、または未解決で残った各指摘に必須）: `同じ文が複数か所` / `場合分けの漏れ` / `直したつもりで直っていない` / `直しで新しく入った` のいずれか 1 つ。同じ指摘 ID と分類を仕分けの PR コメントにも記録し、その PR コメント URL を return に添える。この分類は記録だけに使い、全周共通の停止判定と仕分け順を変えない\n### failed のとき\n- 原因分類（pr-review-gate 手順 2-2）: 実装品質起因 | 仕様が曖昧 | レビュアーの誤検出 | 段 A だけ（昇格なし）\n- 指摘一覧（再現手順・修正点）と PR コメント URL\n- 本体への提案: 実装品質起因なら、失敗の原因が実行側（指示どおりやって結果が違う）か判断側（指示を解釈できなかった・指示自体が外れていた）かを書き添えて、実行側なら `codex-develop.py request --phase implement --failure executor` を呼んで `request` が返した model で W を起こし（model が変わるなら SendMessage で再開せず、新しい thread に手渡す。細目の正本は `plugins/dev-workflow/references/codex-develop.md`）、判断側なら `request --phase decider --failure first`（そのゲートの 1 回目の failed）または `--failure judgment`（そのゲートの 2 回目以降の failed。1 回目の原因が実行側だったときも含む）を呼んで `request` が返した model で `subagent_type: dev-workflow:decider` を立てて修正方針を作らせるよう提案する（**決める役と実行役のどちらか一方だけ**を上げる。`request` が返した model と違う model を独自に指定せず、実行役を最上位の格に上げない。残量モードと共有枠モードの上限は `request` の返り値に効いている）。仕様が曖昧なら受け入れ条件の確定（unmanned は needs-approval）、誤検出なら反証コメントの投稿\n### needs-decider のとき\n- 本体に渡すもの（仕分け表の順 6）: 同じ型の指摘と前の周の指摘の原文、対象ファイルのパス、仕分け欄、順 6 に当てた理由（同じ型の再発／順 3 の差し戻し後の不一致／順 4 の 2 回目）。本体は決める役を起こして裁定を受け取り、照合と振り分けの G を新しく起こして渡す（下の「決める役の裁定受領」）。この PR で裁定が既に 1 回あれば needs-decider で返さず「切り出す」として扱う。順 5 と順 6 の混在で保留にした PR で、主の回答のあとに未処理の順 6 が残っているときもここに当たる（`needs-approval` を外し、failed を付けずに返す）\n### needs-fix-check のとき\n- 本体に渡すもの（手順 2-1 の周の終わりの段落の直し方の判定）: 判定に回す指摘ごとの仮の順（1 周目なら当たる順 2〜4 のどれか）とその根拠、仕分けの PR コメント URL、順 6 に当てた未裁定の指摘があればその一覧（仕分け欄に「順 6・未裁定」と載せたもの）。本体は決める役を起こして判定を受け取り、判定の記録を記録先に投稿してから、照合と振り分けの G を新しく起こして判定と判定の記録の URL を渡す（下の「直し方の判定の受領」）。`needs-approval` も `agent-review:failed` も付けずに返し、同じ return で `needs-decider` を指示しない\n### review-incomplete のとき\n- 固定 HEAD・元の三表・補足後の三表・残差・`補足済み回数: 1` と、それらを記録した PR コメント URL。terminal なので reviewer の再起動・合格処理を提案しない\n```"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 235,
+      "text": "```bash\nbody=\"$(gh api repos/$R/issues/comments/<コメント ID> --jq .body)\"\nprintf '%s\\n' \"$body\" | tail -n +4 >> <table-file>\n```"
+    }
+  ]
+}
