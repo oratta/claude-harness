@@ -33,7 +33,7 @@
 
 ## 6. Codex の phase に付ける正本を替える
 
-- [ ] 6.1 `codex-develop.py` の `prompt` が全 phase に付ける `decision-criteria.md` を `return-declaration.md` に替え、spec の phase にはさらに `spec-decision.md` を付ける。decider の phase も `return-declaration.md` にする。確かめ方: `python3 -m pytest plugins/dev-workflow/tests/test_codex_develop.py`（既存の走らせ方に合わせる）が緑で、spec の phase の docs に `spec-decision.md` が入り、どの phase にも `decision-criteria.md` が入らない検査がある。触る範囲: plugins/dev-workflow/scripts/codex-develop.py:621-630、plugins/dev-workflow/tests/test_codex_develop.py:1010-1050、plugins/dev-workflow/tests/test_codex_develop.py:1715-1725、plugins/dev-workflow/docs/codex-delegation-inventory.md:41
+- [x] 6.1 `codex-develop.py` の `prompt` が全 phase に付ける `decision-criteria.md` を `return-declaration.md` に替え、spec の phase にはさらに `spec-decision.md` を付ける。decider の phase も `return-declaration.md` にする。確かめ方: `python3 -m pytest plugins/dev-workflow/tests/test_codex_develop.py`（既存の走らせ方に合わせる）が緑で、spec の phase の docs に `spec-decision.md` が入り、どの phase にも `decision-criteria.md` が入らない検査がある。触る範囲: plugins/dev-workflow/scripts/codex-develop.py:621-630、plugins/dev-workflow/tests/test_codex_develop.py:1010-1050、plugins/dev-workflow/tests/test_codex_develop.py:1715-1725、plugins/dev-workflow/docs/codex-delegation-inventory.md:41
 
 ## 7. 規則本文から経緯を削る
 
