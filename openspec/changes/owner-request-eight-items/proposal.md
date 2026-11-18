@@ -9,11 +9,11 @@
 - **BREAKING** `output-styles/readable.md` の節 3 を、6 段の順（質問 → 主に聞く理由 → 困りごと → 推奨と根拠 → リスク → 答え方）から、8 項目を 4 つのまとまりで定義する形に書き直す。題名（依頼の形。質問にしない）・アクション（どこで何をするか。リンク付き）／目的・詳細・論点・推奨と根拠・リスク／緊急度・ブロック／アクションに付けるリンク
 - 使う場所ごとに、使うまとまりと長さを表で決める（対話のセッション・チャットで 1 件ずつ出す依頼・チャットで何件かまとめて出す一覧・依頼を並べる画面の行と詳細）。書けない項目は「—」、短い場所には全部の項目が読める場所へのリンクを付ける
 - **BREAKING** 1 行目の書き分けを「求める発言は 1 行目を質問、最後の行を答え方」から「求める発言は 1 行目を題名、2 行目をアクション」に変える。`主がすること: なし` と主の質問への答えの扱いは残す
-- 主に聞く理由の 3 つと論点の定義は残し、聞くかどうかの判定として 8 項目の前に置き、判定の結果を論点の項目に書く。論点なしの依頼は 4 行（題名・アクション・論点・推奨と根拠）に収める
+- 主に聞く理由の 3 つと論点の定義は残し、聞くかどうかの判定として 8 項目の前に置き、判定の結果を論点の項目に書く。使う場所の表を論点の有無より優先し、論点なしの依頼を短く省くのは対話のセッションだけにする（題名・アクション・論点・推奨の 4 行。題名だけで目的が伝わらなければ目的を足して 5 行）。チャットで 1 件ずつ出す依頼と依頼を並べる画面の詳細では、論点なしでも緊急度・ブロックを含む全部の項目を書く。要件の名前「論点の無い確認は 3〜4 行に収める」を、当てる場所と行数に合わせて変える
 - 質問に「OK すると何が起きるか」を埋め込む書き方と「いま困っていること」の段を無くす（目的とブロックが受け持つ）
 - 例 3 つを新しい形に書き直す
 - `rules/communication-style.md` の 3 番目を、正本と食い違わない要点に書き直す
-- 参照先のうち旧い順を写している `plugins/dev-workflow/skills/pr-review-gate/declarations.md`（主への依頼文の 3〜4 行の説明）と `stages/pass.md`（「型の『答え方』に入れる」）を新しい項目名に合わせる
+- 参照先のうち旧い順を写している `plugins/dev-workflow/skills/pr-review-gate/declarations.md`（主への依頼文の 3〜4 行の説明）・`stages/hold.md`（論点なしの 3〜4 行と答え方の行）・`stages/pass.md`（「型の『答え方』に入れる」）を新しい項目名に合わせ、論点なしの行数は正本を指す形にする
 - `tests/owner-question-style.bats` を新しい決まりに合わせる
 
 ## Capabilities
@@ -24,12 +24,13 @@
 
 ### Modified Capabilities
 
-- `owner-question-style`: 正本の節の中身（8 項目・まとまり・使う場所の表）、1 行目の書き分け、短い版の要点、論点の書き場所、1 行目と作文の決まり、論点なしの依頼の行数
+- `owner-question-style`: 正本の節の中身（8 項目・まとまり・使う場所の表と表の優先）、1 行目の書き分け、短い版の要点、論点の書き場所、1 行目と作文の決まり、論点なしの依頼の行数と当てる場所（要件の名前も変える）
+- `dev-workflow-pr-review-gate`: 要件「主への依頼文は宣言を写さず正本の型で書き、照合される行は変えない」の、論点なしの依頼の行数を正本を指す形にし、旧い型の語を消す
 
 ## Impact
 
 - `output-styles/readable.md`・`rules/communication-style.md`（常時注入の固定分。`tests/injection-budget.txt` の予算は動かさず、今の合計 42298 バイト以下に収める）
-- `plugins/dev-workflow/skills/pr-review-gate/declarations.md`・`plugins/dev-workflow/skills/pr-review-gate/stages/pass.md`
+- `plugins/dev-workflow/skills/pr-review-gate/declarations.md`・`stages/hold.md`・`stages/pass.md`、`plugins/dev-workflow/tests/pr-review-gate-skill.bats`
 - `tests/owner-question-style.bats`
 - 後続の change: 親と channel の発言の 1 行目（`owner-message-title-first-line`、dev-workflow-develop）と、番号検査の hook の見分け方（`owner-number-check-title-form`）。同じ PR に順に積む
 - 開いている Draft PR https://github.com/oratta/claude-harness/pull/1655 が節 3 の主に聞く理由と同じ spec を書き換えている。先にマージされた側に合わせて書き直す
