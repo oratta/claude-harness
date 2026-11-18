@@ -162,13 +162,15 @@ item() { grep -F -- "- **$1**" "$2"; }
   item '委任が効く止まり' "$EPIC" | grep -qF '`委任で送った: 子 #<N> <最後の発言の uuid> 委任の記録: <委任の記録の URL>`'
 }
 
-@test "gate pass (#1653): the delegation checks match epic.md word for word" {
+@test "gate pass (#1653): the gate reads the delegation checks from epic-delegation.md instead of copying them" {
   PASSMD="$PLUGIN_DIR/skills/pr-review-gate/stages/pass.md"
   risk="$(item '委任が効く止まり' "$EPIC" | grep -oE '\*\*リスク許容の止まり\*\*.*論点なしと書く。\*\*聖域' | sed 's/。\*\*聖域$//')"
   [ -n "$risk" ]
-  grep -qF -- "$risk" "$PASSMD"
+  ! grep -qF -- "$risk" "$PASSMD" || return 1
+  ! grep -qF '`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど' "$PASSMD" || return 1
+  grep -F 'references/epic-delegation.md' "$PASSMD" | grep -F '判定前に' | grep -qF '委任が有効か'
+  grep -F 'references/epic-delegation.md' "$PASSMD" | grep -F '判定前に' | grep -qF 'リスク許容の止まり'
   grep -qF 'references/epic-delegation.md' "$CHILD"
-  grep -qF '`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど' "$PASSMD"
 }
 
 @test "child stop (#1653): sanctuary and destructive git approvals leave a stop record with fixed heads" {
