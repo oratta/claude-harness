@@ -364,3 +364,150 @@ The parent-fetch paragraph at triage:106 is preserved as three original fragment
 | command | skills/pr-review-gate/stages/triage.md:208 | skills/pr-review-gate/stages/triage-row3.md, skills/pr-review-gate/stages/triage-convergence.md |
 | command | skills/pr-review-gate/stages/triage.md:227 | skills/pr-review-gate/stages/comment-parts.md |
 | command | skills/pr-review-gate/stages/triage.md:242 | skills/pr-review-gate/stages/comment-parts.md |
+
+Additional negative/exit constraints (しない・禁止・不可・失敗・戻す・進む・return):
+
+| Kind | Fixed source:line | Current files |
+|---|---|---|
+| prose | skills/develop/references/roles/gate-runner.md:7 | skills/develop/references/roles/gate-runner.md |
+| prose | skills/develop/references/roles/gate-runner.md:10 | skills/develop/references/roles/gate-runner.md |
+| prose | skills/develop/references/roles/gate-runner.md:27 | skills/develop/references/roles/gate-runner.md |
+| prose | skills/develop/references/roles/gate-runner.md:29 | skills/develop/references/roles/gate-runner.md |
+| prose | skills/develop/references/roles/gate-runner.md:33 | skills/develop/references/roles/gate-runner.md |
+| prose | skills/develop/references/roles/gate-runner.md:40 | skills/pr-review-gate/stages/gate-triage.md |
+| prose | skills/develop/references/roles/gate-runner.md:50 | skills/pr-review-gate/stages/gate-triage.md |
+| prose | skills/develop/references/roles/gate-runner.md:56 | skills/pr-review-gate/stages/triage.md, skills/pr-review-gate/stages/pass.md, skills/pr-review-gate/stages/hold.md, skills/develop/references/roles/gate-runner.md |
+| prose | skills/develop/references/roles/gate-runner.md:58 | skills/develop/references/roles/gate-runner.md |
+| prose | skills/develop/references/roles/gate-runner.md:73 | skills/develop/references/roles/gate-runner.md |
+| prose | skills/develop/references/roles/gate-runner.md:117 | skills/pr-review-gate/stages/triage-nonblocking.md, skills/develop/references/roles/gate-runner.md |
+| prose | skills/pr-review-gate/declarations.md:64 | skills/pr-review-gate/declarations.md |
+| prose | skills/pr-review-gate/declarations.md:85 | skills/pr-review-gate/stages/issue-approved.md |
+| prose | skills/pr-review-gate/declarations.md:98 | skills/pr-review-gate/stages/issue-approved.md |
+| prose | skills/pr-review-gate/declarations.md:99 | skills/pr-review-gate/stages/issue-approved.md |
+| prose | skills/pr-review-gate/declarations.md:109 | skills/pr-review-gate/stages/issue-approved.md |
+| prose | skills/pr-review-gate/declarations.md:117 | skills/pr-review-gate/stages/issue-approved.md |
+| prose | skills/pr-review-gate/declarations.md:123 | skills/pr-review-gate/declarations.md |
+| prose | skills/pr-review-gate/declarations.md:145 | skills/pr-review-gate/declarations.md |
+| prose | skills/pr-review-gate/declarations.md:157 | skills/pr-review-gate/declarations.md |
+| prose | skills/pr-review-gate/declarations.md:158 | skills/pr-review-gate/declarations.md |
+| prose | skills/pr-review-gate/stages/hold.md:9 | skills/pr-review-gate/stages/hold.md |
+| prose | skills/pr-review-gate/stages/hold.md:23 | skills/pr-review-gate/stages/carryover.md |
+| prose | skills/pr-review-gate/stages/hold.md:25 | skills/pr-review-gate/stages/carryover.md |
+| prose | skills/pr-review-gate/stages/hold.md:54 | skills/pr-review-gate/stages/carryover.md |
+| prose | skills/pr-review-gate/stages/hold.md:65 | skills/pr-review-gate/stages/carryover.md |
+| prose | skills/pr-review-gate/stages/hold.md:67 | skills/pr-review-gate/stages/carryover.md |
+| prose | skills/pr-review-gate/stages/hold.md:74 | skills/pr-review-gate/stages/carryover-judge.md |
+| prose | skills/pr-review-gate/stages/hold.md:75 | skills/pr-review-gate/stages/carryover-judge.md |
+| prose | skills/pr-review-gate/stages/hold.md:76 | skills/pr-review-gate/stages/carryover-judge.md |
+| prose | skills/pr-review-gate/stages/hold.md:77 | skills/pr-review-gate/stages/carryover-judge.md |
+| prose | skills/pr-review-gate/stages/hold.md:78 | skills/pr-review-gate/stages/carryover-judge.md |
+| prose | skills/pr-review-gate/stages/hold.md:101 | skills/pr-review-gate/stages/no-point-check.md |
+| prose | skills/pr-review-gate/stages/hold.md:103 | skills/pr-review-gate/stages/no-point-check.md |
+| prose | skills/pr-review-gate/stages/hold.md:104 | skills/pr-review-gate/stages/no-point-check.md |
+| prose | skills/pr-review-gate/stages/hold.md:112 | skills/pr-review-gate/stages/no-point-check.md |
+| prose | skills/pr-review-gate/stages/hold.md:122 | skills/pr-review-gate/stages/no-point-check.md |
+| prose | skills/pr-review-gate/stages/hold.md:123 | skills/pr-review-gate/stages/no-point-check.md |
+| prose | skills/pr-review-gate/stages/hold.md:128 | skills/pr-review-gate/stages/hold.md |
+| prose | skills/pr-review-gate/stages/hold.md:141 | skills/pr-review-gate/stages/hold-resume.md |
+| prose | skills/pr-review-gate/stages/hold.md:144 | skills/pr-review-gate/stages/hold-resume.md |
+| prose | skills/pr-review-gate/stages/hold.md:159 | skills/pr-review-gate/stages/hold-categories.md |
+| prose | skills/pr-review-gate/stages/hold.md:161 | skills/pr-review-gate/stages/hold-categories.md |
+| prose | skills/pr-review-gate/stages/hold.md:167 | skills/pr-review-gate/stages/hold.md |
+| prose | skills/pr-review-gate/stages/hold.md:169 | skills/pr-review-gate/stages/triage.md, skills/pr-review-gate/stages/pass.md, skills/pr-review-gate/stages/hold.md |
+| prose | skills/pr-review-gate/stages/hold.md:200 | skills/pr-review-gate/stages/hold.md |
+| prose | skills/pr-review-gate/stages/pass.md:30 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:42 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:50 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:96 | skills/pr-review-gate/stages/authenticity.md |
+| prose | skills/pr-review-gate/stages/pass.md:112 | skills/pr-review-gate/stages/authenticity-conversation.md |
+| prose | skills/pr-review-gate/stages/pass.md:114 | skills/pr-review-gate/stages/authenticity-conversation.md |
+| prose | skills/pr-review-gate/stages/pass.md:170 | skills/pr-review-gate/stages/issue-approved.md |
+| prose | skills/pr-review-gate/stages/pass.md:180 | skills/pr-review-gate/stages/issue-approved.md |
+| prose | skills/pr-review-gate/stages/pass.md:182 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:183 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:184 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:193 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:195 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:219 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:220 | skills/pr-review-gate/stages/pass-wording.md |
+| prose | skills/pr-review-gate/stages/pass.md:221 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:222 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:229 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:230 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:237 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:254 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:268 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:276 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:277 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:278 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:283 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:291 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/pass.md:293 | skills/pr-review-gate/stages/triage.md, skills/pr-review-gate/stages/pass.md, skills/pr-review-gate/stages/hold.md |
+| prose | skills/pr-review-gate/stages/pass.md:316 | skills/pr-review-gate/stages/pass.md |
+| prose | skills/pr-review-gate/stages/prepare.md:21 | skills/pr-review-gate/stages/prepare.md |
+| prose | skills/pr-review-gate/stages/prepare.md:26 | skills/pr-review-gate/stages/prepare.md |
+| prose | skills/pr-review-gate/stages/prepare.md:31 | skills/pr-review-gate/stages/prepare.md |
+| prose | skills/pr-review-gate/stages/prepare.md:39 | skills/pr-review-gate/stages/prepare.md |
+| prose | skills/pr-review-gate/stages/prepare.md:45 | skills/pr-review-gate/stages/prepare-light.md |
+| prose | skills/pr-review-gate/stages/prepare.md:48 | skills/pr-review-gate/stages/prepare-light.md |
+| prose | skills/pr-review-gate/stages/prepare.md:63 | skills/pr-review-gate/stages/prepare-light.md |
+| prose | skills/pr-review-gate/stages/prepare.md:82 | skills/pr-review-gate/stages/prepare-light.md |
+| prose | skills/pr-review-gate/stages/prepare.md:86 | skills/pr-review-gate/stages/prepare-light.md |
+| prose | skills/pr-review-gate/stages/prepare.md:88 | skills/pr-review-gate/stages/prepare-light.md |
+| prose | skills/pr-review-gate/stages/prepare.md:94 | skills/pr-review-gate/stages/prepare.md |
+| prose | skills/pr-review-gate/stages/prepare.md:119 | skills/pr-review-gate/stages/prepare-partitions.md |
+| prose | skills/pr-review-gate/stages/prepare.md:146 | skills/pr-review-gate/stages/prepare-reviewer.md |
+| prose | skills/pr-review-gate/stages/prepare.md:148 | skills/pr-review-gate/stages/prepare-reviewer.md |
+| prose | skills/pr-review-gate/stages/prepare.md:185 | skills/pr-review-gate/stages/prepare.md, skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:15 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:22 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:26 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:28 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:30 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:36 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:38 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:73 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:74 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:94 | skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/review-run.md:120 | skills/pr-review-gate/stages/prepare.md, skills/pr-review-gate/stages/review-run.md |
+| prose | skills/pr-review-gate/stages/reviewer-brief.md:19 | skills/pr-review-gate/stages/reviewer-brief.md |
+| prose | skills/pr-review-gate/stages/reviewer-brief.md:23 | skills/pr-review-gate/stages/reviewer-brief.md |
+| prose | skills/pr-review-gate/stages/reviewer-brief.md:61 | skills/pr-review-gate/stages/reviewer-brief.md |
+| prose | skills/pr-review-gate/stages/reviewer-brief.md:71 | skills/pr-review-gate/stages/reviewer-brief.md |
+| prose | skills/pr-review-gate/stages/reviewer-brief.md:76 | skills/pr-review-gate/stages/reviewer-brief.md |
+| prose | skills/pr-review-gate/stages/triage.md:36 | skills/pr-review-gate/stages/triage-convergence.md |
+| prose | skills/pr-review-gate/stages/triage.md:39 | skills/pr-review-gate/stages/triage-convergence.md |
+| prose | skills/pr-review-gate/stages/triage.md:40 | skills/pr-review-gate/stages/triage-convergence.md |
+| prose | skills/pr-review-gate/stages/triage.md:41 | skills/pr-review-gate/stages/triage-convergence.md |
+| prose | skills/pr-review-gate/stages/triage.md:43 | skills/pr-review-gate/stages/triage-convergence.md |
+| prose | skills/pr-review-gate/stages/triage.md:45 | skills/pr-review-gate/stages/triage-convergence.md |
+| prose | skills/pr-review-gate/stages/triage.md:56 | skills/pr-review-gate/stages/triage-row3.md |
+| prose | skills/pr-review-gate/stages/triage.md:58 | skills/pr-review-gate/stages/triage-row3.md |
+| prose | skills/pr-review-gate/stages/triage.md:64 | skills/pr-review-gate/stages/triage.md |
+| prose | skills/pr-review-gate/stages/triage.md:76 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:77 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:87 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:95 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:99 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:102 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:104 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:115 | skills/pr-review-gate/stages/triage-epic.md |
+| prose | skills/pr-review-gate/stages/triage.md:117 | skills/pr-review-gate/stages/triage-epic.md |
+| prose | skills/pr-review-gate/stages/triage.md:121 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:123 | skills/pr-review-gate/stages/triage-nonblocking.md |
+| prose | skills/pr-review-gate/stages/triage.md:144 | skills/pr-review-gate/stages/triage-escalation.md |
+| prose | skills/pr-review-gate/stages/triage.md:156 | skills/pr-review-gate/stages/triage-escalation.md |
+| prose | skills/pr-review-gate/stages/triage.md:160 | skills/pr-review-gate/stages/triage-escalation.md |
+| prose | skills/pr-review-gate/stages/triage.md:162 | skills/pr-review-gate/stages/triage-escalation.md |
+| prose | skills/pr-review-gate/stages/triage.md:171 | skills/pr-review-gate/stages/triage-escalation.md |
+| prose | skills/pr-review-gate/stages/triage.md:177 | skills/pr-review-gate/stages/triage.md |
+| prose | skills/pr-review-gate/stages/triage.md:179 | skills/pr-review-gate/stages/triage.md, skills/pr-review-gate/stages/pass.md, skills/pr-review-gate/stages/hold.md |
+| prose | skills/pr-review-gate/stages/triage.md:196 | skills/pr-review-gate/stages/triage.md |
+| prose | skills/pr-review-gate/stages/triage.md:206 | skills/pr-review-gate/stages/triage.md |
+| prose | skills/pr-review-gate/stages/triage.md:240 | skills/pr-review-gate/stages/comment-parts.md |
+| prose | skills/pr-review-gate/stages/triage.md:242 | skills/pr-review-gate/stages/comment-parts.md |
+| prose | skills/pr-review-gate/stages/triage.md:246 | skills/pr-review-gate/stages/comment-parts.md |
+| prose | skills/pr-review-gate/stages/triage.md:247 | skills/pr-review-gate/stages/comment-parts.md |
+| prose | skills/pr-review-gate/stages/triage.md:251 | skills/pr-review-gate/stages/comment-parts.md |
+
+Reference-only exceptions: gate-runner:19 adds the conditional prepare-reviewer source; prepare:184 redirects the needs-reviewer return to prepare-reviewer. Those routing conditions and exits remain checked by related bats.

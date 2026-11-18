@@ -205,3 +205,114 @@ review 行は従来経路でレビューを自分で起こす場面に追加し�
 | review | 24938 | 51034 |
 
 取り込み後の移動表補正: prepare.md の区画入力は 2 段の取得・検査を入口に残す。triage.md の「上の同じ証拠」は triage-convergence.md 内の周の終わりの証拠を指す。pass.md:44-50 の本体を流せない受け入れ条件の代替確認は共通の動作確認に残す。prepare の payload は 148-176、triage のコメント分割は 212-251、pass の真正性は 86-180（旧表より +8 行）を実際の見出しで切り出す。
+
+## 実装後の計測（#1687）
+
+再現: `python3 -B tests/gate_reading_report.py .`。固定 main の既存比較値とも一致を照合する。Claude 一括の比較は従来の宣言＋6段で、Codex 一括は索引も注入する。
+
+字数は UTF-8 の文字数（Python len、wc -m 相当）。同じファイルは一度だけ。before は固定 main `0e7bf3f80d0241bd9582f7b89e5ec3f529f2139f` から実測。Codex は定型指示・固定 REQUEST・ヘッダー・sha256・正本本文を含む実際の prompt() 生成物。可変の PR 本文・結果・ログは予算外で、全実行の総トークン数の保証ではない。予算は UTF-8 バイト数、全 156 profile を実測の1.0倍に設定。
+
+Claude 基礎5場面・条件別（max は同じ段の全条件の和集合）:
+
+| profile | before | after |
+|---|---:|---:|
+| prepare | 30,053 | 20,538 |
+| prepare-light | 30,053 | 24,179 |
+| prepare-partitions | 30,053 | 21,098 |
+| prepare-reviewer | 30,053 | 23,054 |
+| prepare-rereview | 63,373 | 26,764 |
+| prepare-approval-wait | 50,908 | 26,635 |
+| prepare-max | 84,228 | 39,578 |
+| review | 34,148 | 30,614 |
+| review-fallback | 48,259 | 33,130 |
+| review-partitions | 48,259 | 31,174 |
+| review-summary | 34,148 | 33,577 |
+| review-comments | 67,468 | 36,499 |
+| review-max | 81,579 | 39,575 |
+| triage | 49,262 | 22,379 |
+| triage-summary | 49,262 | 25,342 |
+| triage-partitions | 49,262 | 25,963 |
+| triage-supplement | 63,373 | 27,858 |
+| triage-comments | 49,262 | 28,264 |
+| triage-row3 | 63,373 | 33,435 |
+| triage-nonblocking | 49,262 | 29,285 |
+| triage-epic | 49,262 | 31,569 |
+| triage-convergence | 49,262 | 28,605 |
+| triage-failed | 49,262 | 25,416 |
+| triage-max | 63,373 | 60,910 |
+| pass | 50,143 | 31,434 |
+| pass-issue-approved | 50,143 | 37,300 |
+| pass-carryover | 70,998 | 44,646 |
+| pass-judge | 70,998 | 48,094 |
+| pass-no-point | 70,998 | 39,428 |
+| pass-risk-link | 70,998 | 37,242 |
+| pass-risk-conversation | 70,998 | 39,011 |
+| pass-risk-relayed | 70,998 | 39,741 |
+| pass-risk-delegated | 70,998 | 43,406 |
+| pass-wording | 50,143 | 32,642 |
+| pass-max | 70,998 | 65,869 |
+| hold | 36,797 | 17,583 |
+| hold-carryover | 60,514 | 25,569 |
+| hold-judge | 60,514 | 29,017 |
+| hold-no-point | 36,797 | 20,351 |
+| hold-resume | 36,797 | 19,986 |
+| hold-categories | 36,797 | 18,454 |
+| hold-split | 70,117 | 29,176 |
+| hold-max | 93,834 | 44,249 |
+| legacy-all | 136,635 | 73,120 |
+| legacy-all-max | 136,635 | 140,154 |
+
+Codex 固定生成 prompt（追加読込なし）:
+
+| profile | before | after |
+|---|---:|---:|
+| prepare | 142,323 | 22,334 |
+| review | 24,938 | 21,377 |
+| triage | 142,321 | 24,172 |
+| pass | 142,318 | 33,351 |
+| hold | 142,319 | 19,372 |
+| legacy-all | 142,317 | 78,818 |
+
+Codex 条件付き追加読込（注入済みを除外。total は生成 prompt＋追加読込）:
+
+| profile | before追加 | after追加 | before total | after total |
+|---|---:|---:|---:|---:|
+| prepare-light | 0 | 3,641 | 142,323 | 25,975 |
+| prepare-partitions | 0 | 560 | 142,323 | 22,894 |
+| prepare-reviewer | 0 | 2,516 | 142,323 | 24,850 |
+| prepare-rereview | 0 | 6,226 | 142,323 | 28,560 |
+| prepare-approval-wait | 0 | 6,097 | 142,323 | 28,431 |
+| prepare-max | 0 | 19,040 | 142,323 | 41,374 |
+| review-fallback | 14,111 | 2,516 | 39,049 | 23,893 |
+| review-partitions | 14,111 | 560 | 39,049 | 21,937 |
+| review-summary | 0 | 2,963 | 24,938 | 24,340 |
+| review-comments | 33,320 | 5,885 | 58,258 | 27,262 |
+| review-max | 47,431 | 8,961 | 72,369 | 30,338 |
+| triage-summary | 0 | 2,963 | 142,321 | 27,135 |
+| triage-partitions | 0 | 3,584 | 142,321 | 27,756 |
+| triage-supplement | 0 | 5,479 | 142,321 | 29,651 |
+| triage-comments | 0 | 5,885 | 142,321 | 30,057 |
+| triage-row3 | 0 | 11,056 | 142,321 | 35,228 |
+| triage-nonblocking | 0 | 6,906 | 142,321 | 31,078 |
+| triage-epic | 0 | 9,190 | 142,321 | 33,362 |
+| triage-convergence | 0 | 6,226 | 142,321 | 30,398 |
+| triage-failed | 0 | 3,037 | 142,321 | 27,209 |
+| triage-max | 0 | 38,531 | 142,321 | 62,703 |
+| pass-issue-approved | 0 | 5,866 | 142,318 | 39,217 |
+| pass-carryover | 0 | 13,212 | 142,318 | 46,563 |
+| pass-judge | 0 | 16,660 | 142,318 | 50,011 |
+| pass-no-point | 0 | 7,994 | 142,318 | 41,345 |
+| pass-risk-link | 0 | 5,808 | 142,318 | 39,159 |
+| pass-risk-conversation | 0 | 7,577 | 142,318 | 40,928 |
+| pass-risk-relayed | 0 | 8,307 | 142,318 | 41,658 |
+| pass-risk-delegated | 0 | 11,972 | 142,318 | 45,323 |
+| pass-wording | 0 | 1,208 | 142,318 | 34,559 |
+| pass-max | 0 | 34,435 | 142,318 | 67,786 |
+| hold-carryover | 0 | 7,986 | 142,319 | 27,358 |
+| hold-judge | 0 | 11,434 | 142,319 | 30,806 |
+| hold-no-point | 0 | 2,768 | 142,319 | 22,140 |
+| hold-resume | 0 | 2,403 | 142,319 | 21,775 |
+| hold-categories | 0 | 871 | 142,319 | 20,243 |
+| hold-split | 0 | 11,593 | 142,319 | 30,965 |
+| hold-max | 0 | 26,666 | 142,319 | 46,038 |
+| legacy-all-max | 0 | 67,034 | 142,317 | 145,852 |

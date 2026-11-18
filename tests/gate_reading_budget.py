@@ -153,6 +153,10 @@ def measure(root, adapter=None):
         stage = 'legacy-all' if key.startswith('legacy-') else key.split('-', 1)[0]
         prompt, injected = prompts[stage]
         claude_paths = sorted(set(['agents/gate-runner.md'] + COMMON + paths))
+        # Claude's bulk comparison is declarations + six stages, as in design.
+        # Codex additionally injects the index, verified above.
+        if stage == 'legacy-all':
+            claude_paths.remove(GATE + 'SKILL.md')
         result['claude/' + key] = ''.join(read(p) for p in claude_paths)
         # phase review injects reviewer-brief only. review-run is a caller-side file.
         extra = set(paths) - injected
@@ -224,6 +228,23 @@ def fixtures(root):
         baseline = target.read_bytes()
         budgets = {k: len(v.encode()) for k, v in measure(fixture, adapter).items()}
         check(measure(fixture, adapter), budgets)
+        # Corrupt real generated prompts through the same measurement entry point.
+        original_prompt = adapter.prompt
+        def corrupted_prompt(phase, instructions, state):
+            return mutate(original_prompt(phase, instructions, state))
+        for mutate in [
+            lambda text: text[:list(HEADER.finditer(text))[-1].start()],
+            lambda text: text + text[list(HEADER.finditer(text))[-1].start():],
+            lambda text: text.replace('CANONICAL SOURCE ' + COMMON[0],
+                                      'CANONICAL SOURCE extra.md', 1),
+            lambda text: text[:-1] + 'x',
+            lambda text: HEADER.sub(lambda m: m[0].replace(m[2], '0' * 64), text, count=1),
+        ]:
+            adapter.prompt = corrupted_prompt
+            must_fail(lambda: measure(fixture, adapter))
+        adapter.prompt = original_prompt
+        # Bulk plans include hold via multiple conditions; it is still one read.
+        assert plans()['legacy-pass-carryover'].count(GATE + 'stages/hold.md') == 1
         target.write_bytes(baseline + b'x')
         must_fail(lambda: check(measure(fixture, adapter), budgets))
         target.unlink()

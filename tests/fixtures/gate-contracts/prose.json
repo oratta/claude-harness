@@ -994,6 +994,706 @@
       "source": "skills/pr-review-gate/stages/triage.md",
       "line": 258,
       "text": "- 順 6 は決める役の裁定を待ち、裁定を受け取ったらこの段に戻る。"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 7,
+      "text": "1. 下の「時点ごとに読むファイル」の表に従って段のファイルを Read し、起動指示の `段:` が担当する範囲で pr-review-gate の**手順 1〜5**（前提を揃える → レビュー → リスク宣言・仕様宣言 → 動作確認の証拠 → 照合 → Draft なら Ready 化 → `agent-review:passed`）をそのまま実行する。4 つの段を順に通ると手順 1〜5 がすべて実行され、免除される工程は無い。手順 1 で stale な passed を外したら、Draft でない PR は Draft に戻す（正本は pr-review-gate 手順 1）"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 10,
+      "text": "4. 結果を本体に return する（書式は下）。記録先へのコメント・ラベル操作は G が自分で行う（本体は return の要約だけを見る）"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 27,
+      "text": "この節は G（phase `gate`）として起動されたときの規則で、phase `review` のレビュアーとして起動されたとき（Codex に委譲されたレビュアーがこのファイルを読む場合）には適用しない。レビュアーは自分でレビューを行う。"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 29,
+      "text": "新しい G は起動指示にある `レビュー経路:` の 1 行を見て、この行だけで経路を判別する。環境変数・記録先のコメント・自分の起動方法から推測しない。G は段ごとに新しく起こされるので、どの段の G も自分の起動指示の行だけで判別する。"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 33,
+      "text": "| `レビュー経路: adapter` | adapter 経路 | full でも light でも `codex exec`・`codex-companion.mjs`・レビュアーを自分で呼ばず、手順 1 と手順 2-0 まで済ませ、同一 PR/HEAD で他の G が着手済みでないことを確認してから `needs-reviewer` を return する（判定は `full（adapter 経路）` または `light`）。Codex 不可の実測（バイナリ探索・起動）は行わない。投げ先は本体が phase `review` で選び直す |"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 40,
+      "text": "一周目のレビュー要約を受け取ったら、指摘の仕分け前に次を機械照合する。G はここで変更点の意味や `一致` / `食い違い` の正しさを再レビューしない。"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 50,
+      "text": "表の欠落または集合差分があり `補足済み回数: 0` なら、固定 HEAD・元の三表・正確な残差・`補足済み回数: 0` を持つ `needs-reviewer` payload で不足項目だけを補わせる。補足はレビューのやり直しではない。補足の `needs-reviewer` を返す前に、元の三表・`固定 HEAD: <40 桁>`・`一周目の区画: <なし | n>`・`補足済み回数: 1`（補足を頼んだ時点で 1 と数える。payload は 0 のまま）の行を持つ `レビュー三表:` のコメントを PR に投稿する（下の「段ごとの起動と入力」）。補足済み回数は最新の `レビュー三表:` のコメントから読み、fresh reviewer または fresh G へ交代してもリセットしない。"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 56,
+      "text": "## return の書式"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 58,
+      "text": "return メッセージは宣言で始め、そのうしろに下の本文を続ける。宣言の書式とどちらを選ぶかの義務は `skills/develop/references/return-declaration.md` が正本で、この gate-runner.md には書かない。**G は return を書く前に正本（`skills/develop/references/return-declaration.md`）を読み、そこに書かれた書式で宣言する。**"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 73,
+      "text": "`周回:` は前の段の Gate Result の値を引き継ぐ。W の修正後の再レビューで起こされた前提確認と重さ判定の G だけが 1 増やす（戻した指摘が順 3 だけの修正のあとは周を消費しない。`stages/triage.md` の規則のまま）。"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 117,
+      "text": "照合と振り分けの G の return の仕分け欄に `条件の確認待ち` の質問文があれば、G を起こした側（develop では本体）は、その質問文と `条件の確認待ち` の PR コメントの URL を主への次の報告にそのまま載せる（無人運用（loop-dev-agent）では記録先にコメントする）。"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 64,
+      "text": "- **論点なし**: 7 観点の分類に当たっただけで、この変更を入れることで新たに生じるリスク（他の案や見送った場合には無いもの）が無いとき。リスク内容を作文しない。どの変更にも当てはまること（「見落としがあると壊れる」）はリスクに数えない。主の OK を求める文（「決まりで主の OK が要る」の類）を書かない。論点なしの宣言は下の「論点なしの確認」で通り、主に上がるのは確認で通らなかったときだけである"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 85,
+      "text": "当てられるのは資格情報への接触・安全ゲートの弱体化・エージェント権限の拡張の 3 分類だけである。外部公開面の変化・データ喪失・課金/法務・プロダクトのユーザーに及ぶ影響は、issue に書いてあっても主に聞く。宣言の `- 該当する観点:` にこの 4 分類のどれかが 1 つでも含まれる、または引用の付かない分類が 1 つでもあるときは、宣言全体を手順6で主に聞く（一部の分類だけを承認済みにしない）。"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 98,
+      "text": "- **起票の承認**: 起票したセッション S の会話ログで、issue の URL（`https://github.com/<R>/issues/<N>`）が最初に現れる行より前にある主の発言のうち、最後のものを起票を承認した発言の候補とする（候補のままでは証拠にしない。下の提案の照合を通ったものだけを起票を承認した発言とする）。S を探すには、URL を含む会話ログを `grep -l '<URL>' \"${OWNER_REPLY_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}\"/*/*.jsonl` で集める（`owner-reply-check.sh` が読むのと同じ場所。`subagents/` の下は見ない）。"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 99,
+      "text": "  - S にするのは、URL の初出行が、その直前の tool_use（`gh issue create` または `gh api -X POST repos/<R>/issues`）に対応する tool_result であるログだけ。初出行がそれ以外（`gh issue view` の出力・主の発言・`/develop` の引数など）のログは、issue を参照しただけのセッション（この develop のセッションや別セッション方式の子のセッションを含む）なので S にしない"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 109,
+      "text": "当てたときの書き方: 宣言の本文（行頭 `主のリスク許容が必要。`）は書き換えない。末尾に次の 3 行を追記し、`needs-approval` を付けずに手順4・5へ進む（手順 5 で G が条件を確かめ直す）:"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 117,
+      "text": "当たった分類が 2 つ以上なら、1 行目を分類ごとに並べてよい（`issue で承認済み — <分類>: issue #<N> の目的: 「…」`）。追記の行頭を `主の回答: 許容` にしない（`stages/hold.md` の 3-c の「前の宣言の選び方」に拾われ、主の直接の回答ではない記録が引き継ぎの元になるのを避けるため）。条件を 1 つでも満たさなければ当てず、手順6で主に聞く（依頼に満たさなかった条件を添える）。"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 123,
+      "text": "リスク宣言とは**別のコメント**として、仕様宣言を必ず投稿する（リスク宣言の文言は書き換え禁止なので、仕様宣言だけを出し直せるよう分ける）。「書かない」は選べない。本文は次の 3 形のどれかちょうど。"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 145,
+      "text": "仕様変更なしの場合（記録先に `仕様化判断: しない` がある PR）:"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 157,
+      "text": "- 手順 3 で「主のリスク許容が必要」と判定したら、次の順に試す: 前の HEAD に主の直接の許容（`主の回答: 許容` と `真正性確認: 済`）があれば、まず `stages/hold.md` の手順 3-c の引き継ぎ。引き継げないか前の許容が無ければ、手順 3 の issue で承認済み。どちらも当たらなければ `stages/hold.md` の手順 6。先に当たったほうだけを追記し、両方を書き込まない。3-c の引き継ぎか issue で承認済みが当たったら `stages/pass.md` へ進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
+      "line": 158,
+      "text": "- そうでなければ `stages/pass.md`（手順 4 の動作確認と手順 5 の合格処理）へ進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 9,
+      "text": "手順 3 で「主のリスク許容が必要」と判定したとき（まず 3-c の引き継ぎを試し、宣言が `論点なし — ` の行を持つなら手順 6 の前に 6-0 の確認に回す）、手順 4 で主に動作確認を依頼したとき、`stages/triage.md` の仕分け表の順 5 に当たったとき、保留中の PR を再開するときに読む。手順 3 の issue で承認済みを当てた宣言はこの段に来ない（`needs-approval` を付けず、`stages/pass.md` の手順 4・5 へ進む）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 23,
+      "text": "論点なしの確認の記録（1 行目が `論点なしの確認:` のコメント。下の 6-0）は 1 行目が `主の回答:` でないので引き継ぎの元にしない。HEAD が動いたら、新しい HEAD の宣言で論点なしの確認を取り直す（記録は宣言を出した HEAD にだけ効く）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 25,
+      "text": "issue で承認済みの宣言（`declarations.md` 手順 3 の 3 行を追記したもの）は引き継ぎの元にしない（行頭が `主の回答: 許容` でないので上の選び方には拾われない。手順 5 の `確かめ直し: 済` の行も `真正性確認: 済` ではないので拾われない）。HEAD が動いたら、新しい HEAD で手順 3 を回し、同じ条件で issue で承認済みを判定し直す（主に聞いていないので、引き継ぐ回答が無い）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 54,
+      "text": "引き継げるなら、前の宣言と同じ本文を新しい `対象 HEAD:` で投稿し、末尾に次の 4 行を追記する（`needs-approval` は付けずに手順4・5へ進む）。終了コード 0 で `PR_COMMITS=0` のとき（条件 4 を求めないとき）も、投稿する本文は前の宣言の本文のままにし、新しい HEAD のレビューから組み立てた本文に置き換えない:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 65,
+      "text": "1 つでも満たさなければ引き継がず、手順 3 の issue で承認済みを試し（`declarations.md` の出口の順）、それも当たらなければ手順6で主に聞く。主への質問には、スクリプトの `NG:` 行（本文の不一致なら何が変わったか）を引き継げなかった理由として添えて手順6へ進む。終了コード 4 のときは、`EVIDENCE_PR_CHANGED=` の行（どの根拠ファイルの PR 自身の差分が変わったか、PR 自身の commit が触れたか）と、判定の理由（判定の記録が `引き継ぎ判定: 変わった` か `引き継ぎ判定: 判断できない` のときはその `理由:`）か判定役に比べさせなかった理由（ほかの条件を満たさない・差分が 100 行を超えた・従来経路の一括の G で判定役を起こせない、など）を添えて手順6へ進む。終了コード 3 で条件 1 の取り直しのレビューを確かめられなかったときは、`RESOLVED_OUTSIDE_ALLOWLIST=` の行と、PR 全体を見たレビューを確かめられなかったこと（`周回:` の値）を理由に添える。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 67,
+      "text": "引き継ぎで省けるのは主への質問だけで、手順 2 のレビュー・手順 4 の証拠・手順 3-b の仕様宣言は新しい HEAD で出し直し、手順5の実測も省かない。これが手順1の「前回の合格部分を流用しない」と stages/triage.md の「W の修正後の再レビュー」の「手順 1 から全工程をやり直す」に対する唯一の例外である。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 74,
+      "text": "- **判定役**: `subagent_type: dev-workflow:decider`・`model: opus` で起こす（残量モードで上げも下げもしない）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 75,
+      "text": "- **起こすセッションの区別**: develop の外のメインセッションでは、ゲート自身が Agent ツールで判定役を起こし、判定の記録を PR に投稿して 3-c を続ける。develop の合格処理の G は判定役を起こせないので、回す条件を満たしたら宣言を投稿せず `needs-approval` も付けずに、Status `needs-carryover-judge`・`次の段: 合格処理` で返す（本体が判定役を起こして記録を投稿し、合格処理の G を新しく起こす。return の欄は下の「G として動くとき（develop）」節）。従来経路の一括の G（`段: 一括（従来経路）`）は判定役を起こさず手順6で主に聞く（呼び出し元が Status を受けて決める役を起こす約束が無いため）。手順 6-0 の論点なしの確認の決める役も同じ区別で起こす（develop の G は `needs-no-point-check` で返す）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 76,
+      "text": "- `SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、判定役を起こす側（develop の外のメインセッションではゲート自身、develop では本体）が `引き継ぎ判定: 判断できない`・`理由: 判定役を起こさなかった（共有枠 depleted）` の記録を投稿し、手順6で主に聞く側に倒す。develop の合格処理の G は depleted でも `needs-carryover-judge` で返し、この記録を自分で投稿しない（本体の投稿と二重になるのを避ける。記録を受けて起こされた次の合格処理の G が手順6で主に聞く）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 77,
+      "text": "- **渡すもの**: `git diff --no-color --no-ext-diff --no-textconv <前 HEAD> <新しい HEAD> -- <EVIDENCE_PR_CHANGED のファイル>...` の出力と、前の宣言の本文（末尾の `主の回答:` 以降の追記行を除いた部分）の 2 つだけ。記録先の本文・レビューの指摘・W の return・作業の会話は渡さない（主の承認を省いてよいかを、作業した側の説明に引きずられずに決めるため）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 78,
+      "text": "- **依頼文**: `agents/decider.md` の通常の 3 点（原因の分類・直し方・次のモデル）ではなく、次を求める。渡した 2 つだけから判定し、リポジトリを読み足さず、足りなければ「判断できない」と返す。返答の 1 行目は `引き継ぎ判定: 同じ`・`引き継ぎ判定: 変わった`・`引き継ぎ判定: 判断できない` のどれかちょうどにし、2 行目以降に理由（何が同じか・何が変わったか・何が足りないか）を書く。`agents/decider.md` の入力契約の 4 点（記録先の本文・失敗の出力・対象ファイルのパス・実行役の return）はこの依頼には当てはまらず、渡した 2 つだけが入力であることも依頼文に書き、不足を理由に `不足:` で返さず 1 行目を必ず上の 3 形のどれかにするよう求める（入力契約に従って `不足:` で返されると、毎回「判断できない」に倒れてこの経路が一度も効かないため）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 101,
+      "text": "「主のリスク許容が必要」の宣言が `論点なし — ` の行を持つとき（3-c で引き継げず、issue で承認済みも当たらなかったとき）は、下の 1 に進む前にこの確認を回す。`論点あり — ` の行を持つ宣言はこの確認に回さない（下の 1 から主の許容を待つ）。確認者は決める役（`subagent_type: dev-workflow:decider`・`model: opus` を明示。残量モードで上げも下げもしない）だけで、エピックの子でも同じにする。親（エピック）は確かめない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 103,
+      "text": "- **起こす役**: develop の G は決める役を起こせないので、宣言を投稿したら `needs-approval` を付けずに Status `needs-no-point-check`・`次の段: 合格処理` で返す（return の欄は下の「G として動くとき（develop）」節。本体が決める役を起こし、記録を投稿して合格処理の G を新しく起こす）。develop の外のゲートは自分で決める役を起こす（Agent ツール）。従来経路の一括の G（`段: 一括（従来経路）`）は確認に回さず、手順 6 で主に聞く（呼び出し元が Status を受けて決める役を起こす約束が無いため）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 104,
+      "text": "- **渡すもの**: 宣言の本文と PR の差分だけ（`gh pr diff $N --repo $R`）。会話の経緯・G の判断の理由・W の return は渡さない（作業した側の説明に引きずられずに決めるため）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 112,
+      "text": "- **記録**: 決める役を起こしたセッション（develop では本体、develop の外ではゲートを回すセッション）が、宣言コメントへの追記ではなく PR の別のコメントとして次の本文を投稿する（`判定: 論点なし` は `通す` と書く）。1 行目は `主の回答:` で始まらないので、手順 3-c はこの記録を引き継ぎの元にしない。`対象 HEAD:` は宣言と同じ 40 桁を書く"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 122,
+      "text": "- `SHARED_BUDGET_MODE=depleted` のときは決める役を起こさず、起こす側が `論点なしの確認: 判断できない`・`根拠: 決める役を起こさなかった（共有枠 depleted）` の記録を投稿する。develop の G は depleted でも `needs-no-point-check` で返し、記録を自分で投稿しない"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 123,
+      "text": "- **結果ごとの後続**: `通す` なら手順 6 に入らず `stages/pass.md` の手順 4・5 へ進む（同じ HEAD・同じ宣言の URL の記録が合格条件の表で許容済みとして扱われる）。`論点あり` なら G は宣言を `論点あり — ` の形で投稿し直して手順 6（下の 1 から）。`判断できない` なら宣言を変えずに手順 6"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 128,
+      "text": "3. 主への確認依頼は、リポ/運用環境に投稿規約があればそれに従う。無ければ PR コメントに依頼を書き、利用可能な連絡チャネルで主に PR リンクを渡す。依頼の文面（項目と順・聞く理由・リスクの書き方・1 行目の題名と 2 行目のアクションの行）は `~/.claude/output-styles/readable.md` の節 3（主に問いを返す文章の書き方の正本）の型で書き、ここには投稿先と案内の中身だけを置く。リスク宣言が論点なし（分類に当たっただけで、新たに生じるリスクが無い）のときは、依頼も論点なしの短い形で書き（行数は `~/.claude/output-styles/readable.md` の節 3 の論点の無い依頼の決まりに従い、自前で決めない）、宣言を写さない（返事の渡し方の案内はアクションの行に畳み、満たさなかった条件は区切りの下に置く）（宣言の書き分けは `declarations.md` の手順 3）。依頼の前に自力調査（プリフライト）を通す。リスク許容の依頼には「返事は会話で返せばよく、PR へのコメントは要らない」ことを含める。会話で返事を受けたときは、主に PR へのコメントを求めない（手順5の「会話で受領」の形で記録する）。develop の本体が止まる場合は、起動指示の実行モードで返事の渡し方の案内を分ける。interactive（起動指示に実行モードが無いときを含む）では、依頼に「返事は新しいセッションで `/develop <記録先>` と一緒に渡せる」ことを含める。channel では、依頼に「このチャンネルで記録先の番号を添えて返事をすれば続ける（例: `#<記録先> 許容する`）」ことを含め、新しいセッションを開く案内と `/develop` の打ち方は書かない（channel の主はチャンネルだけを見ていて、住人の新しいセッションを開けない）。channel のリスク許容の依頼では、起動指示の `チャンネルの返事の確認:` の行が `可` でない（`不可` か、行が無い）ときに限り、「会話で返せばよく、PR へのコメントは要らない」の代わりに「末尾の PR にコメントで `許容する` と書く」と案内して PR のフル URL を添える（チャンネルの返事を `owner-reply-check.sh` で確かめられないため。行が無いときを不可に倒すのは、PR のコメントならどの環境でも確かめられるため）（引き継ぎのコメントは本体が書く。書式は develop/references/handover.md が正本でここには書かない）。資格情報・安全ゲートの弱体化・エージェント権限の拡張に当たったのに手順 3 の issue で承認済みを当てられずにリスク許容を聞くときは、満たさなかった条件（4 分類を含む・引用できる目的の文が無い・承認の証拠が取れない・`agent-proposed`・実装中に発覚・無人運用や事後報告の届け先が無い経路、など）を依頼に 1 行添える。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 141,
+      "text": "- 動作確認代行の場合、3点セットの3点目（自力検証できるようにする改善提案）は**復帰時に着手または issue 化まで進める**。出しただけで放置しない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 144,
+      "text": "  判断を書かずに次の工程へ進むことを禁じる（放置すると、合格しても auto-merge されないスタック PR になる）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 159,
+      "text": "- 選択肢を並べて主に判断を丸投げしない。推奨を出す（問いの書き方は `~/.claude/output-styles/readable.md` の節 3 の型）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 161,
+      "text": "- 主の回答を待たずに保留 PR をマージしない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 167,
+      "text": "### return の書式（保留・needs-carryover-judge・needs-no-point-check）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 169,
+      "text": "`gate-runner.md`「return の書式」の共通欄（`## Gate Result` から `周回:` まで）のうしろに続ける。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/hold.md",
+      "line": 200,
+      "text": "- 手順 6 の復帰手順の表に従う。表が「手順5へ」とする行は `stages/pass.md`、「手順2からやり直す」「手順3以降へ」とする行はそれぞれ `stages/prepare.md`・`declarations.md`、修正サイクルへ戻す行は `stages/triage.md`（failed の return）へ進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 30,
+      "text": "**軽い通し方の PR**（最新の仕様化判断に `通し方: 軽い` がある）では、手順 1 の 6 と同じ投稿者の絞り込み（`author_association` が `OWNER` / `MEMBER` / `COLLABORATOR`）で読んだ判断の `確かめ方:` のコマンドだけを G が PR の HEAD の作業ツリーで走らせ、表の 1 行にする（手順＝そのコマンド、結果＝終了コードと出力の要点）。新しいテストの代わりとなる既存チェックの実行証拠を残す。終了コードが 0 でなければ passed を付けず failed（`次の段: 前提確認と重さ判定`）で返す。develop では W を `段: spec` で同じ worktree に起こして通常の通し方に戻す。ただし全体のテストなら、下の規則どおり CI の結果で扱う。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 42,
+      "text": "結論の無い CI や失敗した CI を成功として書かない。関係するテストと lint の結果は、作業者が PR に載せた証拠（コマンドと exit code）を使ってよい（その場合、結果の欄にはその証拠があるコメントの URL とコマンド・exit code を写し、自分で動かした形に書かない）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 50,
+      "text": "ゲートの担当は次の 3 点がすべて満たされたときだけ、その条件を充足と判定する。(1) 理由が副作用の大きさで、書かれた副作用が本体の実装から確かめられる、(2) 代替の列が、条件が確かめたい性質（モデル・引数・出力の形など）を本体と同じ経路で通している、(3) 証拠が条件の求める観測そのもの。1 つでも欠けたら結果の欄を ✅ にせず、不合格として作業者に戻す。代替で通せない部分（本体の副作用そのもの）が残るなら、動作確認の表にその旨を書き、3 点セット（自力検証が不能なとき）に進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 96,
+      "text": "リンク先が開けない・主本人の発言と確認できない場合は合格処理をしない（手順6に戻して主に再確認する）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 112,
+      "text": "終了コード 0 で、記録の日時と同じ timestamp を持つ `MATCH:` の行があり、その行の全文から許容の意思が読めるときだけ通す（①主の発言 ②許容の意思、の確認に当たる）。許容の意思は記録の原文ではなく、同じ timestamp の `MATCH:` の全文で読む（原文は部分一致なので、`許容しない` の一部の `許容` だけを記録しても一致してしまう）。あわせて、その発言がこの PR のこの宣言への返事であることを確かめる: 同じ timestamp が、記録を追記する宣言コメントの作成日時（`gh api repos/$R/issues/comments/<comment_id> --jq '.created_at'`）より後であり、全文が別の PR・別の記録先・別のリスクを名指ししていないこと（同じセッションで先に別の PR へ返した `許容する` を流用しないため）。通したら `真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh 終了コード 0）` を追記する。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 114,
+      "text": "- 終了コード 0 でも、記録の日時と同じ timestamp の `MATCH:` が無いとき、または全文が `許容しない` のように許容の意思を示さないときは合格させない（手順6に戻して主に再確認する）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 170,
+      "text": "**issue で承認済みの確かめ直し。** issue で承認済みの 3 行が揃った宣言は、追記を読むだけで通さず、合格処理の前に `declarations.md` 手順 3 の条件を確かめ直す: `owner-reply-check.sh` を記録のセッション ID と原文で回し直し、終了コード 0 と同じ timestamp の `MATCH:` の全文から承認（`/develop <番号>` なら番号の境界）を読む／引用が issue 本文にある／issue に `agent-proposed` が無い／`lastEditedAt` が null か証拠の発言の timestamp より前／`EPIC_DISPATCH_PARENT_EPIC` と `--unmanned` の除外に当たらない／起票の承認なら S の決め方（URL の初出行が起票コマンドの tool_result であるログ）に合い、返事が答えた起票の提案を会話から特定でき、その提案が issue の目的と引用した各効果を含む（エピックの子なら、子の目的と効果が承認された提案の範囲内）／主に事後報告を届ける先がある（メインセッションで主と会話している、または develop の G として return で本体に渡せる）。どれかを満たさなければ合格させず、手順6で主に聞く（依頼に満たさなかった条件を添える）。確かめ直したら、同じ宣言コメントに次の 1 行を追記する:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 180,
+      "text": "**合格したら主に 1 回だけ事後報告する。** issue で承認済みで合格したら、宣言コメントの URL と、引用した issue の文と、当たった分類を 1 回で主に伝える（主が一度も見ないまま通った変更に、後から気づけるようにするため）。ゲートをメインセッションで回しているならその場で伝え、develop の G なら passed の return の `issue で承認済み:` の行に書き、本体が主に伝える。主が後から許容しないと答えたら、手順6の表の「不許容」の行と同じ扱い（revert を含む代替案の検討）にする。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 182,
+      "text": "**「投稿したつもり」を信用しない。** 合格処理の前に、**現在の PR HEAD と一致する SHA を含む宣言コメントと"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 183,
+      "text": "証拠コメントが実在すること**を API で実測確認する（投稿失敗・旧 HEAD 向けコメントの流用を両方とも塞ぐ。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 184,
+      "text": "`gh api -X POST .../comments` は静かに失敗しうるので、投稿直後のレスポンスだけを根拠にしない）:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 193,
+      "text": "1 つでも欠けていれば**合格処理をしない**（コメントを出し直してから再確認する）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 195,
+      "text": "**仕様宣言は記録先の記録と突き合わせる。** 記録先は PR 本文で最初に現れる `Closes #N` / `Fixes #N` / `Refs #N`（大文字小文字不問）が指す元 issue で、**issue 参照が無い PR では PR 自身**（`$REC` を PR 番号に切り替える。PR のコメントも `issues/<番号>/comments` で読める）。そこから最新の `仕様化判断:` コメント（1 行目が `^仕様化判断: (する|しない)$`）を取る。このコメントは 1 行目だけでなく、2 行目以降の `通し方:` の行と `直す文:` の行も読む（文言合わせの通し方で仕様レビューを省いた PR を見分けるため）。PR コメントへの記録が許されるのは **PR 本文に issue 参照が無い場合に限る**（issue 参照があれば issue 側が正。issue 側に記録が無ければ issue に投稿する）。`$ISSUE` が空のまま `issues/$ISSUE/comments` を叩くと `issues//comments` で 404 になるので、必ず `$REC` を経由する:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 219,
+      "text": "| `仕様化判断: する`（`通し方: 文言合わせ` の行なし） | PR の変更ファイルに `openspec/` が含まれる、**または**宣言が指す change が base で archive 済み（`openspec/changes/archive/*-<change-name>/` の実在を実測。スタック PR で仕様が先行 PR に入っている場合）。**かつ** 記録先の最新の `仕様レビュー:` コメントが `APPROVE`（古い APPROVE の後に REQUEST_CHANGES があれば不可）。仕様宣言は「更新した」形 |"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 220,
+      "text": "| `仕様化判断: する`＋`通し方: 文言合わせ` の行あり | `仕様レビュー:` のコメントは照合しない（この通し方では R1 を起こさないので、コメントが無いことを不合格の理由にしない）。代わりに次の 4 点をすべて実測する: ①仕様宣言が `仕様レビュー: 省いた（文言合わせ。` を含む「更新した」形 ②PR の HEAD で `openspec/changes/archive/*-<change-name>/specs/*/spec.md` に当たるファイルがちょうど 1 つ（archive 済みで、差分が 1 ファイル） ③そのファイルに ADDED / REMOVED / RENAMED の見出しが無い ④そのファイルの `### Requirement:` の要件名がすべて、`直す文:` で始まるどれかの行に `「<要件名>」` の形で現れる。1 つでも満たさなければ合格しない。直し方は、差分か仕様化判断のコメントを直して 4 点を満たすか、`通し方:` の行の無い仕様化判断を投稿し直して artifact 一式と仕様レビューからやり直すかのどちらか |"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 221,
+      "text": "| `仕様化判断: しない` | 仕様宣言は「変更なし＋理由」形。PR に `openspec/` 差分が**無い**こと（差分があれば「しない」と矛盾＝合格しない。判断を「する」に取り直すか差分を外す）。`spec-touch-check.sh` が終了コード 2 なら、理由に規範パス接触への言及があること |"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 222,
+      "text": "| 記録なし | **合格しない**。今から判断して記録先に `仕様化判断:` を投稿する（「する」なら仕様化・仕様レビューからやり直す）。issue が無い PR に限り PR 自身のコメントに同書式で記録してよい（`gh api -X POST repos/$R/issues/$REC/comments`） |"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 229,
+      "text": "保留理由が解消しているなら `gh api -X DELETE repos/$R/issues/$N/labels/needs-approval` で外してから進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 230,
+      "text": "解消していないなら**そもそも合格処理をしない**（手順6に戻る）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 237,
+      "text": "**Ready 化に失敗したら passed を付けずに止まる**（下の断片は非 0 で終わる）。draft のまま passed を付けると"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 254,
+      "text": "最後の実測確認は次の**4点すべて**を満たすこと（`gh` は静かに失敗することがある）:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 268,
+      "text": "| Ready 化に失敗して止まった（`draft` が `true`、passed なし） | 失敗の原因（権限・ネットワーク等）を記録先に報告し、解消してから手順5の断片を再実行する |"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 276,
+      "text": "「マージは人間の操作待ち」であることを PR コメントに1行残す。対象 HEAD の CI が失敗か未決着のときは、"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 277,
+      "text": "その1行に CI の状態と、合格後の CI の見張りが結論を出すまでマージしない旨を添える"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 278,
+      "text": "（例: 「マージは人間の操作待ち。CI は実行中 <run の URL>。見張りが結論を出すまでマージしない」）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 283,
+      "text": "- ゲートをサブエージェント（develop の G など）が回している場合: 見張りを始めずに `passed` を return し、呼び出し側の本体に見張りを任せる（サブエージェントは背景タスクの完了で起こされない）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 291,
+      "text": "### return の書式（passed）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 293,
+      "text": "`gate-runner.md`「return の書式」の共通欄（`## Gate Result` から `周回:` まで）のうしろに続ける。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/pass.md",
+      "line": 316,
+      "text": "- 手順 4 で主に動作確認を依頼したとき、手順 5 の照合で主の許容待ちが残ったときは `stages/hold.md`（手順 6）へ進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 21,
+      "text": "1. PR に `agent-review:pending` が付いていることを確認（無ければ付ける）。**`agent-review:failed` からの再レビューもここが起点** — 修正を push したら `failed` を外して `pending` に戻し（`gh api -X DELETE repos/$R/issues/$N/labels/agent-review:failed` → `-X POST ... -f 'labels[]=agent-review:pending'`）、手順1から全工程をやり直す（前回の合格部分を流用しない。唯一の例外は手順 3-c の主の許容の引き継ぎ（`stages/hold.md`）。ただし再レビューの範囲は手順2の収束ルールに従い**差分限定**。方式の書き換えの後は全体レビューにし、周回は数え続ける）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 26,
+      "text": "   passed を外したら、PR が Draft でなければ `gh pr ready --undo` で Draft に戻す（手順5の合格処理で Ready にした PR に commit が積まれた取り直しのあいだ、周回ごとに CI を走らせないため。次の合格で Ready に戻る）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 31,
+      "text": "     if [ \"$(gh api repos/$R/pulls/$N --jq .draft)\" = false ]; then gh pr ready --undo $N --repo $R; fi   # 非 Draft なら Draft に戻す"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 39,
+      "text": "4. `git fetch origin` → `origin/main` をブランチへマージ（rebase + force-push は禁止）。コンフリクトが実装判断を要する規模なら `agent-review:failed` にして終了。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 45,
+      "text": "6. **軽い通し方の確認**: 手順 1 の 3 で解決した記録先（issue 参照が無い PR は PR 自身）を `REC` に置き、最新の仕様化判断だけを読む。最新コメントに `^通し方: 軽い$` と完全一致する行があるときだけ、レビュアーを起こす前に次を確かめる。その行が無ければこの確認をせず、コメントも投稿しない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 48,
+      "text": "   DEC=$(gh api --paginate --slurp repos/$R/issues/$REC/comments | jq -r 'add | [.[] | select(.author_association | IN(\"OWNER\", \"MEMBER\", \"COLLABORATOR\")) | select(.body | split(\"\\n\")[0] | test(\"^仕様化判断: (する|しない)$\"))] | last | .body')"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 63,
+      "text": "     [ \"$(printf '%s\\n' \"$DEC\" | head -1)\" = '仕様化判断: しない' ] &&"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 82,
+      "text": "   grep の 0 件は終了コード 1 になるので、このブロックは `set -e` を有効にせず走らせ、終了コードではなく出力の値で判定する。出力は順に、仕様化判断の 1 行目・種類・確かめ方の行数・openspec のファイル数・変更ファイル数と追加／削除行数、種類の行数、機械判定。`MACHINE_RESULT=条件外` なら出力した確認コメントと Gate Result の欄を使って下の条件外の処理を行い、return する。条件内なら G が差分を読む判断に進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 86,
+      "text": "   **G が差分を読んで判断する点**: `gh pr diff $N --repo $R` で、変更の記録を除くすべての変更が宣言した種類に収まるかを読む。typo・lint・コメント・フォーマット・設定値はプログラムの挙動を変えないこと（設定値も値を変えて挙動が変わらないこと）。ワンライナー fix は明白なバグの 1 行修正で直し方に選択肢がないことを判断し、挙動が変わることを条件外の理由にしない（比較の向きの取り違えの修正は条件内、既定値の選び直しは条件外）。判断がつかない場合も条件外。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 88,
+      "text": "   **結果**: PR コメントの 1 行目を `^軽い通し方の確認: (条件内|条件外)$` に完全一致させ、2 行目を `対象 HEAD: <40 桁フル SHA>`（手順 1 の 5 の `$HEAD_SHA`）、続けて確かめた点ごとの結果と、条件外なら外れた点を書く。条件内なら手順 2-0 へ進む。条件外なら `agent-review:pending` を外し `agent-review:failed` を付け、レビュアーを起こさず終了する。develop の G の return は下の「軽い通し方の条件外」を使い、それ以外の呼び出し元は確認コメントを見て通常の通し方に戻す。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 94,
+      "text": "**実装したコンテキストで自己レビューしない。** これは light / full のどちらでも変わらない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 119,
+      "text": "**区画の判定（一周目のレビューだけ）**: light / full の行数判定は上記のまま行う。別に、PR files API のファイルごとの追加＋削除を `${CLAUDE_PLUGIN_ROOT}/scripts/review-partitions.sh` に渡し、合計が 600 行を超えたらファイル単位の区画を作る。files API が返す順に 400 行以下を目安に詰め、1 ファイルで 400 行を超えるものは単独の区画にする。0 行のファイルは直前の区画（先頭なら区画 1）に置く。`${CLAUDE_PLUGIN_ROOT}` が未設定のときは、この段のファイル（stages/prepare.md）の位置から `../../../scripts/review-partitions.sh` を絶対パスに解決して使う。入力は 2 段で作る（1 本のパイプにしない。パイプだと `gh api` が失敗しても空の入力が渡り、「合計 0 行」と区別できない）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 146,
+      "text": "### needs-reviewer の return（本体にレビュアーの spawn を委ねる）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 148,
+      "text": "G は手順 1（前提を揃える・HEAD SHA の固定）と手順 2-0（light / full の判定と `レビュー重量:` コメント）まで済ませてから、次の payload で本体に return する。本体はこれを読んでレビュアー（既定は `subagent_type: dev-workflow:reviewer` に `model: opus`。マージ条件・層間契約・課金/法務に触れれば `subagent_type: dev-workflow:decider` で spawn する。`general-purpose` に `model: fable` は付けない。聖域パスだけでは上げない）を spawn し、照合と振り分けの G を新しく起こしてその要約を渡す。adapter 経路（`レビュー経路: adapter`）では、本体が phase `review` で投げ先を選び直して dispatch 記録に残してからレビュアーを起動し（develop `SKILL.md` の (4)）、要約と選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。adapter 経路の payload では証拠欄 5 つ（選んだ経路・実行コマンド・終了コード・出力の要点・実待ち時間）をすべて `未実行（adapter 経路）` と書き、Codex の証拠を作らない。`推奨モデル` は参考値で、実際の投げ先は本体の選び直しが決める。Codex 不可・Codex オフ・light 判定・adapter 経路による通常の初回レビュー依頼は下の基本 payload を使う。一周目の三表照合で不足が出た補足要求の場合に限り、同じ payload に固定 HEAD・元の三表・残差・`補足済み回数: 0` を加え、同じレビューの不足した項目だけを補わせる（adapter 経路では補足要求も本体の選び直しを通る）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 185,
+      "text": "- レビュー結果を受け取ったら、指摘が残っていれば `stages/triage.md`、残っていなければ `declarations.md`（手順 3・3-b）へ進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 15,
+      "text": "以下は**従来モード**の優先順。新 Codex モードは App Server 固定で、以下の exec / Claude fallback は適用しない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 22,
+      "text": "**Codex がオフのとき**: full と判定したあと、Codex を試す前に最初の 1 手として `python3 <plugin>/scripts/usage_view.py --codex-enabled` を実行する（`on` か `off` を 1 行出し、常に exit 0。`accounts.json` の `codex.enabled` が `false` のときだけ `off`）。`off` なら、バイナリ探索（`command -v codex`）も Codex の呼び出しもしないで、Task サブエージェント（`subagent_type: dev-workflow:reviewer`）でレビューする。`on` なら表の既定どおり Codex から試す。出力が `on` でも `off` でもない（コマンドが失敗した）ときは `on` と同じに扱い、その出力を `実行コマンド` の証拠に書く。設定ファイルを自分で読まず、このコマンドの出力だけで分岐する。オフは利用者が明示した設定で、下の三条件の実測ではない（未試行の Codex を不可と推測することの禁止には当たらない）。変わるのはレビュー実行者だけで、light の判定・手順 3 のリスク宣言・手順 4 の動作確認・fail-closed の判定順序は変わらない。新 Codex モードと develop の adapter 経路には適用しない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 26,
+      "text": "Codex を full の既定にする理由: **実装者と別モデル系列で読ませたほうがレビューの独立性が上がる**（同一モデルは同じ盲点を共有する）。加えて**レビューで Claude の 5h/7d 枠を消費しない**ので、枠を実装サイクルに残せる。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 28,
+      "text": "**2-0 の事前判定と、この障害時フォールバックは役割が違う** — 前者はレビュー開始前に**変更内容**から重量を決める設計上の選択、後者は full と判定した後に **Codex の可用性**が理由で発生する迂回路。どちらの経路で Task サブエージェントになったかを PR コメントで書き分ける（`レビュー実行者: Task サブエージェント（light 判定のため）` / `レビュー実行者: Task サブエージェント（full・実測した Codex 不可: <条件>）` / `レビュー実行者: Task サブエージェント（full・Codex オフ）`）。develop の adapter 経路（G が `needs-reviewer` を返し、本体が phase `review` で投げ先を選び直した場合）では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` と書く（手順は develop の `references/roles/gate-runner.md`「レビュー経路の判別」）。executor が codex なら、worker 結果の `execution.model_resolution.requested` と `execution.model_resolution.resolved` を使って `<model>` を `<requested>→<resolved>` と書く。resolved が null なら未観測と明示し、要求値や dispatch 時の model で補完しない。executor が claude なら従来の model 値を使う。**どちらの経路でも手順3のリスク宣言・手順4の動作確認・fail-closed の判定順序は一切変わらない** — 変わるのはレビューを実行する主体だけで、免除される工程は無い。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 30,
+      "text": "**従来モードの不可判定**: companion / slash command が無ければ、`command -v codex` 等でバイナリを確認し、あれば exec を試す。companion 導入は任意で、不在だけでは Codex 不可にしない。設定による Codex オフ（上の「Codex がオフのとき」）は三条件とは別で、ここでは扱わない。不可と判定できるのは次の実測だけ:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 36,
+      "text": "未試行、auth.json の有無、バージョン表示だけでは可否を確定しない。「サブスク切れ」との推測も認証切れの実測に代用しない。引数誤り・権限拒否・通信障害などを三条件に読み替えて Claude へ暗黙にフォールバックしない。該当しないエラーは証拠とともに本体へ返す。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 38,
+      "text": "従来モードの full は、成功時も不可時も次の証拠を PR コメントに残す。終了コードは取得できた場合だけ書く。タイムアウトで完了未確認なら実待ち時間を書き、架空の終了コードを書かない。light は事前判定の根拠を記録し、未実行の Codex 証拠を作らない。develop の adapter 経路では同じ雛形の証拠欄を `未実行（adapter 経路）` と書き、レビュー実行者行は adapter 経路の形にする。Codex オフのときは `選んだ経路`・`終了コード`・`実待ち時間` を `未実行（Codex オフ）` と書き、`実行コマンド` にオフの判定に使ったコマンドとその出力を書く。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 73,
+      "text": "3. `plugins/dev-workflow/references/subagent-waiting.md` の完了確認と有限ポーリングに従い、実レビューの完了結果を確認する。バイナリ・auth.json の存在や version 表示だけでレビュー可能とは宣言しない。三条件以外のエラーはそのまま記録し、未確認として残す。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 74,
+      "text": "4. 以下を対象 issue に記録する。認証情報そのものは転載しない。未実測は未確認とし、文書化完了と実測完了を区別する。各 PC の結果が揃うまで対象 issue を完了扱いにせず、文書化 PR に自動 close 指定を付けない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 94,
+      "text": "G はサブエージェントなので Agent ツールを持たず、Task サブエージェントを自分では起こせない。`レビュー経路: 従来`、または新しい G の起動指示に行が無いとき、pr-review-gate 手順 2-1 の従来モードの優先順を次のように読み替える。新 Codex モードは App Server 固定で、以下の exec / Claude fallback は適用しない:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/review-run.md",
+      "line": 120,
+      "text": "- レビュー結果を受け取ったら、指摘が残っていれば `stages/triage.md`、残っていなければ `declarations.md`（手順 3・3-b）へ進む。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/reviewer-brief.md",
+      "line": 19,
+      "text": "姿勢: **受け入れ条件を根拠に「落とせる欠陥を探す」**。実装者がやったことの追認ではなく、やっていない角度（エッジケース・既存コードとの整合・失敗時の戻し方）を突く。テスト・lint は**報告を信用せず自分で再実行**する。再実行するのは、変えたファイルに関係するテスト（この PR で足した・変えたテストのファイルと、テストのファイルのうち変えたファイルのパスかファイル名を含むもの）と lint に限る。テストの全体実行（テストランナーをファイルで絞らずに起動するもの）は行わず、全体のテストは手元で回さない。全体のテストの結果は作業者の結果か CI の結果を証拠にし、どちらも無いとき（例: Draft では CI を走らせないリポジトリで作業者も CI に任せたとき、CI がまだ実行中のとき）は、全体のテストの証拠が無いことを要約に書く（CI の結果は G が手順 4 で扱う）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/reviewer-brief.md",
+      "line": 23,
+      "text": "**レビュアー向け指示ブロック**（Codex の指示文と Task サブエージェントへの指示に、下の `text` ブロックをそのまま貼る。指摘の書式と深刻度の定義はここにだけ置き、他のファイルには再掲しない）:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/reviewer-brief.md",
+      "line": 61,
+      "text": "**Codex が優先度付きの形で返したときの読み替え**: 書式を指定しない `codex exec` は、指摘に `[P1]` のような優先度の見出しを付けて返す（2026-09-21 に実測。#349 の PR コメントに記録）。書式ブロックを貼っても Codex がこの形や JSON で返したときは、次の表で固定書式に読み替える。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/reviewer-brief.md",
+      "line": 71,
+      "text": "`変更点の一覧`・`照合表`・`ハンク被覆` のいずれかが無い優先度付き出力は、完全なレビュー結果へ読み替えない。不足したレビュアー出力として扱い、一周目の照合を完了扱いにしない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/reviewer-brief.md",
+      "line": 76,
+      "text": "- 起こした側は、結果を受け取ったら、指摘が残っていれば `stages/triage.md`、残っていなければ `declarations.md`（手順 3・3-b）へ進む。develop の G は先に `gate-runner.md` の「一周目の三表を機械照合する」を行う。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 36,
+      "text": "同じ周に順 5 の指摘と順 2〜4 の指摘が混ざったら、保留を先にする。G は全件の仕分けを PR コメントに記録して保留で return し、主の回答後に、切り出さない指摘をまとめて 1 回の `agent-review:failed` で W に戻す。主の回答が来るまで、W は順 2〜4 の指摘の修正にも着手しない。`needs-approval` と `agent-review:failed` を同時に付けない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 39,
+      "text": "1. G は全件の仕分けを PR コメントに記録し、`needs-approval` を付けて保留で return する。主への質問は順 5 の指摘についてだけ出し、順 6 の指摘は仕分け欄に「順 6・未裁定」として載せる"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 40,
+      "text": "2. 主の回答が来たら、G は順 5 の指摘を手順 6 の表の「切り出しの確認」行どおりに処理して `needs-approval` を外す。未処理の順 6 の指摘が残っていれば、`agent-review:failed` を付けずに Status `needs-decider` で return する"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 41,
+      "text": "3. 裁定が「全部列挙してから直す」なら、主が「この PR で直す」と答えた指摘・順 6 の指摘・順 2〜4 の指摘をまとめて、1 回の `agent-review:failed` で W に戻す。裁定が「切り出す」なら、順 6 の指摘について順 5 と同じ経路で主に聞き（再び保留）、その回答が来てから残る修正を 1 回の `agent-review:failed` で W に戻す"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 43,
+      "text": "この PR で決める役の裁定が既に 1 回あれば（順 6 の数え方で 1 件以上）、順 6 の指摘は最初から「切り出す」として順 5 の経路に入るので、1 の質問に含めて 1 回の保留にまとめる（主に 2 回に分けて聞かない）。主の回答と裁定の両方が済むまで、W は順 2〜4 を含むどの指摘の修正にも着手しない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 45,
+      "text": "同じ周に直し方の判定に回す指摘と順 6 の指摘が混ざったら、G は判定に回すかを決める前に、順 6 の数え方（1 行目が `^決める役の裁定: (全部列挙してから直す|切り出す)$` に完全一致する PR コメントの件数）でこの PR の裁定の回数を数える。1 件以上なら、順 6 の指摘は決める役を起こさず「切り出す」として順 5 の経路に入るので、判定に回さず、順 6 以外の指摘も含めて全件を順 5 に当て、上の段落の裁定済みの扱いどおり 1 回の保留にまとめる。0 件なら直し方の判定を先にする: G は全件の仕分けを PR コメントに記録し、順 6 の指摘を仕分け欄に「順 6・未裁定」として載せて `needs-fix-check` で return する。判定が「決まっている」なら、照合と振り分けの G は `agent-review:failed` を付けずに Status `needs-decider` で return し、順 6 の裁定が済んでから、判定に回した指摘と順 6 の指摘をまとめて 1 回の `agent-review:failed` で W に戻す（裁定が「切り出す」なら、順 6 の指摘について順 5 と同じ経路で主に聞き、その回答まで W はどの指摘の修正にも着手しない）。判定が「選び直しが要る」なら、判定に回した指摘は順 5 になり、上の順 5 と順 6 の混在の処理順に従う（判定を先にするのは、判定で順 5 に戻る指摘があると主の回答が先になり、順 6 の裁定の対象が変わりうるため）。直し方の判定と順 6 の裁定を 1 回の決める役への依頼にまとめない。直し方の判定は順 6 の回数に数えず、G は判定を受け取っても `決める役の裁定:` のコメントも残さない（判定の記録の 1 行目 `直し方の判定:` は順 6 の数え方の正規表現に一致しない）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 56,
+      "text": "G はレビューをせず、最初に `git fetch` で W の push を取り込み、`git cat-file -e <修正前 SHA>^{commit}` で修正前 SHA のコミットが実在することを確かめる（解決できないときだけ、照合の起点が失われているので W に表の出し直しを求める。祖先であることまでは求めない）。そのうえで次の 2 段で照合する（「該当しない理由」の正否を判定しない。書き換えの妥当性も判定しない。集合の一致だけを見る）。grep の語は 2 段とも `plugins/dev-workflow/scripts/review-hit-set.py --head <HEAD の 40 桁 SHA> --repo <repo> <table-file>` の 1 回の実行で回す（`<HEAD の 40 桁 SHA>` は `git fetch` で W の push を取り込んだあとの HEAD の 40 桁フル SHA。`<repo>` はリポジトリルートのパスで、GitHub のリポジトリ名 `<owner>/<repo>` ではない。`--head` を付けないと 1 段目だけを行う）:"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 58,
+      "text": "2. HEAD で同じ検索コマンドを実行し、残ったヒットがすべて、扱いが「該当しない」の行に対応するかを見る。各「該当しない」行の照合に使う本文は、補助表に載っていれば修正後の本文、載っていなければ主表の本文とする。対応は「ファイル」と「ヒットした行の本文」の組で取り、行番号では取らない（修正で前後の行が増減すると行番号がずれるため）。同じ組が複数あるときは件数で照合する。書き換えで検索語を含まなくなった「該当しない」行が HEAD に現れないことは不一致としない。ただし、修正前 SHA で同じファイル・同じ本文の組に「直した」と「該当しない」の両方があるとき（扱いが混在する組）は、件数の一致だけでは直し忘れを見分けられないので、あわせて `git diff <修正前 SHA> HEAD -- <ファイル>` の出力のうち `-` で始まりその本文が続く行の件数が、その組の「直した」の件数と、その組のうち補助表に載った「該当しない」の件数の和以上であることを見る。足りなければ、その組の「直した」の行を「直したはずが残った」差分として W に返す"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 64,
+      "text": "**順 5（主に切り出すかを聞く）**: 主への質問は「この欠陥を残して切り出すか」の形にし、次の 4 点を必ず書く: 欠陥がマージ後に何を起こすか、直す見積もり（行数・触るファイル・spec を変えるか）、別 issue にする固定費、推奨。2 周目の終わりまで待たず、指摘を受け取ったその周で聞く。G は PR に `needs-approval` を付けて保留で return し、復帰は手順6の表の「切り出しの確認」行に従う。無人運用（loop-dev-agent）でも同じく止まる。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 76,
+      "text": "| D | 同じ場所を直す open の issue があるか。ある | その issue に、受け入れ条件に足さない参考としてコメントで入れる。親の取得が失敗し続けたときの「範囲で成り立つ」に当たった指摘は、段 D を通さない |"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 77,
+      "text": "| E | 起きる見込みと起きたときの影響が、issue 1 件を通す手間に見合うか | 見合えばエピックの外の新しい issue、見合わなければ捨てる。親の取得が失敗し続けたときの「範囲で成り立つ」に当たった指摘は、判定せずエピックの外の新しい issue にする |"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 87,
+      "text": "| 条件が書かれていない・書けない（`条件を書けない` を含む） | 捨てる。PR コメントに理由を 1 行残す。候補探しをしない |"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 95,
+      "text": "**条件を主に聞くとき（段 B で G が決められない）**: 聞くのは条件についての問いにする（例:「既存データのある環境に配ることは、今回あるか。今回は無くても後であるか」）。指摘を issue にしてよいか・直すかは聞かない。この質問では `needs-approval` を付けず、保留で return しない。G は 1 行目が `条件の確認待ち` の PR コメントにその指摘と質問文を残し、ほかの指摘の振り分けと手順3以降をそのまま進める。return の仕分け欄にも質問文を写す。照合と振り分けの G の return の仕分け欄に `条件の確認待ち` の質問文があれば、G を起こした側（develop では本体）は、その質問文と `条件の確認待ち` の PR コメントの URL を主への次の報告にそのまま載せる（無人運用（loop-dev-agent）では記録先にコメントする）。自分でゲートを回すセッションは、G を起こした側を兼ねる。主の答えは 1 行にして、エピックの本文（エピックに属さない PR では記録先の本文）の節 `## 条件の答え` に足す（節が無ければ作る。聞かれた分だけを足し、先に書き出しておかない）。足した行は、同じエピック（記録先）の以後のレビューの依頼文に入る（入れるのはレビュアーを起こす側。`stages/reviewer-brief.md` の入口）。答えを受け取ったセッション（develop では本体。`gate-runner.md` の「段ごとの起動と入力」）は、本文に行を足し、`条件の確認待ち` のコメントに答えを返信し、確認待ちの指摘を段 B の表から当て直す。当て直しは PR がマージ済みでも行い、段 A には戻さず、ラベル・周・宣言には触れない。答えが出るまで、その指摘は `条件の確認待ち` のまま残す。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 99,
+      "text": "- エピックに属する PR で、親が `$R` にあるときは `--epic <エピック番号>` を付ける。親のリポジトリが `$R` と違うとき・親の取得が失敗し続けたときは `--epic` を付けない（親の取得は段 C の段落のとおり、この走らせる前に済ませる）。`--children-only` は付けない（1 回の実行で、候補がエピックの子か外かを各行の 3 列目 `child` / `other` で見分けるため。打ち切りの再実行だけは下の項のとおり付ける）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 102,
+      "text": "- 出力に `(15 件で打ち切り。ほかにも一致あり)` が出たパスがあり、PR がエピックに属し、親の取得に成功し、親が `$R` にあるときに限り、そのパスだけに、1 回目と同じ `--repo` と `--exclude` のまま `--epic <エピック番号> --children-only` を付けて、もう 1 回走らせ、子の候補を足す（打ち切りでエピックの子が 15 件の外に落ち、新しい子 issue を作ってしまうのを防ぐ。この再実行は 1 回だけの規則の例外で、打ち切られたパスごとに 1 回を超えない）。親が別リポジトリのとき・親の取得が失敗し続けたときは再実行せず、初回の候補をすべて `other` と読む（再実行の検索語 `parent-issue:<リポジトリ>#<エピック番号>` が、`$R` の同じ番号の issue の子を探してしまうため）。重なる番号は 1 件と数える。再実行でも打ち切られたら、出た候補だけで振り分け、15 件の外の子を見落とすことは許す。再実行が終了コード 0 以外で終わったら、走らせ直さず、仕分けの PR コメントに「再実行に失敗した」と終了コードを書き、打ち切られたパスの指摘は 1 回目に出た候補だけで振り分ける（再実行でも打ち切られたときと同じ扱い。既存 issue への相乗りも許す）。打ち切られていないパスも 1 回目の結果を使う"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 104,
+      "text": "- 1 回目の実行の終了コードが 0 でないとき（1 は検索の失敗、2 は引数の不備）は、標準出力が空であることを「候補なし」と読まない。引数を直して 1 回だけ走らせ直し、それでも 0 にならなければ、仕分けの PR コメントに「候補探しに失敗した」と終了コードを書き、既存 issue への相乗り（段 C の表の上 3 行と段 D）をせずに、段 C の「当たる issue が無い」と段 E へ進む"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 115,
+      "text": "子の行で受け入れ条件に足す前に、その子 issue が作業中かを確かめる（`develop 開始` か `実行モード:` の行があるコメントと、本文に `Closes` / `Fixes` / `Refs #<番号>`（大文字小文字不問）のある open の PR のどちらか。判定の正本は `openspec/specs/in-progress-issue-scope/spec.md`）。`gh issue view <番号> -R $R --json comments` と `gh pr list -R $R --state open --search \"<番号> in:body\" --json url,body` の 2 回で足り、issue の本文だけで作業中でないと判断しない。作業中なら足さず、この指摘だけの新しい子 issue を同じエピックの子として作り、本文に作業中の子の番号と「作業中の子の PR のマージ後に着手」を書き、作業中の子には新しい子の番号をコメントで書く（受け入れ条件は編集しない）。主に聞かない。どちらかの呼び出しが 0 以外で終わったら 1 回だけやり直し、それでも取れなければ作業中と同じに扱って新しい子 issue を作る。判定のスクリプトは作らない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 117,
+      "text": "3 列目が `other` の候補（`--epic` を付けない実行ではすべての候補）に対して、コメント以外の操作（本文を読んで受け入れ条件が全部満たされるかを判定する・エピックの子に足す・受け入れ条件に足す）をする前に、`gh api repos/$R/issues/<番号> --jq .author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれかであることを確かめる。それ以外の値のとき、または取得に失敗したときは、その候補を「当たる issue が無い」と同じに扱う（本文を読まない）。外の issue に open の PR が付いているときは、新しい子 issue に「外の PR のマージ後に着手」と書く。エピックの中と外に同じファイルを直す issue が並ぶときは、互いの番号を書く。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 121,
+      "text": "**段 E（手間に見合うか）**: 起きる見込みと起きたときの影響を、issue 1 件を通す手間（仕様・レビュー・ゲートを 1 回通す分）と比べる。見合えばエピックの外の新しい issue を作り（これが振り分けを経た follow-up issue）、見合わなければ捨てて PR コメントに理由を 1 行残す。ただし、親の取得が失敗し続けたときの「範囲で成り立つ」に当たった指摘は、この判定をせずエピックの外の新しい issue にする（段 C の段落）。費用対効果を比べるのはこの段だけ。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 123,
+      "text": "**振り分けの記録**: G は指摘ごとに、当てた段と行き先を仕分けの PR コメントに記録し、return の仕分け欄にも書く。行き先は、捨てたなら理由の 1 行、issue にした・コメントで入れたならその URL、段 A なら「この PR で直す」と要る受け入れ条件の ID か delta spec の要件名、または当たる例外 3 種のどれか、確認待ちなら質問文。issue になった件数とならなかった件数は記録するだけで、合否に使わない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 144,
+      "text": "`agent-review:failed` に付け替えて修正サイクルへ戻すときは、**修正を書くサブエージェントのモデルを決めてから戻す**（Agent ツールの `model` パラメータ。PR を持っているセッション本体のモデルは変えない）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 156,
+      "text": "**`request` が返した model を使い、model が変わるなら新しい thread に手渡す。** 使うモデルは `--failure` の値を渡した `request` の返り値で、ここに書いた値（括弧内は Claude での例）から計算し直さず、返った model と違う model を独自に指定しない。返った model が起こし済みの W の model と違うときは SendMessage で再開せず、新しい thread に手渡す（細目の正本は `plugins/dev-workflow/references/codex-develop.md`）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 160,
+      "text": "**なぜ 1 回目の failed で上げるのか**: G のレビューループは 2 周キャップで**2 周目が既定の最終周**にあたる（3 周目以降は直し方の判定・主の回答・順 6 の裁定のどれかがあるときだけ開く）ため、1 回目の failed の時点で原因側を一方だけ上げてキャップ内での収束確率を上げる（昇格トリップワイヤーの「1 回目の失敗では誰も上げない」は同じテストの 2 連続失敗を数える別の発火条件で、こちらとは数え方が違う）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 162,
+      "text": "**収束ルール（2周キャップ）との関係**: 再レビューは既定2周なので**2周目が既定の最終周**にあたる（3 周目以降は直し方の判定・主の回答・順 6 の裁定のどれかがあるときだけ開く）。最終周の前に、失敗の原因側を一方だけ上げる（決める役は 1 回目の failed では上位の格、最上位の格は 2 回目以降。値は `--failure` を渡した `request` の返り値）ことで、キャップ内で収束する確率を上げる（3周目へ持ち越さないための配分）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 171,
+      "text": "1周目からモデルを上げる「重要実装」の事前分類（聖域パス・マージ権限・層間契約・課金/法務。実行役はどの分類でも上位の格止まりで、読んで判断する役が分類に当たるときは `subagent_type: dev-workflow:decider`）は **develop スキルの references/pre-classification.md が正本** — このゲートでは再掲しない。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 177,
+      "text": "### return の書式（failed / needs-decider / needs-fix-check / review-incomplete と仕分け）"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 179,
+      "text": "`gate-runner.md`「return の書式」の共通欄（`## Gate Result` から `周回:` まで）のうしろに続ける。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 196,
+      "text": "failed の return には**必ず原因分類**を含める（本体はこれを見て、決める役と実行役のどちらを上げるかを決める。分類の定義は pr-review-gate 手順 2-2 が正本。モデルを上げるのは実装品質起因のときだけで、「段 A だけ（昇格なし）」では W のモデルを据え置く）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 206,
+      "text": "レビュー要約を受け取った G は、「レビュー実行者:」の PR コメント（`レビュー実行者: Task サブエージェント（light 判定のため）` / `（full・実測した Codex 不可: <条件>）` / `（full・Codex オフ）`。adapter 経路では `レビュー実行者: <executor>/<model>（adapter 経路・<light|full>・dispatch 記録: <URL>）` とし、本体から渡された executor / model と dispatch 記録のコメント URL を写し、`<light|full>` には手順 2-0 の判定を書く。Codex の `<model>` は worker 結果の `execution.model_resolution.requested` と `execution.model_resolution.resolved` による `<requested>→<resolved>` として書く。resolved が null なら未観測と明示し、要求値や dispatch 時の model から補完しない。Claude の `<model>` は従来の値を使う。モデルと根拠を添え、full では対象 HEAD と `stages/prepare.md` の needs-reviewer の payload の証拠欄と同じ証拠を記録する。終了コードは取得できた場合のみ記し、架空の終了コードを書かない。light は事前判定として記録する）を **G が投稿**する。そのあとの分岐は、`gate-runner.md` の「段ごとの起動と入力」の「レビュアーの要約受領」に従う。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 240,
+      "text": "`$(...)` が各部分の末尾の改行を落とし、`printf '%s\\n'` が行区切りを 1 個戻すので、部分の間には行区切りが 1 個だけ残る（行同士がつながらず、表の途中に空行も入らない）。`tail -n +4` は部分の先頭の 3 行を除く（残すと 2 行目の SHA の行が 2 回現れ、`review-hit-set.py` が contract エラーを出す）。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 242,
+      "text": "足す前に部分ごとに次を確かめる。`gh api repos/$R/issues/comments/<コメント ID> --jq .issue_url` の末尾の番号が同じ PR であること（別の PR のコメントなら連結しない）、部分の 1 行目の k/n が親の行と一致すること、部分の 2 行目が親の SHA の行（三表は `固定 HEAD:`、順 3 は `修正前 SHA:`）と一致すること、n 件すべて取得できたこと。部分の中の行の欠落は、ここでは確かめず、既存の照合が差分として拾う。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 246,
+      "text": "- 三表: 部分が読めない、または親と対応しないときは、元の三表の欠落として残差に記録し、Status `review-incomplete` で return する。合格処理へ進まず、2 回目の `needs-reviewer` を返さない"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 247,
+      "text": "- 順 3 の一覧: `部分 k/n:` の行が n 行そろわない、部分が n 件取得できない、または部分が親と対応しないときは、照合を行わず W に表の出し直しを求める。順 3 の差し戻し 1 回に数える。W は親と部分を投稿し直し、G は最新の親を読む"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/triage.md",
+      "line": 251,
+      "text": "**1 行で部分に収まらないとき**: 1 行だけで部分に収まらない行（ミニファイされたファイルのヒットなど）があれば、そのコメントを投稿しない。W は投稿も push もせず、return で本体に報告する。G は補足の `needs-reviewer` を返さず、Status `review-incomplete` で return する（回数の記録が残らないまま補足を頼むと、補足済み回数が 0 に戻るため）。"
     }
   ],
   "commands": [
@@ -1413,6 +2113,16 @@
       "source": "skills/develop/references/roles/gate-runner.md",
       "line": 123,
       "reason": "モデル規則の重複は decision-criteria.md / pre-classification.md の正本参照へ。develop-roles.bats のモデル契約で別検査。"
+    },
+    {
+      "source": "skills/develop/references/roles/gate-runner.md",
+      "line": 19,
+      "reason": "移動先への参照案内を付け替え。gate_contracts links / pr-review-gate-index / develop-roles の条件・出口検査で確認。"
+    },
+    {
+      "source": "skills/pr-review-gate/stages/prepare.md",
+      "line": 184,
+      "reason": "移動先への参照案内を付け替え。gate_contracts links / pr-review-gate-index / develop-roles の条件・出口検査で確認。"
     }
   ]
 }
