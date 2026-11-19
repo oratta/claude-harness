@@ -12,14 +12,14 @@ develop の本体から `subagent_type: dev-workflow:gate-runner` で**名前付
 
 ## 時点ごとに読むファイル
 
-段のファイルのパスは `skills/pr-review-gate/` から書く。どの時点でも、表にないファイル（索引 `SKILL.md` を含む）は読まない。
+段のファイルのパスは `skills/pr-review-gate/` から書く。どの時点でも、表のファイルとそれらが条件付きで指す `stages/` の詳細のほかは読まない（索引 `SKILL.md` を含む）。
 
 | 段（起動指示の `段:`） | 読むファイル |
 |---|---|
-| 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare.md`（adapter 経路はここで `needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/triage.md` の収束ルールの節と「W の修正後の再レビュー」の入力） |
-| 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md`（戻した指摘が順 3 だけの修正のあとは、加えて `stages/prepare.md` の手順 1） |
-| 合格処理（手順 3・3-b・4・5。引き継ぎの判定と論点なしの確認の受領を含む） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すとき・`needs-carryover-judge` を返すとき・`needs-no-point-check` を返すときは加えて `stages/hold.md`） |
-| 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md`（切り出しの確認に「切り出す」と答えられたときは加えて `stages/triage.md` の置き場所の段落・候補探し・段 C の節） |
+| 前提確認と重さ判定（手順 1・2・2-0） | `stages/prepare.md`（adapter 経路は payload を組むときに `stages/prepare-reviewer.md` を追加し、`needs-reviewer` を return する。W の修正後の再レビューのときは加えて `stages/triage-convergence.md` の収束ルールの節と「W の修正後の再レビュー」の入力） |
+| 照合と振り分け（レビュー要約・補足レビューの結果・決める役の裁定の受領、順 3 だけの修正のあと） | `stages/triage.md`（要約・補足受領では `stages/gate-triage.md` を追加。戻した指摘が順 3 だけの修正のあとは、加えて `stages/prepare.md` の手順 1） |
+| 合格処理（手順 3・3-b・4・5。引き継ぎの判定と論点なしの確認の受領を含む） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるときは `stages/carryover.md`、保留を返すとき・`needs-carryover-judge` を返すとき・`needs-no-point-check` を返すときは加えて `stages/hold.md`） |
+| 保留の解除（主のリスク許容・動作確認・切り出しの確認への回答が届いたとき） | `stages/hold.md`（切り出しの確認に「切り出す」と答えられたときは加えて `stages/triage-nonblocking.md` の置き場所の段落・候補探しと `stages/triage-epic.md` の段 C の節） |
 | 一括（従来経路）でレビューを自分で起こすとき | 上の表の全部と、`stages/review-run.md` とレビュアーに渡す `stages/reviewer-brief.md` |
 
 ## レビュー経路の判別（G として起動されたときだけ）
@@ -34,24 +34,6 @@ develop の本体から `subagent_type: dev-workflow:gate-runner` で**名前付
 | `レビュー経路: 従来`、または新しい G の起動指示に行が無い | 従来経路 | `skills/pr-review-gate/stages/review-run.md` の「G として動くとき（develop）」節の「レビューの実行者」の表に従う（full は G の Bash から Codex を直接呼ぶ。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは G からは使えない） |
 
 行が無い場合だけ従来経路とする既定は、新しい G の起動指示（手渡しで起こされた後任 G を含む）に適用する。`レビュー経路: adapter` は新 Codex モードを含む adapter 解決の全構成（`claude-default` を含む）を指し、新 Codex モードとは同義ではない。従来モードのレビュー実行者の表（`stages/review-run.md`）は、`レビュー経路: 従来`、または新しい G の起動指示に行が無いときだけ適用する。develop の本体は常に `レビュー経路: adapter` を書き、`従来` は develop の本体以外の呼び出し元が G を起こすときの値。
-
-## 一周目の三表を機械照合する
-
-一周目のレビュー要約を受け取ったら、指摘の仕分け前に次を機械照合する。G はここで変更点の意味や `一致` / `食い違い` の正しさを再レビューしない。
-
-1. 記録先の各受け入れ条件が `変更点の一覧` の変更点 ID に 1 回以上対応しているかを集合比較する。
-2. 各 `照合表` を `plugins/dev-workflow/scripts/review-hit-set.py --repo <repo> <table-file>`（`<repo>` はリポジトリルートのパスで、GitHub のリポジトリ名 `<owner>/<repo>` ではない） に渡し、固定 HEAD で再実行した repository-wide な grep の全ヒット集合と一致するかを確認する。`全ヒット要約:` の行を持つ表も同じコマンドに渡す（スクリプトが行数とハッシュで照合するので、全行の本文が無いことを表の欠落として扱わない。一致しなければ `summary:` / `extra:` の出力を残差にし、`contract:`（標準エラー出力）も残差にして、補足ではレビュアーが検索コマンドを実行し直して要約を出し直す。10 行以下の語は全行の表で出し直す）。場合分けの軸はこのスクリプトへ渡さず、軸の全域と表の行だけを比較する。
-3. 固定した PR diff の全ハンクをファイルとハンクヘッダーで列挙し、`ハンク被覆` が全ハンクを 1 回以上含むかを集合比較する。
-
-一周目の要約に `区画 <k>/<n>` の見出しがある場合、先に最新の `レビュー重量:` コメントにある区画の数と受け取った三表の区画の数を比べ、足りない区画を残差にする。受け入れ条件の被覆は全区画の `変更点の一覧` の和集合、ハンク被覆は全区画の `ハンク被覆` の和集合を PR 全体と集合比較する。各区画の `照合表` はそれぞれ `review-hit-set.py` に渡す。区画 k の変更点 ID と finding ID が `P<k>-` で始まることも確かめ、外れた ID はその区画の残差にする。区画に分けなかった一周目（`区画 <k>/<n>` の見出しが無い）は区画の数を比べず 1 組の三表で照合する。
-
-残差の補足先は、足りない区画ならその区画、ハンク被覆ならそのハンクのファイルが属する区画、照合表と ID の接頭辞ならその表や ID を出した区画、受け入れ条件の被覆なら区画 1 とする。区画 1 は受け入れ条件の被覆の残差について、受け入れ条件の全文・全区画のファイル一覧とそのハンクを読んでよく、`P1-` の変更点 ID で補う。対応が無ければ `P1-` の finding を返す。補足要求には残差のある区画ごとに元の三表と残差を分けて載せる。補足済み回数は区画ごとではなく PR で 1 つだけ数える。
-
-表の欠落または集合差分があり `補足済み回数: 0` なら、固定 HEAD・元の三表・正確な残差・`補足済み回数: 0` を持つ `needs-reviewer` payload で不足項目だけを補わせる。補足はレビューのやり直しではない。補足の `needs-reviewer` を返す前に、元の三表・`固定 HEAD: <40 桁>`・`一周目の区画: <なし | n>`・`補足済み回数: 1`（補足を頼んだ時点で 1 と数える。payload は 0 のまま）の行を持つ `レビュー三表:` のコメントを PR に投稿する（下の「段ごとの起動と入力」）。補足済み回数は最新の `レビュー三表:` のコメントから読み、fresh reviewer または fresh G へ交代してもリセットしない。
-
-## 補足レビュー結果の受領
-
-最新の `レビュー三表:` のコメントから元の三表・`一周目の区画:`・補足済み回数を読み、補足結果を加えて同じ機械照合を再実行する。一周目の区画の構成で和集合を再照合し、区画を計算し直さない。`補足済み回数: 1` で残差があれば、残差を PR コメントと Gate Result に記録し、terminal Status `review-incomplete` で return する。2 回目の `needs-reviewer` を返さない。手順 3 以降の合格処理へ進まない。差分が解消した場合だけ通常の指摘仕分けへ進む。
 
 ## return の書式
 
@@ -84,7 +66,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 | 保留 | `保留の解除` |
 | passed / review-incomplete / 重複で降りた | `なし` |
 
-この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: 前提確認の軽い通し方の条件外の `failed` と `needs-reviewer` は `stages/prepare.md`、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`、`needs-no-point-check` は `stages/hold.md`。
+この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: 前提確認の軽い通し方の条件外の `failed` は `stages/prepare-light.md` の「軽い通し方の条件外」、`needs-reviewer` は `stages/prepare-reviewer.md` の「G として動くとき（develop）」節、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`、`needs-no-point-check` は `stages/hold.md`。
 
 ## 段ごとの起動と入力
 
@@ -105,10 +87,10 @@ G は前の段の会話を持たない。段と段の間で渡すものは次の
 | レビューの三表と補足済み回数（補足を頼んだ時点で 1。コメントが無ければ 0） | 1 行目 `レビュー三表:` のコメント（`固定 HEAD: <40 桁>`・`一周目の区画: <なし \| n>`・`補足済み回数: <0 \| 1>` の行を持つ。補足の `needs-reviewer` を返す前に投稿する） | 照合と振り分け |
 | 振り分けの結果 | 既存の仕分けコメント | 照合と振り分け |
 
-段ごとの入力のうち、W の修正後の再レビュー（前提確認と重さ判定）は `stages/prepare.md`、決める役の裁定受領・直し方の判定の受領と順 3 だけの修正のあと（照合と振り分け）は `stages/triage.md`、保留の解除は `stages/hold.md`、保留の解除のあとの合格処理は `stages/pass.md` の、それぞれ「G として動くとき（develop）」節の「この段で起こされたときの入力」に従う。照合と振り分けの G がレビュアーの要約か補足レビューの結果を受け取ったときの分岐は、ここに置く。
+段ごとの入力のうち、W の修正後の再レビュー（前提確認と重さ判定）は `stages/prepare.md`、決める役の裁定受領・直し方の判定の受領と順 3 だけの修正のあと（照合と振り分け）は `stages/triage.md`、保留の解除は `stages/hold.md`、保留の解除のあとの合格処理は `stages/pass.md` の、それぞれ「G として動くとき（develop）」節の「この段で起こされたときの入力」に従う。
 
-- **レビュアーの要約受領**: `stages/triage.md` の「G として動くとき（develop）」節にある「レビュー実行者:」コメントを投稿してから、前の周の仕分けコメントに順 3 の指摘があれば、三表の照合より先に、その一覧表のコメント（`## 一覧（順 3）`）を `stages/triage.md` の順 3 の 2 段で照合する（不一致の差し戻しは `stages/triage.md` の順 3 の規則に従い、ここに新しい規則は足さない）。そのあと、一周目は最初に `変更点の一覧`・`照合表`・`ハンク被覆` を上の同名節どおり機械照合する。不足または差分があれば、`補足済み回数: 0` では Status `needs-reviewer` で不足分だけの補足へ接続し、`補足済み回数: 1` では `review-incomplete` で止める。三表の照合が完了したあとだけ要約に指摘が残っているかで分岐し、指摘が無ければ手順 3 以降（この G は宣言をせず、Status `次の段へ`・`次の段: 合格処理` で返す）。指摘が残っていれば、周の数に関係なく pr-review-gate 手順 2-1 の仕分け表（`stages/triage.md`）に上から当てる（順 1 は全周共通の判定）。止める指摘が無く順 1 だけなら、止めない指摘の振り分け表（`stages/triage.md`）に通す。1 周目に段 A に当たる指摘があれば `agent-review:failed` に付け替えて failed で返し、無ければ段 B 以降の結果を仕分けに記録してから（振り分けで issue にすると決まった指摘だけが follow-up issue になる）同じく `次の段へ`・`次の段: 合格処理` で返す。順 2〜4 は `agent-review:failed` に付け替えて failed で返し（止めない指摘は failed の PR コメントに一覧で残す）、順 5 は保留、順 6 は `needs-decider` で返す。ただし 2 周目以降の周の終わりには順 2〜4 をそのまま使わない。pr-review-gate 手順 2-1 の周の終わりの段落どおり、同じ型の再発は順 6、それ以外は判定に回す条件に当たれば `needs-fix-check`（直し方の判定。指摘ごとの仮の順を仕分けに記録する）、当たらなければ順 5 で返す。順 5 と順 2〜4、または順 5 と順 6 が混ざれば保留だけを先に返す。保留と `needs-decider` を同じ return で指示しない。判定に回す指摘と未裁定の順 6 が混ざれば `needs-fix-check` だけを先に返し、`needs-fix-check` と `needs-decider` を同じ return で指示しない（処理順は pr-review-gate 手順 2-1 の混在の段落）。仕分けは PR コメントに記録する
-- **補足レビュー結果の受領**: 上の同名節どおり `補足済み回数: 1` を維持して三表を再照合する。残差があれば `review-incomplete`、無ければ同じ一周目の指摘仕分けへ進む
+照合と振り分けの G がレビュアーの要約・補足結果を受け取ったときは `stages/gate-triage.md` を読む。
+
 
 従来経路（`レビュー経路: 従来`、または新しい G の起動指示に行が無い）の G はレビューを自分の起動の中で起こすので、手順 1〜5 と保留までを 1 体で続けてよい。そのときの Gate Result は `段: 一括（従来経路）`、`次の段: なし` と書く。
 
@@ -116,10 +98,10 @@ G が `工程中断:` で返したら、本体は同じ段の新しい G を起�
 
 照合と振り分けの G の return の仕分け欄に `条件の確認待ち` の質問文があれば、G を起こした側（develop では本体）は、その質問文と `条件の確認待ち` の PR コメントの URL を主への次の報告にそのまま載せる（無人運用（loop-dev-agent）では記録先にコメントする）。
 
-**条件の答えを受け取ったとき（本体の作業。G を起こさない）**: 照合と振り分けの G が 1 行目 `条件の確認待ち` の PR コメントを残した指摘（止めない指摘の振り分け表の段 B で、G が条件を決められなかったもの。return の仕分け欄に質問文がある）について、主が条件を答えたら、答えを受け取ったセッション（develop では本体）が次を行う: 答えを 1 行にして、エピックの本文（親が別リポジトリなら親のリポジトリの本文（`stages/triage.md` の段 C の段落）。エピックに属さない PR では記録先の本文）の節 `## 条件の答え` に足す（節が無ければ作る）、`条件の確認待ち` のコメントに答えを返信する、確認待ちの指摘を `stages/triage.md` の段 B の表から当て直す（段 A には戻さない。当て直しはサブエージェントに任せてよい）。PR がマージ済みでも行う。ラベル・周・宣言には触れず、Gate Result も作らない。足した行は、以後のレビュアーの依頼文に入れる（`stages/reviewer-brief.md` の入口）。
+**条件の答えを受け取ったとき（本体の作業。G を起こさない）**: 照合と振り分けの G が 1 行目 `条件の確認待ち` の PR コメントを残した指摘（止めない指摘の振り分け表の段 B で、G が条件を決められなかったもの。return の仕分け欄に質問文がある）について、主が条件を答えたら、答えを受け取ったセッション（develop では本体）が次を行う: 答えを 1 行にして、エピックの本文（親が別リポジトリなら親のリポジトリの本文（`stages/triage-epic.md` の段 C の段落）。エピックに属さない PR では記録先の本文）の節 `## 条件の答え` に足す（節が無ければ作る）、`条件の確認待ち` のコメントに答えを返信する、確認待ちの指摘を `stages/triage-nonblocking.md` の段 B の表から当て直す（段 A には戻さない。当て直しはサブエージェントに任せてよい）。PR がマージ済みでも行う。ラベル・周・宣言には触れず、Gate Result も作らない。足した行は、以後のレビュアーの依頼文に入れる（`stages/reviewer-brief.md` の入口）。
 
 ## モデル（本体が spawn 時に決める）
 
-G の既定は `sonnet` で、上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認（照合作業）で、欠陥探索は Codex か `needs-reviewer` で本体が spawn するレビュアー（既定 `opus`。マージ条件・層間契約・課金/法務に触れる PR なら `subagent_type: dev-workflow:decider`）が担う。モデルの優先順位は全役割共通: ①共有枠モード `SHARED_BUDGET_MODE`（`depleted` → 全役割 `sonnet` 上限・昇格なし。`throttled` → 既定 `sonnet`・昇格上限 `opus`・`abundant` 無効）②その範囲内で事前分類（マージ権限・層間契約・課金/法務）による `dev-workflow:decider`（聖域パスは `opus` 止まり） ③Fable 残量モード（`reserve` は自動実行のみ・`exhausted` は全経路で `opus` 上限。このとき種別は `dev-workflow:decider` のまま `model: opus` に落とす）。正本は `skills/develop/references/decision-criteria.md`。 レビュアーは `throttled` では既定 `sonnet`（マージ権限・層間契約・課金/法務に当たっても `opus` 止まり）、`depleted` では `sonnet`。事前分類表の正本は `references/pre-classification.md`。
+G のモデルは本体が決める。正本は develop/SKILL.md「モデル」、`skills/develop/references/decision-criteria.md` と `references/model-tiers.md`。G 自身は選び直さない。
 
 G 自身の起動の途中では hook がコンテキストを測る。**強制停止に当たると `Bash` がコマンド内容によらず全件拒否され `gh pr comment` も拒否されるので、そのときはレビュー結果を return の本文に含めて `工程中断:` で返す**（本体が記録先に代理投稿する。R1 の仕様レビューを本体が代理投稿しているのと同じ経路）。**commit も本体が行う**（G は `Bash` が全件拒否されるため自分で片付けられない。作業ツリーの未コミット差分は本体が `git -C <path> status --porcelain` で確認して commit する）。上限超を検知したあとの扱いと、G が手順の途中で一時的に止まっているとき（Codex の `run_in_background` 起動やレビュアーの応答待ち）に 1 行目へ何を置くかは `skills/develop/references/return-declaration.md` が正本で、この gate-runner.md には書かない。正本を読むまで手渡さない。

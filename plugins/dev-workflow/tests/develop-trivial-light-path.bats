@@ -2,6 +2,8 @@
 # #1584: 本体が通す軽い修正の契約と、文書中の照合コマンドの実測。
 # #1683: 軽い通し方の正本は decision-criteria.md から light-path.md へ移った。
 load lib/develop-docs
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   CRITERIA="$PLUGIN_DIR/skills/develop/references/light-path.md"
@@ -11,6 +13,7 @@ setup() {
   GATE="$PLUGIN_DIR/skills/develop/references/roles/gate-runner.md"
   PREPARE="$PLUGIN_DIR/skills/pr-review-gate/stages/prepare.md"
   PASS="$PLUGIN_DIR/skills/pr-review-gate/stages/pass.md"
+  gate_test_docs
 }
 light_section() {
   LC_ALL=C awk '/^#{2,3} /{f=0} index($0,"## 仕様化しないが軽く通す（軽い通し方）")==1{f=1} f' "$CRITERIA"

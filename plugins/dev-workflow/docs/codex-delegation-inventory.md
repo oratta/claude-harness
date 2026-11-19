@@ -27,6 +27,7 @@ Codex を呼ぶ、または呼び方を書いている手順書・スクリプ�
 | `plugins/dev-workflow/skills/develop/SKILL.md` | 本体が role ごとに `request` を呼び、投げ先を選ぶ。従来経路の G の説明も含む | 移行済み |
 | `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md` | R1 のモデルを `request --phase spec-review` で得る | 移行済み |
 | `plugins/dev-workflow/skills/pr-review-gate/stages/triage.md` | レビュー failed からの昇格で `request --failure` を呼ぶ | 移行済み |
+| `plugins/dev-workflow/skills/pr-review-gate/stages/triage-escalation.md` | failed の原因分類と `request --failure` の正本（triage.md から移動） | 移行済み |
 | `plugins/dev-workflow/skills/pr-review-gate/stages/review-run.md` | 従来経路で G が `codex exec` と companion を直接呼ぶ | 残置 |
 | `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` | G の経路の判別。`レビュー経路: 従来` のとき G が Codex を直接呼ぶ | 残置 |
 | `plugins/dev-workflow/references/subagent-waiting.md` | `codex exec` 直叩きと companion の完了待ちの書き方（従来経路が使う） | 残置 |
