@@ -255,11 +255,11 @@ exclude_count() { grep -cxF "$EXCLUDE_LINE" "$(exclude_file)" || true; }
     run cli "$mode"
     [ "$status" -eq 0 ]
   done
-  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)"
+  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)" || return 1
   rm "$SETTINGS"
   run cli --check
   [ "$status" -eq 2 ]
-  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)"
+  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)" || return 1
 }
 
 @test "similar but not identical exclude lines do not count, one exact line is added (#1471)" {
@@ -287,5 +287,5 @@ exclude_count() { grep -cxF "$EXCLUDE_LINE" "$(exclude_file)" || true; }
   config '[]'
   run cli --apply
   [ "$status" -eq 1 ]
-  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)" 2>/dev/null
+  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)" 2>/dev/null || return 1
 }
