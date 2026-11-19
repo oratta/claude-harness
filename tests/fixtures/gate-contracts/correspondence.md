@@ -476,6 +476,8 @@ Additional negative/exit constraints (しない・禁止・不可・失敗・戻
 
 Reference-only exceptions: gate-runner:19 adds the conditional prepare-reviewer source; prepare:184 redirects the needs-reviewer return to prepare-reviewer. Those routing conditions and exits remain checked by related bats.
 
+Merged main (#1690, #1697): pass.md:146, :155 and :156 are the texts of origin/main after #1690 moved the delegation conditions to develop `references/epic-delegation.md` (the gate reads them there instead of copying them). Only those three prose expectations differ from the revision above; their destination stays authenticity-delegated.md.
+
 ## Gate round 1 reference changes (#1687)
 
 The expected prose below was updated only where the referenced file or section moved (compared after the alias normalization above). Rules, stop conditions, commands and templates are unchanged. prepare:119 is split into the part kept in prepare.md and the part kept in prepare-partitions.md (A7).
