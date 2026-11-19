@@ -2,7 +2,7 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
-このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/reviewer-brief.md`（2-1 のレビュアー向け指示）、`stages/triage.md`（2-1 の止める判定と仕分け・2-2）、`declarations.md`（手順 3・3-b）、`stages/pass.md`（手順 4・5）。
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/reviewer-brief.md`（2-1 のレビュアー向け指示）、`stages/triage.md`（2-1 の止める判定と仕分け）、`stages/triage-escalation.md`（2-2）、`declarations.md`（手順 3・3-b）、`stages/pass.md`（手順 4・5）。
 
 ## 入口
 
@@ -96,9 +96,9 @@ G はサブエージェントなので Agent ツールを持たず、Task サブ
 | 判定 | 実行者 | G の動き |
 |---|---|---|
 | **full**（既定） | Codex CLI | G の **Bash から直接**呼ぶ。どちらか: (a) `codex exec -c approval_policy=never -c model_reasoning_effort=medium -` を `run_in_background` で起動する（レビュー指示は引数に埋めず、ファイルに保存して標準入力から渡す。書き方は下の正本）、(b) codex プラグインの `scripts/codex-companion.mjs`（`~/.claude/plugins/marketplaces/*/plugins/codex/scripts/codex-companion.mjs` を path-discovery で特定）に `task … --effort medium` を投げる。**どちらの経路も完了の確認は下の「Codex の起動と完了確認」**（起動しただけで出力ファイルを読んで済ませない）。slash command `/codex:adversarial-review` と `codex:codex-rescue` サブエージェントは **G からは使えない**（前者は本体専用の slash command、後者は Agent ツールを要する）。`--effort minimal` は 400 エラーになるので使わない |
-| **full** で Codex がオフ（手順 2-1 の「Codex がオフのとき」の判定が `off`。Codex を試す前に確かめる） | 本体が spawn するレビュアー | Codex を試さない（バイナリ探索もしない）。`needs-reviewer` を return し、根拠に `Codex オフ（設定）` と書く（書式は `stages/prepare.md` の「G として動くとき（develop）」節。証拠欄は手順 2-1 の雛形のオフの値） |
-| **full** だが Codex が使えない（実測したバイナリ無し・認証切れ・タイムアウト＝下記の正本が定める総待ちの上限に達した） | 本体が spawn するレビュアー | `needs-reviewer` を return する（書式は `stages/prepare.md` の「G として動くとき（develop）」節） |
-| **light** | 本体が spawn するレビュアー | `needs-reviewer` を return する（書式は `stages/prepare.md` の「G として動くとき（develop）」節） |
+| **full** で Codex がオフ（手順 2-1 の「Codex がオフのとき」の判定が `off`。Codex を試す前に確かめる） | 本体が spawn するレビュアー | Codex を試さない（バイナリ探索もしない）。`needs-reviewer` を return し、根拠に `Codex オフ（設定）` と書く（書式は `stages/prepare-reviewer.md` の「G として動くとき（develop）」節。証拠欄は手順 2-1 の雛形のオフの値） |
+| **full** だが Codex が使えない（実測したバイナリ無し・認証切れ・タイムアウト＝下記の正本が定める総待ちの上限に達した） | 本体が spawn するレビュアー | `needs-reviewer` を return する（書式は `stages/prepare-reviewer.md` の「G として動くとき（develop）」節） |
+| **light** | 本体が spawn するレビュアー | `needs-reviewer` を return する（書式は `stages/prepare-reviewer.md` の「G として動くとき（develop）」節） |
 
 不可判定の正本は pr-review-gate 手順 2-1。companion / slash command が無ければ `command -v codex` 等でバイナリを確認し、あれば exec を試す。companion 導入は任意。不在だけでは不可とせず、バイナリ探索で不在、実際の Codex 呼び出しで認証切れ、または起動後に正本の総待ち上限に到達した実測だけを採用する。未試行・auth.json の有無は証拠にならない。引数誤り・権限拒否・通信障害は三条件に読み替えず、Claude へ暗黙にフォールバックしない。該当しないエラーは証拠付きで本体へ返す。
 

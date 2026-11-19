@@ -9,6 +9,8 @@
 #
 # spec: dev-workflow-develop
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -24,6 +26,7 @@ setup() {
   PRGATE="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   USER_DOC="${PLUGIN_DIR}/docs/codex-develop.md"
   ARCHIVE_TASKS="${PLUGIN_DIR}/../../openspec/changes/archive/2026-09-23-codex-model-family-resolution/tasks.md"
+  gate_test_docs
 }
 
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }

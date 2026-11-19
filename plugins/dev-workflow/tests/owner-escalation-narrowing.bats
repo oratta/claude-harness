@@ -5,6 +5,8 @@
 # （parent-merge-criteria.md）、子の止まりの手順（epic-child-stop.md）の文を確かめる。
 # テスト名は ASCII のみ（bats はマルチバイトのテスト名を扱えない。既存スイートと同じ制約）。
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   REF="$PLUGIN_DIR/skills/develop/references"
@@ -17,6 +19,7 @@ setup() {
     if [ -f "${REF}/epic-$doc.md" ]; then cat "${REF}/epic-$doc.md" >> "$EPIC"; fi
   done
   CHILD="$REF/epic-child-stop.md"
+  gate_test_docs
 }
 
 # 見出し（`**<名前>**:` で始まる段落）を 1 段落だけ出す
@@ -163,7 +166,9 @@ item() { grep -F -- "- **$1**" "$2"; }
 }
 
 @test "gate pass (#1653): the gate reads the delegation checks from epic-delegation.md instead of copying them" {
-  PASSMD="$PLUGIN_DIR/skills/pr-review-gate/stages/pass.md"
+  PASSMD="$PLUGIN_DIR/skills/pr-review-gate/stages/authenticity-delegated.md"
+  grep -qF 'stages/authenticity.md' "$PLUGIN_DIR/skills/pr-review-gate/stages/pass.md"
+  grep -qF 'stages/authenticity-delegated.md' "$PLUGIN_DIR/skills/pr-review-gate/stages/authenticity.md"
   risk="$(item '委任が効く止まり' "$EPIC" | grep -oE '\*\*リスク許容の止まり\*\*.*論点なしと書く。\*\*聖域' | sed 's/。\*\*聖域$//')"
   [ -n "$risk" ]
   ! grep -qF -- "$risk" "$PASSMD" || return 1

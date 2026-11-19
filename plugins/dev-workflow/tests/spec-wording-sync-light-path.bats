@@ -8,6 +8,8 @@
 
 load lib/develop-docs
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
@@ -19,6 +21,7 @@ setup() {
   W_FINISH="${PLUGIN_DIR}/skills/develop/references/roles/worker/finish.md"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  gate_test_docs
 }
 
 # 「## <見出し>」で始まる節を、次の「## 」の手前まで切り出す（多バイトの見出しは index で比べる）
@@ -240,7 +243,7 @@ table5() { step5 | grep '^| '; }
 # 手順 5 に書かれた照合のコマンド（DEC= の行から、要件名の突き合わせの行まで）を抜き出して fixture で実行する。
 # gh は fixture を返す偽物に差し替え、archive 済みの差分は一時ディレクトリに置く。
 light_cmds() {
-  step5 | LC_ALL=C awk '/^DEC=/{f=1} f{print} f && /^grep -h .*Requirement: /{exit}'
+  step5 | LC_ALL=C awk '/^```bash$/{bash=1; next} /^```$/{bash=0; next} bash && /^DEC=/{f=1} bash && f{print} bash && f && /^grep -h .*Requirement: /{exit}'
 }
 
 install_fake_gh() {

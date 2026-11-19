@@ -7,6 +7,8 @@
 # 手順書の契約は文言と、正本から抽出した雛形の実行の両方で検査する。
 # テスト名は ASCII のみ。
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -29,8 +31,10 @@ setup() {
   # 禁止語の検査対象＝サブエージェント（W / R1 / G）が手順として読む文書。
   # pr-review-gate は索引と段のファイルに分かれているので、1 つの文書として連結して検査する
   # （背景起動を書いた段と前景ポーリングを書いた段が別でも、スキル全体で併記されていればよい）。
-  GATE_ALL="${BATS_TEST_TMPDIR}/pr-review-gate-all.md"
-  cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD" > "$GATE_ALL"
+  # 全ファイル（移した条件付きの詳細を含む）を連結した GATE_SCOPE_DOCS をそのまま使う。
+  # GATE は pr-review-gate の SKILL.md を指すので、gate_test_docs は置き換えない
+  gate_test_docs
+  GATE_ALL="$GATE_SCOPE_DOCS"
   # W の禁止語の検査は、索引・worker/ の 4 本・事前分類表の全部を連結して見る
   WORKER_ALL="${BATS_TEST_TMPDIR}/worker-all.md"
   cat "${ROLES}/worker.md" "${ROLES}/worker/common.md" "${ROLES}/worker/spec.md" "${ROLES}/worker/implement.md" "${ROLES}/worker/finish.md" "${PLUGIN_DIR}/skills/develop/references/pre-classification.md" > "$WORKER_ALL"
