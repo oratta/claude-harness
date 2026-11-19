@@ -2453,7 +2453,7 @@ assert_no_ask_reason() {
 
 @test "no-ask: epic step five explains conditional transcript detection and screen limits" {
   local step t
-  step="$(sed -n '/^5\. /,/^6\. /p' "${PLUGIN_DIR}/skills/develop/references/epic.md")"
+  step="$(grep -E '^5\. ' "${PLUGIN_DIR}/skills/develop/references/epic-loop.md")"
   for t in 'DEV_WORKFLOW_GIT_GUARD_NO_ASK' '起動側' '拒否後' '承認を求めてターンを終え' '会話ログが読める' 'wait --watch-stopped' '権限確認の画面で止まった子' '会話ログを読めない子' '検知できない'; do
     [[ "$step" == *"$t"* ]] || { echo "missing $t"; return 1; }
   done
