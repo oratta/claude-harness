@@ -17,3 +17,4 @@ develop は開始時に `develop-idle-compaction.py --apply` で worktree の `.
 
 - `plugins/dev-workflow/scripts/develop-idle-compaction.py`
 - `plugins/dev-workflow/tests/develop-idle-compaction.bats`
+- `plugins/dev-workflow/skills/develop/references/reply-after-idle.md`（承認範囲の文面）
