@@ -693,6 +693,8 @@ The spec label includes the canonical decision whether specification is needed: 
 creating a specification. Follow the same decision criteria and return contract as a Claude worker.
 The coordinator alone applies workflow prerequisites, reviews, checks and transitions.
 Account is fixed by the worker. Work only in {state['cwd']}.
+Scratch files (notes, fetched data, drafts, logs, throwaway scripts) go outside the cwd: under $TMPDIR, or
+a directory made with `mktemp -d`. Never create scratchpad/ or any other untracked directory in the cwd.
 {root_note}Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
 return needs-reviewer/needs-decider with the exact request; the coordinator dispatches a fresh thread.
 Claude Agent/SendMessage/Skill/opsx operations in canonical references are provider-specific:
