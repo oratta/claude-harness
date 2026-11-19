@@ -30,7 +30,7 @@ SKILL.md は本体（メインセッション）の役割を「役割 W / R1 / G
 - **THEN** 「本体は Edit でコードを書かない」の箇所に、例外が軽い通し方だけであることと、その正本が `references/light-path.md` であることが書かれている
 
 #### Scenario: W の再開は profile role と executor に従う
-- **WHEN** SKILL.md の 1 ループと profile 経路の記述を読む
+- **WHEN** SKILL.md の 1 ループと、そこから必読にした `plugins/dev-workflow/references/codex-develop.md` の起動・再開手順を読む
 - **THEN** profile 無しと同じ profile role の Claude W は再開前に現在の上限を確認し、適用 model が上限内のときだけ名前付き thread を SendMessage で再開すること、上限超過・profile role の変更・Codex W の場合は fresh thread に成果物と必要な要約を渡すこと、W が孫を呼ぶ工程が無いことが書かれている
 
 #### Scenario: 再開前に exhausted へ変わった
@@ -89,6 +89,8 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 この要件の failed 分岐の守備範囲で入力として扱うのは、G の `failed` の return に書かれた原因分類と、本体が `request` を呼んで得る返り値（`model`・`tier`）である。拾いたい誤りは、`request` が返した model を使わずにモデル名を直接指定すること、実行役を最上位の格に上げること、決める役と実行役を同時に上げること、判断側の `--failure` の値をゲートの何回目の failed かと食い違えて渡すことである。一方、G が原因分類そのもの（実行側か判断側か）を誤ることはこの契約では検出せず、許容する。`request` が上限を適用して低い格の model を返したときは、その model を使うことも許容する。穴が見つかるたびに塞ぎ切ること（任意の不正入力や将来の executor への対応を際限なく足すこと）は、この要件の完了条件にしない。
 
+G の結果を受けた本体の状態別の詳しい手順は `skills/develop/references/gate-result.md` に置かなければならない（MUST）。SKILL.md の (4) は Status → 読むファイルの表でその手順へ接続し、結果を処理する前の必読を指示する（MUST）。工程の順と、G の Status・`次の段:` だけで次の段を決める原則は SKILL.md に残す（MUST）。
+
 #### Scenario: ループの順序が書かれている
 - **WHEN** SKILL.md の 1 ループの記述を読む
 - **THEN** 0〜4 の工程が W→R1→W→G の順で並び、(1) の W の工程に `openspec new change` があり、仕様化しない判定は (3) へ直行し、R1 と G にそれぞれ既定 2 周と、2 周目以降の周の終わりに直し方の判定を通す続行がある
@@ -132,7 +134,7 @@ worktree は本体が用意する（SHALL）: 本体が既に対象専用の wor
 
 #### Scenario: G の failed は片方だけ上げて W の再開に戻る
 - **WHEN** G が failed を return する
-- **THEN** SKILL.md は実装品質起因のときだけ原因分類に応じて、実行側なら `--failure executor` の `request` が返した model で実行役を上げるか、判断側なら `--failure first`（ゲートの 1 回目の failed）または `judgment`（そのゲートの 2 回目以降の failed。1 回目の原因が実行側だったときも含む）の `request` が返した model で決める役を `dev-workflow:decider` で立てるかの一方だけを行い、仕様が曖昧・レビュアーの誤検出・段 A だけ（昇格なし）ではモデルを上げず、段 A だけなら W を据え置きで再開し、実行役を最上位の格に上げず、G を再開して差分再レビューするよう指示している
+- **THEN** SKILL.md から必読にした `skills/develop/references/gate-result.md` は実装品質起因のときだけ原因分類に応じて、実行側なら `--failure executor` の `request` が返した model で実行役を上げるか、判断側なら `--failure first`（ゲートの 1 回目の failed）または `judgment`（そのゲートの 2 回目以降の failed。1 回目の原因が実行側だったときも含む）の `request` が返した model で決める役を `dev-workflow:decider` で立てるかの一方だけを行い、仕様が曖昧・レビュアーの誤検出・段 A だけ（昇格なし）ではモデルを上げず、段 A だけなら W を据え置きで再開し、実行役を最上位の格に上げず、G を再開して差分再レビューするよう指示している
 
 #### Scenario: decider として起こした R1 の結果は本体が投稿する
 - **WHEN** SKILL.md の (2) の記述を読む
@@ -463,6 +465,8 @@ W と G の指示書（`references/roles/worker/common.md`・`references/roles/g
 ### Requirement: 本体は role profile から executor を選ぶ
 develop 本体は、Claude 既定の経路を含めて、新しい role を起動する直前に事前分類・設計判断・失敗の原因・自動実行かどうかを共通 resolver（`codex-develop.py request`）に渡し、canonical role の executor/account/model/effort を取得して、executor=claude なら Agent、executor=codex なら foreground request/run 経路を選ばなければならない（MUST）。resolver が `role: decider` を返したとき（事前分類に当たる R1 または G が要求したレビュアー）は、`subagent_type: dev-workflow:decider` として起動しなければならない（MUST）。本体は resolver の `requested_model`・`model`・`tier_reason` を要求 model・適用 model・変更理由として記録し、あわせて `tier`・`executed_tier`・`tier_cap` も dispatch 記録に残し、Agent には `model` を渡さなければならない（MUST）。`tier_reason` は `tier` の変化だけを表すので、`tier_cap` で値が変わった場合は `executed_tier` と `tier_cap` の記録で見分ける。新しい起動の `model` を文章の規則で計算し直してはならない（MUST NOT）。同じ Claude thread の再開前の上限確認は、同じ phase と、今回の再開に当たる格の入力（失敗ループの段なら、その段の `--failure` の値を含む）で `request` を呼び直し、返った `tier` と `model` を thread の格（起動時に記録した `tier`）と applied model（起動時に記録した `model`）と比べて行わなければならない（MUST）。呼び直しの結果は `tier` と `model` だけを読み、executor・account・構成の選び直しには使ってはならない（MUST NOT）。`tier` は構成によらないので、役の途中切り替えにはならない。executor の選択は transport と execution setting だけを変え、仕様化判断、工程順、独立レビュー、差戻し上限、verify、archive、PR gate の条件を変えてはならない（MUST NOT）。
 
+役割解決の入力・選択規則・結果の監査記録・provider 分岐・同じ Claude role の再開と fresh thread の境界の説明は、`plugins/dev-workflow/references/codex-develop.md` の一つの正本へ集約しなければならない（MUST）。SKILL.md と `commands/develop.md` は、操作前にその正本を読む指示だけを置き、解決手順を再掲してはならない（MUST NOT）。同 reference 内でも同じ手順を繰り返さず、一つの本文へ参照でつなぐ（MUST）。
+
 #### Scenario: 1 つの profile で executor が工程間に変わる
 - **WHEN** spec-write=codex、spec-review=claude の profile で仕様化工程を進める
 - **THEN** W は Codex foreground 経路、R1 は Claude Agent 経路で別 thread として動き、R1 の APPROVE が記録されるまで実装へ進まない
@@ -493,13 +497,13 @@ develop 本体は、Claude 既定の経路を含めて、新しい role を起�
 
 ### Requirement: G の needs-decider を受けた本体の動き
 
-`plugins/dev-workflow/skills/develop/SKILL.md` の (4) は、G の return の分岐に `needs-decider`（pr-review-gate の仕分け表の順 6。同じ型の再発）の行を持たなければならない（MUST）。その行は次を規定する（MUST）: 本体は `subagent_type: dev-workflow:decider` を、残量モードの規定どおりのモデルで spawn する。入力は、`agents/decider.md` の入力契約の 4 項目に揃え、記録先（issue または Draft PR）の本文、判断に必要な関連コメント（`仕様化判断:` の記録・G の仕分けの PR コメント・順 3 の一覧表の PR コメントがあればそれ）、G の return に載った同じ型の指摘と前の周の指摘の原文（PR コメントの本文を貼る）、対象ファイルのパス、G の仕分け欄、W の直近の return とする。依頼は、マージ可否を問うときと同じ `agents/decider.md` の既存の「可否と根拠」の出力契約で出し（決める役が 3 点の契約で返す取り違えを防ぐため、行にその旨を書く）、問いを「この PR の中で、同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」の 1 つにする。依頼文では、返答の 1 行目を `裁定: 可`・`裁定: 否`・`不足: <足りないもの>` のどれかちょうどにするよう指定し、本体はその 1 行目で分岐する（MUST。本文の読み取りで分岐しない）。本体は返ってきた可否を方式（`裁定: 可`＝全部列挙してから直す、`裁定: 否`＝切り出す）に読み替え、根拠とともに SendMessage で G に渡して G を再開する。本体は裁定を記録先に投稿しない（記録は G が PR コメントに行う）。これは「`dev-workflow:decider` で起こした役割の return は本体が代理投稿する」一般則の例外であり、SKILL.md は一般則の記述にもこの例外を一言書かなければならない（MUST）。`agents/decider.md` の入力契約と出力契約は変えない（MUST NOT）。
+`skills/develop/references/gate-result.md` は、SKILL.md の (4) の Status 表から必読にされ、G の return の分岐に `needs-decider`（pr-review-gate の仕分け表の順 6。同じ型の再発）の行を持たなければならない（MUST）。その行は次を規定する（MUST）: 本体は `subagent_type: dev-workflow:decider` を、残量モードの規定どおりのモデルで spawn する。入力は、`agents/decider.md` の入力契約の 4 項目に揃え、記録先（issue または Draft PR）の本文、判断に必要な関連コメント（`仕様化判断:` の記録・G の仕分けの PR コメント・順 3 の一覧表の PR コメントがあればそれ）、G の return に載った同じ型の指摘と前の周の指摘の原文（PR コメントの本文を貼る）、対象ファイルのパス、G の仕分け欄、W の直近の return とする。依頼は、マージ可否を問うときと同じ `agents/decider.md` の既存の「可否と根拠」の出力契約で出し（決める役が 3 点の契約で返す取り違えを防ぐため、行にその旨を書く）、問いを「この PR の中で、同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」の 1 つにする。依頼文では、返答の 1 行目を `裁定: 可`・`裁定: 否`・`不足: <足りないもの>` のどれかちょうどにするよう指定し、本体はその 1 行目で分岐する（MUST。本文の読み取りで分岐しない）。本体は返ってきた可否を方式（`裁定: 可`＝全部列挙してから直す、`裁定: 否`＝切り出す）に読み替え、根拠とともに SendMessage で G に渡して G を再開する。本体は裁定を記録先に投稿しない（記録は G が PR コメントに行う）。これは「`dev-workflow:decider` で起こした役割の return は本体が代理投稿する」一般則の例外であり、SKILL.md は一般則の記述にもこの例外を一言書かなければならない（MUST）。`agents/decider.md` の入力契約と出力契約は変えない（MUST NOT）。
 
 決める役の返答の 1 行目が `不足:` なら、本体はそれを裁定として扱ってはならず、G に渡してはならない（MUST NOT）。本体は足りないものを補って、同じ問いで 1 回だけ依頼し直す（MUST）。依頼し直しても不足が返ったら、本体は G に「裁定なし（入力不足）」と足りなかったものを SendMessage で渡して G を再開する（MUST。G はそれを「切り出す」として順 5 の経路で主に聞く）。
 
 #### Scenario: (4) に needs-decider の行がある
 
-- **WHEN** develop の SKILL.md (4) の G の return の分岐を読む
+- **WHEN** develop の SKILL.md (4) の Status 表から `skills/develop/references/gate-result.md` の `needs-decider` の手順を読む
 - **THEN** `needs-decider` の行があり、`dev-workflow:decider` をマージ可否と同じ「可否と根拠」の契約で起こすこと、入力（記録先の本文・関連コメント・同じ型の指摘と前の周の指摘・対象ファイル・仕分け欄・W の return）、返答の 1 行目を `裁定: 可`／`裁定: 否`／`不足:` のどれかに指定しその 1 行目で分岐すること、可否を方式に読み替えること、裁定を SendMessage で G に返すこと、本体は裁定を代理投稿しないことが書かれており、代理投稿の一般則の記述にこの例外が書かれている
 
 #### Scenario: 決める役が不足を返す
@@ -581,11 +585,11 @@ develop の本体は、(4) で G を起動する指示・再開する指示・�
 - **THEN** adapter 経路の `needs-reviewer` 規則は G 向けに限定されており、レビュアーは自分でレビューを行う
 
 ### Requirement: 本体は adapter 経路の needs-reviewer で phase review の投げ先を選び直して記録する
-`SKILL.md` の (4) は、adapter 経路で G から `needs-reviewer` を受けた本体の手順として、次の順序を書かなければならない（MUST）: `codex-develop.py request --phase review` で投げ先を選び直す（実行先オプションはその develop の開始時と同じ）→ 返った選択（構成・reason・Claude と最良 Codex の margin・各 `fetched_at`。欠測は `missing`）と解決した executor / model を記録先の dispatch 記録に投稿する → 投稿に成功してから、選ばれた投げ先でレビュアーを起動する → レビュー要約と、選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。
+SKILL.md の (4) の Status 表から必読にした `skills/develop/references/gate-result.md` は、adapter 経路で G から `needs-reviewer` を受けた本体の手順として、次の順序を書かなければならない（MUST）: `codex-develop.py request --phase review` で投げ先を選び直す（実行先オプションはその develop の開始時と同じ）→ 返った選択（構成・reason・Claude と最良 Codex の margin・各 `fetched_at`。欠測は `missing`）と解決した executor / model を記録先の dispatch 記録に投稿する → 投稿に成功してから、選ばれた投げ先でレビュアーを起動する → レビュー要約と、選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。
 
 review phase の executor が `codex` のときは、本体は worker の結果 JSON にある `execution.model_resolution.requested` と `execution.model_resolution.resolved` も G に渡さなければならない（MUST）。G は `レビュー実行者:` 行の `<model>` を `<requested>→<resolved>` の形で記録しなければならない（MUST）。解決値が未観測のときは要求値や dispatch 時の model から補完してはならない（MUST NOT）。
 
-渡し方は G の起動形で分けて書かなければならない（MUST）: Claude の G は SendMessage で再開して渡す（`gate-runner.md`「needs-reviewer の return」節と `SKILL.md` の (4) の既存規則）。Codex の G は新しい phase `gate` を開始してその入力に渡す（`codex-develop.md`「品質と transport 差分」の G の項）。
+渡し方は G の起動形で分けて書かなければならない（MUST）: Claude の G は SendMessage で再開して渡す（`gate-runner.md`「needs-reviewer の return」節と `skills/develop/references/gate-result.md` の既存規則）。Codex の G は新しい phase `gate` を開始してその入力に渡す（`codex-develop.md`「品質と transport 差分」の G の項）。
 
 本体は選び直しと記録の前にレビュアーを起動してはならない（MUST NOT）。従来経路（`レビュー経路: 従来` または行が無い G）が `needs-reviewer` を返したときに呼び出し元がレビュアーを起こす手順（`gate-runner.md` の既存記述）は変えてはならない（MUST NOT）。
 
@@ -605,7 +609,7 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 
 #### Scenario: 回帰テスト
 - **WHEN** `bash scripts/test.sh` を実行する
-- **THEN** `gate-runner.md`・`SKILL.md`・`codex-develop.md`・`pr-review-gate/stages/triage.md`・`pr-review-gate/stages/review-run.md` の上記文言を照合する bats を含めて exit 0 になる
+- **THEN** `gate-runner.md`・`SKILL.md` とその必読先・`codex-develop.md`・`pr-review-gate/stages/triage.md`・`pr-review-gate/stages/review-run.md` の上記文言を照合する bats を含めて exit 0 になる
 
 ### Requirement: epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う
 `plugins/dev-workflow/scripts/epic-dispatch.sh` は、サブコマンド `route`・`launch`・`wait` を持たなければならない（MUST）。どのサブコマンドも LLM を呼んではならない（MUST NOT）。
@@ -1255,7 +1259,7 @@ V は数ターンで終わる役なので、SendMessage で再開してはなら
 
 ### Requirement: 保留で止まるときは記録先に引き継ぎのコメントを 1 種類の書式で残す
 
-本体は、`needs-approval` を付けて主の返事を待つすべての場面で、止まる前に記録先へ引き継ぎのコメントを投稿しなければならない（MUST）。場面は pr-review-gate の保留（リスク許容・動作確認・切り出しの確認）、`skills/develop/SKILL.md`「PR トークン上限」の exit 2、レビューの 2 周キャップ超え、仕様レビューの条件の問い（`条件の問い:` を主に聞くとき）の 4 つで、書式は場面によらず 1 種類とする（MUST）。場面ごとに別の書式を作ってはならない（MUST NOT）。
+本体は、`needs-approval` を付けて主の返事を待つすべての場面で、止まる前に記録先へ引き継ぎのコメントを投稿しなければならない（MUST）。場面は pr-review-gate の保留（リスク許容・動作確認・切り出しの確認）、`skills/develop/references/pr-token-budget.md`の exit 2、レビューの 2 周キャップ超え、仕様レビューの条件の問い（`条件の問い:` を主に聞くとき）の 4 つで、書式は場面によらず 1 種類とする（MUST）。場面ごとに別の書式を作ってはならない（MUST NOT）。
 
 **投稿の順序**: 本体は、どの場面でも次の順で投稿する（MUST）。①主への依頼のコメントを投稿し、その URL を得る。依頼コメントの置き場は、対象の PR があれば PR、無ければ記録先とする（`stages/hold.md` 手順 6 は依頼を PR に投稿するので、記録先が issue でも PR のコメントの URL でよい。引き継ぎのコメント自体は常に記録先に投稿する）。G の保留では G が投稿した依頼コメントの URL を使い、G が投稿していなければ本体が依頼文を PR（無ければ記録先）のコメントとして投稿する。exit 2 と 2 周キャップ超えと条件の問いでは本体が問いを PR（無ければ記録先）のコメントに書く。②その URL を「主への依頼」に書いて引き継ぎのコメントを投稿する。③主に案内する。①より前に引き継ぎを投稿してはならない（MUST NOT。URL が無いため）。
 
@@ -1268,7 +1272,7 @@ V は数ターンで終わる役なので、SendMessage で再開してはなら
 | 対象 | PR 番号（まだ無ければ `なし`）・HEAD の 40 桁 SHA・ブランチ・worktree のパス |
 | ラベルの付け先 | `needs-approval` を付けた先。PR があれば `PR #N`、PR がまだ無ければ記録先（`issue #N`）。コメントの記録先とは別に書く |
 | 実行モード | interactive / channel / unmanned |
-| 実行先 | 実行先オプションと account-home の対応（明示したときだけ。無ければ `自動選択`）と、開始済みの phase ごとの選択結果（構成・executor・account・model）が書かれたコメントの URL。最初の phase の選択結果は develop 開始コメント（`develop/SKILL.md`「Role profile の選択」）、以降の phase は dispatch 記録のコメントにある。両方書く（どちらも無ければ `なし`） |
+| 実行先 | 実行先オプションと account-home の対応（明示したときだけ。無ければ `自動選択`）と、開始済みの phase ごとの選択結果（構成・executor・account・model）が書かれたコメントの URL。最初の phase の選択結果は develop 開始コメント（開始時の記録の規約は `plugins/dev-workflow/references/codex-develop.md`「起動と role 解決」）、以降の phase は dispatch 記録のコメントにある。両方書く（どちらも無ければ `なし`） |
 | 次に起こす役割 | 返事のあとに最初に起こす役割と、渡す入力の在り処 |
 | 周回 | 仕様レビューと G の周回の数・W の修正の周回の数 |
 | 前任 W | 直近の return の 1 行目と要約または URL（W を起こしていなければ `なし`）と、手渡し可否（次の段落） |
@@ -1585,7 +1589,7 @@ W の指示書の読み込み量は、`plugins/dev-workflow/scripts/subagent-con
 
 ### Requirement: adapter 経路の本体は Claude のレビュアーを区画ごとに起こす
 
-develop の SKILL.md の (4) の `needs-reviewer` の手順は、phase `review` で選ばれた executor が claude で、G の payload の `区画:` に区画の一覧があるときは、区画ごとにレビュアーを 1 体ずつ並列に起こすことを書かなければならない（MUST）。各レビュアーの Agent の `description` は `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` の形にしなければならない（MUST。`subagent-context-audit.sh --by-role` が先頭トークン `Reviewer` でレビュアーに数えるため）。executor が codex のときは区画を使わず、差分全体を 1 つの request に渡さなければならない（MUST）。
+develop の SKILL.md の (4) の Status 表から必読にした `skills/develop/references/gate-result.md` の `needs-reviewer` の手順は、phase `review` で選ばれた executor が claude で、G の payload の `区画:` に区画の一覧があるときは、区画ごとにレビュアーを 1 体ずつ並列に起こすことを書かなければならない（MUST）。各レビュアーの Agent の `description` は `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` の形にしなければならない（MUST。`subagent-context-audit.sh --by-role` が先頭トークン `Reviewer` でレビュアーに数えるため）。executor が codex のときは区画を使わず、差分全体を 1 つの request に渡さなければならない（MUST）。
 
 本体は全区画の要約が揃ってから、照合と振り分けの G を 1 体だけ新しく起こし、全区画の要約を `区画 <k>/<n>` の見出しを付けてまとめて渡さなければならない（MUST）。区画ごとに G を起こしてはならない（MUST NOT）。
 
@@ -1601,7 +1605,7 @@ develop の SKILL.md の (4) の `needs-reviewer` の手順は、phase `review` 
 
 ### Requirement: 補足は一周目の区画の構成のまま、選び直した executor で残差だけを補う
 
-一周目照合の補足要求（`needs-reviewer` の補足 payload）でも、本体は既存要件「本体は adapter 経路の needs-reviewer で phase review の投げ先を選び直して記録する」のとおり phase `review` の投げ先を選び直す。SKILL.md の (4) は、選び直しで executor が一周目と変わっても変わらなくても、補足を一周目の区画の構成（G が `レビュー三表:` のコメントと補足 payload に書いた `一周目の区画:`）のまま行うことを書かなければならない（MUST）。補足のときに区画を計算し直してはならず、差分全体のレビューを始めてはならない（MUST NOT）。一周目の三表の変更点 ID と finding ID はそのまま残し、補った項目にも一周目と同じ ID の付け方（区画があれば補足先の区画の `P<k>-`、区画が無ければ接頭辞なし）を使わなければならない（MUST）。既存の「元の三表を置き換えず、残差に挙げた不足した項目だけを補う」と「補足は PR 全体で 1 回まで（補足済み回数は PR で 1 つ）」は変えない（MUST）。
+一周目照合の補足要求（`needs-reviewer` の補足 payload）でも、本体は既存要件「本体は adapter 経路の needs-reviewer で phase review の投げ先を選び直して記録する」のとおり phase `review` の投げ先を選び直す。SKILL.md の (4) から必読にした `skills/develop/references/gate-result.md` は、選び直しで executor が一周目と変わっても変わらなくても、補足を一周目の区画の構成（G が `レビュー三表:` のコメントと補足 payload に書いた `一周目の区画:`）のまま行うことを書かなければならない（MUST）。補足のときに区画を計算し直してはならず、差分全体のレビューを始めてはならない（MUST NOT）。一周目の三表の変更点 ID と finding ID はそのまま残し、補った項目にも一周目と同じ ID の付け方（区画があれば補足先の区画の `P<k>-`、区画が無ければ接頭辞なし）を使わなければならない（MUST）。既存の「元の三表を置き換えず、残差に挙げた不足した項目だけを補う」と「補足は PR 全体で 1 回まで（補足済み回数は PR で 1 つ）」は変えない（MUST）。
 
 executor ごとの起こし方は次のとおりとしなければならない（MUST）:
 
@@ -1698,7 +1702,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 ### Requirement: G の needs-fix-check を受けた本体の動き
 
-`skills/develop/SKILL.md` の 1 ループの (4) は、G の Status `needs-fix-check` を受けた本体の動きを書かなければならない（MUST）: 本体は「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement の手順で決める役を起こして判定を受け取り、判定の記録を記録先に投稿し、判定（「決まっている」または「選び直しが要る」）と判定の記録の URL を渡して照合と振り分けの G を新しく起こす（MUST）。本体は判定を受けて自分で `agent-review:failed` を付けたり W を再開したりしてはならない（MUST NOT。ラベルの付け替えと W に戻す指摘の一覧は G が決める）。
+`skills/develop/references/gate-result.md` は、SKILL.md の (4) の Status 表から必読にされ、G の Status `needs-fix-check` を受けた本体の動きを書かなければならない（MUST）: 本体は「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement の手順で決める役を起こして判定を受け取り、判定の記録を記録先に投稿し、判定（「決まっている」または「選び直しが要る」）と判定の記録の URL を渡して照合と振り分けの G を新しく起こす（MUST）。本体は判定を受けて自分で `agent-review:failed` を付けたり W を再開したりしてはならない（MUST NOT。ラベルの付け替えと W に戻す指摘の一覧は G が決める）。
 
 #### Scenario: needs-fix-check で返った
 - **WHEN** G が Status `needs-fix-check`・`次の段: 照合と振り分け` で return する
@@ -2100,7 +2104,6 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 #### Scenario: 親が注意書きの投稿失敗に対処する
 - **WHEN** `references/epic-loop.md`「通常進行の手順」手順１を読む
 - **THEN** `note not posted to` のときに本体が注意書きを子 issue に投稿すると書かれている
-
 
 ### Requirement: 端末を作れなかった子と指示が届かなかった子の案内は、二重起動を避ける確認を先に出す
 `plugins/dev-workflow/scripts/epic-dispatch.sh launch` が stderr に出す案内は、次を満たさなければならない（MUST）。この要件は、要件「epic-dispatch.sh はエピックの子の経路判定・起動・待ち受けを LLM なしで行う」の作り直しと送り直しのコマンドの規定に足すもので、既存の規定は変えない。
@@ -2935,7 +2938,7 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 
 ### Requirement: 空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない
 
-本体は、W が `(Subagent completed but returned no output.)` だけを返したとき（`continue: false` による打ち切りで、拒否理由が親に届かない場合を含む）、その W に SendMessage で報告を 1 回だけ求めなければならない（MUST）。求める報告の項目は、打ちたかったコマンドの全文・対象のパス・その対象を自分で作ったか（作ったなら作ったコマンド）・なぜ要るか・拒否の記録のパスの 5 つとし（MUST。子への拒否理由が求める項目とそろえる）、何をしようとして何が拒否されたかを書かせる。本体は、報告の有無によらず `git -C <path> status --porcelain` で作業ツリーの未コミット差分を確かめ、残っていれば引き取らなければならない（MUST）。報告に破壊的 git 操作で打ち切られたとあるときは、同じ指示で W を起こし直してはならない（MUST NOT）。扱いは要件「破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる」に従い、許可を書けなかった場合は、打ち切られた操作と指示の見直しを主に上げなければならない（MUST）。ただし、許可を書くスクリプトが終了コード 3 で終わり、同じ要件の「形の理由で断られたときの打ち直し」の条件を満たすときは、主に上げずに打ち直しを指示する（その要件に従う）。許可を書いて同じ W を SendMessage で再開することと、打ち直しを指示して同じ W を再開することは、同じ指示での起こし直しに数えない。打ち直しのあとに W が空の return で返ったときは、その打ち直しについて報告を改めて 1 回だけ求めてよい（打ち直しの前に求めた 1 回とは別に数える）。1 回求めても報告が空のとき、または報告から打ち切りの原因が読み取れないときも、同じ指示で W を起こし直してはならず（MUST NOT）、空だったことと作業ツリーの状態を主に上げなければならない（MUST）。`skills/develop/SKILL.md` の「1 ループ」の節に、これらが書かれていなければならない（MUST）。
+本体は、W が `(Subagent completed but returned no output.)` だけを返したとき（`continue: false` による打ち切りで、拒否理由が親に届かない場合を含む）、その W に SendMessage で報告を 1 回だけ求めなければならない（MUST）。求める報告の項目は、打ちたかったコマンドの全文・対象のパス・その対象を自分で作ったか（作ったなら作ったコマンド）・なぜ要るか・拒否の記録のパスの 5 つとし（MUST。子への拒否理由が求める項目とそろえる）、何をしようとして何が拒否されたかを書かせる。本体は、報告の有無によらず `git -C <path> status --porcelain` で作業ツリーの未コミット差分を確かめ、残っていれば引き取らなければならない（MUST）。報告に破壊的 git 操作で打ち切られたとあるときは、同じ指示で W を起こし直してはならない（MUST NOT）。扱いは要件「破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる」に従い、許可を書けなかった場合は、打ち切られた操作と指示の見直しを主に上げなければならない（MUST）。ただし、許可を書くスクリプトが終了コード 3 で終わり、同じ要件の「形の理由で断られたときの打ち直し」の条件を満たすときは、主に上げずに打ち直しを指示する（その要件に従う）。許可を書いて同じ W を SendMessage で再開することと、打ち直しを指示して同じ W を再開することは、同じ指示での起こし直しに数えない。打ち直しのあとに W が空の return で返ったときは、その打ち直しについて報告を改めて 1 回だけ求めてよい（打ち直しの前に求めた 1 回とは別に数える）。1 回求めても報告が空のとき、または報告から打ち切りの原因が読み取れないときも、同じ指示で W を起こし直してはならず（MUST NOT）、空だったことと作業ツリーの状態を主に上げなければならない（MUST）。`skills/develop/references/worker-recovery.md` にこれらを書き、SKILL.md は W の空 return を受けたときに同ファイルを必ず読むよう指示しなければならない（MUST）。
 
 この要件の対象は W だけである。R1・G・レビュアーなど再開しない役が空で返ったときの扱いは、この要件の範囲外とし、既存の要件（手渡しの許可条件、G が工程中断で返したときの扱い）に従う。
 
@@ -2943,7 +2946,7 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 
 #### Scenario: 報告を 1 回だけ求める
 
-- **WHEN** `skills/develop/SKILL.md` の `returned no output` を含む段落を読む
+- **WHEN** SKILL.md の必読指示から `skills/develop/references/worker-recovery.md` の `returned no output` を含む段落を読む
 - **THEN** SendMessage で 1 回だけ報告を求める、と書かれており、`git -C <path> status --porcelain` で未コミット差分を確かめることも書かれている
 
 #### Scenario: 打ち切られたら起こし直さない
@@ -3102,7 +3105,7 @@ develop の手順書は、別セッション方式の通常進行を `references
 
 ### Requirement: 破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる
 
-本体は、名前付きで起こした W の報告（通常の return、または空の return への報告要求の返事）に、破壊的 git 操作を hook に拒否されたこと（拒否の記録のパスがある）が書かれているとき、次のとおり扱わなければならない（MUST）。`skills/develop/SKILL.md` の「1 ループ」の節の、要件「空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない」の段落と、その直後の段落（下の「形の理由で断られたときの打ち直し」の手順）に、これらが書かれていなければならない（MUST）。
+本体は、名前付きで起こした W の報告（通常の return、または空の return への報告要求の返事）に、破壊的 git 操作を hook に拒否されたこと（拒否の記録のパスがある）が書かれているとき、次のとおり扱わなければならない（MUST）。`skills/develop/references/worker-recovery.md` の、要件「空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない」に対応する段落と、その直後の打ち直しの段落に、これらを書かなければならない（MUST）。SKILL.md は通常の return を含む拒否報告を受けたとき、許可や再開の前に同ファイルを必ず読むよう指示しなければならない（MUST）。
 
 許可を書く条件: 次の 4 つをすべて満たすときだけ、本体の Bash で `${CLAUDE_PLUGIN_ROOT}/scripts/git-guard-permit.sh <拒否の記録のパス> <理由>` を実行する（MUST。許可の仕組みは spec destructive-git-hook の要件のとおりで、この要件は作り直さない）。
 
@@ -3123,7 +3126,7 @@ develop の手順書は、別セッション方式の通常進行を `references
 
 #### Scenario: 許可を書く条件が書かれている
 
-- **WHEN** `skills/develop/SKILL.md` の `returned no output` を含む段落を読む
+- **WHEN** SKILL.md の必読指示から `skills/develop/references/worker-recovery.md` の `returned no output` を含む段落を読む
 - **THEN** `git-guard-permit.sh` を実行して許可を書く条件として、scratchpad の中・自分で作った・戻す用事に収まることが書かれており、対象の repo に git を実行しないことも書かれている
 
 #### Scenario: 通常の worktree から scratchpad の中の repo を -C で戻す操作も許可の対象になる
@@ -3143,7 +3146,7 @@ develop の手順書は、別セッション方式の通常進行を `references
 
 #### Scenario: 形の理由で断られたら 1 回だけ打ち直しを指示する
 
-- **WHEN** `skills/develop/SKILL.md` の「1 ループ」の節の、`returned no output` を含む段落とその直後の段落を読む
+- **WHEN** `skills/develop/references/worker-recovery.md` の、`returned no output` を含む段落とその直後の段落を読む
 - **THEN** 許可を書くスクリプトが終了コード 3 で終わり、1・3・4 を満たし報告の対象のパスが scratchpad の下の形なら、オーナーに上げずに同じ W を再開して、準備を別の呼び出しで先に済ませ、破壊的な操作だけを実パスの単独のコマンドとして 1 回だけ打ち、拒否されたら打ち直さず報告に戻るよう指示することが書かれており、新しい拒否の記録で許可の手順をやり直すこと、打ち直しの指示は同じ W の同じ操作について 1 回までで新しい拒否の記録になっても回数を戻さないこと、打ち直したあとにスクリプトがまた 0 以外で終わったらオーナーに上げることも書かれている
 
 #### Scenario: 実機で、まとめて打った後始末が打ち直しを経て人の確認なしに通る
@@ -3673,7 +3676,7 @@ develop の `SKILL.md`「ループの終わり」は、エピックの子（`scr
 - **THEN** 子の本体は主に聞き直さず、記録先に `PR トークン上限: 60000000` と `決めた人:`・`権限: <URL>`・`停止の記録:` の行を投稿し、次の計測に `--cap 60000000` を付けて再開する
 
 ### Requirement: サブエージェント方式では親を兼ねる本体が権限に照らす
-サブエージェント方式（unmanned・channel を含む）のエピックでは、親を兼ねる本体が、子の記録先の計測の exit 2 で主に聞く前に、見込みを子の記録先にコメントしなければならない（MUST）。そのうえで要件「親は PR トークン上限の止まりを権限に照らして続けさせる」の条件 (a)・(b) で照らし、満たせば要件「親の権限で続けた上限は子の本体が記録先に書く」の書式で投稿して続ける（MUST）。満たさなければ、exit 2 の手順で主に問う。手順は SKILL.md「PR トークン上限」に書く。
+サブエージェント方式（unmanned・channel を含む）のエピックでは、親を兼ねる本体が、子の記録先の計測の exit 2 で主に聞く前に、見込みを子の記録先にコメントしなければならない（MUST）。そのうえで要件「親は PR トークン上限の止まりを権限に照らして続けさせる」の条件 (a)・(b) で照らし、満たせば要件「親の権限で続けた上限は子の本体が記録先に書く」の書式で投稿して続ける（MUST）。満たさなければ、exit 2 の手順で主に問う。手順は `skills/develop/references/pr-token-budget.md` に書き、SKILL.md は計測前に同ファイルを必ず読むよう指示する（MUST）。
 
 #### Scenario: サブエージェント方式では本体が照らして書く
 - **WHEN** サブエージェント方式のエピックで、子の記録先の計測が exit 2（合計 31000000 / 上限 30000000）になり、本体の見込みが合計 40000000、権限が 60000000
@@ -3811,7 +3814,7 @@ develop を呼んでいたと判定したとき、スクリプトは stdout に 
 
 ### Requirement: G の needs-carryover-judge を受けた本体の動き
 
-`skills/develop/SKILL.md` の 1 ループの (4) は、G の Status `needs-carryover-judge` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、pr-review-gate の `stages/hold.md` 手順 3-c の依頼の書き方で `subagent_type: dev-workflow:decider`・`model: opus` の判定役を起こし、判定の記録を PR に代理投稿し、判定と記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、3-c の書式の `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。本体は判定を受けて自分で宣言を投稿したり、ラベルを付けたり、主に聞いたりしてはならない（MUST NOT。引き継ぐか主に聞くかは合格処理の G が決める）。ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び `needs-carryover-judge` を返したときは、判定役を起こし直してはならず（MUST NOT）、投稿した記録の URL を添えて主に聞かなければならない（MUST）。
+`skills/develop/references/gate-result.md` は、SKILL.md の (4) の Status 表から必読にされ、G の Status `needs-carryover-judge` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、pr-review-gate の `stages/hold.md` 手順 3-c の依頼の書き方で `subagent_type: dev-workflow:decider`・`model: opus` の判定役を起こし、判定の記録を PR に代理投稿し、判定と記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、3-c の書式の `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。本体は判定を受けて自分で宣言を投稿したり、ラベルを付けたり、主に聞いたりしてはならない（MUST NOT。引き継ぐか主に聞くかは合格処理の G が決める）。ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び `needs-carryover-judge` を返したときは、判定役を起こし直してはならず（MUST NOT）、投稿した記録の URL を添えて主に聞かなければならない（MUST）。
 
 #### Scenario: needs-carryover-judge で返った
 
@@ -5318,7 +5321,7 @@ develop の本体は、通常経路で CI 見張りを始める前と修正後�
 
 CI 用引き継ぎが最新の可である間に W を起動／再開するたびに（CI fix とゲート failed の直しを含む）、事前に許可条件を確認して依頼入力を保持し、同じ必要項目を持つ最新の引き継ぎを `手渡し: 不可（W を起動／再開するため、今回の工程完了または停止確認待ち）` として投稿し、投稿成功を確認してから起動／再開を指示しなければならない（MUST）。可へ戻せるのは、今回起動／再開した W の工程完了 return またはその W への停止指示に対する停止確認を受け取り、今回の成果と根拠で新しい引き継ぎを投稿するときだけである（MUST）。以前の完了／停止確認や push・idle だけで可へ戻してはならない（MUST NOT）。
 
-develop/SKILL.md の failed 後の W 起動／再開手順と handover.md を読む場面は、最新 CI 用引き継ぎが可なら同ファイル「起動／再開前の無効化と再許可」に従い、不可の投稿成功後だけ指示することへ接続しなければならない（MUST）。
+develop/SKILL.md から必読にした `skills/develop/references/gate-result.md` の failed 後の W 起動／再開手順と handover.md を読む場面は、最新 CI 用引き継ぎが可なら同ファイル「起動／再開前の無効化と再許可」に従い、不可の投稿成功後だけ指示することへ接続しなければならない（MUST）。
 
 #### Scenario: 通常経路の CI fix の W を起動または再開する
 - **WHEN** 本体が既存 W を implement で再開する、または最新の手渡し可を確認して新しい W を implement で起動する
@@ -5333,7 +5336,7 @@ develop/SKILL.md の failed 後の W 起動／再開手順と handover.md を読
 - **THEN** 今回の停止確認と成果・編集ファイル・commit SHA を記録した新しい手渡し可を投稿できる。未コミット差分があれば本体が commit してから記録し、今回の完了も停止確認も無ければ不可のままにする
 
 #### Scenario: failed 後の本体手順から無効化を辿る
-- **WHEN** 本体が develop/SKILL.md の failed 後の W 起動／再開手順または handover.md を読む場面を読む
+- **WHEN** 本体が develop/SKILL.md から必読にした `skills/develop/references/gate-result.md` の failed 後の W 起動／再開手順または handover.md を読む場面を読む
 - **THEN** 最新 CI 用引き継ぎが可の場合は handover.md「起動／再開前の無効化と再許可」に従い不可を投稿し、投稿成功後だけ W に指示するという接続がある。投稿失敗なら W を起動／再開せず既存の停止先へ報告する
 
 ### Requirement: 通常判断で W を把握しない本体は許可された手渡しで implement 担当を用意する
@@ -5375,19 +5378,19 @@ develop/SKILL.md の failed 後の W 起動／再開手順と handover.md を読
 - **THEN** 関係 Bats で引き継ぎの作成・必要項目・対象照合・許可根拠・W 不明の implement 手渡し／停止先・9 と 2 からの接続・既存通常経路と軽い経路の維持を確かめる。既存 W の再開と新しい W の起動の両方で、事前の不可の投稿成功、投稿失敗時の停止、HEAD・差分が変わる前の本体交代による二人目の起動防止、今回の完了／停止確認後だけの再許可、守備範囲の段落も検査する。上の守備範囲を超えて穴を塞ぎ切ることは完了条件にしない
 
 ### Requirement: 失敗の段は `--failure` で request に渡し、返った model を使う
-SKILL.md「モデル」節の失敗ループの段落は、`request` の `--failure` の各値がどの失敗の段に当たるか（`first` = 1 回目の失敗、`executor` = 2 回目で実行側が原因、`judgment` = 2 回目で判断側が原因）を書かなければならない（MUST）。決める役と実行役の model は、その段の `--failure` を渡した `request` が返した値を使うと書かなければならず（MUST）、決める役の model を `templates/escalation-tripwires.md` の文面から読み取る指示を書いてはならない（MUST NOT。判断側・実行側の分類の定義を読む先として同テンプレートを指すことは許す）。実行側の昇格は「W を上位で再開」ではなく、格が上がって model が変わるなら新しい thread に手渡す、と書かなければならない（MUST。細目の正本は `references/codex-develop.md`）。
+SKILL.md「モデル」節は、失敗ループで起動・再開を扱う前に `plugins/dev-workflow/references/codex-develop.md` の「起動と role 解決」を必ず読むよう指示しなければならない（MUST）。対応する失敗ループの本文は同 reference の一つの正本へ集約し、SKILL.md には再掲してはならない（MUST NOT）。この必読参照先は、`request` の `--failure` の各値がどの失敗の段に当たるか（`first` = 1 回目の失敗、`executor` = 2 回目で実行側が原因、`judgment` = 2 回目で判断側が原因）を書かなければならない（MUST）。決める役と実行役の model は、その段の `--failure` を渡した `request` が返した値を使うと書かなければならず（MUST）、決める役の model を `templates/escalation-tripwires.md` の文面から読み取る指示を書いてはならない（MUST NOT。判断側・実行側の分類の定義を読む先として同テンプレートを指すことは許す）。実行側の昇格は「W を上位で再開」ではなく、格が上がって model が変わるなら新しい thread に手渡す、と書かなければならない（MUST。細目の正本は `references/codex-develop.md`）。
 
 #### Scenario: `--failure` の値と段の対応が書かれている
-- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
-- **THEN** `--failure first`・`--failure executor`・`--failure judgment` のそれぞれが、1 回目の失敗・2 回目の実行側・2 回目の判断側に当たると書かれている
+- **WHEN** SKILL.md「モデル」節と、そこから操作前の必読にした `plugins/dev-workflow/references/codex-develop.md` の失敗ループの本文を読む
+- **THEN** SKILL.md に操作前の必読指示があり、参照先に `--failure first`・`--failure executor`・`--failure judgment` のそれぞれが、1 回目の失敗・2 回目の実行側・2 回目の判断側に当たると書かれている
 
 #### Scenario: decider の model を文面から読まない
-- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
-- **THEN** 「decider の `model` の段は `templates/escalation-tripwires.md` を Read して従う」の形の文が無く、`request` が返した model を使うと書かれている
+- **WHEN** SKILL.md「モデル」節と、そこから操作前の必読にした `plugins/dev-workflow/references/codex-develop.md` の失敗ループの本文を読む
+- **THEN** SKILL.md と必読参照先には「decider の `model` の段は `templates/escalation-tripwires.md` を Read して従う」の形の文が無く、必読参照先に `request` が返した model を使うと書かれている
 
 #### Scenario: 実行側の昇格は新しい thread
-- **WHEN** SKILL.md「モデル」節の失敗ループの段落を読む
-- **THEN** 実行側の昇格で model が変わるときは SendMessage で再開せず新しい thread に手渡すと書かれ、`references/codex-develop.md` を細目の正本として指している
+- **WHEN** SKILL.md「モデル」節と、そこから操作前の必読にした `plugins/dev-workflow/references/codex-develop.md` の失敗ループの本文を読む
+- **THEN** 必読参照先に、実行側の昇格で model が変わるときは SendMessage で再開せず新しい thread に手渡すと書かれ、`references/codex-develop.md` を細目の正本として指している
 
 ### Requirement: 主の側にしか答えが無いとする前に 3 つを確かめる
 
@@ -5443,11 +5446,11 @@ SKILL.md「モデル」節の失敗ループの段落は、`request` の `--fail
 
 ### Requirement: G の needs-no-point-check を受けた本体の動き
 
-`skills/develop/SKILL.md` の 1 ループの (4) は、G の Status `needs-no-point-check` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、`subagent_type: dev-workflow:decider`・`model: opus` の決める役を起こし、宣言の本文と PR の差分だけを渡して論点なしかを判定させ、dev-workflow-pr-review-gate の要件「論点なしの確認の記録を PR に残す」の形の記録を PR に投稿し、記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは決める役を起こさず、`論点なしの確認: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。
+`skills/develop/references/gate-result.md` は、SKILL.md の (4) の Status 表から必読にされ、G の Status `needs-no-point-check` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、`subagent_type: dev-workflow:decider`・`model: opus` の決める役を起こし、宣言の本文と PR の差分だけを渡して論点なしかを判定させ、dev-workflow-pr-review-gate の要件「論点なしの確認の記録を PR に残す」の形の記録を PR に投稿し、記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは決める役を起こさず、`論点なしの確認: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。
 
 #### Scenario: Status の一覧に needs-no-point-check がある
 
-- **WHEN** SKILL.md の G の return の一覧（4 つの段の行）と `references/roles/gate-runner.md` の段と Status の表を読む
+- **WHEN** SKILL.md の G の Status → 読むファイルの表と `references/roles/gate-runner.md` の段と Status の表を読む
 - **THEN** どちらにも `needs-no-point-check` がある
 
 #### Scenario: needs-no-point-check で返った
@@ -5579,3 +5582,57 @@ CI 見張りの fix からの戻し方のうち、通常判断で W を把握し
 #### Scenario: 同量の内容入れ替えは予算検査で止めない
 - **WHEN** 正常な予算と固定集合で、ファイルの字数とバイト数を保ったまま文の内容だけを入れ替える
 - **THEN** 予算検査は 0 のままでよく、内容がその場面に適するかは仕様レビューと PR の段落対応表で確認する
+
+### Requirement: 起動時の先頭に本体の骨格と読み直しの指示を置く
+
+SKILL.md は役割表、本体が自分でコードを書かない・レビューしない禁止事項（軽い通し方の既存例外を含む）、工程順と操作前の正本の読み直し指示を先頭 5,000 トークン以内に置かなければならない（MUST）。換算方法と対象範囲は PR 本文に再現可能なコマンドで示す（MUST）。自動要約後も、場面限定の正本を読む入口を残す（MUST）。
+
+#### Scenario: 本体の骨格が先頭にある
+- **WHEN** SKILL.md の先頭から役割表・禁止事項・工程概要・読み直し指示の末尾までを測る
+- **THEN** PR に記載した換算で 5,000 以下となり、記録先→仕様化判断→R1→実装＋verify→必要時 V→archive＋Draft PR＋仕様宣言→G の順と、既存の例外への参照がある
+
+### Requirement: 場面限定の本体手順は起きた場面で必読にする
+
+SKILL.md は PR トークン上限・G の状態別分岐・W の空 return と破壊的 git 操作の許可の手順の中身を持たず、読む場面と読む先を残さなければならない（MUST）。spawn・再開・Codex 委譲の前は pr-token-budget.md、G の結果の処理前は Status 表の行き先、W の空 return または通常 return を含む拒否報告では再開・許可の前に worker-recovery.md を必ず読むよう指示する（MUST）。
+
+#### Scenario: G の状態から本体の詳細へ進む
+- **WHEN** 本体が G の Status を受け取る
+- **THEN** SKILL.md の Status → 読むファイルの表から、次の段へ・passed・needs-reviewer・重複で降りた・review-incomplete・failed・保留・needs-fix-check・needs-carryover-judge・needs-no-point-check・needs-decider の対応先を読める。決める役の起動・代理投稿の例外・再要求の制約は到達先に保たれる
+
+#### Scenario: 通常の return に拒否の報告がある
+- **WHEN** W が工程完了または工程中断の return に破壊的 git 操作の拒否を報告する
+- **THEN** 空 return のときと同じく、本体は worker-recovery.md を必ず読んでから許可や再開を扱う。移動によって許可条件・回数・権限は変わらない
+
+#### Scenario: 単発の issue の開始では不要な詳細を読まない
+- **WHEN** G の結果も拒否報告もまだ無い単発の issue を開始する
+- **THEN** 起動時の三ファイルに状態分岐と拒否復旧の本文は無く、その場面の必読参照だけがある。spawn 前のトークン計測など、既に必要な場面では詳細の必読を省かない
+
+### Requirement: 文言検査は手順書の移動に依存せず入口と予算を別に守る
+
+手順の文言の bats は、develop 配下の手順書集合のどこかに規則があることを確かめ、移動だけで落ちてはならない（MUST NOT）。Codex 固有の規則は正本 codex-develop.md を対象に加える。入口から正本への必読参照、核心規則の先頭位置、役割解決本文の一元化は別に検査しなければならない（MUST）。起動時の三ファイルと切り出し先にはファイル別の実測バイト予算を置き、超過と実測の 1.1 倍を超える余白を拒否する（MUST）。
+
+**守備範囲**: 入力元は、リポジトリの `plugins/dev-workflow/skills/develop/SKILL.md` と `skills/develop/references/**/*.md` の手順書集合（後者も同 plugin 配下）、Codex 固有の規則では `plugins/dev-workflow/references/codex-develop.md`、入口の `plugins/dev-workflow/commands/develop.md`、起動時の三ファイルと切り出し先の予算ファイル、およびそれらの使い捨て fixture である。拾う誤りは、検査対象の規則の欠落、入口の必読参照の欠落、核心規則の先頭 5,000 トークン範囲からの逸脱、役割解決本文の重複、バイト予算の超過と実測の 1.1 倍を超える余白である。内容・必読参照・先頭位置・一元化の検査を満たしたまま、場面限定の二つの段落を同じ字数・バイト数で別の手順書間で入れ替え、各ファイルの予算も変わらない場合は、読む場面に合わない配置になっても検査を通ることを許す（#1682 の OWNER の決定）。字数・バイト数が同じ入替えや、存在する文の意味・実エージェントの読解まで機械で保証し、範囲外の穴を全て塞ぎ切ることは完了条件にしない。
+
+#### Scenario: 文を移すだけなら検査が通る
+- **WHEN** 使い捨て fixture で必要な規則を develop の別の手順書へ移し、読む場面からの参照を保つ
+- **THEN** 内容検査が通る。一方、規則を手順書集合から消した fixture は落ちる
+
+#### Scenario: 内容だけ残して必読参照を消す
+- **WHEN** 拒否復旧の手順を残したまま、SKILL.md の通常の拒否報告での必読指示を消す
+- **THEN** 入口の構造検査が落ちる
+
+#### Scenario: 起動時と条件付きの予算を守る
+- **WHEN** 起動時の三ファイルまたは切り出した手順書の複製を予算より 1 byte 大きくする、または予算を実測の 1.1 倍より大きくする
+- **THEN** 対応する予算検査が落ちる。commands/develop.md が SKILL.md と codex-develop.md を名指しする既存検査も維持される
+
+#### Scenario: 同じ量の入替えによる配置の誤りは残りとして受け入れる
+- **WHEN** 使い捨て fixture で、検査対象の規則・必読参照・先頭位置・役割解決の一元化を保ち、場面限定の段落を同じ字数・バイト数で手順書間で入れ替え、各ファイルの実測と予算を変えない
+- **THEN** 文言・入口・先頭位置・一元化・予算の検査が通ることを許す。場面に合わない配置をこの入替えだけで検出することや、守備範囲外の穴を塞ぎ切ることは完了条件にしない
+
+### Requirement: 切り出し後の読む量と段落の行き先を記録する
+
+起動時に読む三ファイルの前後の字数を UTF-8 の wc -m 相当で PR 本文と親エピックのコメントに記録しなければならない（MUST）。PR 本文には移した段落ごとに、単発 issue のどの場面で読まずに済むか、必要な場面で何を必読として残したかを記録する（MUST）。減った量そのものを合否条件にしてはならない（MUST NOT）。例・経緯・既存正本と同文の段落を削除または参照化しても、既存の条件・権限・工程の順は変えてはならない（MUST NOT）。
+
+#### Scenario: PR と親エピックに測定を残す
+- **WHEN** 切り出し後の PR を用意する
+- **THEN** 基準 HEAD と対象パス・測定コマンド・三ファイルの前後の字数・先頭位置の換算・段落別の行き先と読む場面が PR 本文にあり、字数の前後が親エピックにも記録される

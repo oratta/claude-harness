@@ -73,7 +73,7 @@ develop スキルは、仕様化経路で、W が openspec CLI（`openspec new c
 
 2 周目以降の周の終わりに BLOCKER が残ったら（R1 の結果が `REQUEST_CHANGES`）、本体は主に聞く前に、決める役（`subagent_type: dev-workflow:decider`）に残った BLOCKER の直し方の判定を依頼しなければならない（MUST。判定役・入力・返答の 1 行目・判定の記録と事後報告の書式は `dev-workflow-develop` の「レビューの 2 周目以降の周の終わりは直し方の判定を通して続ける」Requirement が正本）。判定が「決まっている」で、PR トークン上限の計測が exit 2 でなければ、本体は主に聞かずに W を再開して artifact を直させ、R1 に次の周の差分再レビューをさせる（MUST）。interactive と unmanned で同じに扱う（MUST）。
 
-主に聞くのは次の 2 つのときだけとする（MUST）: ①直し方の判定が「選び直しが要る」（設計の選択肢が複数ある・記録先の範囲を変える・前の周で「決まっている」とした直し方で閉じなかった。入力不足で判定が出なかったときも含む） ②PR トークン上限の計測が exit 2（`scripts/pr-token-budget.sh` が上限超を返した）。①のときは記録先に `needs-approval` ラベルを付けて経緯をコメントし（MUST）、interactive モードでは本体が AskUserQuestion で判断を仰ぎ、unmanned モードではそのサイクルを終了する（MUST）。②のときは `skills/develop/SKILL.md`「PR トークン上限」の exit 2 の手順に従う（MUST）。この 2 つは方針を主に聞くときの数で、指摘の条件を聞く問い（`dev-workflow-develop` の「仕様レビューの残った指摘は直し方の判定の前に条件を確かめる」Requirement）は数えない（SHALL）。
+主に聞くのは次の 2 つのときだけとする（MUST）: ①直し方の判定が「選び直しが要る」（設計の選択肢が複数ある・記録先の範囲を変える・前の周で「決まっている」とした直し方で閉じなかった。入力不足で判定が出なかったときも含む） ②PR トークン上限の計測が exit 2（`scripts/pr-token-budget.sh` が上限超を返した）。①のときは記録先に `needs-approval` ラベルを付けて経緯をコメントし（MUST）、interactive モードでは本体が AskUserQuestion で判断を仰ぎ、unmanned モードではそのサイクルを終了する（MUST）。②のときは `skills/develop/references/pr-token-budget.md` の exit 2 の手順に従う（MUST）。この 2 つは方針を主に聞くときの数で、指摘の条件を聞く問い（`dev-workflow-develop` の「仕様レビューの残った指摘は直し方の判定の前に条件を確かめる」Requirement）は数えない（SHALL）。
 
 判定結果は記録先のコメントとして記録しなければならず（MUST）、その書式は `references/roles/spec-reviewer.md` に置く（SHALL）。コメントの 1 行目は正規表現 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$` に完全一致し、2 行目以降に周回数・レビュアーのモデル・残課題を書く（MUST）。
 
