@@ -3773,6 +3773,8 @@ REFS
   grep -qF 'isolation: "worktree"' "$refs/epic-subagent.md"
   grep -F '**別セッション方式とサブエージェント方式に共通**' "$refs/epic.md"
   ! grep -qF '両経路に共通' "$refs/epic.md" || return 1
+  grep -F 'follow-up の issue を作る前に読む' "$SKILL" | grep -qF '「別セッション方式とサブエージェント方式に共通」' || return 1
+  ! grep -qF '「両経路に共通」' "$SKILL" || return 1
 }
 
 @test "1693: test comments and current public classification name their destinations" {
@@ -5220,7 +5222,7 @@ nothing_sent() {
   printf '%s\n' "$l4" | grep -qF '`launch` が `failed` を返しても'
 }
 
-# --- 同時に動く子の上限（SKILL.md） ---
+# --- 同時に動く子の上限（epic-loop.md） ---
 # spec: dev-workflow-develop（epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める /
 # 親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる）
 
