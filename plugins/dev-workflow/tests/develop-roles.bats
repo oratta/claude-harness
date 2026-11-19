@@ -9,6 +9,8 @@
 #
 # spec: dev-workflow-develop, dev-workflow-spec-review
 
+load lib/gate-docs
+
 setup() {
   export LC_ALL=C.UTF-8
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -28,10 +30,11 @@ setup() {
   PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
   REVIEWER="${ROLES}/spec-reviewer.md"
   GATE="${ROLES}/gate-runner.md"
+  gate_test_docs
 }
 
 # G の否定の検査（その文言が G の読むどこにも無いこと）は gate-runner.md と段のファイル全部で見る
-gate_all() { cat "$GATE" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; }
+gate_all() { cat "$ALL_GATE_DOCS"; }
 # W の否定の検査（その文言が W の指示書のどこにも無いこと）は索引・worker/ の 4 本・pre-classification.md の全部で見る（#556）
 worker_all() { cat "$WORKER" "$W_COMMON" "$W_SPEC" "$W_IMPL" "$W_FINISH" "$PRE"; }
 load lib/develop-docs
@@ -305,7 +308,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
   # パスと Markdown の閉じバッククォートを許容し、「読んでから」「も読む」「開く」も拾う。
   # 「読まない」「読まず」を含む行（否定の明示）と索引の所在説明は拾わない。
   local hits
-  hits=$(gate_all | grep -E 'SKILL\.md`?[[:space:]]*(を|も)[[:space:]]*(Read|読|開)' | grep -vE '読ま(ない|ず)' || true)
+  hits=$(gate_scope | grep -E 'SKILL\.md`?[[:space:]]*(を|も)[[:space:]]*(Read|読|開)' | grep -vE '読ま(ない|ず)' || true)
   if [ -n "$hits" ]; then
     echo "G の指示書に SKILL.md を読む肯定の指示がある: $hits" >&2
     return 1
@@ -370,7 +373,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 @test "gate-runner (#354): row-5 findings return as on-hold for split-off confirmation, not proposing a third round" {
   grep -q '切り出しの確認' "$GATE"
   grep -q '3周目を提案しない' "${HOLD}"
-  ! gate_all | grep -qF '2周目キャップ' || return 1
+  ! gate_scope | grep -qF '2周目キャップ' || return 1
 }
 
 @test "gate-runner (#281): round field covers round 3+ after owner go-ahead and full review line counts" {
@@ -379,7 +382,7 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner (#281): no high-severity-only third round permission remains" {
-  ! gate_all | grep -qF '新規の高深刻度 blocking のみ' || return 1
+  ! gate_scope | grep -qF '新規の高深刻度 blocking のみ' || return 1
 }
 
 @test "gate-runner (#354): resume covers the owner's answer to the split-off confirmation" {
@@ -417,20 +420,23 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 }
 
 @test "gate-runner: G itself defaults to sonnet; the reviewer is opus or the decider type for merge conditions / cross-layer contracts" {
-  grep -q 'G の既定は `sonnet`' "$GATE"
-  grep -q '`opus`' "$GATE"
-  ! gate_all | grep -q 'マージ条件・聖域・層間契約' || return 1
-  ! gate_all | grep -q '聖域・層間契約による' || return 1
-  ! gate_all | grep -qE '実装品質起因なら.*`model: fable`' || return 1
+  real_gate="${ROLES}/gate-runner.md"
+  grep -qF '正本は develop/SKILL.md「モデル」' "$real_gate"
+  grep -qF 'G 自身は選び直さない' "$real_gate"
+  grep -F '| G（`dev-workflow:gate-runner`）' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF '中位（`sonnet`）'
+  grep -F '| G が要求するレビュアー' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF '上位（`opus`）'
+  grep -F '| G が要求するレビュアー' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF 'subagent_type: dev-workflow:decider'
+  ! gate_scope | grep -q 'マージ条件・聖域・層間契約' || return 1
+  ! gate_scope | grep -q '聖域・層間契約による' || return 1
+  ! gate_scope | grep -qE '実装品質起因なら.*`model: fable`' || return 1
   # 旧ラダー（実行役を 1 段ずつ上げる）は残さず、決める役の種別で上げる
-  ! gate_all | grep -q '1 段上' || return 1
-  grep -qF 'dev-workflow:decider' "$GATE"
+  ! gate_scope | grep -q '1 段上' || return 1
+  grep -F '| R1（' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF 'subagent_type: dev-workflow:decider'
   grep -qF '一方だけ' "${TRIAGE}"
   grep -qF '実行役を最上位の格に上げない' "${TRIAGE}"
   grep -qF '`general-purpose` に `model: fable` は付けない' "${PREPARE}"
-  grep -q 'マージ条件' "$GATE"
-  grep -q '聖域' "$GATE"
-  grep -q '層間契約' "$GATE"
+  grep -F '| R1（' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF 'マージ条件・層間契約'
+  grep -F '| R1（' "${PLUGIN_DIR}/skills/develop/SKILL.md" | grep -qF '聖域パスだけでは上げない'
 }
 
 # 上のテストは新文言の存在と一部の旧文言の不在しか見ておらず、同じ文書の別の段落
@@ -586,7 +592,7 @@ $(cat "$rd")"
 }
 
 @test "gate-runner (#352): needs-reviewer does not tell G to continue with step 3 unconditionally" {
-  ! gate_all | grep -q '手順 3 以降を続ける' || return 1
+  ! gate_scope | grep -q '手順 3 以降を続ける' || return 1
   n="$(section "${PREPARE}" 'needs-reviewer')"
   grep -qF '「レビュアーの要約受領」' <<<"$n"
 }
@@ -646,7 +652,7 @@ $(cat "$rd")"
   for token in 'マージ後に何を起こすか' '見積もり' '固定費' '推奨'; do
     grep -qF "$token" <<<"$line" || { echo "missing: $token"; return 1; }
   done
-  ! gate_all | grep -qF '続けるか、範囲外として閉じるか' || return 1
+  ! gate_scope | grep -qF '続けるか、範囲外として閉じるか' || return 1
 }
 
 @test "gate-runner (#354): Status has needs-decider and a section says what the main session receives" {
@@ -807,7 +813,7 @@ $(cat "$rd")"
   for key in '保留の解除' '決める役の裁定受領'; do
     line="$(grep -F -- "**$key**" "$HOLD" "$TRIAGE" | cut -d: -f2-)"
     [ -n "$line" ] || { echo "no line: $key"; return 1; }
-    grep -qF 'pr-review-gate 手順 2-1 の混在の段落' <<<"$line" || { echo "$key lacks mixed ref"; return 1; }
+    grep -qE 'pr-review-gate 手順 2-1 の混在の段落|`stages/triage-convergence\.md` の混在の段落' <<<"$line" || { echo "$key lacks mixed ref"; return 1; }
     grep -qF 'failed に進まない' <<<"$line" || { echo "$key lacks guard"; return 1; }
   done
   grep -F '**決める役の裁定受領**' "$TRIAGE" | grep -qF '裁定なし（入力不足）'
@@ -909,7 +915,8 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   [ -n "$row" ] || { echo "no hold-release row"; return 1; }
   grep -qF '`stages/hold.md`' <<<"$row"
   grep -qF '切り出しの確認に「切り出す」と答えられたときは加えて' <<<"$row"
-  grep -qF '`stages/triage.md` の置き場所の段落・候補探し・段 C の節' <<<"$row"
+  grep -qF '`stages/triage-nonblocking.md` の置き場所の段落・候補探し' <<<"$row"
+  grep -qF '`stages/triage-epic.md` の段 C の節' <<<"$row"
 }
 
 @test "gate-runner (#554): G name and description name the stage and keep the G: prefix" {
@@ -1204,9 +1211,9 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
 
 # 順 3 と順 2・4 が混ざった failed のあと、要約受領の分岐で順 3 の一覧表を三表より先に照合する（#586）。
 @test "gate-runner summary-receipt branch checks the order-3 list table before the three tables (#586)" {
-  L=$(grep -F -- '- **レビュアーの要約受領**: `stages/triage.md`' "${ROLES}/gate-runner.md")
+  L=$(grep -F -- '- **レビュアーの要約受領**: `stages/triage.md`' "${PLUGIN_DIR}/skills/pr-review-gate/stages/gate-triage.md")
   [ -n "$L" ] || return 1
-  grep -qF '三表の照合より先に、その一覧表のコメント（`## 一覧（順 3）`）を `stages/triage.md` の順 3 の 2 段で照合する' <<<"$L" || return 1
+  grep -qF '三表の照合より先に、その一覧表のコメント（`## 一覧（順 3）`）を `stages/triage-row3.md` の順 3 の 2 段で照合する' <<<"$L" || return 1
 }
 
 # 文言の検査を「develop 配下の手順書のどこかにあること」で確かめる共通の関数（#1683）

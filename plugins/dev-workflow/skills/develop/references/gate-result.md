@@ -11,7 +11,7 @@ Status の処理前に読む。以下の references/ は skills/develop/ が基�
 ## passed
 
 passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
-G の return に `issue で承認済み:` があれば、CI の見張りの前に主へその行（宣言 URL・分類・引用）を1回伝える（pr-review-gate `stages/pass.md`）。
+G の return に `issue で承認済み:` があれば、CI の見張りの前に主へその行（宣言 URL・分類・引用）を1回伝える（pr-review-gate `stages/issue-approved.md`）。
 見張り・修正担当の引き継ぎ・`stopped` / `killed` 通知は、開始前に `plugins/dev-workflow/references/ci-watch.md` 全文を必ず Read して従う。同正本の7が `references/handover.md`「CI 見張りの修正担当の引き継ぎ」へ接続する。
 `fix` の担当と段は `references/light-path.md`「CI 見張りの fix からの戻し方」を必ず Read する。通常経路のゲート取り直しは前提確認と重さ判定の新しい G から。unmanned は (4) を回さないので対象外。
 
@@ -25,7 +25,7 @@ needs-reviewer → adapter 経路では G は full でも light でもこれを�
         一周目で payload に区画があり executor が claude なら、区画ごとに 1 体ずつ並列に起こす。description は
         `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` とする。executor が codex なら区画を使わず差分全体を 1 つの request に渡す。
      ④ レビュー要約と、選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。review phase の executor が codex なら、worker の結果 JSON の `execution.model_resolution.requested` / `execution.model_resolution.resolved` も G に渡す。resolved が未観測なら null をそのまま渡し、要求値や dispatch 時の model で補完しない。Claude の G は照合と振り分けの G を新しく起こし、前の Gate Result ブロックと一緒に起動指示で渡す
-        （gate-runner.md「needs-reviewer の return」）。Codex の G は新しい phase gate を開始してその入力に渡す（codex-develop.md「品質と transport 差分」）
+        （pr-review-gate stages/prepare-reviewer.md「needs-reviewer の return」）。Codex の G は新しい phase gate を開始してその入力に渡す（codex-develop.md「品質と transport 差分」）
         全区画の要約が揃ってから、各要約の先頭に `区画 <k>/<n>` の見出しを付けてまとめ、照合と振り分けの G を 1 体だけ起こして渡す（G は見出しの有無で区画レビューかを判定する）。
      通常の初回レビュー依頼も補足要求も同じ ①〜④ で進める。`needs-reviewer` が一周目照合の補足要求である場合に限り、③ のレビュアーへ
      同じレビューの固定 HEAD・元の三表・残差・補足済み回数を payload のまま渡し、不足分だけを補わせる。補足結果は照合と振り分けの G を新しく起こして渡す（補足済み回数は G が最新の `レビュー三表:` の PR コメントから読むので、fresh thread でもリセットされない）
@@ -68,8 +68,8 @@ needs-fix-check → 2 周目以降の周の終わりに残った指摘の直し�
 
 ## needs-carryover-judge
 
-needs-carryover-judge → 許容済みの PR で HEAD が動き、risk-carryover-check.sh が終了コード 4 を返した（G が判定に回す条件は pr-review-gate の `stages/hold.md` 手順 3-c の「終了コード 4 の判定役」）。
-     本体は PR トークン上限を測ってから、`stages/hold.md` 手順 3-c の依頼の書き方で subagent_type: dev-workflow:decider・model: `opus` の判定役を起こし
+needs-carryover-judge → 許容済みの PR で HEAD が動き、risk-carryover-check.sh が終了コード 4 を返した（G が判定に回す条件は pr-review-gate の `stages/carryover-judge.md` 手順 3-c の「終了コード 4 の判定役」）。
+     本体は PR トークン上限を測ってから、`stages/carryover-judge.md` 手順 3-c の依頼の書き方で subagent_type: dev-workflow:decider・model: `opus` の判定役を起こし
      （入力は G の return の前 HEAD・新しい HEAD・前の宣言・EVIDENCE_PR_CHANGED= のファイルから作る。作業の文脈は渡さない）、判定の記録を PR に代理投稿し（書式は 3-c が正本）、
      判定と判定の記録の URL を渡して合格処理の G を新しく起こす。SHARED_BUDGET_MODE=depleted なら判定役を起こさず、3-c の書式で
      `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を新しく起こす（G が手順 6 で主に聞く）。
@@ -79,7 +79,7 @@ needs-carryover-judge → 許容済みの PR で HEAD が動き、risk-carryover
 
 ## needs-no-point-check
 
-needs-no-point-check → 論点なしの宣言を決める役の確認に回す（`stages/hold.md` 6-0 が正本）。本体は PR トークン上限を測り、subagent_type: dev-workflow:decider・model: `opus` の確認役に
+needs-no-point-check → 論点なしの宣言を決める役の確認に回す（`stages/no-point-check.md` 6-0 が正本）。本体は PR トークン上限を測り、subagent_type: dev-workflow:decider・model: `opus` の確認役に
      宣言の本文と PR の差分だけを渡し、確認の記録を PR に投稿して合格処理の G を新しく起こす。SHARED_BUDGET_MODE=depleted なら起こさず `論点なしの確認: 判断できない` を投稿する。
      本体はラベルを付けず、主に聞かない。同じ宣言・同じ HEAD で再び返ったら確認役を起こし直さず、記録の URL を添えて主に聞く
 

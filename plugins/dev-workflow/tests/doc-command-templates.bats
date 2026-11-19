@@ -1,6 +1,6 @@
 #!/usr/bin/env bats
 # #558: Execute the documented blocks, never a copied implementation.
-# Block numbers include non-shell fences; see the inventory prepared for the PR.
+# Block numbers include non-shell fences; conditional details have separate files (#1687).
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -214,15 +214,15 @@ install_fixture() {
 }
 
 @test "prepare diff block counts changed lines excluding diff headers" {
-  # #1584: 軽い通し方の照合ブロックが HEAD 固定の直後に入る。
-  prepare_block 5
+  # #1687: 軽い通し方は prepare-light.md へ移動。入口の diff コマンドを実行する。
+  prepare_block 4
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   [ "$output" = $'alpha.md\nbeta.sh\n2' ]
 }
 
 @test "pass head block retrieves comments for the fixed SHA" {
-  pass_block 11
+  pass_block 3
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   [ "$output" = 'review: fixed HEAD' ]
@@ -230,7 +230,7 @@ install_fixture() {
 }
 
 @test "pass label block makes a draft ready before adding passed" {
-  pass_block 13
+  pass_block 5
   run bash "$SNIP"
   [ "$status" -eq 0 ]
   ready="$(grep -n '^pr ready ' "$CALLS" | cut -d: -f1)"
@@ -240,7 +240,7 @@ install_fixture() {
 }
 
 @test "pass label block refuses an invalid draft response" {
-  pass_block 13
+  pass_block 5
   GH_DRAFT=unknown run bash "$SNIP"
   [ "$status" -eq 1 ]
   [[ "$output" == *'draft を取得できない'* ]] || return 1
@@ -248,7 +248,7 @@ install_fixture() {
 }
 
 @test "pass label block stops when ready fails" {
-  pass_block 13
+  pass_block 5
   GH_FAIL_READY=1 run bash "$SNIP"
   [ "$status" -eq 1 ]
   [[ "$output" == *'gh pr ready に失敗'* ]] || return 1

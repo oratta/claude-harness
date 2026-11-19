@@ -10,6 +10,7 @@
 # spec: dev-workflow-develop
 
 load lib/develop-docs
+load lib/gate-docs
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -26,6 +27,7 @@ setup() {
   PRGATE="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   USER_DOC="${PLUGIN_DIR}/docs/codex-develop.md"
   ARCHIVE_TASKS="${PLUGIN_DIR}/../../openspec/changes/archive/2026-09-23-codex-model-family-resolution/tasks.md"
+  gate_test_docs
 }
 
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
@@ -33,6 +35,34 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 # develop SKILL.md の (4) ブロック（「(4) G を」からコードブロックの終わりまで）
 step4() { develop_procedures; }
 startup_step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
+
+@test "review (#1649): temporary-directory routing covers bash and pytest as well as bats" {
+  for file in "$CODEX_DEVELOP" "$REVIEWER_BRIEF"; do
+    paragraph="$(grep -F '#1401' "$file")"
+    echo "$paragraph" | grep -qF '再実行に書き込める一時ディレクトリが要るテスト'
+    echo "$paragraph" | grep -qF 'bats のほか、`mktemp` を使う bash テスト'
+    echo "$paragraph" | grep -qF '`BATS_TMPDIR` / `TMPDIR` に書くテスト'
+    echo "$paragraph" | grep -qF '`pytest` のように一時ファイルを書くテスト'
+    echo "$paragraph" | grep -qE '関係するテストに.*一時ディレクトリが要るテスト.*Claude のレビュアー'
+  done
+}
+
+@test "review (#1649): bats still routes to Claude with writable temp paths and read-only policy intact" {
+  for file in "$CODEX_DEVELOP" "$REVIEWER_BRIEF"; do
+    paragraph="$(grep -F '#1401' "$file")"
+    echo "$paragraph" | grep -qF 'bats のほか'
+    echo "$paragraph" | grep -qF '書けず'
+    echo "$paragraph" | grep -qF 'Claude のレビュアー'
+    echo "$paragraph" | grep -qF '`TMPDIR`'
+    echo "$paragraph" | grep -qF '`BATS_TMPDIR`'
+    echo "$paragraph" | grep -qF 'read-only role に `writableRoots` を与え'
+  done
+  paragraph="$(grep -F '#1401' "$REVIEWER_BRIEF")"
+  echo "$paragraph" | grep -qF 'export TMPDIR=<パス> BATS_TMPDIR=<パス>'
+  echo "$paragraph" | grep -qF '同じ固定 HEAD'
+  echo "$paragraph" | grep -qF '補足済み回数は増やさず'
+  echo "$paragraph" | grep -qF '`review-incomplete` で止めない'
+}
 
 @test "docs (#405): model example and explanation accept families and exact IDs" {
   grep -qF '<sol|luna|astra などの系統名、または完全なCodexモデルID>' "$USER_DOC"

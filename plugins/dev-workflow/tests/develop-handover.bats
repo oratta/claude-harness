@@ -10,6 +10,7 @@
 # spec: dev-workflow-develop, dev-workflow-pr-review-gate
 
 load lib/develop-docs
+load lib/gate-docs
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -17,6 +18,7 @@ setup() {
   HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
   COMMAND="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  gate_test_docs
 }
 
 # 引き継ぎの節（見出し「## 保留で止まるときの引き継ぎ」から次の ## まで）

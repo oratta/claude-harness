@@ -16,6 +16,7 @@ TIMED_OUT='The job running on runner mac-1 has exceeded the maximum execution ti
 CANCELED='The operation was canceled.'
 
 load lib/develop-docs
+load lib/gate-docs
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -55,6 +56,7 @@ EOF
   export DEV_WORKFLOW_PR_STATE_DIR="$STATE_DIR"
   export DEV_WORKFLOW_CI_WATCH_INTERVAL=1
   export DEV_WORKFLOW_CI_WATCH_TIMEOUT=30
+  gate_test_docs
 }
 
 teardown() {
