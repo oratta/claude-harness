@@ -6,7 +6,7 @@
 ## 2. テスト
 
 - [ ] 2.1 bats に追加: apply 後に `git status --porcelain` が空／再 apply と既存行で重複しない／追跡済みファイルは追跡のまま／別の未コミットファイルだけが porcelain に出る／linked worktree でも共有 exclude に書く／不正入力では exclude も作らない。触る範囲: plugins/dev-workflow/tests/develop-idle-compaction.bats:1-（末尾に追記）
-- [ ] 2.2 bats に追加: exclude を書けない（`info/exclude` がディレクトリ等）とき exit 1 で設定ファイルが作られない・変わらない／`--check` と false 済みの apply が exclude の中身を変えない／`/.claude/settings.local.json` だけがある exclude には 1 行足す。触る範囲: plugins/dev-workflow/tests/develop-idle-compaction.bats（末尾に追記）
+- [ ] 2.2 bats に追加: exclude を書けない（`info/exclude` がディレクトリ等）とき exit 1 で設定ファイルが作られない・変わらない／`--check` と false 済みの apply が exclude の中身を変えない／設定ファイルが無い（または idleCompaction が false でなく書き込みが起きる）状態で、`/.claude/settings.local.json` だけがある exclude には 1 行足す（false 済みの apply は足さない）。触る範囲: plugins/dev-workflow/tests/develop-idle-compaction.bats（末尾に追記）
 
 ## 3. 手順書
 

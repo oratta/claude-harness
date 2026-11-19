@@ -14,7 +14,7 @@
 - **AND** 別の未コミットファイルがある worktree では、そのファイルだけが porcelain に出る
 
 #### Scenario: 表記違いの同義行は完全一致でないので足す
-- **WHEN** `info/exclude` に `/.claude/settings.local.json` や `.claude/*` だけがある状態で apply する
+- **WHEN** 設定ファイルが無い、または idleCompaction が false でなく、apply が設定ファイルを書き込む。このとき `info/exclude` には `/.claude/settings.local.json` や `.claude/*` だけがある
 - **THEN** `.claude/settings.local.json` の行が 1 行足される
 
 #### Scenario: exclude に同じ行があれば足さず、追跡済みなら追跡を変えない
