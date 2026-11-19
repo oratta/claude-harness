@@ -166,7 +166,7 @@ exit 1 のとき（`codex-records.sh` が失敗して集計を呼ばなかった
 - **WHEN** 本体が executor `codex` の W に委譲し、codex-worker が `thread_id` が `t1`・`usage.total.totalTokens` が 1200000 の結果 JSON を返す
 - **THEN** 本体は記録先に 1 行目が `Codex 消費: t1 1200000` のコメントを投稿し、次の計測の `--codex-records` にその行が入る
 
-#### Scenario: SKILL.md に手順が書かれている
+#### Scenario: pr-token-budget.md に手順が書かれている
 - **WHEN** `skills/develop/SKILL.md` の spawn・再開・Codex 委譲の前の必読指示から `skills/develop/references/pr-token-budget.md` を読む
 - **THEN** 「`pr-token-budget.sh` が exit 2 なら spawn / SendMessage / Codex への委譲をせず主に上げる」手順、description に記録先番号 `#N` を入れる規約、Codex を呼んだら `Codex 消費:` コメントを投稿する手順、計測の前に `codex-records.sh` で `Codex 消費:` コメントを集めて `--codex-records` で渡す手順、`codex-records.sh` が失敗したら集計を呼ばず exit 1 と同じ扱いにする手順が書かれている
 
@@ -182,7 +182,7 @@ exit 1 のとき（`codex-records.sh` が失敗して集計を呼ばなかった
 - **WHEN** エピックの子の記録先が上限 30000000 で止まり（合計 31000000）、親の権限が 60000000 で、子の合計の見込みが 45000000 のため親が続けさせる
 - **THEN** 子の本体は記録先に 1 行目 `PR トークン上限: 60000000`、2 行目以降に `決めた人:`・`権限:`・`停止の記録:` のコメントを投稿し、次の spawn の前の計測に `--cap 60000000` を付ける。既定の上限 30000000 は変わらない
 
-#### Scenario: SKILL.md の exit 2 にエピックの子の分岐が書かれている
+#### Scenario: pr-token-budget.md の exit 2 にエピックの子の分岐が書かれている
 - **WHEN** `skills/develop/references/pr-token-budget.md` の exit 2 を読む
 - **THEN** 記録先がエピックの子なら主に聞く前に親の権限の内かを照らすこと、権限の内なら新上限は権限で、`PR トークン上限: <権限>` に `決めた人:`・`権限:`・`停止の記録:` を添えて投稿すること、照らし方の正本が `references/epic-stop.md` にあることが書かれている
 
@@ -244,7 +244,7 @@ develop の本体は、記録先の消費の記録に、1 行の印 `[消費記�
 - **WHEN** 本体が spawn する
 - **THEN** `description` は `#288` と `[消費記録 工程=impl-review 試行=1 アカウント=claude:a]` を同じ文字列の中に含む
 
-#### Scenario: SKILL.md に規約が書かれている
+#### Scenario: pr-token-budget.md に規約が書かれている
 - **WHEN** 本体が SKILL.md と `plugins/dev-workflow/references/codex-develop.md` の必読参照から、印を書く前に `skills/develop/references/pr-token-budget.md` を読む
 - **THEN** 同 reference の消費の記録の規約に、印の形・置き場・工程名の語彙・試行と引継ぎの数え方・再開される W の扱い・G とレビュアーの工程の決め方が書かれている
 
@@ -322,6 +322,6 @@ develop の本体は、executor が `codex` の役割へ委譲した分の `Code
 - **WHEN** 本体が G の return に書かれた thread_id で、G が full レビューで呼んだ Codex の消費を記録する
 - **THEN** `Codex 消費:` コメントの印は `工程=impl-review` を含み、`開始=` も `終了=` も含まない
 
-#### Scenario: SKILL.md に時刻の書き方が書かれている
+#### Scenario: pr-token-budget.md に時刻の書き方が書かれている
 - **WHEN** `skills/develop/references/pr-token-budget.md` を読む
 - **THEN** Codex の消費の記録に、結果 JSON の `started_at` / `ended_at` から `開始=` / `終了=` を書くこと、取れなければキーごと省くこと、G の full レビューの分には書かないことが書かれ、「消費の記録の印」の時刻の行は `Codex 消費:` コメントの印にだけ書くことを示している
