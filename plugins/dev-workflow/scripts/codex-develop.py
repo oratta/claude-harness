@@ -686,6 +686,13 @@ sources and the check scripts they name are read. Read only the details an entry
 resolving them at that moment: `stages/foo.md` resolves to <Plugin root>/skills/pr-review-gate/stages/foo.md
 and `skills/...` resolves to <Plugin root>/skills/... . Do not read details ahead of their condition.
 '''
+    scratch_note = ''
+    if role in WRITER_ROLES:
+        # #1608: a writer that is told only "work in the cwd" put scratchpad/ inside the worktree.
+        scratch_note = '''Scratch files (notes, fetched data, drafts, logs, throwaway scripts) go outside the cwd: under $TMPDIR, or
+a directory made with `mktemp -d`. Never create scratchpad/ or any other directory for scratch files in the cwd;
+real work files stay in the cwd as usual.
+'''
     text = f'''Codex delegated develop phase: {phase}. Role: {role}.
 The Claude coordinator follows the canonical develop workflow; execute ONLY the requested assignment.
 Phase labels select role instructions, not an alternate workflow or mandatory sequence.
@@ -693,9 +700,7 @@ The spec label includes the canonical decision whether specification is needed: 
 creating a specification. Follow the same decision criteria and return contract as a Claude worker.
 The coordinator alone applies workflow prerequisites, reviews, checks and transitions.
 Account is fixed by the worker. Work only in {state['cwd']}.
-Scratch files (notes, fetched data, drafts, logs, throwaway scripts) go outside the cwd: under $TMPDIR, or
-a directory made with `mktemp -d`. Never create scratchpad/ or any other untracked directory in the cwd.
-{root_note}Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
+{root_note}{scratch_note}Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
 return needs-reviewer/needs-decider with the exact request; the coordinator dispatches a fresh thread.
 Claude Agent/SendMessage/Skill/opsx operations in canonical references are provider-specific:
 use repository CLI equivalents for openspec only where available; do not pretend a Claude hook ran.
