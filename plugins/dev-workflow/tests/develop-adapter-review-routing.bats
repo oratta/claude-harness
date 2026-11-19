@@ -45,7 +45,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 @test "review (#1649): bats still routes to Claude with writable temp paths and read-only policy intact" {
   for file in "$CODEX_DEVELOP" "$REVIEWER_BRIEF"; do
     paragraph="$(grep -F '#1401' "$file")"
-    echo "$paragraph" | grep -qF 'bats'
+    echo "$paragraph" | grep -qF 'bats のほか'
     echo "$paragraph" | grep -qF '書けず'
     echo "$paragraph" | grep -qF 'Claude のレビュアー'
     echo "$paragraph" | grep -qF '`TMPDIR`'
