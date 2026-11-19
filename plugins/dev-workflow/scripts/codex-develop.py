@@ -8,6 +8,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import select
 import subprocess
@@ -645,7 +646,9 @@ def write(path, value):
     tmp.replace(path)
 
 
-def prompt(phase, instructions, state):
+def prompt(phase, instructions, state, *, plugin_root=None):
+    # plugin_root is only the displayed root (the budget measurement passes a fixed value so the
+    # prompt length does not depend on the install location). Sources are always read from ROOT.
     role, source = PHASES[phase]
     # return の 1 行目の宣言は return-declaration.md、仕様化判断と分割判定は spec-decision.md が正本（#1683）。
     # decision-criteria.md は本体（coordinator）向けの規則なので phase には付けない。
@@ -656,10 +659,33 @@ def prompt(phase, instructions, state):
         # W の phase は全段で読む common.md と段のファイルを正本にする（explore / summarize は common.md だけ）
         docs.insert(0, 'skills/develop/references/roles/worker/common.md')
     if phase == 'gate':
-        docs += ['skills/pr-review-gate/SKILL.md', 'skills/pr-review-gate/declarations.md'] + [
-            f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold')]
+        # Read only the launch instruction, before a previous result or quoted brief.
+        # A previous Gate Result's 段/次の段 must never select this request's stage.
+        launch = re.split(r'^## Gate Result\s*$|^```', instructions, maxsplit=1, flags=re.M)[0]
+        route = re.search(r'^レビュー経路: (.+)$', launch, re.M)
+        stage = re.search(r'^段: (.+)$', launch, re.M)
+        stage_docs = {
+            '前提確認と重さ判定': ['stages/prepare.md'],
+            '照合と振り分け': ['stages/triage.md'],
+            '合格処理': ['declarations.md', 'stages/pass.md'],
+            '保留の解除': ['stages/hold.md'],
+        }
+        if route and route[1] == 'adapter' and stage and stage[1] in stage_docs:
+            docs += ['skills/pr-review-gate/' + name for name in stage_docs[stage[1]]]
+        else:
+            # Preserve legacy and missing-line callers' bulk protocol.
+            docs += ['skills/pr-review-gate/SKILL.md', 'skills/pr-review-gate/declarations.md'] + [
+                f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold')]
     elif phase == 'review':
         docs.append('skills/pr-review-gate/stages/reviewer-brief.md')
+    root_note = ''
+    if phase in ('gate', 'review'):
+        root_note = f'''Plugin root: {plugin_root or ROOT}
+Work and changes stay in the cwd above. Plugin root is read-only: it is only where the canonical
+sources and the check scripts they name are read. Read only the details an entry conditionally points to,
+resolving them at that moment: `stages/foo.md` resolves to <Plugin root>/skills/pr-review-gate/stages/foo.md
+and `skills/...` resolves to <Plugin root>/skills/... . Do not read details ahead of their condition.
+'''
     text = f'''Codex delegated develop phase: {phase}. Role: {role}.
 The Claude coordinator follows the canonical develop workflow; execute ONLY the requested assignment.
 Phase labels select role instructions, not an alternate workflow or mandatory sequence.
@@ -667,7 +693,7 @@ The spec label includes the canonical decision whether specification is needed: 
 creating a specification. Follow the same decision criteria and return contract as a Claude worker.
 The coordinator alone applies workflow prerequisites, reviews, checks and transitions.
 Account is fixed by the worker. Work only in {state['cwd']}.
-Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
+{root_note}Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
 return needs-reviewer/needs-decider with the exact request; the coordinator dispatches a fresh thread.
 Claude Agent/SendMessage/Skill/opsx operations in canonical references are provider-specific:
 use repository CLI equivalents for openspec only where available; do not pretend a Claude hook ran.

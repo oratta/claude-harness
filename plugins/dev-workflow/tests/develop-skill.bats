@@ -8,6 +8,8 @@
 #
 # spec: dev-workflow-develop, dev-workflow-execution-strategy (REMOVED), dev-workflow-escalation-tripwires
 
+load lib/gate-docs
+
 setup() {
   # 文面検査の正規表現（[^。]* など）は多バイトを 1 文字として数える UTF-8 ロケールが前提。
   # LANG 未設定（C ロケール）だと [^。] が日本語の文字を構成するバイトを除外して空振りする（#662）
@@ -28,6 +30,7 @@ setup() {
   # 「レビューの周を主に聞かずに続ける（直し方の判定）」節は SKILL.md から references/ へ移した（#1222）
   FIX_CHECK="${SKILL_DIR}/references/fix-check.md"
   TRIPWIRES="${PLUGIN_DIR}/templates/escalation-tripwires.md"
+  gate_test_docs
 }
 
 # 「## <見出し>」から次の「## 」までを切り出す
@@ -932,10 +935,11 @@ refute() {
   echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-carryover-judge'
   nc="$(echo "$step4" | awk '/^      needs-carryover-judge →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
   [ -n "$nc" ] || { echo "no needs-carryover-judge line in step (4)"; return 1; }
-  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/carryover-judge.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
     echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done
-  # 依頼の書き方と記録の書式は hold.md を正本にし、SKILL.md に再掲しない
+  grep -qF '終了コード 4 の判定役' "${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
+  # 依頼の書き方と記録の書式は carryover-judge.md を正本にし、SKILL.md に再掲しない
   ! echo "$nc" | grep -qF '前 HEAD: <40 桁' || return 1
 }
 
@@ -953,10 +957,11 @@ refute() {
   echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-no-point-check'
   nc="$(echo "$step4" | awk '/^      needs-no-point-check →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
   [ -n "$nc" ] || { echo "no needs-no-point-check line in step (4)"; return 1; }
-  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '宣言の本文と PR の差分だけ' '記録を PR に' '合格処理の G を新しく起こす' '`stages/hold.md`' '6-0' 'SHARED_BUDGET_MODE=depleted' '`論点なしの確認: 判断できない`' 'ラベルを付けず' '主に聞かない' '同じ宣言・同じ HEAD' '起こし直さず'; do
+  for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '宣言の本文と PR の差分だけ' '記録を PR に' '合格処理の G を新しく起こす' '`stages/no-point-check.md`' '6-0' 'SHARED_BUDGET_MODE=depleted' '`論点なしの確認: 判断できない`' 'ラベルを付けず' '主に聞かない' '同じ宣言・同じ HEAD' '起こし直さず'; do
     echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
   done
-  # 記録の書式は hold.md を正本にし、SKILL.md に再掲しない
+  grep -qF '6-0.' "${PLUGIN_DIR}/skills/pr-review-gate/stages/no-point-check.md"
+  # 記録の書式は no-point-check.md を正本にし、SKILL.md に再掲しない
   ! echo "$nc" | grep -qF '確認者: dev-workflow:decider（' || return 1
 }
 
@@ -1000,7 +1005,8 @@ refute() {
 
 @test "fix-check move (#1222): every reference to the section names references/fix-check.md" {
   local f line
-  for f in "$SKILL" "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md" \
+  grep -qF 'stages/triage-convergence.md' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  for f in "$SKILL" "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-convergence.md" \
            "${SKILL_DIR}/references/roles/spec-reviewer.md" "${SKILL_DIR}/references/roles/worker/spec.md"; do
     grep -qF '「レビューの周を主に聞かずに続ける（直し方の判定）」' "$f" || { echo "参照が無い: $f" >&2; return 1; }
     while IFS= read -r line; do
@@ -1056,7 +1062,7 @@ refute() {
 
 @test "ask-owner (#1035): out-of-scope filing defines search, record, pending condition and epic note" {
   s="$(section '主に聞かずに決めること')"
-  for token in 'triage.md' 'review-issue-candidates.sh' 'gh issue list' '`範囲外の問題の振り分け`' \
+  for token in 'stages/triage-nonblocking.md' 'review-issue-candidates.sh' 'gh issue list' '`範囲外の問題の振り分け`' \
                '`条件の確認待ち`' '`## 条件の答え`' '注意書き' 'needs-approval'; do
     echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
@@ -1828,7 +1834,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   s="$(section '主に聞かずに決めること')"
   c="$(echo "$s" | grep -F '候補探し:')"
   for token in '`--exclude` にエピックの番号も渡す' '(15 件で打ち切り。ほかにも一致あり)' \
-               '`--epic <エピック番号> --children-only`' '打ち切られたパスごとに 1 回を超えない' '`triage.md` の候補探しの段落'; do
+               '`--epic <エピック番号> --children-only`' '打ち切られたパスごとに 1 回を超えない' '`stages/triage-nonblocking.md` の候補探しの段落'; do
     echo "$c" | grep -qF "$token" || { echo "missing: $token"; return 1; }
   done
   echo "$c" | grep -qF '下の 2 つ目' && { echo "dangling reference remains"; return 1; }

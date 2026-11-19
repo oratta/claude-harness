@@ -9,6 +9,8 @@
 #
 # spec: dev-workflow-model-escalation-policy, dev-workflow-develop
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -26,6 +28,7 @@ setup() {
   BUDGET_POINTER='残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`'
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
+  gate_test_docs
 }
 
 # --- ルール1: 事前分類（1周目から Fable）は develop の pre-classification.md にある ---
@@ -115,7 +118,9 @@ setup() {
 @test "shared budget: the throttled row lowers the reviewer G requests to Sonnet, as request does" {
   grep -F '| `throttled`' "$CRITERIA" | grep -qF 'W / R1 / G と G が要求するレビュアーの既定を **Sonnet** に落とす'
   GATE_RUNNER="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
-  grep -qF 'レビュアーは `throttled` では既定 `sonnet`（マージ権限・層間契約・課金/法務に当たっても `opus` 止まり）' "$GATE_RUNNER"
+  grep -qF 'skills/develop/references/decision-criteria.md' "$GATE_RUNNER"
+  grep -qF 'G 自身は選び直さない' "$GATE_RUNNER"
+  grep -F '| ①共有枠モード | `throttled`' "$CRITERIA" | grep -qF '昇格上限 Opus'
   ! grep -qF 'レビュアーは `throttled` では `opus` 止まり' "$GATE_RUNNER" || return 1
 }
 
@@ -148,10 +153,11 @@ setup() {
 # --- ルール2: エスカレーション（failed → 修正実装）は pr-review-gate にある ---
 
 @test "escalation: fix-cycle model section lives in step 2 of the gate" {
-  # 手順 2 の中の 2-2 として triage.md にあり、索引の対応表もそこを指す
+  # 手順 2-2 の正本は triage-escalation.md。入口・索引ともそこを指す
   grep -qE '^#### 2-2\. 修正サイクルのモデル昇格' "$TRIAGE"
   grep -qF '| 2-2 | 2-2. 修正サイクルのモデル昇格' "$GATE_SKILL"
-  grep -F '| 2-2 |' "$GATE_SKILL" | grep -qF 'stages/triage.md'
+  grep -F '| 2-2 |' "$GATE_SKILL" | grep -qF 'stages/triage-escalation.md'
+  grep -qF 'stages/triage-escalation.md' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
 }
 
 @test "escalation: implementation-quality failures raise the decider or the executor, never both" {

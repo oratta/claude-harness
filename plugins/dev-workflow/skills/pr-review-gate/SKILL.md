@@ -40,10 +40,10 @@ version: 1.7.0
 | 2-1 | 2-1. レビューの実行（レビュー実行者） | `stages/review-run.md` |
 | 2-1 | 2-1. レビューの実行（レビュアー向け指示） | `stages/reviewer-brief.md` |
 | 2-1 | 2-1. レビューの実行（止める判定と仕分け） | `stages/triage.md` |
-| 2-2 | 2-2. 修正サイクルのモデル昇格（failed → 修正実装） | `stages/triage.md` |
+| 2-2 | 2-2. 修正サイクルのモデル昇格（failed → 修正実装） | `stages/triage-escalation.md` |
 | 3 | 3. リスク宣言（positive affirmation・必須） | `declarations.md` |
 | 3-b | 3-b. 仕様宣言（positive affirmation・必須） | `declarations.md` |
-| 3-c | 3-c. 前の HEAD の許容の引き継ぎ | `stages/hold.md` |
+| 3-c | 3-c. 前の HEAD の許容の引き継ぎ | `stages/carryover.md` |
 | 4 | 4. 動作確認 | `stages/pass.md` |
 | 5 | 5. 合格処理 | `stages/pass.md` |
 | 6 | 6. 保留処理（リスク許容待ち / 動作確認依頼 / 切り出しの確認） | `stages/hold.md` |

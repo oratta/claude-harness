@@ -15,6 +15,8 @@ LOST='The self-hosted runner lost communication with the server.'
 TIMED_OUT='The job running on runner mac-1 has exceeded the maximum execution time of 40 minutes.'
 CANCELED='The operation was canceled.'
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/ci-watch.sh"
@@ -53,6 +55,7 @@ EOF
   export DEV_WORKFLOW_PR_STATE_DIR="$STATE_DIR"
   export DEV_WORKFLOW_CI_WATCH_INTERVAL=1
   export DEV_WORKFLOW_CI_WATCH_TIMEOUT=30
+  gate_test_docs
 }
 
 teardown() {

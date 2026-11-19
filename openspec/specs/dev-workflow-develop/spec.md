@@ -866,9 +866,9 @@ G の指示書 `skills/develop/references/roles/gate-runner.md` は、G が CI �
 
 ### Requirement: G は段ごとに要るファイルだけを読む
 
-`plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` は、`skills/pr-review-gate/SKILL.md` を Read する指示を持ってはならない（MUST NOT）。pr-review-gate の手順 1〜5 を実行する義務の文は gate-runner.md に残さなければならない（MUST。既存要件「役割の指示書は references/roles/ に分かれている」と `develop-roles.bats` がその文を見る）。代わりに、G がどの時点でどのファイルを読むかを表で示さなければならない（MUST）。表は少なくとも次を含む: 起動したら `stages/prepare.md`、従来経路でレビューを自分で起動するときだけ `stages/review-run.md`、レビュー結果に指摘が残っていたら `stages/triage.md`、宣言を書く前に `declarations.md`、合格処理で `stages/pass.md`、主のリスク許容が要る・保留に入る・保留から再開するときは `stages/hold.md`。
+`plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` は、`skills/pr-review-gate/SKILL.md` を Read する指示を持ってはならない（MUST NOT）。pr-review-gate の手順 1〜5 を実行する義務の文は gate-runner.md に残さなければならない（MUST。既存要件「役割の指示書は references/roles/ に分かれている」と `develop-roles.bats` がその文を見る）。代わりに、G がどの時点でどのファイルを読むかを表で示さなければならない（MUST）。表は少なくとも次を含む: 起動したら `stages/prepare.md`、従来経路でレビューを自分で起動するときだけ `stages/review-run.md`、レビュー結果に指摘が残っていたら `stages/triage.md`、宣言を書く前に `declarations.md`、合格処理で `stages/pass.md`、主のリスク許容が要る・保留に入る・保留から再開するときは `stages/hold.md`。各入口の条件付き詳細は dev-workflow-pr-review-gate の「既存要件が SKILL.md に置いた内容は段のファイルを指す」の場面別の所在に従って読む（MUST）。条件が成り立たない詳細は読ませない（MUST NOT）。
 
-gate-runner.md に残すのは、役割と入力、レビュー経路の判別、上の表、一周目の三表の機械照合と補足レビュー結果の受領、return の共通部分（1 行目の宣言と Gate Result の共通欄）、再開の振り分け、モデルとコンテキスト上限とする（MUST）。特定の段でしか使わない G の規則（needs-reviewer の payload、従来経路のレビュー実行者の表と Codex の起動、Status ごとの return 書式、再開のうち段に固有のもの）は、その段のファイルの「G として動くとき（develop）」節に置かなければならない（MUST）。
+gate-runner.md に残すのは、役割と入力、レビュー経路の判別、上の表、return の共通部分（宣言の正本への参照と Gate Result の共通欄）、段ごとの起動と入力の共通契約、モデルとコンテキスト上限の正本への参照とする（MUST）。三表の機械照合・補足受領・要約受領の分岐は stages/gate-triage.md を条件付きで読み、区画固有部分はそこから stages/gate-triage-partitions.md を読む（MUST）。特定の段でしか使わない G の規則（needs-reviewer の payload、従来経路のレビュー実行者の表と Codex の起動、Status ごとの return 書式、再開のうち段に固有のもの）は、その段の入口または条件付き詳細の「G として動くとき（develop）」節に置かなければならない（MUST）。
 
 #### Scenario: SKILL.md 全体を読む指示が無い
 
@@ -877,37 +877,40 @@ gate-runner.md に残すのは、役割と入力、レビュー経路の判別�
 
 #### Scenario: return の書式が段のファイルにある
 
-- **WHEN** `stages/pass.md`・`stages/triage.md`・`stages/hold.md`・`stages/prepare.md` の「G として動くとき」節を読む
+- **WHEN** `stages/pass.md`・`stages/triage.md`・`stages/hold.md`・`stages/prepare.md` とそれらが条件付きで指す詳細の「G として動くとき」節を読む
 - **THEN** それぞれに passed・failed / needs-decider / review-incomplete・保留・needs-reviewer の return 書式がある
 
 #### Scenario: 読み込み量の実測
 
-- **WHEN** この変更を develop で PR にし、`scripts/subagent-context-audit.sh --by-role` で G の `docs_median` を測る
-- **THEN** 実測値とファイルごとの内訳が PR 本文に記録されている（目標は 15K トークン以下。超えたときは加えて follow-up issue の URL が記録されている）
+- **WHEN** この変更の PR の prepare・review・triage・pass・hold の読むファイルを、固定した変更前 main と実装後の HEAD で測る
+- **THEN** UTF-8 ロケールの wc -m の字数とファイルごとの内訳が PR 本文に記録されている。条件付き詳細も数え、減少量や 15K トークンの目標を合否に使わない
 
 ### Requirement: 既存要件が gate-runner.md に置いた内容のうち段に移したものは段のファイルを指す
 
-既存要件が `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` に置く・含む・書くと定めた内容のうち、段のファイルの「G として動くとき（develop）」節へ移すものは、移した先のその節を指すものとして読まなければならない（MUST）。移すものと移し先は次のとおりとする（MUST）。
+既存要件が `plugins/dev-workflow/skills/develop/references/roles/gate-runner.md` に置く・含む・書くと定めた内容のうち、段の入口または条件付き詳細の「G として動くとき（develop）」節へ移すものは、移した先のその節を指すものとして読まなければならない（MUST）。移すものと移し先は次のとおりとする（MUST）。
 
 | 内容 | 移し先 |
 |---|---|
-| needs-reviewer の payload（判定 `full（adapter 経路）` と、証拠欄 5 つの `未実行（adapter 経路）` を含む）と、その前に済ませること | `stages/prepare.md` |
-| レビュー要約を受け取った G が投稿する「レビュー実行者:」PR コメントの段落 | `stages/prepare.md` |
+| needs-reviewer の payload（判定 `full（adapter 経路）` と、証拠欄 5 つの `未実行（adapter 経路）` を含む）と、その前に済ませること | `stages/prepare-reviewer.md` |
+| レビュー要約を受け取った G が投稿する「レビュー実行者:」PR コメントの段落 | `stages/triage.md` |
 | 従来経路のレビュー実行者の表と Codex の起動・完了確認（Codex の起動の事実 (a)(b)・companion の path-discovery・slash command 不可を含む） | `stages/review-run.md` |
 | Status ごとの return 書式のうち failed 節・仕分け欄・needs-decider 節・review-incomplete | `stages/triage.md` |
 | Status ごとの return 書式のうち保留欄 | `stages/hold.md` |
 | Status ごとの return 書式のうち passed | `stages/pass.md` |
-| 再開節のうち W の修正後の再レビューと決める役の裁定受領 | `stages/triage.md` |
-| 再開節のうち保留の解除と、許容済み PR で HEAD が動いたとき | `stages/hold.md` |
+| 再開節のうち W の修正後の再レビュー | `stages/triage-convergence.md` |
+| 再開節のうち決める役の裁定受領 | `stages/triage.md` |
+| 一周目の三表・補足受領・要約受領の分岐 | `stages/gate-triage.md`（区画の詳細は `stages/gate-triage-partitions.md`） |
+| 再開節のうち保留の解除 | `stages/hold-resume.md` |
+| 許容済み PR で HEAD が動いたとき | `stages/carryover.md`（判定役の詳細は `stages/carryover-judge.md`） |
 
 `周回:` 欄は Gate Result の共通欄として gate-runner.md に残す（MUST）。
 
-この読み替えは、少なくとも次の 5 つの既存要件に掛かる: `dev-workflow-develop` の「役割の指示書は references/roles/ に分かれている」（Scenario「gate-runner.md は pr-review-gate を手順書として参照する」が見る needs-reviewer の項目と failed の原因分類を含む）・「adapter 経路の G はレビュアーを自分で呼ばず needs-reviewer を返す」・「本体は adapter 経路の needs-reviewer で phase review の投げ先を選び直して記録する」（参照先の「`gate-runner.md`『needs-reviewer の return』節」は `stages/prepare.md` の「G として動くとき（develop）」節を指す）、`dev-workflow-pr-review-gate` の「G の指示書の failed 節と周回欄が収束ルールに揃っている」・「Codex 経路と Task サブエージェント経路で同じ書式を渡す」（gate-runner.md の payload がブロックを指す行は、`stages/prepare.md` の payload の行が `stages/reviewer-brief.md` を指すことで満たす）。gate-runner.md に残す内容（上の要件「G は段ごとに要るファイルだけを読む」が列挙したもの）を定めた既存要件は読み替えない。
+この読み替えは、少なくとも次の 5 つの既存要件に掛かる: `dev-workflow-develop` の「役割の指示書は references/roles/ に分かれている」（Scenario「gate-runner.md は pr-review-gate を手順書として参照する」が見る needs-reviewer の項目と failed の原因分類を含む）・「adapter 経路の G はレビュアーを自分で呼ばず needs-reviewer を返す」・「本体は adapter 経路の needs-reviewer で phase review の投げ先を選び直して記録する」（参照先の「`gate-runner.md`『needs-reviewer の return』節」は `stages/prepare-reviewer.md` の「G として動くとき（develop）」節を指す）、`dev-workflow-pr-review-gate` の「G の指示書の failed 節と周回欄が収束ルールに揃っている」・「Codex 経路と Task サブエージェント経路で同じ書式を渡す」（gate-runner.md の payload がブロックを指す行は、`stages/prepare-reviewer.md` の payload の行が `stages/reviewer-brief.md` を指すことで満たす）。gate-runner.md に残す内容（上の要件「G は段ごとに要るファイルだけを読む」が列挙したもの）を定めた既存要件は読み替えない。段の入口からさらに移す本文の所在は dev-workflow-pr-review-gate の場面別の移動先を参照する（MUST）。Status ごとの return を詳細へ移す場合も書式は逐語保存する。
 
 #### Scenario: needs-reviewer の証拠欄の所在
 
 - **WHEN** 既存要件「adapter 経路の G はレビュアーを自分で呼ばず needs-reviewer を返す」が gate-runner.md に求める payload を探す
-- **THEN** `stages/prepare.md` の「G として動くとき（develop）」節に、判定 `full（adapter 経路）` と証拠欄 5 つの `未実行（adapter 経路）` がある
+- **THEN** `stages/prepare-reviewer.md` の「G として動くとき（develop）」節に、判定 `full（adapter 経路）` と証拠欄 5 つの `未実行（adapter 経路）` がある
 
 #### Scenario: failed 節の所在
 
@@ -925,16 +928,27 @@ gate-runner.md に残すのは、役割と入力、レビュー経路の判別�
 
 ### Requirement: レビュー担当に渡す指示は reviewer-brief.md を指す
 
-gate-runner.md の needs-reviewer の payload（`stages/prepare.md` に移ったもの）と `plugins/dev-workflow/references/subagent-waiting.md` の Codex 指示文の雛形は、レビュアーに渡す指示として `skills/pr-review-gate/stages/reviewer-brief.md` のレビュアー向け指示ブロックを指さなければならない（MUST）。
+gate-runner.md の needs-reviewer の payload（`stages/prepare-reviewer.md` に移ったもの）と `plugins/dev-workflow/references/subagent-waiting.md` の Codex 指示文の雛形は、レビュアーに渡す指示として `skills/pr-review-gate/stages/reviewer-brief.md` のレビュアー向け指示ブロックを指さなければならない（MUST）。
 
 #### Scenario: needs-reviewer の payload
 
-- **WHEN** `stages/prepare.md` の needs-reviewer の payload を読む
+- **WHEN** `stages/prepare-reviewer.md` の needs-reviewer の payload を読む
 - **THEN** 「レビュアーに渡す指示」の行が `stages/reviewer-brief.md` のレビュアー向け指示ブロックを指している
 
 ### Requirement: Codex に渡す正本の一覧を段のファイルに合わせる
 
-`plugins/dev-workflow/scripts/codex-develop.py` は、phase `gate` の request に `skills/pr-review-gate/SKILL.md`・`stages/` の 6 ファイル・`declarations.md` を正本として含めなければならない（MUST）。phase `review` の request には `skills/develop/references/roles/gate-runner.md` と `skills/pr-review-gate/stages/reviewer-brief.md` を正本として含めなければならない（MUST）。
+`plugins/dev-workflow/scripts/codex-develop.py` は、phase `gate` の adapter 経路では、起動指示の `段: <段の名前>` に従って、共通の `skills/develop/references/roles/gate-runner.md` と `skills/develop/references/return-declaration.md`、および次の段の入口とそこから無条件で読むファイルだけを正本として注入しなければならない（MUST）。前の Gate Result や引用された要約の `段:` / `次の段:` を今回の担当段として扱ってはならない（MUST NOT）。
+
+| 起動指示の段 | `skills/pr-review-gate/` から加える入口 |
+|---|---|
+| 前提確認と重さ判定 | `stages/prepare.md` |
+| 照合と振り分け | `stages/triage.md` |
+| 合格処理 | `declarations.md`・`stages/pass.md` |
+| 保留の解除 | `stages/hold.md` |
+
+adapter の phase gate に索引 `skills/pr-review-gate/SKILL.md`、他段の入口、条件付き詳細を先回りして注入してはならない（MUST NOT）。G は条件が成り立ったときだけ入口が指す詳細を読み、その追加読込も予算と字数報告に含めなければならない（MUST）。新しい CLI 引数・段は足さず、段の選択には既存の起動指示を使う（SHALL）。
+
+`レビュー経路: 従来` と経路の行無しの既定には、現行の索引・6 段・declarations と共通 2 ファイルの一括注入を残さなければならない（MUST）。phase `review` の request には `skills/develop/references/roles/gate-runner.md`、`skills/develop/references/return-declaration.md` と `skills/pr-review-gate/stages/reviewer-brief.md` を正本として含めなければならない（MUST）。phase review を G の段としては扱わず、レビューの担い手・段の遷移・宣言と return の書式を変えてはならない（MUST NOT）。
 
 #### Scenario: review phase の正本
 
@@ -943,8 +957,23 @@ gate-runner.md の needs-reviewer の payload（`stages/prepare.md` に移った
 
 #### Scenario: gate phase の正本
 
-- **WHEN** `codex-develop.py` で phase `gate` の request を作る
-- **THEN** prompt に索引・6 つの段のファイル・`declarations.md` の `CANONICAL SOURCE` 行がある
+- **WHEN** adapter 経路の 4 段それぞれの phase gate request を生成する
+- **THEN** prompt の CANONICAL SOURCE の集合が共通 2 ファイルと表の当該段のファイル、および無条件で読むファイルに一致し、各本文と sha256 が正本と一致する。索引・他段の入口・条件付き詳細は注入されず、同じ正本の重複注入も無い
+
+#### Scenario: 前の結果にある段を誤って使わない
+
+- **WHEN** 起動指示の担当段が「合格処理」で、添付した前の Gate Result に `段: 照合と振り分け` と `次の段: 合格処理` がある phase gate request を生成する
+- **THEN** 合格処理の入口を注入し、triage.md を注入しない
+
+#### Scenario: 条件付き詳細を読む
+
+- **WHEN** 合格処理の G が注入された入口で「通し方: 文言合わせ」の条件を確認する
+- **THEN** その時点で pass-wording.md を読み、通常の合格処理にはその本文を先回りして注入しない。条件付き予算は固定生成 prompt と追加で読む詳細の合計を検査する
+
+#### Scenario: 従来経路と行無しの既定を保つ
+
+- **WHEN** `レビュー経路: 従来` または経路の行無しの phase gate request を生成する
+- **THEN** 現行の一括注入の正本が残り、その生成 prompt と条件付きの追加読込を一括 profile で測る
 
 ### Requirement: G は段ごとに新しく起こし、SendMessage で再開しない
 
@@ -952,18 +981,18 @@ gate-runner.md の needs-reviewer の payload（`stages/prepare.md` に移った
 
 | 段 | 本体が起こす時点 | G が読むファイル（`skills/pr-review-gate/` から） | 返しうる Status |
 |---|---|---|---|
-| 前提確認と重さ判定 | ゲートの開始、W の修正後の再レビュー（failed の `次の段: 前提確認と重さ判定`。`原因: 軽い通し方の条件外` を除く）、保留の解除が `次の段: 前提確認と重さ判定` を返したとき、CI の見張りで `ready` になったあとの取り直し | `stages/prepare.md`（W の修正後の再レビューのときは加えて `stages/triage.md` の収束ルールの節と「W の修正後の再レビュー」の入力） | `needs-reviewer` / failed（軽い通し方の条件外） / 保留 / `重複で降りた` |
+| 前提確認と重さ判定 | ゲートの開始、W の修正後の再レビュー（failed の `次の段: 前提確認と重さ判定`。`原因: 軽い通し方の条件外` を除く）、保留の解除が `次の段: 前提確認と重さ判定` を返したとき、CI の見張りで `ready` になったあとの取り直し | `stages/prepare.md`（W の修正後の再レビューのときは加えて `stages/triage-convergence.md` の収束ルールの節と「W の修正後の再レビュー」の入力） | `needs-reviewer` / failed（軽い通し方の条件外） / 保留 / `重複で降りた` |
 | 照合と振り分け | レビュー要約・補足レビューの結果・決める役の裁定・直し方の判定を受け取ったとき、戻した指摘が順 3 だけの修正のあと（failed の `次の段: 照合と振り分け`） | `stages/triage.md` | `次の段へ` / failed / 保留 / `needs-reviewer`（補足） / `needs-decider` / `needs-fix-check` / `review-incomplete` |
-| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるとき・保留を返すとき・`needs-carryover-judge` を返すときは加えて `stages/hold.md`） | passed / failed（確かめ方の非 0。`次の段: 前提確認と重さ判定`） / 保留 / `needs-carryover-judge` |
-| 保留の解除 | 主の回答が届いたとき | `stages/hold.md`（切り出しの確認に「切り出す」と答えられたときは加えて `stages/triage.md` の置き場所の段落・候補探し・段 C の節） | 復帰手順の表どおりに `次の段へ`（`次の段:` は合格処理か前提確認と重さ判定） / failed / needs-decider / 保留 |
+| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと） | `declarations.md` と `stages/pass.md`（前の HEAD の許容があるときは加えて `stages/carryover.md`、保留を返すとき・`needs-carryover-judge` を返すときは加えて `stages/hold.md`） | passed / failed（確かめ方の非 0。`次の段: 前提確認と重さ判定`） / 保留 / `needs-carryover-judge` |
+| 保留の解除 | 主の回答が届いたとき | `stages/hold.md`（切り出しの確認に「切り出す」と答えられたときは加えて `stages/triage-nonblocking.md` の置き場所の段落・候補探しと `stages/triage-epic.md` の段 C の節） | 復帰手順の表どおりに `次の段へ`（`次の段:` は合格処理か前提確認と重さ判定） / failed / needs-decider / 保留 |
 
 本体は G の起動指示に `段: <段の名前>` の 1 行を書かなければならない（MUST）。`skills/develop/SKILL.md` の (4)（`(4) G を` で始まる行から、その行を含むコードブロックの閉じ ``` の行まで）と `skills/develop/references/roles/gate-runner.md` は、`SendMessage` の語と `G を再開` の文字列を持ってはならない（MUST NOT）。SKILL.md の (4) の「G の起動・再開・手渡しの指示」「G を再開か手渡しで起こして」も段ごとの起動の言い方に書き換える（MUST）。G への SendMessage は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」の停止の指示だけに残し、その規則は decision-criteria.md にだけ書く（MUST）。`gate-runner.md` の「時点ごとに読むファイル」の表は、上の段の表に揃えなければならない（MUST）。
 
 保留の解除の G は、復帰手順の表が別の段の作業に進むと示したとき、その作業を自分で行ってはならず（MUST NOT）、Status `次の段へ` と `次の段:` で返さなければならない（MUST）。許容したとき・切り出して残りが無いときは `次の段: 合格処理`、許容せず代替案で手順 2 からやり直すときは `agent-review:failed` に付け替えて failed（`次の段: 前提確認と重さ判定`）で返す（MUST）。`次の段へ` の `次の段: 前提確認と重さ判定` は、W の修正が要らないときだけに使う。
 
-W の修正後の再レビューで起こされた前提確認と重さ判定の G は、前の周の指摘を仕分けコメントから読み、`stages/triage.md` の収束ルールどおり差分限定か全体レビューかを自分で判定し、全体レビューにしたときは 2 つの行数を PR コメントに記録しなければならない（MUST）。
+W の修正後の再レビューで起こされた前提確認と重さ判定の G は、前の周の指摘を仕分けコメントから読み、`stages/triage-convergence.md` の収束ルールどおり差分限定か全体レビューかを自分で判定し、全体レビューにしたときは 2 つの行数を PR コメントに記録しなければならない（MUST）。
 
-保留の解除のあとで起こされた合格処理の G（前の Gate Result が `段: 保留の解除`）は、今の HEAD の `対象 HEAD:` を持つ `## リスク宣言` コメントがあれば、宣言を出し直してはならず（MUST NOT）、手順 5 の真正性確認から入らなければならない（MUST）。そのコメントが無ければ（切り出しの確認を解除した場合）、`declarations.md` の手順 3 から入らなければならない（MUST）。照合と振り分けのあとの合格処理は、前の Gate Result の `段: 照合と振り分け` で見分ける（MUST。`次の段: 合格処理` は保留の解除の Gate Result にもあるため入口の判別に使わない）。許容済みの PR で HEAD が動いていたときの許容の引き継ぎ（手順 3-c）は、合格処理の G が宣言の前に `stages/hold.md` を読んで試す（MUST）。引き継ぎの判定を受けて起こされた合格処理の G（前の Gate Result が `段: 合格処理`・Status `needs-carryover-judge`）は、`declarations.md` の手順 3 から入り直し、3-c で PR の判定の記録を読まなければならない（MUST）。
+保留の解除のあとで起こされた合格処理の G（前の Gate Result が `段: 保留の解除`）は、今の HEAD の `対象 HEAD:` を持つ `## リスク宣言` コメントがあれば、宣言を出し直してはならず（MUST NOT）、手順 5 の真正性確認から入らなければならない（MUST）。そのコメントが無ければ（切り出しの確認を解除した場合）、`declarations.md` の手順 3 から入らなければならない（MUST）。照合と振り分けのあとの合格処理は、前の Gate Result の `段: 照合と振り分け` で見分ける（MUST。`次の段: 合格処理` は保留の解除の Gate Result にもあるため入口の判別に使わない）。許容済みの PR で HEAD が動いていたときの許容の引き継ぎ（手順 3-c）は、合格処理の G が宣言の前に `stages/carryover.md` を読んで試す（MUST）。引き継ぎの判定を受けて起こされた合格処理の G（前の Gate Result が `段: 合格処理`・Status `needs-carryover-judge`）は、`declarations.md` の手順 3 から入り直し、3-c で PR の判定の記録を読まなければならない（MUST）。
 
 この要件は、develop の本体がレビュアーを起こす adapter 経路（起動指示が `レビュー経路: adapter`）に掛かる。従来経路の G はレビューを自分の起動の中で起こすので、手順 1〜5 と保留までを 1 体で続けてよい（MAY）。そのときの Gate Result は `段: 一括（従来経路）`、`次の段: なし` と書く（MUST）。
 
@@ -995,7 +1024,7 @@ W の修正後の再レビューで起こされた前提確認と重さ判定の
 #### Scenario: 保留の解除の G が切り出しの確認の回答で追加に読むもの
 
 - **WHEN** `gate-runner.md` の「時点ごとに読むファイル」の表の保留の解除の行を読む
-- **THEN** 切り出しの確認に「切り出す」と答えられたときは加えて `stages/triage.md` の置き場所の段落・候補探し・段 C の節を読むことが書かれている
+- **THEN** 切り出しの確認に「切り出す」と答えられたときは加えて `stages/triage-nonblocking.md` の置き場所の段落・候補探しと `stages/triage-epic.md` の段 C の節を読むことが書かれている
 
 #### Scenario: CI の見張りのあとの取り直し
 
@@ -1159,7 +1188,7 @@ G が要求するレビュアー（決める役でないとき）は、本体が
 
 仕様レビュー R1（決める役でないとき）の種別は変えない（SHALL。`general-purpose`。決める役に当たるときは従来どおり `dev-workflow:decider`）。
 
-`develop/SKILL.md` の役割表と Agent ツールの行、(1)・(3)・(4) の spawn の記述とモデル表、`references/roles/worker/common.md`・`references/roles/gate-runner.md` の冒頭、`skills/pr-review-gate/stages/prepare.md` の needs-reviewer の payload、`skills/pr-review-gate/stages/review-run.md` 2-1 の優先順の表、`plugins/dev-workflow/README.md` の役割とモデルの説明は、それぞれの種別を書かなければならない（MUST）。
+`develop/SKILL.md` の役割表と Agent ツールの行、(1)・(3)・(4) の spawn の記述とモデル表、`references/roles/worker/common.md`・`references/roles/gate-runner.md` の冒頭、`skills/pr-review-gate/stages/prepare-reviewer.md` の needs-reviewer の payload、`skills/pr-review-gate/stages/review-run.md` 2-1 の優先順の表、`plugins/dev-workflow/README.md` の役割とモデルの説明は、それぞれの種別を書かなければならない（MUST）。
 
 #### Scenario: 役割表が種別を書く
 - **WHEN** `plugins/dev-workflow/skills/develop/SKILL.md` の役割表を読む
@@ -1170,7 +1199,7 @@ G が要求するレビュアー（決める役でないとき）は、本体が
 - **THEN** W には `dev-workflow:worker`、G には `dev-workflow:gate-runner` が書かれ、W / G を `general-purpose` で起こす記述が無い
 
 #### Scenario: レビュアーの spawn の記述が種別を書く
-- **WHEN** `develop/SKILL.md` の Agent ツールの行とモデル表の「G が要求するレビュアー」の行、`stages/prepare.md` の needs-reviewer の payload の前の段落と `推奨モデル` の行、`stages/review-run.md` 2-1 の表のフォールバックの行を読む
+- **WHEN** `develop/SKILL.md` の Agent ツールの行とモデル表の「G が要求するレビュアー」の行、`stages/prepare-reviewer.md` の needs-reviewer の payload の前の段落と `推奨モデル` の行、`stages/review-run.md` 2-1 の表のフォールバックの行を読む
 - **THEN** レビュアーの既定の種別として `dev-workflow:reviewer` が書かれ、事前分類に当たるときの `dev-workflow:decider` が残り、レビュアーの段落・行に `subagent_type: general-purpose` と `` Agent ツール（`general-purpose`） `` の形が無い（`` `general-purpose` に `model: fable` は付けない `` の文言は残ってよい）
 
 ### Requirement: W の仕様化経路は openspec CLI だけで進める
@@ -2163,8 +2192,8 @@ develop の `references/epic-loop.md` の「通常進行の手順」は、端末
 `skills/develop/SKILL.md` は節「主に聞かずに決めること」を 1 か所持ち、本体・W・G が主に聞くのは、主の側にしか無い情報（好み・事業判断・許容度）、主の手でしかできない操作（パスワード・MFA・CAPTCHA のように、エージェントの手では通せないもの。ログイン済みのブラウザで押せる操作（OAuth の認可ボタン・チャットの板の作成など）は入らない）、規則が主の承認を求める操作（`rules/destructive-git-guard.md` の一覧・マージ・聖域）のどれかが要るときだけであると書かなければならない（MUST）。節は次の 4 つの型の決め方を持たなければならない（MUST）。
 
 - **自分側の誤りの後始末**: 本体・W・G・レビュアーが記録先の範囲の外に誤って入れた変更（実ホームの設定ファイルへの書き足しなど）は、控え・git の履歴・自分のツール呼び出しの記録のどれかと今の状態を比べて、差分が自分側の入れた分だけで戻し先が一意に決まるなら、主に聞かずに戻す（MUST）。戻す前に今の状態の控えを取り（MUST）、戻したあと記録先に何を・どこから戻したか・控えの場所を事後報告する（MUST）。差分が自分側の分だけと確かめられないときは主に聞く（MUST）。git の破壊的操作（`rules/destructive-git-guard.md` の一覧）はこの型に入らず、従来どおり事前承認とする（MUST）。聖域（CLAUDE.md・hooks・権限設定）への変更を戻す操作も、差分が一意でもこの型に入らず、従来どおり無条件で人間承認とする（MUST）。`rules/destructive-git-guard.md` は変えない（MUST NOT）
-- **範囲外の問題の起票**: 本体が作業中に見つけた記録先の範囲外の問題（レビュー指摘ではないもの。G の振り分けを経た指摘は G の振り分けのまま扱う）は、本体が次の手順で行き先（捨てる・既存 issue に参考として入れる・新しい issue）を決め、起票したら URL を事後報告する（MUST）。`skills/pr-review-gate/stages/triage.md` は PR 番号・PR コメント・G の手順 3 を前提にしているので丸ごとは当てず、段 B・段 D・段 E の問い（エピックの子の記録先なら段 C の問いも）と段 B の表だけを借りる（MUST）。
-  - 候補探し: 段 B を通った問題が 1 件以上あれば、問題がファイルを指すなら `plugins/dev-workflow/scripts/review-issue-candidates.sh --repo $R --exclude <記録先の番号> [--epic <エピック番号>] <パス>...` を、ファイルを指さないなら `gh issue list --repo $R --state open --search "<問題を表す語>"` を、それぞれ 1 回だけ走らせる（MUST。打ち切りの再実行だけ例外）。記録先の番号は記録先の issue、記録先が Draft PR ならその PR の番号とする。エピックに属するときは、`--exclude` にエピックの番号も渡す（MUST。エピック自身が `other` の候補に返るのを防ぐ）。出力に `(15 件で打ち切り。ほかにも一致あり)` が出たパスがあり、エピックに属するときは、そのパスだけに `--epic <エピック番号> --children-only` を付けて走らせ直し、子の候補を足す（MUST。打ち切られたパスごとに 1 回を超えない）。再実行を含め、終了コードが 0 でないときの扱いは `triage.md` の候補探しの段落に従う（MUST）。再試行後の終了コードは記録先の `範囲外の問題の振り分け` コメントに書き、既存 issue への相乗りをせずに段 E へ進む（MUST）
+- **範囲外の問題の起票**: 本体が作業中に見つけた記録先の範囲外の問題（レビュー指摘ではないもの。G の振り分けを経た指摘は G の振り分けのまま扱う）は、本体が次の手順で行き先（捨てる・既存 issue に参考として入れる・新しい issue）を決め、起票したら URL を事後報告する（MUST）。`skills/pr-review-gate/stages/triage-nonblocking.md`（段 C は `skills/pr-review-gate/stages/triage-epic.md`）は PR 番号・PR コメント・G の手順 3 を前提にしているので丸ごとは当てず、段 B・段 D・段 E の問い（エピックの子の記録先なら段 C の問いも）と段 B の表だけを借りる（MUST）。
+  - 候補探し: 段 B を通った問題が 1 件以上あれば、問題がファイルを指すなら `plugins/dev-workflow/scripts/review-issue-candidates.sh --repo $R --exclude <記録先の番号> [--epic <エピック番号>] <パス>...` を、ファイルを指さないなら `gh issue list --repo $R --state open --search "<問題を表す語>"` を、それぞれ 1 回だけ走らせる（MUST。打ち切りの再実行だけ例外）。記録先の番号は記録先の issue、記録先が Draft PR ならその PR の番号とする。エピックに属するときは、`--exclude` にエピックの番号も渡す（MUST。エピック自身が `other` の候補に返るのを防ぐ）。出力に `(15 件で打ち切り。ほかにも一致あり)` が出たパスがあり、エピックに属するときは、そのパスだけに `--epic <エピック番号> --children-only` を付けて走らせ直し、子の候補を足す（MUST。打ち切られたパスごとに 1 回を超えない）。再実行を含め、終了コードが 0 でないときの扱いは `stages/triage-nonblocking.md` の候補探しの段落に従う（MUST）。再試行後の終了コードは記録先の `範囲外の問題の振り分け` コメントに書き、既存 issue への相乗りをせずに段 E へ進む（MUST）
   - 判断結果の記録: 記録先（issue、または Draft PR）に 1 行目が `範囲外の問題の振り分け` ちょうどのコメントを 1 件置き、問題ごとに、問題の要約・当てた段・行き先（issue にした・コメントで入れたならその URL、捨てたなら理由の 1 行）を書く（MUST）
   - 段 B の確認待ち: 条件がいつ成り立つかを本体が記録先・エピックの本文・受け入れ条件・コード・本文の節 `## 条件の答え` から決められないときは、起票の可否ではなく条件についての問いを主に聞く（MUST）。同じコメントにその問題を `条件の確認待ち` として質問文とともに残し、`needs-approval` を付けず、作業を止めない（MUST）。答えは 1 行にして記録先（エピックの子ならエピック）の本文の節 `## 条件の答え` に足し（節が無ければ作る）、その問題を段 B から当て直す（MUST）
   - エピックの注意書き: 記録先にエピックの親（OWNER）からの注意書きがあり、新しい問題の置き場所を指定している（例: エピック #1038 の「新しい問題はエピックに新しい子 issue として切る」）ときは、段 C の「既存の子 issue の受け入れ条件に足す」より注意書きを優先する（MUST）
@@ -4829,7 +4858,7 @@ unmanned で仕様の発明が 2 回に達した、または change の割り方
 
 ### Requirement: 条件の確かめは PR のレビューに当てない
 
-**PR のレビュー**: この節の本体の手順は G の `needs-fix-check` には当てない（MUST NOT）。PR のレビューの指摘の条件は、G が `stages/triage.md` の段 B と段落「周の終わりの止める指摘の条件」で確かめ、本体は判定しない（MUST NOT）。本体が決める役に渡すのは `needs-fix-check` で渡された指摘に限る（MUST）。
+**PR のレビュー**: この節の本体の手順は G の `needs-fix-check` には当てない（MUST NOT）。PR のレビューの指摘の条件は、G が `stages/triage-nonblocking.md` の段 B と `stages/triage-convergence.md` の段落「周の終わりの止める指摘の条件」で確かめ、本体は判定しない（MUST NOT）。本体が決める役に渡すのは `needs-fix-check` で渡された指摘に限る（MUST）。
 
 #### Scenario: PR のレビューには当てない
 - **WHEN** G が Status `needs-fix-check` で return する
