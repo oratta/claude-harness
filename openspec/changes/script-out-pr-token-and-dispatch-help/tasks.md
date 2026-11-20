@@ -18,4 +18,4 @@
 
 - [x] 3.1 手順書の字数を前後で測り（`wc -m`・`wc -c`）、`tests/develop-orchestrator-reference-budget.txt` と `tests/develop-epic-scene-budget.txt` の該当行を実測に合わせて下げる。`tests/injection-budget.txt` は常時注入に触れないので変えない（変わるなら理由を PR 本文に書く）。触る範囲: tests/develop-orchestrator-reference-budget.txt:1、tests/develop-epic-scene-budget.txt:1-11
 - [x] 3.2 `plugins/dev-workflow/changes/1686.md` に変更の記録を書く（出した 2 候補・出さない 3 候補と理由・字数の前後）。触る範囲: plugins/dev-workflow/changes/1686.md（新規）
-- [ ] 3.3 `./scripts/test.sh` と `./scripts/lint.sh` を通す（検証のみ）。触る範囲: scripts/test.sh、scripts/lint.sh
+- [x] 3.3 `./scripts/test.sh` と `./scripts/lint.sh` を通す（検証のみ）。触る範囲: scripts/test.sh、scripts/lint.sh
