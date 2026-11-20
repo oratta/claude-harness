@@ -159,14 +159,35 @@ referrers() {
   fi
 }
 
+# 実ファイルと一時コピーの変異を同じ参照検査に通す。
+check_style_reference() {
+  local f=$1
+    grep -qE 'readable\.md|communication-style|references/epic-loop\.md`( の)?(「[^」]*」と)*「主への報告」[^。]*を(先に)?読む' "$f" || { echo "no reference: $f"; return 1; }
+}
+
 @test "referrers: no copy of the old form and each points at the canonical style" {
   local f
   while IFS= read -r f; do
     if grep -qF '目的 → いま取り組んでいる場所' "${REPO_ROOT}/$f"; then echo "old order: $f"; return 1; fi
     if grep -qF '決めてほしいこと・推奨・受け入れるリスク' "${REPO_ROOT}/$f"; then echo "old items: $f"; return 1; fi
     if grep -qF '「飲めるか」を 1 問だけ' "${REPO_ROOT}/$f"; then echo "old ask: $f"; return 1; fi
-    grep -qE 'readable\.md|communication-style|references/epic-loop\.md`( の)?(「[^」]*」と)*「主への報告」[^。]*を(先に)?読む' "${REPO_ROOT}/$f" || { echo "no reference: $f"; return 1; }
+    check_style_reference "${REPO_ROOT}/$f" || return 1
   done < <(referrers)
+}
+
+@test "regress: removing only epic-stop report reading instruction fails" {
+  local original="${REPO_ROOT}/plugins/dev-workflow/skills/develop/references/epic-stop.md"
+  local f="$BATS_TEST_TMPDIR/epic-stop.md"
+  cp "$original" "$f"
+  run check_style_reference "$f"
+  [ "$status" -eq 0 ]
+  sed 's/主への発言は `references\/epic-loop.md`「主への報告」を先に読む。//' "$original" > "$f"
+  # 一般の文章規則への参照と、他の epic-loop 参照は残した変異。
+  grep -qE 'readable\.md|communication-style' "$f"
+  grep -qF 'references/epic-loop.md' "$f"
+  run check_style_reference "$f"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'no reference:'* ]] || return 1
 }
 
 @test "referrers: readable.md is named by the home path" {
