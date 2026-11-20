@@ -10,5 +10,7 @@
 
 ## 2. 統合検証
 
-- [ ] 2.1 `./scripts/test.sh` と `./scripts/lint.sh` を実行し、両方 exit 0 を確認する。コマンドが実行不可なら成功扱いせず、実行できないコマンドと理由を本体へ報告する（検証のみ）。触る範囲: scripts/test.sh:3-42（統一テストランナー）、scripts/lint.sh:3-33（統一 lint ランナー）
+- [x] 2.1 `./scripts/test.sh` と `./scripts/lint.sh` を実行し、両方 exit 0 を確認する。コマンドが実行不可なら成功扱いせず、実行できないコマンドと理由を本体へ報告する（検証のみ）。触る範囲: scripts/test.sh:3-42（統一テストランナー）、scripts/lint.sh:3-33（統一 lint ランナー）
 - [x] 2.2 `openspec validate move-develop-idle-rules-to-requirement-text --type change --strict` と `openspec validate --specs --json` が exit 0、spec 検証の失敗が基準の 0 件から増えていないことを確認する（基準 99 passed / 0 failed。検証のみ）。触る範囲: openspec/changes/move-develop-idle-rules-to-requirement-text/specs/dev-workflow-develop/spec.md:1-44（MODIFIED delta）、openspec/specs/dev-workflow-develop/spec.md:4306-4347（本 change の正本要件）
+
+全体検証の完了根拠: https://github.com/oratta/claude-harness/issues/1696#issuecomment-7027848316 （全体 5,272/5,273 ok、長い TMPDIR による範囲外の 1 件は既定 TMPDIR で再実行して exit 0）。lint exit 0 の記録: https://github.com/oratta/claude-harness/issues/1696#issuecomment-7027278425 。
