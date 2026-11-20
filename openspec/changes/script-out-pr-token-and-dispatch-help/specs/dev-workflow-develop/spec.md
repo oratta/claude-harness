@@ -31,14 +31,22 @@
 - **THEN** 抽出した語頭はすべて固定リストにある（足りなければ固定リストと `--help` に語を足す）
 
 ### Requirement: epic-loop.md は出力語の定義文を持たず、動作指示と分類表を持つ
-`skills/develop/references/epic-loop.md` は、`epic-dispatch.sh` の出力語の意味を定義する文（例: `launched <N>` の括弧書きの「最初の指示を子の入力欄に送り、ターンの開始まで確かめた」、`skipped` の「既存 worktree があれば二重起動しない」、`wait` の `closed`・`stopped`・`unrecorded` の意味）。`wait` が `done` を推定する条件は定義文ではなく動作指示なので、この要件では消さないを持たず、`epic-dispatch.sh --help` への参照と、出力語ごとの「止まって主に報告する／進む」の分類表を持たなければならない（MUST）。
+`skills/develop/references/epic-loop.md` は、`epic-dispatch.sh` の出力語の意味を定義する文を持たず、`epic-dispatch.sh --help` への参照と、出力語ごとの「止まって主に報告する／進む」の分類表を持たなければならない（MUST）。消す定義文の例は、`launched <N>` の括弧書きの「最初の指示を子の入力欄に送り、ターンの開始まで確かめた」、`skipped` の「既存 worktree があれば二重起動しない」、`wait` の `closed`・`stopped`・`unrecorded` の意味、`notify-closed` の `unrecorded` の定義の文である。`wait` が `done` を推定する条件は定義文ではなく動作指示なので、この要件では消さない。
+
 #### Scenario: 定義文は消え、分類表と --help への参照がある
 - **WHEN** `references/epic-loop.md` を読む
 - **THEN** `epic-dispatch.sh --help` への参照があり、出力語ごとに「止まって主に報告する」か「進む」の行がある表があり、`launched <N>`（…確かめた）の定義の括弧書きは無い
 
 ### Requirement: epic-loop.md は出力語を受けた動作指示を残す
-`skills/develop/references/epic-loop.md` は、出力語を受けて本体がすることを定める動作指示を残さなければならない（MUST）。残すもの: `kept <N> <理由>` の確かめ方と消し方、`not-done` は待ちを続けること、`reaped`・`gone` を片付け待ちから外すこと、`done`・`closed` で起こされたときの手順、`deferred` の意味と後回しの子の扱い、同時上限の既定値の式と設定方法、`wait` が完了を推定する条件（手順 2 の 1 文）、手順 3・4 の推定 `done` と `skipped <N> not-stopped` の扱い、`child-log` を状態表の前に読む指示、idleCompaction を切る指示。既存の要件「Orca 経路の片付け」「同時に動く子の上限」「後回しの子の通常進行」「回し方の手順は推定した done も子の付けた done と同じに片付ける」はこれらを要求していて定義文を要求していないので、本文と Scenario は変わらず成り立つ。
+`skills/develop/references/epic-loop.md` は、出力語を受けて本体がすることを定める動作指示を残さなければならない（MUST）。残すもの: `kept <N> <理由>` の確かめ方と消し方、`not-done` は待ちを続けること、`reaped`・`gone` を片付け待ちから外すこと、`done`・`closed` で起こされたときの手順、`deferred` の意味と後回しの子の扱い、同時上限の既定値の式と設定方法、`wait` が完了を推定する条件（手順 2 の 1 文）、手順 3・4 の推定 `done` と `skipped <N> not-stopped` の扱い、`child-log` を状態表の前に読む指示、idleCompaction を切る指示。
 
 #### Scenario: 動作指示は残る
 - **WHEN** 既存の Scenario「Orca 経路に片付けの手順が書かれている」「片付けた子と消えた子は片付け待ちから外れる」「epic-loop.md に既定値の式と設定方法が書かれている」「回し方に推定の扱いが書かれている」と、`epic-dispatch.bats` の検査「Orca route steps 2-4 describe the inferred done and reap it like the child's done」を、編集後の `epic-loop.md` にかける
+- **THEN** すべて偽にならない（既存の bats がそのまま通る）
+
+### Requirement: epic-loop.md は報告・再開・復元の動作指示も残す
+`skills/develop/references/epic-loop.md` は、次の動作指示も残さなければならない（MUST）。手順 4 の `notify-closed` の出力の扱い（`unrecorded <N>` はエピックに 1 行を残し主に上げない、`failed <N> <段>` は主に報告する。消すのは `unrecorded` の定義の文だけ）、手順 1・6 の `note not posted to` と `failed` の再開手順、手順 7 の `adopt`（`failed <N> ambiguous` と stdout が空の exit 1 の扱い）・`pending-owner`・`clear`、状態表の `unreadable` の子の書き方（`確かめられなかった`）、後回しの子だけが残ったときの主への報告（`wait` を呼ばず `launch` の stderr を添える）。`epic-loop.md` を読む既存の要件はこれらを要求していて定義文を要求していないので、本文と Scenario は変わらず成り立つ。
+
+#### Scenario: 報告・再開・復元の動作指示は残る
+- **WHEN** `epic-loop.md` を読む既存の Scenario すべて（例: 「手順 7 が adopt から始まる」「手順 7 が主の返事待ちの子の出し直しを書いている」「後回しの子だけが残ったら主に報告する」「読めない子とサブエージェント方式」と、`note not posted to`・端末を作れなかった子の再開手順を読む Scenario）を、編集後の `epic-loop.md` にかける
 - **THEN** すべて偽にならない（既存の bats がそのまま通る）

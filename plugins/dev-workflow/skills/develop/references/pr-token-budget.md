@@ -18,16 +18,13 @@
 **計測**: その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および Codex executor へ委譲する直前に、役割と executor を問わず毎回次を実行する（`subagent-context.sh` を再開前に呼ぶのと同じ位置。こちらは spawn と委譲の前にも呼ぶ）。
 
 ```bash
-# 渡すすべての記録先番号のコメントを全ページ取得し、1 行目が ^Codex 消費:  のものだけを集める。
-# 全番号の取得に成功したときだけ exit 0 で記録ファイルを書く
-scripts/codex-records.sh --repo <owner>/<repo> --out "<scratchpad>/codex-records.txt" <記録先番号> [PR 番号] \
-  && scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records "<scratchpad>/codex-records.txt" \
-       --codex-home <account 対応表の各 CODEX_HOME>... --codex-home "${CODEX_HOME:-$HOME/.codex}" [--cap <新上限>]
+scripts/pr-token-measure.sh --repo <owner>/<repo> <記録先番号> [PR 番号] \
+  --codex-home <account 対応表の各 CODEX_HOME>... [--cap <新上限>]
 ```
 
-`codex-records.sh` が exit 0 以外を返したら（通信障害・認証エラー・`gh` か `jq` が無い等）、`pr-token-budget.sh` を呼ばず、下の exit 1（計測できない）と同じ扱いにする。取得に失敗した記録を空の記録や前回のファイルで代えない（Codex 分が抜けた合計を上限以内と読み違えるため）。
+`pr-token-measure.sh` は、渡したすべての記録先番号の `Codex 消費:` コメントを全ページ取得して記録ファイルを作り、`pr-token-budget.sh` を `--codex-records` 付きで呼んで、その stdout（1 行 JSON）と exit code（0 / 2 / 1）をそのまま返す。取得に失敗したら（通信障害・認証エラー・`gh` か `jq` が無い等）`pr-token-budget.sh` を呼ばず、stderr に理由を出して exit 1 で終わる。この exit 1 は下の exit 1（計測できない）と同じ扱いにする。
 
-`--codex-home` には codex-develop の account と CODEX_HOME の対応表（`--account-home` / `--account-home-file`）にある全パスと、本体の環境の `${CODEX_HOME:-$HOME/.codex}` を渡す。記録先に `PR トークン上限:` のコメントがあれば、最新のものの値を `--cap` に渡す。上限の既定は 30,000,000（Claude 分と Codex 分の合計に対する値。環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` で変更可）。計測はこの reference の手順で、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置かない。
+`--codex-home` には codex-develop の account と CODEX_HOME の対応表（`--account-home` / `--account-home-file`）にある全パスを渡す（本体の環境の `${CODEX_HOME:-$HOME/.codex}` はラッパーが足す）。記録先に `PR トークン上限:` のコメントがあれば、最新のものの値を `--cap` に渡す。上限の既定は 30,000,000（Claude 分と Codex 分の合計に対する値。環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` で変更可）。計測はこの reference の手順で、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置かない。
 
 **exit 2（上限超）**: spawn / SendMessage / Codex への委譲をしない。PR があれば PR、無ければ記録先に `needs-approval` を付け（引き継ぎの「ラベルの付け先」と同じ）、`references/handover.md` どおり引き継ぎを残し、主に「続けるか、範囲外として閉じるか」を問う。問いには合計（Claude 分と Codex 分の内訳）・体数・上限・残工程（次に起こそうとした役割と、そのあと残る工程）・推奨（どちらを選ぶかとその理由）を添え、判断材料なしで出さない。unmanned でも同じく止まり、問いを記録先のコメントに書いてサイクルを終える。
 

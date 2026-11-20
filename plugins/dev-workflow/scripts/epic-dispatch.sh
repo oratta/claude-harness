@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # エピックの子の経路判定・起動・待ち受けを LLM なしで行う。develop の本体（エピックの解決
-# セッション）が skills/develop/references/epic.md「回し方」の手順どおりに呼ぶ。
+# セッション）が skills/develop/references/epic-loop.md の手順どおりに呼ぶ。出力語の意味は --help が出す。
 #
 #   epic-dispatch.sh route <child>...
 #   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...
@@ -270,6 +270,114 @@ usage:
   epic-dispatch.sh max-parallel
 EOF
   exit 1
+}
+
+# --help / -h: サブコマンドの書式と、stdout の結果行の語頭（出力語）の意味を stdout に出して exit 0。
+# gh・orca・git を呼ばず、状態の記録も読み書きしない（es_check_env より前に呼ぶ）。
+# 結果行の語頭を足したら、ここにも語を足す（tests/epic-dispatch.bats が固定リストと突き合わせる）
+help_text() {
+  # cat を呼ばない（PATH に何も無くても出せる）
+  local t
+  IFS= read -r -d '' t <<'HELP' || true
+epic-dispatch.sh: エピックの子の経路判定・起動・待ち受け・片付けを LLM なしで行う。
+
+結果行は stdout に出す。語頭が出力語で、<N> は子の番号、<理由> は 1 語。エラーの説明は stderr に出る。
+サブコマンドを知らない・引数が足りないときは、使い方を stderr に出して exit 1（stdout は空）。
+
+route <child>...
+  経路を 1 語で返す。exit 0。
+  nested     エピックの子のセッションの中（さらに展開しない）
+  orca       orca が PATH にあり、Orca 管理のワークツリーにいる
+  tmux       Orca 管理外で、環境変数 TMUX があり tmux が PATH にある
+  subagent   どちらでもない（サブエージェント方式）。子が 0 件のときも subagent
+  EPIC_DISPATCH_LAUNCHER=orca|tmux で部品を固定できる（使えなければ subagent）。
+
+launch [--note <text>] [--base <branch>] <epic> <child>...
+  子ごとに 1 行。exit 0、1 件でも failed なら 1。
+  launched <N>         最初の指示を子の入力欄に送り、ターンの開始まで確かめた
+  skipped <N>          既存 worktree があれば二重起動しない
+  failed <N> [<理由>]  起動できなかった（ワークツリーを作ったあとなら記録に段を残し、stderr に作り直しのコマンドが出る）
+  deferred <N>         同時上限に達して起動しなかった後回しの子
+  同時上限: 環境変数 EPIC_DISPATCH_MAX_PARALLEL（1 以上の整数）。無ければ物理メモリの GiB を 4 で割って切り捨てた値
+  （最小 1。メモリ量を読めなければ 2）。実際の値は max-parallel が出す。
+
+reply [--relaunch] --as <parent|owner> <epic> <child> <text>
+  子の端末に返事を届ける。1 行。exit 0、failed なら 1。
+  sent <N>          子のセッションへ送った
+  relaunched <N>    --relaunch で、閉じて起動し直した
+  failed <N> <理由>
+
+notify-closed [--relaunch] <epic> <child>
+  記録先が completed で閉じた子に、完了報告と mark done を促す。1 行。exit 0、failed なら 1。
+  notified <N>        子に送り、エピックに「親の判断」の 1 行を残した
+  unrecorded <N>      子には届いたが、エピックへの 1 行を残せなかった（stderr に投稿し直しのコマンド）
+  skipped <N> <理由>  何も送らない（not-closed・not-completed・no-worktree・already-done・not-stopped）
+  failed <N> <段>     送れなかった（stderr に送り直しか作り直しのコマンド）
+
+wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
+  子の変化を待つ。起こす行は該当する語だけ（複数行ありうる）。子の番号が空白区切りで続く。
+  closed <N>...      記録先の issue が閉じた。exit 0
+  done <N>...        子が完了の印を付けた、または --watch-done の子の完了を推定した。exit 0
+  stopped <N>...     子が主の返事待ちで止まった（--watch-stopped）。exit 0
+  unrecorded <N>...  --resolve で子には返事を送ったが、エピックへの 1 行を残せなかった。exit 0
+  expired <N>...     主に伝え済みの止まりだけが続き、EPIC_DISPATCH_OWNER_WAIT_SEC（既定 43200 秒）たった。exit 0
+  timeout [<N>...]   上限に達した。exit 2。上限は --timeout か EPIC_DISPATCH_TIMEOUT。どちらも無ければ親の会話キャッシュの有効期限から決める
+  error gh <N>... / error workspaces  3 回続けて確認に失敗した（stderr に理由）。exit 1
+  keepalive          出力語ではなく、長い待ちのあいだ止まった子に送る固定の声かけ。結果は子の記録に残る
+
+mark <done|waiting|stopped|resumed> <issue>
+  今いるワークツリーの記録に印を付ける。exit 0、失敗は 1。
+  marked <N> <kind>   印を付けた
+  skipped <N> <理由>  付けない（no-workspace・not-linked・not-stopped）
+
+reap <child>...
+  完了の印が付いた子の端末を閉じ、ワークツリーとローカルブランチを消す。子ごとに 1 行。exit 0。
+  reaped <N> [branch-kept]  片付けた（branch-kept はローカルブランチを残した）
+  gone <N>                  すでに無い（記録を消した）
+  kept <N> <理由>           消さずに残した。理由は not-done・dirty・llm-logs・unmerged-commits・ambiguous・state-unreadable・
+                            close-failed・launcher-unavailable・no-branch・git-failed・pr-lookup-failed・issue-lookup-failed・
+                            base-lookup-failed・rm-failed など
+
+pending-owner <child>...
+  主の返事待ちを受けたまま子が再開していない子を返す（読み取り専用）。exit 0。
+  pending <N> [<uuid>]  止まりの発言の uuid が分かれば続く
+
+dismiss <child>...
+  止まりの印を解いて再開扱いにする。子ごとに 1 行。exit 0、failed があれば 1。
+  dismissed <N>
+
+told <child> <uuid>
+  止まりを主に伝え済みとして記録する。1 行。exit 0、failed なら 1。
+  told <N>
+
+child-log [--last] <child>...
+  子の会話ログの末尾を読む（読み取り専用）。子ごとに 1 行。exit 0（jq が無い・ワークツリーを読めないときは stdout 空で 1）。
+  列（タブ区切り）: <子> / 主の最後の発言の時刻（JST） / その冒頭 80 文字 / 子の最後の発言の時刻 / その冒頭（無いものは -）
+  unreadable <N>  記録が無い・読めない・一意に決まらない、会話ログが読めない、python3 が無い
+  --last は子ごとに JSON を 1 行出す（child・uuid・at・stop_uuid・last_input_at・questions・text）
+
+adopt <epic> <child>...
+  未記録の子を起動部品の印から取り込む。子ごとに 1 行。exit 0、failed があれば 1。
+  adopted <N>  記録を作った
+  skipped <N>  すでに記録がある
+  none <N>     取り込める対象が無い
+  failed <N> [ambiguous|state-unreadable]
+
+clear <epic>
+  エピックの状態の記録の置き場を消す。1 行。exit 0。
+  cleared <epic>  消した
+  none <epic>     置き場が無かった
+
+max-parallel
+  同時に動く子の上限（整数 1 行）を出す。exit 0。
+
+子の起動コマンド（launch・reply が組み立てる）:
+  [CLD_DEFAULT_ARGS=...] <コマンド> --settings '{"idleCompaction":false}' --model '<model>'
+  コマンド: 環境変数 EPIC_DISPATCH_CLAUDE_CMD（既定は bin/cld の絶対パス。クォートせずそのまま置くので引数付きも可）
+  model: 環境変数 EPIC_DISPATCH_MODEL（既定 opus）
+  idleCompaction を切るのは、子のアイドル時のコンパクトをそのプロセスだけ止めるため。
+HELP
+  printf '%s\n' "$t"
 }
 
 is_num() { [[ "$1" =~ ^[0-9]+$ ]]; }
@@ -2419,6 +2527,7 @@ cmd_clear() {
 }
 
 [ "$#" -ge 1 ] || usage
+case "$1" in -h|--help) help_text; exit 0 ;; esac
 sub="$1"; shift
 es_check_env || usage
 es_root_init || { case "$sub" in route|mark|max-parallel) ;; *) exit 1 ;; esac; }

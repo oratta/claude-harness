@@ -671,7 +671,7 @@ refute() {
 @test "token budget: SKILL.md has one section that measures before every spawn / SendMessage / Codex delegation" {
   s="$(develop_procedures)"
   [ -n "$s" ] || { echo "no PR トークン上限 section"; return 1; }
-  grep -qF 'scripts/pr-token-budget.sh' <<<"$s"
+  grep -qF 'scripts/pr-token-measure.sh' <<<"$s"
   grep -q 'spawn する直前' <<<"$s"
   grep -q 'SendMessage で再開する直前' <<<"$s"
   grep -q 'Codex executor へ委譲する直前' <<<"$s"
@@ -703,8 +703,8 @@ refute() {
   grep -qF 'Codex 消費: <thread_id> <tokens>' <<<"$s"
   grep -qF 'usage.total.totalTokens' <<<"$s"
   grep -q '`usage` が null' <<<"$s"
-  grep -qF 'scripts/codex-records.sh --repo <owner>/<repo> --out "<scratchpad>/codex-records.txt"' <<<"$s"
-  grep -qF -- '--codex-records "<scratchpad>/codex-records.txt"' <<<"$s"
+  grep -qF 'scripts/pr-token-measure.sh --repo <owner>/<repo>' <<<"$s"
+  ! grep -qF 'scripts/codex-records.sh --repo' <<<"$s"
   grep -qF -- '--codex-home' <<<"$s"
   grep -qF '${CODEX_HOME:-$HOME/.codex}' <<<"$s"
 }
@@ -762,10 +762,10 @@ refute() {
 
 @test "token budget: a failed comment fetch skips the budget and is handled as exit 1" {
   s="$(develop_procedures)"
-  grep -q '&& scripts/pr-token-budget.sh' <<<"$s"
+  grep -q 'pr-token-measure.sh` は' <<<"$s"
   grep -q 'pr-token-budget.sh` を呼ばず' <<<"$s"
   grep -q '^\*\*exit 1（.*Codex 消費コメントを取得できなかった）\*\*' <<<"$s"
-  grep -q '空の記録や前回のファイルで代えない' <<<"$s"
+  grep -q 'stderr に理由を出して exit 1' <<<"$s"
 }
 
 @test "token budget: continue raises the cap via a comment, close stops Codex too, exit 1 comments once per cycle" {

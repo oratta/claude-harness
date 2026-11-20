@@ -3638,8 +3638,9 @@ infer_ready() {
   printf '%s\n' "$r" | grep -F -- '--dangerously-skip-permissions' | grep -qF 'cld'
   printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_CLAUDE_CMD' | grep -qF 'cld'
   printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_CLAUDE_CMD' | grep -qF '合わせて変える'
-  printf '%s\n' "$r" | grep -qF 'EPIC_DISPATCH_MODEL'
-  printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_MODEL' | grep -qF 'opus'
+  # 起動コマンドの組み立て（モデルの既定など）は手順書でなく --help が持つ
+  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh --help'
+  "$SCRIPT" --help | grep -F 'EPIC_DISPATCH_MODEL' | grep -qF 'opus'
   printf '%s\n' "$r" | grep -qF 'pr-review-gate'
   printf '%s\n' "$r" | grep -F '直接マージしない' | grep -qF 'gh pr merge'
 }
@@ -4065,7 +4066,7 @@ orca_cmd_scripts() {
 @test "skill: Orca route waits with --watch-stopped and reports stopped children without dropping them" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF -- '--watch-stopped <動いている子>...'
-  printf '%s\n' "$r" | grep -F '`stopped <N>...`' | grep -qF '1〜3 行'
+  printf '%s\n' "$r" | grep -F '| `wait` |' | grep -qF '`stopped`（手順 8）'
   p="$(printf '%s\n' "$r" | grep -E '^8\. ')"
   printf '%s\n' "$p" | grep -qF '`stopped <N>...` で起こされたら'
   printf '%s\n' "$p" | grep -qF '`子の停止: 主の返事待ち`'
@@ -4081,8 +4082,7 @@ orca_cmd_scripts() {
   r="$(run_section)"
   l2="$(printf '%s\n' "$r" | grep -E '^2\. ')"
   printf '%s\n' "$l2" | grep -qF -- '--resolve <エピック番号> --watch-stopped <動いている子>...'
-  printf '%s\n' "$l2" | grep -F '`unrecorded <N>...`' | grep -qF '1〜4 行'
-  printf '%s\n' "$l2" | grep -F '付けないときは従来どおり' | grep -qF '1〜3 行'
+  printf '%s\n' "$l2" | grep -F '付けないときは' | grep -qF '`unrecorded` は出ない'
   printf '%s\n' "$l2" | grep -F '`unrecorded <N>...` で起こされたら' | grep -F '主に上げず' | grep -qF '投稿し直しのコマンド'
   printf '%s\n' "$l2" | grep -qF '親の判断: 子 #N 通した — 理由は記録できなかった 発言 <止まりの uuid か 不明>'
   printf '%s\n' "$l2" | grep -qF 'references/parent-pass-criteria.md'
@@ -8915,4 +8915,83 @@ dep_marker_tail_stays_stopped() {
 
 @test "dependency wait: a marker followed by trailing space and CRLF still skips the judge and stays stopped" {
   dep_marker_tail_stays_stopped $'保存して終了した。\n止まった理由: 依存待ち: https://github.com/o/r/issues/22 \r\n'
+}
+
+# --- --help（出力語の意味。spec: dev-workflow-develop「epic-dispatch.sh は --help で出力語の意味を出す」） ---
+
+# stdout の結果行の語頭の固定リスト（理由・番号が続くものは語頭だけ）
+HELP_WORDS="nested orca tmux subagent launched skipped failed deferred sent relaunched notified unrecorded closed done stopped error expired timeout keepalive marked reaped gone kept unreadable pending dismissed told adopted none cleared"
+
+# gh・orca・git を置かない PATH（bash だけ）で --help を呼ぶ
+help_env() {
+  local d="$BATS_TEST_TMPDIR/helpbin"
+  mkdir -p "$d"
+  ln -sf "$(command -v bash)" "$d/bash"
+  EPIC_STATE_ROOT="$BATS_TEST_TMPDIR/help-state-root" PATH="$d" "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "--help: prints the usage and output words on stdout, exit 0, no side effects" {
+  run help_env --help
+  [ "$status" -eq 0 ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ]
+  for sub in route launch reply notify-closed wait mark reap pending-owner dismiss told child-log adopt clear max-parallel; do
+    printf '%s\n' "$output" | grep -qE "^$sub( |\$)" || { echo "missing subcommand: $sub"; return 1; }
+  done
+  [ ! -e "$BATS_TEST_TMPDIR/help-state-root" ]
+  [ "$(calls '.')" -eq 0 ]
+}
+
+@test "--help: -h is the same as --help" {
+  run help_env --help
+  want="$output"
+  run help_env -h
+  [ "$status" -eq 0 ]
+  [ "$output" = "$want" ]
+}
+
+@test "--help: every word of the fixed list is explained" {
+  run help_env --help
+  [ "$status" -eq 0 ]
+  for w in $HELP_WORDS; do
+    printf '%s\n' "$output" | grep -qF -- "$w" || { echo "missing word: $w"; return 1; }
+  done
+}
+
+@test "--help: describes exit codes, the child-log columns, max-parallel and the child launch command" {
+  run help_env --help
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'exit 2'
+  printf '%s\n' "$output" | grep -qF 'タブ区切り'
+  printf '%s\n' "$output" | grep -qF 'EPIC_DISPATCH_MAX_PARALLEL'
+  printf '%s\n' "$output" | grep -qF 'EPIC_DISPATCH_CLAUDE_CMD'
+  printf '%s\n' "$output" | grep -qF 'EPIC_DISPATCH_MODEL'
+}
+
+@test "--help: every result word the script echoes to stdout is in the fixed list" {
+  # echo "<語> $n / $* / $epic の形で、>&2 を伴わない行から語頭を機械抽出する
+  words="$(grep -E 'echo "[a-z-]+ \$(n|\*|epic)' "$SCRIPT" | grep -v '>&2' \
+    | grep -oE 'echo "[a-z-]+ \$' | sed -E 's/^echo "//; s/ \$$//' | sort -u)"
+  [ -n "$words" ]
+  for w in $words; do
+    case " $HELP_WORDS " in
+      *" $w "*) ;;
+      *) echo "not in the fixed list: $w"; return 1 ;;
+    esac
+  done
+}
+
+@test "usage: no argument and an unknown subcommand still print the usage on stderr, exit 1, empty stdout" {
+  run dispatch
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  run dispatch nosuchcommand
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "header comment points at epic-loop.md, not the removed epic.md section" {
+  ! sed -n 1,5p "$SCRIPT" | grep -qF 'epic.md「回し方」'
+  sed -n 1,5p "$SCRIPT" | grep -qF 'epic-loop.md'
 }
