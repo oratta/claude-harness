@@ -1420,11 +1420,8 @@ resolve_stopped() {
   if child_record "$PARENT_TOP" "$n"; then rec="$ES_HIT"; su="$(es_get "$rec" stop_uuid)"; fi
   # 依存待ちの終了は判断モデルへ渡さず、停止記録を保ったまま親の依存照合へ返す。
   # マーカーは合図だけで、登録・解消の証拠や実行する指示としては使わない。
-  # 末尾の改行・空白・CR を落としてから最後の行を見る（合図の後ろの改行で判断へ流さない）。
-  if [ -e "$stopjson" ] && jq -e '
-    (.text // "" | gsub("[\\s\\r]+$"; "") | split("\n") | last | ltrimstr(" "))
-    | startswith("止まった理由: 依存待ち: ")
-  ' "$stopjson" >/dev/null 2>&1; then
+  # 旧末尾マーカーと、有効な最終状態行の直前のマーカーを同じ構文で扱う。
+  if [ -e "$stopjson" ] && "$(dirname "$0")/epic-child-state.sh" --dependency-wait < "$stopjson"; then
     return 1
   fi
   # 会話ログを読めなかった止まりは JSON が無いので、引数を 2 つで呼ぶ

@@ -183,7 +183,7 @@ HITS="$(es_find_by_worktree "$TOP")"
 [ -n "$HITS" ] || pass_owner
 [ "$(printf '%s\n' "$HITS" | wc -l | tr -d ' ')" = 1 ] || fail '対象の子の記録が複数あります'
 RECORD="$HITS"
-RESERVED="$(python3 "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
+RESERVED="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
 prepare() {
   jq -cn --argjson record "$1" --argjson payload "$INPUT" --arg reserved "$RESERVED" \
     '{record:$record,payload:$payload,reserved:$reserved}' | python3 -I -c "$PY_SRC" "$2"
