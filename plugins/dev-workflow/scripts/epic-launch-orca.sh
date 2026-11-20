@@ -111,22 +111,24 @@ pick_session_term() {
 # Classify observed foreground input. An unknown display never authorizes a send.
 # A background shell alone does not make the foreground busy.
 keepalive_screen_reason() {
-  SCREEN="$1" python3 - "$2" <<'PYCODE'
+  SCREEN="$1" python3 - "$2" "${3-}" <<'PYCODE'
 import json, os, re, sys
 raw = os.environ["SCREEN"]
 mode = sys.argv[1]
+after_send = sys.argv[2] == "after-send"
 if mode == "orca":
     try:
-        d = json.loads(raw)["result"]
+        d = json.loads(raw)["result"]["terminal"]
         if not isinstance(d, dict) or not isinstance(d.get("tail"), list) or not all(isinstance(x, str) for x in d["tail"]):
+            raise ValueError()
+        draft = d.get("draft", "")
+        if not isinstance(draft, str):
             raise ValueError()
         if d.get("source") != "screen":
             print("skipped unknown-state"); sys.exit()
         raw = "\n".join(d["tail"])
-        draft = d.get("draft", "")
-        if not isinstance(draft, str):
-            raise ValueError()
     except (ValueError, KeyError, TypeError):
+        print("failed observe shape: expected result.terminal object, tail string[], optional draft string", file=sys.stderr)
         print("failed observe"); sys.exit()
 else:
     draft = ""
@@ -134,13 +136,14 @@ ansi = r"\x1b\[[0-?]*[ -/]*[@-~]"
 plain = re.sub(ansi, "", raw)
 lines = [s for s in plain.splitlines() if s.strip()]
 screen = "\n".join(lines)
+busy = bool(re.search(r"[^\w\s].*(?:…|\.\.\.).*\([^\n]*\d+(?:s|m).*·", screen) or "esc to interrupt" in screen.lower())
 if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
     print("skipped dialog")
-elif re.search(r"[^\w\s].*(?:…|\.\.\.).*\([^\n]*\d+(?:s|m).*·", screen) or "esc to interrupt" in screen.lower():
+elif busy and not after_send:
     print("skipped busy")
 elif draft:
     print("skipped input-not-empty")
-elif not re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on", screen):
+elif not re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on|⏵⏵ bypass permissions on", screen):
     print("skipped unknown-state")
 else:
     # Resolve the frame before inspecting input. Never choose a later prompt,
@@ -149,17 +152,22 @@ else:
     rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
     visible = [i for i, (_, p) in enumerate(rows) if p.strip()]
     footer = r"\s*(?:\? for shortcuts|.*\(shift\+tab to cycle\).*|.*manual mode on.*)\s*"
+    bypass_footer = r"\s*⏵⏵ bypass permissions on(?:\s*·[^\n]+)?\s*"
     border = r"\s*[─━]+\s*"
     openers = [i for i in range(len(rows) - 1)
                if re.fullmatch(border, rows[i][1])
                and re.match(r"^\s*❯(?:\s|$)", rows[i + 1][1])]
+    # Only the measured bypass footer permits intervening custom statuslines.
+    bypass = bool(visible and re.fullmatch(bypass_footer, rows[visible[-1]][1]))
+    borders = [i for i in visible[:-1] if re.fullmatch(border, rows[i][1])]
+    lower = borders[-1] if bypass and borders else (visible[-2] if len(visible) >= 2 else -1)
     if (len(openers) != 1 or len(visible) < 4
-            or not re.fullmatch(footer, rows[visible[-1]][1])
-            or not re.fullmatch(border, rows[visible[-2]][1])
-            or openers[0] + 1 >= visible[-2]):
+            or not (bypass or re.fullmatch(footer, rows[visible[-1]][1]))
+            or lower < 0 or not re.fullmatch(border, rows[lower][1])
+            or openers[0] + 1 >= lower):
         print("skipped unknown-state")
     else:
-        region = rows[openers[0] + 1:visible[-2]]
+        region = rows[openers[0] + 1:lower]
         candidate = "\n".join(s.replace("❯", "", 1) if i == 0 else s
                               for i, (s, _) in enumerate(region))
         # Track SGR dim across line wraps. A reset ends the suggestion; normal
@@ -176,7 +184,8 @@ else:
                             dim = True
             elif token.strip() and not (mode == "tmux" and dim):
                 nonempty = True
-        print("skipped input-not-empty" if nonempty else "ready")
+        print("skipped input-not-empty" if nonempty else
+              ("busy-empty" if after_send and busy else "ready"))
 PYCODE
 }
 
@@ -208,10 +217,10 @@ cmd_keepalive() {
   [ "$rc" -eq 0 ] || { echo 'failed send'; return 1; }
   if turn_started "$sent"; then echo sent; return 0; fi
   # Some providers report unsupported while the input reaches Claude. Reobserve
-  # for a new foreground spinner with an empty draft; never resend the input.
+  # for a new foreground spinner and independently prove the entire input frame
+  # and optional draft empty; never resend the input.
   if after="$(orca terminal read --terminal "$handle" --screen --json)" \
-    && [ "$(keepalive_screen_reason "$after" orca)" = 'skipped busy' ] \
-    && printf '%s' "$after" | jq -e '(.result.draft // "") == ""' >/dev/null 2>&1; then
+    && [ "$(keepalive_screen_reason "$after" orca after-send)" = 'busy-empty' ]; then
     echo sent; return 0
   fi
   echo 'failed send'; return 1
