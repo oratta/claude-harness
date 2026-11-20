@@ -48,7 +48,7 @@ CONDITIONS = {
         'convergence': ['triage-convergence'], 'failed': ['triage-escalation'],
     },
     'pass': {
-        'issue-approved': ['issue-approved'],
+        'issue-approved': ['issue-approved', 'authenticity-conversation'],
         'carryover': ['hold', 'carryover', 'authenticity'],
         'judge': ['hold', 'carryover', 'carryover-judge', 'authenticity'],
         'no-point': ['hold', 'no-point-check'],
@@ -264,6 +264,15 @@ def fixtures(root):
             must_fail(lambda: validate_inventory(fixture, plan))
         runner.write_text(runner_text)
         validate_inventory(fixture, plan)
+        # Issue approval reads the conversation detail for owner-reply-check results.
+        conversation = condition_path('authenticity-conversation')
+        issue_approved = {GATE + p for p in BASE['pass']} | {
+            condition_path('issue-approved'), conversation}
+        assert set(plan['pass-issue-approved']) == issue_approved
+        assert set(plan['legacy-pass-issue-approved']) == set(plan['legacy-all']) | issue_approved
+        for key in ['pass-issue-approved', 'legacy-pass-issue-approved',
+                    'pass-max', 'legacy-all-max']:
+            assert plan[key].count(conversation) == 1, key
         # Carryover/judge recheck the original answer in its own format.
         formats = {
             'conversation': ['authenticity-conversation'],
@@ -292,6 +301,12 @@ def fixtures(root):
             for key, value in initial_formats.items():
                 profile = key.split('/', 1)[1]
                 assert len(grown_formats[key].encode()) - len(value.encode()) == int(path in plan[profile]), key
+            if detail == 'authenticity-conversation':
+                for provider in ['claude', 'codex']:
+                    for profile in ['pass-issue-approved', 'legacy-pass-issue-approved']:
+                        key = provider + '/' + profile
+                        limit = len(initial_formats[key].encode())
+                        must_fail(lambda: check({key: grown_formats[key]}, {key: limit}))
             target.write_bytes(body)
         # Delegation reads a shared develop source, once per conditional union.
         delegation = 'skills/develop/references/epic-delegation.md'
