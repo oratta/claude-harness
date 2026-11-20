@@ -2,7 +2,7 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
-このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/triage.md`（2-1 の止める判定と仕分け）、`stages/triage-escalation.md`（2-2）、`declarations.md`（手順 3・3-b）、`stages/hold.md`（手順 3-c・6）。
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/triage.md`（2-1 の止める判定と仕分け）、`stages/triage-escalation.md`（2-2）、`declarations.md`（手順 3・3-b）、`stages/carryover.md`（手順 3-c）、`stages/hold.md`（手順 6）。
 
 ## 入口
 
@@ -212,8 +212,8 @@ G は CI の見張りを始めずに `passed` を return する（背景タス�
 
 合格処理の G は、起動指示の前の段の `## Gate Result` ブロックを受け取り、前の段の会話は持たない前提で PR コメントから固定 HEAD と仕分けを読む。
 
-- **照合と振り分けのあと**（前の Gate Result が `段: 照合と振り分け`）: `declarations.md` の手順 3 から入る。宣言の前に前の HEAD の許容があれば、`stages/hold.md` を読んで手順 3-c の引き継ぎを試す
-- **保留の解除のあと**（前の Gate Result が `段: 保留の解除`）: 今の HEAD の `対象 HEAD:` を持つ `## リスク宣言` コメントがあれば、宣言を出し直さず手順 5 の真正性確認から入る。無ければ（切り出しの確認を解除した場合）`declarations.md` の手順 3 から入る。HEAD が動いていて前の HEAD の許容があるときは、宣言の前に `stages/hold.md` の 3-c を試す
+- **照合と振り分けのあと**（前の Gate Result が `段: 照合と振り分け`）: `declarations.md` の手順 3 から入る。宣言の前に前の HEAD の許容があれば、`stages/carryover.md` を読んで手順 3-c の引き継ぎを試す
+- **保留の解除のあと**（前の Gate Result が `段: 保留の解除`）: 今の HEAD の `対象 HEAD:` を持つ `## リスク宣言` コメントがあれば、宣言を出し直さず手順 5 の真正性確認から入る。無ければ（切り出しの確認を解除した場合）`declarations.md` の手順 3 から入る。HEAD が動いていて前の HEAD の許容があるときは、宣言の前に `stages/carryover.md` の 3-c を試す
 - **引き継ぎの判定のあと**（前の Gate Result が `段: 合格処理`・Status `needs-carryover-judge`）: `declarations.md` の手順 3 から入り直し、`stages/carryover.md` の手順 3-c で PR の判定の記録（1 行目 `引き継ぎ判定:`）を読んで、引き継ぐか手順 6 で主に聞くかを決める。一致する記録が無ければ `needs-carryover-judge` を返し直さず、`stages/carryover-judge.md` の「記録の選び方」どおり主に聞く
 - **論点なしの確認のあと**（前の Gate Result が `段: 合格処理`・Status `needs-no-point-check`）: 今の HEAD の宣言を出し直さず、`stages/no-point-check.md` の手順 6-0 の記録の選び方で PR の記録（1 行目 `論点なしの確認:`）を読む。`通す` なら手順 4・5、`論点あり` なら宣言を `論点あり — ` の形で投稿し直して手順 6、`判断できない` か一致する記録が無いときは手順 6 で主に聞く（`needs-no-point-check` を返し直さない）。HEAD が動いていたら `declarations.md` の手順 3 から入り直す
 - 保留を返すときは `stages/hold.md` の「G として動くとき（develop）」節の書式で返す（`次の段: 保留の解除`）。`needs-carryover-judge` と `needs-no-point-check` を返すときも同じ節の書式で返す（`次の段: 合格処理`）
