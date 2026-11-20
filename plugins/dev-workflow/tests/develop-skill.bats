@@ -4,10 +4,11 @@
 #
 # SKILL.md は実行コードではないため、規定（いつ使うか・本体の禁止事項・入口 0・
 # 1 ループ・モデル・実行モード・前提・エピック）の記述が存在することを文書アサーションで検証する。
-# 節ごとに切り出してから grep し、他節の既存文で偽合格しないようにする。
+# 内容は develop_procedures / codex_procedures の集合で確認し、入口と量は別テストで守る。
 #
 # spec: dev-workflow-develop, dev-workflow-execution-strategy (REMOVED), dev-workflow-escalation-tripwires
 
+load lib/develop-docs
 load lib/gate-docs
 
 setup() {
@@ -54,7 +55,7 @@ substep() { awk -v s="$1" '$0 ~ "^[[:space:]]+\\(" s "\\)[[:space:]]" {f=1; prin
 # 書いた `! ... | grep -q ...` は退行を検出できない（bats 1.13 で実測）。否定はこの関数で書く。
 refute() {
   local body="$1"; shift
-  if printf '%s\n' "$body" | grep -q "$@"; then
+  if grep -q "$@" <<<"$body"; then
     echo "一致してはならないパターンに一致した: $*" >&2
     return 1
   fi
@@ -76,74 +77,100 @@ refute() {
 
 @test "frontmatter: description carries the old issue trigger words" {
   d="$(frontmatter | awk '/^description:/{print; exit}')"
-  echo "$d" | grep -q 'issue 番号'
-  echo "$d" | grep -q 'URL'
-  echo "$d" | grep -q 'この issue 対応して'
+  grep -q 'issue 番号' <<<"$d"
+  grep -q 'URL' <<<"$d"
+  grep -q 'この issue 対応して' <<<"$d"
 }
 
 @test "frontmatter: description says the skill is mandatory for code/skill/command/normative changes" {
   d="$(frontmatter | awk '/^description:/{print; exit}')"
-  echo "$d" | grep -q '規範文書'
-  echo "$d" | grep -q '必ず'
+  grep -q '規範文書' <<<"$d"
+  grep -q '必ず' <<<"$d"
 }
 
 # --- いつ使うか ---
 
 @test "when-to-use: entry-agnostic with the read-only exception" {
-  section 'いつ使うか' | grep -q '入口を問わず'
-  section 'いつ使うか' | grep -q '規範文書'
-  section 'いつ使うか' | grep -q '読むだけ'
-  section 'いつ使うか' | grep -q '回答だけ'
-  section 'いつ使うか' | grep -q '生成物'
+  generated="$(section 'いつ使うか')"
+  grep -q '入口を問わず' <<<"$generated"
+  generated="$(section 'いつ使うか')"
+  grep -q '規範文書' <<<"$generated"
+  generated="$(section 'いつ使うか')"
+  grep -q '読むだけ' <<<"$generated"
+  generated="$(section 'いつ使うか')"
+  grep -q '回答だけ' <<<"$generated"
+  generated="$(section 'いつ使うか')"
+  grep -q '生成物' <<<"$generated"
 }
 
 # --- 本体の役割 ---
 
 @test "orchestrator: main never edits code nor performs reviews itself" {
-  section '本体の役割' | grep -q 'Edit でコードを書かない'
-  section '本体の役割' | grep -qE 'レビュー.*代行しない'
-  section '本体の役割' | grep -q '`model`'
-  section '本体の役割' | grep -qE 'W / R1 / G|W・R1・G'
+  generated="$(section '本体の役割')"
+  grep -q 'Edit でコードを書かない' <<<"$generated"
+  generated="$(section '本体の役割')"
+  grep -qE 'レビュー.*代行しない' <<<"$generated"
+  generated="$(section '本体の役割')"
+  grep -q '`model`' <<<"$generated"
+  generated="$(section '本体の役割')"
+  grep -qE 'W / R1 / G|W・R1・G' <<<"$generated"
 }
 
 @test "orchestrator: decides the next role from return summaries and record-target comments/labels" {
-  section '本体の役割' | grep -q 'return'
-  section '本体の役割' | grep -qE '記録先.*(コメント|ラベル)'
+  generated="$(section '本体の役割')"
+  grep -q 'return' <<<"$generated"
+  generated="$(section '本体の役割')"
+  grep -qE '記録先.*(コメント|ラベル)' <<<"$generated"
 }
 
 # --- 入口 0 ---
 
 @test "entry-0: issue if present, otherwise Draft PR before the spec decision" {
-  section '入口 0' | grep -q 'issue があれば'
-  section '入口 0' | grep -q 'git commit --allow-empty'
-  section '入口 0' | grep -q 'gh pr create --draft'
-  section '入口 0' | grep -qE '仕様化判断.*(前|先)'
+  generated="$(section '入口 0')"
+  grep -q 'issue があれば' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -q 'git commit --allow-empty' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -q 'gh pr create --draft' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -qE '仕様化判断.*(前|先)' <<<"$generated"
 }
 
 @test "entry-0: acceptance criteria go to the PR body and no issue reference in the PR body" {
-  section '入口 0' | grep -qE '受け入れ条件.*PR 本文'
-  section '入口 0' | grep -q 'Closes'
-  section '入口 0' | grep -qE '(Closes|Refs).*(書かない|書いてはならない)'
+  generated="$(section '入口 0')"
+  grep -qE '受け入れ条件.*PR 本文' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -q 'Closes' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -qE '(Closes|Refs).*(書かない|書いてはならない)' <<<"$generated"
   # #1239 C2: 2 つの規則の正本は worker/spec.md「記録先の用意」
-  section '入口 0' | grep -qF 'references/roles/worker/spec.md'
-  section '入口 0' | grep -qF '「記録先の用意」'
+  generated="$(section '入口 0')"
+  grep -qF 'references/roles/worker/spec.md' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -qF '「記録先の用意」' <<<"$generated"
   grep -qF '## 記録先の用意' "${SKILL_DIR}/references/roles/worker/spec.md"
 }
 
 @test "entry-0: issues are opened only for epics, unmanned queues, or recorded discussions" {
-  section '入口 0' | grep -q 'エピック'
-  section '入口 0' | grep -q '無人キュー'
-  section '入口 0' | grep -q '議論'
+  generated="$(section '入口 0')"
+  grep -q 'エピック' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -q '無人キュー' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -q '議論' <<<"$generated"
 }
 
 @test "entry-0: decision and review result live in record-target comments; the spec declaration always goes to a PR comment" {
   # 記録先のコメントに置くのは仕様化判断と仕様レビュー結果
-  section '入口 0' | grep -qF '仕様化判断: する|しない'
-  section '入口 0' | grep -qF '仕様レビュー: APPROVE|REQUEST_CHANGES'
+  generated="$(section '入口 0')"
+  grep -qF '仕様化判断: する|しない' <<<"$generated"
+  generated="$(section '入口 0')"
+  grep -qF '仕様レビュー: APPROVE|REQUEST_CHANGES' <<<"$generated"
   section '入口 0' | grep -F '仕様化判断: する|しない' | grep -q '記録先のコメント'
   # 仕様宣言は記録先ではなく PR コメント（issue #212。pr-review-gate 手順 3-b / 5 と worker/finish.md が正）:
   # 節内で仕様宣言に触れる行はすべて 'PR コメント' を含む（冒頭文の「…仕様宣言を置く「記録先」」の再発もここで落ちる）
-  section '入口 0' | grep -q '仕様宣言'
+  generated="$(section '入口 0')"
+  grep -q '仕様宣言' <<<"$generated"
   [ -z "$(section '入口 0' | grep '仕様宣言' | grep -v 'PR コメント')" ]
 }
 
@@ -157,14 +184,17 @@ refute() {
 # --- 1 ループ ---
 
 @test "loop: stages 0-4 run in W -> R1 -> W -> G order" {
-  loop="$(section '1 ループ')"
-  s0="$(echo "$loop" | grep -n '(0)' | head -1 | cut -d: -f1)"
-  s1="$(echo "$loop" | grep -n '(1)' | head -1 | cut -d: -f1)"
-  s2="$(echo "$loop" | grep -n '(2)' | head -1 | cut -d: -f1)"
-  s3="$(echo "$loop" | grep -n '(3)' | head -1 | cut -d: -f1)"
-  s4="$(echo "$loop" | grep -n '(4)' | head -1 | cut -d: -f1)"
+  loop="$(develop_procedures)"
+  s0="$(echo "$loop" | grep -n '^(0) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s1="$(echo "$loop" | grep -n '^(1) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s2="$(echo "$loop" | grep -n '^(2) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s3="$(echo "$loop" | grep -n '^(3) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s4="$(echo "$loop" | grep -n '^(4) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
   [ -n "$s0" ] && [ -n "$s1" ] && [ -n "$s2" ] && [ -n "$s3" ] && [ -n "$s4" ]
-  [ "$s0" -lt "$s1" ] && [ "$s1" -lt "$s2" ] && [ "$s2" -lt "$s3" ] && [ "$s3" -lt "$s4" ]
+  [ "$s0" -lt "$s1" ] || return 1
+  [ "$s1" -lt "$s2" ] || return 1
+  [ "$s2" -lt "$s3" ] || return 1
+  [ "$s3" -lt "$s4" ] || return 1
   echo "$loop" | sed -n "${s1},${s2}p" | grep -q 'W'
   echo "$loop" | sed -n "${s2},${s3}p" | grep -q 'R1'
   echo "$loop" | sed -n "${s3},${s4}p" | grep -q 'W'
@@ -172,65 +202,65 @@ refute() {
 }
 
 @test "loop: W does spec decision, split judgement and openspec new change, then R1 reviews before apply" {
-  loop="$(section '1 ループ')"
-  echo "$loop" | grep -q '仕様化判断'
-  echo "$loop" | grep -q 'openspec new change'
-  ff="$(echo "$loop" | grep -n 'openspec new change' | head -1 | cut -d: -f1)"
-  rev="$(echo "$loop" | grep -n '仕様レビュー' | head -1 | cut -d: -f1)"
-  apply="$(echo "$loop" | grep -n 'apply' | head -1 | cut -d: -f1)"
+  loop="$(develop_procedures)"
+  grep -q '仕様化判断' <<<"$loop"
+  grep -q 'openspec new change' <<<"$loop"
+  ff="$(echo "$loop" | grep -n 'openspec new change' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  rev="$(echo "$loop" | grep -n '仕様レビュー' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  apply="$(echo "$loop" | grep -n 'apply' | awk 'NR == 1 {print}' | cut -d: -f1)"
   [ "$ff" -lt "$rev" ] && [ "$rev" -lt "$apply" ]
-  echo "$loop" | grep -qE '仕様化しない.*\(3\)'
+  grep -qE '仕様化しない.*\(3\)' <<<"$loop"
 }
 
 @test "loop: R1 and G both have a two-round cap and needs-approval afterwards" {
-  loop="$(section '1 ループ')"
+  loop="$(develop_procedures)"
   [ "$(echo "$loop" | grep -cE '2 ?周')" -ge 2 ]
-  echo "$loop" | grep -q 'needs-approval'
+  grep -q 'needs-approval' <<<"$loop"
 }
 
 @test "loop: G failed raises only the cause side (never W to fable) then resumes W and spawns the next-stage G" {
-  loop="$(section '1 ループ')"
-  echo "$loop" | grep -qE 'failed.*原因分類'
-  echo "$loop" | grep -qF '実装品質起因のときだけ'
-  echo "$loop" | grep -qF '一方だけ'
-  echo "$loop" | grep -qF 'dev-workflow:decider'
-  # #1239 C9・C10: どちらを上げるかと W の上限は「モデル」節の昇格トリップワイヤーの段落を指す
-  echo "$loop" | grep -E 'failed.*原因分類' | grep -qF '「モデル」節の昇格トリップワイヤーの段落'
+  loop="$(develop_procedures)"
+  grep -qE 'failed.*原因分類' <<<"$loop"
+  grep -qF '実装品質起因のときだけ' <<<"$loop"
+  grep -qF '一方だけ' <<<"$loop"
+  grep -qF 'dev-workflow:decider' <<<"$loop"
+  # #1239 C9・C10: どちらを上げるかと W の上限はreferences/codex-develop.mdを指す
+  echo "$loop" | grep -E 'failed.*原因分類' | grep -qF 'references/codex-develop.md'
   ! grep -qF 'W を fable にはしない' "$SKILL" || return 1
   # #1628: failed の行は Claude のモデル名ではなく --failure の値と request の返り値で書く
   f="$(echo "$loop" | grep -E 'failed.*原因分類')"
-  echo "$f" | grep -qF 'request --phase implement --failure executor'
-  echo "$f" | grep -qF 'request --phase decider --failure judgment'
-  echo "$f" | grep -qF '新しい thread に手渡す'
-  ! echo "$f" | grep -qF 'W を `opus` まで' || return 1
-  echo "$loop" | grep -qE 'W を再開'
+  grep -qF 'request --phase implement --failure executor' <<<"$f"
+  grep -qF 'request --phase decider --failure judgment' <<<"$f"
+  grep -qF '新しい thread に手渡す' <<<"$f"
+  ! grep -qF 'W を `opus` まで' <<<"$f" || return 1
+  grep -qE 'W を再開' <<<"$loop"
   # #554: G は再開せず、failed の Gate Result の 次の段: どおりに新しく起こす
-  echo "$loop" | grep -qF '`次の段:` どおりの G を新しく起こして再レビュー'
+  grep -qF '`次の段:` どおりの G を新しく起こして再レビュー' <<<"$loop"
 }
 
 @test "loop: G failed lists all 4 cause classes and keeps W as is for stage A only (#1014)" {
-  loop="$(section '1 ループ')"
+  loop="$(develop_procedures)"
   # G の return（triage.md）の 4 値と本体の列挙が揃っている
-  echo "$loop" | grep -qF '原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））'
-  ! echo "$loop" | grep -qF '／レビュアーの誤検出）' || return 1
+  grep -qF '原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））' <<<"$loop"
+  ! grep -qF '／レビュアーの誤検出）' <<<"$loop" || return 1
   # 本体は triage.md を読まないので、4 つ目の値の戻し方をここで引ける
-  echo "$loop" | grep -qF '段 A だけなら W を据え置きで再開する'
+  grep -qF '段 A だけなら W を据え置きで再開する' <<<"$loop"
 }
 
 @test "loop: W is spawned by name, resumed via SendMessage, and never needs grandchildren" {
-  loop="$(section '1 ループ')"
-  echo "$loop" | grep -q '名前付き'
-  echo "$loop" | grep -q 'SendMessage'
-  echo "$loop" | grep -q '孫'
+  loop="$(develop_procedures)"
+  grep -q '名前付き' <<<"$loop"
+  grep -q 'SendMessage' <<<"$loop"
+  grep -q '孫' <<<"$loop"
 }
 
 @test "loop: W's second run covers apply(TDD), verify, archive, the Draft PR and the spec declaration" {
-  loop="$(section '1 ループ')"
-  echo "$loop" | grep -q 'TDD'
-  echo "$loop" | grep -q 'verify'
-  echo "$loop" | grep -q 'archive'
-  echo "$loop" | grep -q 'Draft'
-  echo "$loop" | grep -q '仕様宣言'
+  loop="$(develop_procedures)"
+  grep -q 'TDD' <<<"$loop"
+  grep -q 'verify' <<<"$loop"
+  grep -q 'archive' <<<"$loop"
+  grep -q 'Draft' <<<"$loop"
+  grep -q '仕様宣言' <<<"$loop"
 }
 
 # ゲート合格まで PR を Draft のまま進める（#304）。CI を Draft で止めるリポでは、W が (3b) で Ready にすると
@@ -239,13 +269,13 @@ refute() {
   s3="$(section '1 ループ' | top_step 3)"
   segb="$(echo "$s3" | substep 3b)"
   [ -n "$segb" ] || { echo "no (3b) substep in the (3) block"; return 1; }
-  echo "$segb" | grep -q 'Draft のまま'
-  echo "$segb" | grep -q 'Draft で作成'
+  grep -q 'Draft のまま' <<<"$segb"
+  grep -q 'Draft で作成' <<<"$segb"
   # W が Ready に切り替える記述が無い（Ready に触れてよいのは G が手順 5 で行うという参照だけ）
   refute "$segb" -E 'Ready に(（|切り替え|する)'
   stray="$(echo "$segb" | grep -F 'Ready' | grep -vF '手順 5' || true)"
   [ -z "$stray" ] || { echo "Ready が (3b) の W の作業として書かれている: $stray"; return 1; }
-  s4="$(section '1 ループ' | top_step 4)"
+  s4="$(develop_procedures)"
   [ -n "$s4" ] || { echo "no (4) step in the loop block"; return 1; }
   echo "$s4" | tr '\n' ' ' | grep -qE 'Draft なら Ready にしてから[^。]*agent-review:passed'
 }
@@ -260,21 +290,21 @@ refute() {
   [ -n "$sega" ] || { echo "no (3a) substep in the (3) block"; return 1; }
   [ -n "$segb" ] || { echo "no (3b) substep in the (3) block"; return 1; }
   # 工程ラベルの並び順（実装が archive より先）
-  la="$(echo "$s3" | grep -nE '^[[:space:]]+\(3a\)[[:space:]]' | head -1 | cut -d: -f1)"
-  lb="$(echo "$s3" | grep -nE '^[[:space:]]+\(3b\)[[:space:]]' | head -1 | cut -d: -f1)"
+  la="$(echo "$s3" | grep -nE '^[[:space:]]+\(3a\)[[:space:]]' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  lb="$(echo "$s3" | grep -nE '^[[:space:]]+\(3b\)[[:space:]]' | awk 'NR == 1 {print}' | cut -d: -f1)"
   [ "$la" -lt "$lb" ]
   # (3a) は実装と verify を行い、その return で「実装＋verify」の完了を宣言する
-  echo "$sega" | grep -q 'TDD'
-  echo "$sega" | grep -q 'verify'
+  grep -q 'TDD' <<<"$sega"
+  grep -q 'verify' <<<"$sega"
   echo "$sega" | grep -F '工程完了: 実装＋verify' | grep -q 'return'
   refute "$sega" -F '工程完了: archive'
   # (3a) で archive しない。archive に触れてよいのは「archive は (3b)」という参照だけ
   stray="$(echo "$sega" | grep -F 'archive' | grep -vF '(3b)' || true)"
   [ -z "$stray" ] || { echo "archive が (3a) の作業として書かれている: $stray"; return 1; }
   # (3b) は archive・PR を Draft のまま用意・仕様宣言を行い、その return で「archive＋PR＋仕様宣言」の完了を宣言する
-  echo "$segb" | grep -q 'archive'
-  echo "$segb" | grep -q 'Draft'
-  echo "$segb" | grep -q '仕様宣言'
+  grep -q 'archive' <<<"$segb"
+  grep -q 'Draft' <<<"$segb"
+  grep -q '仕様宣言' <<<"$segb"
   echo "$segb" | grep -F '工程完了: archive＋PR＋仕様宣言' | grep -q 'return'
   refute "$segb" -F '工程完了: 実装＋verify'
 }
@@ -292,7 +322,7 @@ refute() {
   refute "$s3" -F 'DEV_WORKFLOW_CONTEXT_CAP'
   refute "$s3" -E '150000|150K|220000'
   # (3a)/(3b) より細かく切らないこと（禁止であることまで検査する）
-  echo "$s3" | grep -qE '細かく.*切らない'
+  grep -qE '細かく.*切らない' <<<"$s3"
 }
 
 # 旧世代の W（古いキャッシュの worker.md を読んだ W）が (3) を通しで終えて返してきたとき、
@@ -302,40 +332,40 @@ refute() {
 @test "loop: main routes stage 3 by what it instructed, not by matching the stage name string" {
   flat="$(section '1 ループ' | top_step 3 | tr '\n' ' ')"
   [ -n "$flat" ]
-  echo "$flat" | grep -qE '自分が \(3a\) を指示したか \(3b\) を指示したかで決め[^。]*工程名の文字列照合では決めない'
+  grep -qE '自分が \(3a\) を指示したか \(3b\) を指示したかで決め[^。]*工程名の文字列照合では決めない' <<<"$flat"
   # #1239 B1: 古い世代の W が (3) を通しで返す入力はもう来ないので、(3b) を飛ばす分岐は書かない
-  ! echo "$flat" | grep -qF '既に揃っていれば' || return 1
-  ! echo "$flat" | grep -qF '(3b) を指示せず' || return 1
+  ! grep -qF '既に揃っていれば' <<<"$flat" || return 1
+  ! grep -qF '(3b) を指示せず' <<<"$flat" || return 1
 }
 
 # --- モデル ---
 
 @test "model: W defaults to sonnet and is capped at opus; R1 opus, G sonnet; fable only via the decider type" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| W（実行役。`dev-workflow:worker`） \| 中位（`sonnet`） \|'
-  echo "$m" | grep -qE 'W.*`opus`'
-  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| 上位（`opus`） \|'
-  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| 中位（`sonnet`） \|'
-  ! echo "$m" | grep -qE 'マージ条件・聖域・層間契約' || return 1
-  echo "$m" | grep -q '事前分類'
-  echo "$m" | grep -q 'マージ条件'
-  echo "$m" | grep -q '聖域'
-  echo "$m" | grep -q '層間契約'
+  grep -qE '^\| W（実行役。`dev-workflow:worker`） \| 中位（`sonnet`） \|' <<<"$m"
+  grep -qE 'W.*`opus`' <<<"$m"
+  grep -qE '^\| R1（読んで判断する役） \| 上位（`opus`） \|' <<<"$m"
+  grep -qE '^\| G（`dev-workflow:gate-runner`） \| 中位（`sonnet`） \|' <<<"$m"
+  ! grep -qE 'マージ条件・聖域・層間契約' <<<"$m" || return 1
+  grep -q '事前分類' <<<"$m"
+  grep -q 'マージ条件' <<<"$m"
+  grep -q '聖域' <<<"$m"
+  grep -q '層間契約' <<<"$m"
   # W を fable にする行は無く、fable は決める役の種別だけ
-  echo "$m" | grep -qF 'W の上限は `opus`'
-  echo "$m" | grep -qF 'dev-workflow:decider'
-  echo "$m" | grep -qF 'agent-model-guard.sh'
+  grep -qF 'W の上限は `opus`' <<<"$m"
+  grep -qF 'dev-workflow:decider' <<<"$m"
+  grep -qF 'agent-model-guard.sh' <<<"$m"
 }
 
 @test "model: budget modes are named and point to decision-criteria.md without restating the effects (#1239 C8)" {
   m="$(section 'モデル')"
-  echo "$m" | grep -q 'FABLE_BUDGET_MODE'
-  echo "$m" | grep -q 'SHARED_BUDGET_MODE'
-  echo "$m" | grep -q 'references/decision-criteria.md'
-  echo "$m" | grep -qF 'ここに再掲しない'
+  grep -q 'FABLE_BUDGET_MODE' <<<"$m"
+  grep -q 'SHARED_BUDGET_MODE' <<<"$m"
+  grep -q 'references/decision-criteria.md' <<<"$m"
+  grep -qF 'ここに再掲しない' <<<"$m"
   # 5 値のどれについても効果の文を書かない（正本は decision-criteria.md の表）
   for v in abundant reserve exhausted throttled depleted; do
-    ! echo "$m" | grep -qF "\`$v\`" || return 1
+    ! grep -qF "\`$v\`" <<<"$m" || return 1
   done
   # 効果の文は正本にある
   dc="${SKILL_DIR}/references/decision-criteria.md"
@@ -347,64 +377,55 @@ refute() {
 }
 
 @test "model: the escalation tripwire survives as a one-side-only ladder" {
-  m="$(section 'モデル')"
-  echo "$m" | grep -q '2 連続'
-  echo "$m" | grep -qF 'どちらか一方だけ'
-  echo "$m" | grep -qF '両方同時に上げない'
-  echo "$m" | grep -qF 'dev-workflow:decider'
-  # #1239 C9・C10: 段落はラダーの正本を指し、W の上限は表の W の行を指す 1 句で残す
-  t="$(echo "$m" | grep '^昇格トリップワイヤー')"
-  echo "$t" | grep -qF 'templates/escalation-tripwires.md'
-  echo "$t" | grep -qF 'W の上限は「モデル」節の表の W の行（`opus`）'
-  ! echo "$t" | grep -qF '`opus` → `fable`' || return 1
-  # review F1: 判断側・実行側の定義は escalation-tripwires.md を Read して従う
-  echo "$t" | grep -qF '指示を解釈できなかった'
-  echo "$t" | grep -qF '指示どおりやって結果が違う'
-  echo "$t" | grep -qF 'templates/escalation-tripwires.md` を Read'
-  # #424: --failure の各値と失敗の段の対応を書き、model は request の返り値を使う。
-  # decider の model を文面から読む指示と「W を opus で再開」は残さない
-  echo "$t" | grep -qF '`--failure first`（1 回目の失敗）'
-  echo "$t" | grep -qF '`--failure executor`（2 回目の失敗で原因が実行側）'
-  echo "$t" | grep -qF '`--failure judgment`（2 回目の失敗で原因が判断側）'
-  echo "$t" | grep -qF '`request` が返した `model`'
-  echo "$t" | grep -qF '新しい thread に手渡す'
-  echo "$t" | grep -qF 'references/codex-develop.md'
-  refute "$t" -F 'decider の `model` の段'
-  refute "$t" -F 'W を `opus` で再開'
+  # The model section must lead to the resolver; the ladder has one body there.
+  generated="$(section 'モデル')"
+  grep -qF '必ず' <<<"$generated"
+  generated="$(section 'モデル')"
+  grep -qF 'references/codex-develop.md' <<<"$generated"
+  m="$(codex_procedures)"
+  for token in '2 連続' 'どちらか一方だけ' '両方同時に上げない' 'dev-workflow:decider' \
+    'templates/escalation-tripwires.md' '指示を解釈できなかった' '指示どおりやって結果が違う' \
+    '`--failure executor`' '`request --phase decider --failure judgment`' '`request --phase decider --failure first`' \
+    '1 回目の失敗' '2 回目の失敗' '返った model で実行役を起こす' 'fresh thread'; do
+    grep -qF -- "$token" <<<"$m" || { echo "missing: $token"; return 1; }
+  done
+  refute "$(section 'モデル')" -F 'decider の `model` の段'
+  refute "$(section 'モデル')" -F 'W を `opus` で再開'
 }
 
 @test "loop: step 1 points the W model to the W row of the model table (#1239 C10)" {
   s1="$(grep -E '^\(1\) W を' "$SKILL")"
   # #614: 本体は request が返した model を使い、1 周目の値を文章の規則で計算し直さない。
   # 事前分類への道筋は「Role profile の選択」節の格の入力を通り、「1 周目」列は正本に残る
-  echo "$s1" | grep -qF '`request` が返した `model`'
-  echo "$s1" | grep -qF '「Role profile の選択」節'
-  echo "$s1" | grep -qF '「モデル」節の表の W の行'
-  ! echo "$s1" | grep -qF 'それ以外 sonnet' || return 1
-  section 'Role profile の選択' | grep -qF 'references/pre-classification.md'
+  grep -qF '`request` が返した `model`' <<<"$s1"
+  grep -qF '「Role profile の選択」節' <<<"$s1"
+  grep -qF '「モデル」節の表の W の行' <<<"$s1"
+  ! grep -qF 'それ以外 sonnet' <<<"$s1" || return 1
+  generated="$(codex_procedures)"
+  grep -qF 'references/pre-classification.md' <<<"$generated"
   grep -qE '^\| 分類 \| 具体 \| 1 周目 \|' "${SKILL_DIR}/references/pre-classification.md"
-  ! echo "$s1" | grep -qF 'W の上限は opus' || return 1
+  ! grep -qF 'W の上限は opus' <<<"$s1" || return 1
 }
 
 @test "model: G defaults to sonnet and every pre-classification lifts W only to opus" {
   m="$(section 'モデル')"
-  echo "$m" | grep -qE '^\| G（`dev-workflow:gate-runner`） \| 中位（`sonnet`） \|'
-  echo "$m" | grep -qE '^\| R1（読んで判断する役） \| 上位（`opus`） \|'
-  echo "$m" | grep -q '聖域パス'
-  echo "$m" | grep -qE 'マージ権限・層間契約・課金/法務'
+  grep -qE '^\| G（`dev-workflow:gate-runner`） \| 中位（`sonnet`） \|' <<<"$m"
+  grep -qE '^\| R1（読んで判断する役） \| 上位（`opus`） \|' <<<"$m"
+  grep -q '聖域パス' <<<"$m"
+  grep -qE 'マージ権限・層間契約・課金/法務' <<<"$m"
 }
 
 @test "loop: W is measured with subagent-context.sh before every SendMessage resume, and G is never resumed" {
   loop="$(section '1 ループ（W → R1 → W → G）')"
-  echo "$loop" | grep -q 'subagent-context.sh'
-  echo "$loop" | grep -q '手渡し'
+  grep -q 'subagent-context.sh' <<<"$loop"
+  grep -q '手渡し' <<<"$loop"
   # 閾値と環境変数名の正本は decision-criteria.md「コンテキスト上限」1 箇所（#261）。
   # ここでは再掲ではなく、その正本を指していることを固定する
-  echo "$loop" | grep -q 'decision-criteria.md'
-  echo "$loop" | grep -q 'コンテキスト上限'
-  ! echo "$loop" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP' || return 1
+  grep -q 'decision-criteria.md' <<<"$loop"
+  grep -q 'コンテキスト上限' <<<"$loop"
+  ! grep -q 'DEV_WORKFLOW_CONTEXT_CAP' <<<"$loop" || return 1
   # #554: G は段ごとに新しく起こすので、再開前の計測は W だけに掛かる
-  echo "$loop" | grep -qF '再開前の計測は W だけに掛かる'
+  grep -qF '再開前の計測は W だけに掛かる' <<<"$loop"
 }
 
 @test "model: no execution-strategy branches nor deterministic signal commands anywhere under develop" {
@@ -421,30 +442,30 @@ refute() {
 
 @test "mode table: unmanned main is the orchestrator, runs (0)-(3), W adds Draft PR + pending, G left to Step 1" {
   t="$(section '実行モード')"
-  echo "$t" | grep -q 'interactive'
-  echo "$t" | grep -q 'unmanned'
-  echo "$t" | grep -q '憲法のメイン'
-  echo "$t" | grep -qE 'W / R1.*spawn|W と R1.*spawn'
-  echo "$t" | grep -qE '\(0\).*\(3\)'
-  echo "$t" | grep -q 'Draft PR'
-  echo "$t" | grep -q 'agent-review:pending'
-  echo "$t" | grep -qE 'G.*Step 1'
+  grep -q 'interactive' <<<"$t"
+  grep -q 'unmanned' <<<"$t"
+  grep -q '憲法のメイン' <<<"$t"
+  grep -qE 'W / R1.*spawn|W と R1.*spawn' <<<"$t"
+  grep -qE '\(0\).*\(3\)' <<<"$t"
+  grep -q 'Draft PR' <<<"$t"
+  grep -q 'agent-review:pending' <<<"$t"
+  grep -qE 'G.*Step 1' <<<"$t"
 }
 
 @test "mode table: spec decision record and spec review are not exempt in unmanned" {
   t="$(section '実行モード')"
-  echo "$t" | grep -qE '(仕様化判断|判定の記録).*免除しない'
-  echo "$t" | grep -qE '仕様レビュー.*免除しない|免除しない.*仕様レビュー'
-  echo "$t" | grep -q 'blocked_by'
+  grep -qE '(仕様化判断|判定の記録).*免除しない' <<<"$t"
+  grep -qE '仕様レビュー.*免除しない|免除しない.*仕様レビュー' <<<"$t"
+  grep -q 'blocked_by' <<<"$t"
 }
 
 @test "mode: the unmanned split paragraph is one sentence pointing to worker/spec.md (#1239 C11)" {
   para="$(section '実行モード' | grep '^unmanned で複数 change')"
   [ -n "$para" ]
   for k in '子 issue' 'blocked_by' 'サイクルを終える' '`references/roles/worker/spec.md`「分割判定」'; do
-    echo "$para" | grep -qF "$k" || return 1
+    grep -qF "$k" <<<"$para" || return 1
   done
-  ! echo "$para" | grep -qF 'Discord' || return 1
+  ! grep -qF 'Discord' <<<"$para" || return 1
   for k in '質問文・理由' 'return' 'needs-approval' 'W は Discord（MCP・CLI とも）へ直接送信しない' '本体の代理送信手順'; do
     grep -qF "$k" "${SKILL_DIR}/references/roles/worker/spec.md" || return 1
   done
@@ -453,83 +474,89 @@ refute() {
 # --- 前提 ---
 
 @test "prerequisites: Agent / SendMessage / gh / opsx-or-openspec / Codex with their degraded paths" {
-  p="$(section '前提')"
-  echo "$p" | grep -q 'Agent'
-  echo "$p" | grep -q '`model`'
-  echo "$p" | grep -q '名前付き'
-  echo "$p" | grep -qF 'isolation: "worktree"'
-  echo "$p" | grep -q 'SendMessage'
-  echo "$p" | grep -q '`gh`'
-  echo "$p" | grep -q 'dependencies'
-  echo "$p" | grep -q 'opsx'
-  echo "$p" | grep -q 'openspec'
-  echo "$p" | grep -q 'Codex'
-  echo "$p" | grep -q 'needs-reviewer'
+  p="$(develop_procedures)"
+  grep -q 'Agent' <<<"$p"
+  grep -q '`model`' <<<"$p"
+  grep -q '名前付き' <<<"$p"
+  grep -qF 'isolation: "worktree"' <<<"$p"
+  grep -q 'SendMessage' <<<"$p"
+  grep -q '`gh`' <<<"$p"
+  grep -q 'dependencies' <<<"$p"
+  grep -q 'opsx' <<<"$p"
+  grep -q 'openspec' <<<"$p"
+  grep -q 'Codex' <<<"$p"
+  grep -q 'needs-reviewer' <<<"$p"
 }
 
 @test "prerequisites: the Agent row points to the worktree section for isolation instead of restating it (#1239 C1)" {
   row="$(section '前提' | grep -E '^\| \*\*Agent')"
-  echo "$row" | grep -qF '「worktree の用意」'
-  echo "$row" | grep -qF '`isolation: "remote"` は使わない'
-  section 'worktree の用意' | grep -qF '`isolation: "remote"` は使わない'
+  grep -qF '「worktree の用意」' <<<"$row"
+  generated="$(develop_procedures)"
+  grep -qF '`isolation: "remote"` は使わない' <<<"$generated"
+  generated="$(section 'worktree の用意')"
+  grep -qF '`isolation: "remote"` は使わない' <<<"$generated"
 }
 
 @test "role profile: selection and operations point to codex-develop.md and keep only the record duties (#1239 C3 C4 C5)" {
   r="$(section 'Role profile の選択')"
   # C3: margin の式と構成の選び方は codex-develop.md「起動と role 解決」
-  ! echo "$r" | grep -qF 'margin = ' || return 1
-  echo "$r" | grep -qF '「起動と role 解決」'
-  echo "$r" | grep -qF 'missing'
-  echo "$r" | grep -qF 'fetched_at'
-  echo "$r" | grep -qF 'codex-standard'
+  ! grep -qF 'margin = ' <<<"$r" || return 1
+  grep -qF '「起動と role 解決」' <<<"$r"
+  generated="$(codex_procedures)"
+  grep -qF 'missing' <<<"$generated"
+  generated="$(codex_procedures)"
+  grep -qF 'fetched_at' <<<"$generated"
+  generated="$(codex_procedures)"
+  grep -qF 'codex-standard' <<<"$generated"
   grep -qF 'margin' "${PLUGIN_DIR}/references/codex-develop.md"
   # C4: 本体が行う操作の正本は codex-develop.md「本体が行う操作」
-  echo "$r" | grep -qF '「本体が行う操作」'
-  echo "$r" | grep -qF '以下の spawn / SendMessage 表記は'
+  generated="$(codex_procedures)"
+  grep -qF '本体が行う操作' <<<"$generated"
+  grep -qF '以下の spawn / SendMessage 表記にも適用' <<<"$r"
   # C5: レビュー経路の正本はこの節。(4) の起動指示は細目をこの節に任せる
-  echo "$r" | grep -qF 'request の instructions'
+  grep -qF 'request の instructions' <<<"$r"
   g="$(grep -A1 -F 'G の起動指示には常に `レビュー経路: adapter` の 1 行' "$SKILL")"
   [ -n "$g" ]
-  ! echo "$g" | grep -qF 'request の instructions' || return 1
-  echo "$g" | grep -qF '「Role profile の選択」節'
+  ! grep -qF 'request の instructions' <<<"$g" || return 1
+  grep -qF '「Role profile の選択」節' <<<"$g"
 }
 
 # --- エピック ---
 
 @test "epic: four subsections exist (conditions / how to create / how to run / completion)" {
   e="$(section 'エピックの扱い' "$EPIC")"
-  echo "$e" | grep -q '^### 条件'
-  echo "$e" | grep -q '^### 作り方'
-  echo "$e" | grep -qF 'epic-loop.md'
-  echo "$e" | grep -q '^### 完了条件'
+  grep -q '^### 条件' <<<"$e"
+  grep -q '^### 作り方' <<<"$e"
+  grep -qF 'epic-loop.md' <<<"$e"
+  grep -q '^### 完了条件' <<<"$e"
 }
 
 @test "epic: conditions name 2+ PRs, multiple capabilities, or ordered children" {
   e="$(section 'エピックの扱い' "$EPIC")"
-  echo "$e" | grep -qE '2 本以上'
-  echo "$e" | grep -q 'capability'
-  echo "$e" | grep -q '順序依存'
+  grep -qE '2 本以上' <<<"$e"
+  grep -q 'capability' <<<"$e"
+  grep -q '順序依存' <<<"$e"
 }
 
 @test "epic: creation binds Closes to children and wires dependencies via blocked_by" {
   e="$(section 'エピックの扱い' "$EPIC")"
-  echo "$e" | grep -q 'Closes'
-  echo "$e" | grep -q 'dependencies/blocked_by'
-  echo "$e" | grep -q '/develop <エピック番号>'
+  grep -q 'Closes' <<<"$e"
+  grep -q 'dependencies/blocked_by' <<<"$e"
+  grep -q '/develop <エピック番号>' <<<"$e"
 }
 
 @test "epic: children run in parallel in isolated worktrees, new problems become new child issues" {
   e="$(section 'エピックの扱い' "$EPIC")"
-  echo "$e" | grep -q '並列'
-  echo "$e" | grep -qF 'isolation: "worktree"'
-  echo "$e" | grep -q '新しい子 issue'
-  echo "$e" | grep -qE 'スタック'
+  grep -q '並列' <<<"$e"
+  grep -qF 'isolation: "worktree"' <<<"$e"
+  grep -q '新しい子 issue' <<<"$e"
+  grep -qE 'スタック' <<<"$e"
 }
 
 @test "epic: completion needs the epic's own verification, not just all children merged" {
   e="$(section 'エピックの扱い' "$EPIC")"
-  echo "$e" | grep -q '閉じない'
-  echo "$e" | grep -qE '証拠.*エピック'
+  grep -q '閉じない' <<<"$e"
+  grep -qE '証拠.*エピック' <<<"$e"
 }
 
 # --- エピックの 2 節の移設（#1219） ---
@@ -537,24 +564,26 @@ refute() {
 @test "epic move (#1219): SKILL.md keeps only a short guide that says when to Read the moved files" {
   g="$(section 'エピックの扱い')"
   [ -n "$g" ]
-  echo "$g" | grep -qF '`references/epic.md`'
-  echo "$g" | grep -qF 'Read'
-  echo "$g" | grep -qF '`/develop <エピック番号>` で起動したとき'
-  echo "$g" | grep -qF '`nested` を返すエピックの子として動き'
-  echo "$g" | grep -qF '単発の issue・会話依頼・Draft PR を記録先にする依頼の 1 ループでは、下のどれかの場面に当たらない限り読まない'
+  grep -qF '`references/epic.md`' <<<"$g"
+  grep -qF 'Read' <<<"$g"
+  grep -qF '`/develop <エピック番号>` で起動したとき' <<<"$g"
+  grep -qF '`nested` を返すエピックの子として動き' <<<"$g"
+  grep -qF '単発の issue・会話依頼・Draft PR を記録先にする依頼の 1 ループでは、下のどれかの場面に当たらない限り読まない' <<<"$g"
   # 起動し直した子も親の注意書きの規則を読む（#1243 の F1）・範囲外の問題を新しい子 issue にする規則を読む（F2）
   echo "$g" | grep -F '`親エピックからの注意書き:` で始まるコメントがあるとき' | grep -F '起動し直した' | grep -qF '`author_association`'
   echo "$g" | grep -F '範囲外の新しい問題' | grep -qF '新しい子 issue'
   [ "$(echo "$g" | grep -c '^### ')" -eq 0 ]
   c="$(section 'エピックの子が主の返事を待って止まるとき')"
   [ -n "$c" ]
-  echo "$c" | grep -qF '`references/epic-child-stop.md` を Read'
-  echo "$c" | grep -qF '主の返事を待って止まる前'
-  echo "$c" | grep -qF '`主の返事（親エピック #`'
-  echo "$c" | grep -qF '`nested` でないセッションは読まない'
+  grep -qF '`references/epic-child-stop.md` を Read' <<<"$c"
+  grep -qF '主の返事を待って止まる前' <<<"$c"
+  grep -qF '`主の返事（親エピック #`' <<<"$c"
+  grep -qF '`nested` でないセッションは読まない' <<<"$c"
   # 参照の節からも辿れる
-  section '参照' | grep -qF '`references/epic.md`'
-  section '参照' | grep -qF '`references/epic-child-stop.md`'
+  generated="$(develop_procedures)"
+  grep -qF '`references/epic.md`' <<<"$generated"
+  generated="$(develop_procedures)"
+  grep -qF '`references/epic-child-stop.md`' <<<"$generated"
 }
 
 @test "epic move (#1219): phrases unique to the moved sections live in the moved files, not in SKILL.md" {
@@ -587,7 +616,8 @@ refute() {
   if grep -qF '上の 1 ループ' "$EPIC"; then return 1; fi
   grep -qF '（行の形の正本は `skills/develop/references/epic-child-stop.md` の側）' "${PLUGIN_DIR}/references/ci-watch.md"
   if grep -qF '記録の形の正本は SKILL.md の側' "${PLUGIN_DIR}/references/ci-watch.md"; then return 1; fi
-  section '上流の壁打ち（`/opsx:explore`）を呼ばない理由' | grep -qF '（`references/epic.md` のエピックの作り方）'
+  generated="$(section '上流の壁打ち（`/opsx:explore`）を呼ばない理由')"
+  grep -qF '（`references/epic.md` のエピックの作り方）' <<<"$generated"
 }
 
 # --- 上流の壁打ち（旧 longrun:plan。#205 で /opsx:explore に） ---
@@ -606,27 +636,27 @@ refute() {
   grep -qE '^5\. 【rate-limit 実エラー → reactive 降格】' "$TRIPWIRES"
   ! grep -qE '^6\. ' "$TRIPWIRES" || return 1
   w4="$(awk '/^4\. /{f=1} /^5\. /{f=0} f' "$TRIPWIRES")"
-  echo "$w4" | grep -q 'subagent-context.sh'
+  grep -q 'subagent-context.sh' <<<"$w4"
   # 閾値の再掲ではなく正本を指す（#261）。あわせて途中計測 hook の経路に触れていること
-  echo "$w4" | grep -q 'decision-criteria.md'
-  echo "$w4" | grep -q 'context-tripwire.sh'
-  ! echo "$w4" | grep -q 'DEV_WORKFLOW_CONTEXT_CAP' || return 1
-  echo "$w4" | grep -q 'モデルは変えない'
+  grep -q 'decision-criteria.md' <<<"$w4"
+  grep -q 'context-tripwire.sh' <<<"$w4"
+  ! grep -q 'DEV_WORKFLOW_CONTEXT_CAP' <<<"$w4" || return 1
+  grep -q 'モデルは変えない' <<<"$w4"
 }
 
 @test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and five wires" {
   grep -q '^## 昇格トリップワイヤー' "$TRIPWIRES"
   w1="$(awk '/^1\. /{f=1} /^2\. /{f=0} f' "$TRIPWIRES")"
-  echo "$w1" | grep -q '規模超過'
-  echo "$w1" | grep -q '本体に return'
-  echo "$w1" | grep -q 'エピック化'
-  echo "$w1" | grep -q 'workflow-execution.md'
-  ! echo "$w1" | grep -q 'workflow 型へ' || return 1
+  grep -q '規模超過' <<<"$w1"
+  grep -q '本体に return' <<<"$w1"
+  grep -q 'エピック化' <<<"$w1"
+  grep -q 'workflow-execution.md' <<<"$w1"
+  ! grep -q 'workflow 型へ' <<<"$w1" || return 1
   ! grep -qF '/lr:' "$TRIPWIRES" || return 1
   grep -q '失敗ループ' "$TRIPWIRES"
   grep -q '仕様の発明' "$TRIPWIRES"
   w3="$(awk '/^3\. /{f=1} /^4\. /{f=0} f' "$TRIPWIRES")"
-  echo "$w3" | grep -q 'opsx:explore'
+  grep -q 'opsx:explore' <<<"$w3"
   [ "$(grep -cE '^[1-4]\. 【' "$TRIPWIRES")" -eq 4 ]
 }
 
@@ -639,141 +669,141 @@ refute() {
 # --- PR トークン上限（#288。spec: dev-workflow-pr-token-budget） ---
 
 @test "token budget: SKILL.md has one section that measures before every spawn / SendMessage / Codex delegation" {
-  s="$(section 'PR トークン上限')"
+  s="$(develop_procedures)"
   [ -n "$s" ] || { echo "no PR トークン上限 section"; return 1; }
-  echo "$s" | grep -qF 'scripts/pr-token-budget.sh'
-  echo "$s" | grep -q 'spawn する直前'
-  echo "$s" | grep -q 'SendMessage で再開する直前'
-  echo "$s" | grep -q 'Codex executor へ委譲する直前'
-  echo "$s" | grep -q '役割と executor を問わず毎回'
+  grep -qF 'scripts/pr-token-budget.sh' <<<"$s"
+  grep -q 'spawn する直前' <<<"$s"
+  grep -q 'SendMessage で再開する直前' <<<"$s"
+  grep -q 'Codex executor へ委譲する直前' <<<"$s"
+  grep -q '役割と executor を問わず毎回' <<<"$s"
   # 1 ループの工程から参照されている
-  sed -n '/^## 1 ループ/,/^## モデル/p' "$SKILL" | grep -q '「PR トークン上限」'
+  sed -n '/^## 1 ループ/,/^## モデル/p' "$SKILL" | grep -q 'references/pr-token-budget.md'
 }
 
 @test "token budget: exit 2 stops before spawn / SendMessage / Codex and asks continue-or-close with materials" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -q 'exit 2'
-  echo "$s" | grep -q 'spawn / SendMessage / Codex への委譲をしない'
-  echo "$s" | grep -q 'needs-approval'
-  echo "$s" | grep -qF '続けるか、範囲外として閉じるか'
-  echo "$s" | grep -q '合計（Claude 分と Codex 分の内訳）・体数・上限・残工程'
-  echo "$s" | grep -q '・推奨（どちらを選ぶかとその理由）'
-  echo "$s" | grep -q 'unmanned'
+  s="$(develop_procedures)"
+  grep -q 'exit 2' <<<"$s"
+  grep -q 'spawn / SendMessage / Codex への委譲をしない' <<<"$s"
+  grep -q 'needs-approval' <<<"$s"
+  grep -qF '続けるか、範囲外として閉じるか' <<<"$s"
+  grep -q '合計（Claude 分と Codex 分の内訳）・体数・上限・残工程' <<<"$s"
+  grep -q '・推奨（どちらを選ぶかとその理由）' <<<"$s"
+  grep -q 'unmanned' <<<"$s"
 }
 
 @test "token budget: description carries the record number #N regardless of role" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -q 'description'
-  echo "$s" | grep -qF '`#N`'
-  echo "$s" | grep -q '役割を問わない'
+  s="$(develop_procedures)"
+  grep -q 'description' <<<"$s"
+  grep -qF '`#N`' <<<"$s"
+  grep -q '役割を問わない' <<<"$s"
 }
 
 @test "token budget: Codex consumption is posted as a comment and gathered into --codex-records" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -qF 'Codex 消費: <thread_id> <tokens>'
-  echo "$s" | grep -qF 'usage.total.totalTokens'
-  echo "$s" | grep -q '`usage` が null'
-  echo "$s" | grep -qF 'scripts/codex-records.sh --repo <owner>/<repo> --out "<scratchpad>/codex-records.txt"'
-  echo "$s" | grep -qF -- '--codex-records "<scratchpad>/codex-records.txt"'
-  echo "$s" | grep -qF -- '--codex-home'
-  echo "$s" | grep -qF '${CODEX_HOME:-$HOME/.codex}'
+  s="$(develop_procedures)"
+  grep -qF 'Codex 消費: <thread_id> <tokens>' <<<"$s"
+  grep -qF 'usage.total.totalTokens' <<<"$s"
+  grep -q '`usage` が null' <<<"$s"
+  grep -qF 'scripts/codex-records.sh --repo <owner>/<repo> --out "<scratchpad>/codex-records.txt"' <<<"$s"
+  grep -qF -- '--codex-records "<scratchpad>/codex-records.txt"' <<<"$s"
+  grep -qF -- '--codex-home' <<<"$s"
+  grep -qF '${CODEX_HOME:-$HOME/.codex}' <<<"$s"
 }
 
 # 消費の記録の印（#1158。読み取り側 flatmate の burn-consumption-ledger の契約に合わせる）
 @test "consumption mark: form, vocabulary and three places are written once in the token budget section" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -qF '[消費記録 工程=<工程> 試行=<n> アカウント=<provider>:<登録名> 引継ぎ=<k>]'
+  s="$(develop_procedures)"
+  grep -qF '[消費記録 工程=<工程> 試行=<n> アカウント=<provider>:<登録名> 引継ぎ=<k>]' <<<"$s"
   for st in spec spec-review implement impl-review finish gate-prepare gate-triage gate-pass gate-hold decide screen-check; do
-    echo "$s" | grep -qF "\`$st\`"
+    grep -qF "\`$st\`" <<<"$s"
   done
-  echo "$s" | grep -qF 'claude:<登録名>'
-  echo "$s" | grep -qF 'codex:<CODEX_HOME 対応表の登録名>'
-  echo "$s" | grep -q '最初の担当には書かない'
-  echo "$s" | grep -qF '2 行目以降'
+  grep -qF 'claude:<登録名>' <<<"$s"
+  grep -qF 'codex:<CODEX_HOME 対応表の登録名>' <<<"$s"
+  grep -q '最初の担当には書かない' <<<"$s"
+  grep -qF '2 行目以降' <<<"$s"
 }
 
 @test "consumption mark: time keys only in the Codex consumption comment, and an unknown account name is omitted not guessed" {
-  s="$(section 'PR トークン上限')"
+  s="$(develop_procedures)"
   refute "$s" -F '`開始=` `終了=` は書かない'
-  echo "$s" | grep -qF '`開始=` `終了=` は `Codex 消費:` コメントの印にだけ書き、description と `develop 開始` コメントの印には書かない'
-  echo "$s" | grep -qF '`アカウント=` のキーごと省き'
+  grep -qF '`開始=` `終了=` は `Codex 消費:` コメントの印にだけ書き、description と `develop 開始` コメントの印には書かない' <<<"$s"
+  grep -qF '`アカウント=` のキーごと省き' <<<"$s"
 }
 
 @test "consumption mark: the Codex consumption record copies started_at / ended_at, omits missing ones, and skips G's full review (#1321)" {
-  p="$(section 'PR トークン上限' | grep -F '**Codex の消費の記録**')"
+  p="$(develop_procedures | grep -F '**Codex の消費の記録**')"
   [ -n "$p" ]
-  echo "$p" | grep -qF '結果 JSON の `started_at` を `開始=`、`ended_at` を `終了=`'
-  echo "$p" | grep -qF '開始=2026-10-19T23:50:00Z 終了=2026-10-20T00:10:00Z'
-  echo "$p" | grep -qF 'キーが無いか `null` なら、そのキーを印から省き、推測で埋めない'
-  echo "$p" | grep -qF 'G の full レビュー分は時刻が取れないので `開始=` `終了=` を書かない'
+  grep -qF '結果 JSON の `started_at` を `開始=`、`ended_at` を `終了=`' <<<"$p"
+  grep -qF '開始=2026-10-19T23:50:00Z 終了=2026-10-20T00:10:00Z' <<<"$p"
+  grep -qF 'キーが無いか `null` なら、そのキーを印から省き、推測で埋めない' <<<"$p"
+  grep -qF 'G の full レビュー分は時刻が取れないので `開始=` `終了=` を書かない' <<<"$p"
 }
 
 @test "consumption mark: a resumable W gets account only in description and the mark at the head of each resume message" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -qF '再開しうる W'
-  echo "$s" | grep -qF '`工程=` と `試行=` を書かない'
-  echo "$s" | grep -qF '再開の指示文の先頭'
+  s="$(develop_procedures)"
+  grep -qF '再開しうる W' <<<"$s"
+  grep -qF '`工程=` と `試行=` を書かない' <<<"$s"
+  grep -qF '再開の指示文の先頭' <<<"$s"
 }
 
 @test "consumption mark: G stage comes from the name, reviewers are impl-review, attempt is not the name's n" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -qF '`gate-<段>`'
-  echo "$s" | grep -qF 'Gate Result の `段:` は使わない'
-  echo "$s" | grep -qF '`impl-review`'
-  echo "$s" | grep -qF '名前の `<n>` は起動回数'
-  echo "$s" | grep -qF '試行を変えず `引継ぎ=` を増やす'
+  s="$(develop_procedures)"
+  grep -qF '`gate-<段>`' <<<"$s"
+  grep -qF 'Gate Result の `段:` は使わない' <<<"$s"
+  grep -qF '`impl-review`' <<<"$s"
+  grep -qF '名前の `<n>` は起動回数' <<<"$s"
+  grep -qF '試行を変えず `引継ぎ=` を増やす' <<<"$s"
 }
 
 @test "consumption mark: develop start comment in Role profile section carries the launch account mark" {
-  s="$(section 'Role profile の選択')"
-  echo "$s" | grep -qF '[消費記録 アカウント=claude:<登録名>]'
-  echo "$s" | grep -qF '`工程=` と `試行=` は省いてよい'
+  s="$(codex_procedures)"
+  grep -qF '[消費記録 アカウント=claude:<登録名>]' <<<"$s"
+  grep -qF '`工程=` と `試行=` は省いてよい' <<<"$s"
 }
 
 @test "token budget: a failed comment fetch skips the budget and is handled as exit 1" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -q '&& scripts/pr-token-budget.sh'
-  echo "$s" | grep -q 'pr-token-budget.sh` を呼ばず'
-  echo "$s" | grep -q '^\*\*exit 1（.*Codex 消費コメントを取得できなかった）\*\*'
-  echo "$s" | grep -q '空の記録や前回のファイルで代えない'
+  s="$(develop_procedures)"
+  grep -q '&& scripts/pr-token-budget.sh' <<<"$s"
+  grep -q 'pr-token-budget.sh` を呼ばず' <<<"$s"
+  grep -q '^\*\*exit 1（.*Codex 消費コメントを取得できなかった）\*\*' <<<"$s"
+  grep -q '空の記録や前回のファイルで代えない' <<<"$s"
 }
 
 @test "token budget: continue raises the cap via a comment, close stops Codex too, exit 1 comments once per cycle" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -qF 'PR トークン上限: <'
-  echo "$s" | grep -qF -- '--cap <新上限>'
-  echo "$s" | grep -q '範囲外として閉じる'
-  echo "$s" | grep -q 'Codex にも委譲しない'
-  echo "$s" | grep -q 'exit 1'
-  echo "$s" | grep -q '1 サイクルに 1 回まで'
+  s="$(develop_procedures)"
+  grep -qF 'PR トークン上限: <' <<<"$s"
+  grep -qF -- '--cap <新上限>' <<<"$s"
+  grep -q '範囲外として閉じる' <<<"$s"
+  grep -q 'Codex にも委譲しない' <<<"$s"
+  grep -q 'exit 1' <<<"$s"
+  grep -q '1 サイクルに 1 回まで' <<<"$s"
 }
 
 # spec: dev-workflow-pr-token-budget（エピックの子は主に聞く前に親の権限に照らす。#1245）
 
 @test "token budget: an epic child is checked against the parent's authority before asking the owner" {
-  s="$(section 'PR トークン上限')"
-  echo "$s" | grep -qF '`子の PR トークン権限: <値>`'
-  echo "$s" | grep -qF '既定 60000000'
+  s="$(develop_procedures)"
+  grep -qF '`子の PR トークン権限: <値>`' <<<"$s"
+  grep -qF '既定 60000000' <<<"$s"
   echo "$s" | grep -F 'references/epic-stop.md' | grep -qF '**PR トークン上限の子**'
   echo "$s" | grep -F '別セッション方式の子' | grep -qF 'references/epic-child-stop.md'
   echo "$s" | grep -F 'サブエージェント方式' | grep -F '見込みを子の記録先にコメント' | grep -qF '照らす'
   echo "$s" | grep -F '照らす前に' | grep -qF '既定値で投稿'
   echo "$s" | grep -F '新上限は' | grep -qF '権限の値'
-  echo "$s" | grep -qF -- '--cap <権限>'
-  echo "$s" | grep -qF 'PR トークン上限: <権限>'
-  echo "$s" | grep -qF '決めた人: <親エピック #<E> の判断（親の権限の内。主の承認ではない）か、'
-  echo "$s" | grep -qF 'エピック #<E> の本体（親の権限の内）'
-  echo "$s" | grep -qF '権限: <権限のコメントの URL>'
-  echo "$s" | grep -qF '停止の記録: <停止の記録の URL か なし>'
+  grep -qF -- '--cap <権限>' <<<"$s"
+  grep -qF 'PR トークン上限: <権限>' <<<"$s"
+  grep -qF '決めた人: <親エピック #<E> の判断（親の権限の内。主の承認ではない）か、' <<<"$s"
+  grep -qF 'エピック #<E> の本体（親の権限の内）' <<<"$s"
+  grep -qF '権限: <権限のコメントの URL>' <<<"$s"
+  grep -qF '停止の記録: <停止の記録の URL か なし>' <<<"$s"
   echo "$s" | grep -F '親の返事' | grep -qF '主に聞き直さない'
   echo "$s" | grep -F '既定の上限' | grep -qF '変えない'
   # エピックの子でない記録先の「続ける」の式は残る
-  echo "$s" | grep -qF 'その時点の合計 ＋ 直前の計測で上限に使った値'
+  grep -qF 'その時点の合計 ＋ 直前の計測で上限に使った値' <<<"$s"
 }
 
 @test "token budget: measurement is not placed in the Codex adapter reference" {
   body="$(cat "${PLUGIN_DIR}/references/codex-develop.md")"
-  refute "$body" -F 'pr-token-budget'
+  refute "$body" -F 'scripts/pr-token-budget.sh'
   refute "$(cat "${PLUGIN_DIR}/scripts/codex-worker.py")" -F 'pr-token-budget'
 }
 
@@ -792,10 +822,10 @@ refute() {
 
 @test "handover move (#1220): SKILL.md keeps only the guidance lines and Reads the destination before stopping and when resuming" {
   s="$(section '保留で止まるときの引き継ぎ')"
-  echo "$s" | grep -qF '`references/handover.md`'
-  echo "$s" | grep -qF '主の返事を待って止まる前'
-  echo "$s" | grep -qF '保留中の記録先を再開するとき'
-  echo "$s" | grep -qF 'Read してから進める'
+  grep -qF '`references/handover.md`' <<<"$s"
+  grep -qF '主の返事を待って止まる前' <<<"$s"
+  grep -qF '保留中の記録先を再開するとき' <<<"$s"
+  grep -qF 'Read してから進める' <<<"$s"
   # 移した節の固有語句は移設先にあり、SKILL.md の本文には残っていない
   for p in '**投稿の順序**' '**依頼の出し直し**' '**書式**' '| 待ち理由 |' '**前任 W の手渡し可否**' '**channel の主への案内**' '### 新しいセッションでの再開' 'SendMessage しない'; do
     if grep -qF -- "$p" "$SKILL"; then echo "SKILL.md に残っている: $p" >&2; return 1; fi
@@ -864,120 +894,120 @@ refute() {
 @test "fix-check (#722): the decider is asked with the verdict-and-reasons contract, not the 3 points" {
   s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   [ -n "$s" ] || { echo "no fix-check section"; return 1; }
-  echo "$s" | grep -qF 'subagent_type: dev-workflow:decider'
-  echo "$s" | grep -qF '可否と根拠'
-  echo "$s" | grep -qF '3 点ではなく'
-  echo "$s" | grep -qF 'agents/decider.md'
+  grep -qF 'subagent_type: dev-workflow:decider' <<<"$s"
+  grep -qF '可否と根拠' <<<"$s"
+  grep -qF '3 点ではなく' <<<"$s"
+  grep -qF 'agents/decider.md' <<<"$s"
   # 定義の 3 条件
-  echo "$s" | grep -qF '直し方が 1 つに決まる'
-  echo "$s" | grep -qF '記録先の範囲'
-  echo "$s" | grep -qF '前の周で「決まっている」と判定した直し方を当てたのに閉じなかった'
+  grep -qF '直し方が 1 つに決まる' <<<"$s"
+  grep -qF '記録先の範囲' <<<"$s"
+  grep -qF '前の周で「決まっている」と判定した直し方を当てたのに閉じなかった' <<<"$s"
 }
 
 @test "fix-check (#722): the five inputs are fixed" {
   s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   for token in '記録先の本文と関連コメント' '残った指摘の原文' '前の周の指摘の原文' '対象ファイルのパス' 'W の直近の return'; do
-    echo "$s" | grep -qF "$token" || { echo "missing input: $token"; return 1; }
+    grep -qF "$token" <<<"$s" || { echo "missing input: $token"; return 1; }
   done
 }
 
 @test "fix-check (#722): first-line answers, one retry on shortage, then treated as re-choosing" {
   s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
   for token in '`裁定: 可`' '`裁定: 否`' '`不足: <足りないもの>`' '1 回だけ依頼し直し' '3 回目の依頼はしない'; do
-    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+    grep -qF "$token" <<<"$s" || { echo "missing: $token"; return 1; }
   done
   echo "$s" | grep -F '1 回だけ依頼し直し' | grep -qF '選び直しが要る'
 }
 
 @test "fix-check (#722): the record format is defined here with its first line and fields" {
   s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
-  echo "$s" | grep -qF '`^直し方の判定: (決まっている|選び直しが要る)$`'
+  grep -qF '`^直し方の判定: (決まっている|選び直しが要る)$`' <<<"$s"
   for f in '対象' '周' '判定役' '指摘ごとの判定' '入力不足'; do
-    echo "$s" | grep -qE "^\| ${f} \|" || { echo "record lacks field: $f"; return 1; }
+    grep -qE "^\| ${f} \|" <<<"$s" || { echo "record lacks field: $f"; return 1; }
   done
 }
 
 @test "fix-check (#722): the after-the-fact report format is defined here with its first line and fields" {
   s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
-  echo "$s" | grep -qF '`^主に聞かずに回した周: [0-9]+ 周目$`'
+  grep -qF '`^主に聞かずに回した周: [0-9]+ 周目$`' <<<"$s"
   for f in '残っていた指摘' '判定の根拠' '使ったトークン' '周の結果'; do
-    echo "$s" | grep -qE "^\| ${f} \|" || { echo "report lacks field: $f"; return 1; }
+    grep -qE "^\| ${f} \|" <<<"$s" || { echo "report lacks field: $f"; return 1; }
   done
   # トークンの 2 つの値は既存の計測から取る
-  echo "$s" | grep -qF '新しい計測の仕組みは足さない'
+  grep -qF '新しい計測の仕組みは足さない' <<<"$s"
 }
 
 @test "fix-check (#722): only two conditions ask the owner" {
   s="$(section 'レビューの周を主に聞かずに続ける（直し方の判定）' "$FIX_CHECK")"
-  echo "$s" | grep -qF '方針の選び直し'
-  echo "$s" | grep -qF '`pr-token-budget.sh` が exit 2'
-  echo "$s" | grep -qF '2 つだけ'
-  echo "$s" | grep -qF '回数に上限は置かない'
-  echo "$s" | grep -qF '`2 周キャップ超え`'
+  grep -qF '方針の選び直し' <<<"$s"
+  grep -qF '`pr-token-budget.sh` が exit 2' <<<"$s"
+  grep -qF '2 つだけ' <<<"$s"
+  grep -qF '回数に上限は置かない' <<<"$s"
+  grep -qF '`2 周キャップ超え`' <<<"$s"
 }
 
 @test "fix-check (#722): step (4) handles needs-fix-check by posting the record and starting the triage G" {
-  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
-  echo "$step4" | grep -qF 'needs-decider / needs-fix-check / review-incomplete'
-  nf="$(echo "$step4" | awk '/^      needs-fix-check →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  step4="$(develop_procedures)"
+  grep -qF 'needs-decider / needs-fix-check / review-incomplete' <<<"$step4"
+  nf="$(develop_status needs-fix-check)"
   [ -n "$nf" ] || { echo "no needs-fix-check line in step (4)"; return 1; }
   for token in 'PR トークン上限' 'dev-workflow:decider' '判定の記録' '照合と振り分けの G を新しく起こ' 'レビューの周を主に聞かずに続ける（直し方の判定）' '`references/fix-check.md`' 'Read' 'W も再開しない' '事後報告'; do
-    echo "$nf" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+    grep -qF "$token" <<<"$nf" || { echo "missing: $token"; return 1; }
   done
   # needs-fix-check の段落は needs-decider の段落の前に置く
-  a="$(echo "$step4" | grep -n '^      needs-fix-check →' | cut -d: -f1)"
-  d="$(echo "$step4" | grep -n '^      needs-decider →' | cut -d: -f1)"
+  a="$(echo "$step4" | grep -n '^needs-fix-check →' | cut -d: -f1)"
+  d="$(echo "$step4" | grep -n '^needs-decider →' | cut -d: -f1)"
   [ "$a" -lt "$d" ]
 }
 
 @test "carryover judge (#1238): step (4) handles needs-carryover-judge by starting the judge, posting the record and starting the pass G" {
-  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
+  step4="$(develop_procedures)"
   echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-carryover-judge'
-  nc="$(echo "$step4" | awk '/^      needs-carryover-judge →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  nc="$(develop_status needs-carryover-judge)"
   [ -n "$nc" ] || { echo "no needs-carryover-judge line in step (4)"; return 1; }
   for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '判定の記録を PR に' '合格処理の G を新しく起こす' '`stages/carryover-judge.md`' '3-c' 'SHARED_BUDGET_MODE=depleted' '`引き継ぎ判定: 判断できない`' '宣言を投稿せず' 'ラベルを付けず' '主に聞かない' '同じ前 HEAD・新しい HEAD・根拠ファイルの組' '判定役を起こし直さず'; do
-    echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+    grep -qF -- "$token" <<<"$nc" || { echo "missing: $token"; return 1; }
   done
   grep -qF '終了コード 4 の判定役' "${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover-judge.md"
   # 依頼の書き方と記録の書式は carryover-judge.md を正本にし、SKILL.md に再掲しない
-  ! echo "$nc" | grep -qF '前 HEAD: <40 桁' || return 1
+  ! grep -qF '前 HEAD: <40 桁' <<<"$nc" || return 1
 }
 
 @test "carryover judge (#1238): the model table has the carryover judge row (decider, opus, not started when depleted)" {
   row="$(section 'モデル' | grep -E '^\| ' | grep -F '引き継ぎの判定役')"
   [ -n "$row" ] || { echo "no carryover judge row"; return 1; }
-  echo "$row" | grep -qF '`dev-workflow:decider`'
-  echo "$row" | grep -qF '`opus`'
-  echo "$row" | grep -qF 'depleted'
-  echo "$row" | grep -qF '起こさない'
+  grep -qF '`dev-workflow:decider`' <<<"$row"
+  grep -qF '`opus`' <<<"$row"
+  grep -qF 'depleted' <<<"$row"
+  grep -qF '起こさない' <<<"$row"
 }
 
 @test "no-point check (#1653): step (4) handles needs-no-point-check by starting the decider, posting the record and starting the pass G" {
-  step4="$(awk '/^\(4\) G を/{f=1} f&&/^```$/{exit} f' "$SKILL")"
+  step4="$(develop_procedures)"
   echo "$step4" | grep -E '^      4 つの段で' | grep -qF 'needs-no-point-check'
-  nc="$(echo "$step4" | awk '/^      needs-no-point-check →/{f=1; print; next} f&&/^      [^ ]/{exit} f')"
+  nc="$(develop_status needs-no-point-check)"
   [ -n "$nc" ] || { echo "no needs-no-point-check line in step (4)"; return 1; }
   for token in 'PR トークン上限' 'dev-workflow:decider' '`opus`' '宣言の本文と PR の差分だけ' '記録を PR に' '合格処理の G を新しく起こす' '`stages/no-point-check.md`' '6-0' 'SHARED_BUDGET_MODE=depleted' '`論点なしの確認: 判断できない`' 'ラベルを付けず' '主に聞かない' '同じ宣言・同じ HEAD' '起こし直さず'; do
-    echo "$nc" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+    grep -qF -- "$token" <<<"$nc" || { echo "missing: $token"; return 1; }
   done
   grep -qF '6-0.' "${PLUGIN_DIR}/skills/pr-review-gate/stages/no-point-check.md"
   # 記録の書式は no-point-check.md を正本にし、SKILL.md に再掲しない
-  ! echo "$nc" | grep -qF '確認者: dev-workflow:decider（' || return 1
+  ! grep -qF '確認者: dev-workflow:decider（' <<<"$nc" || return 1
 }
 
 @test "no-point check (#1653): the model table has the no-point checker row (decider, opus, not started when depleted)" {
   row="$(section 'モデル' | grep -E '^\| ' | grep -F '論点なしの確認役')"
   [ -n "$row" ] || { echo "no no-point checker row"; return 1; }
-  echo "$row" | grep -qF '`dev-workflow:decider`'
-  echo "$row" | grep -qF '`opus`'
-  echo "$row" | grep -qF 'depleted'
-  echo "$row" | grep -qF '起こさない'
+  grep -qF '`dev-workflow:decider`' <<<"$row"
+  grep -qF '`opus`' <<<"$row"
+  grep -qF 'depleted' <<<"$row"
+  grep -qF '起こさない' <<<"$row"
 }
 
 @test "fix-check (#722): the handover scene for the two-round cap points at the re-choosing verdict" {
   s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
   echo "$s" | grep -F 'レビューの 2 周キャップ超え' | grep -qF '選び直しが要る'
-  echo "$s" | grep -qF '`2 周キャップ超え`'
+  grep -qF '`2 周キャップ超え`' <<<"$s"
 }
 
 # --- 「レビューの周を主に聞かずに続ける（直し方の判定）」節の移設（#1222） ---
@@ -987,12 +1017,12 @@ refute() {
   [ -n "$step2" ] || { echo "no step (2)"; return 1; }
   line="$(echo "$step2" | grep -F 'レビューの周を主に聞かずに続ける（直し方の判定）')"
   [ -n "$line" ] || { echo "step (2) lacks the section name" >&2; return 1; }
-  echo "$line" | grep -qF '`references/fix-check.md`'
-  echo "$line" | grep -qF 'Read'
+  grep -qF '`references/fix-check.md`' <<<"$line"
+  grep -qF 'Read' <<<"$line"
   # 主に聞かずに回した周の事後報告を (4) と同じく (2) でも押さえる（コンパクト後は SKILL.md しか手元に無い）
   report="$(echo "$step2" | grep -F '主に聞かず次の周を回す')"
   [ -n "$report" ] || { echo "step (2) lacks the continue line" >&2; return 1; }
-  echo "$report" | grep -qF '`references/fix-check.md` の「続行と事後報告」の書式で事後報告を記録先に投稿する'
+  grep -qF '`references/fix-check.md` の「続行と事後報告」の書式で事後報告を記録先に投稿する' <<<"$report"
 }
 
 @test "fix-check move (#1222): the moved section's own phrases are in references/fix-check.md and not in SKILL.md" {
@@ -1024,14 +1054,14 @@ refute() {
   s="$(section '主に聞かずに決めること')"
   for token in '主の側にしか無い情報' '主の手でしかできない操作' '規則が主の承認を求める操作' \
                '自分側の誤りの後始末' '範囲外の問題の起票' '小さな実装の選択' '閉じる操作'; do
-    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+    grep -qF "$token" <<<"$s" || { echo "missing: $token"; return 1; }
   done
 }
 
 @test "ask-owner (#1654): owner-hands-only ops are what the agent cannot pass; logged-in browser clicks are not" {
   s="$(section '主に聞かずに決めること')"
-  echo "$s" | grep -qF 'パスワード・MFA・CAPTCHA' || { echo "missing: パスワード・MFA・CAPTCHA"; return 1; }
-  if echo "$s" | grep -qF 'MFA・OAuth・ログイン'; then echo "old example remains"; return 1; fi
+  grep -qF 'パスワード・MFA・CAPTCHA' <<<"$s" || { echo "missing: パスワード・MFA・CAPTCHA"; return 1; }
+  if grep -qF 'MFA・OAuth・ログイン' <<<"$s"; then echo "old example remains"; return 1; fi
   # 文単位で見る（「。」で区切る）
   sentences="$(echo "$s" | awk '{gsub(/。/, "。\n"); print}')"
   # 主の手でしかできない操作の例を挙げる文に OAuth・ログイン・ダッシュボードが無い
@@ -1056,7 +1086,7 @@ refute() {
 @test "ask-owner (#1035): cleanup of own mistakes reverts with a backup and excludes git and the sanctuary" {
   s="$(section '主に聞かずに決めること')"
   for token in '控えを取って戻し' '事後報告' 'git の破壊的操作' 'destructive-git-guard' '聖域'; do
-    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+    grep -qF "$token" <<<"$s" || { echo "missing: $token"; return 1; }
   done
 }
 
@@ -1064,7 +1094,7 @@ refute() {
   s="$(section '主に聞かずに決めること')"
   for token in 'stages/triage-nonblocking.md' 'review-issue-candidates.sh' 'gh issue list' '`範囲外の問題の振り分け`' \
                '`条件の確認待ち`' '`## 条件の答え`' '注意書き' 'needs-approval'; do
-    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+    grep -qF "$token" <<<"$s" || { echo "missing: $token"; return 1; }
   done
 }
 
@@ -1075,8 +1105,8 @@ refute() {
 
 @test "ask-owner (#1035): both cleanup and filing carry a scope paragraph" {
   s="$(section '主に聞かずに決めること')"
-  echo "$s" | grep -qF '自分側の誤りの後始末の守備範囲は'
-  echo "$s" | grep -qF '範囲外の問題の起票の守備範囲は'
+  grep -qF '自分側の誤りの後始末の守備範囲は' <<<"$s"
+  grep -qF '範囲外の問題の起票の守備範囲は' <<<"$s"
 }
 
 @test "ask-owner (#1035): fix-check definition 1 accepts choices that do not change visible behaviour" {
@@ -1086,9 +1116,9 @@ refute() {
 
 @test "ask-owner (#1035): loop end closes PR-less record issues without handing it to the owner" {
   s="$(section 'ループの終わり')"
-  echo "$s" | grep -qF 'gh issue close <N> --reason completed'
-  echo "$s" | grep -qF '主に渡さない'
-  echo "$s" | grep -qF 'PR を伴わない記録先 issue を閉じたときを除く'
+  grep -qF 'gh issue close <N> --reason completed' <<<"$s"
+  grep -qF '主に渡さない' <<<"$s"
+  grep -qF 'PR を伴わない記録先 issue を閉じたときを除く' <<<"$s"
 }
 
 # --- Requirement: 親は主の答えに発言の場所を添えて送り、子は親の会話ログで確かめてからリスク許容として受け取る（#1059） ---
@@ -1096,45 +1126,45 @@ refute() {
 
 @test "relayed reply (#1059): Orca step 8 reports in the body, locates the uuid, and appends the location" {
   line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
-  echo "$line" | grep -qF '本文で報告する（質問ツールで聞かない）'
-  echo "$line" | grep -qF 'owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <主の答え>'
-  echo "$line" | grep -qF ' [主の発言: セッション <親のセッション ID> / uuid <uuid>]'
-  echo "$line" | grep -qF '書き換えず'
-  echo "$line" | grep -qF '子のタブ'
+  grep -qF '本文で報告する（質問ツールで聞かない）' <<<"$line"
+  grep -qF 'owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <主の答え>' <<<"$line"
+  grep -qF ' [主の発言: セッション <親のセッション ID> / uuid <uuid>]' <<<"$line"
+  grep -qF '書き換えず' <<<"$line"
+  grep -qF '子のタブ' <<<"$line"
 }
 
 @test "relayed reply (#1059): the child's 'reply from the parent' item checks with --relayed before handing to G" {
   item="$(grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP")"
-  echo "$item" | grep -qF '[主の発言: セッション <ID> / uuid <uuid>]'
-  echo "$item" | grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>'
-  echo "$item" | grep -qF '子のタブ'
-  echo "$item" | grep -qF 'REASON='
-  echo "$item" | grep -qF '「親経由で受領」'
+  grep -qF '[主の発言: セッション <ID> / uuid <uuid>]' <<<"$item"
+  grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>' <<<"$item"
+  grep -qF '子のタブ' <<<"$item"
+  grep -qF 'REASON=' <<<"$item"
+  grep -qF '「親経由で受領」' <<<"$item"
 }
 
 @test "relayed reply (#1059): a relayed reply on a relaunch is handled before resume step 2 without the own session ID" {
   item="$(grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP")"
-  echo "$item" | grep -qF '手順 2 より先に当て'
-  echo "$item" | grep -qF '自分のセッション ID で `owner-reply-check.sh` に掛けない'
+  grep -qF '手順 2 より先に当て' <<<"$item"
+  grep -qF '自分のセッション ID で `owner-reply-check.sh` に掛けない' <<<"$item"
 }
 
 @test "relayed reply (#1059): the hold line refers to 'reply from the parent' for a child that got the acceptance via the parent" {
-  line="$(grep -F 'リスク許容を会話で受けたら主に PR へのコメントを求めず' "$SKILL")"
-  echo "$line" | grep -qF 'エピックの子が親経由で'
-  echo "$line" | grep -qF '「親から届いた返事」'
+  line="$(develop_procedures | grep -F 'リスク許容を会話で受けたら主に PR へのコメントを求めず')"
+  grep -qF 'エピックの子が親経由で' <<<"$line"
+  grep -qF '「親から届いた返事」' <<<"$line"
 }
 
 @test "relayed reply (#1059): Orca step 8 compares the full text with whitespace collapsed and re-reports when another owner message sits in between" {
   line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
-  echo "$line" | grep -qF '全文が主の答えと同じ（どちらも連続する空白を 1 個にまとめて比べる）'
-  echo "$line" | grep -qF 'not-direct'
+  grep -qF '全文が主の答えと同じ（どちらも連続する空白を 1 個にまとめて比べる）' <<<"$line"
+  grep -qF 'not-direct' <<<"$line"
 }
 
 @test "relayed reply (#1059): a confirmed relayed refusal is taken as the owner's refusal" {
   item="$(grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_STOP")"
-  echo "$item" | grep -qF '全文から不許容の意思が読め'
-  echo "$item" | grep -qF '主本人の不許容として受け取り'
-  echo "$item" | grep -qF '許容とも不許容とも読めない'
+  grep -qF '全文から不許容の意思が読め' <<<"$item"
+  grep -qF '主本人の不許容として受け取り' <<<"$item"
+  grep -qF '許容とも不許容とも読めない' <<<"$item"
 }
 
 # --- Requirement: 親は主の委任を…受ける／委任が有効か／委任が効く止まり／委任で許容を送る／子は委任の返事を確かめてから G に渡す（#1293） ---
@@ -1151,48 +1181,48 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 @test "delegated reply (#1293): epic.md has the delegation paragraph after step 8 and step 8 routes to it before the pass criteria" {
   [ -n "$(deleg_para)" ]
   line="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
-  echo "$line" | grep -qF '**主の委任** の段落の「委任で送る」に当たるかを確かめ'
+  grep -qF '**主の委任** の段落の「委任で送る」に当たるかを確かめ' <<<"$line"
   # 委任で送るかの確かめが、基準に照らす文より前にある
-  echo "$line" | grep -qF '親が自分で今回の停止の記録（無ければ最後の発言）を `references/parent-pass-criteria.md` に照らす'
+  grep -qF '親が自分で今回の停止の記録（無ければ最後の発言）を `references/parent-pass-criteria.md` に照らす' <<<"$line"
   before="${line%%親が自分で記録を \`references/parent-pass-criteria.md\` に照らす*}"
-  echo "$before" | grep -qF '**主の委任**'
+  grep -qF '**主の委任**' <<<"$before"
 }
 
 @test "delegated reply (#1293): the delegation record has the fixed lines 1-4" {
   p="$(deleg_para)"
-  echo "$p" | grep -qxF '  主の委任: リスク許容'
-  echo "$p" | grep -qxF '  エピック: #<E>'
-  echo "$p" | grep -qxF '  範囲: このエピックの子が pr-review-gate で求めるリスク許容のうち、子の停止の記録の推奨が「許容する」のもの。聖域の変更・破壊的な操作・マージの承認・不許容は含まない'
-  echo "$p" | grep -qxF '  期間: この記録への主の確認の発言から、このエピックに `主の委任:` で始まる次のコメントが付くか、エピックが閉じるまで'
-  echo "$p" | grep -qxF '  きっかけ: <主が任せる旨を述べた発言の全文。無ければ なし>'
+  grep -qxF '  主の委任: リスク許容' <<<"$p"
+  grep -qxF '  エピック: #<E>' <<<"$p"
+  grep -qxF '  範囲: このエピックの子が pr-review-gate で求めるリスク許容のうち、子の停止の記録の推奨が「許容する」のもの。聖域の変更・破壊的な操作・マージの承認・不許容は含まない' <<<"$p"
+  grep -qxF '  期間: この記録への主の確認の発言から、このエピックに `主の委任:` で始まる次のコメントが付くか、エピックが閉じるまで' <<<"$p"
+  grep -qxF '  きっかけ: <主が任せる旨を述べた発言の全文。無ければ なし>' <<<"$p"
 }
 
 @test "delegated reply (#1293): the confirmation question asks to type the delegation word right after it, and re-asks when unreadable or interrupted" {
   p="$(deleg_para | grep -F -- '- **委任の受け方**')"
   # #1653: 挟まった発言だけでは問い直さない（`not-direct` で落とさない）
-  echo "$p" | grep -qF '親のタブで `任せる` と打つ'
-  echo "$p" | grep -qF '質問ツールで聞かない'
-  echo "$p" | grep -qF '任せる意思が読めないとき'
-  echo "$p" | grep -qF '挟まっただけでは問い直さない'
-  echo "$p" | grep -qF '委任を使わず問いを出し直す'
-  echo "$p" | grep -qF 'その発言だけを委任として扱わない'
+  grep -qF '親のタブで `任せる` と打つ' <<<"$p"
+  grep -qF '質問ツールで聞かない' <<<"$p"
+  grep -qF '任せる意思が読めないとき' <<<"$p"
+  grep -qF '挟まっただけでは問い直さない' <<<"$p"
+  grep -qF '委任を使わず問いを出し直す' <<<"$p"
+  grep -qF 'その発言だけを委任として扱わない' <<<"$p"
 }
 
 @test "delegated reply (#1293): the confirmation location line is posted and read back after a restart" {
   p="$(deleg_para | grep -F -- '- **委任の確認の場所**')"
-  echo "$p" | grep -qF 'owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <確認の全文>'
-  echo "$p" | grep -qF '`委任の確認の場所: セッション <親のセッション ID> / uuid <uuid> / 記録 <委任の記録の URL>`'
-  echo "$p" | grep -qF '`主の委任:` で始めない'
-  echo "$p" | grep -qF '起動し直したあとは'
-  echo "$p" | grep -qF '引けなければ委任を使わない'
+  grep -qF 'owner-reply-check.sh --locate "$CLAUDE_CODE_SESSION_ID" <確認の全文>' <<<"$p"
+  grep -qF '`委任の確認の場所: セッション <親のセッション ID> / uuid <uuid> / 記録 <委任の記録の URL>`' <<<"$p"
+  grep -qF '`主の委任:` で始めない' <<<"$p"
+  grep -qF '起動し直したあとは' <<<"$p"
+  grep -qF '引けなければ委任を使わない' <<<"$p"
 }
 
 @test "delegated reply (#1293): revocation is posted at the first tool call of the next turn and counts only the three author associations" {
   p="$(deleg_para)"
-  echo "$p" | grep -qF '1 行目 `主の委任: 取り消し`'
-  echo "$p" | grep -qF '次のターンの最初のツール呼び出し'
-  echo "$p" | grep -qF '`OWNER`・`MEMBER`・`COLLABORATOR` のどれかなら効く'
-  echo "$p" | grep -qF 'それ以外の投稿者の `主の委任:` で始まるコメントは、取り消しとしても新しい記録としても数えない'
+  grep -qF '1 行目 `主の委任: 取り消し`' <<<"$p"
+  grep -qF '次のターンの最初のツール呼び出し' <<<"$p"
+  grep -qF '`OWNER`・`MEMBER`・`COLLABORATOR` のどれかなら効く' <<<"$p"
+  grep -qF 'それ以外の投稿者の `主の委任:` で始まるコメントは、取り消しとしても新しい記録としても数えない' <<<"$p"
 }
 
 @test "delegated reply (#1293): the six validity conditions and four stop conditions are the same string in epic.md and epic-child-stop.md" {
@@ -1209,46 +1239,46 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "delegated reply (#1293): the parent sends with the delegation tag and records it without the parent-judgment prefix" {
   p="$(deleg_para | grep -F -- '- **委任で送る**')"
-  echo "$p" | grep -qF 'reply --as owner'
-  echo "$p" | grep -qF '`許容する（主の委任による。停止の記録: <URL>） [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]`'
-  echo "$p" | grep -qF '`委任で送った: 子 #<N> <停止の記録の URL> 委任の記録: <委任の記録の URL>`'
-  echo "$p" | grep -qF '`親の判断:` で始めない'
-  echo "$p" | grep -qF '手順 8 の形で主に上げる'
+  grep -qF 'reply --as owner' <<<"$p"
+  grep -qF '`許容する（主の委任による。停止の記録: <URL>） [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]`' <<<"$p"
+  grep -qF '`委任で送った: 子 #<N> <停止の記録の URL> 委任の記録: <委任の記録の URL>`' <<<"$p"
+  grep -qF '`親の判断:` で始めない' <<<"$p"
+  grep -qF '手順 8 の形で主に上げる' <<<"$p"
 }
 
 @test "delegated reply (#1293): the parent does not send twice for the same stop record" {
   p="$(deleg_para | grep -F -- '- **二重送信の防止**')"
-  echo "$p" | grep -qF '手順 7・8 で同じ子が再び挙がったとき、その子の `委任で送った:` の行の URL が今回の停止の記録の URL と同じなら送り直さず子の再開を待つ'
+  grep -qF '手順 7・8 で同じ子が再び挙がったとき、その子の `委任で送った:` の行の URL が今回の停止の記録の URL と同じなら送り直さず子の再開を待つ' <<<"$p"
 }
 
 @test "delegated reply (#1293): the parent route has a scope paragraph" {
   p="$(deleg_para | grep -F -- '- **守備範囲**')"
   for w in '①入力の出どころ' '②拾いたい誤り' '③確認に `任せる` 以外の語で任せる意思が読める答えと' '④穴を塞ぎ切ることは完了条件にしない'; do
-    echo "$p" | grep -qF "$w" || return 1
+    grep -qF "$w" <<<"$p" || return 1
   done
 }
 
 @test "delegated reply (#1293): the child checks a delegation-tagged reply with --delegated and never with --relayed" {
   item="$(child_reply_item)"
-  echo "$item" | grep -qF '末尾が `[主の委任: セッション <ID> / uuid <uuid> / 記録 <URL>]` の返事'
-  echo "$item" | grep -qF '上の `--relayed` に掛けず'
-  echo "$item" | grep -qF '添え書きの無い返事としても扱わず'
-  echo "$item" | grep -qF 'owner-reply-check.sh --delegated <ID> <uuid> <委任の記録の作成日時> <URL> <最新の停止の記録の作成日時>'
-  echo "$item" | grep -qF '「親経由で受領（委任）」が正本'
-  echo "$item" | grep -qF '添え書き（`[主の発言: …]` も `[主の委任: …]` も）が無い'
+  grep -qF '末尾が `[主の委任: セッション <ID> / uuid <uuid> / 記録 <URL>]` の返事' <<<"$item"
+  grep -qF '上の `--relayed` に掛けず' <<<"$item"
+  grep -qF '添え書きの無い返事としても扱わず' <<<"$item"
+  grep -qF 'owner-reply-check.sh --delegated <ID> <uuid> <委任の記録の作成日時> <URL> <最新の停止の記録の作成日時>' <<<"$item"
+  grep -qF '「親経由で受領（委任）」が正本' <<<"$item"
+  grep -qF '添え書き（`[主の発言: …]` も `[主の委任: …]` も）が無い' <<<"$item"
 }
 
 @test "delegated reply (#1293): the child asks for the child's tab with the reason when the delegated reply cannot be confirmed, and has a scope" {
   item="$(child_reply_item)"
-  echo "$item" | grep -qF '止まりに委任が効かないときは G を起こさず'
+  grep -qF '止まりに委任が効かないときは G を起こさず' <<<"$item"
   # 委任の返事はリスク許容待ちの止まりにだけ受ける（P3-F1）
   # #1653: 聖域の変更・破壊的な git 操作の承認待ちも記録を残す止まりに入った
-  echo "$item" | grep -qF '止まった件が記録を残す止まり（リスク許容・聖域の変更の承認・破壊的な git 操作の承認の返事待ち）のときだけ受け、上の `--relayed` に掛けず'
-  echo "$item" | grep -qF '止まった件が記録を残す止まりでない（マージ待ち・実機操作などで止まった）、または止まりに委任が効かないときは G を起こさず'
-  echo "$item" | grep -qF '確かめられなかった理由（`REASON=` の値か満たさなかった条件）'
-  echo "$item" | grep -qF '③親と子が同じ PC で動き、委任の確認のあとに親が起動し直したものは通してよい'
+  grep -qF '止まった件が記録を残す止まり（リスク許容・聖域の変更の承認・破壊的な git 操作の承認の返事待ち）のときだけ受け、上の `--relayed` に掛けず' <<<"$item"
+  grep -qF '止まった件が記録を残す止まりでない（マージ待ち・実機操作などで止まった）、または止まりに委任が効かないときは G を起こさず' <<<"$item"
+  grep -qF '確かめられなかった理由（`REASON=` の値か満たさなかった条件）' <<<"$item"
+  grep -qF '③親と子が同じ PC で動き、委任の確認のあとに親が起動し直したものは通してよい' <<<"$item"
   # [主の発言: …] の経路の文は変えない
-  echo "$item" | grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>'
+  grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>' <<<"$item"
 }
 
 @test "skill: step 7 of the Orca route re-presents children waiting for the owner before launch" {
@@ -1338,7 +1368,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "skill: an empty return from W asks for a report once and never relaunches with the same instruction (#1117)" {
   # spec: dev-workflow-develop「空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない」
-  p="$(section '1 ループ' | grep -F 'returned no output')"
+  p="$(develop_procedures | grep -F 'returned no output')"
   [ -n "$p" ]
   [ "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" = 1 ]
   printf '%s\n' "$p" | grep -qF 'SendMessage で 1 回だけ報告を求める'
@@ -1450,7 +1480,7 @@ xrepo_block() { cat "$SKILL_DIR/references/epic-multirepo.md" | awk '/^\*\*別�
 
 @test "skill: a denial report from W is handled by writing a permit and resuming, or escalating to the owner (#1135)" {
   # spec: dev-workflow-develop「破壊的 git 操作の拒否の報告を受けたら、条件を満たすときだけ許可を書いて再開し、それ以外はオーナーに上げる」
-  p="$(section '1 ループ' | grep -F 'returned no output')"
+  p="$(develop_procedures | grep -F 'returned no output')"
   [ -n "$p" ]
   [ "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" = 1 ]
   # 報告の 4 項目
@@ -1483,12 +1513,12 @@ xrepo_block() { cat "$SKILL_DIR/references/epic-multirepo.md" | awk '/^\*\*別�
 
 # 「1 ループ」の節で、`returned no output` を含む段落の直後の段落（空行 1 つを挟む）を出す
 retry_para() {
-  section '1 ループ' | awk 'index($0, "returned no output"){n=NR} n && NR==n+2{print; exit}'
+  develop_procedures | awk 'index($0, "returned no output"){n=NR} n && NR==n+2{print; exit}'
 }
 
 @test "skill: an exit-3 retry is not a relaunch, and an empty return after it may ask for a report once more (#1173)" {
   # spec: dev-workflow-develop「空の return を受けたら報告を 1 回だけ求め、同じ指示で起こし直さない」の例外
-  p="$(section '1 ループ' | grep -F 'returned no output')"
+  p="$(develop_procedures | grep -F 'returned no output')"
   [ "$(printf '%s\n' "$p" | wc -l | tr -d ' ')" = 1 ]
   printf '%s\n' "$p" | grep -qF '打ち直しを指示して同じ W を再開することは、同じ指示での起こし直しに数えない'
   r="$(retry_para)"
@@ -1727,29 +1757,29 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 
 @test "handover: the owner-reply-check timestamp procedure lives in one paragraph of handover.md (#1239 C6)" {
   s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
-  echo "$s" | grep -qF '**会話で受けた返事の日時の取り方**'
+  grep -qF '**会話で受けた返事の日時の取り方**' <<<"$s"
   [ "$(grep -cF 'MATCH: が複数出たら' "$HANDOVER")" -eq 1 ]
   # 段落は日時の取り方の要素を全部持つ
   para="$(grep -F '**会話で受けた返事の日時の取り方**' "$HANDOVER")"
   for k in 'owner-reply-check.sh' 'MATCH: 行の timestamp' 'MATCH: が複数出たら' 'MATCH: が出なければ時刻を作らない' '終了コード 1' '終了コード 2'; do
-    echo "$para" | grep -qF "$k" || return 1
+    grep -qF "$k" <<<"$para" || return 1
   done
   # 再開の手順 2 は段落を名前で指し、CLAUDE_CODE_SESSION_ID は残す
-  step2="$(grep '^2\. ' "$HANDOVER" | head -n 1)"
-  echo "$step2" | grep -qF '「会話で受けた返事の日時の取り方」'
-  echo "$step2" | grep -qF 'CLAUDE_CODE_SESSION_ID'
-  ! echo "$step2" | grep -qF 'MATCH: が複数出たら' || return 1
+  step2="$(grep '^2\. ' "$HANDOVER" | awk 'NR == 1 {print}')"
+  grep -qF '「会話で受けた返事の日時の取り方」' <<<"$step2"
+  grep -qF 'CLAUDE_CODE_SESSION_ID' <<<"$step2"
+  ! grep -qF 'MATCH: が複数出たら' <<<"$step2" || return 1
 }
 
 @test "loop: the hold line tells main to Read the timestamp paragraph before running owner-reply-check.sh (#1239 C6)" {
-  hold="$(grep -F '保留 → needs-approval のまま' "$SKILL")"
+  hold="$(develop_procedures | grep -F '保留 → needs-approval のまま')"
   [ -n "$hold" ]
-  echo "$hold" | grep -qE '`owner-reply-check.sh` を回す前に `references/handover.md` の「会話で受けた返事の日時の取り方」を Read'
-  ! echo "$hold" | grep -qF 'MATCH: が複数出たら' || return 1
+  grep -qE '`owner-reply-check.sh` を回す前に `references/handover.md` の「会話で受けた返事の日時の取り方」を Read' <<<"$hold"
+  ! grep -qF 'MATCH: が複数出たら' <<<"$hold" || return 1
   ! grep -qF 'MATCH: が複数出たら' "$SKILL" || return 1
-  echo "$hold" | grep -qF 'リスク許容を会話で受けたら主に PR へのコメントを求めず'
-  echo "$hold" | grep -qF 'エピックの子が親経由で'
-  echo "$hold" | grep -qF '「親から届いた返事」'
+  grep -qF 'リスク許容を会話で受けたら主に PR へのコメントを求めず' <<<"$hold"
+  grep -qF 'エピックの子が親経由で' <<<"$hold"
+  grep -qF '「親から届いた返事」' <<<"$hold"
 }
 
 
@@ -1835,9 +1865,9 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   c="$(echo "$s" | grep -F '候補探し:')"
   for token in '`--exclude` にエピックの番号も渡す' '(15 件で打ち切り。ほかにも一致あり)' \
                '`--epic <エピック番号> --children-only`' '打ち切られたパスごとに 1 回を超えない' '`stages/triage-nonblocking.md` の候補探しの段落'; do
-    echo "$c" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+    grep -qF "$token" <<<"$c" || { echo "missing: $token"; return 1; }
   done
-  echo "$c" | grep -qF '下の 2 つ目' && { echo "dangling reference remains"; return 1; }
+  refute "$c" -F '下の 2 つ目'
   return 0
 }
 
@@ -1916,7 +1946,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 # spec: manual-codex-develop（失敗ループの昇格で profile と実装役の設定を差し替えない。#424）
 @test "codex-develop: the failure loop keeps the profile, the returned model and the effort (#424)" {
   CODEX_DEV="${PLUGIN_DIR}/references/codex-develop.md"
-  ops="$(section '本体が行う操作' "$CODEX_DEV")"
+  ops="$(cat "$CODEX_DEV")"
   p="$(printf '%s\n' "$ops" | grep '^失敗ループ')"
   [ -n "$p" ]
   printf '%s\n' "$p" | grep -qF '`--failure executor`'
@@ -1944,8 +1974,9 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   rule='返った `tier` が thread の格より低くなく、かつ返った `model` が thread の applied model と同じときだけ SendMessage'
   grep -qF "$rule" "$CODEX_DEV"
   rp="$(section 'Role profile の選択')"
-  printf '%s\n' "$rp" | grep -qF "$rule"
-  for body in "$(cat "$CODEX_DEV")" "$rp"; do
+  printf '%s\n' "$rp" | grep -qF 'references/codex-develop.md'
+  printf '%s\n' "$rp" | grep -qF '必ず Read'
+  for body in "$(cat "$CODEX_DEV")"; do
     printf '%s\n' "$body" | grep -qF '`--failure` の値を含む'
     printf '%s\n' "$body" | grep -qF '`tier` と `model` だけを読み'
     refute "$body" -F '呼び直しの結果は `tier` だけを読み'

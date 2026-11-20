@@ -15,7 +15,14 @@ version: 2.1.0
 | ゲート実行者 | **G**（`dev-workflow:gate-runner`） | `references/roles/gate-runner.md` | pr-review-gate の手順 1〜5 |
 | 画面確認役 | **V**（`general-purpose`） | `references/roles/screen-checker.md` | 必要な場合だけ画面観測を返す |
 
-旧スキル（issue 限定の入口で、本体が自分で Step A〜D を実行する手順書だったもの）の後継。反転した理由は 1 つで、Claude Code のサブエージェントは Agent ツールを持たない（孫を spawn できない）ため、本体向けの手順書をサブエージェントに渡すと仕様レビュー・別コンテキストの PR レビュー・fable 昇格がすべて自己レビューに退化するから。別コンテキストを要する工程は**すべて本体が起こす**。
+## 本体の骨格（詳細は操作前に読み直す）
+
+- **本体は Edit でコードを書かない。** テスト・実装・仕様は W が編集する。例外は軽い通し方だけ（`references/light-path.md`）。
+- **本体はレビューを代行しない。** R1・G・レビュアーは本体が別コンテキストで起こす。W に孫の spawn を指示しない。
+- 工程順: 記録先 → W の仕様化判断 → 必要なら R1 の APPROVE → W の実装＋verify → 必要なら V → W の archive＋Draft PR＋仕様宣言 → G。仕様化しない場合と文言合わせ、軽い通し方の例外は「1 ループ」と `references/light-path.md` に従う。
+- コンパクト後も、操作前に本文の該当節と正本を必ず Read し直す。spawn・再開・Codex 委譲前は `references/pr-token-budget.md`、G の結果は Status 表、W の空 return・通常 return 内の拒否報告は `references/worker-recovery.md`、役割の起動・再開は plugin の `references/codex-develop.md` が入口。
+
+<!-- startup-core-end -->
 
 ## 開始時の idle compaction 設定
 
@@ -23,13 +30,9 @@ version: 2.1.0
 
 ## Role profile の選択
 
-profile と旧 account/model のどちらも明示しない場合、各 canonical phase の開始時に adapter で再評価する。登録 Codex accounts の週次 snapshot の実効値（取得からの経過時間で捨てず、リセット時刻で読み替えた値）と Claude 起動 account の実効値（セッション記録と snapshot をリセット時刻で読み替えた値）から構成を選ぶ（margin の求め方と構成の選び方は `references/codex-develop.md`「起動と role 解決」が正本）。開始済み role は工程途中で切り替えない。adapter が返す構成（`claude-write-codex-review`・`codex-standard`・Claude 既定構成のどれか）、reason、両 provider の margin / fetched_at、代表 Codex account を、最初の develop 開始コメントと後続 phase の dispatch 記録へ残す。値が無ければ `missing` と記録する。develop 開始コメントには「実行モード」の節の `実行モード:` の行と、channel のときは `references/channel.md` の「channel のリスク許容」で決める `チャンネルの返事の確認:` の行を残す。本体の起動アカウントの印 `[消費記録 アカウント=claude:<登録名>]` の行を残す（`工程=` と `試行=` は省いてよい。印の規約は「PR トークン上限」節の「消費の記録の印」。登録名が取れないときは `アカウント=` のキーごと省く）。
-
-新しい role を起動する直前に、Claude 既定の経路を含む全経路で、本体は `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこの SKILL.md から `../../references/codex-develop.md`）を絶対パスに解決して Read し、`codex-develop.py request` に `--phase` と格の入力を渡して canonical role の per-role execution result を取得する。格の入力は、当たる事前分類の `--pre-class sacred|merge|contract|billing`（繰り返し可。順に聖域パス・マージ権限・層間契約・課金/法務。判定の正本は `references/pre-classification.md`）、記録先が設計判断を含むときの `--design-judgment`、失敗のラダーの段を示す `--failure first|executor|judgment`、自動実行のときの `--unmanned` である。`--profile NAME [--profile-file PATH]` または旧形式の Codex account/model を明示したときも同じ `request` に渡す。provider 操作は同 reference の「role 解決直後の一度だけの分岐」に従う。事前分類に当たる R1 または G が要求したレビュアーは `request` が `role: decider` と構成の `decider` entry の投げ先/account を返すので、`subagent_type: dev-workflow:decider` として起動する。本体は返った `model` を使い、新しい起動の `model` を文章の規則で計算し直さない。この SKILL.md はその分岐を再掲せず、工程順、role、review 条件、return 契約、次工程の判断だけを正本として維持する。
+新しい role の起動・同じ Claude role の再開の直前には、Claude 既定の経路を含む全経路で `${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定ならこの SKILL.md から `../../references/codex-develop.md`）を絶対パスに解決して必ず Read する。「起動と role 解決」の入力・結果・監査記録・再開条件に従い、以下の spawn / SendMessage 表記にも適用する。
 
 G の起動指示（段ごとに新しく起こす G と、手渡しで起こす後任 G のすべて）には、起動形を問わず常に `レビュー経路: adapter` の 1 行を書く（自動選択・明示 profile・旧形式のどれも adapter で解決するので、今が adapter 経路かを評価しない）。Codex の G では request の instructions（`--input` の指示ファイル）にも書く。develop の本体は `レビュー経路: 従来` を書かない（develop の本体以外の呼び出し元のための値）。G は再開せず段ごとに新しく起こすので、起動指示に行が無い G は従来経路（full は G が Codex を直接呼ぶ）として動く。どの段の起動指示でも行を省略しない（`references/roles/gate-runner.md`「レビュー経路の判別」）。
-
-本体は、起こすたびに thread と requested tuple / applied model / reason（`requested_model`・`model`・`tier_reason`）を記録し、dispatch 記録には `tier`・`executed_tier`・`tier_cap` も残す。`tier_reason` は `tier` の変化だけを表すので、`tier_cap` で値が変わった起動は `executed_tier` と `tier_cap` の記録で見分ける。同じ Claude role を再開する直前には毎回、同じ phase と、今回の再開に当たる格の入力（失敗ループの段なら、その段の `--failure` の値を含む）で `request` を呼び直し、返った `tier`（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` の上限を適用済み）と `model` を、thread の格（起動時に記録した `tier`）と applied model（起動時に記録した `model`）と比べる。返った `tier` が thread の格より低くなく、かつ返った `model` が thread の applied model と同じときだけ SendMessage する。それ以外（`tier` が低いときと、失敗ループの昇格を含めて `model` が変わるとき）は SendMessage せず、工程完了か停止確認の条件を満たしてから requested tuple を変えずに返った `model` の fresh thread へ手渡す。呼び直しの結果は `tier` と `model` だけを読み、executor・account・構成の選び直しには使わない。`tier` は構成によらないので、役の途中切り替えにはならない。fresh thread にする境界を含め、細目は `references/codex-develop.md`「本体が行う操作」が正本（その操作を行う前に Read する）。以下の spawn / SendMessage 表記は、この規則を適用した provider 操作を意味する。
 
 ## いつ使うか
 
@@ -43,7 +46,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 
 | 前提 | 使い方 | 無いとき |
 |---|---|---|
-| **Agent ツール** | W (`dev-workflow:worker`) / R1 (`general-purpose` または `dev-workflow:decider`) / G (`dev-workflow:gate-runner`) / G が要求するレビュアー (`dev-workflow:reviewer` または `dev-workflow:decider`) / V (`general-purpose`) の spawn。`model` を必ず明示し、W と G は**名前付き**で spawn する（W は SendMessage で再開するため。G は再開せず段ごとに新しく起こし、名前は (4) の形にする）。W は本体が対象専用の worktree にいなければ `isolation: "worktree"` で起こす。**`isolation: "remote"` は使わない**（理由は「worktree の用意」） | 本体になれない。親セッションに return する |
+| **Agent ツール** | 先頭の役割表・「本体の役割」「worktree の用意」に従って起動する | 本体になれない。親セッションに return する |
 | **SendMessage** | 名前付きで起こした W の再開（コンテキストを引き継いだまま次の工程を指示する）。G は再開しない（段ごとに新しく起こし、レビュー要約は起動指示で渡す） | 再開できないので、前任を手渡してよい状態のときだけ新しい W を spawn し、前回の return 全文をプロンプトに渡す。条件は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」が正本で、満たさないなら spawn せず親に返す（前任が動いたまま後任を起こさない） |
 | **`gh`** | 記録先（issue / PR）へのコメントとラベル操作、Draft PR の作成、エピックの子の依存（`gh api repos/<owner>/<repo>/issues/<N>/dependencies/blocked_by`、issue dependencies API） | 記録先を作れないので開始しない（記録なしで実装に進まない） |
 | **openspec CLI** | W は `openspec --version` で経路の有無を決め、`openspec new change` → R1 → TDD → `openspec validate --strict` → `openspec archive` と進める。opsx コマンドは本体や主の対話用 | 仕様化経路が発生しない（W は `仕様化判断: しない` の理由に「openspec 不在」と書き、コード直行する） |
@@ -66,14 +69,14 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 
 本体・W・G が主に聞くのは、次のどれかが要るときだけ（#1035）: 主の側にしか無い情報（好み・事業判断・許容度）、主の手でしかできない操作（パスワード・MFA・CAPTCHA のように、エージェントの手では通せないもの）、規則が主の承認を求める操作（`rules/destructive-git-guard.md` の一覧・マージ・聖域）で、それは（`~/.claude/output-styles/readable.md` の節 3 の主に聞く理由の 3 つに当たる。マージは、人が押すと決まっている場面では主の手でしかできない操作、マージしてよいかを聞く場面では決まりの側）。ログイン済みのブラウザで押せる操作（OAuth の認可ボタン・チャットの板の作成など）は、主の手でしかできない操作に入らない（#1654）。そのうち主の名義で外へ公開・送信する・課金する・外部のアプリやサービスに権限を渡す（OAuth の認可を含む）・取り消せないものは、手が要るからではなく規則が主の承認を求める操作として聞く。それ以外は次の 4 つの型の決め方で自分で決め、記録先に事後報告する。
 
-- **自分側の誤りの後始末**: 本体・W・G・レビュアーが記録先の範囲の外に誤って入れた変更（実ホームの設定ファイルへの書き足しなど）は、控え・git の履歴・自分のツール呼び出しの記録のどれかと今の状態を比べ、差分が自分側の入れた分だけで戻し先が一意に決まるなら、主に聞かずに今の状態の控えを取って戻し、記録先に何を・どこから戻したか・控えの場所を事後報告する。差分が自分側の分だけと確かめられないときは主に聞く。git の破壊的操作（`rules/destructive-git-guard.md` の一覧）はこの型に入らず、事前承認のまま。聖域（CLAUDE.md・hooks・権限設定）への変更を戻す操作も、差分が一意でもこの型に入らず、無条件で人間承認のまま。例: claude-harness #977 でゲート担当が実ホームの `~/.claude/accounts.json` に書き足した `z` の 1 件は、控えの `.bak` との差分がその 1 件だけなので、聞かずに消して事後報告する
-- **範囲外の問題の起票**: 本体が作業中に見つけた記録先の範囲外の問題（レビュー指摘ではないもの。G の振り分けを経た指摘は G の振り分けのまま扱う）は、本体が行き先（捨てる・既存 issue に参考として入れる・新しい issue）を決め、起票したら URL を事後報告する。`skills/pr-review-gate/stages/triage-nonblocking.md`（段 C は `skills/pr-review-gate/stages/triage-epic.md`）は PR 番号・PR コメント・G の手順 3 を前提にしているので丸ごとは当てず、段 B・段 D・段 E の問い（エピックの子の記録先なら段 C の問いも）と段 B の表だけを借りる。起票してよいかを主に聞かない。G の振り分けの結果を主への報告にまとめるときも、行き先を「オーナーが決める」に書き換えない。起票によって配布や後続の作業の順番を変えるかは主に聞いてよいが、起票はその前に済ませる。例: flatmate #1104 でリハーサルの記録から見つけた詰まった操作は、本体が起票して URL を報告する
+- **自分側の誤りの後始末**: 本体・W・G・レビュアーが記録先の範囲の外に誤って入れた変更（実ホームの設定ファイルへの書き足しなど）は、控え・git の履歴・自分のツール呼び出しの記録のどれかと今の状態を比べ、差分が自分側の入れた分だけで戻し先が一意に決まるなら、主に聞かずに今の状態の控えを取って戻し、記録先に何を・どこから戻したか・控えの場所を事後報告する。差分が自分側の分だけと確かめられないときは主に聞く。git の破壊的操作（`rules/destructive-git-guard.md` の一覧）はこの型に入らず、事前承認のまま。聖域（CLAUDE.md・hooks・権限設定）への変更を戻す操作も、差分が一意でもこの型に入らず、無条件で人間承認のまま
+- **範囲外の問題の起票**: 本体が作業中に見つけた記録先の範囲外の問題（レビュー指摘ではないもの。G の振り分けを経た指摘は G の振り分けのまま扱う）は、本体が行き先（捨てる・既存 issue に参考として入れる・新しい issue）を決め、起票したら URL を事後報告する。`skills/pr-review-gate/stages/triage-nonblocking.md`（段 C は `skills/pr-review-gate/stages/triage-epic.md`）は PR 番号・PR コメント・G の手順 3 を前提にしているので丸ごとは当てず、段 B・段 D・段 E の問い（エピックの子の記録先なら段 C の問いも）と段 B の表だけを借りる。起票してよいかを主に聞かない。G の振り分けの結果を主への報告にまとめるときも、行き先を「オーナーが決める」に書き換えない。起票によって配布や後続の作業の順番を変えるかは主に聞いてよいが、起票はその前に済ませる
   - 候補探し: 段 B を通った問題が 1 件以上あれば、問題がファイルを指すなら `plugins/dev-workflow/scripts/review-issue-candidates.sh --repo $R --exclude <記録先の番号> [--epic <エピック番号>] <パス>...` を、ファイルを指さないなら `gh issue list --repo $R --state open --search "<問題を表す語>"` を、それぞれ 1 回だけ走らせる（打ち切られたパスの再実行だけ例外）。記録先の番号は記録先の issue、記録先が Draft PR ならその PR の番号。エピックに属するときは、`--exclude` にエピックの番号も渡す。出力に `(15 件で打ち切り。ほかにも一致あり)` が出たパスがあり、エピックに属するときは、そのパスだけ `--epic <エピック番号> --children-only` を付けて再実行し、子の候補を足す（打ち切られたパスごとに 1 回を超えない）。終了コードが 0 でないときの扱い（再実行を含む）は `stages/triage-nonblocking.md` の候補探しの段落に従う。再試行後の終了コードは記録先の `範囲外の問題の振り分け` コメントに書き、既存 issue への相乗りをせずに段 E へ進む
   - 判断結果の記録: 記録先（issue、または Draft PR）に、1 行目が `範囲外の問題の振り分け` ちょうどのコメントを 1 件置き、問題ごとに、問題の要約・当てた段・行き先（issue にした・コメントで入れたならその URL、捨てたなら理由の 1 行）を書く
   - 段 B の確認待ち: 条件がいつ成り立つかを、記録先・エピックの本文・受け入れ条件・コード・本文の節 `## 条件の答え` から決められないときは、起票の可否ではなく条件についての問いを主に聞く。同じコメントにその問題を `条件の確認待ち` として質問文とともに残し、`needs-approval` を付けず、作業を止めない。答えは 1 行にして記録先（エピックの子ならエピック）の本文の節 `## 条件の答え` に足し（節が無ければ作る）、その問題を段 B から当て直す
   - エピックの注意書き: 記録先にエピックの親（OWNER）からの注意書きがあり、新しい問題の置き場所を指定している（例: エピック #1038 の「新しい問題はエピックに新しい子 issue として切る」）ときは、段 C の「既存の子 issue の受け入れ条件に足す」より注意書きを優先する
-- **小さな実装の選択**: どれを選んでも受け入れ条件と利用者に見える振る舞いが変わらない選択肢は、その工程の担い手が選び、選んだ理由を記録先に残す。レビューの 2 周目以降の周の終わりに残った指摘の直し方は、`references/fix-check.md` の節「レビューの周を主に聞かずに続ける（直し方の判定）」に従う（例: flatmate #1564 の、仕様レビューの BLOCKER を閉じるテストの方式 A/B）
-- **閉じる操作**: 受け入れ条件を満たした記録先を閉じる操作は、節「ループの終わり」に従い、主に渡さない（例: claude-harness #693 の調査だけの issue）
+- **小さな実装の選択**: どれを選んでも受け入れ条件と利用者に見える振る舞いが変わらない選択肢は、その工程の担い手が選び、選んだ理由を記録先に残す。レビューの 2 周目以降の周の終わりに残った指摘の直し方は、`references/fix-check.md` の節「レビューの周を主に聞かずに続ける（直し方の判定）」に従う
+- **閉じる操作**: 受け入れ条件を満たした記録先を閉じる操作は、節「ループの終わり」に従い、主に渡さない
 
 自分側の誤りの後始末の守備範囲は、本体・W・G・レビュアーのツール呼び出しが記録先の範囲の外（実ホームの設定ファイル・別のリポジトリなど）に書いた変更である。拾いたい誤りは、戻す内容が差分から一意に決まるのに、戻してよいか・いつ戻すかを主に聞いて止まることで、これは主に聞かずに戻す。通してよい例は、控えの `.bak` との差分が自分側の書き足した 1 件だけで、その 1 件を消すこと。主の変更と区別できない差分・git の破壊的操作・聖域への変更を戻す操作は主に上げる。戻した内容が誤っていたことは防がない（戻す前に取った控えから取り消せる）。
 
@@ -100,7 +103,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 
 1 issue（または 1 Draft PR）につき次を回す。各工程の担い手と、本体が次に誰を起こすかの判断材料を書く。
 
-下の各工程の spawn・SendMessage による再開・Codex executor への委譲の直前には、毎回「PR トークン上限」の節の計測を行う（exit 2 なら起こさず止まる）。
+下の各工程の spawn・SendMessage による再開・Codex executor への委譲の直前には、毎回必ず `references/pr-token-budget.md` を Read して計測を行う（exit 2 なら起こさず止まる）。
 
 ```
 (0) 記録先を確定する（入口 0）。worktree を用意する
@@ -150,77 +153,28 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            G が `工程中断:` で返したら同じ段の新しい G を起こし、前任の return 全文と起動指示の入力を渡す
            （起こしてよい条件は references/decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」の「手渡しの許可」）
       4 つの段で pr-review-gate の手順 1〜5 → return「passed / failed / 保留 / needs-reviewer / needs-decider / needs-fix-check / review-incomplete / needs-carryover-judge / needs-no-point-check / 重複で降りた / 次の段へ」
-      次の段へ → `次の段:` の G を新しく起こす（照合と振り分けが止める指摘なしで終われば合格処理。保留の解除は合格処理か前提確認と重さ判定）。仕分け欄に `条件の確認待ち` の質問文があれば主へ届ける（gate-runner.md）
-      合格処理（手順 5）では PR が Draft なら Ready にしてから agent-review:passed を付ける（W は Ready にしない）
-      passed → 本体が `plugins/dev-workflow/references/ci-watch.md` の手順で CI の見張りを始める（G は見張りを始めない）。
-           見張りの背景タスクの `stopped` / `killed` 通知は `references/ci-watch.md` の 9 に従う。
-           ただし G の return に `issue で承認済み:` があれば、CI の見張りの前に主へその行（宣言 URL・分類・引用）を 1 回伝える（pr-review-gate 手順 5 の事後報告。書式は pr-review-gate `stages/issue-approved.md`）。
-           見張りの一手が `fix` なら W に直させる。担当・段の分岐は `references/light-path.md`「CI 見張りの fix からの戻し方」に従う（最新判断が軽いなら同じ worktree の新しい W を `段: spec`、通常経路の既存 W は `段: implement` の再開／許可された手渡し）。
-           軽い通し方から戻す起動指示には `ci-watch.md`「7. 直し方」に従うこと（最初の push の前に手順 3）を入れる。仕様化途中の push では見張りに戻らず、通常経路を進めて (3b) の return を受けてから `wait` → `next` に戻る。
-           通常経路の既存 W が push したら本体が passed を外したまま同じ状態ファイルで `wait` → `next` を続け、
-           `ready` になってから前提確認と重さ判定の G を新しく起こしてゲートを取り直させ、
-           G が再び passed を返したら見張りの続き（reference の「`ready` を受けたあと」）に進む。合格するまでマージ待ち・マージ依頼に進まない。unmanned は (4) を回さないので対象外
-      needs-reviewer → adapter 経路では G は full でも light でもこれを返す。本体は次の順で進む:
-           ① codex-develop.py request --phase review で投げ先を選び直す（実行先オプションはこの develop 開始時と同じ。自動選択なら無指定。レビュー対象が事前分類に当たれば `--pre-class` を渡す）
-           ② 返った選択（構成・reason・両 provider の margin・各 fetched_at・代表 Codex account。欠測は missing）と解決した executor / `requested_model` / `model` / `tier_reason` / `tier` / `executed_tier` / `tier_cap` を
-              記録先に dispatch 記録として投稿する。投稿に成功するまでレビュアーを起動しない
-           ③ 選ばれた投げ先でレビュアーを起動する（executor が claude なら Agent ツールで `subagent_type: dev-workflow:reviewer` として、model は `request` が返した `model`。
-              返った role が decider なら dev-workflow:decider。codex なら request を実行する）
-              一周目で payload に区画があり executor が claude なら、区画ごとに 1 体ずつ並列に起こす。description は
-              `Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)` とする。executor が codex なら区画を使わず差分全体を 1 つの request に渡す。
-           ④ レビュー要約と、選ばれた executor / model・dispatch 記録のコメント URL を G に渡す。review phase の executor が codex なら、worker の結果 JSON の `execution.model_resolution.requested` / `execution.model_resolution.resolved` も G に渡す。resolved が未観測なら null をそのまま渡し、要求値や dispatch 時の model で補完しない。Claude の G は照合と振り分けの G を新しく起こし、前の Gate Result ブロックと一緒に起動指示で渡す
-              （pr-review-gate stages/prepare-reviewer.md「needs-reviewer の return」）。Codex の G は新しい phase gate を開始してその入力に渡す（codex-develop.md「品質と transport 差分」）
-              全区画の要約が揃ってから、各要約の先頭に `区画 <k>/<n>` の見出しを付けてまとめ、照合と振り分けの G を 1 体だけ起こして渡す（G は見出しの有無で区画レビューかを判定する）。
-           通常の初回レビュー依頼も補足要求も同じ ①〜④ で進める。`needs-reviewer` が一周目照合の補足要求である場合に限り、③ のレビュアーへ
-           同じレビューの固定 HEAD・元の三表・残差・補足済み回数を payload のまま渡し、不足分だけを補わせる。補足結果は照合と振り分けの G を新しく起こして渡す（補足済み回数は G が最新の `レビュー三表:` の PR コメントから読むので、fresh thread でもリセットされない）
-           補足は `一周目の区画:` の構成と既存 ID のまま、元の三表を置き換えず残差だけを補う。区画を計算し直さず、差分全体のレビューを始めない。
-           一周目に区画があり補足の executor が claude なら、残差のある区画だけを 1 体ずつ並列に起こし、description を
-           `Reviewer: 補足 区画 <k>/<n> for PR #<N> (#<issue>)` とする。一周目に区画があり executor が codex なら、
-           1 つの request に残差のある区画ごとに番号・ファイル一覧・元の三表・残差を分けて載せ、`P<k>-` の ID で補わせる。
-           一周目に区画が無く executor が claude なら補足レビュアーを 1 体だけ起こし、1 組の三表と残差を接頭辞の無い ID で補わせる。
-           一周目に区画が無く executor が codex なら今までどおり 1 つの補足 request にする。補足済み回数は PR で 1 つだけ数える。
-           develop の本体以外から G を起こす従来経路の手順（呼び出し元がレビュアーを起こす）は gate-runner.md のまま
-      重複で降りた → 取り直さず主に報告
-      review-incomplete → reviewer を再起動しない。`agent-review:pending` のまま Gate Result の残差を報告して工程を止め、合格処理へ進まない
-      failed 後の W 起動／再開前に、最新 CI 用引き継ぎが可なら `references/handover.md`「起動／再開前の無効化と再許可」に従い不可を投稿し、投稿成功後だけ指示する
-      軽い通し方の failed → W を `段: spec` で新規起動。条件外と通常の failed の戻し方は `references/light-path.md`。以後 G は前提確認と重さ判定から
-      failed → 原因分類（実装品質起因／仕様が曖昧／レビュアーの誤検出／段 A だけ（昇格なし））で決める。モデルを上げるのは実装品質起因のときだけで、上げるのは決める役か実行役の一方だけ（実行側は `request --phase implement --failure executor`、判断側は `request --phase decider --failure judgment`（ゲートの 1 回目は `first`）の返す model で起こし、model が変われば新しい thread に手渡す。定義は「モデル」節の昇格トリップワイヤーの段落）。
-           仕様が曖昧なら仕様修正、誤検出なら反証で返す（どちらもモデルを上げない）。段 A だけなら W を据え置きで再開する
-           → W を再開（再開指示に `段: implement`。再開前に測る。上限超のあとの扱いは (3) と同じく正本に従う）→ W の修正のあと、failed の Gate Result の `次の段:` どおりの G を新しく起こして再レビュー（順 3 だけなら照合と振り分け、それ以外は前提確認と重さ判定。
-           2 周キャップ。範囲と 3 周目の扱いは pr-review-gate の収束ルールに従う）
-      保留 → needs-approval のまま本体がオーナーに 1 アクション（許容する／しない、動作確認の結果、切り出しの確認への回答（切り出す／この PR で直す））で依頼する。止まる前に `references/handover.md` どおり記録先へ引き継ぎを残し、主に新しいセッションでの再開を案内する（channel では新しいセッションを案内せず、同ファイルの channel の案内をチャンネルに送る）。依頼を出したあとに同じ保留の通知・報告の再送が届いたときは、同ファイルの「依頼の出し直し」に従う。回答が届いたら保留の解除の G を新しく起こし、回答を渡す（新しいセッションなら同ファイルの再開手順から）。リスク許容を会話で受けたら主に PR へのコメントを求めず、自分のセッション ID（`$CLAUDE_CODE_SESSION_ID`）・その発言の日時（会話ログの timestamp。`owner-reply-check.sh` を回す前に `references/handover.md` の「会話で受けた返事の日時の取り方」を Read し、その手順で取る）・原文を G に渡す（記録の書式と真正性確認は pr-review-gate 手順 5 の「会話で受領」が正本）。エピックの子が親経由で許容を受けたときは、自分のセッション ID で確かめず、`references/epic-child-stop.md` の「親から届いた返事」の手順で確かめてから G に渡す
-      needs-fix-check → 2 周目以降の周の終わりに残った指摘の直し方の判定（G が判定に回す条件は pr-review-gate 手順 2-1 の周の終わりの段落）。
-           本体は `references/fix-check.md` を Read し、その節「レビューの周を主に聞かずに続ける（直し方の判定）」の手順で、PR トークン上限を測ってから dev-workflow:decider を起こして判定を受け取り、
-           判定の記録を記録先に投稿し、判定（決まっている／選び直しが要る）と判定の記録の URL を渡して照合と振り分けの G を新しく起こす。
-           本体は自分でラベルを付け替えず、W も再開しない（W に戻す指摘の一覧とラベルは G が決める）。判定が「決まっている」で開いた周の結果
-           （その周の照合と振り分けの G の return）を受け取ったら、同じ節の書式で事後報告を記録先に投稿する
-      needs-carryover-judge → 許容済みの PR で HEAD が動き、risk-carryover-check.sh が終了コード 4 を返した（G が判定に回す条件は pr-review-gate の `stages/carryover-judge.md` 手順 3-c の「終了コード 4 の判定役」）。
-           本体は PR トークン上限を測ってから、`stages/carryover-judge.md` 手順 3-c の依頼の書き方で subagent_type: dev-workflow:decider・model: `opus` の判定役を起こし
-           （入力は G の return の前 HEAD・新しい HEAD・前の宣言・EVIDENCE_PR_CHANGED= のファイルから作る。作業の文脈は渡さない）、判定の記録を PR に代理投稿し（書式は 3-c が正本）、
-           判定と判定の記録の URL を渡して合格処理の G を新しく起こす。SHARED_BUDGET_MODE=depleted なら判定役を起こさず、3-c の書式で
-           `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を新しく起こす（G が手順 6 で主に聞く）。
-           本体は判定を受けて自分で宣言を投稿せず、ラベルを付けず、主に聞かない（引き継ぐか主に聞くかは合格処理の G が決める）。
-           ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び needs-carryover-judge を返したときは、
-           判定役を起こし直さず、投稿した記録の URL を添えて主に聞く（G 側の止めが外れたときに opus の判定役を繰り返し起こさないため）
-      needs-no-point-check → 論点なしの宣言を決める役の確認に回す（`stages/no-point-check.md` 6-0 が正本）。本体は PR トークン上限を測り、subagent_type: dev-workflow:decider・model: `opus` の確認役に
-           宣言の本文と PR の差分だけを渡し、確認の記録を PR に投稿して合格処理の G を新しく起こす。SHARED_BUDGET_MODE=depleted なら起こさず `論点なしの確認: 判断できない` を投稿する。
-           本体はラベルを付けず、主に聞かない。同じ宣言・同じ HEAD で再び返ったら確認役を起こし直さず、記録の URL を添えて主に聞く
-      needs-decider → 仕分け表の順 6（同じ型の再発）。本体が subagent_type: dev-workflow:decider を `request --phase decider` が返した `model` で起こし、
-           入力に decider.md の入力契約どおり、記録先の本文・判断に必要な関連コメント（`仕様化判断:` の記録・G の仕分けの PR コメント・順 3 の一覧表の
-           PR コメントがあればそれ）・同じ型の指摘と前の周の指摘の原文・対象ファイルのパス・G の仕分け欄・W の直近の return を貼って、「この PR の中で
-           同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」を問う（順 6 の依頼はマージ可否と同じ可否と根拠の形で問う。decider.md は変えない）。
-           依頼文で返答の 1 行目を `裁定: 可`・`裁定: 否`・`不足: <足りないもの>` のどれかちょうどに指定し、本体はその 1 行目で分岐する（本文の読み取りで分岐しない）。
-           `裁定: 可` を「全部列挙してから直す」、`裁定: 否` を「切り出す」に読み替え、根拠とともに照合と振り分けの G を新しく起こして渡す。1 行目が `不足:` なら裁定として扱わず
-           G に渡さない。足りないものを補って同じ問いで 1 回だけ依頼し直す。1 行目が 3 形のどれにも一致しなければ `不足:` と同じに扱う（1 回だけ依頼し直す）。
-           2 回目も不足（または 3 形に一致しない）なら「裁定なし（入力不足）」と足りなかったものを、照合と振り分けの G を新しく起こして渡す（G は「切り出す」として主に聞く）。
-           本体は裁定を代理投稿しない（G が `決める役の裁定:` の PR コメントとして記録する）
 ```
+
+G の結果を処理する前に、次の Status → 読むファイルの表の行き先を必ず Read して従う。`工程中断:` の手渡し条件は上記の正本を読む。
+
+| Status | 読むファイル |
+|---|---|
+| 次の段へ | `references/gate-result.md#次の段へ` |
+| passed | `references/gate-result.md#passed` |
+| needs-reviewer | `references/gate-result.md#needs-reviewer` |
+| 重複で降りた | `references/gate-result.md#重複で降りた` |
+| review-incomplete | `references/gate-result.md#review-incomplete` |
+| failed | `references/gate-result.md#failed` |
+| 保留 | `references/gate-result.md#保留` |
+| needs-fix-check | `references/gate-result.md#needs-fix-check` |
+| needs-carryover-judge | `references/gate-result.md#needs-carryover-judge` |
+| needs-no-point-check | `references/gate-result.md#needs-no-point-check` |
+| needs-decider | `references/gate-result.md#needs-decider` |
+
 
 W は名前付きで spawn し、SendMessage で再開してコンテキストを引き継ぐ（(1) の判定・(2) の指摘・(3) の実装が同じコンテキストにある）。**ただし再開の前に毎回 `scripts/subagent-context.sh <名前>` でコンテキスト量を測る（exit 2 が上限超）。閾値と全解除の環境変数・途中計測 hook を含む 2 経路・上限超を検知したあとの扱い（送ってよい／送ってはならない SendMessage・手渡しを行ってよい条件・return の 1 行目の宣言・前任が動作中のまま交代させる手順）は `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本で、この SKILL.md には書かない。正本を読むまで手渡さない。** G は再開せず段ごとに新しく起こすので、再開前の計測は W だけに掛かる。**W の起動指示・SendMessage による再開指示・手渡しの起動指示には `段: spec` / `段: implement` / `段: finish` の 1 行を必ず書く**（W は `references/roles/worker/common.md` とこの行が指す段のファイルだけを読み、行が無ければ読まずに聞き返す）。値はその起動・再開で本体が指示する工程で決める（上のコードブロックの各工程に書いた値）。手渡しでは、前任が工程の途中で止まり（return の 1 行目が `工程完了:` でない）後任に同じ工程を続けさせるなら前任が担っていた段、前任が `工程完了:` で return したあとに後任へ次の工程を指示するならその工程の段にする（(3a) を終えた前任の後任に (3b) を指示するなら `段: finish`、(1) を終えた前任の後任に R1 の REQUEST_CHANGES の修正を指示するなら `段: spec`）。次の工程は本体が自分の指示した工程から決め、前任の return の工程名の文字列から決めない（新しいセッションで引き継ぎから再開する本体は、引き継ぎの「次に起こす役割」に書かれた `段:` の値を使う）。**`工程中断:` で返ってきた return にレビュー結果（`agent-review` の判定やレビュー本文）が含まれていたら、本体がそれを記録先に代理投稿する**（G が途中計測の強制停止に当たると `gh pr comment` も拒否されるため。R1 の仕様レビューを代理投稿するのと同じ形）。**強制停止中は commit も本体が行う**: `工程中断:` の return を受け取ったとき、および次の手渡し・次の spawn・そのサイクルの終了・worktree の撤去のいずれよりも先に、本体は return に書かれた作業ツリーのパス（強制停止による中断なら hook の `permissionDecisionReason` に含まれる `cwd`）に対して `git -C <path> status --porcelain` を実行して未コミット差分を確認し、残っていれば本体が commit する（MUST。止まったサブエージェント自身は `Bash` が全件拒否されて commit できない。手渡し先が確認するのは**次に起こされた**サブエージェントの差分だけなので、手渡しが発生しない経路や後継が G の場合はこの本体側の確認が無いと作業が失われたまま残る）。W が孫を呼ぶ必要がある工程は存在しない。仕様化する場合で複数 change に割れたときは、interactive では change ごとに (1)〜(3) を回す（change ごとに仕様レビューを行う。並列可能なら W を並列に起こす（エピックの子のときは `references/epic-worker-slots.md` の枠に従う）。change ごとに worktree を分ける）。
 
-**W が `(Subagent completed but returned no output.)` だけを返したとき**（破壊的 git 操作を 2 回拒否されて hook に打ち切られた子は、拒否の理由が親に届かずこの形で返る）は、その W に SendMessage で 1 回だけ報告を求める（何をしようとして、何が拒否されたかを、打ちたかったコマンドの全文・対象のパス・その対象を自分で作ったか（作ったならそのコマンド）・なぜ要るか・拒否の記録のパスの 5 項目で書かせる）。報告の有無によらず、SendMessage の前後に `git -C <path> status --porcelain` で作業ツリーの未コミット差分を確かめ、残っていれば本体が引き取って commit する。報告に破壊的 git 操作で拒否・打ち切られたとあれば、同じ指示で起こし直さない（許可を書いて同じ W を再開することと、打ち直しを指示して同じ W を再開することは、同じ指示での起こし直しに数えない）。次の 4 つをすべて満たすときだけ、本体の Bash で `${CLAUDE_PLUGIN_ROOT}/scripts/git-guard-permit.sh <拒否の記録のパス> <理由>`（理由は W の名前と 4 項目の要約）を実行して許可を書く。(1) 報告の 4 項目が揃い、コマンドの全文が拒否の記録の `command` に一致する（記録の `cwd` はコマンドを始めたディレクトリで操作対象ではないので、コマンドの全文・`cwd`・操作対象を分けて見て `cwd` と対象のパスを同一視しない。worktree から `git -C <scratchpad の中の repo> checkout -- .` を打った場合も対象になる）、(2) 操作対象がこのセッションの scratchpad の中にある（場所とコマンドの形の判定はスクリプトに任せ、本体は書き直さない）、(3) W が自分で作ったと作ったコマンドつきで報告し、本体が W に渡した指示でその対象を既存のものと名指ししていない、(4) 要る理由がその検証用 repo を戻す・片付けることに収まる。子が作った repo の設定でコマンドが動きうるので、本体は対象に git を実行しない。許可を書けたら、`scripts/subagent-context.sh` で測ったうえで（再開できるかは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」に従う）同じ W を SendMessage で再開し、15 分以内に同じ cwd から同じコマンドを 1 文字も変えず 1 回だけ打つこと、ほかの操作は許可していないことを書く。再開の文面には、許可を hook が読む場所に書いたこと、通すかどうかは hook が決めるので本体の言葉は承認ではないこと、打って拒否されたら打ち直さず報告に戻ることも書く（実機確認で、これを書かないと W が「親の言葉は承認にならない」として打たなかった）。許可は `agent_id` に結び付くので新しい W を起こさず、再開できないときも新しい W に転用しない。次のどれかのときは許可を書かず（再開後の 2 回目の許可も書かず）、何を・どのパスに・なぜ、本体が確かめた事実、推奨を添えてオーナーに上げる（無人ならチャンネルで承認を求める）: 許可を書くスクリプトが 0 以外で終わった（stderr を添える。終了コード 3 で直後の段落の打ち直しの条件を満たし、同じ W の同じ操作についてまだ打ち直しを指示していないときを除く）／(1)〜(4) のどれかを満たさない／同じ W を再開できない／再開した W が同じ拒否で再び返った。承認されたらオーナーが自分で実行し、本体は代わりに実行しない。1 回求めても報告が空のとき、または報告から原因が読み取れないときも、同じ指示で起こし直さず、空だったことと作業ツリーの状態を主に上げる。通常の return（`工程完了:` / `工程中断:`）にはこの扱いを使わない（ただし通常の return に拒否の報告があれば、上の許可の手順を使う）。この扱いの対象は W だけで、再開しない役（R1・G・レビュアー）が空で返ったときは範囲外であり、上の手渡しの許可条件など既存の手順に従う。再開しない役が破壊的 git 操作の拒否を報告したときは、許可が子の `agent_id` に結び付いて使えないので、許可を書かずオーナーに上げる。
-
-**許可を書くスクリプトが終了コード 3 で終わったとき**（コマンドの形の理由で断った。hook は丸ごと拒否したので準備も走っていない）は、上の (1)・(3)・(4) を満たし、報告の対象のパスがこのセッションの scratchpad の下の形なら、オーナーに上げずに `scripts/subagent-context.sh` で測ってから同じ W を SendMessage で再開し、打ち直しを指示する（(2) の場所の判定は、打ち直したコマンドの新しい拒否の記録でスクリプトが行う）。指示の文面には、破壊的でない準備（repo やファイルを作るコマンド）は別の Bash の呼び出しで先に済ませてよいこと、破壊的な操作だけを変数・置換・引用符を使わず実パスで、`&&`・`;`・改行でつながない単独のコマンドとして 1 回だけ打つこと、この指示は承認ではなく打てば hook に拒否される見込みで、そのときは打ち直さず 5 項目（新しい拒否の記録のパスを含む）を報告して返ることを書く。返ってきた報告は、新しい拒否の記録で、上の許可の手順を (1) の確かめからやり直す。打ち直しのあとに W が hook に打ち切られて空で返ったときは、その打ち直しについて報告を改めて 1 回だけ求めてよい（打ち直しの前に求めた 1 回とは別に数える）。それも空なら、同じ指示で起こし直さず、空だったことと作業ツリーの状態を主に上げる。打ち直しの指示は同じ W の同じ操作（戻す・片付ける対象と目的が同じもの）について 1 回までで、新しい拒否の記録になっても回数を戻さない（同じ W の別の操作は別に数える。回数は本体が手元で覚える）。打ち直したコマンドの記録でスクリプトがまた 0 以外で終わったら（3 でも）、2 回目の打ち直しを指示せず、上の段落のとおりオーナーに上げる。
+W の空 return、または通常 return（`工程完了:` / `工程中断:`）を含む破壊的 git 操作の拒否報告を受けたら、再開や許可を書く前に必ず `references/worker-recovery.md` を Read して従う。
 
 ## ループの終わり
 
@@ -232,59 +186,9 @@ W は名前付きで spawn し、SendMessage で再開してコンテキスト�
 - 出力が `marked` / `skipped` なら何もしない。`failed` なら完了報告に 1 行書く。どの出力でも止まらない
 - 印を最後に置くのは、`done` の印が付くと、エピックの親セッションが最短で次のポーリング（既定 300 秒以内）にこのワークスペースの端末を閉じてワークツリーを消すため。印のあとに文章を書き足さない。スクリプトは今のワークスペースがこの issue のものかを自分で確かめる（違えば `skipped`）ので、エピックの子かどうかを判断せずに呼んでよい
 
-## PR トークン上限（spawn・再開・Codex 委譲の前に毎回測る）
+## PR トークン上限
 
-1 つの記録先に使ったトークンの累計に上限を掛ける（#288）。周回数のキャップでは、1 周が重い場合や W の再開が繰り返される場合を止められないため。
-
-**消費の記録の印**（工程・試行・アカウントごとに消費を数えるため。読み取り側は flatmate の `scripts/burn_consumption.py` で、契約は同 repo の `burn-consumption-ledger`「工程・試行・アカウントを記録の印から読む」）: 消費の記録には 1 行の印 `[消費記録 工程=<工程> 試行=<n> アカウント=<provider>:<登録名> 引継ぎ=<k>]` を書く。キーの順は問わない。自由文で工程や試行を書いても読み取り側は読まない。
-- 工程は `spec`・`spec-review`・`implement`・`impl-review`・`finish`・`gate-prepare`・`gate-triage`・`gate-pass`・`gate-hold`・`decide`・`screen-check` のどれか（この一覧が正本。以下の 3 か所の規約はここを指す）
-- 試行は、記録先ごと・工程ごとに 1 から数え、差戻しの修正で同じ工程をやり直すたびに 1 増やす。数えるのは本体。`引継ぎ=<k>` は、同じ工程と試行で手渡しにより起こし直した k 番目の担当にだけ書く（最初の担当には書かない）
-- アカウントは `claude:<登録名>` か `codex:<CODEX_HOME 対応表の登録名>`。登録名が取れないときは推測で埋めず、`アカウント=` のキーごと省き、読み取り側に欠測として読ませる
-- 時刻の `開始=` `終了=` は `Codex 消費:` コメントの印にだけ書き、description と `develop 開始` コメントの印には書かない
-- 置き場は 3 か所: ① `Codex 消費:` コメントの 2 行目以降 ② サブエージェントの `description`（`#N` と同じ文字列の中） ③ `develop 開始` コメント（本体の起動アカウント。`工程=` と `試行=` は省いてよい）
-- **同じサブエージェントを SendMessage で別の工程・試行へ再開しうる W**（既定の W）は、description の印に `アカウント=`（と該当すれば `引継ぎ=`）だけを書き、`工程=` と `試行=` を書かない。読み取り側は 1 体を 1 行にして description の印から 1 つだけ読むので、書くと再開後の消費が起動時の工程・試行へ誤帰属する（書かなければ欠測になる）。再開のたびに、再開の指示文の先頭にその再開が担う工程・試行の印を 1 行置く（今の読み取り側は読まないが、境目として残る）。工程と試行を description に書くのは、1 つの工程・試行にしか使わない 1 体（G・V・決める役・R1 の周ごとの spawn、再開しない手渡しの担当）だけ
-- G 自身の工程は、本体が起こした段（G の名前 `G-<PR>-<prepare|triage|pass|hold>-<n>` の段）から `gate-<段>` と決める。Gate Result の `段:` は使わない（日本語名か `一括（従来経路）` を返すため）。G が要求した Codex・Claude のレビュアーは `impl-review`。G の名前の `<n>` は起動回数で試行ではない（`工程中断:` の手渡しでも増える）。G の試行は、その段をやり直した回数（差戻しのあとの同じ段は 1 増える）。手渡しで起こし直したときは試行を変えず `引継ぎ=` を増やす
-
-**紐付けの規約**: その記録先のためにサブエージェントを spawn するときは、役割を問わない（W / R1 / G / G のレビュアー / 決める役はその例）で Agent ツールの `description` に記録先番号を `#N` の形で入れる（例: `W: impl for #288`。PR 番号も分かっていれば `G: gate for PR #400 (#288)` のように併記してよい）。番号の無い description のサブエージェントは計測から漏れる。印は同じ文字列の中に入れる（例: `W: impl for #288 [消費記録 アカウント=claude:a]`。再開される W の書き方は上の「消費の記録の印」）。
-
-**Codex の消費の記録**: その記録先のために Codex を呼んだら、そのたびに記録先へ 1 行目が `Codex 消費: <thread_id> <tokens>` のコメントを投稿する。executor が `codex` の役割へ委譲したときは codex-worker の結果 JSON の `thread_id` と `usage.total.totalTokens` を書く（`usage` が null か `usage.total.totalTokens` が読めないときは `<tokens>` を `-` と書く）。G が full レビューで Bash から Codex を呼んだときは、G が return に書いた Codex thread の thread_id を使い、`<tokens>` を `-` と書く。結果 JSON を受け取れなかった委譲と、G が thread_id を取れなかった呼び出しは記録できず、上限の外になる。コメントの 2 行目以降に印を書く（1 行目の形は変えない。executor が `codex` の W は、その委譲の工程・試行と `codex:<登録名>`。G の full レビュー分は工程 `impl-review`）。executor が `codex` の委譲は、結果 JSON の `started_at` を `開始=`、`ended_at` を `終了=` に写す（例: `開始=2026-10-19T23:50:00Z 終了=2026-10-20T00:10:00Z`）。キーが無いか `null` なら、そのキーを印から省き、推測で埋めない。G の full レビュー分は時刻が取れないので `開始=` `終了=` を書かない。
-
-**計測**: その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および Codex executor へ委譲する直前に、役割と executor を問わず毎回次を実行する（`subagent-context.sh` を再開前に呼ぶのと同じ位置。こちらは spawn と委譲の前にも呼ぶ）。
-
-```bash
-# 渡すすべての記録先番号のコメントを全ページ取得し、1 行目が ^Codex 消費:  のものだけを集める。
-# 全番号の取得に成功したときだけ exit 0 で記録ファイルを書く
-scripts/codex-records.sh --repo <owner>/<repo> --out "<scratchpad>/codex-records.txt" <記録先番号> [PR 番号] \
-  && scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records "<scratchpad>/codex-records.txt" \
-       --codex-home <account 対応表の各 CODEX_HOME>... --codex-home "${CODEX_HOME:-$HOME/.codex}" [--cap <新上限>]
-```
-
-`codex-records.sh` が exit 0 以外を返したら（通信障害・認証エラー・`gh` か `jq` が無い等）、`pr-token-budget.sh` を呼ばず、下の exit 1（計測できない）と同じ扱いにする。取得に失敗した記録を空の記録や前回のファイルで代えない（Codex 分が抜けた合計を上限以内と読み違えるため）。
-
-`--codex-home` には codex-develop の account と CODEX_HOME の対応表（`--account-home` / `--account-home-file`）にある全パスと、本体の環境の `${CODEX_HOME:-$HOME/.codex}` を渡す。記録先に `PR トークン上限:` のコメントがあれば、最新のものの値を `--cap` に渡す。上限の既定は 30,000,000（Claude 分と Codex 分の合計に対する値。環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` で変更可）。計測はこの SKILL.md の手順で、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置かない。
-
-**exit 2（上限超）**: spawn / SendMessage / Codex への委譲をしない。PR があれば PR、無ければ記録先に `needs-approval` を付け（引き継ぎの「ラベルの付け先」と同じ）、`references/handover.md` どおり引き継ぎを残し、主に「続けるか、範囲外として閉じるか」を問う。問いには合計（Claude 分と Codex 分の内訳）・体数・上限・残工程（次に起こそうとした役割と、そのあと残る工程）・推奨（どちらを選ぶかとその理由）を添え、判断材料なしで出さない。unmanned でも同じく止まり、問いを記録先のコメントに書いてサイクルを終える。
-
-- 「続ける」: 記録先に 1 行目が `PR トークン上限: <新上限>` のコメントを投稿し、以後この記録先の計測に `--cap <新上限>` を渡す。新上限は「その時点の合計 ＋ 直前の計測で上限に使った値（`--cap`、無ければ `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければ 30000000）」。後任の本体は記録先の最新の `PR トークン上限:` コメントの値を使う
-- 「範囲外として閉じる」: この記録先について以後サブエージェントを起こさず、Codex にも委譲しない。残作業を記録先にコメントしてサイクルを終える
-
-**記録先がエピックの子のとき**: 主に聞く前に、エピックの親が持つ子 1 件あたりの PR トークンの権限（エピックの 1 行目 `子の PR トークン権限: <値>` のコメント。既定 60000000）の内かを照らす。照らし方の正本は `references/epic-stop.md` の **PR トークン上限の子** の段落。
-
-- 別セッション方式の子: 今までどおり止まり、最後の発言の末尾の `止まった理由:` の行に続けて見込みを書く（`references/epic-child-stop.md`）。起こされた親が照らす
-- サブエージェント方式（unmanned・channel を含む）: 親を兼ねる本体が、見込みを子の記録先にコメントしてから（終わるまでにあと何トークンで、合計がいくつになるか）、`references/epic-stop.md` の **PR トークン上限の子** の条件 (a)(b) で照らす。照らす前にエピックに権限のコメントが無ければ既定値で投稿し、主に伝える（unmanned はコメントだけ）。満たさなければ上の手順どおり主に問う
-- 親の権限で続けるとき: 新上限は「合計 ＋ 直前の上限」ではなく権限の値にする。記録先に次の 4 行のコメントを投稿し、以後 `--cap <権限>` を渡す。親の返事 `続ける。新しい上限 <権限>（親の権限。<URL>）` を受けた子の本体もこの書式で書く。親の返事は主が権限のコメントで先に承認した範囲の執行なので、子の本体は主に聞き直さない
-- 既定の上限（30,000,000）は変えない。止まることで工程の中の無駄に気づく機会を残すためで、権限は止まったあとの続け方だけを変える
-
-```
-PR トークン上限: <権限>
-決めた人: <親エピック #<E> の判断（親の権限の内。主の承認ではない）か、エピック #<E> の本体（親の権限の内）>
-権限: <権限のコメントの URL>
-停止の記録: <停止の記録の URL か なし>
-```
-
-**exit 1（計測できない。引数エラー・python3 が無い・リポジトリ外・Codex 消費コメントを取得できなかった）**: 止まらずに進み、計測できなかったことと理由を記録先にコメントする。コメントは同じ記録先・同じ理由について 1 サイクルに 1 回までにする（interactive では本体の 1 セッション、unmanned では loop-dev-agent の 1 サイクル）。
-
-計測に入らないもの: 本体自身の消費、Workflow 経由のサブエージェント。出力の `unresolved`（作業ディレクトリが消えたサブエージェント）と `codex_unresolved`（rollout が見つからない thread）は合計に入らないので、0 でなければ問いに件数を添える。
+spawn・再開・Codex 委譲の前は毎回、必ず `references/pr-token-budget.md` を Read して測る。開始・dispatch・消費の印を書く前も同ファイルを必ず Read する。
 
 ## 保留で止まるときの引き継ぎ（主の返事を待つ前に書く）
 
@@ -301,7 +205,7 @@ PR トークン上限: <権限>
 
 ## モデル
 
-役割ごとのモデルは、`codex-develop.py request` が役割と入力（事前分類・設計判断・失敗・自動実行かどうか）と残量モードから格（最安・中位・上位・最上位）を決めて返す。格は提供元と構成によらず同じで、格からモデル名への対応は `references/model-tier-map.json` の 1 か所にある（下の表の括弧内は Claude での値）。本体の判断は `request` に渡す入力（「Role profile の選択」節）だけで、返った `model` を使い、新しい起動の `model` を文章の規則で計算し直さない。V と引き継ぎの判定役と論点なしの確認役だけは `request` を通らず、表の値を明示する。
+モデルの起動・再開（失敗ループを含む）を扱う前に、必ず `../../references/codex-develop.md`（plugin の `references/codex-develop.md`）の「起動と role 解決」を Read して従う。役割の格は下表、対応は `references/model-tier-map.json`、残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`）はここに再掲しない。優先順位は `references/decision-criteria.md` が正本。V と引き継ぎの判定役と論点なしの確認役は表の明示値を使う。
 
 | 役割 | 既定の格 | 上げる条件 |
 |---|---|---|
@@ -313,11 +217,7 @@ PR トークン上限: <権限>
 | 論点なしの確認役（`needs-no-point-check` を受けて本体が起こす） | 上位（`opus`） | 引き継ぎの判定役と同じ（`dev-workflow:decider`・`request` を通らない・depleted のときは起こさない） |
 | G が要求するレビュアー（読んで判断する役） | 上位（`opus`） | 既定の種別は `dev-workflow:reviewer`。レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `--pre-class` を渡し、返った `role: decider` で `subagent_type: dev-workflow:decider` として起動する（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では `request` が返した `model` を使い、推奨モデルは参考値。(4) の ③） |
 
-W の既定が `sonnet` なのは、監査（2026-09）で W に Sonnet が 1 本も無く、昇格ラダーの Sonnet 段が構造的に通っていなかったため。W は事前分類と失敗ループで `opus` まで上がる。W の上限を `opus` にしたのは、Fable が消費するのはターン数（会話履歴の cache 読込）で、実装・修正ループは 1 件で数十〜数百ターン回るため。「層間契約だから判断が要る」ぶんは仕様化判断・R1 レビュー・本体の判断で吸収し、W は確定した内容を落とす作業だけを担う。読んで判断する役（R1・レビュアー）が Fable に当たるときは `dev-workflow:decider` で起こす — Fable を渡せる `subagent_type` はこれだけで、判定は `scripts/agent-model-guard.sh` が行う。
-
-残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`。全モデル共通の週次枠から導出）が、上の表の既定と昇格の上限を決める（新しい起動への適用は `request` が行う）。値ごとの効果と両者が食い違ったときの扱いは `references/decision-criteria.md` の残量モードと共有枠モードの表が正本で、ここに再掲しない。
-
-昇格トリップワイヤーは失敗の原因側だけを上げるラダーとして残す（ラダーの正本は `templates/escalation-tripwires.md`）: 同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直したと W が return したら、本体は失敗の原因が判断側（指示を解釈できなかった・指示自体が外れていた）か実行側（指示どおりやって結果が違う）かで、**決める役と実行役のどちらか一方だけ**を上げる（両方同時に上げない）。判断側・実行側の定義と段の表は `templates/escalation-tripwires.md` を Read して従う。失敗の段は `request` の `--failure` で渡す: `--failure first`（1 回目の失敗）は決める役を立てて実行役は格を変えずに再試行、`--failure executor`（2 回目の失敗で原因が実行側）は実行役を上げ、`--failure judgment`（2 回目の失敗で原因が判断側）は決める役（投げ先が claude なら `subagent_type: dev-workflow:decider`、codex なら Codex role の手順）を立てて修正方針を作らせ実行役の格は変えない。決める役と実行役の model は、その段の `--failure` を渡した `request` が返した `model` を使い、表から計算し直さない。実行側で返った `model` が W の applied model と違えば、SendMessage で再開せず新しい thread に手渡す（細目は `references/codex-develop.md`）。W の上限は「モデル」節の表の W の行（`opus`）。残量モードと共有枠モードの上限が先に効く。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格の理由にはならず、モデルは変えない（そのあとの扱いは `references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本）。規模超過（編集対象 5 ファイル超・作業項目が 2 回増えた）を W が return したら、本体が change / 子 issue（エピック化）に分割する。
+失敗の判断側・実行側の分類の定義は `templates/escalation-tripwires.md`。model は上の必読正本に従う。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格の理由にはならず、モデルは変えない。手渡しは `references/decision-criteria.md` が正本。規模超過（編集対象5ファイル超・作業項目が2回増えた）を W が return したら本体が change / 子 issue に分割する。
 
 ## 実行モード
 
@@ -333,7 +233,7 @@ unmanned で W の return に質問文・理由が含まれるとき、本体（
 
 **仕様化判断の記録と仕様レビューは unmanned でも免除しない**（同じ書式で記録先に記録し、R1 の APPROVE まで W を apply に進めない）。文言合わせの通し方（1 ループの (1)。判定基準は `references/spec-decision.md` Step B）で R1 を起こさないのは、モードによる免除ではなく、interactive と同じ対象・同じ当てる条件で unmanned にも当てる。
 
-channel が interactive と違うのは次の点だけで、それ以外の工程と記録は interactive と同じ。W・R1 の起動指示の実行モードには interactive と書く（W・R1 の手順の分岐は channel でも interactive 側をとり、主に聞くのは W・R1 の return を受けた本体がチャンネルで行う）。違う点: 主に聞く先と主への発言の宛先がチャンネルになる（`references/channel.md` の「channel の聞き方」「channel の主への発言」）・保留からの再開の案内がチャンネルの返事になる（`references/handover.md` と G の依頼文）・リスク許容をチャンネルで受けるのは返事を確かめられるときだけ（`references/channel.md` の「channel のリスク許容」）・エピックは `route` を呼ばずサブエージェント方式で回す（`references/epic-subagent.md`）。
+W・R1 の起動指示の実行モードには interactive と書く（channel でも interactive 側で分岐し、主への質問は return を受けた本体が行う）。channel の読み替えは `references/channel.md`、エピックの方式は `references/epic.md` を場面別の必読入口から読む。
 
 ### モードの決め方
 
@@ -363,14 +263,7 @@ channel が interactive と違うのは次の点だけで、それ以外の工�
 
 このスキルは規模が大きくても、上流の壁打ち（openspec の `/opsx:explore`。まだ形になっていない曖昧な要望を、対話で質問しながら実装可能な単位に分解し、相互矛盾がないか確認する工程）を内部から呼ばない。このスキルが扱う依頼（issue・受け入れ条件付きの会話依頼・エピックの子）は既にその「ほぐす作業」が終わった状態にある。複数 change が必要なら記録先の記述を根拠に分割すれば足りる（`references/epic.md` のエピックの作り方）。`/opsx:explore` は issue の体裁を成す前の構想専用として切り離し、その出口（`/opsx:new` / `/opsx:ff`）からこのスキルに入る。
 
-## 参照
+## その他の正本
 
-- 役割の指示書: `references/roles/worker/`（W。索引は `references/roles/worker.md`）・`references/roles/spec-reviewer.md`（R1）・`references/roles/gate-runner.md`（G）
-- 判定基準: 仕様化と change 分割は `references/spec-decision.md`、軽い通し方は `references/light-path.md`、残量モードは `references/decision-criteria.md`
-- エピックの条件・作り方・回し方・完了条件: `references/epic.md`。エピックの子が主の返事を待って止まるときの子の側の手順: `references/epic-child-stop.md`
-- 昇格トリップワイヤーの常駐ルールテンプレート: `plugins/dev-workflow/templates/escalation-tripwires.md`
-- G の手順書: pr-review-gate の段のファイル（`skills/pr-review-gate/stages/` と `declarations.md`。索引は `skills/pr-review-gate/SKILL.md`、G が時点ごとに読むファイルは `references/roles/gate-runner.md` の表。記録先の探索順・仕様宣言の照合は据え置き）
-- 入口の 5 分岐と issueify フォールバック: `commands/develop.md`（`/work-issue` はエイリアス）
-- worktree セットアップの自動化: worktree プラグインの `hooks/hooks.json`（`WorktreeCreate` / `SessionStart`）
-- 棲み分け相手: 各リポに配備された loop-dev-agent の憲法（`docs/agent-loop.md`。それを配るリポジトリが保守する正本で、harness にテンプレートは無い）。unmanned の外形（ラベル・Draft PR・キュー）は憲法側
-- 1 ループに収まらない規模を Workflow で回す型: `plugins/dev-workflow/references/workflow-execution.md`（スクリプトの書き方は `workflow-authoring` スキル）
+- worktree セットアップの自動化: worktree プラグインの `hooks/hooks.json`（`WorktreeCreate` / `SessionStart`）。
+- unmanned の外形（ラベル・Draft PR・キュー）: 各リポに配備された loop-dev-agent の憲法 `docs/agent-loop.md`（配布元が保守し、harness にテンプレートは無い）。
