@@ -1530,7 +1530,9 @@ run_section() { cat "$EPIC"; }
 
 @test "launcher parts: the subagent mode writes no state record" {
   r="$(run_section)"
-  printf '%s\n' "$r" | grep -qF 'サブエージェント方式は部品ではなく別の方式なので状態の記録を書かない'
+  r="$(cat "$SKILL_DIR/references/epic-subagent.md")"
+  printf '%s\n' "$r" | grep -qF '別方式なので状態を記録しない'
+  printf '%s\n' "$r" | grep -qF 'エピックの状態ディレクトリを作らない'
 }
 
 @test "launcher parts: EPIC_DISPATCH_LAUNCHER and tmux are written in the route rule" {
@@ -1786,7 +1788,10 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
     printf '%s\n' "$p7" | grep -qF "$word" || return 1
   done
   l="$(grep '^親が別セッション方式でターンを終えるときに主に出す発言すべて' "$EPIC")"
-  printf '%s\n' "$l" | grep -qF '60 分未満の純粋な'
+  printf '%s\n' "$l" | grep -qF '`reply-after-idle.md`「親への適用」で続行する純粋な `timeout` で起こされたときは主に発言を書かない'
+  parent="$(section '親への適用' "$SKILL_DIR/references/reply-after-idle.md")"
+  printf '%s\n' "$parent" | grep -F '| 親の最後のリクエストから 60 分未満' | grep -qF '| そのまま続ける |'
+  printf '%s\n' "$parent" | grep -F '| 親の最後のリクエストから 60 分以上' | grep -qF '| 起動し直す |'
   printf '%s\n' "$l" | grep -qF '長時間後の再開案内'
 }
 
@@ -1872,7 +1877,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 @test "epic: escalated stops are recorded with told, and wait's expired ends the watch with a restart note" {
   p8="$(grep -E '^8\. `stopped <N>...`' "$EPIC")"
   printf '%s\n' "$p8" | grep -qF '上げた子ごとに `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ'
-  printf '%s\n' "$p8" | grep -qF '**マージ待ちの子** と **PR トークン上限の子** の手順で主に上げた場合を含む'
+  printf '%s\n' "$p8" | grep -qF '`epic-merge-wait.md`「マージ待ちの子」 と **PR トークン上限の子** の手順で主に上げた場合を含む'
   printf '%s\n' "$p8" | grep -qF '`skipped <N> ...`・`failed <N> ...` は主に上げずに `references/epic-loop.md` の手順 2 に戻る'
   p7="$(grep -E '^7\. ' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p7" | grep -qF '報告を出し直した子には、待ちに入る前に手順 8 と同じく `scripts/epic-dispatch.sh told <N> <止まりの uuid>` を呼ぶ。'
@@ -1881,7 +1886,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   p9="$(grep -E '^9\. `expired <N>...`' "$EPIC")"
   printf '%s\n' "$p9" | grep -qF '`wait` を掛けない'
   printf '%s\n' "$p9" | grep -qF '`/develop <エピック番号>` で親を再開する'
-  printf '%s\n' "$p9" | grep -qF '時間分類の 60 分以上と同じ項目の再開の記録'
+  printf '%s\n' "$p9" | grep -qF '`reply-after-idle.md`「親への適用」の項目で再開の記録（起床理由は `expired <N>...`）をエピックに追記'
   grep -F '**待ちをやめてよい条件**' "$EPIC" \
     | grep -qF '(f) `wait` が `expired <N>...` で返り、手順 9 を済ませたとき（伝え済みの止まりだけが残っているので、下のやめる直前の (1)(2) の確認は要らない）'
 }

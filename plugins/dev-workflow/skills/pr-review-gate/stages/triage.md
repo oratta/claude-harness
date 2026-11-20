@@ -2,7 +2,7 @@
 
 以下 `$R` = `<owner>/<repo>`、`$N` = PR 番号。段の一覧と手順番号の対応表は索引 `SKILL.md`（pr-review-gate の直下）にある。
 
-このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/reviewer-brief.md`（2-1 のレビュアー向け指示）、`stages/triage-escalation.md`（2-2）、`declarations.md`（手順 3・3-b）、`stages/hold.md`（手順 3-c・6）。
+このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/prepare.md`（手順 1・2・2-0）、`stages/reviewer-brief.md`（2-1 のレビュアー向け指示）、`stages/triage-escalation.md`（2-2）、`declarations.md`（手順 3・3-b）、`stages/carryover.md`（手順 3-c）、`stages/hold.md`（手順 6）。
 
 ## 入口
 
