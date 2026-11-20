@@ -305,6 +305,7 @@ reply [--relaunch] --as <parent|owner> <epic> <child> <text>
   子の端末に返事を届ける。1 行。exit 0、failed なら 1。
   sent <N>          子のセッションへ送った
   relaunched <N>    --relaunch で、閉じて起動し直した
+  skipped <N> not-stopped  止まりの印が無く何も送らない
   failed <N> <理由>
 
 notify-closed [--relaunch] <epic> <child>
@@ -345,10 +346,15 @@ pending-owner <child>...
 dismiss <child>...
   止まりの印を解いて再開扱いにする。子ごとに 1 行。exit 0、failed があれば 1。
   dismissed <N>
+  skipped <N> not-stopped  止まりの印が無く何もしない
+  failed <N>               印を解けなかった
 
 told <child> <uuid>
   止まりを主に伝え済みとして記録する。1 行。exit 0、failed なら 1。
   told <N>
+  skipped <N> uuid-mismatch  止まりの発言の uuid が記録と違う（何も記録しない）
+  skipped <N> not-stopped    止まりの印が無く何も記録しない
+  failed <N>                 記録できなかった
 
 child-log [--last] <child>...
   子の会話ログの末尾を読む（読み取り専用）。子ごとに 1 行。exit 0（jq が無い・ワークツリーを読めないときは stdout 空で 1）。

@@ -136,12 +136,26 @@ run_measure() { run --separate-stderr "$SCRIPT" "$@"; }
 }
 
 @test "the temporary directory is removed after success, a failed fetch and exit 2" {
-  export TMPDIR="${WORK}/tmp"
-  mkdir -p "$TMPDIR"
+  # macOS の mktemp -d は TMPDIR を見ないので、作った場所を記録する mktemp のスタブを PATH に置く
+  REAL_MKTEMP="$(command -v mktemp)"
+  mkdir -p "${WORK}/bin"
+  cat > "${WORK}/bin/mktemp" <<SH
+#!/usr/bin/env bash
+d="\$("$REAL_MKTEMP" "\$@")" || exit 1
+echo "\$d" > "${WORK}/made-dir"
+echo "\$d"
+SH
+  chmod +x "${WORK}/bin/mktemp"
+  export PATH="${WORK}/bin:$PATH"
   run_measure --repo o/r 288
-  [ -z "$(ls -A "$TMPDIR")" ]
+  [ -s "${WORK}/made-dir" ]
+  [ ! -e "$(cat "${WORK}/made-dir")" ]
+  rm -f "${WORK}/made-dir"
   PB_EXIT=2 run_measure --repo o/r 288
-  [ -z "$(ls -A "$TMPDIR")" ]
+  [ -s "${WORK}/made-dir" ]
+  [ ! -e "$(cat "${WORK}/made-dir")" ]
+  rm -f "${WORK}/made-dir"
   CR_EXIT=1 run_measure --repo o/r 288
-  [ -z "$(ls -A "$TMPDIR")" ]
+  [ -s "${WORK}/made-dir" ]
+  [ ! -e "$(cat "${WORK}/made-dir")" ]
 }
