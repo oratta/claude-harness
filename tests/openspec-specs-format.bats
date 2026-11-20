@@ -11,7 +11,52 @@
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  SPECS_DIR="$REPO_ROOT/openspec/specs"
+  SPECS_DIR="${SPECS_DIR:-$REPO_ROOT/openspec/specs}"
+}
+
+# #1725: 既知の段落の全文に依存せず、シナリオ側に紛れた要件本文を検出する。
+@test "no requirement prose with MUST or SHALL appears after its first scenario" {
+  python3 - "$SPECS_DIR" <<'PYTHON'
+import re
+import sys
+from pathlib import Path
+
+errors = []
+files = sorted(Path(sys.argv[1]).glob("*/spec.md"))
+assert files, f"no spec.md files in {sys.argv[1]}"
+for path in files:
+    in_requirement = after_scenario = False
+    fence = None
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        # フェンス内の見出しは Requirement / Scenario の境界として扱わない。
+        if fence:
+            if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + r"{" + str(len(fence)) + r",}\s*", line):
+                fence = None
+            continue
+        opening = re.match(r" {0,3}(`{3,}|~{3,})", line)
+        if opening:
+            fence = opening[1]
+            continue
+        if line.startswith("### Requirement: "):
+            in_requirement = True
+            after_scenario = False
+            continue
+        if in_requirement and line.startswith("#### Scenario:"):
+            after_scenario = True
+            continue
+        if not after_scenario:
+            continue
+        # 見出し・字下げ継続行・シナリオのステップ（Markdown の箇条書き/強調を含む）は除外。
+        if re.match(r"\s|#{1,6}\s", line):
+            continue
+        if re.match(r"(?:[-+*]\s+|\d+[.)]\s+)?(?:\*\*|__)?(?:WHEN|THEN|AND|GIVEN|BUT)\b", line):
+            continue
+        if re.search(r"\b(?:MUST|SHALL)\b", line):
+            errors.append(f"{path}:{number}:{line}")
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    sys.exit(1)
+PYTHON
 }
 
 @test "no spec.md under openspec/specs uses change delta headings" {
