@@ -9,7 +9,7 @@ claude/hold-no-point 43242
 claude/hold-resume 42652
 claude/hold-split 64602
 claude/legacy-all 153275
-claude/legacy-all-max 303406
+claude/legacy-all-max 309907
 claude/legacy-hold-carryover 171719
 claude/legacy-hold-categories 155448
 claude/legacy-hold-judge 179721
@@ -21,7 +21,7 @@ claude/legacy-pass-issue-approved 166464
 claude/legacy-pass-judge 179721
 claude/legacy-pass-no-point 159321
 claude/legacy-pass-risk-conversation 158923
-claude/legacy-pass-risk-delegated 166052
+claude/legacy-pass-risk-delegated 172553
 claude/legacy-pass-risk-link 154675
 claude/legacy-pass-risk-relayed 159667
 claude/legacy-pass-wording 155820
@@ -47,10 +47,10 @@ claude/pass 65210
 claude/pass-carryover 95187
 claude/pass-issue-approved 78399
 claude/pass-judge 103189
-claude/pass-max 140594
+claude/pass-max 147095
 claude/pass-no-point 82789
 claude/pass-risk-conversation 82391
-claude/pass-risk-delegated 89520
+claude/pass-risk-delegated 96021
 claude/pass-risk-link 78143
 claude/pass-risk-relayed 83135
 claude/pass-wording 67755
@@ -87,7 +87,7 @@ codex/hold-no-point 44901
 codex/hold-resume 44311
 codex/hold-split 66261
 codex/legacy-all 161889
-codex/legacy-all-max 312020
+codex/legacy-all-max 318521
 codex/legacy-hold-carryover 180333
 codex/legacy-hold-categories 164062
 codex/legacy-hold-judge 188335
@@ -99,7 +99,7 @@ codex/legacy-pass-issue-approved 175078
 codex/legacy-pass-judge 188335
 codex/legacy-pass-no-point 167935
 codex/legacy-pass-risk-conversation 167537
-codex/legacy-pass-risk-delegated 174666
+codex/legacy-pass-risk-delegated 181167
 codex/legacy-pass-risk-link 163289
 codex/legacy-pass-risk-relayed 168281
 codex/legacy-pass-wording 164434
@@ -125,10 +125,10 @@ codex/pass 66995
 codex/pass-carryover 96972
 codex/pass-issue-approved 80184
 codex/pass-judge 104974
-codex/pass-max 142379
+codex/pass-max 148880
 codex/pass-no-point 84574
 codex/pass-risk-conversation 84176
-codex/pass-risk-delegated 91305
+codex/pass-risk-delegated 97806
 codex/pass-risk-link 79928
 codex/pass-risk-relayed 84920
 codex/pass-wording 69540
