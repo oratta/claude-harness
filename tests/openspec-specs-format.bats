@@ -33,7 +33,7 @@ for path in files:
             if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + r"{" + str(len(fence)) + r",}\s*", line):
                 fence = None
             continue
-        opening = re.match(r" {0,3}(`{3,}|~{3,})", line)
+        opening = re.match(r" {0,3}(`{3,}(?=[^`]*$)|~{3,})", line)
         if opening:
             fence = opening[1]
             continue
@@ -47,7 +47,7 @@ for path in files:
         if not after_scenario:
             continue
         # 見出し・字下げ継続行・シナリオのステップ（Markdown の箇条書き/強調を含む）は除外。
-        if re.match(r"\s|#{1,6}\s", line):
+        if re.match(r"[ \t]|#{1,6}\s", line):
             continue
         if re.match(r"(?:[-+*]\s+|\d+[.)]\s+)?(?:\*\*|__)?(?:WHEN|THEN|AND|GIVEN|BUT)\b", line):
             continue
