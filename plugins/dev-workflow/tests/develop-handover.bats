@@ -9,6 +9,7 @@
 #
 # spec: dev-workflow-develop, dev-workflow-pr-review-gate
 
+load lib/develop-docs
 load lib/gate-docs
 
 setup() {
@@ -124,8 +125,10 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 }
 
 @test "loop: the hold row and the token-cap exit 2 point to the handover section" {
-  grep -n '保留 → needs-approval' "$SKILL" | grep -qF 'references/handover.md'
-  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'references/handover.md'
+  body="$(develop_procedures)"
+  grep -n '保留 → needs-approval' <<<"$body" | grep -qF 'references/handover.md'
+  body="$(develop_procedures)"
+  awk '/\*\*exit 2（上限超）\*\*/{print}' <<<"$body" | grep -qF 'references/handover.md'
 }
 
 @test "command: an existing handover comment routes to the resume steps regardless of the label" {
@@ -142,7 +145,8 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 }
 
 @test "loop: the token-cap exit 2 puts the label where the handover's label target says (PR if any, else the record)" {
-  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'PR があれば PR、無ければ記録先に `needs-approval` を付け'
+  body="$(develop_procedures)"
+  awk '/\*\*exit 2（上限超）\*\*/{print}' <<<"$body" | grep -qF 'PR があれば PR、無ければ記録先に `needs-approval` を付け'
 }
 
 @test "handover (#721): guidance accepts a conversation reply or /develop args without a PR comment" {
@@ -181,5 +185,6 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 }
 
 @test "resend: the gate hold line in the loop points at the resend rule" {
-  grep -F '保留 → needs-approval のまま' "$SKILL" | grep -qF '依頼の出し直し'
+  body="$(develop_procedures)"
+  grep -F '保留 → needs-approval のまま' <<<"$body" | grep -qF '依頼の出し直し'
 }

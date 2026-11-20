@@ -7,6 +7,8 @@
 #
 # spec: dev-workflow-issue-entry, dev-workflow-develop
 
+load lib/develop-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   CMD="$PLUGIN_DIR/commands/develop.md"
@@ -23,10 +25,10 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
 
 @test "command: allowed-tools includes Agent and SendMessage and excludes Edit" {
   tools="$(frontmatter "$CMD" | awk -F': ' '/^allowed-tools:/{print $2; exit}')"
-  echo "$tools" | grep -qw 'Agent'
-  echo "$tools" | grep -qw 'SendMessage'
-  ! echo "$tools" | grep -qw 'Edit' || return 1
-  ! echo "$tools" | grep -qw 'Write' || return 1
+  grep -qw 'Agent' <<<"$tools"
+  grep -qw 'SendMessage' <<<"$tools"
+  ! grep -qw 'Edit' <<<"$tools" || return 1
+  ! grep -qw 'Write' <<<"$tools" || return 1
 }
 
 @test "command: resolves skills/develop/SKILL.md via path-discovery and runs it inline (no Skill tool)" {
@@ -38,15 +40,15 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
 }
 
 @test "command: no executor options use the adapter's automatic profile selection for every phase" {
-  grep -q '実行先オプションが無ければ' "$CMD"
+  grep -q '実行先オプションの有無を問わず' "$CMD"
   grep -q 'references/codex-develop.md' "$CMD"
-  grep -q '各 phase で profile なしの request' "$CMD"
+  codex_procedures | grep -q '各 phase で profile なしの request'
   ! grep -q 'いずれの実行先オプションも無い場合は従来のClaude経路' "$CMD" || return 1
 }
 
 @test "command: no-arg follow-up keeps automatic selection instead of requiring explicit executor options" {
-  grep -q '引数なしの追加依頼' "$CMD"
-  grep -q 'profile なしの request' "$CMD"
+  codex_procedures | grep -q '引数なしの追加依頼'
+  codex_procedures | grep -q 'profile なしの request'
   ! grep -q '実行先オプションと account-home の対応を明示し直す' "$CMD" || return 1
 }
 
@@ -62,15 +64,15 @@ frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
   grep -q 'typo' "$CMD"
   b2="$(grep -n '数字のみだが issue が存在しない' "$CMD" | head -1)"
   [ -n "$b2" ]
-  echo "$b2" | grep -q '入口 0'
+  grep -q '入口 0' <<<"$b2"
 }
 
 @test "branch 4: unmatched natural-language request defaults to entry-0 (Draft PR), issueify only when tracking is needed" {
   b4="$(grep -n 'マッチしな' "$CMD" | head -1)"
   [ -n "$b4" ]
-  echo "$b4" | grep -q '入口 0'
-  echo "$b4" | grep -q 'Draft PR'
-  echo "$b4" | grep -q '追跡・キュー・議論'
+  grep -q '入口 0' <<<"$b4"
+  grep -q 'Draft PR' <<<"$b4"
+  grep -q '追跡・キュー・議論' <<<"$b4"
 }
 
 @test "branch 5: no-arg listing offers both start-without-issue and issue-ify options" {

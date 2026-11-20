@@ -1905,12 +1905,16 @@ class DocumentationContracts(unittest.TestCase):
         self.assertNotIn('<= 300', decision)
         self.assertNotIn('> 300', decision)
         self.assertIn('リセット時刻', decision)
-        for text in (self.adapter, self.skill,
-                     (self.root / 'docs/codex-develop.md').read_text()):
+        documents = (self.adapter, self.skill,
+                     (self.root / 'docs/codex-develop.md').read_text())
+        # Positive content belongs to the resolver; negative scope stays unchanged.
+        for text in (self.adapter, documents[2]):
             self.assertIn('claude-write-codex-review', text)
+            self.assertIn('margin', text)
+        for text in documents:
             self.assertNotIn('age 300', text)
             self.assertNotIn('<=300', text)
-            self.assertIn('margin', text)
+        self.assertIn('references/codex-develop.md', self.skill)
 
     def test_margin_formula_is_not_counted_here(self):
         # 週の秒数が残っていれば margin を自分で数えている（数えるのは headroom.py だけ）
@@ -1930,15 +1934,15 @@ class DocumentationContracts(unittest.TestCase):
         for value in ('role', 'claude', 'Agent', 'codex', '前景'):
             self.assertIn(value, branch)
         self.assertIn('references/codex-develop.md', self.skill)
-        self.assertIn('分岐を再掲せず', self.skill)
+        self.assertNotIn('`executor` で一度だけ分岐', self.skill)
 
     def test_resume_rechecks_caps_and_hands_off_without_changing_requested_tuple(self):
-        for name, document in (('adapter', self.adapter), ('skill', self.skill)):
-            with self.subTest(document=name):
-                for value in ('SendMessage', '上限', 'fresh thread', 'requested tuple',
-                              '工程完了', '停止確認', 'FABLE_BUDGET_MODE',
-                              'SHARED_BUDGET_MODE'):
-                    self.assertIn(value, document)
+        for value in ('SendMessage', '上限', 'fresh thread', 'requested tuple',
+                      '工程完了', '停止確認', 'FABLE_BUDGET_MODE',
+                      'SHARED_BUDGET_MODE'):
+            self.assertIn(value, self.adapter)
+        self.assertIn('references/codex-develop.md', self.skill)
+        self.assertIn('必ず Read', self.skill)
         self.assertIn('exhausted', self.adapter)
         self.assertIn('depleted', self.adapter)
         self.assertIn('requested model / applied model / reason', self.adapter)
@@ -1948,7 +1952,10 @@ class DocumentationContracts(unittest.TestCase):
             self.assertIn(f'`{field}`', self.adapter)
         self.assertIn('本体は上限を計算し直さない', self.adapter)
         self.assertNotIn('再計算', self.adapter)
-        self.assertIn('sonnet 上限で haiku はそのまま', self.adapter)
+        # The removed example is covered by the existing canonical cap rule.
+        decision = (self.root / 'skills/develop/references/decision-criteria.md').read_text()
+        self.assertIn('`haiku` の役割（explore と summarize）', decision)
+        self.assertIn('上限なので最安を上げない', decision)
         self.assertNotIn('applied=sonnet に固定', self.adapter)
         self.assertIn('その段の `--failure` の値を含む。実行先オプションも同じ）で `request` を呼び直し', self.adapter)
         self.assertIn('呼び直しで書かれた依頼ファイルは使わず捨てる', self.adapter)

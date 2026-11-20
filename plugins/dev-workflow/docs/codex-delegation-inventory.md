@@ -20,10 +20,10 @@ Codex を呼ぶ、または呼び方を書いている手順書・スクリプ�
 
 | ファイル | 役割 | 区分 |
 |---|---|---|
-| `plugins/dev-workflow/commands/develop.md` | develop の入口。実行先オプションを `codex-develop.py request` へ渡す | 移行済み |
 | `plugins/dev-workflow/references/codex-develop.md` | 手動 develop provider adapter の正本。委譲 3 手順と、委譲箇所と phase と role の表 | 移行済み |
 | `plugins/dev-workflow/docs/codex-develop.md` | 手動で Codex 経路を試す人向けの使い方 | 移行済み |
 | `plugins/dev-workflow/scripts/CODEX-WORKER.md` | 前景コマンド `codex-worker.py run` の使い方 | 移行済み |
+| `plugins/dev-workflow/skills/develop/references/pr-token-budget.md` | Codex 委譲前のトークン計測と消費記録の規約 | 言及のみ |
 | `plugins/dev-workflow/skills/develop/SKILL.md` | 本体が role ごとに `request` を呼び、投げ先を選ぶ。従来経路の G の説明も含む | 移行済み |
 | `plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md` | R1 のモデルを `request --phase spec-review` で得る | 移行済み |
 | `plugins/dev-workflow/skills/pr-review-gate/stages/triage.md` | レビュー failed からの昇格で `request --failure` を呼ぶ | 移行済み |
