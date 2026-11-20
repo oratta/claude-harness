@@ -1201,6 +1201,27 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 self.assertIn('`skills/...` resolves to <Plugin root>/skills/...', text)
                 self.assertIn('only the details an entry conditionally points to', text)
 
+    def test_only_writing_phases_say_where_scratch_files_go(self):
+        # #1608: without a stated place Codex made scratchpad/ inside the worktree. Read-only
+        # roles cannot write there, so the instruction is for the writer roles only.
+        for phase, (role, _) in m.PHASES.items():
+            with self.subTest(phase=phase):
+                target = self.root / ('scratch-' + phase + '.json')
+                self.call_profile('codex-standard', phase=phase, out=target)
+                text = json.loads(target.read_text())['prompt']
+                head = text.split('\nCANONICAL SOURCE ', 1)[0]
+                if role in m.WRITER_ROLES:
+                    self.assertIn('Scratch files', head)
+                    self.assertIn('outside the cwd', head)
+                    self.assertIn('$TMPDIR', head)
+                    self.assertIn('mktemp -d', head)
+                    self.assertIn('Never create scratchpad/ or any other directory for scratch files in the cwd', head)
+                    self.assertIn('real work files stay in the cwd as usual', head)
+                    self.assertNotIn('untracked directory', head)
+                else:
+                    self.assertNotIn('Scratch files', head)
+                    self.assertNotIn('scratchpad/', head)
+
     def test_gate_launch_ignores_a_quoted_stage(self):
         self.input.write_text('レビュー経路: adapter\n段: 前提確認と重さ判定\n'
                               '> 段: 合格処理\n```markdown\n段: 保留の解除\n```\n')
