@@ -276,7 +276,8 @@ residual_pids() { # <pgid>
 # residual_pids を「pid ppid 経過時間 コマンド」で表示する。
 print_residuals() { # <pgid>
   for p in $(residual_pids "$1"); do
-    ps -o pid=,ppid=,etime=,command= -p "$p" 2>/dev/null | cut -c1-160
+    # 長い TMPDIR 配下でも原因の実行ファイル名・引数が欠けないよう、行幅で切り詰めない（#1724）。
+    ps -ww -o pid=,ppid=,etime=,command= -p "$p" 2>/dev/null
   done
 }
 

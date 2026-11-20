@@ -149,9 +149,11 @@ BATS
 # bats 本体の実行ファイルでなければ残留として検出する
 @test "a leftover whose command merely mentions bats-core is still detected" {
   require_process_listing
-  mkdir -p "$BATS_TEST_TMPDIR/bats-core-fixture"
-  ln -s "$(command -v sleep)" "$BATS_TEST_TMPDIR/bats-core-fixture/bats-exec-sleep"
-  export FIXTURE_SLEEP="$BATS_TEST_TMPDIR/bats-core-fixture/bats-exec-sleep"
+  # TMPDIR が短い環境でも報告の旧 160 字制限を超え、コマンド末尾の欠落を再現する（#1724）。
+  local long_dir="$BATS_TEST_TMPDIR/$(printf '%0170d' 0)"
+  mkdir -p "$long_dir/bats-core-fixture"
+  ln -s "$(command -v sleep)" "$long_dir/bats-core-fixture/bats-exec-sleep"
+  export FIXTURE_SLEEP="$long_dir/bats-core-fixture/bats-exec-sleep"
   write_inner_suite lookalike <<'BATS'
 @@TEST "leaves a bats-looking child alive after the test" {
   ( for f in /dev/fd/*; do f=${f##*/}; [ "$f" -gt 2 ] 2>/dev/null && eval "exec $f>&-" 2>/dev/null; done; exec "$FIXTURE_SLEEP" 1234 ) &
