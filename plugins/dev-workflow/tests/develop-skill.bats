@@ -185,13 +185,16 @@ refute() {
 
 @test "loop: stages 0-4 run in W -> R1 -> W -> G order" {
   loop="$(develop_procedures)"
-  s0="$(echo "$loop" | grep -n '(0)' | awk 'NR == 1 {print}' | cut -d: -f1)"
-  s1="$(echo "$loop" | grep -n '(1)' | awk 'NR == 1 {print}' | cut -d: -f1)"
-  s2="$(echo "$loop" | grep -n '(2)' | awk 'NR == 1 {print}' | cut -d: -f1)"
-  s3="$(echo "$loop" | grep -n '(3)' | awk 'NR == 1 {print}' | cut -d: -f1)"
-  s4="$(echo "$loop" | grep -n '(4)' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s0="$(echo "$loop" | grep -n '^(0) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s1="$(echo "$loop" | grep -n '^(1) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s2="$(echo "$loop" | grep -n '^(2) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s3="$(echo "$loop" | grep -n '^(3) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
+  s4="$(echo "$loop" | grep -n '^(4) ' | awk 'NR == 1 {print}' | cut -d: -f1)"
   [ -n "$s0" ] && [ -n "$s1" ] && [ -n "$s2" ] && [ -n "$s3" ] && [ -n "$s4" ]
-  [ "$s0" -lt "$s1" ] && [ "$s1" -lt "$s2" ] && [ "$s2" -lt "$s3" ] && [ "$s3" -lt "$s4" ]
+  [ "$s0" -lt "$s1" ] || return 1
+  [ "$s1" -lt "$s2" ] || return 1
+  [ "$s2" -lt "$s3" ] || return 1
+  [ "$s3" -lt "$s4" ] || return 1
   echo "$loop" | sed -n "${s1},${s2}p" | grep -q 'W'
   echo "$loop" | sed -n "${s2},${s3}p" | grep -q 'R1'
   echo "$loop" | sed -n "${s3},${s4}p" | grep -q 'W'
@@ -1859,7 +1862,7 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
                '`--epic <エピック番号> --children-only`' '打ち切られたパスごとに 1 回を超えない' '`stages/triage-nonblocking.md` の候補探しの段落'; do
     grep -qF "$token" <<<"$c" || { echo "missing: $token"; return 1; }
   done
-  grep -qF '下の 2 つ目' && { echo "dangling reference remains"; return 1; } <<<"$c"
+  refute "$c" -F '下の 2 つ目'
   return 0
 }
 

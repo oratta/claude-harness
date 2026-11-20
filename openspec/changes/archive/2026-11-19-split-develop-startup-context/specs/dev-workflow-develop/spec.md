@@ -148,19 +148,19 @@ develop 本体は、Claude 既定の経路を含めて、新しい role を起�
 
 ### Requirement: G の needs-decider を受けた本体の動き
 
-`skills/develop/references/gate-result.md` は、SKILL.md の (4) の Status 表から必読にされ、G の return の分岐に `needs-decider`（pr-review-gate の仕分け表の順 6。同じ型の再発）の行を持たなければならない（MUST）。その行は次を規定する（MUST）: 本体は `subagent_type: dev-workflow:decider` を、残量モードの規定どおりのモデルで spawn する。入力は、`agents/decider.md` の入力契約の 4 項目に揃え、記録先（issue または Draft PR）の本文、判断に必要な関連コメント（`仕様化判断:` の記録・G の仕分けの PR コメント・順 3 の一覧表の PR コメントがあればそれ）、G の return に載った同じ型の指摘と前の周の指摘の原文（PR コメントの本文を貼る）、対象ファイルのパス、G の仕分け欄、W の直近の return とする。依頼は、マージ可否を問うときと同じ `agents/decider.md` の既存の「可否と根拠」の出力契約で出し（決める役が 3 点の契約で返す取り違えを防ぐため、行にその旨を書く）、問いを「この PR の中で、同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」の 1 つにする。依頼文では、返答の 1 行目を `裁定: 可`・`裁定: 否`・`不足: <足りないもの>` のどれかちょうどにするよう指定し、本体はその 1 行目で分岐する（MUST。本文の読み取りで分岐しない）。本体は返ってきた可否を方式（`裁定: 可`＝全部列挙してから直す、`裁定: 否`＝切り出す）に読み替え、根拠とともに SendMessage で G に渡して G を再開する。本体は裁定を記録先に投稿しない（記録は G が PR コメントに行う）。これは「`dev-workflow:decider` で起こした役割の return は本体が代理投稿する」一般則の例外であり、SKILL.md は一般則の記述にもこの例外を一言書かなければならない（MUST）。`agents/decider.md` の入力契約と出力契約は変えない（MUST NOT）。
+`skills/develop/references/gate-result.md` は、SKILL.md の (4) の Status 表から必読にされ、G の return の分岐に `needs-decider`（pr-review-gate の仕分け表の順 6。同じ型の再発）の行を持たなければならない（MUST）。その行は次を規定する（MUST）: 本体は `subagent_type: dev-workflow:decider` を、残量モードの規定どおりのモデルで spawn する。入力は、`agents/decider.md` の入力契約の 4 項目に揃え、記録先（issue または Draft PR）の本文、判断に必要な関連コメント（`仕様化判断:` の記録・G の仕分けの PR コメント・順 3 の一覧表の PR コメントがあればそれ）、G の return に載った同じ型の指摘と前の周の指摘の原文（PR コメントの本文を貼る）、対象ファイルのパス、G の仕分け欄、W の直近の return とする。依頼は、マージ可否を問うときと同じ `agents/decider.md` の既存の「可否と根拠」の出力契約で出し（決める役が 3 点の契約で返す取り違えを防ぐため、行にその旨を書く）、問いを「この PR の中で、同じ型を全部列挙してから直すべきか（可）、切り出すべきか（否）」の 1 つにする。依頼文では、返答の 1 行目を `裁定: 可`・`裁定: 否`・`不足: <足りないもの>` のどれかちょうどにするよう指定し、本体はその 1 行目で分岐する（MUST。本文の読み取りで分岐しない）。本体は返ってきた可否を方式（`裁定: 可`＝全部列挙してから直す、`裁定: 否`＝切り出す）に読み替え、根拠とともに照合と振り分けの G を新しく起こして渡す。本体は裁定を記録先に投稿しない（記録は G が PR コメントに行う）。これは「`dev-workflow:decider` で起こした役割の return は本体が代理投稿する」一般則の例外であり、SKILL.md は一般則の記述にもこの例外を一言書かなければならない（MUST）。`agents/decider.md` の入力契約と出力契約は変えない（MUST NOT）。
 
-決める役の返答の 1 行目が `不足:` なら、本体はそれを裁定として扱ってはならず、G に渡してはならない（MUST NOT）。本体は足りないものを補って、同じ問いで 1 回だけ依頼し直す（MUST）。依頼し直しても不足が返ったら、本体は G に「裁定なし（入力不足）」と足りなかったものを SendMessage で渡して G を再開する（MUST。G はそれを「切り出す」として順 5 の経路で主に聞く）。
+決める役の返答の 1 行目が `不足:` なら、本体はそれを裁定として扱ってはならず、G に渡してはならない（MUST NOT）。本体は足りないものを補って、同じ問いで 1 回だけ依頼し直す（MUST）。依頼し直しても不足が返ったら、本体は「裁定なし（入力不足）」と足りなかったものを、照合と振り分けの G を新しく起こして渡す（MUST。G はそれを「切り出す」として順 5 の経路で主に聞く）。
 
 #### Scenario: (4) に needs-decider の行がある
 
 - **WHEN** develop の SKILL.md (4) の Status 表から `skills/develop/references/gate-result.md` の `needs-decider` の手順を読む
-- **THEN** `needs-decider` の行があり、`dev-workflow:decider` をマージ可否と同じ「可否と根拠」の契約で起こすこと、入力（記録先の本文・関連コメント・同じ型の指摘と前の周の指摘・対象ファイル・仕分け欄・W の return）、返答の 1 行目を `裁定: 可`／`裁定: 否`／`不足:` のどれかに指定しその 1 行目で分岐すること、可否を方式に読み替えること、裁定を SendMessage で G に返すこと、本体は裁定を代理投稿しないことが書かれており、代理投稿の一般則の記述にこの例外が書かれている
+- **THEN** `needs-decider` の行があり、`dev-workflow:decider` をマージ可否と同じ「可否と根拠」の契約で起こすこと、入力（記録先の本文・関連コメント・同じ型の指摘と前の周の指摘・対象ファイル・仕分け欄・W の return）、返答の 1 行目を `裁定: 可`／`裁定: 否`／`不足:` のどれかに指定しその 1 行目で分岐すること、可否を方式に読み替えること、裁定を照合と振り分けの G を新しく起こして渡すこと、本体は裁定を代理投稿しないことが書かれており、代理投稿の一般則の記述にこの例外が書かれている
 
 #### Scenario: 決める役が不足を返す
 
 - **WHEN** 順 6 の依頼に対して、決める役の返答の 1 行目が `不足: <足りないもの>` である
-- **THEN** 本体はそれを G に渡さず、足りないものを補って 1 回だけ依頼し直す。2 回目も不足なら「裁定なし（入力不足）」として G に渡す
+- **THEN** 本体はそれを G に渡さず、足りないものを補って 1 回だけ依頼し直す。2 回目も不足なら「裁定なし（入力不足）」として照合と振り分けの G を新しく起こして渡す
 
 #### Scenario: decider の契約を変えない
 
@@ -214,7 +214,7 @@ executor ごとの起こし方は次のとおりとしなければならない�
 
 ### Requirement: G の needs-carryover-judge を受けた本体の動き
 
-`skills/develop/references/gate-result.md` は、SKILL.md の (4) の Status 表から必読にされ、G の Status `needs-carryover-judge` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、pr-review-gate の `stages/hold.md` 手順 3-c の依頼の書き方で `subagent_type: dev-workflow:decider`・`model: opus` の判定役を起こし、判定の記録を PR に代理投稿し、判定と記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、3-c の書式の `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。本体は判定を受けて自分で宣言を投稿したり、ラベルを付けたり、主に聞いたりしてはならない（MUST NOT。引き継ぐか主に聞くかは合格処理の G が決める）。ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び `needs-carryover-judge` を返したときは、判定役を起こし直してはならず（MUST NOT）、投稿した記録の URL を添えて主に聞かなければならない（MUST）。
+`skills/develop/references/gate-result.md` は、SKILL.md の (4) の Status 表から必読にされ、G の Status `needs-carryover-judge` を受けた本体の動きを書かなければならない（MUST）: 本体は PR トークン上限を測ってから、pr-review-gate の `stages/carryover-judge.md` 手順 3-c の依頼の書き方で `subagent_type: dev-workflow:decider`・`model: opus` の判定役を起こし、判定の記録を PR に代理投稿し、判定と記録の URL を渡して合格処理の G を新しく起こさなければならない（MUST）。`SHARED_BUDGET_MODE=depleted` のときは判定役を起こさず、3-c の書式の `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を起こす（MUST）。本体は判定を受けて自分で宣言を投稿したり、ラベルを付けたり、主に聞いたりしてはならない（MUST NOT。引き継ぐか主に聞くかは合格処理の G が決める）。ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び `needs-carryover-judge` を返したときは、判定役を起こし直してはならず（MUST NOT）、投稿した記録の URL を添えて主に聞かなければならない（MUST）。
 
 #### Scenario: needs-carryover-judge で返った
 
@@ -464,7 +464,7 @@ review phase の executor が `codex` のときは、本体は worker の結果 
 - **THEN** `gate-runner.md`・`SKILL.md` とその必読先・`codex-develop.md`・`pr-review-gate/stages/triage.md`・`pr-review-gate/stages/review-run.md` の上記文言を照合する bats を含めて exit 0 になる
 
 ### Requirement: 失敗の段は `--failure` で request に渡し、返った model を使う
-SKILL.md「モデル」節は、失敗ループで起動・再開を扱う前に `plugins/dev-workflow/references/codex-develop.md` の「起動と role 解決」を必ず読むよう指示しなければならない（MUST）。対応する失敗ループの本文は同 reference の一つの正本へ集約し、SKILL.md には再掲してはならない（MUST NOT）。この必読参照先は、`request` の `--failure` の各値がどの失敗の段に当たるか（`first` = 1 回目の失敗、`executor` = 2 回目で実行側が原因、`judgment` = 2 回目で判断側が原因）を書かなければならない（MUST）。決める役と実行役の model は、その段の `--failure` を渡した `request` が返した値を使うと書かなければならず（MUST）、決める役の model を `templates/escalation-tripwires.md` の文面から読み取る指示を書いてはならない（MUST NOT。判断側・実行側の分類の定義を読む先として同テンプレートを指すことは許す）。実行側の昇格は「W を上位で再開」ではなく、格が上がって model が変わるなら新しい thread に手渡す、と書かなければならない（MUST。細目の正本は `references/codex-develop.md`）。
+SKILL.md「モデル」節は、失敗ループで起動・再開を扱う前に `plugins/dev-workflow/references/codex-develop.md` の「起動と role 解決」を必ず読むよう指示しなければならない（MUST）。対応する失敗ループの本文は同 reference の一つの正本へ集約し、SKILL.md には再掲してはならない（MUST NOT）。この必読参照先は、`request` の `--failure` の各値がどの失敗の段に当たるか（`first` = 1 回目の失敗、`executor` = 2 回目で実行側が原因、`judgment` = 2 回目で判断側が原因）を書かなければならない（MUST）。決める役と実行役の model は、その段の `--failure` を渡した `request` が返した値を使うと書かなければならず（MUST）、決める役の model を `templates/escalation-tripwires.md` の文面から読み取る指示を書いてはならない（MUST NOT。判断側・実行側の分類の定義を読む先として同テンプレートを指すことは許す）。実行側の昇格は「W を上位で再開」ではなく、格が上がって model が変わるなら新しい thread に手渡す、と書かなければならない（MUST。同 reference の失敗ループの本文が正本）。
 
 #### Scenario: `--failure` の値と段の対応が書かれている
 - **WHEN** SKILL.md「モデル」節と、そこから操作前の必読にした `plugins/dev-workflow/references/codex-develop.md` の失敗ループの本文を読む
@@ -476,7 +476,7 @@ SKILL.md「モデル」節は、失敗ループで起動・再開を扱う前に
 
 #### Scenario: 実行側の昇格は新しい thread
 - **WHEN** SKILL.md「モデル」節と、そこから操作前の必読にした `plugins/dev-workflow/references/codex-develop.md` の失敗ループの本文を読む
-- **THEN** 必読参照先に、実行側の昇格で model が変わるときは SendMessage で再開せず新しい thread に手渡すと書かれ、`references/codex-develop.md` を細目の正本として指している
+- **THEN** 必読参照先に、実行側の昇格で model が変わるときは SendMessage で再開せず新しい thread に手渡すと書かれている
 
 ## ADDED Requirements
 

@@ -345,8 +345,8 @@ dev-workflow は `/ci-watch <PR> [--merge]` の入口を持ち、対象 PR の U
 
 ### Requirement: 再開の発火点は reference の手順に置き、develop は節を指すだけにする
 
-切れた見張りの再開は SessionStart hook ではなく `references/ci-watch.md` の手順として置く（MUST）。develop の `skills/develop/references/gate-result.md`（`SKILL.md` の Status 表から必読）は CI の見張りの行から再開の節を指すだけで、再開の条件や手順を言い換えて再掲しない（MUST）。
+切れた見張りの再開は SessionStart hook ではなく `references/ci-watch.md` の手順として置く（MUST）。develop の `skills/develop/references/gate-result.md`（`SKILL.md` の Status 表から必読）は CI の見張りの行から `plugins/dev-workflow/references/ci-watch.md` 全文を必ず Read して従う（再開の節を含む）よう指示し、再開の条件や手順を言い換えて再掲しない（MUST）。
 
-#### Scenario: develop の gate-result.md は節を指すだけ
+#### Scenario: develop の gate-result.md は再開の節を含む全文を必読にする
 - **WHEN** `plugins/dev-workflow/skills/develop/references/gate-result.md` の passed の節の CI の見張りの行を読む
-- **THEN** 見張りの背景タスクの `stopped` / `killed` の通知を受けたときは `references/ci-watch.md` の再開の節に従うことが書かれ、`CI 見張り終了:` による決着済みの判定は写されていない
+- **THEN** 見張りの背景タスクの `stopped` / `killed` の通知を受けたときは再開の節を含む `plugins/dev-workflow/references/ci-watch.md` 全文を必ず Read して従うことが書かれ、`CI 見張り終了:` による決着済みの判定は写されていない
