@@ -137,9 +137,11 @@ plain = re.sub(ansi, "", raw)
 lines = [s for s in plain.splitlines() if s.strip()]
 screen = "\n".join(lines)
 busy = bool(re.search(r"[^\w\s].*(?:…|\.\.\.).*\([^\n]*\d+(?:s|m).*·", screen) or "esc to interrupt" in screen.lower())
+# Waiting on agents is busy, but is not proof of a new foreground turn after send.
+agent_wait = bool(re.search(r"(?m)^\s*[✻✽✶✢✳✺]\s+Waiting for \d+ background agents?(?: to finish)?\s*$", screen))
 if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
     print("skipped dialog")
-elif busy and not after_send:
+elif (busy or agent_wait) and not after_send:
     print("skipped busy")
 elif draft:
     print("skipped input-not-empty")
@@ -152,11 +154,22 @@ else:
     rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
     visible = [i for i, (_, p) in enumerate(rows) if p.strip()]
     footer = r"\s*(?:\? for shortcuts|.*\(shift\+tab to cycle\).*|.*manual mode on.*)\s*"
-    bypass_footer = r"\s*⏵⏵ bypass permissions on(?:\s*·[^\n]+)?\s*"
+    bypass_footer = r"\s*⏵⏵ bypass permissions on(?: \(shift\+tab to cycle\))?(?:\s*·[^\n]+)?\s*"
     border = r"\s*[─━]+\s*"
     openers = [i for i in range(len(rows) - 1)
                if re.fullmatch(border, rows[i][1])
                and re.match(r"^\s*❯(?:\s|$)", rows[i + 1][1])]
+    # The measured agent panel follows the footer: main, then named agent rows.
+    # Strip only this known suffix. Unknown/wrapped panels and stale shell rows
+    # stay visible, so they cannot turn an old Claude frame into ready.
+    footers = [n for n, i in enumerate(visible)
+               if re.fullmatch(bypass_footer, rows[i][1])]
+    if len(footers) == 1:
+        n = footers[0]
+        panel = [rows[i][1] for i in visible[n + 1:]]
+        if (len(panel) >= 2 and re.fullmatch(r"\s*⏺ main\s*", panel[0])
+                and all(re.fullmatch(r"\s*◯ \S+\s{2,}\S.*", p) for p in panel[1:])):
+            visible = visible[:n + 1]
     # Only the measured bypass footer permits intervening custom statuslines.
     bypass = bool(visible and re.fullmatch(bypass_footer, rows[visible[-1]][1]))
     borders = [i for i in visible[:-1] if re.fullmatch(border, rows[i][1])]
