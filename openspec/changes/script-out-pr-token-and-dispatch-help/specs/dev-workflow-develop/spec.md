@@ -1,21 +1,44 @@
 ## ADDED Requirements
 
 ### Requirement: epic-dispatch.sh は --help で出力語の意味を出す
-`plugins/dev-workflow/scripts/epic-dispatch.sh` は、第 1 引数が `--help` か `-h` のとき、stdout にサブコマンドの書式と出力語の意味を出して exit 0 で終わらなければならない（MUST）。出力語は `launch`・`reply`・`reap`・`wait` などが返すもの（`launched`・`skipped`・`failed`・`deferred`・`reaped`・`gone`・`kept <理由>` など）で、終了コード・`child-log` の列・`max-parallel` の既定値の決め方・子の起動コマンドの組み立て（`EPIC_DISPATCH_CLAUDE_CMD`・`EPIC_DISPATCH_MODEL` と既定）も出す。`gh`・`orca`・`git` を呼ばず、状態の記録を読み書きしない（MUST NOT）。既存の使い方（stderr・exit 1）と各サブコマンドの出力語・終了コードは変えない（MUST NOT）。
+`plugins/dev-workflow/scripts/epic-dispatch.sh` は、第 1 引数が `--help` か `-h` のとき、stdout にサブコマンドの書式と出力語の意味を出して exit 0 で終わらなければならない（MUST）。対象は全サブコマンド（`route`・`launch`・`reply`・`notify-closed`・`wait`・`mark`・`reap`・`pending-owner`・`dismiss`・`told`・`child-log`・`adopt`・`clear`・`max-parallel`）で、各サブコマンドの終了コード、`child-log` の列、`max-parallel` の既定値の決め方、子の起動コマンドの組み立て（`EPIC_DISPATCH_CLAUDE_CMD`・`EPIC_DISPATCH_MODEL` と既定）も出す。
 
 #### Scenario: --help は出力語の意味を出して exit 0 で終わる
-- **WHEN** `epic-dispatch.sh --help` を呼ぶ
-- **THEN** stdout に `launched`・`deferred`・`reaped`・`gone`・`kept` の各語と意味が出て、exit 0 で、`gh`・`orca`・`git` は呼ばれない
+- **WHEN** `epic-dispatch.sh --help` を `gh`・`orca`・`git` を PATH に置かない環境で呼ぶ
+- **THEN** stdout に全サブコマンドの書式と、次の節の語頭の一覧の全語の意味が出て、exit 0 で、状態の記録の置き場は作られない
+
+### Requirement: --help は副作用を持たず既存の使い方を変えない
+`--help` の処理は状態の記録の検査（`es_check_env`）と `epic-state.sh` の関数の呼び出しより前に置き、`gh`・`orca`・`git` を呼ばず状態の記録を読み書きしない（MUST NOT）。既存の使い方（stderr・exit 1）と各サブコマンドの出力語・終了コードは変えてはならない（MUST NOT）。
+
 
 #### Scenario: 既存の使い方は変わらない
 - **WHEN** 知らないサブコマンドか引数なしで呼ぶ
 - **THEN** stderr に使い方が出て exit 1 で、stdout は空である
 
-### Requirement: epic-loop.md は出力語の説明を持たず分類表だけを持つ
-`skills/develop/references/epic-loop.md` は、`epic-dispatch.sh` の出力語の意味の説明を持たず、`--help` を参照したうえで、出力語ごとに「止まって主に報告する／進む」の分類を表で示さなければならない（MUST）。
+### Requirement: --help は出力語の固定リストの全語を説明する
+`--help` は、stdout の結果行の語頭（理由・番号が続くものは語頭だけ。理由の語は各サブコマンドの下に書く）の次の固定リストの全語を説明しなければならない（MUST）: `nested`・`orca`・`tmux`・`subagent`（route）、`launched`・`skipped`・`failed`・`deferred`（launch）、`sent`・`relaunched`（reply）、`notified`・`unrecorded`（notify-closed）、`closed`・`done`・`stopped`・`error`・`expired`・`timeout`・`keepalive`（wait）、`marked`（mark）、`reaped`・`gone`・`kept`・`unreadable`（reap・child-log）、`pending`（pending-owner）、`dismissed`（dismiss）、`told`（told）、`adopted`・`none`（adopt・clear）、`cleared`（clear）。
 
-守備範囲: 拾いたい誤りは、`--help` の出力語の一覧が実装と食い違うこと（スクリプトが出す語と `--help` の語を突き合わせて検査する）である。説明文の言い回しと、分類表の各行の妥当性は機械では検査せず、レビューで見る。
+#### Scenario: 固定リストの語はすべて --help に載る
+- **WHEN** 固定リストの各語を `epic-dispatch.sh --help` の stdout から探す
+- **THEN** すべての語が見つかる
 
-#### Scenario: 実装が出す語は --help に載る
-- **WHEN** `epic-dispatch.sh` が出す出力語の一覧と `--help` の出力を突き合わせる
-- **THEN** 一覧のすべての語が `--help` に現れる
+### Requirement: 固定リストは機械抽出と突き合わせて検査する
+テストは、(1) 固定リストの全語が `--help` の出力に現れること、(2) `epic-dispatch.sh` の中の `echo "<語> $n`・`echo "<語> $*`・`echo "<語> $epic` の形で（`>&2` を伴わない行から）機械抽出した語頭がすべて固定リストに含まれること、を検査する（MUST）。エラーメッセージ（stderr）と、`wait` の `error gh`・`error workspaces` の 2 語目は抽出の対象に含めず、`--help` の本文の言い回しも検査しない。
+
+
+#### Scenario: 実装が出す結果行の語頭は固定リストに含まれる
+- **WHEN** `epic-dispatch.sh` の `echo "<語> $n` 形の stdout 行から語頭を機械抽出する
+- **THEN** 抽出した語頭はすべて固定リストにある（足りなければ固定リストと `--help` に語を足す）
+
+### Requirement: epic-loop.md は出力語の定義文を持たず、動作指示と分類表を持つ
+`skills/develop/references/epic-loop.md` は、`epic-dispatch.sh` の出力語の意味を定義する文（例: `launched <N>` の括弧書きの「最初の指示を子の入力欄に送り、ターンの開始まで確かめた」、`skipped` の「既存 worktree があれば二重起動しない」、`wait` の各出力の意味）を持たず、`epic-dispatch.sh --help` への参照と、出力語ごとの「止まって主に報告する／進む」の分類表を持たなければならない（MUST）。
+#### Scenario: 定義文は消え、分類表と --help への参照がある
+- **WHEN** `references/epic-loop.md` を読む
+- **THEN** `epic-dispatch.sh --help` への参照があり、出力語ごとに「止まって主に報告する」か「進む」の行がある表があり、`launched <N>`（…確かめた）の定義の括弧書きは無い
+
+### Requirement: epic-loop.md は出力語を受けた動作指示を残す
+`skills/develop/references/epic-loop.md` は、出力語を受けて本体がすることを定める動作指示を残さなければならない（MUST）。残すもの: `kept <N> <理由>` の確かめ方と消し方、`not-done` は待ちを続けること、`reaped`・`gone` を片付け待ちから外すこと、`done`・`closed` で起こされたときの手順、`deferred` の意味と後回しの子の扱い、同時上限の既定値の式と設定方法。既存の要件「Orca 経路の片付け」「同時に動く子の上限」「後回しの子の通常進行」はこれらを要求していて定義文を要求していないので、本文と Scenario は変わらず成り立つ。
+
+#### Scenario: 動作指示は残る
+- **WHEN** 既存の Scenario「Orca 経路に片付けの手順が書かれている」「片付けた子と消えた子は片付け待ちから外れる」「epic-loop.md に既定値の式と設定方法が書かれている」の検査を、編集後の `epic-loop.md` にかける
+- **THEN** すべて偽にならない（既存の bats がそのまま通る）
