@@ -135,12 +135,12 @@ check_naming() {
   if grep -Eq '^([1-9]\. |\*\*(マージ待ちの子|PR トークン上限の子|主の委任|別のリポジトリの子|サブエージェント方式)\*\*)' "$root/$R/epic.md"; then
     echo 'entry contains parent operations' >&2; rc=1
   fi
-  if grep -Eq '^\*\*マージ待ちの子\*\*' "$root/$R/epic-loop.md"; then
+  if grep -Eq '^[[:space:]]*([-+*][[:space:]]+)?\*\*マージ待ちの子\*\*' "$root/$R/epic-loop.md"; then
     echo 'parent loop contains merge-wait operations' >&2; rc=1
   fi
   local f
   for f in epic-child-stop.md epic-keepalive.md epic-worker-slots.md; do
-    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md`( の)?( ?手順 [0-9]+)? を読' "$root/$R/$f"; then
+    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md`( の)?[[:space:]]*((「)?手順[[:space:]]*([0-9]|０|１|２|３|４|５|６|７|８|９)+([[:space:]]*と[[:space:]]*([0-9]|０|１|２|３|４|５|６|７|８|９)+)*(」)?)?[[:space:]]*を(先に)?読' "$root/$R/$f"; then
       echo "child reads parent operations: $f" >&2; rc=1
     fi
   done
@@ -298,6 +298,51 @@ fixture_budget() {
   run check_naming "$r"
   [ "$status" -eq 1 ]
   [[ "$output" == *'child keepalive contains parent watch'* ]] || return 1
+}
+
+@test "regress: child parent-step reference fullwidth fails" {
+  local r="$BATS_TEST_TMPDIR/r"
+  copy_real "$r"
+  printf '\n`references/epic-stop.md` の手順 ８ を読む。\n' >> "$r/$R/epic-child-stop.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'child reads parent operations: epic-child-stop.md'* ]] || return 1
+}
+
+@test "regress: child parent-step reference first fails" {
+  local r="$BATS_TEST_TMPDIR/r"
+  copy_real "$r"
+  printf '\n`references/epic-stop.md` の手順 8 を先に読む。\n' >> "$r/$R/epic-child-stop.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'child reads parent operations: epic-child-stop.md'* ]] || return 1
+}
+
+@test "regress: child parent-step reference multiple fails" {
+  local r="$BATS_TEST_TMPDIR/r"
+  copy_real "$r"
+  printf '\n`references/epic-stop.md` の手順 8 と 9 を読む。\n' >> "$r/$R/epic-child-stop.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'child reads parent operations: epic-child-stop.md'* ]] || return 1
+}
+
+@test "regress: child parent-step reference quoted fails" {
+  local r="$BATS_TEST_TMPDIR/r"
+  copy_real "$r"
+  printf '\n`references/epic-stop.md` の「手順 8」を読む。\n' >> "$r/$R/epic-child-stop.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'child reads parent operations: epic-child-stop.md'* ]] || return 1
+}
+
+@test "regress: bulleted merge-wait operations in parent loop fail" {
+  local r="$BATS_TEST_TMPDIR/r"
+  copy_real "$r"
+  printf '\n- **マージ待ちの子**: 親のマージ処理。\n' >> "$r/$R/epic-loop.md"
+  run check_naming "$r"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'parent loop contains merge-wait operations'* ]] || return 1
 }
 
 @test "regress: unconditional scene operations at parent startup fail" {
