@@ -48,7 +48,7 @@ failure() {
   local value
   success '実行モード: interactive（既定）'
   success '実行モード: channel（チャンネルの依頼）' --channel-request
-  for value in '' 0 ' 0 ' $' \t\r\n' $' \t\r\n0\r\n\t ' $'\u00a0\u3000' $'\u00a00\u3000'; do
+  for value in '' 0 ' 0 ' $' \t\r\n' $' \t\r\n0\r\n\t ' $'\xc2\xa0\xe3\x80\x80' $'\xc2\xa00\xe3\x80\x80'; do
     export DEV_WORKFLOW_UNATTENDED="$value"
     success '実行モード: interactive（既定）'
     success '実行モード: channel（チャンネルの依頼）' --channel-request
@@ -57,7 +57,7 @@ failure() {
 
 @test "marker: nonzero nonempty strings including false and double zero are present" {
   local value
-  for value in 1 false 00 $' \t\r\nhello\u00a0\u3000'; do
+  for value in 1 false 00 $' \t\r\nhello\xc2\xa0\xe3\x80\x80'; do
     export DEV_WORKFLOW_UNATTENDED="$value"
     success '実行モード: channel（印）'
     success '実行モード: channel（印）' --channel-request

@@ -68,16 +68,15 @@ refute() {
   printf '%s\n' "$row" | grep -qF 'チャンネルで聞く（AskUserQuestion は使わない）'
 }
 
-@test "mode decision: order, marker reading, start comment line, no change midway" {
-  local s; s="$(subsection 'モードの決め方')"
+@test "mode decision: script inputs, result table, failure and retained instructions" {
+  local s word; s="$(subsection 'モードの決め方')"
   [ -n "$s" ]
-  printf '%s\n' "$s" | grep -qF -- '`--unmanned`'
-  printf '%s\n' "$s" | grep -qF 'DEV_WORKFLOW_UNATTENDED'
-  printf '%s\n' "$s" | grep -qF '<channel source='
-  printf '%s\n' "$s" | grep -qF '未設定・空・`0` は印なし'
-  printf '%s\n' "$s" | grep -qF '実行モード: <モード>（<理由>）'
-  printf '%s\n' "$s" | grep -qF '途中でモードを変えない'
-  printf '%s\n' "$s" | grep -qF '引き継ぎの `実行モード` の値を使'
+  for word in 'scripts/develop-mode.sh' '--unmanned（develop の引数にあるとき）' '--channel-request（依頼本文が <channel source= で始まるとき）' '新規開始時に 1 回' '実行モード: interactive（既定）' '実行モード: channel（印）' '実行モード: channel（チャンネルの依頼）' '実行モード: unmanned（引数）' 'exit 0' 'exit 1' 'stderr' '推測で進めない' '実行モード: <モード>（<理由>）' '途中でモードを変えない' '引き継ぎの `実行モード` の値を使' '決め直さず' 'references/channel.md'; do
+    printf '%s\n' "$s" | grep -qF -- "$word"
+  done
+  printf '%s\n' "$s" | grep -qF '| 出力／終了 | 本体の扱い |'
+  printf '%s\n' "$s" | grep -qF '開始コメントに'
+  refute "$s" '^1\. '
 }
 
 @test "start comment: Role profile section lists the mode line and the channel reply check line" {
