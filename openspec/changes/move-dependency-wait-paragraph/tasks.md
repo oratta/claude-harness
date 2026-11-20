@@ -4,8 +4,8 @@
 
 ## 1. archive 前の配置確認
 
-- [ ] 1.1 `bats tests/openspec-specs-format.bats` を実行し、一般配置検査だけが対象段落1件（`dev-workflow-develop/spec.md:5702`）を検出して失敗し、他の7テストが成功することを確認する。失敗を消すために検査の除外条件を変えない。触る範囲: tests/openspec-specs-format.bats:18-61（既存の一般配置検査、検証のみ）、openspec/specs/dev-workflow-develop/spec.md:5678-5702（依存待ちの要件、検証のみ）
-- [ ] 1.2 delta から `## MODIFIED Requirements` を除いた要件全文が、基準 HEAD の同じ要件全文とバイト単位で一致し、本文の対象段落が1回・全5シナリオが保持されていることを確認する。`openspec validate move-dependency-wait-paragraph --type change --strict` が exit 0 であることも確認する。触る範囲: openspec/changes/move-dependency-wait-paragraph/specs/dev-workflow-develop/spec.md:1-27（要件全文の MODIFIED delta、検証のみ）
+- [x] 1.1 `bats tests/openspec-specs-format.bats` を実行し、一般配置検査だけが対象段落1件（`dev-workflow-develop/spec.md:5702`）を検出して失敗し、他の7テストが成功することを確認する。失敗を消すために検査の除外条件を変えない。触る範囲: tests/openspec-specs-format.bats:18-61（既存の一般配置検査、検証のみ）、openspec/specs/dev-workflow-develop/spec.md:5678-5702（依存待ちの要件、検証のみ）
+- [x] 1.2 delta から `## MODIFIED Requirements` を除いた要件全文が、基準 HEAD の同じ要件全文とバイト単位で一致し、本文の対象段落が1回・全5シナリオが保持されていることを確認する。`openspec validate move-dependency-wait-paragraph --type change --strict` が exit 0 であることも確認する。触る範囲: openspec/changes/move-dependency-wait-paragraph/specs/dev-workflow-develop/spec.md:1-27（要件全文の MODIFIED delta、検証のみ）
 
 ## Workflow follow-up
 
