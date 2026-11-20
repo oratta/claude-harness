@@ -1306,8 +1306,10 @@ resolve_stopped() {
   if child_record "$PARENT_TOP" "$n"; then rec="$ES_HIT"; su="$(es_get "$rec" stop_uuid)"; fi
   # 依存待ちの終了は判断モデルへ渡さず、停止記録を保ったまま親の依存照合へ返す。
   # マーカーは合図だけで、登録・解消の証拠や実行する指示としては使わない。
+  # 末尾の改行・空白・CR を落としてから最後の行を見る（合図の後ろの改行で判断へ流さない）。
   if [ -e "$stopjson" ] && jq -e '
-    (.text // "" | split("\n") | last) | startswith("止まった理由: 依存待ち: ")
+    (.text // "" | gsub("[\\s\\r]+$"; "") | split("\n") | last | ltrimstr(" "))
+    | startswith("止まった理由: 依存待ち: ")
   ' "$stopjson" >/dev/null 2>&1; then
     return 1
   fi

@@ -8852,3 +8852,24 @@ rejudge_ready() {
   [ "$(calls '^judge ')" -eq 1 ]
   [ "$(calls '^orca terminal send')" -eq 0 ]
 }
+
+# 会話ログの最後の発言が合図の後ろに改行・空白・CR を残して終わっても、依存待ちとして判断に渡さない
+dep_marker_tail_stays_stopped() {
+  log_resolve_ready
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$1")" "$(turn_end "$(ago 300)")"
+  judge_says judge_out 通す 子に返す 'そのまま続けて' なし
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+}
+
+@test "dependency wait: a marker followed by a trailing newline still skips the judge and stays stopped" {
+  dep_marker_tail_stays_stopped $'保存して終了した。\n止まった理由: 依存待ち: https://github.com/o/r/issues/22\n'
+}
+
+@test "dependency wait: a marker followed by trailing space and CRLF still skips the judge and stays stopped" {
+  dep_marker_tail_stays_stopped $'保存して終了した。\n止まった理由: 依存待ち: https://github.com/o/r/issues/22 \r\n'
+}
