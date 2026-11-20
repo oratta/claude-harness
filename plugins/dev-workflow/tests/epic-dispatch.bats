@@ -333,6 +333,20 @@ esac
 exit 0' ;;
     gh) body='
 if [ "$1 $2" = "api user" ]; then echo "stub-user"; exit 0; fi
+# Dependency API fixture used by the child registration and parent re-read scenario.
+case "${2-}" in
+  */dependencies/blocked_by)
+    if [ "${3-}" = -X ] && [ "${4-}" = POST ]; then
+      [ "${6-}" = issue_id=22 ] || exit 1
+      cp "$STUB_CFG/dependency_22" "$STUB_CFG/registered_dependency"
+      cat "$STUB_CFG/registered_dependency"
+    else
+      if [ -e "$STUB_CFG/registered_dependency" ]; then
+        jq -s . "$STUB_CFG/registered_dependency"
+      else echo "[]"; fi
+    fi
+    exit 0 ;;
+esac
 case "$1 $2" in
   "api repos/"*/*)
     case "${2#repos/}" in
@@ -3794,10 +3808,10 @@ infer_ready() {
   s3="$(printf '%s\n' "$r" | grep -F '`done <N>...` で起こされたら')"
   [ "$(printf '%s\n' "$s3" | grep -c .)" -eq 1 ]
   printf '%s\n' "$s3" | grep -qF '動いている子か片付け待ちの子があれば 2 に戻る'
-  printf '%s\n' "$s3" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認と報告がまだなら行う'
+  printf '%s\n' "$s3" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認・報告も行う'
   s7="$(printf '%s\n' "$r" | grep -F '再開したら')"
   [ "$(printf '%s\n' "$s7" | grep -c .)" -eq 1 ]
-  printf '%s\n' "$s7" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認と報告がまだなら行う'
+  printf '%s\n' "$s7" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認・報告も行う'
 }
 
 # 手順書に書いてよい orca のコマンドは、手順 3 で親が確かめて消すときの 1 件だけ（#1095）。
@@ -3956,7 +3970,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -qF '手順 7'
   printf '%s\n' "$l" | grep -qF 'references/ci-watch.md'
   # 親が追加のやり直しを許したあと同じ HEAD で落ちたときの止まり（`none`）も対象に入る
-  printf '%s\n' "$l" | grep -F '`obs.state` が `wait` でない `none`' | grep -qF '前回と同じ状態・同じ HEAD の決着'
+  printf '%s\n' "$l" | grep -F '`obs.state` が `wait` でない `none`' | grep -qF '同じ状態・HEAD で決着済み'
   # 桁数と取り方、取れないときの書き方
   printf '%s\n' "$l" | grep -qF '先頭 7 文字'
   printf '%s\n' "$l" | grep -qF '`obs.head`'
@@ -4003,7 +4017,7 @@ orca_cmd_scripts() {
   q="$(run_section | grep -E '^7\. '; cat "$PLUGIN_DIR/skills/develop/references/epic-stop.md")"
   printf '%s\n' "$q" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）、待ちに入る'
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
-  printf '%s\n' "$r" | grep -qF '破壊的操作や聖域を止めた hook は「決まりで主の承認が要る」に当たる'
+  printf '%s\n' "$r" | grep -qF '破壊的操作や聖域は承認待ちに当たる'
 }
 
 @test "skill: Orca route waits with --watch-stopped and reports stopped children without dropping them" {
@@ -4298,7 +4312,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -F '1 つに決まらない' | grep -qF '主に上げるとき'
   # リスクは表の「その子のブランチの中に閉じるもの」と揃え、解釈の揺れは推奨が変わるときに限る（#1254 のゲートの指摘）
   printf '%s\n' "$p" | grep -qF '許容と書かれておらず、その子のブランチの中にも閉じないリスク'
-  printf '%s\n' "$p" | grep -qF '原則の語が 2 通り以上に読め、読み方で推奨が変わる'
+  printf '%s\n' "$p" | grep -qF '語の解釈で推奨が変わる'
   run grep -F '解釈が要る' "$f"; [ "$status" -eq 1 ]
   run grep -F '許容と書かれていないリスク' "$f"; [ "$status" -eq 1 ]
   printf '%s\n' "$p" | grep -F '推し量った意図' | grep -qF '根拠にしない'
@@ -5177,7 +5191,7 @@ nothing_sent() {
   [ "$n" -gt 0 ]
   [ "$l" -gt 0 ]
   [ "$n" -lt "$l" ]
-  printf '%s\n' "$l4" | grep -qF '`launch` が `failed` を返しても'
+  printf '%s\n' "$l4" | grep -qF '`launch` の `failed` 後の送り漏れを防ぐ'
 }
 
 # --- 同時に動く子の上限（SKILL.md） ---
@@ -5212,7 +5226,7 @@ worker_slots() { cat "$PLUGIN_DIR/skills/develop/references/epic-worker-slots.md
   l1="$(printf '%s\n' "$r" | grep -E '^1\. ')"
   l2="$(printf '%s\n' "$r" | grep -E '^2\. ')"
   printf '%s\n' "$l1" | grep -qF '`deferred <N>`'
-  printf '%s\n' "$l1" | grep -qF '`EPIC_DISPATCH_MAX_PARALLEL`'
+  printf '%s\n' "$l1" | grep -qF '**同時に動く子の上限**'
   printf '%s\n' "$l2" | grep -qF '後回しの子は動いている子にも片付け待ちの子にも入れない'
   printf '%s\n' "$l2" | grep -qF '`wait` の位置引数にも `--watch-done` にも渡さない'
 }
@@ -5222,7 +5236,7 @@ worker_slots() { cat "$PLUGIN_DIR/skills/develop/references/epic-worker-slots.md
   for k in 3 8; do
     printf '%s\n' "$r" | grep -E "^$k\\. " | grep -Eq '後回しの子が残っていれば、(`references/epic-loop.md` の手順 )?2 に戻る前に依存の解けた開いた子'
   done
-  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子もここに含まれる'
+  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子も同じ `--note` で渡す'
 }
 
 @test "skill: Orca route reports to the owner when only deferred children are left" {
@@ -5488,7 +5502,7 @@ resolve_relaunch_count() {
 @test "skill: Orca route steps 3 and 4 relaunch the deferred children with the same --note" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -E '^3\. ' | grep -qF '依存の解けた開いた子を、最初に渡したときと同じ `--note` を付けて `launch` に渡し直す'
-  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子には最初に渡したときと同じ `--note` を付ける'
+  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子も同じ `--note` で渡す'
 }
 
 @test "skill: Orca route step 4 relaunches the deferred children after a close other than completed too" {
@@ -5498,7 +5512,7 @@ resolve_relaunch_count() {
 @test "skill: Orca route steps 3, 4 and 7 report when only deferred children are left" {
   r="$(run_section)"
   for k in 3 4 7; do
-    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子だけが残るときは 2 の報告'
+    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子だけなら 2 の報告'
   done
 }
 
@@ -8723,4 +8737,118 @@ rejudge_ready() {
 
 @test "skill: parent subagent route reads shared worker slots" {
   subagent_para | grep -qF 'references/epic-worker-slots.md'
+}
+
+# --- dependency-wait stop and restart (#1717) ---
+
+@test "dependency wait docs: child registers, saves resumable progress and ends without a mark" {
+  for text in 'dependencies/blocked_by' 'issue_id=' 'GET' '子の停止: 依存待ち' \
+    '依存先:' '待つ理由:' '再開条件:' '再開に要る途中経過:' '再開手順:' \
+    '止まった理由: 依存待ち: <依存先 URL>' '対応 issue が不明' '未保存の途中経過' \
+    '待機用の背景タスク' '停止の印を付ける操作は不要'; do
+    grep -qF "$text" "$EPIC_CHILD_STOP" || { echo "missing child instruction: $text"; return 1; }
+  done
+  grep -qF '主の返事待ちの 7 項目とは別' "$EPIC_CHILD_STOP"
+}
+
+@test "dependency wait docs: parent response registers and ends, keeping existing approval limits" {
+  local doc="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  for text in 'blocked_by' '再開手順を記録して終了' 'あとで親から連絡するので待機' '返してはならない' 'main の CI' \
+    '主の承認' 'human-merge' '同じ HEAD で 1 回'; do
+    grep -qF "$text" "$doc" || { echo "missing parent criterion: $text"; return 1; }
+  done
+}
+
+@test "dependency wait docs: loop restores dependencies before owner questions and preserves stops until restart" {
+  local doc="$PLUGIN_DIR/skills/develop/references/epic-loop.md"
+  for text in '依存待ちの照合' 'pending-owner' '主の返事待ちより先' \
+    '動いている子から外す' 'reply --relaunch --as parent' 'relaunched' \
+    'not-stopped' 'not_planned' '未起動の子は' '送信結果' \
+    '依存待ちが残る間は' 'clear' 'notify-closed / reap'; do
+    grep -qF "$text" "$doc" || { echo "missing loop instruction: $text"; return 1; }
+  done
+}
+
+@test "dependency wait: registered and saved child stays stopped through open dependency and relaunches from the same record" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11 stop=resumed
+  set_terms 11 term-a-11
+  gh_seq 11 open
+  gh_seq 22 open closed
+  local dep_url='https://github.com/oratta/claude-harness/issues/22'
+  local progress='branch oratta/issue-11 / commit aaa111 / PR #33 / 残作業: ゲート'
+  local resume='main を取り込んでゲートを取り直す'
+  printf '%s\n' '{"id":22,"number":22,"state":"open","html_url":"https://github.com/oratta/claude-harness/issues/22"}' > "$STUB_CFG/dependency_22"
+  # Child: register, GET-confirm and save the comment before ending the turn.
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by -X POST -F issue_id=22
+  [ "$status" -eq 0 ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq -r '.[0].html_url')" = "$dep_url" ]
+  local record
+  record="$(printf '子の停止: 依存待ち\n依存先: %s\n待つ理由: main の CI 修正\n再開条件: 前提の完了\n再開に要る途中経過: %s\n再開手順: %s' "$dep_url" "$progress" "$resume")"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh issue comment 11 --body "$record"
+  [ "$status" -eq 0 ]
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '依存と再開記録を保存して終了した。\n止まった理由: 依存待ち: %s' "$dep_url")")" "$(turn_end "$(ago 300)")"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ ! -e "$STUB_CFG/comment_400" ]
+  [ "$(cat "$STUB_CFG/comment_11")" = "$(printf '%s\n---' "$record")" ]
+  local stopped_record
+  stopped_record="$(cat "$(rec_of 1122 11)")"
+  # Parent restart: pending is classified from the saved comment, not an owner question.
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'pending 11 d1' ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq '[.[] | select(.state != "closed")] | length')" -eq 1 ]
+  # No child is polled or sent to while the external prerequisite is open.
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 2 ]
+  [ "$output" = 'timeout 22' ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$stopped_record" ]
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 0 ]
+  [ "$output" = 'closed 22' ]
+  # GitHub now reports the dependency completed. The parent re-reads, then uses
+  # the saved resume instruction with the existing restart operation.
+  jq '.state = "closed" | .state_reason = "completed"' "$STUB_CFG/registered_dependency" > "$STUB_CFG/closed_dependency"
+  mv "$STUB_CFG/closed_dependency" "$STUB_CFG/registered_dependency"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq '[.[] | select(.state != "closed" or .state_reason != "completed")] | length')" -eq 0 ]
+  [ "$(calls '^gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by')" -eq 4 ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$stopped_record" ]
+  resume="$(sed -n 's/^再開手順: //p' "$STUB_CFG/comment_11")"
+  run dispatch reply --relaunch --as parent 400 11 "依存先 $dep_url が完了。$resume"
+  [ "$status" -eq 0 ]
+  [ "$output" = 'relaunched 11' ]
+  [ "$(rec_get 11 session)" = term-11 ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" '/develop #11 '
+  grep -qF "$resume" "$STUB_CFG/sent_term-11"
+  grep -qF "$dep_url" "$STUB_CFG/sent_term-11"
+  [ "$(calls '^orca terminal send')" -eq 1 ]
+  [ "$(calls '^orca terminal close')" -eq 1 ]
+  [ "$(rec_get 11 worktree)" = "$BATS_TEST_TMPDIR/work/issue-11" ]
+}
+
+@test "dependency wait: a marker above the final line remains an ordinary no-question report" {
+  log_resolve_ready
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '止まった理由: 依存待ち: https://github.com/o/r/issues/22\nその後、依存が解けて完了した。')")" "$(turn_end "$(ago 300)")"
+  judge_says judge_out 問いではない 完了の報告 '' なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'closed 11' ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(calls '^judge ')" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
 }
