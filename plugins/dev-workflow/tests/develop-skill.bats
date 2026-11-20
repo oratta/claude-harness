@@ -1898,9 +1898,9 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
   printf '%s\n' "$p" | grep -qF '更新前の版の子は記録の `前提:` の中の同じ行'
   printf '%s\n' "$p" | grep -qF '今回の止まった理由の上限が権限より小さい'
   m="$(grep -F '**マージ待ちの子**' "$EPIC")"
-  printf '%s\n' "$m" | grep -qF '子の最後の発言の全文（更新前の版の子は停止の記録）'
+  printf '%s\n' "$m" | grep -qF 'parent-merge-inputs.sh'
   ! printf '%s\n' "$m" | grep -qF '記録の PR の本文' || return 1
-  grep -qF '子の最後の発言の全文（更新前の版の子は停止の記録）' "${SKILL_DIR}/references/parent-merge-criteria.md"
+  grep -qF 'parent-merge-inputs.sh' "${SKILL_DIR}/references/parent-merge-criteria.md"
 }
 
 # spec: dev-workflow-develop（主に上げた止まりは told で記録し、伝え済みの止まりだけなら wait は expired で返る）
