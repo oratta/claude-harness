@@ -16,3 +16,17 @@
 - この spec 段では artifact を commit/push して return し、実装は R1 の APPROVE を確認した別の段で行う。
 - finish 段で archive・Draft PR・仕様宣言を行う。PR 本文には判定箇所と SKILL.md 全体の前後の字数/bytes、startup 予算を下げた理由、固定注入実測 44,032 と維持理由、(b) を出さなかった理由、(c) の後続候補を記録する。`Closes #1686` / `Fixes #1686` は書かず、継続中の issue として参照する。
 - (b) は本体の再確認と既存 `reap`/`wait` の判定が同値でなく、出力だけに任せると動作が変わる。(c) は停止・マージ・委任・別 repo の入力収集を定める別 change `collect-parent-merge-inputs` の候補として return する。
+
+## 実装試行 3 の検査記録
+
+- 引き継いだ script は変更せず、bats の Unicode 空白を UTF-8 バイト表記に修正。`bats plugins/dev-workflow/tests/develop-mode.bats`: exit 0（8 件）。script 不在の隔離 fixture に同テストをコピーした再確認は exit 1（期待する Red）。これはこの試行で新たに script を実装する前の実行ではなく、引き継ぎ後の Red 再確認。
+- 文書テストの先行更新後、旧文書に対する `bats plugins/dev-workflow/tests/develop-channel-mode.bats`: exit 1（mode decision だけ失敗）。文書を置き換えた後の `bats plugins/dev-workflow/tests/develop-mode.bats plugins/dev-workflow/tests/develop-channel-mode.bats plugins/dev-workflow/tests/develop-skill.bats`: exit 0（196 件）。
+- `bats tests/develop-startup-budget.bats tests/injection-budget.bats tests/develop-epic-scene-budget.bats tests/develop-worker-stage-budget.bats tests/develop-orchestrator-reference-budget.bats`: exit 0（129 件）。実測値は `plugins/dev-workflow/changes/1686.md` に記録。
+- `shellcheck --severity=warning plugins/dev-workflow/scripts/develop-mode.sh`: exit 0。
+- `PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin ./scripts/lint.sh`: exit 0。Claude 起動禁止に従い PATH から claude を除外したため、内包する `claude plugin validate` は未実行。shellcheck は全追跡 sh を検査し指摘なし。
+- `./scripts/test-auto-merge-workflow.sh`: exit 0（145 passed, 0 failed、actionlint も成功）。CI の lint ジョブが lint.sh と併せて実行する検査。
+- `openspec validate extract-develop-mode-decision --type change --strict`: exit 0。
+- `./scripts/test.sh`: exit 143。共有契約 `plugins/dev-workflow/references/subagent-waiting.md` の総待ち上限 27 分に達し、実行中の test.sh とその子プロセスを TERM で停止した。全 5,330 件中、最後の成功は 4,339 件目、停止前の `not ok` は 0 件。全体合格ではなく task 2.1 は未完了。環境の ps/pgrep 自己列挙検査で残留検査なしの分岐になったこともログに表示された。
+- 関連テスト検索: `git grep -l -e 'develop-mode.sh' -e 'develop-channel-mode.bats' -e 'skills/develop/SKILL.md' -e 'develop-startup-budget.txt' -e 'changes/1686.md' -- '*test*' '*.bats'`（exit 0）。検索結果を含む全体は上記で未完了のため、検索で見つかった全テストの合格を主張しない。
+- `git diff --check`: exit 0。channel.md 案内の末尾段落全文は起点と同一、判定 script 本体・hook・epic-loop.md に起点 09aa530f からの差分なし。
+- 残作業: 全体テストの完了と task 2.1 のチェック。archive・PR 作成・独立レビューはこの段で実施しない。
