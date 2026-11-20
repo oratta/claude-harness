@@ -24,6 +24,29 @@ def reject_constant(_value):
     raise ValueError("invalid JSON constant")
 
 
+EXCLUDE_LINE = ".claude/settings.local.json"
+
+
+def add_exclude(root):
+    """Add the settings path to the shared info/exclude unless the exact line exists."""
+    git = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--git-common-dir"],
+        capture_output=True, text=True, check=False,
+    )
+    if git.returncode or not git.stdout.strip():
+        raise ValueError("cannot resolve the git common directory")
+    common = Path(root) / git.stdout.strip()  # absolute output wins over root
+    info = common / "info"
+    exclude = info / "exclude"
+    text = exclude.read_text(encoding="utf-8") if exclude.exists() else ""
+    if EXCLUDE_LINE in text.split("\n"):
+        return
+    info.mkdir(exist_ok=True)
+    prefix = "" if not text or text.endswith("\n") else "\n"
+    with open(exclude, "a", encoding="utf-8") as stream:
+        stream.write(prefix + EXCLUDE_LINE + "\n")
+
+
 def configure(worktree, apply):
     root = Path(worktree).absolute()
     target = root / ".claude" / "settings.local.json"
@@ -62,6 +85,8 @@ def configure(worktree, apply):
         data["idleCompaction"] = False
         # Serialize before creating anything; rejected inputs leave no new paths.
         content = json.dumps(data, ensure_ascii=False, indent=2) + "\n"
+        # Hide the file before it exists so it never shows in git status.
+        add_exclude(root)
         directory.mkdir(exist_ok=True)
         with tempfile.NamedTemporaryFile(
             mode="w", encoding="utf-8", dir=directory,
