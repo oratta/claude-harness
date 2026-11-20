@@ -11,7 +11,52 @@
 
 setup() {
   REPO_ROOT="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
-  SPECS_DIR="$REPO_ROOT/openspec/specs"
+  SPECS_DIR="${SPECS_DIR:-$REPO_ROOT/openspec/specs}"
+}
+
+# #1725: 既知の段落の全文に依存せず、シナリオ側に紛れた要件本文を検出する。
+@test "no requirement prose with MUST or SHALL appears after its first scenario" {
+  python3 - "$SPECS_DIR" <<'PYTHON'
+import re
+import sys
+from pathlib import Path
+
+errors = []
+files = sorted(Path(sys.argv[1]).glob("*/spec.md"))
+assert files, f"no spec.md files in {sys.argv[1]}"
+for path in files:
+    in_requirement = after_scenario = False
+    fence = None
+    for number, line in enumerate(path.read_text().splitlines(), 1):
+        # フェンス内の見出しは Requirement / Scenario の境界として扱わない。
+        if fence:
+            if re.fullmatch(r" {0,3}" + re.escape(fence[0]) + r"{" + str(len(fence)) + r",}\s*", line):
+                fence = None
+            continue
+        opening = re.match(r" {0,3}(`{3,}(?=[^`]*$)|~{3,})", line)
+        if opening:
+            fence = opening[1]
+            continue
+        if line.startswith("### Requirement: "):
+            in_requirement = True
+            after_scenario = False
+            continue
+        if in_requirement and line.startswith("#### Scenario:"):
+            after_scenario = True
+            continue
+        if not after_scenario:
+            continue
+        # 見出し・字下げ継続行・シナリオのステップ（Markdown の箇条書き/強調を含む）は除外。
+        if re.match(r"[ \t]|#{1,6}\s", line):
+            continue
+        if re.match(r"(?:[-+*]\s+|\d+[.)]\s+)?(?:\*\*|__)?(?:WHEN|THEN|AND|GIVEN|BUT)\b", line):
+            continue
+        if re.search(r"\b(?:MUST|SHALL)\b", line):
+            errors.append(f"{path}:{number}:{line}")
+if errors:
+    print("\n".join(errors), file=sys.stderr)
+    sys.exit(1)
+PYTHON
 }
 
 @test "no spec.md under openspec/specs uses change delta headings" {
@@ -140,6 +185,21 @@ cases = json.loads(r'''[
     "owner-question-style",
     "主に問いを返す各所は正本を参照し、固有の事柄だけを残す",
     "エピックの親の共通の書き分けは epic-loop.md の「主への報告」に一度宣言し、停止・マージ待ち・サブエージェント方式の手順はこの宣言を読むよう指示する（MUST）。各手順末に同じ宣言を複写することは要求しない。"
+  ],
+  [
+    "dev-workflow-develop",
+    "時間がたった子への返事は 60 分を境にそのまま送るか起動し直すかを決める",
+    "根拠には、2026-10-23 の子のログで、コンパクトのあとに残ったのが `SKILL.md` のファイル名と `/develop` の入口だけで、再開したあとも読み直さずにゲートの実行まで進んでいたことと、起動し直しとの費用の差（1 回あたり Opus 5.5 で約 $0.5）、1 時間以上たってから返事が来る子の割合（3.2%）を書く（SHALL）。判定に使う事実は、子の端末の有無（`orca` のコマンドは書かず、要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」に従う。端末の有無は `epic-dispatch.sh reply` が確かめ、端末が無ければ起動し直す。要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」）と、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）の最後のリクエストの時刻、および同じファイルを `plugins/dev-workflow/scripts/subagent-context.sh --file <トランスクリプト>` で測った会話量 N である。事実を読めない場合は、上の自動判定の要件と同じく確認できた条件だけで決め、どちらも真と確認できなければそのまま送ると書く（MUST）。送り方と起動し直し方の手順本体はこのファイルに書かない（SHALL NOT。止まった子を親が解決する手順（develop の `references/epic-loop.md` の Orca 経路と `epic-dispatch.sh reply`）が書き、このファイルを参照する）。"
+  ],
+  [
+    "dev-workflow-develop",
+    "親が長く待ったあとは親の表で続けるか起動し直すかを決める",
+    "親の状態はエピックと子 issue のコメント・依存グラフ・子の状態記録から復元できると書く（SHALL）。`回し方:`、`子 #N マージ → 残り k 件` / `子 #N 見送り`、`後で別に起動するエピック:`、`子 #N のワークツリーを残した`、`親の判断: 子 #N 通した` と停止記録 URL の対応、`pending-owner` の確認を残す。比較する相手は手順書と引き継ぎを読む新セッションであり、要約と手順書再読み込みを二重に払う親の方針を #1385 で覆したと書く（SHALL）。監視停止が compact のせいだったとは断定しない。古い集計のリンクは履歴として残せるが、親の idle 閾値の再集計を現行の宿題にしない。"
+  ],
+  [
+    "dev-workflow-memory-refresh",
+    "memory-refresh スキルで承認と控えを取ってから整理する",
+    "`patches:` による分類の守備範囲は次のとおり。入力の出どころはメモリの frontmatter と `gh` が返す issue の状態・閉じ方で、敵対的な入力は想定しない。拾う誤りは、完了で閉じたものを削除にしないこと・完了以外で閉じたものを確かめずに削除にすること。通してよい具体例は、動きが直ったかの判断の誤り（主が一覧の承認で見る）。見つかる穴をすべて塞ぐことは完了条件にしない（MUST NOT）。"
   ]
 ]''')
 errors = []

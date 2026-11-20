@@ -4,7 +4,7 @@
 
 本文の「上の「親経由で受けた許容（親経由で受領）の真正性確認」の 1」は `stages/authenticity-relayed.md` の同名節の 1 を指す。
 
-**主の委任で親経由に受けた許容（親経由で受領（委任））の真正性確認。** エピックの子で、主が親のセッションでこのエピックのリスク許容を親に任せ（develop の `references/epic-delegation.md` の **主の委任**）、親が末尾に ` [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]` を添えて送ってきたときは、develop の本体が `owner-reply-check.sh --delegated` の終了コード 0 を確かめてから値（親のセッション ID・確認の uuid・`MATCH:` の timestamp・委任の記録の URL・停止の記録の URL・`MATCH:` の全文）を渡す。宣言コメントに次の 1 行を追記する（`<日時>` は `MATCH:` の行の timestamp、`<原文>` はその行の全文。行頭は `主の回答: 許容` のままにし、手順 3-c の「前の宣言の選び方」がこの記録を主の直接の回答として拾えるようにする）:
+**主の委任で親経由に受けた許容（親経由で受領（委任））の真正性確認。** エピックの子で、主が親のセッションでこのエピックのリスク許容を親に任せ（develop の `skills/develop/references/epic-delegation.md` の **主の委任**）、親が末尾に ` [主の委任: セッション <親のセッション ID> / uuid <確認の uuid> / 記録 <委任の記録の URL>]` を添えて送ってきたときは、develop の本体が `owner-reply-check.sh --delegated` の終了コード 0 を確かめてから値（親のセッション ID・確認の uuid・`MATCH:` の timestamp・委任の記録の URL・停止の記録の URL・`MATCH:` の全文）を渡す。宣言コメントに次の 1 行を追記する（`<日時>` は `MATCH:` の行の timestamp、`<原文>` はその行の全文。行頭は `主の回答: 許容` のままにし、手順 3-c の「前の宣言の選び方」がこの記録を主の直接の回答として拾えるようにする）:
 
 ```
 主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>
@@ -13,8 +13,8 @@
 真正性確認では次をすべて確かめる。子に届いた文は主の発言と区別できないので根拠にせず、エピックと PR のコメントと親の会話ログの行そのものを読む。この形は `owner-reply-check.sh --relayed` で確かめない（委任の確認は停止の記録より前の発言なので、`--relayed` では必ず `not-after` で落ちる）。
 
 1. 停止の記録の URL のコメントを、上の「親経由で受けた許容（親経由で受領）の真正性確認」の 1 と同じ `gh api` で読み、1 行目が `子の停止: 主の返事待ち`、`author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか、`issue_url` がこの PR の記録先の issue であることを確かめ、`created_at` と `html_url` を取る。あわせて同じ `--jq '... | last | .html_url'` で記録先の最新の停止の記録の URL を取り、`html_url` と一致することを確かめる
-2. develop の `references/epic-delegation.md`「委任が有効か」を判定前に読み、共有正本の全条件で委任の有効性を確かめる。`lastEditedAt` の読み方も同じ所にある。
-3. develop の `references/epic-delegation.md`「委任が効く止まり」の「リスク許容の止まり」を判定前に読み、共有正本の条件で止まりに委任が効くか確かめる。G が扱うのはリスク許容の止まりだけで、聖域の変更・破壊的な git 操作・マージ待ち・実機操作の止まりの委任は G を通らない。`主の回答:` の照合では、今確かめている委任の形の記録の行だけは除く。
+2. develop の `skills/develop/references/epic-delegation.md`「委任が有効か」を判定前に読み、共有正本の全条件で委任の有効性を確かめる。`lastEditedAt` の読み方も同じ所にある。
+3. develop の `skills/develop/references/epic-delegation.md`「委任が効く止まり」の「リスク許容の止まり」を判定前に読み、共有正本の条件で止まりに委任が効くか確かめる。G が扱うのはリスク許容の止まりだけで、聖域の変更・破壊的な git 操作・マージ待ち・実機操作の止まりの委任は G を通らない。`主の回答:` の照合では、今確かめている委任の形の記録の行だけは除く。
 4. 委任の記録の作成日時（`gh api repos/$R/issues/comments/<comment_id> --jq .created_at`）と、1 で取った停止の記録の `created_at` で次を回し、終了コード 0 で、`MATCH:` の timestamp が記録の日時と同じで、`MATCH:` の全文から任せる意思が読めることを確かめる（記録の原文だけで読まない）
 
    ```bash

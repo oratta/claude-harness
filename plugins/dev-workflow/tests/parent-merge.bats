@@ -27,7 +27,7 @@ section() {
   if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
   awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
 run_section() { cat "$EPIC"; }
-# 「回し方」の中の、マージ待ちの子の段落（`**マージ待ちの子**` で始まる段落から次の空行まで）
+# epic-merge-wait.md「マージ待ちの子」の段落（`**マージ待ちの子**` で始まる段落から次の空行まで）
 merge_para() { run_section | awk '/^\*\*マージ待ちの子\*\*/{f=1} f && /^$/{exit} f'; }
 # ci-watch.md の「`ready` を受けたあと」の節
 ready_section() {

@@ -15,6 +15,20 @@ import gate_reading_budget as budget
 REVISION = '0e7bf3f80d0241bd9582f7b89e5ec3f529f2139f'
 
 
+def original_path(path, aliases):
+    # Before #1690 extracted the shared conditions, they were part of pass.md.
+    if path == 'skills/develop/references/epic-delegation.md':
+        return budget.GATE + 'stages/pass.md'
+    name = Path(path).stem
+    if name not in aliases:
+        return path
+    old = aliases[name]
+    if old == 'gate-runner':
+        return budget.COMMON[0]
+    return budget.GATE + ('declarations.md' if old == 'declarations'
+                          else 'stages/' + old + '.md')
+
+
 def compare(root):
     after = budget.measure(root)
     fixtures = root / 'tests/fixtures/gate-contracts'
@@ -28,16 +42,6 @@ def compare(root):
     def git_source(name):
         return subprocess.check_output(
             ['git', '-C', str(root), 'show', REVISION + ':' + str(budget.PLUGIN / name)])
-
-    def original_path(path):
-        name = Path(path).stem
-        if name not in aliases:
-            return path
-        old = aliases[name]
-        if old == 'gate-runner':
-            return budget.COMMON[0]
-        return budget.GATE + ('declarations.md' if old == 'declarations'
-                              else 'stages/' + old + '.md')
 
     with tempfile.TemporaryDirectory(prefix='gate-reading-report-') as tmp:
         plugin = Path(tmp) / budget.PLUGIN
@@ -69,7 +73,7 @@ def compare(root):
             prompt = module.prompt(phase, request, {'cwd': '/gate-reading-fixture'})
             injected = {m[1] for m in budget.HEADER.finditer(prompt)}
             claude_paths = set(['agents/gate-runner.md'] + budget.COMMON + [
-                original_path(p) for p in paths
+                original_path(p, aliases) for p in paths
                 if stage != 'legacy-all' or p != budget.GATE + 'SKILL.md'])
             before_claude = ''.join(read(p) for p in sorted(claude_paths))
             after_paths = set(['agents/gate-runner.md'] + budget.COMMON + paths)
@@ -83,7 +87,7 @@ def compare(root):
             # The profile total is exactly the sum of its distinct files.
             assert sum(files['before'][p] for p in claude_paths) == len(before_claude), key
             assert sum(files['after'][p] for p in after_paths) == len(after['claude/' + key]), key
-            extra = {original_path(p) for p in paths} - injected
+            extra = {original_path(p, aliases) for p in paths} - injected
             if stage == 'review':
                 extra.discard(budget.GATE + 'stages/review-run.md')
             before_codex = prompt + ''.join(read(p) for p in sorted(extra))
@@ -172,6 +176,7 @@ def render(result, plan):
     lines = [
         '字数は UTF-8 の文字数（Python len、wc -m 相当）。同じファイルは一度だけ。'
         'before は固定 main `' + REVISION + '` から実測。'
+        '共有 `skills/develop/references/epic-delegation.md` は before では `stages/pass.md` に内包されていた条件に対応させる。'
         'Codex は定型指示・固定 REQUEST・ヘッダー・sha256・正本本文を含む実際の prompt() 生成物。'
         '可変の PR 本文・結果・ログは予算外で、全実行の総トークン数の保証ではない。'
         '予算は UTF-8 バイト数、全 ' + str(len(result)) + ' profile を実測の1.0倍に設定。',
