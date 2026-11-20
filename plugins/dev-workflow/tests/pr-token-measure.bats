@@ -83,7 +83,7 @@ run_measure() { run --separate-stderr "$SCRIPT" "$@"; }
   : > "$CALLS"
   run_measure --repo o/r 288
   [ "$status" -eq 0 ]
-  ! grep -q -- '--cap' "$CALLS"
+  ! grep -q -- '--cap' "$CALLS" || return 1
 }
 
 @test "--codex-home values are passed along with the CODEX_HOME default" {
@@ -104,14 +104,14 @@ run_measure() { run --separate-stderr "$SCRIPT" "$@"; }
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   [ -n "$stderr" ]
-  ! grep -q '^budget' "$CALLS"
+  ! grep -q '^budget' "$CALLS" || return 1
 }
 
 @test "a non-1 failure of the fetch also exits 1" {
   CR_EXIT=3 run_measure --repo o/r 288
   [ "$status" -eq 1 ]
   [ -z "$output" ]
-  ! grep -q '^budget' "$CALLS"
+  ! grep -q '^budget' "$CALLS" || return 1
 }
 
 @test "missing --repo calls nothing and exits 1" {

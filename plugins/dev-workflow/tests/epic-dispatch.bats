@@ -8992,6 +8992,6 @@ help_env() {
 }
 
 @test "header comment points at epic-loop.md, not the removed epic.md section" {
-  ! sed -n 1,5p "$SCRIPT" | grep -qF 'epic.md「回し方」'
+  ! sed -n 1,5p "$SCRIPT" | grep -qF 'epic.md「回し方」' || return 1
   sed -n 1,5p "$SCRIPT" | grep -qF 'epic-loop.md'
 }

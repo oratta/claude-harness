@@ -704,7 +704,7 @@ refute() {
   grep -qF 'usage.total.totalTokens' <<<"$s"
   grep -q '`usage` が null' <<<"$s"
   grep -qF 'scripts/pr-token-measure.sh --repo <owner>/<repo>' <<<"$s"
-  ! grep -qF 'scripts/codex-records.sh --repo' <<<"$s"
+  ! grep -qF 'scripts/codex-records.sh --repo' <<<"$s" || return 1
   grep -qF -- '--codex-home' <<<"$s"
   grep -qF '${CODEX_HOME:-$HOME/.codex}' <<<"$s"
 }
