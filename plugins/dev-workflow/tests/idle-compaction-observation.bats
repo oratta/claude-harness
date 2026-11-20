@@ -44,7 +44,7 @@ collect() {
 }
 assert_result() {
   [ "$status" -eq 0 ]
-  [[ "$output" != *SECRET_FIXTURE* ]]
+  [[ "$output" != *SECRET_FIXTURE* ]] || return 1
   python3 - "$LLM_LOG_DIR" "$1" "${2-}" <<'PY'
 import json, sys
 from pathlib import Path
@@ -57,7 +57,7 @@ PY
 @test "storage: unset and empty LLM_LOG_DIR stop before creating anything" {
   unset LLM_LOG_DIR
   collect
-  [ "$status" -eq 1 ]; [[ "$output" == *LLM_LOG_DIR* ]]
+  [ "$status" -eq 1 ]; [[ "$output" == *LLM_LOG_DIR* ]] || return 1
   export LLM_LOG_DIR=''
   collect
   [ "$status" -eq 1 ]; [ ! -e "$WORK/results" ]
@@ -86,14 +86,14 @@ PY
   cmp "$WORK/log.jsonl" "$WORK/original"
   printf '{SECRET_FIXTURE' > "$WORK/meta.json"
   collect
-  [ "$status" -eq 1 ]; [[ "$output" != *SECRET_FIXTURE* ]]
+  [ "$status" -eq 1 ]; [[ "$output" != *SECRET_FIXTURE* ]] || return 1
 }
 @test "metadata: invalid known types and enum values never echo input" {
   for patch in '{"sleep":"SECRET_FIXTURE"}' '{"start_line":true}' '{"version":"SECRET_FIXTURE"}' '{"idle_threshold":-1}' '{"role":{}}'; do
     cp "$WORK/meta.json" "$WORK/saved"
     mutate "$patch"
     collect
-    [ "$status" -eq 1 ]; [[ "$output" != *SECRET_FIXTURE* ]]
+    [ "$status" -eq 1 ]; [[ "$output" != *SECRET_FIXTURE* ]] || return 1
     mv "$WORK/saved" "$WORK/meta.json"
   done
 }
@@ -204,11 +204,11 @@ PY
 }
 @test "failures: missing metadata, bad arguments and unsavable destination use fixed errors" {
   run python3 "$SCRIPT" --transcript "$WORK/SECRET_FIXTURE" --metadata "$WORK/SECRET_FIXTURE"
-  [ "$status" -eq 1 ]; [[ "$output" != *SECRET_FIXTURE* ]]
+  [ "$status" -eq 1 ]; [[ "$output" != *SECRET_FIXTURE* ]] || return 1
   run python3 "$SCRIPT" --SECRET_FIXTURE
-  [ "$status" -eq 1 ]; [[ "$output" != *SECRET_FIXTURE* ]]
+  [ "$status" -eq 1 ]; [[ "$output" != *SECRET_FIXTURE* ]] || return 1
   touch "$WORK/blocked"
   export LLM_LOG_DIR="$WORK/blocked/results"
   collect
-  [ "$status" -eq 1 ]; [[ "$output" == collection-failed ]]
+  [ "$status" -eq 1 ]; [[ "$output" == collection-failed ]] || return 1
 }
