@@ -4306,11 +4306,11 @@ channel モードでは、状態表の答え方の列を、チャンネルで返
 ### Requirement: 時間がたった子への返事は 60 分を境にそのまま送るか起動し直すかを決める
 時間がたった子・親への返事の規則は `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` に置き、子について次を書かなければならない（MUST）: すべての develop セッションは開始時の worktree-local 設定でアイドル時のコンパクトを切り、子は補助として `launch` が `--settings '{"idleCompaction":false}'` を付けてアイドル時のコンパクトを切ること（そのプロセスだけに効き通常の自動コンパクトは止めない・v2.1.290 以降が要る・ホームの `~/.claude/settings.json` に置かない（worktree の `.claude/settings.local.json` だけを使う））。子の表は上から、端末が無ければ起動し直す、会話量 N が `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS`（既定 150000）以上なら経過時間と compact の有無によらず起動し直す、最後のリクエストから 60 分未満ならそのまま送る、60 分以上なら compact の有無と会話量によらず起動し直す、と書く。会話量条件が時間条件に優先するよう並べる。根拠は、コンパクトされた子は `SKILL.md` の中身を持たずに進むことと、費用の差の小ささ。
 
+根拠には、2026-10-23 の子のログで、コンパクトのあとに残ったのが `SKILL.md` のファイル名と `/develop` の入口だけで、再開したあとも読み直さずにゲートの実行まで進んでいたことと、起動し直しとの費用の差（1 回あたり Opus 5.5 で約 $0.5）、1 時間以上たってから返事が来る子の割合（3.2%）を書く（SHALL）。判定に使う事実は、子の端末の有無（`orca` のコマンドは書かず、要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」に従う。端末の有無は `epic-dispatch.sh reply` が確かめ、端末が無ければ起動し直す。要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」）と、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）の最後のリクエストの時刻、および同じファイルを `plugins/dev-workflow/scripts/subagent-context.sh --file <トランスクリプト>` で測った会話量 N である。事実を読めない場合は、上の自動判定の要件と同じく確認できた条件だけで決め、どちらも真と確認できなければそのまま送ると書く（MUST）。送り方と起動し直し方の手順本体はこのファイルに書かない（SHALL NOT。止まった子を親が解決する手順（develop の `references/epic-loop.md` の Orca 経路と `epic-dispatch.sh reply`）が書き、このファイルを参照する）。
+
 #### Scenario: 規則のファイルに子の切り方と分ける条件と根拠が書かれている
 - **WHEN** `plugins/dev-workflow/skills/develop/references/reply-after-idle.md` を読む
 - **THEN** 子は `launch` が `--settings '{"idleCompaction":false}'` を付けてアイドル時のコンパクトを切ること、ホームの `~/.claude/settings.json` に置かず、worktree の `.claude/settings.local.json` だけを使うこと、子は端末が無い・会話量が新閾値以上・60 分以上のいずれかなら起動し直し、会話量が閾値未満か不明で 60 分未満ならそのまま送ること、新閾値の変数名と既定値 150000、子を起動し直す根拠（コンパクトされた子は `SKILL.md` の中身を持たない）と #1039 の決定を #1323 で覆したこと、判定に使う事実（端末の有無は `epic-dispatch.sh reply` が確かめること・最後のリクエストの時刻はトランスクリプトから読むこと・会話量は同じファイルを `subagent-context.sh --file` で測ること）が書かれている
-
-根拠には、2026-10-23 の子のログで、コンパクトのあとに残ったのが `SKILL.md` のファイル名と `/develop` の入口だけで、再開したあとも読み直さずにゲートの実行まで進んでいたことと、起動し直しとの費用の差（1 回あたり Opus 5.5 で約 $0.5）、1 時間以上たってから返事が来る子の割合（3.2%）を書く（SHALL）。判定に使う事実は、子の端末の有無（`orca` のコマンドは書かず、要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」に従う。端末の有無は `epic-dispatch.sh reply` が確かめ、端末が無ければ起動し直す。要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」）と、子のセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）の最後のリクエストの時刻、および同じファイルを `plugins/dev-workflow/scripts/subagent-context.sh --file <トランスクリプト>` で測った会話量 N である。事実を読めない場合は、上の自動判定の要件と同じく確認できた条件だけで決め、どちらも真と確認できなければそのまま送ると書く（MUST）。送り方と起動し直し方の手順本体はこのファイルに書かない（SHALL NOT。止まった子を親が解決する手順（develop の `references/epic-loop.md` の Orca 経路と `epic-dispatch.sh reply`）が書き、このファイルを参照する）。
 
 この分類は、`epic-dispatch.sh wait --resolve` が親の代わりに通す返事を除き、スクリプトではなく本体が規則のファイルを読んで行う。`wait --resolve` が通す返事は、要件「wait --resolve は通す返事を送る前に起動し直すかを表で決める」のとおり `resolve_stopped` が同じ子の表で分類する（例外）。拾いたい誤りは、60 分以上止まった子（コンパクトされて `SKILL.md` の中身を持たない子と、この変更より前に起動されてコンパクトされうる子を含む）にそのまま返事を送り、子が手順を外れて進むこと、大きい会話の子に時間だけを見て返事を送り続けること、会話量が閾値未満か不明で 60 分未満の子を不要に起動し直して、子が積んだ判断と起動し直しの費用を無駄にすることである。次は通してよく、この分類では止めない: 経過時間がちょうど 60 分前後で、時刻の読み方によって扱いが分かれる子／トランスクリプトが複数あってどれが子のセッションか分からず、そのまま送った子。すり抜ける入力が見つかるたびに塞ぐことは、この要件の完了条件としない。
 
@@ -4329,12 +4329,12 @@ channel モードでは、状態表の答え方の列を、チャンネルで返
 
 親の時間分類の操作規則は reply-after-idle.md に一度だけ置き、epic-loop.md の起床時・手順 5・9 はそこを先に読む案内にする（MUST）。
 
+親の状態はエピックと子 issue のコメント・依存グラフ・子の状態記録から復元できると書く（SHALL）。`回し方:`、`子 #N マージ → 残り k 件` / `子 #N 見送り`、`後で別に起動するエピック:`、`子 #N のワークツリーを残した`、`親の判断: 子 #N 通した` と停止記録 URL の対応、`pending-owner` の確認を残す。比較する相手は手順書と引き継ぎを読む新セッションであり、要約と手順書再読み込みを二重に払う親の方針を #1385 で覆したと書く（SHALL）。監視停止が compact のせいだったとは断定しない。古い集計のリンクは履歴として残せるが、親の idle 閾値の再集計を現行の宿題にしない。
+
 #### Scenario: 規則のファイルに親の値と表と復元元が書かれている
 - **WHEN** 規則のファイルを読む
 - **THEN** 親にも idleCompaction false を適用し、60 分未満は続け、60 分以上は起動し直すと分かり、compact や N による継続の例外・親だけの閾値が無い
 - **AND** 回し方、終わった子、外した子エピック、残した worktree、親が通した判断、主の返事待ち、残りの子の復元元が記録されている
-
-親の状態はエピックと子 issue のコメント・依存グラフ・子の状態記録から復元できると書く（SHALL）。`回し方:`、`子 #N マージ → 残り k 件` / `子 #N 見送り`、`後で別に起動するエピック:`、`子 #N のワークツリーを残した`、`親の判断: 子 #N 通した` と停止記録 URL の対応、`pending-owner` の確認を残す。比較する相手は手順書と引き継ぎを読む新セッションであり、要約と手順書再読み込みを二重に払う親の方針を #1385 で覆したと書く（SHALL）。監視停止が compact のせいだったとは断定しない。古い集計のリンクは履歴として残せるが、親の idle 閾値の再集計を現行の宿題にしない。
 
 この規則の入力は、親のトランスクリプトの最後のリクエスト時刻と、エピックの復元記録である。拾う誤りは、compact 済み・会話量が小さいことを理由に 60 分以上止まった親を続けること。境界の時刻が曖昧で 60 分前後の扱いが揺れる場合は続けてよく、時刻不明から長時間経過を捏造しない。復元元の記録自体の誤りや欠落はこの時間分類だけでは防がない。穴の追加封鎖を完了条件にしない。
 
@@ -4532,17 +4532,31 @@ Claude Code で develop を開始する本体は、役割別工程や返事待�
 - **THEN** DISABLE_AUTO_COMPACT など通常の自動 compact を止める指定を追加せず、既存の compact 後の手順書再読み込み hook を残す
 
 ### Requirement: idle compaction の設定操作は既存設定と承認規則を保つ
-設定部品は check と apply を分け、idleCompaction 以外の値を保持し、false 済みは無変更としなければならない（MUST）。PR 本文とリスク宣言に継続適用の範囲を明記し、主のマージ承認（リスク宣言の許容）をその範囲への一度の承認として記録する（MUST）。承認後の develop 開始では worktree ごとに操作承認を確認・質問してはならない（MUST NOT）。承認前の実設定変更や権限・hooks による迂回はせず、他キー・別ファイル・symlink 先は従来の聖域承認を要する（MUST）。他セッションへの持続・自動復元しないこと・戻し方も案内する。
+設定部品は check と apply を分け、idleCompaction 以外の値を保持し、false 済みは無変更としなければならない（MUST）。apply が設定ファイルを書くときは、書く前に、そのリポジトリの `git rev-parse --git-common-dir` が指すディレクトリの `info/exclude` に `.claude/settings.local.json` の行を足し、同じ行が既にあれば足さない（MUST）。`.gitignore` と追跡状態は変えてはならず（MUST NOT）、exclude を書けないときは設定ファイルを書かず失敗とする。check と、何も書かない apply は exclude に触れない。この exclude への追記は継続適用の範囲に含め（「別ファイル」への書き込みの例外にしない）、承認宣言の文面にも「共有 `info/exclude` への `.claude/settings.local.json` の 1 行の追記」を含める（MUST）。この要件の守備範囲で入力として扱うのは、利用者の設定ファイル、worktree のパス、既存の `info/exclude` の中身である。拾いたい誤りは、書いた設定ファイルが `git status --porcelain` に出ること、exclude に同じ行が重複すること、ファイルの追跡状態が変わることである。一方、`/.claude/settings.local.json` や glob のような表記違いの同義行は、完全一致ではないので 1 行足してよい（通してよい入力）。既存行の判定は完全一致だけで、symlink の拒否は従来どおり設定ファイルの経路に限る。表記違いや想定外の exclude の書き方まで穴を塞ぎ切ることは、この要件の完了条件にしない。PR 本文とリスク宣言に継続適用の範囲を明記し、主のマージ承認（リスク宣言の許容）をその範囲への一度の承認として記録する（MUST）。承認後の develop 開始では worktree ごとに操作承認を確認・質問してはならない（MUST NOT）。承認前の実設定変更や権限・hooks による迂回はせず、他キー・別ファイル・symlink 先は従来の聖域承認を要する（MUST）。他セッションへの持続・自動復元しないこと・戻し方も案内する。
 
 #### Scenario: 他キーを保持し false 済みを変更しない
 - **WHEN** permissions、hooks、任意の未知キーを持つ正常な設定に apply する
 - **THEN** idleCompaction だけが false となり、他キーの値が保存される
 - **AND** 再適用では内容と mtime が変わらず、ホームや共有設定に書き込みが無い
 
+#### Scenario: apply のあと設定ファイルが dirty に出ない
+- **WHEN** 設定ファイルが無い worktree に apply し、`git status --porcelain` を見る
+- **THEN** `.claude/settings.local.json` は出ず、共有の `info/exclude` にその行が 1 行だけある
+- **AND** 別の未コミットファイルがある worktree では、そのファイルだけが porcelain に出る
+
+#### Scenario: 表記違いの同義行は完全一致でないので足す
+- **WHEN** 設定ファイルが無い、または idleCompaction が false でなく、apply が設定ファイルを書き込む。このとき `info/exclude` には `/.claude/settings.local.json` や `.claude/*` だけがある
+- **THEN** `.claude/settings.local.json` の行が 1 行足される
+
+#### Scenario: exclude に同じ行があれば足さず、追跡済みなら追跡を変えない
+- **WHEN** `info/exclude` に既に同じ行がある、または設定ファイルが既に追跡対象のリポジトリで apply する
+- **THEN** 行は重複せず、追跡対象のファイルは追跡されたままである
+
 #### Scenario: 一度承認した仕組みを新しい worktree でも質問せず適用する
 - **WHEN** 主が上記の継続適用の範囲を記した PR のマージを承認し、リスク宣言を許容した仕組みで、新しい worktree の develop を開始する
 - **THEN** check が exit 2 なら本体は当該キーだけの apply を行い、対象 worktree ごとの承認確認や追加質問を行わない
 - **AND** PR 本文とリスク宣言の両方に「develop 開始時、現在の worktree の `.claude/settings.local.json` の idleCompaction だけを false にする。他の設定値は保持し、ホーム・共有設定には書かない」と記し、新しい worktree・新セッション・interactive / unmanned にも継続適用する範囲を含める
+- **AND** 同じ文面に、共有 `info/exclude` への `.claude/settings.local.json` の 1 行の追記も継続適用の範囲として含める
 - **AND** R1 の APPROVE やエージェントの投稿だけを主の承認と読み替えない
 
 #### Scenario: 新規ファイルも一度の承認の範囲で作る
@@ -4550,7 +4564,7 @@ Claude Code で develop を開始する本体は、役割別工程や返事待�
 - **THEN** apply は idleCompaction false だけの JSON object を作り、共有設定やユーザー設定を複製しない
 
 #### Scenario: 継続適用の範囲外には従来の承認を残す
-- **WHEN** 他キー・別ファイル・symlink 先への書き込みが必要になる
+- **WHEN** 他キー・別ファイル（共有 `info/exclude` への上記 1 行を除く）・symlink 先への書き込みが必要になる
 - **THEN** この PR の承認を流用せず従来の聖域承認を求め、専用部品は symlink を追って書かない
 
 #### Scenario: 仕組み自体の承認前は実設定を変えない

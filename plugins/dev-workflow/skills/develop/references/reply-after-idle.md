@@ -11,10 +11,10 @@
 Claude の本体は、role 選択・工程・返事待ちより前に、現在の git worktree root を `<worktree>` として `python3 <plugin>/scripts/develop-idle-compaction.py --check <worktree>` を実行する（`<plugin>` はこの reference から `../../..` の絶対パス）。親・子・単発、interactive / unmanned を分けず、新セッションでの引き継ぎ・compact 後の再読でも同じ入口を使う。委譲された Codex worker は Claude の実設定を変更せず、本体が適用する。
 
 - exit 0: disk 上は false 済み。書き込まない
-- exit 2: `python3 <plugin>/scripts/develop-idle-compaction.py --apply <worktree>` で `.claude/settings.local.json` の最上位 `idleCompaction` だけを boolean false にする。無ければそのキーだけのファイルを作る
+- exit 2: `python3 <plugin>/scripts/develop-idle-compaction.py --apply <worktree>` で `.claude/settings.local.json` の最上位 `idleCompaction` だけを boolean false にする。無ければそのキーだけのファイルを作る。書く前に共有 `info/exclude` へ同ファイルの 1 行を足し（既にあれば足さない）、porcelain に出さない。書けなければ設定も書かず失敗
 - exit 1 または apply 失敗: 対象パスと原因を記録して開始を止める。壊れた JSON・重複キー・非 object・読めない設定・symlink を上書きせず、部品は symlink を追わない
 
-これは #1385 の PR に記す「develop 開始時、現在の worktree の `.claude/settings.local.json` の idleCompaction だけを false にする。他の設定値は保持し、ホーム・共有設定には書かない」という継続適用への、主のマージ承認（リスク宣言の許容）を一度の承認とする仕組み。承認後は新しい worktree でも操作の承認確認・追加質問はしない。他キー・別ファイル・symlink 先は範囲外で、従来の聖域承認を要する。R1 APPROVE やエージェントの投稿を主の承認に代えず、マージ承認前の実設定には apply しない。部品の検証は一時 git repo で行う。
+これは #1385 の PR に記す「develop 開始時、現在の worktree の `.claude/settings.local.json` の idleCompaction だけを false にする。他の設定値は保持し、ホーム・共有設定には書かない。共有 `info/exclude` へ同ファイルの 1 行だけ足す」という継続適用への、主のマージ承認（リスク宣言の許容）を一度の承認とする仕組み。承認後は新しい worktree でも操作の承認確認・追加質問はしない。他キー・別ファイル・symlink 先は範囲外（上記 exclude の 1 行は範囲内）で、従来の聖域承認を要する。R1 APPROVE やエージェントの投稿を主の承認に代えず、マージ承認前の実設定には apply しない。部品の検証は一時 git repo で行う。
 
 設定は同じ worktree の他セッションにも残り、終了時に自動復元しない。通常の自動 compact（会話が上限近くに達したとき）と既存の compact 後の手順書再読み込み hook は維持する。子の既存 `--settings '{"idleCompaction":false}'` も残す。戻すときは主が差分を確認・承認し、このキーだけ元の値に戻すか、元々無ければ削除する。設定ファイル全体を復元しない。
 
