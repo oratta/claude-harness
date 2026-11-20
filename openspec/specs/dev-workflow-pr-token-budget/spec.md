@@ -142,7 +142,7 @@ exit code は、`total_tokens` が上限以下なら 0、上限を超えたら 2
 - **THEN** `claude_tokens` はその会話記録の usage の合計になる
 
 ### Requirement: 本体は spawn と再開の前に測り、上限超なら止まる
-develop の本体は、その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および executor が `codex` の役割へ委譲する直前に、役割と executor を問わず毎回 `scripts/pr-token-budget.sh <記録先番号> [PR 番号] --codex-records <file> --codex-home <dir>...` を MUST 実行する。`<file>` は、本体が計測の直前に `scripts/codex-records.sh --repo <owner>/<repo> --out <file> <記録先番号> [PR 番号]` で作る（渡すすべての記録先番号のコメントを全ページ取得し、1 行目が `^Codex 消費: ` に一致するものだけから `<thread_id> <tokens>` を 1 行ずつ書いたもの）。`codex-records.sh` が exit 0 以外を返したら、本体は `pr-token-budget.sh` を呼んではならず MUST NOT、`pr-token-budget.sh` の exit 1（計測できない）と同じ扱いにする（理由は「Codex 消費コメントを取得できなかった」）。取得に失敗した記録を空の記録や前回のファイルで代えてはならない（MUST NOT）。`--codex-home` には codex-develop の account と CODEX_HOME の対応表にある全パスと、本体の環境の `${CODEX_HOME:-$HOME/.codex}` を渡す。計測の手順は `skills/develop/references/pr-token-budget.md`（本体の場面限定手順）に置き、SKILL.md は spawn・再開・Codex 委譲の前に同ファイルを必ず Read して測るよう指示し（MUST）、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置いてはならない（MUST NOT）。
+develop の本体は、その記録先のためにサブエージェントを spawn する直前、SendMessage で再開する直前、および executor が `codex` の役割へ委譲する直前に、役割と executor を問わず毎回 `scripts/pr-token-measure.sh --repo <owner>/<repo> <記録先番号> [PR 番号] --codex-home <dir>... [--cap <新上限>]` を MUST 実行する。このラッパーは、渡されたすべての記録先番号の `Codex 消費:` コメントを `scripts/codex-records.sh` で集めて記録ファイルを作り、`scripts/pr-token-budget.sh` を `--codex-records` 付きで呼んで、その stdout と exit code を返す（要件「計測は 1 コマンドのラッパーで呼ぶ」）。ラッパーが取得に失敗して exit 1（理由は「Codex 消費コメントを取得できなかった」）を返したら、`pr-token-budget.sh` の exit 1（計測できない）と同じ扱いにする。取得に失敗した記録を空の記録や前回のファイルで代えてはならない（MUST NOT）。`--codex-home` には codex-develop の account と CODEX_HOME の対応表にある全パスを渡す（本体の環境の `${CODEX_HOME:-$HOME/.codex}` はラッパーが足す）。計測の手順は `skills/develop/references/pr-token-budget.md`（本体の場面限定手順）に置き、SKILL.md は spawn・再開・Codex 委譲の前に同ファイルを必ず Read して測るよう指示し（MUST）、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置いてはならない（MUST NOT）。
 
 本体は、その記録先のために Codex を呼んだら、そのたびに記録先へ 1 行目が `Codex 消費: <thread_id> <tokens>` のコメントを MUST 投稿する。executor が `codex` の役割へ委譲したときは codex-worker の結果 JSON の `thread_id` と `usage.total.totalTokens` を書く（`usage` が null か `usage.total.totalTokens` が読めないときは `<tokens>` を `-` と書く）。G が full レビューで Bash から Codex を呼んだときは、G が return に書いた thread_id（`codex exec` の出力ヘッダの `session id:`、companion の結果の `threadId`）を使い、`<tokens>` を `-` と書く。G は Codex を呼んだら thread_id を return に MUST 書く（`skills/develop/references/roles/gate-runner.md` に書く）。結果 JSON を受け取れず thread_id が分からない委譲と、G が thread_id を取れなかった Codex の呼び出しは記録できず、この上限の外になる。
 
@@ -168,11 +168,11 @@ exit 1 のとき（`codex-records.sh` が失敗して集計を呼ばなかった
 
 #### Scenario: pr-token-budget.md に手順が書かれている
 - **WHEN** `skills/develop/SKILL.md` の spawn・再開・Codex 委譲の前の必読指示から `skills/develop/references/pr-token-budget.md` を読む
-- **THEN** 「`pr-token-budget.sh` が exit 2 なら spawn / SendMessage / Codex への委譲をせず主に上げる」手順、description に記録先番号 `#N` を入れる規約、Codex を呼んだら `Codex 消費:` コメントを投稿する手順、計測の前に `codex-records.sh` で `Codex 消費:` コメントを集めて `--codex-records` で渡す手順、`codex-records.sh` が失敗したら集計を呼ばず exit 1 と同じ扱いにする手順が書かれている
+- **THEN** 「計測が exit 2 なら spawn / SendMessage / Codex への委譲をせず主に上げる」手順、description に記録先番号 `#N` を入れる規約、Codex を呼んだら `Codex 消費:` コメントを投稿する手順、計測を `pr-token-measure.sh` の 1 コマンドで呼ぶ手順、ラッパーが exit 1 を返したら計測できない扱いにする手順が書かれ、`codex-records.sh` と `pr-token-budget.sh` を直接つなぐ bash は書かれていない
 
 #### Scenario: コメントの取得に失敗したら計測できない扱いにする
-- **WHEN** 計測の直前に `codex-records.sh` が exit 1 を返す（例: 記録先に `Codex 消費: t1 30000001` があり上限 30000000 だが、`gh api` が認証エラーで失敗した）
-- **THEN** 本体は `pr-token-budget.sh` を呼ばず、上限以内として扱わない。止まらずに進み、「Codex 消費コメントを取得できなかった」ことを記録先にコメントする（同じサイクルで 2 回目以降は投稿しない）
+- **WHEN** 計測の `pr-token-measure.sh` が取得の失敗で exit 1 を返す（例: 記録先に `Codex 消費: t1 30000001` があり上限 30000000 だが、`gh api` が認証エラーで失敗した）
+- **THEN** 上限以内として扱わない。止まらずに進み、「Codex 消費コメントを取得できなかった」ことを記録先にコメントする（同じサイクルで 2 回目以降は投稿しない）
 
 #### Scenario: 続けたあとの計測は引き上げた上限を使う
 - **WHEN** 上限 30000000 で止まり、その時点の合計が 30500000 で、主が「続ける」を選ぶ
@@ -325,3 +325,38 @@ develop の本体は、executor が `codex` の役割へ委譲した分の `Code
 #### Scenario: pr-token-budget.md に時刻の書き方が書かれている
 - **WHEN** `skills/develop/references/pr-token-budget.md` を読む
 - **THEN** Codex の消費の記録に、結果 JSON の `started_at` / `ended_at` から `開始=` / `終了=` を書くこと、取れなければキーごと省くこと、G の full レビューの分には書かないことが書かれ、「消費の記録の印」の時刻の行は `Codex 消費:` コメントの印にだけ書くことを示している
+
+### Requirement: 計測は 1 コマンドのラッパーで呼ぶ
+`plugins/dev-workflow/scripts/pr-token-measure.sh --repo <owner>/<repo> [--cap <tokens>] [--codex-home <dir>]... <記録先番号>...` を持たなければならない（MUST）。`codex-records.sh` を呼び、exit 0 のときだけ `pr-token-budget.sh <番号>... --codex-records <file>` を呼ぶ。`--codex-home` には渡されたものに加えて `${CODEX_HOME:-$HOME/.codex}` を渡し、`--cap` は渡されたときだけ渡す。`pr-token-budget.sh` の stdout と exit code（0 / 2 / 1）をそのまま返す。
+#### Scenario: 記録の取得と集計を 1 回の呼び出しでつなぐ
+- **WHEN** `pr-token-measure.sh --repo o/r 288` を呼び、`codex-records.sh` が exit 0 で記録を書く
+- **THEN** `pr-token-budget.sh 288 --codex-records <その記録>` が呼ばれ、その stdout と exit code がそのまま返る
+
+#### Scenario: 上限超過は exit 2 のまま返す
+- **WHEN** `pr-token-budget.sh` が exit 2 を返す
+- **THEN** ラッパーも exit 2 で終わり、stdout は `pr-token-budget.sh` の 1 行 JSON と同じである
+
+#### Scenario: --cap は渡されたときだけ渡す
+- **WHEN** `--cap 60000000` を付けて呼ぶ場合と、付けずに呼ぶ場合
+- **THEN** 前者は `pr-token-budget.sh` に `--cap 60000000` が渡り、後者は `--cap` が渡らない
+
+#### Scenario: 本体の環境の CODEX_HOME を渡す
+- **WHEN** `--codex-home /x` を付けて呼ぶ
+- **THEN** `pr-token-budget.sh` には `--codex-home /x` と `--codex-home ${CODEX_HOME:-$HOME/.codex}` の両方が渡る
+
+### Requirement: ラッパーは取得に失敗したら集計を呼ばず exit 1 で終わる
+`pr-token-measure.sh` は、`codex-records.sh` が exit 0 以外のときは `pr-token-budget.sh` を呼ばず、stdout を空にして stderr に理由を出し exit 1 で終わらなければならない（MUST）。`--repo` の欠落と、番号が 0 件か数字でない場合も exit 1 とする。一時ディレクトリは終わるときに消す。LLM を呼ばず、GitHub に書き込まない（MUST NOT）。
+
+守備範囲: 拾いたい誤りは、取得に失敗したのに前回のファイルや空の記録で集計し、Codex 分が抜けた合計を上限以内と読み違えることと、2 つのスクリプトの exit code がラッパーで書き換わることである。一時ディレクトリの置き場の選び方と、`pr-token-budget.sh` の出力の整形（しない）は検査しない。
+
+#### Scenario: 取得に失敗したら集計を呼ばない
+- **WHEN** `codex-records.sh` が exit 1 で終わる
+- **THEN** `pr-token-budget.sh` は呼ばれず、stdout は空で、stderr に理由が出て exit 1 である
+
+#### Scenario: 引数が足りないか不正なら何も呼ばず exit 1
+- **WHEN** `--repo` が無い、記録先番号が 0 件、または番号が数字でない（`28a`）で呼ぶ
+- **THEN** `codex-records.sh` も `pr-token-budget.sh` も呼ばれず、stdout は空で exit 1 である
+
+#### Scenario: 一時ディレクトリを消す
+- **WHEN** 成功・取得失敗・上限超過のどれで終わったあとでも
+- **THEN** ラッパーが作った一時ディレクトリは残らない
