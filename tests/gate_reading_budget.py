@@ -66,6 +66,17 @@ CONDITIONS = {
         'split': ['hold-resume', 'triage-nonblocking', 'triage-epic'],
     },
 }
+# The unsuffixed route is the ordinary GitHub-link answer. Other formats
+# read only their own authenticity details; max/legacy use the same union.
+for stage in ['pass', 'hold']:
+    for route in ['carryover', 'judge']:
+        for form, details in {
+            'conversation': ['authenticity-conversation'],
+            'relayed': ['authenticity-relayed'],
+            'delegated': ['authenticity-relayed', 'authenticity-delegated', *EXTERNAL],
+        }.items():
+            CONDITIONS[stage][route + '-' + form] = CONDITIONS[stage][route] + details
+
 STAGES = dict(zip(['prepare', 'triage', 'pass', 'hold'],
                  ['前提確認と重さ判定', '照合と振り分け', '合格処理', '保留の解除']))
 LEGACY = ['SKILL.md', 'declarations.md'] + ['stages/' + n + '.md' for n in
