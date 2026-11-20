@@ -8745,6 +8745,7 @@ rejudge_ready() {
   for text in 'dependencies/blocked_by' 'issue_id=' 'GET' '子の停止: 依存待ち' \
     '依存先:' '待つ理由:' '再開条件:' '再開に要る途中経過:' '再開手順:' \
     '止まった理由: 依存待ち: <依存先 URL>' '対応 issue が不明' '未保存の途中経過' \
+    '止まった理由: 依存待ちへの移行の失敗: <失敗した操作>' \
     '待機用の背景タスク' '停止の印を付ける操作は不要'; do
     grep -qF "$text" "$EPIC_CHILD_STOP" || { echo "missing child instruction: $text"; return 1; }
   done
