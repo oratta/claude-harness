@@ -66,6 +66,17 @@ CONDITIONS = {
         'split': ['hold-resume', 'triage-nonblocking', 'triage-epic'],
     },
 }
+# The unsuffixed route is the ordinary GitHub-link answer. Other formats
+# read only their own authenticity details; max/legacy use the same union.
+for stage in ['pass', 'hold']:
+    for route in ['carryover', 'judge']:
+        for form, details in {
+            'conversation': ['authenticity-conversation'],
+            'relayed': ['authenticity-relayed'],
+            'delegated': ['authenticity-relayed', 'authenticity-delegated', *EXTERNAL],
+        }.items():
+            CONDITIONS[stage][route + '-' + form] = CONDITIONS[stage][route] + details
+
 STAGES = dict(zip(['prepare', 'triage', 'pass', 'hold'],
                  ['前提確認と重さ判定', '照合と振り分け', '合格処理', '保留の解除']))
 LEGACY = ['SKILL.md', 'declarations.md'] + ['stages/' + n + '.md' for n in
@@ -253,10 +264,42 @@ def fixtures(root):
             must_fail(lambda: validate_inventory(fixture, plan))
         runner.write_text(runner_text)
         validate_inventory(fixture, plan)
+        # Carryover/judge recheck the original answer in its own format.
+        formats = {
+            'conversation': ['authenticity-conversation'],
+            'relayed': ['authenticity-relayed'],
+            'delegated': ['authenticity-relayed', 'authenticity-delegated', *EXTERNAL],
+        }
+        for stage in ['pass', 'hold']:
+            for route in ['carryover', 'judge']:
+                base = stage + '-' + route
+                for form, details in formats.items():
+                    key = base + '-' + form
+                    expected = set(plan[base]) | {condition_path(n) for n in details}
+                    assert key in plan, ('missing answer-format profile', key)
+                    assert set(plan[key]) == expected, key
+                    assert set(plan['legacy-' + key]) == set(plan['legacy-all']) | expected, key
+                for details in formats.values():
+                    assert not set(plan[base]) & {condition_path(n) for n in details}, base
+        initial_formats = measure(fixture, adapter)
+        for detail in ['authenticity-conversation', 'authenticity-relayed',
+                       'authenticity-delegated', *EXTERNAL]:
+            path = condition_path(detail)
+            target = fixture / PLUGIN / path
+            body = target.read_bytes()
+            target.write_bytes(body + b'x')
+            grown_formats = measure(fixture, adapter)
+            for key, value in initial_formats.items():
+                profile = key.split('/', 1)[1]
+                assert len(grown_formats[key].encode()) - len(value.encode()) == int(path in plan[profile]), key
+            target.write_bytes(body)
         # Delegation reads a shared develop source, once per conditional union.
         delegation = 'skills/develop/references/epic-delegation.md'
         affected = {'pass-risk-delegated', 'pass-max',
-                    'legacy-pass-risk-delegated', 'legacy-all-max'}
+                    'legacy-pass-risk-delegated', 'hold-max', 'legacy-all-max'}
+        affected |= {prefix + stage + '-' + route + '-delegated'
+                     for prefix in ['', 'legacy-'] for stage in ['pass', 'hold']
+                     for route in ['carryover', 'judge']}
         assert {key for key, paths in plan.items() if delegation in paths} == affected
         for key in affected:
             assert plan[key].count(delegation) == 1, key
