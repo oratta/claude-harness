@@ -135,12 +135,12 @@ check_naming() {
   if grep -Eq '^([1-9]\. |\*\*(マージ待ちの子|PR トークン上限の子|主の委任|別のリポジトリの子|サブエージェント方式)\*\*)' "$root/$R/epic.md"; then
     echo 'entry contains parent operations' >&2; rc=1
   fi
-  if grep -Eq '^\*\*マージ待ちの子\*\*' "$root/$R/epic-loop.md"; then
+  if grep -Eq '^[[:space:]]*([-+*][[:space:]]+)?\*\*マージ待ちの子\*\*' "$root/$R/epic-loop.md"; then
     echo 'parent loop contains merge-wait operations' >&2; rc=1
   fi
   local f
   for f in epic-child-stop.md epic-keepalive.md epic-worker-slots.md; do
-    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md`( の)?( ?手順 [0-9]+)? を読' "$root/$R/$f"; then
+    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md`( の)?[[:space:]]*(「?手順[[:space:]]*[0-9０-９]+([[:space:]]*と[[:space:]]*[0-9０-９]+)*」?)?[[:space:]]*を(先に)?読' "$root/$R/$f"; then
       echo "child reads parent operations: $f" >&2; rc=1
     fi
   done

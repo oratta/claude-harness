@@ -162,7 +162,15 @@ referrers() {
 # 実ファイルと一時コピーの変異を同じ参照検査に通す。
 check_style_reference() {
   local f=$1
-    grep -qE 'readable\.md|communication-style|references/epic-loop\.md`( の)?(「[^」]*」と)*「主への報告」[^。]*を(先に)?読む' "$f" || { echo "no reference: $f"; return 1; }
+  # epic-stop は一般の文章規則への参照だけでは足りない。
+  # エピック固有の報告規則を先に読む経路を必須にする（#1699 P1-F2）。
+  case "$f" in
+    */epic-stop.md|epic-stop.md)
+      grep -qE 'references/epic-loop\.md`( の)?「主への報告」を先に読む' "$f" || { echo "no reference: $f"; return 1; }
+      return 0
+      ;;
+  esac
+  grep -qE 'readable\.md|communication-style|references/epic-loop\.md`( の)?(「[^」]*」と)*「主への報告」[^。]*を(先に)?読む' "$f" || { echo "no reference: $f"; return 1; }
 }
 
 @test "referrers: no copy of the old form and each points at the canonical style" {
