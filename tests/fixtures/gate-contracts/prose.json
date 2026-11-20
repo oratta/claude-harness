@@ -268,7 +268,7 @@
     {
       "source": "skills/pr-review-gate/stages/hold.md",
       "line": 196,
-      "text": "- **保留の解除**: オーナーの回答（許容する／しない・動作確認の結果・切り出しの確認への回答（切り出す／この PR で直す））を受けて pr-review-gate の復帰手順に従う。復帰手順が別の段の作業に進むときは、その作業を自分で行わず Status `次の段へ` で返す。許容したとき・切り出して残りが無いとき（ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無いとき）は `次の段: 合格処理`、許容せず代替案に切り替えて作り直すとき・切り出したあとに 1 周目の段 A に当たる未解決の指摘が残っているときは `agent-review:failed` に付け替えて failed（`次の段: 前提確認と重さ判定`）で返す。1 周目かは前の段の Gate Result の `周回:` で、段 A の有無は仕分けの PR コメントの「段 A・この PR で直す」の印で読み、印が無ければ段 A の指摘は無いものとして扱う（判定をやり直さない）。段 A が残って failed で返すときの欄は `stages/triage.md` の「failed のとき」を使い、残りが段 A だけなら原因分類は「段 A だけ（昇格なし）」、順 2〜4 も残っていれば手順 2-2 の表どおりとする。`次の段へ`・`次の段: 前提確認と重さ判定` は W の修正が要らないときだけに使う。未処理の順 6 が残っていれば failed に進まない（`needs-approval` を外して `needs-decider` で返す。処理順は pr-review-gate 手順 2-1 の混在の段落）"
+      "text": "- **保留の解除**: オーナーの回答（許容する／しない・動作確認の結果・切り出しの確認への回答（切り出す／この PR で直す））を受けて pr-review-gate の復帰手順に従う。復帰手順が別の段の作業に進むときは、その作業を自分で行わず Status `次の段へ` で返す。許容したとき・切り出して残りが無いとき（ほかに止める指摘も、1 周目の段 A に当たる未解決の指摘も無いとき）は `次の段: 合格処理`、許容せず代替案に切り替えて作り直すとき・切り出したあとに 1 周目の段 A に当たる未解決の指摘が残っているときは `agent-review:failed` に付け替えて failed（`次の段: 前提確認と重さ判定`）で返す。1 周目かは前の段の Gate Result の `周回:` で、段 A の有無は仕分けの PR コメントの「段 A・この PR で直す」の印で読み、印が無ければ段 A の指摘は無いものとして扱う（判定をやり直さない）。段 A が残って failed で返すときの欄は `stages/triage.md` の「failed のとき」を使い、残りが段 A だけなら原因分類は「段 A だけ（昇格なし）」、順 2〜4 も残っていれば手順 2-2 の表どおりとする。`次の段へ`・`次の段: 前提確認と重さ判定` は W の修正が要らないときだけに使う。未処理の順 6 が残っていれば failed に進まない（`needs-approval` を外して `needs-decider` で返す。処理順は `triage-convergence.md` の混在の段落）"
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",
@@ -638,7 +638,7 @@
     {
       "source": "skills/pr-review-gate/stages/review-run.md",
       "line": 105,
-      "text": "**Codex を呼んだら、その Codex thread の thread_id を return に書く**（`codex exec` は出力ヘッダの `session id:` の値、companion は結果の `threadId`。取れなかったらそう書く）。本体はこれを記録先の `Codex 消費: <thread_id> -` として残し、PR トークン上限の計測に入れる（G の Claude トランスクリプトには Codex の消費が入らないため。手順の正本は `skills/develop/SKILL.md`「PR トークン上限」）。"
+      "text": "**Codex を呼んだら、その Codex thread の thread_id を return に書く**（`codex exec` は出力ヘッダの `session id:` の値、companion は結果の `threadId`。取れなかったらそう書く）。本体はこれを記録先の `Codex 消費: <thread_id> -` として残し、PR トークン上限の計測に入れる（G の Claude トランスクリプトには Codex の消費が入らないため。手順の正本は `skills/develop/references/pr-token-budget.md`）。"
     },
     {
       "source": "skills/pr-review-gate/stages/review-run.md",
@@ -1143,7 +1143,7 @@
     {
       "source": "skills/pr-review-gate/stages/hold.md",
       "line": 75,
-      "text": "- **起こすセッションの区別**: develop の外のメインセッションでは、ゲート自身が Agent ツールで判定役を起こし、判定の記録を PR に投稿して 3-c を続ける。develop の合格処理の G は判定役を起こせないので、回す条件を満たしたら宣言を投稿せず `needs-approval` も付けずに、Status `needs-carryover-judge`・`次の段: 合格処理` で返す（本体が判定役を起こして記録を投稿し、合格処理の G を新しく起こす。return の欄は下の「G として動くとき（develop）」節）。従来経路の一括の G（`段: 一括（従来経路）`）は判定役を起こさず手順6で主に聞く（呼び出し元が Status を受けて決める役を起こす約束が無いため）。手順 6-0 の論点なしの確認の決める役も同じ区別で起こす（develop の G は `needs-no-point-check` で返す）"
+      "text": "- **起こすセッションの区別**: develop の外のメインセッションでは、ゲート自身が Agent ツールで判定役を起こし、判定の記録を PR に投稿して 3-c を続ける。develop の合格処理の G は判定役を起こせないので、回す条件を満たしたら宣言を投稿せず `needs-approval` も付けずに、Status `needs-carryover-judge`・`次の段: 合格処理` で返す（本体が判定役を起こして記録を投稿し、合格処理の G を新しく起こす。返す欄は `hold.md` の「G として動くとき（develop）」節）。従来経路の一括の G（`段: 一括（従来経路）`）は判定役を起こさず手順6で主に聞く（呼び出し元が Status を受けて決める役を起こす約束が無いため）。手順 6-0 の論点なしの確認の決める役も同じ区別で起こす（develop の G は `needs-no-point-check` で返す）"
     },
     {
       "source": "skills/pr-review-gate/stages/hold.md",

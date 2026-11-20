@@ -102,7 +102,7 @@ G はサブエージェントなので Agent ツールを持たず、Task サブ
 
 不可判定の正本は pr-review-gate 手順 2-1。companion / slash command が無ければ `command -v codex` 等でバイナリを確認し、あれば exec を試す。companion 導入は任意。不在だけでは不可とせず、バイナリ探索で不在、実際の Codex 呼び出しで認証切れ、または起動後に正本の総待ち上限に到達した実測だけを採用する。未試行・auth.json の有無は証拠にならない。引数誤り・権限拒否・通信障害は三条件に読み替えず、Claude へ暗黙にフォールバックしない。該当しないエラーは証拠付きで本体へ返す。
 
-**Codex を呼んだら、その Codex thread の thread_id を return に書く**（`codex exec` は出力ヘッダの `session id:` の値、companion は結果の `threadId`。取れなかったらそう書く）。本体はこれを記録先の `Codex 消費: <thread_id> -` として残し、PR トークン上限の計測に入れる（G の Claude トランスクリプトには Codex の消費が入らないため。手順の正本は `skills/develop/SKILL.md`「PR トークン上限」）。
+**Codex を呼んだら、その Codex thread の thread_id を return に書く**（`codex exec` は出力ヘッダの `session id:` の値、companion は結果の `threadId`。取れなかったらそう書く）。本体はこれを記録先の `Codex 消費: <thread_id> -` として残し、PR トークン上限の計測に入れる（G の Claude トランスクリプトには Codex の消費が入らないため。手順の正本は `skills/develop/references/pr-token-budget.md`）。
 
 Codex の出力全文を本体に流さない。`変更点の一覧`・`照合表`・`ハンク被覆` と構造化された指摘一覧だけを G が読み、本体には要約だけ返す。
 
