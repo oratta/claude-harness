@@ -18,7 +18,7 @@ def check(root, mode, budget=None):
     if mode == 'content':
         body = procedures(root)
         for term in ['git-guard-permit.sh', 'agent_id', '15 分以内', '終了コード 3',
-                     '1 回だけ報告を求める', 'pr-token-budget.sh', 'codex-records.sh']:
+                     '1 回だけ報告を求める', 'pr-token-budget.sh', 'pr-token-measure.sh']:
             assert term in body, term
     elif mode == 'structure':
         end = '<!-- startup-core-end -->'
