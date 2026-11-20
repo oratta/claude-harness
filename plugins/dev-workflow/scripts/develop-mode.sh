@@ -50,8 +50,11 @@ else:
 print("実行モード: " + mode)
 PY
 ); then
-  printf '%s\n' "$result"
-else
-  printf '%s\n' 'develop-mode.sh: Python 3 (python3) による判定に失敗しました。' >&2
-  exit 1
+  case "$result" in
+    *'
+'*) ;;
+    '実行モード: '*) printf '%s\n' "$result"; exit 0 ;;
+  esac
 fi
+printf '%s\n' 'develop-mode.sh: Python 3 (python3) による判定に失敗しました（実行失敗または不正な出力）。' >&2
+exit 1

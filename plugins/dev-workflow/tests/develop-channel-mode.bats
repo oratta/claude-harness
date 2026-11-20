@@ -71,7 +71,7 @@ refute() {
 @test "mode decision: script inputs, result table, failure and retained instructions" {
   local s word; s="$(subsection 'モードの決め方')"
   [ -n "$s" ]
-  for word in 'scripts/develop-mode.sh' '--unmanned（develop の引数にあるとき）' '--channel-request（依頼本文が <channel source= で始まるとき）' '新規開始時に 1 回' '実行モード: interactive（既定）' '実行モード: channel（印）' '実行モード: channel（チャンネルの依頼）' '実行モード: unmanned（引数）' 'exit 0' 'exit 1' 'stderr' '推測で進めない' '実行モード: <モード>（<理由>）' '途中でモードを変えない' '引き継ぎの `実行モード` の値を使' '決め直さず' 'references/channel.md'; do
+  for word in 'scripts/develop-mode.sh' '--unmanned（develop の引数にあるとき）' '--channel-request（依頼本文が <channel source= で始まるとき）' '新規開始時に 1 回' '実行モード: interactive（既定）' '実行モード: channel（印）' '実行モード: channel（チャンネルの依頼）' '実行モード: unmanned（引数）' 'exit 0' 'exit 0 以外、または上のどの行にも当たらない出力' 'stderr' '推測で進めない' '実行モード: <モード>（<理由>）' '途中でモードを変えない' '引き継ぎの `実行モード` の値を使' '決め直さず' 'references/channel.md'; do
     printf '%s\n' "$s" | grep -qF -- "$word"
   done
   printf '%s\n' "$s" | grep -qF '| 出力／終了 | 本体の扱い |'

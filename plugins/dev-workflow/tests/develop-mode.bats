@@ -101,6 +101,21 @@ failure() {
   grep -qi 'python' "$ERR"
 }
 
+@test "runtime: successful Python with empty or malformed output fails" {
+  mkdir "$BATS_TEST_TMPDIR/bin"
+  printf '#!/bin/sh\nexit 0\n' > "$BATS_TEST_TMPDIR/bin/python3"
+  chmod +x "$BATS_TEST_TMPDIR/bin/python3"
+  PATH="$BATS_TEST_TMPDIR/bin:$PATH" failure
+  grep -qi 'python' "$ERR"
+
+  local value
+  for value in 'unexpected' $'実行モード: interactive（既定）\nextra'; do
+    printf '#!/bin/sh\nprintf "%%s\\n" "%s"\n' "$value" > "$BATS_TEST_TMPDIR/bin/python3"
+    PATH="$BATS_TEST_TMPDIR/bin:$PATH" failure
+    grep -qi 'python' "$ERR"
+  done
+}
+
 @test "isolation: no external operation commands or state changes" {
   local cmd
   mkdir "$BATS_TEST_TMPDIR/bin" "$BATS_TEST_TMPDIR/home" "$BATS_TEST_TMPDIR/work"
