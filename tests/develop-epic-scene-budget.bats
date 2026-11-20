@@ -140,7 +140,7 @@ check_naming() {
   fi
   local f
   for f in epic-child-stop.md epic-keepalive.md epic-worker-slots.md; do
-    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md`( の)?[[:space:]]*(「?手順[[:space:]]*[0-9０-９]+([[:space:]]*と[[:space:]]*[0-9０-９]+)*」?)?[[:space:]]*を(先に)?読' "$root/$R/$f"; then
+    if grep -Eq 'epic-(loop|stop|merge-wait|multirepo|subagent|keepalive-watch)\.md`( の)?[[:space:]]*((「)?手順[[:space:]]*([0-9]|０|１|２|３|４|５|６|７|８|９)+([[:space:]]*と[[:space:]]*([0-9]|０|１|２|３|４|５|６|７|８|９)+)*(」)?)?[[:space:]]*を(先に)?読' "$root/$R/$f"; then
       echo "child reads parent operations: $f" >&2; rc=1
     fi
   done
