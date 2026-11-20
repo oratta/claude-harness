@@ -137,6 +137,11 @@
     },
     {
       "source": "skills/pr-review-gate/declarations.md",
+      "line": 5,
+      "text": "このファイルが番号で指す他の段の手順は次のファイルにある（パスは pr-review-gate の直下から）: `stages/pass.md`（手順 4・5）、`stages/hold.md`（手順 3-c）、`stages/hold.md`（手順 6）。"
+    },
+    {
+      "source": "skills/pr-review-gate/declarations.md",
       "line": 9,
       "text": "レビューで止める指摘が残らなかったあと（`stages/triage.md` を通った場合は、止める指摘が無くなったあと）、合格処理（`stages/pass.md`）の前に読む。develop の W は、(3b) で仕様宣言を投稿するときにこのファイルだけを読む。"
     },

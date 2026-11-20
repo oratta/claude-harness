@@ -166,6 +166,8 @@ step_headings() {
     grep '^このファイルが番号で指す' "${GATE_DIR}/stages/${file}.md" | grep -qF '`stages/carryover.md`（手順 3-c）'
     ! grep -qF '`stages/hold.md`（手順 3-c・6）' "${GATE_DIR}/stages/${file}.md" || return 1
   done
+  grep '^このファイルが番号で指す' "${GATE_DIR}/declarations.md" | grep -qF '`stages/carryover.md`（手順 3-c）、`stages/hold.md`（手順 6）'
+  grep '^\- 手順 3 で' "${GATE_DIR}/declarations.md" | grep -qF 'まず `stages/carryover.md` の手順 3-c'
   grep -F -- '- **照合と振り分けのあと**' "${GATE_DIR}/stages/pass.md" | grep -qF '`stages/carryover.md` を読んで手順 3-c'
   grep -F -- '- **保留の解除のあと**' "${GATE_DIR}/stages/pass.md" | grep -qF '`stages/carryover.md` の 3-c'
 }
