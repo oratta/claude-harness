@@ -9,7 +9,7 @@
 
 ## 2. 統合確認
 
-- [ ] 2.1 新規 bats と script を git の追跡に入れ、動的列挙する `./scripts/test.sh` と `./scripts/lint.sh` を実行し、ともに exit 0 を記録する。`openspec validate extract-develop-mode-decision --type change --strict` も exit 0 とし、未チェックの tasks が無いことを確認する。確認: 実行コマンドと終了コードの記録、`git diff --check` が exit 0、既存 script と hook と epic reference に差分が無いこと。触る範囲: openspec/changes/extract-develop-mode-decision/tasks.md:5-14（進捗のみ）
+- [x] 2.1 新規 bats と script を git の追跡に入れ、動的列挙する `./scripts/test.sh` と `./scripts/lint.sh` を実行し、ともに exit 0 を記録する。`openspec validate extract-develop-mode-decision --type change --strict` も exit 0 とし、未チェックの tasks が無いことを確認する。確認: 実行コマンドと終了コードの記録、`git diff --check` が exit 0、既存 script と hook と epic reference に差分が無いこと。触る範囲: openspec/changes/extract-develop-mode-decision/tasks.md:5-14（進捗のみ）
 
 ## Workflow follow-up
 
@@ -26,7 +26,15 @@
 - `PATH=/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin ./scripts/lint.sh`: exit 0。Claude 起動禁止に従い PATH から claude を除外したため、内包する `claude plugin validate` は未実行。shellcheck は全追跡 sh を検査し指摘なし。
 - `./scripts/test-auto-merge-workflow.sh`: exit 0（145 passed, 0 failed、actionlint も成功）。CI の lint ジョブが lint.sh と併せて実行する検査。
 - `openspec validate extract-develop-mode-decision --type change --strict`: exit 0。
-- `./scripts/test.sh`: exit 143。共有契約 `plugins/dev-workflow/references/subagent-waiting.md` の総待ち上限 27 分に達し、実行中の test.sh とその子プロセスを TERM で停止した。全 5,330 件中、最後の成功は 4,339 件目、停止前の `not ok` は 0 件。全体合格ではなく task 2.1 は未完了。環境の ps/pgrep 自己列挙検査で残留検査なしの分岐になったこともログに表示された。
-- 関連テスト検索: `git grep -l -e 'develop-mode.sh' -e 'develop-channel-mode.bats' -e 'skills/develop/SKILL.md' -e 'develop-startup-budget.txt' -e 'changes/1686.md' -- '*test*' '*.bats'`（exit 0）。検索結果を含む全体は上記で未完了のため、検索で見つかった全テストの合格を主張しない。
+- `./scripts/test.sh`: exit 0。本体が固定 HEAD `5e33b3a9e09fd32e3ec241c49d5fcaf18a958514` で手元実行を完走し、`1..5330`、bats 全スイート pass、excluded 0 を確認した（https://github.com/oratta/claude-harness/issues/1686#issuecomment-7040962092）。実装試行 3 の待ち上限停止に代わる完走結果として task 2.1 を完了とする。finish では全体テストを再実行しない。
+- 関連テスト検索: `git grep -l -e 'develop-mode.sh' -e 'develop-channel-mode.bats' -e 'skills/develop/SKILL.md' -e 'develop-startup-budget.txt' -e 'changes/1686.md' -- '*test*' '*.bats'`（exit 0）。全体テストの完走結果は上記の本体の記録を引き継ぐ。
 - `git diff --check`: exit 0。channel.md 案内の末尾段落全文は起点と同一、判定 script 本体・hook・epic-loop.md に起点 09aa530f からの差分なし。
-- 残作業: 全体テストの完了と task 2.1 のチェック。archive・PR 作成・独立レビューはこの段で実施しない。
+- 統合確認は完了。finish 段で archive・Draft PR・仕様宣言を行い、独立レビューは本体へ返す。
+
+## finish の検査記録
+
+- `bats plugins/dev-workflow/tests/develop-mode.bats plugins/dev-workflow/tests/develop-channel-mode.bats plugins/dev-workflow/tests/develop-skill.bats tests/develop-startup-budget.bats tests/injection-budget.bats`: exit 0（294 件）。
+- archive 前の `openspec validate extract-develop-mode-decision --type change --strict`: exit 0。全タスク完了を確認後、`openspec archive extract-develop-mode-decision --yes`: exit 0。archive 先の存在と元ディレクトリの不存在を確認。
+- `openspec validate dev-workflow-develop --type spec`: exit 0。追加の `--strict` は exit 1（既存 115 WARNING、ERROR なし）。固定 HEAD 5e33b3a9 の spec を隔離 fixture で同じ CLI にかけ、警告の level/path/message が全件同一であることを照合（exit 0）。
+- `openspec validate --archived`: exit 1（386 passed / 27 failed）。今回の archive は valid、失敗した 27 件はいずれも差分のない既存 archive。JSON による照合は exit 0。
+- `git diff --check`: exit 0。全体テストは本体の完走結果を引き継ぎ、再実行しない。
