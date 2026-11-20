@@ -4,9 +4,9 @@
 
 ## 1. 守備範囲の配置と回帰テスト
 
-- [ ] 1.1 #1695 の配置検査のケース表に「memory-refresh スキルで承認と控えを取ってから整理する」の「`patches:` による分類の守備範囲は次のとおり。」で始まる段落の全文を追加する。要件を最初の Scenario で分け、本文に完全一致で 1 回・シナリオに 0 回を検査する。既存のケースと前の change の 2 ケースを保持し、`./scripts/test.sh openspec-specs-format` を移動前に実行して追加ケースを失敗理由として非 0 になることを確認する。触る範囲: tests/openspec-specs-format.bats:85-155（#1695 のケース表と境界検査）
-- [ ] 1.2 delta と同じく 1 段落を同じ要件の最初の Scenario の直前へ、全文を変えず移す。`./scripts/test.sh openspec-specs-format` が exit 0 となり、`git diff -- openspec/specs/dev-workflow-memory-refresh/spec.md` が 1 段落の移動と必要な空行だけで、要件名・全シナリオ・その他の文・過去の archive delta が保持されていることを確認する。触る範囲: openspec/specs/dev-workflow-memory-refresh/spec.md:62-97（承認・控え・整理の要件）
-- [ ] 1.3 `openspec show dev-workflow-memory-refresh --type spec --json` が exit 0 となり、対応する要件の `text` に対象段落の全文が 1 回、全 `requirements[].scenarios[].rawText` に 0 回であることを確認する（検証のみ）。触る範囲: openspec/specs/dev-workflow-memory-refresh/spec.md:62-97（守備範囲の CLI 上の帰属）
+- [x] 1.1 #1695 の配置検査のケース表に「memory-refresh スキルで承認と控えを取ってから整理する」の「`patches:` による分類の守備範囲は次のとおり。」で始まる段落の全文を追加する。要件を最初の Scenario で分け、本文に完全一致で 1 回・シナリオに 0 回を検査する。既存のケースと前の change の 2 ケースを保持し、`./scripts/test.sh openspec-specs-format` を移動前に実行して追加ケースを失敗理由として非 0 になることを確認する。触る範囲: tests/openspec-specs-format.bats:85-155（#1695 のケース表と境界検査）
+- [x] 1.2 delta と同じく 1 段落を同じ要件の最初の Scenario の直前へ、全文を変えず移す。`./scripts/test.sh openspec-specs-format` が exit 0 となり、`git diff -- openspec/specs/dev-workflow-memory-refresh/spec.md` が 1 段落の移動と必要な空行だけで、要件名・全シナリオ・その他の文・過去の archive delta が保持されていることを確認する。触る範囲: openspec/specs/dev-workflow-memory-refresh/spec.md:62-97（承認・控え・整理の要件）
+- [x] 1.3 `openspec show dev-workflow-memory-refresh --type spec --json` が exit 0 となり、対応する要件の `text` に対象段落の全文が 1 回、全 `requirements[].scenarios[].rawText` に 0 回であることを確認する（検証のみ）。触る範囲: openspec/specs/dev-workflow-memory-refresh/spec.md:62-97（守備範囲の CLI 上の帰属）
 
 ## 2. 両 change の統合検証
 
