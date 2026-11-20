@@ -4161,7 +4161,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -qF '権限の値と権限を広げる選び方'
   printf '%s\n' "$p" | grep -F '広げて答えたら' | grep -qF '照らし直し'
   printf '%s\n' "$p" | grep -F '「続ける」とだけ' | grep -qF 'reply --as owner'
-  printf '%s\n' "$p" | grep -F 'サブエージェント方式' | grep -qF 'SKILL.md'
+  printf '%s\n' "$p" | grep -F 'サブエージェント方式' | grep -qF '`references/pr-token-budget.md`「記録先がエピックの子のとき」'
 }
 
 @test "skill: an epic child writes the estimate when stopped at the PR token cap and takes the parent's raise without re-asking" {
@@ -4174,7 +4174,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -qF '`続ける。新しい上限 <権限>'
   printf '%s\n' "$l" | grep -qF '主が権限のコメント（`子の PR トークン権限:`）で先に承認した範囲の執行'
   printf '%s\n' "$l" | grep -qF '主に聞き直さず'
-  printf '%s\n' "$l" | grep -F '`PR トークン上限:`' | grep -qF 'SKILL.md「PR トークン上限」'
+  printf '%s\n' "$l" | grep -F '`PR トークン上限:`' | grep -qF '`references/pr-token-budget.md`「記録先がエピックの子のとき」の 4 行の上限コメント書式'
 }
 
 # spec: dev-workflow-develop（親が通してよい範囲の基準を 1 つのファイルに置く）
