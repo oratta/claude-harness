@@ -476,7 +476,7 @@ Additional negative/exit constraints (しない・禁止・不可・失敗・戻
 
 Reference-only exceptions: gate-runner:19 adds the conditional prepare-reviewer source; prepare:184 redirects the needs-reviewer return to prepare-reviewer. Those routing conditions and exits remain checked by related bats.
 
-Merged main (#1690, #1697): pass.md:146, :155 and :156 are the texts of origin/main after #1690 moved the delegation conditions to develop `references/epic-delegation.md` (the gate reads them there instead of copying them). Only those three prose expectations differ from the revision above; their destination stays authenticity-delegated.md.
+Merged main (#1690, #1697): pass.md:146, :155 and :156 are the texts of origin/main after #1690 moved the delegation conditions to develop `references/epic-delegation.md` (the gate reads them there instead of copying them). Only those three prose expectations differ from the revision above; their destination stays authenticity-delegated.md. #1707 then made the reference path explicit (`skills/develop/references/epic-delegation.md`) in the same three expectations.
 
 ## Gate round 1 reference changes (#1687)
 

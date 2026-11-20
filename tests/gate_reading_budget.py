@@ -16,6 +16,7 @@ from pathlib import Path
 
 PLUGIN = Path('plugins/dev-workflow')
 GATE = 'skills/pr-review-gate/'
+EXTERNAL = ['skills/develop/references/epic-delegation.md']
 COMMON = ['skills/develop/references/roles/gate-runner.md',
           'skills/develop/references/return-declaration.md']
 BASE = {
@@ -54,7 +55,7 @@ CONDITIONS = {
         'risk-link': ['hold', 'authenticity'],
         'risk-conversation': ['hold', 'authenticity', 'authenticity-conversation'],
         'risk-relayed': ['hold', 'authenticity', 'authenticity-relayed'],
-        'risk-delegated': ['hold', 'authenticity', 'authenticity-relayed', 'authenticity-delegated'],
+        'risk-delegated': ['hold', 'authenticity', 'authenticity-relayed', 'authenticity-delegated', *EXTERNAL],
         'wording': ['pass-wording'],
     },
     'hold': {
@@ -93,12 +94,17 @@ def verify_prompt(text, expected, read):
     return set(names)
 
 
+def condition_path(name):
+    # Bare names are gate stages; explicit paths are relative to Plugin root.
+    return name if '/' in name else GATE + 'stages/' + name + '.md'
+
+
 def plans():
     result = {}
     for stage, base in BASE.items():
         result[stage] = [GATE + p for p in base]
         for condition, names in CONDITIONS[stage].items():
-            result[stage + '-' + condition] = result[stage] + [GATE + 'stages/' + n + '.md' for n in names]
+            result[stage + '-' + condition] = result[stage] + [condition_path(n) for n in names]
         result[stage + '-max'] = sorted(set(p for key, paths in result.items()
             if key == stage or key.startswith(stage + '-') for p in paths))
     result['legacy-all'] = [GATE + p for p in LEGACY]
@@ -113,6 +119,7 @@ def plans():
 
 def validate_inventory(root, plan):
     files = {str(p.relative_to(root / PLUGIN)) for p in (root / PLUGIN / GATE).rglob('*.md')}
+    files.update(p for p in EXTERNAL if (root / PLUGIN / p).is_file())
     covered = set(p for paths in plan.values() for p in paths)
     assert files == covered, ('unmeasured/missing files', files - covered, covered - files)
     # Every planned detail must actually be referenced by a procedure (not only by the index).
@@ -120,7 +127,8 @@ def validate_inventory(root, plan):
     refs += (root / PLUGIN / COMMON[0]).read_text()
     detail = covered - {GATE + p for p in LEGACY}
     for path in detail:
-        assert '`stages/' + Path(path).name + '`' in refs, ('unreferenced detail', path)
+        reference = path.removeprefix(GATE)
+        assert '`' + reference + '`' in refs, ('unreferenced detail', path)
     gate = (root / PLUGIN / COMMON[0]).read_text()
     for stage in STAGES:
         # Split the row into columns first: the stage-name column has its own parentheses.
@@ -132,7 +140,7 @@ def validate_inventory(root, plan):
         paths = lambda text: set(re.findall(r'`([^`]+\.md)`', text))
         # Unconditional reads are exactly BASE; conditional reads are a subset of CONDITIONS.
         assert paths(before) == set(BASE[stage]), ('base reads differ', stage, paths(before))
-        allowed = {'stages/' + n + '.md' for names in CONDITIONS[stage].values() for n in names}
+        allowed = {condition_path(n).removeprefix(GATE) for names in CONDITIONS[stage].values() for n in names}
         assert paths(inside) <= allowed, ('unknown conditional reads', stage, paths(inside) - allowed)
 
 
@@ -245,6 +253,47 @@ def fixtures(root):
             must_fail(lambda: validate_inventory(fixture, plan))
         runner.write_text(runner_text)
         validate_inventory(fixture, plan)
+        # Delegation reads a shared develop source, once per conditional union.
+        delegation = 'skills/develop/references/epic-delegation.md'
+        affected = {'pass-risk-delegated', 'pass-max',
+                    'legacy-pass-risk-delegated', 'legacy-all-max'}
+        assert {key for key, paths in plan.items() if delegation in paths} == affected
+        for key in affected:
+            assert plan[key].count(delegation) == 1, key
+        delegated = fixture / PLUGIN / delegation
+        delegated_body = delegated.read_bytes()
+        initial = measure(fixture, adapter)
+        limits = {key: len(value.encode()) for key, value in initial.items()}
+        delegated.write_bytes(delegated_body + b'x')
+        grown = measure(fixture, adapter)
+        for key in initial:
+            expected = int(key.split('/', 1)[1] in affected)
+            assert len(grown[key].encode()) - limits[key] == expected, key
+        must_fail(lambda: check(grown, limits))
+        delegated.write_bytes(delegated_body)
+        delegated.unlink()
+        must_fail(lambda: validate_inventory(fixture, plan))
+        delegated.write_bytes(delegated_body)
+        detail = fixture / PLUGIN / GATE / 'stages/authenticity-delegated.md'
+        detail_body = detail.read_text()
+        assert '`' + delegation + '`' in detail_body
+        detail.write_text(detail_body.replace('`' + delegation + '`', '`missing.md`'))
+        must_fail(lambda: validate_inventory(fixture, plan))
+        detail.write_text(detail_body)
+        # The real adapter tells a worker how to resolve this explicit shared path.
+        prompt = adapter.prompt('gate', '段: 合格処理', {'cwd': str(fixture)},
+                                plugin_root=str(fixture / PLUGIN))
+        assert '`skills/...` resolves to <Plugin root>/skills/...' in prompt
+        assert (fixture / PLUGIN / delegation).is_file()
+        # Fixed before predates the shared file: its delegation conditions lived in pass.md.
+        import gate_reading_report as report
+        aliases = json.loads((root / 'tests/fixtures/gate-contracts/prose.json').read_text())['aliases']
+        assert report.original_path(delegation, aliases) == GATE + 'stages/pass.md'
+        for key in affected:
+            before = {report.original_path(p, aliases) for p in plan[key]}
+            assert delegation not in before
+            assert GATE + 'stages/pass.md' in before
+            assert before == {report.original_path(p, aliases) for p in plan[key] if p != delegation}
         target = fixture / PLUGIN / GATE / 'stages/prepare-light.md'
         baseline = target.read_bytes()
         budgets = {k: len(v.encode()) for k, v in measure(fixture, adapter).items()}
