@@ -151,6 +151,14 @@ JSON
   [[ "$output" != *forged-candidate* ]] || return 1
   [[ "$output" != *'委任は有効'* ]] || return 1
 }
+@test "inputs: no delegation candidate unless the parent supplied --delegation-place" {
+  echo '[{"body":"主の委任: 論点なしの止まり\nunchecked-candidate","html_url":"unchecked-url","created_at":"2026-02-01T00:00:00Z","author_association":"OWNER"}]' > "$CFG/epic-comments"
+  run collect
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'## 委任の記録の候補（なし）'* ]] || return 1
+  [[ "$output" != *unchecked-candidate* ]] || return 1
+  [[ "$output" != *unchecked-url* ]] || return 1
+}
 @test "inputs: only casting files present in the worktree are included" {
   mkdir -p "$TOP/.claude/casting"
   echo project-only > "$TOP/.claude/casting/project.md"

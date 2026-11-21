@@ -93,5 +93,6 @@ section 'CI の結果' "$ci"
 section 'auto-merge.yml の聖域とマージ条件の行' "$paths"
 section 'human-merge を付けた投稿' "$bot_notes"
 section '配役表' "$casting"
+[ -n "$delegation_place" ] || delegation=''
 section '委任の記録の候補' "$delegation"
 section '委任の確認の場所' "$delegation_place"

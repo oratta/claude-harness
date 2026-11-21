@@ -14,7 +14,7 @@ develop の `references/epic-merge-wait.md` は、epic-stop.md「停止の処理
 
 #### Scenario: 親の手順にマージ待ちの判断と印の付け方が書かれている
 - **WHEN** `references/epic-merge-wait.md` の Orca 経路の手順のあとの段落を読む
-- **THEN** 今回の止まった理由が `PR のマージ待ち（` で始まる子について、手順 8 で主に上げるどちらの経路でも報告の前に行うこと、前提の確認と入力の収集に `parent-merge-inputs.sh` を呼ぶこと（出力が `主に上げる:` なら主に上げ、入力文なら決める役に貼ること。`gh` の書き方と入力の列挙は手順書に書かない）、4 つの前提（PR の base ブランチの `auto-merge.yml` の `parent-merge-approved`、見送りラベルが `human-merge` だけ、PR 本文の最初の `Closes`・`Fixes`・`Refs` が子 issue の番号、今の HEAD の判断のコメントがまだ無い）、`dev-workflow:decider` に `parent-merge-criteria.md` で判断させること、可のとき残っている `parent-merge-approved` を外し、HEAD を確かめてから `親のマージ判断: 可`・`親が見た HEAD:` のコメント → `parent-merge-approved` ラベルの順に付け、`reply --as parent` で子に伝え、エピックに `マージに回した` の 1 行を残すこと、否・不足・迷ったときは主に上げること、印を付けるのは親だけで直接マージしないことが書かれている
+- **THEN** 今回の止まった理由が `PR のマージ待ち（` で始まる子について、手順 8 で主に上げるどちらの経路でも報告の前に行うこと、前提の確認と入力の収集に `parent-merge-inputs.sh` を呼ぶこと（出力が `主に上げる:` なら主に上げ、入力文なら決める役に貼ること。`gh` の書き方と入力の列挙は手順書に書かない）、4 つの前提の確認をスクリプトに任せること、`dev-workflow:decider` に `parent-merge-criteria.md` で判断させること、可のとき残っている `parent-merge-approved` を外し、HEAD を確かめてから `親のマージ判断: 可`・`親が見た HEAD:` のコメント → `parent-merge-approved` ラベルの順に付け、`reply --as parent` で子に伝え、エピックに `マージに回した` の 1 行を残すこと、否・不足・迷ったときは主に上げること、印を付けるのは親だけで直接マージしないことが書かれている
 
 #### Scenario: マージ待ち以外の止まりは今までどおり
 - **WHEN** 今回の止まった理由が `PR のマージ待ち（` で始まらない
