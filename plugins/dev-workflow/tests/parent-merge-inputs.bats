@@ -45,7 +45,7 @@ collect() {
 mutate_pr() { jq "$1" "$CFG/pr" > "$CFG/new" && mv "$CFG/new" "$CFG/pr"; }
 assert_escalated() {
   [ "$status" -eq 3 ]
-  [[ "$output" == '主に上げる: '* ]]
+  [[ "$output" == '主に上げる: '* ]] || return 1
   [ "${#lines[@]}" -eq 1 ]
 }
 @test "inputs: all sections, full last message, base workflow and rename source" {
@@ -58,22 +58,24 @@ assert_escalated() {
   for value in エピック本文 子本文 trusted-note 子の最後の全文 '止まった理由:' 'SACRED=secret' 'MERGE_CONDITION=workflow' old.sh new.sh SUCCESS; do
     [[ "$output" == *"$value"* ]] || return 1
   done
-  [[ "$output" != *untrusted-note* ]]
-  [[ "$output" == *'## 配役表（なし）'* ]]
+  [[ "$output" != *untrusted-note* ]] || return 1
+  [[ "$output" == *'## 配役表（なし）'* ]] || return 1
   grep -qF '?ref=release/v1' "$CALLS"
-  ! grep -Eq 'merge|comment|edit' < <(grep -vE '^api |^pr view |^pr diff ' "$CALLS")
+  if grep -Eq 'merge|comment|edit' < <(grep -vE '^api |^pr view |^pr diff ' "$CALLS"); then
+    return 1
+  fi
 }
 @test "precondition: base workflow has no approval support" {
   echo '# no support' > "$CFG/workflow"
   run collect
   assert_escalated
-  [[ "$output" == *auto-merge.yml* ]]
+  [[ "$output" == *auto-merge.yml* ]] || return 1
 }
 @test "precondition: only human-merge, on an open PR" {
   mutate_pr '.labels += [{"name":"needs-approval"}]'
   run collect
   assert_escalated
-  [[ "$output" == *ラベル* ]]
+  [[ "$output" == *ラベル* ]] || return 1
   mutate_pr '.labels = []'
   run collect
   assert_escalated
@@ -85,14 +87,14 @@ assert_escalated() {
   mutate_pr '.body = "Fixes #22\nCloses #11"'
   run collect
   assert_escalated
-  [[ "$output" == *番号* ]]
+  [[ "$output" == *番号* ]] || return 1
 }
 @test "precondition: an approval for this HEAD escalates with troubleshooting" {
   echo '[{"body":"親のマージ判断: 可\n親が見た HEAD: aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","author_association":"OWNER"}]' > "$CFG/pr-comments"
   run collect
   assert_escalated
-  [[ "$output" == *docs/auto-merge.md* ]]
-  [[ "$output" == *親の判断の印を付けたのにマージされないとき* ]]
+  [[ "$output" == *docs/auto-merge.md* ]] || return 1
+  [[ "$output" == *親の判断の印を付けたのにマージされないとき* ]] || return 1
 }
 @test "inputs: stale approval does not block" {
   echo '[{"body":"親のマージ判断: 可\n親が見た HEAD: bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","author_association":"OWNER"}]' > "$CFG/pr-comments"
@@ -130,9 +132,9 @@ assert_escalated() {
 JSON
   run collect
   [ "$status" -eq 0 ]
-  [[ "$output" == *trusted-gate* ]]
-  [[ "$output" != *untrusted-gate* ]]
-  [[ "$output" == *$'## human-merge を付けた投稿\n\n'*bot-post* ]]
+  [[ "$output" == *trusted-gate* ]] || return 1
+  [[ "$output" != *untrusted-gate* ]] || return 1
+  [[ "$output" == *$'## human-merge を付けた投稿\n\n'*bot-post* ]] || return 1
 }
 @test "inputs: latest trusted delegation candidate and supplied confirmation verbatim" {
   cat > "$CFG/epic-comments" <<'JSON'
@@ -145,15 +147,17 @@ JSON
   for value in new-candidate new-url '委任の確認の場所: セッション abc / uuid xyz / 記録 new-url'; do
     [[ "$output" == *"$value"* ]] || return 1
   done
-  [[ "$output" != *old-candidate* ]]; [[ "$output" != *forged-candidate* ]]
-  [[ "$output" != *'委任は有効'* ]]
+  [[ "$output" != *old-candidate* ]] || return 1
+  [[ "$output" != *forged-candidate* ]] || return 1
+  [[ "$output" != *'委任は有効'* ]] || return 1
 }
 @test "inputs: only casting files present in the worktree are included" {
   mkdir -p "$TOP/.claude/casting"
   echo project-only > "$TOP/.claude/casting/project.md"
   run collect
   [ "$status" -eq 0 ]
-  [[ "$output" == *project-only* ]]; [[ "$output" != *local.md* ]]
+  [[ "$output" == *project-only* ]] || return 1
+  [[ "$output" != *local.md* ]] || return 1
 }
 
 @test "unreadable: late collection failure leaves stdout empty" {
@@ -166,6 +170,6 @@ JSON
   mutate_pr '.statusCheckRollup = []'
   run collect
   [ "$status" -eq 0 ]
-  [[ "$output" == *'## エピックの本文（なし）'* ]]
-  [[ "$output" == *'## CI の結果（なし）'* ]]
+  [[ "$output" == *'## エピックの本文（なし）'* ]] || return 1
+  [[ "$output" == *'## CI の結果（なし）'* ]] || return 1
 }
