@@ -87,7 +87,7 @@ nl() { printf '%s\n' "$@"; }
 
 # ---------- 配線 ----------
 
-@test "hooks.json: Stop has exactly one entry that runs the check without matcher or timeout" {
+@test "hooks.json: Stop has exactly one common entry with a 30 second timeout" {
   python3 -I - "$HOOKS_JSON" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))["hooks"]["Stop"]
@@ -98,8 +98,8 @@ assert len(e["hooks"]) == 1, e
 h = e["hooks"][0]
 assert h["type"] == "command", h
 assert "${CLAUDE_PLUGIN_ROOT}" in h["command"], h
-assert "scripts/owner-message-number-check.sh" in h["command"], h
-assert "matcher" not in h and "timeout" not in h, h
+assert "scripts/epic-child-state.sh" in h["command"], h
+assert "matcher" not in h and h["timeout"] == 30, h
 PY
 }
 
