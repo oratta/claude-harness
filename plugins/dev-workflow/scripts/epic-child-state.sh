@@ -84,7 +84,9 @@ try:
             lines.pop()
             while lines and not lines[-1].strip():
                 lines.pop()
-        raise SystemExit(0 if lines and lines[-1].lstrip(' ').startswith('止まった理由: 依存待ち: ') else 1)
+        tail = lines[-1] if lines else ''
+        tail = tail[1:] if tail.startswith(' ') else tail
+        raise SystemExit(0 if tail.startswith('止まった理由: 依存待ち: ') else 1)
     r, p, reserved = data['record'], data['payload'], data['reserved']
     extension(r)
     sid, path = p.get('session_id'), p.get('transcript_path')
@@ -142,9 +144,14 @@ try:
         if not assistants:
             raise ValueError('会話ログに現在の発言がありません')
         pos, _, text = assistants[-1]
-        if pos < i['transcript_offset'] or (users and users[-1][0] > pos):
+        payload_text = p.get('last_assistant_message')
+        def old(row):
+            return row[0] < i['transcript_offset'] or (users and users[-1][0] > row[0])
+        if text != payload_text:
+            if not any(row[2] == payload_text and old(row) for row in assistants):
+                raise ValueError('会話ログの最終発言と last_assistant_message が対応しません')
             print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
-        if text != p.get('last_assistant_message'):
+        if old(assistants[-1]):
             print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
         parsed = status(text)
         if not parsed:
@@ -161,6 +168,10 @@ if [ "${1-}" = --dependency-wait ]; then
   exit $?
 fi
 INPUT="$(cat)"
+command -v jq >/dev/null 2>&1 || {
+  printf '%s' "$INPUT" | "$DIR/owner-message-number-check.sh"
+  exit $?
+}
 EVENT="$(jq -r '.hook_event_name // ""' <<< "$INPUT" 2>/dev/null)"
 OWNER=""; OWNER_RC=0
 if [ "$EVENT" = Stop ]; then
@@ -169,7 +180,8 @@ fi
 pass_owner() { [ -z "$OWNER" ] || printf '%s\n' "$OWNER"; exit "$OWNER_RC"; }
 block() { jq -cn --arg reason "$1" '{decision:"block",reason:$reason}'; exit 0; }
 fail() {
-  local reason="${1}: ${RECORD:-$ES_ROOT}。通常入力を送り直してください。"
+  local reason="${1}: ${RECORD:-$ES_ROOT}"
+  case "$1" in *入力情報がありません*) reason="${reason}。通常入力を送り直してください。" ;; esac
   if [ "$EVENT" = Stop ]; then block "$reason"; fi
   printf '%s\n' "$reason" >&2
   exit 2
@@ -178,11 +190,14 @@ case "$EVENT" in UserPromptSubmit|Stop) ;; *) exit 0 ;; esac
 jq -e 'type == "object" and (has("agent_id") | not)' <<< "$INPUT" >/dev/null 2>&1 || pass_owner
 CWD="$(jq -r '.cwd // ""' <<< "$INPUT")"
 TOP="$(git -C "$CWD" rev-parse --show-toplevel 2>/dev/null)" || pass_owner
-es_root_init && es_check_env || fail '状態保存の設定が不正です'
-HITS="$(es_find_by_worktree "$TOP")"
+es_root_init 2>/dev/null || pass_owner
+HITS="$(es_find_by_worktree "$TOP" 2>/dev/null)"
 [ -n "$HITS" ] || pass_owner
 [ "$(printf '%s\n' "$HITS" | wc -l | tr -d ' ')" = 1 ] || fail '対象の子の記録が複数あります'
 RECORD="$HITS"
+es_check_env || fail '状態保存の設定が不正です'
+# Finish the lock failure path before the hook's 30-second timeout.
+EPIC_STATE_LOCK_TIMEOUT="$(python3 -I -c 'import sys; print(min(int(sys.argv[1]), 20))' "${EPIC_STATE_LOCK_TIMEOUT-10}")" || fail 'ロック待ち時間を設定できません'
 RESERVED="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
 prepare() {
   jq -cn --argjson record "$1" --argjson payload "$INPUT" --arg reserved "$RESERVED" \
@@ -218,5 +233,5 @@ es_modify "$RECORD" 'if .turn_input == $snapshot then .turn_state=$state else em
 RC=$?
 [ "$RC" -ne 4 ] || pass_owner
 [ "$RC" -eq 0 ] || fail "Stop の保存または無効化に失敗しました${REASON:+ / $REASON}"
-[ "$ACTION" = save ] || fail "$REASON"
+[ "$ACTION" = save ] || { [ "$PLAN_RC" -ne 0 ] || block "$REASON"; fail "$REASON"; }
 pass_owner

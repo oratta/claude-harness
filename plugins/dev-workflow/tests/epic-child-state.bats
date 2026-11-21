@@ -64,24 +64,31 @@ blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$ou
 @test "stop: malformed lines block even on retry and clear previously published state" {
   input next
   stop '状態: 完了 — done'
-  for msg in '欠落' '状態: 不明 — x' '状態: 完了 —   ' '> 状態: 完了 — x' '- 状態: 完了 — x' $'```\n状態: 完了 — x\n```' $'~~~\n状態: 完了 — x' $'状態: 完了 — x\n後続文'; do
+  for msg in '欠落' '状態: 不明 — x' '状態: 完了 - 済み' '状態: 停止 — 確認してください' '状態: 完了 —   ' '> 状態: 完了 — x' '- 状態: 完了 — x' $'```\n状態: 完了 — x\n```' $'~~~\n状態: 完了 — x' $'状態: 完了 — x\n後続文'; do
     append_row assistant "$msg"
     run bash -c 'printf "%s" "$1" | "$2"' _ "$(payload Stop "$msg" | jq '.stop_hook_active=true')" "$HOOK"
     blocked
+    [[ "$output" == *'状態: <主の返事待ち|作業報告|完了> — <空でない中身>'* ]] || return 1
+    [[ "$output" != *通常入力* ]] || return 1
     [ "$(jq -r .turn_state "$REC")" = null ]
   done
   run stop '状態: 完了 — 修正済み'; [ "$status" -eq 0 ]; [ -z "$output" ]
   [ "$(jq -r .turn_input.generation "$REC")" = 1 ]
+  jq -e '.turn_state.value == "完了" and .turn_state.summary == "修正済み" and .turn_state.generation == 1' "$REC"
 }
 @test "stop-owner: real owner guard blocks publication and corrected retry saves" {
   input next
   stop '状態: 作業報告 — old'
   run stop $'#1670 の対応を進めますか？\n状態: 主の返事待ち — 判断待ち'
   blocked
+  [[ "$output" != *通常入力* ]] || return 1
   [ "$(jq -r .turn_state "$REC")" = null ]
-  run stop $'対応を進めますか？\nhttps://github.com/o/r/issues/1670\n状態: 主の返事待ち — 判断待ち'
+  msg=$'対応を進めますか？\nhttps://github.com/o/r/issues/1670\n状態: 主の返事待ち — 判断待ち'
+  append_row assistant "$msg"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$(payload Stop "$msg" | jq '.stop_hook_active=true')" "$HOOK"
   [ "$status" -eq 0 ]; [ -z "$output" ]
   [ "$(jq -r .turn_state.generation "$REC")" = 1 ]
+  jq -e '.turn_state.value == "主の返事待ち"' "$REC"
 }
 @test "scope: ordinary, subagent and unsupported launcher do not change record" {
   before="$(cat "$REC")"
@@ -116,7 +123,7 @@ blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$ou
   [ "$status" -eq 0 ]; [ "$(jq -r .turn_state "$REC")" = null ]
 }
 @test "failure: missing input, unreadable transcript, malformed extension, duplicate match and locks" {
-  run stop '状態: 完了 — x'; blocked; [[ "$output" == *通常入力* ]]
+  run stop '状態: 完了 — x'; blocked; [[ "$output" == *通常入力* ]] || return 1
   input next
   rm -f "${LOG}"
   run bash -c 'printf "%s" "$1" | "$2"' _ "$(payload Stop '状態: 完了 — x')" "$HOOK"
@@ -126,7 +133,7 @@ blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$ou
   before="$(cat "$REC")"
   run input next; [ "$status" -eq 2 ]; [ -d "$REC.lock" ]; [ "$(cat "$REC")" = "$before" ]
   run stop '状態: 完了 — x'; blocked
-  [[ "$output" == *保存または無効化に失敗* ]]
+  [[ "$output" == *保存または無効化に失敗* ]] || return 1
   [ "$(cat "$REC")" = "$before" ]; [ -d "$REC.lock" ]
   rmdir "$REC.lock"
   jq '.turn_input.generation="bad"' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
@@ -243,11 +250,11 @@ SH
   chmod +x "$BATS_TEST_TMPDIR/bin/mv"
   export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
   run input next
-  [ "$status" -eq 2 ]; [[ "$output" == *保存できません*通常入力* ]]
+  [ "$status" -eq 2 ]; [[ "$output" == *保存できません* ]] || return 1
   [ "$(cat "$REC")" = "$before" ]; [ ! -d "$REC.lock" ]
   for msg in '状態: 完了 — new' $'#1670 の対応を進めますか？\n状態: 主の返事待ち — rejected'; do
     run stop "$msg"; blocked
-    [[ "$output" == *保存または無効化に失敗*通常入力* ]]
+    [[ "$output" == *保存または無効化に失敗* ]] || return 1
     [ "$(cat "$REC")" = "$before" ]; [ ! -d "$REC.lock" ]
   done
 }
@@ -306,4 +313,129 @@ SH
   run input bad; [ "$status" -eq 2 ]; [ "$(cat "$REC")" = "$before" ]
   run stop '状態: 完了 — bad'; blocked
   es_read "$REC" >/dev/null
+}
+
+@test "stop: unknown correspondence blocks while proven old messages remain ignored" {
+  append_row assistant '状態: 完了 — old'
+  input next
+  before="$(cat "$REC")"
+  # Neither an old final row nor a current intermediate row proves the payload.
+  for phase in before-boundary after-boundary; do
+    [ "$phase" != after-boundary ] || append_row assistant '途中の発言'
+    for msg in '調査が終わりました' '状態: 完了 — new'; do
+      run bash -c 'printf "%s" "$1" | "$2"' _ "$(payload Stop "$msg")" "$HOOK"
+      blocked
+      [[ "$output" == *会話ログ*対応*"$REC"* ]] || return 1
+      [ "$(jq -r .turn_state "$REC")" = null ]
+    done
+  done
+  # A genuinely late Stop is still ignored even after a newer assistant row exists.
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$(payload Stop '状態: 完了 — old')" "$HOOK"
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  [ "$(jq -r .turn_input.generation "$REC")" = 1 ]
+  [ "$(jq -r .turn_state "$REC")" = null ]
+  # A user row following an old assistant also proves that its matching Stop is old.
+  append_row assistant '状態: 完了 — previous'
+  append_row user newer
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$(payload Stop '状態: 完了 — previous')" "$HOOK"
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "scope: unregistered git sessions stay silent with invalid settings and unrelated broken records" {
+  mkdir "$BATS_TEST_TMPDIR/ordinary"
+  git init -q "$BATS_TEST_TMPDIR/ordinary"
+  ordinary="$(cd "$BATS_TEST_TMPDIR/ordinary" && pwd -P)"
+  before="$(cat "$REC")"; stamp="$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "$REC")"
+  printf '{"schema":1}\n' > "$EPIC_STATE_ROOT/o.r-1/bad.json"
+  files="$(find "$EPIC_STATE_ROOT" -name '*.json' | sort)"
+  export EPIC_DISPATCH_PARENT_EPIC=1
+  for config in normal bad-timeout empty-root; do
+    root="$EPIC_STATE_ROOT"
+    case "$config" in
+      bad-timeout) export EPIC_STATE_LOCK_TIMEOUT=abc ;;
+      empty-root) export EPIC_STATE_ROOT= ;;
+    esac
+    for event in UserPromptSubmit Stop; do
+      p="$(payload "$event" hi | jq --arg cwd "$ordinary" '.cwd=$cwd | .stop_hook_active=true')"
+      run bash -c 'printf "%s" "$1" | "$2"' _ "$p" "$HOOK"
+      [ "$status" -eq 0 ]; [ -z "$output" ]
+      [ "$(cat "$REC")" = "$before" ]; [ "$(python3 -c 'import os,sys; print(os.stat(sys.argv[1]).st_mtime_ns)' "$REC")" = "$stamp" ]
+    done
+    export EPIC_STATE_ROOT="$root"
+    [ "$(find "$EPIC_STATE_ROOT" -name '*.json' | sort)" = "$files" ]
+  done
+}
+
+@test "stop-owner: missing jq preserves the original guard" {
+  mkdir "$BATS_TEST_TMPDIR/no-jq"
+  for tool in bash cat dirname grep python3; do
+    ln -s "$(command -v "$tool")" "$BATS_TEST_TMPDIR/no-jq/$tool"
+  done
+  p="$(payload Stop 'PR #1712 を許容しますか？')"
+  expected="$(printf '%s' "$p" | "$PLUGIN_DIR/scripts/owner-message-number-check.sh")"
+  [[ "$expected" == *block* ]] || return 1
+  run env PATH="$BATS_TEST_TMPDIR/no-jq" "$HOOK" <<< "$p"
+  [ "$status" -eq 0 ]; [ "$output" = "$expected" ]
+  p="$(payload UserPromptSubmit hello | jq 'del(.last_assistant_message)')"
+  run env PATH="$BATS_TEST_TMPDIR/no-jq" "$HOOK" <<< "$p"
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "failure: hook lock waits are capped below its timeout and retain state" {
+  input next
+  stop '状態: 完了 — published'
+  before="$(cat "$REC")"
+  mkdir "$REC.lock" "$BATS_TEST_TMPDIR/bin"
+  export SLEEP_CALLS="$BATS_TEST_TMPDIR/sleeps"
+  cat > "$BATS_TEST_TMPDIR/bin/sleep" <<'SH'
+#!/usr/bin/env bash
+printf '%s\n' "$1" >> "$SLEEP_CALLS"
+SH
+  chmod +x "$BATS_TEST_TMPDIR/bin/sleep"
+  export PATH="$BATS_TEST_TMPDIR/bin:$PATH" EPIC_STATE_LOCK_TIMEOUT=31
+  for event in UserPromptSubmit Stop; do
+    : > "$SLEEP_CALLS"
+    p="$(payload "$event" '状態: 完了 — published')"
+    run bash -c 'printf "%s" "$1" | "$2"' _ "$p" "$HOOK"
+    if [ "$event" = UserPromptSubmit ]; then
+      [ "$status" -eq 2 ]; [[ "$output" == *入力受付のロックに失敗* ]] || return 1
+    else
+      blocked; [[ "$output" == *保存または無効化に失敗* ]] || return 1
+    fi
+    [ "$(wc -l < "$SLEEP_CALLS" | tr -d ' ')" -eq 100 ]
+    [ "$(cat "$REC")" = "$before" ]
+    [ -d "$REC.lock" ]
+  done
+  rmdir "$REC.lock"
+}
+
+@test "dependency-wait: marker indentation retains the one-space contract" {
+  for spaces in '' ' ' '  ' '   ' '    '; do
+    p="$(jq -cn --arg t "${spaces}止まった理由: 依存待ち: https://x" '{text:$t}')"
+    run "$HOOK" --dependency-wait <<< "$p"
+    case "${#spaces}" in 0|1) [ "$status" -eq 0 ] ;; *) [ "$status" -eq 1 ] ;; esac
+  done
+}
+
+@test "dependency-wait: full text determines fence context before the tail is cut" {
+  parent_fixture
+  marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
+  padding="$(python3 -c 'print("x" * 8500)')"
+  text=$'```\n'"$padding"$'\n```\n'"$marker"$'\n状態: 作業報告 — 待機'
+  put_record 11
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
+  # The same tail inside an unclosed code example must still reach the judge.
+  log_resolve_ready
+  printf 0 > "$STUB_CFG/ghcount_11"
+  text=$'```\n'"$padding"$'\n'"$marker"$'\n状態: 作業報告 — 例'
+  put_record 11
+  put_chat 11 s1 "$(said d2 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
+  judge_says judge_out 問いではない 完了の報告 '' なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(rec_get 11 stop)" = resumed ]; [ "$(calls '^judge ')" -eq 1 ]
 }
