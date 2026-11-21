@@ -15,7 +15,7 @@
 | 手順 3 (b) の起点ブランチ | その子の記録の `base`（子のリポジトリの既定ブランチか `--base` の値）。親のリポジトリの `main` ではない |
 | 手順 4 の `gh api repos/{owner}/{repo}/issues/<N> --jq .state_reason` | `gh api repos/<子の owner>/<子の repo>/issues/<N> --jq .state_reason`（親のリポジトリの同じ番号を読んで `completed` と `not_planned` を取り違えない） |
 | 手順 8・マージ待ちの子・PR トークン上限の子の、子 issue の `子の停止: 主の返事待ち` と `親の判断:` のコメントの読み先（`author_association` を含む） | 子のリポジトリ（`repos/<子の owner>/<子の repo>/issues/<N>/comments`） |
-| マージ待ちの子の `auto-merge.yml` の取得、`親のマージ判断:` のコメント、`parent-merge-approved` のラベル、PR 本文の `Closes #N` の確認 | すべて子のリポジトリの PR に対して行う（`contents` は `repos/<子の owner>/<子の repo>/...`、コメントは `gh pr comment <PR> -R <子の repo>`、ラベルは `gh api repos/<子の repo>/issues/<PR番号>/labels`）。印が数えられるのは `gh` の認証アカウントが子のリポジトリの OWNER・MEMBER・COLLABORATOR のときだけで、そうでなければ決める役を起こさず手順 8 の形で主に上げる |
+| マージ待ちの子の入力収集と判断の印 | `parent-merge-inputs.sh` に子を `<owner>/<repo>#<N>` で渡す。PR と base の `auto-merge.yml` は PR の URL から読み先を決める。印も子の PR に付ける（コメントは `gh pr comment <PR> -R <子の repo>`、ラベルは `gh api repos/<子の repo>/issues/<PR番号>/labels`）。印が数えられるのは `gh` の認証アカウントが子のリポジトリの OWNER・MEMBER・COLLABORATOR のときだけで、そうでなければ決める役を起こさず手順 8 の形で主に上げる |
 | 注意書き `親エピックからの注意書き: #<エピック番号>` | `親エピックからの注意書き: <エピックの owner>/<repo>#<E>`（子のリポジトリの issue に残る） |
 | 親から届く返事の頭 | `親エピック #<E>（<owner>/<repo>）の判断（主の承認ではない）: ` と `主の返事（親エピック #<E>（<owner>/<repo>）経由）: `（番号のあとにエピックのリポジトリが付く） |
 | `stop-judge.sh <epic> <child>` の `<child>` | 番号か `<owner>/<repo>#<N>`。後者は子の本文・コメントを `repos/<o>/<r>/issues/<N>` から読み、エピックのコメントの過去の判断を `親の判断: 子 <o>/<r>#<N> ` で始まる行から探す |
