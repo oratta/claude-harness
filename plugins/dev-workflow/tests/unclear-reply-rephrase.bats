@@ -88,7 +88,7 @@ lacks() {
   python3 -I - "$HOOKS_JSON" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))["hooks"]["UserPromptSubmit"]
-assert len(d) == 2, d
+assert len(d) == 3, d
 assert "prompt-tripwires-refresh.sh" in d[0]["hooks"][0]["command"], d[0]
 e = d[1]
 assert "matcher" not in e and "timeout" not in e, e
