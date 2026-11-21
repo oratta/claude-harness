@@ -9,10 +9,13 @@
 
 - [x] 2.1 send 応答の現行構造を CLI ヘルプと実機確認の receipt に照合し、turn_started の検出が入れ子でも通ることをテストする。既存の検出で十分なら関数は変更しない。未確認時の見直しは現行 read を 1 回だけ使い、新しい前景の busy と入力枠全体 / 任意の draft の空欄の両方を必要とする。busy だけ、非空の入力/ draft、idle のまま、不正な送信後 read、send 非ゼロの各失敗、および再送・create/close/wait/入力消去をしないことをテストし、`bats --filter 'keepalive orca|launch:.*turn_started|launch:.*nested stages' plugins/dev-workflow/tests/epic-dispatch.bats` で確認する。触る範囲: plugins/dev-workflow/scripts/epic-launch-orca.sh:87-90（turn_started）、plugins/dev-workflow/scripts/epic-launch-orca.sh:111-217（空欄観測と cmd_keepalive）、plugins/dev-workflow/tests/epic-dispatch.bats:1296-1311（既存の stages テスト）、plugins/dev-workflow/tests/epic-dispatch.bats:7846-7949（送信確認テスト）
 
-## 3. 統合と実際の子への到達確認
+## 3. 統合検証
 
 - [x] 3.1 `bash -n plugins/dev-workflow/scripts/epic-launch-orca.sh`、`bats plugins/dev-workflow/tests/epic-dispatch.bats`、`openspec validate fix-orca-keepalive-observation --type change --strict` を実行し、全て exit 0 を確認する。送信失敗や形の不一致の診断が wait の従来の stdout / 終了理由を変えず、既存の tmux / 起動 / reply のテストも通ることを確認する。触る範囲: plugins/dev-workflow/scripts/epic-launch-orca.sh:87-217、plugins/dev-workflow/tests/epic-dispatch.bats:1-8932（統合検証のみ）
-- [ ] 3.2 実際のエピックの会話 15 万トークン未満で停止中の子 1 件について、共通定義の固定文が一度届き、会話ログに固定文と `[child-cache-keepalive]` の予約された返事があり、次の request の `cache_read_input_tokens` が会話量とほぼ同じになることを検証する。子の識別子、時刻、read/send の構造、送信結果、ログの該当 uuid、input/cache_read/cache_creation の数値と比較対象の会話量を #1728 のコメントに記録する。実測した send receipt も匿名化して回帰テストへ反映し、`bats --filter 'keepalive orca' plugins/dev-workflow/tests/epic-dispatch.bats` が通ることを確認する。条件を満たす子やログが無ければ未完了のまま blockers として報告し、stub の成功で代えない。ログはリポジトリに保存しない。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:7846-7949（実測 send の回帰ケース）、openspec/changes/fix-orca-keepalive-observation/tasks.md（新規、検証結果のチェック更新。実機の証拠は issue #1728）
+
+## マージ後の確認
+
+- 旧 tasks 3.2（未確認）: 実際のエピックの会話 15 万トークン未満で停止中の子 1 件について、共通定義の固定文が一度届き、会話ログに固定文と `[child-cache-keepalive]` の予約された返事があり、次の request の `cache_read_input_tokens` が会話量とほぼ同じになることを検証する。子の識別子、時刻、read/send の構造、送信結果、ログの該当 uuid、input/cache_read/cache_creation の数値と比較対象の会話量を #1728 のコメントに記録する。実測した send receipt も匿名化して回帰テストへ反映し、`bats --filter 'keepalive orca' plugins/dev-workflow/tests/epic-dispatch.bats` が通ることを確認する。条件を満たす子やログが無ければ未完了のまま blockers として報告し、stub の成功で代えない。ログはリポジトリに保存しない。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:7846-7949（実測 send の回帰ケース）、本 tasks.md（実機の証拠は issue #1728）
 
 ## Workflow follow-up
 
