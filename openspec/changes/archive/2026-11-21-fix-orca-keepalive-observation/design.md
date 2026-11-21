@@ -26,7 +26,7 @@ Orca の画面枠に限り、既知の shortcuts / cycle / manual-mode フッタ
 
 bypass フッターの下にエージェント一覧が続く実測形も扱う。ANSI 装飾と空行を除いた観測で bypass フッターが一つだけあり、その後の全行が、先頭の `⏺ main` と、それに続く一行以上の `◯ <空白を含まない名前><2 文字以上の空白><空でない状態表示>` なら、その一覧だけを末尾判定から除外する。各行の前後の空白は許す。一覧が無ければ従来どおりフッター自体を最終可視行とする。既知の一覧を除外しても、一意な入力枠全体と任意の draft の空欄検査は省かない。main 行の欠落、未知の行、既知の行形式に合わない折り返し、末尾のシェル表示などは除外せず、他の busy / dialog / 非空 draft の判定が無ければ `skipped unknown-state` とする。任意の一覧を読み飛ばす案は、古い Claude 画面を入力待ちと誤認し得るため採らない。
 
-busy / dialog の検出は一覧を除外する前の観測全体に適用する。送信前は、行頭の既知の記号（`✻✽✶✢✳✺` のいずれか）と `Waiting for N background agent` または `agents`、任意の ` to finish` からなる待機行も `skipped busy` とする（行頭・行末の空白を許す）。スピナーや `esc to interrupt` が無く、空の入力欄と既知の一覧が同居しても送らない。一覧内の `Waiting for parent reply` などの状態表示だけでは、この待機行とはみなさない。
+busy / dialog の検出は一覧を除外する前の観測全体に適用する。送信前は、行頭の既知の記号（`✻✽✶✢✳✺` のいずれか）と `Waiting for N background agent` または `agents`、任意の ` to finish` からなる待機行（行頭・行末の空白を許す）を、一意な入力枠・下罫線・既知フッターを確定したうえで、上罫線より前の履歴で判定する。待機行より後に既知の前景完了行（既知の記号、観測済みの動詞 `Worked|Churned|Brewed|Sautéed|Cogitated|Baked|Cooked|Crunched`、`for <時間> · done <時刻> AM|PM`、任意の ` · N shell(s) still running` を行全体で照合）が無ければ `skipped busy`（通知・空行・未完の状態行が挟まっても変わらない）。完了行があれば古い待機として解除するが、最後の完了行から上罫線までに空行と実測済みの `※ recap: … (turn off recaps in /config)` 以外が残れば `skipped unknown-state`。完了後に再び待機行があれば、入力枠内・後方の待機行と同じく `skipped busy`。枠なし・複数枠は busy / dialog / 入力済みに当たらなければ `skipped unknown-state`。解除は `ready` を直接返す根拠にせず、入力領域の検査を通った場合だけ `ready`。スピナーや `esc to interrupt` が無く、空の入力欄と既知の一覧が同居しても、解除されない待機行があれば送らない。一覧内の `Waiting for parent reply` などの状態表示だけでは、この待機行とはみなさない。
 
 代案の「draft 欠落を空欄扱い」は実際の入力を見逃す。「Orca の別フィールドだけで判定」は、現行ヘルプと実測に入力テキストを必ず返すフィールドが無いため採らない。tmux の部品を呼び出すのではなく、Orca スクリプト内の既存の画面判定を再利用・調整する。
 

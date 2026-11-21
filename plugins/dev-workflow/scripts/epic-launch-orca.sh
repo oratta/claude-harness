@@ -137,21 +137,11 @@ plain = re.sub(ansi, "", raw)
 lines = [s for s in plain.splitlines() if s.strip()]
 screen = "\n".join(lines)
 busy = bool(re.search(r"[^\w\s].*(?:…|\.\.\.).*\([^\n]*\d+(?:s|m).*·", screen) or "esc to interrupt" in screen.lower())
-# Waiting on agents is busy, but is not proof of a new foreground turn after send.
-agent_wait = bool(re.search(r"(?m)^\s*[✻✽✶✢✳✺]\s+Waiting for \d+ background agents?(?: to finish)?\s*$", screen))
-if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
-    print("skipped dialog")
-elif (busy or agent_wait) and not after_send:
-    print("skipped busy")
-elif draft:
-    print("skipped input-not-empty")
-elif not re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on|⏵⏵ bypass permissions on", screen):
-    print("skipped unknown-state")
-else:
+rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
+def resolve_frame():
     # Resolve the frame before inspecting input. Never choose a later prompt,
     # border or footer from the body: multiple possible openers are ambiguous.
     # Keep the complete observation so long input/busy/dialog evidence survives.
-    rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
     visible = [i for i, (_, p) in enumerate(rows) if p.strip()]
     footer = r"\s*(?:\? for shortcuts|.*\(shift\+tab to cycle\).*|.*manual mode on.*)\s*"
     bypass_footer = r"\s*⏵⏵ bypass permissions on(?: \(shift\+tab to cycle\))?(?:\s*·[^\n]+)?\s*"
@@ -178,27 +168,65 @@ else:
             or not (bypass or re.fullmatch(footer, rows[visible[-1]][1]))
             or lower < 0 or not re.fullmatch(border, rows[lower][1])
             or openers[0] + 1 >= lower):
-        print("skipped unknown-state")
-    else:
-        region = rows[openers[0] + 1:lower]
-        candidate = "\n".join(s.replace("❯", "", 1) if i == 0 else s
-                              for i, (s, _) in enumerate(region))
-        # Track SGR dim across line wraps. A reset ends the suggestion; normal
-        # characters after it are human input even when the first line was dim.
-        dim = False
-        nonempty = False
-        for token in re.split("(" + ansi + ")", candidate):
-            if re.fullmatch(ansi, token):
-                if token.endswith("m"):
-                    for code in token[2:-1].split(";"):
-                        if code in ("", "0", "22"):
-                            dim = False
-                        elif code == "2" and token == "\x1b[2m":
-                            dim = True
-            elif token.strip() and not (mode == "tmux" and dim):
-                nonempty = True
-        print("skipped input-not-empty" if nonempty else
-              ("busy-empty" if after_send and busy else "ready"))
+        return None
+    return openers[0], lower
+
+# Waiting on agents is busy, but is not proof of a new foreground turn after send.
+# A stale wait line in history is released only by a later known foreground
+# completion line; between that line and the input frame only blanks and the
+# measured recap are allowed. Needs a resolved frame, else no wait is judged.
+wait_re = r"\s*[✻✽✶✢✳✺]\s+Waiting for \d+ background agents?(?: to finish)?\s*"
+done_re = (r"\s*[✻✽✶✢✳✺]\s+(?:Worked|Churned|Brewed|Sautéed|Cogitated|Baked|Cooked|Crunched)"
+           r" for (?:\d+[hms]\s*)+ · done \d{1,2}:\d{2} [AP]M(?: · \d+ shells? still running)?\s*")
+recap_re = r"\s*※ recap: .* \(turn off recaps in /config\)\s*"
+def wait_state(frame):
+    if frame is None:
+        return "none"
+    top = frame[0]
+    waits = [i for i, (_, p) in enumerate(rows) if re.fullmatch(wait_re, p)]
+    if not waits:
+        return "none"
+    last = waits[-1]
+    if last >= top:
+        return "busy"
+    dones = [i for i in range(last + 1, top) if re.fullmatch(done_re, rows[i][1])]
+    if not dones:
+        return "busy"
+    if all(not rows[i][1].strip() or re.fullmatch(recap_re, rows[i][1])
+           for i in range(dones[-1] + 1, top)):
+        return "released"
+    return "unknown"
+frame = resolve_frame()
+wait = wait_state(frame)
+footer_seen = re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on|⏵⏵ bypass permissions on", screen)
+if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
+    print("skipped dialog")
+elif (busy or wait == "busy") and not after_send:
+    print("skipped busy")
+elif draft:
+    print("skipped input-not-empty")
+elif not footer_seen or frame is None or wait == "unknown":
+    print("skipped unknown-state")
+else:
+    region = rows[frame[0] + 1:frame[1]]
+    candidate = "\n".join(s.replace("❯", "", 1) if i == 0 else s
+                          for i, (s, _) in enumerate(region))
+    # Track SGR dim across line wraps. A reset ends the suggestion; normal
+    # characters after it are human input even when the first line was dim.
+    dim = False
+    nonempty = False
+    for token in re.split("(" + ansi + ")", candidate):
+        if re.fullmatch(ansi, token):
+            if token.endswith("m"):
+                for code in token[2:-1].split(";"):
+                    if code in ("", "0", "22"):
+                        dim = False
+                    elif code == "2" and token == "\x1b[2m":
+                        dim = True
+        elif token.strip() and not (mode == "tmux" and dim):
+            nonempty = True
+    print("skipped input-not-empty" if nonempty else
+          ("busy-empty" if after_send and busy else "ready"))
 PYCODE
 }
 

@@ -464,7 +464,7 @@ Orca の部品は、見つけた clone のパスに当たるリポジトリを `
 | 画面・入力の観測 | 判定 |
 |---|---|
 | 記号＋`…`＋`(Ns · …)` のスピナー行（例: `✢ Hullaballooing… (1s · thinking)`） | 空の `❯` と同居しても実行中として `skipped busy` |
-| Orca のバックグラウンドエージェント待機行 | 行頭の `✻✽✶✢✳✺` のいずれかの記号と空白に続く `Waiting for N background agent` / `agents`（N は数字、末尾の ` to finish` と行頭・行末の空白は任意）を観測したら、スピナーや `esc to interrupt` が無くても `skipped busy`。一覧内の `Waiting for parent reply` などの状態表示だけではこの待機行とみなさない |
+| Orca のバックグラウンドエージェント待機行 | 行頭の `✻✽✶✢✳✺` のいずれかの記号と空白に続く `Waiting for N background agent` / `agents`（N は数字、末尾の ` to finish` と行頭・行末の空白は任意）を、一意な入力枠より前の履歴に観測したら `skipped busy`。待機行より後（入力枠の上罫線より前）に、既知の前景完了行が 1 行でもあるときだけ古い待機として解除する。完了行は行全体が、既知の記号、`Worked`/`Churned`/`Brewed`/`Sautéed`/`Cogitated`/`Baked`/`Cooked`/`Crunched` のいずれか、` for <時間> · done <時刻> AM|PM`、任意の ` · N shell(s) still running` の形式。本文中の `done` や未知の動詞では解除しない。最後の完了行から上罫線までは空行と `※ recap: … (turn off recaps in /config)` だけを許し、ほかの行が残れば `skipped unknown-state`。通知・空行・未完の状態行が挟まるだけで完了行が無ければ `skipped busy`。完了後に再び待機行があれば `skipped busy`。入力枠内・後方の待機行は完了行で解除しない。一意な入力枠・下罫線・既知フッターを確定できない画面（枠なし・複数枠）は、ほかの busy / dialog / 入力済み判定に当たらなければ `skipped unknown-state`。解除は `ready` を直接返す根拠にせず、入力領域の検査を通った場合だけ `ready`。一覧内の `Waiting for parent reply` などの状態表示だけではこの待機行とみなさない |
 | AskUserQuestion の `Enter to select · ↑/↓ to navigate` | `skipped dialog` |
 | 許可画面の `Do you want to proceed?` または `Esc to cancel · Tab to amend` | `skipped dialog` |
 | フォルダ信頼確認の `Enter to confirm · Esc to cancel` | `skipped dialog` |
@@ -577,7 +577,7 @@ Orca の画面 read が JSON として壊れている、`result.terminal` が ob
 - **THEN** `skipped unknown-state` / exit 0 となり send は呼ばれない
 
 #### Scenario: 現行 send receipt のターン開始を認識する
-- **WHEN** 二度の送信前観測が ready で、send が exit 0、実測した現行 send 応答の stages 配列に turn_started がある（配列が receipt の内側にある場合を含む）
+- **WHEN** 二度の送信前観測が ready で、send が exit 0、現行の send 応答の stages 配列に turn_started がある（配列が receipt の内側にある場合を含む）
 - **THEN** send は 1 回、stdout は `sent` / exit 0 となる。input_accepted だけの応答ではこの条件を満たさない
 
 #### Scenario: ターン開始が未確認でも画面の実行開始と空欄で到達確認する

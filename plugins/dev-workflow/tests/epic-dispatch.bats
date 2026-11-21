@@ -8065,7 +8065,7 @@ PYCODE
   done
 }
 
-# Orca 1.4.263 V observation (2026-11-21), b1.json-b3.json:
+# Orca 1.4.263 observation (2026-11-21), `orca terminal read --terminal <handle> --screen --json`:
 # anonymized waiting line, footer and agent list; frame/statuslines from read above.
 orca_measured_agent_screen() {
   orca_measured_screen
@@ -8101,6 +8101,121 @@ PYCODE
     [ "$status" -eq 0 ]; [ "$output" = 'skipped busy' ]
     [ "$(calls '^orca terminal send ')" -eq 0 ]
   done
+}
+
+# Anonymized from 11 real Orca 1.4.263 screens (2026-11-21): 4 stopped children whose history
+# keeps an old wait line, and 7 children that were still waiting. Args: history lines, separated by "|".
+orca_history_screen() {
+  local hist="$1" frame
+  frame='──────────────
+❯
+──────────────
+  .../workspaces/example/task Opus oratta/task
+  Context 80%  │  Cache 95%
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · 1 shell'
+  orca_screen "$(printf '%s\n%s' "${hist//|/$'\n'}" "$frame")"
+}
+W='✻ Waiting for 1 background agent to finish'
+D='✻ Worked for 21m 1s · done 8:51 AM · 1 shell still running'
+R='※ recap: summary of the work. (turn off recaps in /config)'
+
+@test "keepalive orca: stale wait lines are released only by a later known completion line" {
+  keepalive_orca_setup
+  local cases=(
+    "ready|conv|$W|conv|$D"
+    "ready|$W|conv|✻ Churned for 40s · done 8:47 AM"
+    "ready|$W|✻ Brewed for 1h 2m 3s · done 12:05 PM · 2 shells still running"
+    "ready|$W|✻ Sautéed for 45s · done 8:43 AM|$R"
+    "ready|$W|$D||$R|"
+    "ready|✻ Cogitated for 3s · done 8:00 AM|✻ Baked for 3s · done 8:01 AM|✻ Cooked for 3s · done 8:02 AM|✻ Crunched for 3s · done 8:03 AM"
+    "skipped busy|conv|$W"
+    "skipped busy|$W|✻ Waiting for 5 background agents to finish"
+    "skipped busy|✻ Churned for 1m · done 8:00 AM|conv|✻ Waiting for 5 background agents to finish"
+    "skipped busy|$W|⏺ Background command finished"
+    "skipped busy|$W||"
+    "skipped busy|$W|✻ Thinking about it"
+    "skipped busy|$W|conv with done 8:51 AM text"
+    "skipped busy|$W|✻ Pondered for 3s · done 8:51 AM"
+    "skipped busy|$W|✻ Worked for 3s · done 8:51 AM extra"
+    "skipped busy|$D|$W"
+    "skipped busy|$W|$D|$W"
+    "skipped unknown-state|$W|$D|⏺ Background command finished"
+    "skipped unknown-state|$W|$D|$R|⏺ unknown notice"
+  )
+  local c reason hist
+  for c in "${cases[@]}"; do
+    reason="${c%%|*}"; hist="${c#*|}"
+    orca_history_screen "$hist"
+    sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+    run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+    echo "$hist: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$reason" ]
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]
+    if [ "$reason" = ready ]; then
+      [ "$output" = sent ]; [ "$(calls '^orca terminal send ')" -eq 1 ]
+    else
+      [ "$output" = "$reason" ]; [ "$(calls '^orca terminal send ')" -eq 0 ]
+    fi
+  done
+}
+
+@test "keepalive orca: a wait line inside or after the frame is busy even with an earlier completion" {
+  keepalive_orca_setup
+  sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+  orca_screen "$D
+──────────────
+❯
+$W
+──────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+  ⏵⏵ bypass permissions on"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" != ready ]
+  orca_screen "$D
+──────────────
+❯
+──────────────
+$W
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" != ready ]
+}
+
+@test "keepalive orca: stale wait with no frame or several frames never reaches ready" {
+  keepalive_orca_setup
+  sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+  orca_screen "$W
+$D
+? for shortcuts"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" = 'skipped unknown-state' ]
+  orca_screen "$W
+$D
+──────────────
+❯
+──────────────
+──────────────
+❯
+──────────────
+? for shortcuts"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" = 'skipped unknown-state' ]
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$output" = 'skipped unknown-state' ]; [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: after send a wait line alone is failed send, never resent" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  orca_history_screen "$W"
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+  keepalive_orca_setup
+  echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
 }
 
 @test "keepalive orca: measured agent list preserves idle frame and rejects input or unknown suffix" {
