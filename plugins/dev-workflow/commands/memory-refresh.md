@@ -12,7 +12,7 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 
 ```bash
 plugin_root="${CLAUDE_PLUGIN_ROOT}"
-DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
+DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && command -v setopt >/dev/null 2>&1 && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
 for dir in \
   "${plugin_root:+$plugin_root/skills/memory-refresh}" \
   ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/memory-refresh \
