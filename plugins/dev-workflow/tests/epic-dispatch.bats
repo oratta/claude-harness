@@ -7841,12 +7841,533 @@ keepalive_orca_setup() {
 ────────────────
 ? for shortcuts'
 }
-orca_screen() { jq -cn --arg s "$1" --arg d "${2-}" '{result:{source:"screen",tail:($s|split("\n")),draft:$d}}' > "$STUB_CFG/screen"; }
+orca_screen() { jq -cn --arg s "$1" --arg d "${2-}" '{result:{terminal:{source:"screen",tail:($s|split("\n")),draft:$d}}}' > "$STUB_CFG/screen"; }
+
+
+# Captured with Orca 1.4.263, 2026-11-21:
+# orca terminal read --terminal <handle> --screen --json
+# IDs, conversation and custom statusline text anonymized; JSON types and frame retained.
+orca_measured_screen() {
+  cat > "$STUB_CFG/screen" <<'JSON'
+{
+  "id": "read-fixture",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term-fixture",
+      "status": "running",
+      "tail": [
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "❯",
+        "──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "[custom statusline]",
+        "[custom statusline]",
+        "[custom statusline]",
+        "[custom statusline]",
+        "  ⏵⏵ bypass permissions on · 1 shell · ← 3 agents · ↓ to manage"
+      ],
+      "truncated": false,
+      "limited": false,
+      "oldestCursor": "0",
+      "nextCursor": "2",
+      "latestCursor": "2",
+      "returnedLineCount": 31,
+      "tailRows": [
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 188
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 2
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        }
+      ],
+      "source": "screen"
+    }
+  },
+  "_meta": {
+    "runtimeId": "runtime-fixture"
+  }
+}
+JSON
+}
+
+@test "keepalive orca: measured bypass frame supports statuslines and preserves all input" {
+  keepalive_orca_setup
+  for kind in ready same-line multiline blank-line dim busy dialog stale multiple; do
+    orca_measured_screen
+    python3 - "$STUB_CFG/screen" "$kind" <<'PYCODE'
+import json, sys
+p, kind = sys.argv[1:]
+d = json.load(open(p)); rows = d["result"]["terminal"]["tail"]
+i = rows.index("❯")
+if kind == "same-line": rows[i] = "❯ human"
+if kind == "multiline": rows[i:i+1] = ["❯ one", " two"]
+if kind == "blank-line": rows[i:i+1] = ["❯", "", " human"]
+if kind == "dim": rows[i] = "❯ \x1b[2msuggestion\x1b[0m"
+if kind == "busy": rows.insert(0, "✽ Working… (1s · thinking)")
+if kind == "dialog": rows.insert(0, "Enter to confirm")
+if kind == "stale": rows.append("user@host %")
+if kind == "multiple": rows[:0] = rows[i-1:i+2]
+json.dump(d, open(p, "w"))
+PYCODE
+    echo 0 > "$STUB_CFG/readcount"
+    : > "$STUB_LOG"
+    case "$kind" in
+      ready) expected=sent ;;
+      busy|dialog) expected="skipped $kind" ;;
+      stale|multiple) expected='skipped unknown-state' ;;
+      *) expected='skipped input-not-empty' ;;
+    esac
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$kind: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$expected" ]
+    if [ "$kind" != ready ]; then [ "$(calls '^orca terminal send ')" -eq 0 ]; fi
+  done
+}
+
+# Orca 1.4.263 observation (2026-11-21), `orca terminal read --terminal <handle> --screen --json`:
+# anonymized waiting line, footer and agent list; frame/statuslines from read above.
+orca_measured_agent_screen() {
+  orca_measured_screen
+  python3 - "$STUB_CFG/screen" "${1-waiting}" <<'PYCODE'
+import json, sys
+p, kind = sys.argv[1:]
+d = json.load(open(p)); t = d["result"]["terminal"]; rows = t["tail"]
+rows[-1] = "  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 3 agents · ↓ to manage"
+rows += ["  ⏺ main", "  ◯ child-1  Waiting for parent reply     10s · ↓ 45.7k tokens"]
+if kind == "waiting": rows.insert(0, "✻ Waiting for 1 background agent to finish")
+if kind == "plural": rows.insert(0, "✻ Waiting for 2 background agents to finish")
+if kind == "same-line": rows[rows.index("❯")] = "❯ human"
+if kind == "multiline":
+    i = rows.index("❯"); rows[i:i+1] = ["❯", "", " human"]
+if kind == "draft": t["draft"] = "human"
+if kind == "unknown": rows.append("  unknown agent list layout")
+if kind == "shell": rows.append("user@host %")
+if kind == "missing-main": rows.remove("  ⏺ main")
+if kind == "multiple":
+    i = rows.index("❯"); rows[:0] = rows[i-1:i+2]
+t["returnedLineCount"] = len(rows)
+t["tailRows"] = [{"wrapped": False, "trailingSpaces": 0} for _ in rows]
+json.dump(d, open(p, "w"))
+PYCODE
+}
+
+@test "keepalive orca: measured background agent wait is busy without spinner or interrupt" {
+  keepalive_orca_setup
+  for kind in waiting plural; do
+    orca_measured_agent_screen "$kind"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$kind: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = 'skipped busy' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+}
+
+# Anonymized from 11 real Orca 1.4.263 screens (2026-11-21): 4 stopped children whose history
+# keeps an old wait line, and 7 children that were still waiting. Args: history lines, separated by "|".
+orca_history_screen() {
+  local hist="$1" frame
+  frame='──────────────
+❯
+──────────────
+  .../workspaces/example/task Opus oratta/task
+  Context 80%  │  Cache 95%
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · 1 shell'
+  orca_screen "$(printf '%s\n%s' "${hist//|/$'\n'}" "$frame")"
+}
+W='✻ Waiting for 1 background agent to finish'
+D='✻ Worked for 21m 1s · done 8:51 AM · 1 shell still running'
+R='※ recap: summary of the work. (turn off recaps in /config)'
+
+@test "keepalive orca: stale wait lines are released only by a later known completion line" {
+  keepalive_orca_setup
+  local cases=(
+    "ready|conv|$W|conv|$D"
+    "ready|$W|conv|✻ Churned for 40s · done 8:47 AM"
+    "ready|$W|✻ Brewed for 1h 2m 3s · done 12:05 PM · 2 shells still running"
+    "ready|$W|✻ Sautéed for 45s · done 8:43 AM|$R"
+    "ready|$W|$D||$R|"
+    "ready|✻ Cogitated for 3s · done 8:00 AM|✻ Baked for 3s · done 8:01 AM|✻ Cooked for 3s · done 8:02 AM|✻ Crunched for 3s · done 8:03 AM"
+    "skipped busy|conv|$W"
+    "skipped busy|$W|✻ Waiting for 5 background agents to finish"
+    "skipped busy|✻ Churned for 1m · done 8:00 AM|conv|✻ Waiting for 5 background agents to finish"
+    "skipped busy|$W|⏺ Background command finished"
+    "skipped busy|$W||"
+    "skipped busy|$W|✻ Thinking about it"
+    "skipped busy|$W|conv with done 8:51 AM text"
+    "skipped busy|$W|✻ Pondered for 3s · done 8:51 AM"
+    "skipped busy|$W|✻ Worked for 3s · done 8:51 AM extra"
+    "skipped busy|$D|$W"
+    "skipped busy|$W|$D|$W"
+    "skipped unknown-state|$W|$D|⏺ Background command finished"
+    "skipped unknown-state|$W|$D|$R|⏺ unknown notice"
+  )
+  local c reason hist
+  for c in "${cases[@]}"; do
+    reason="${c%%|*}"; hist="${c#*|}"
+    orca_history_screen "$hist"
+    sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+    run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+    echo "$hist: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$reason" ]
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]
+    if [ "$reason" = ready ]; then
+      [ "$output" = sent ]; [ "$(calls '^orca terminal send ')" -eq 1 ]
+    else
+      [ "$output" = "$reason" ]; [ "$(calls '^orca terminal send ')" -eq 0 ]
+    fi
+  done
+}
+
+@test "keepalive orca: a wait line inside or after the frame is busy even with an earlier completion" {
+  keepalive_orca_setup
+  sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+  orca_screen "$D
+──────────────
+❯
+$W
+──────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+  ⏵⏵ bypass permissions on"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" != ready ]
+  orca_screen "$D
+──────────────
+❯
+──────────────
+$W
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" != ready ]
+}
+
+@test "keepalive orca: stale wait with no frame or several frames never reaches ready" {
+  keepalive_orca_setup
+  sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+  orca_screen "$W
+$D
+? for shortcuts"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" = 'skipped unknown-state' ]
+  orca_screen "$W
+$D
+──────────────
+❯
+──────────────
+──────────────
+❯
+──────────────
+? for shortcuts"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" = 'skipped unknown-state' ]
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$output" = 'skipped unknown-state' ]; [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: after send a wait line alone is failed send, never resent" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  orca_history_screen "$W"
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+  keepalive_orca_setup
+  echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+@test "keepalive orca: measured agent list preserves idle frame and rejects input or unknown suffix" {
+  keepalive_orca_setup
+  for kind in ready same-line multiline draft unknown shell missing-main multiple; do
+    orca_measured_agent_screen "$kind"
+    echo 0 > "$STUB_CFG/readcount"
+    : > "$STUB_LOG"
+    # Verify the classifier's ready result as well as the real keepalive path.
+    sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+    case "$kind" in
+      ready) reason=ready; expected=sent ;;
+      same-line|multiline|draft) reason='skipped input-not-empty'; expected="$reason" ;;
+      *) reason='skipped unknown-state'; expected="$reason" ;;
+    esac
+    run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+    echo "$kind: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$reason" ]
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]; [ "$output" = "$expected" ]
+    if [ "$kind" = ready ]; then
+      [ "$(calls '^orca terminal send ')" -eq 1 ]
+    else
+      [ "$(calls '^orca terminal send ')" -eq 0 ]
+    fi
+  done
+}
+
+@test "keepalive orca: agent panel reobservation still requires foreground execution and empty input" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  for kind in waiting ready busy input; do
+    orca_measured_agent_screen "$kind"
+    if [ "$kind" = busy ] || [ "$kind" = input ]; then
+      jq '.result.terminal.tail |= (["esc to interrupt"] + .)' "$STUB_CFG/screen" > "$STUB_CFG/modified"
+      mv "$STUB_CFG/modified" "$STUB_CFG/screen"
+    fi
+    if [ "$kind" = input ]; then
+      jq '.result.terminal.tail |= map(if . == "❯" then "❯ human" else . end)' "$STUB_CFG/screen" > "$STUB_CFG/modified"
+      mv "$STUB_CFG/modified" "$STUB_CFG/screen"
+    fi
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+    keepalive_orca_setup
+    echo 0 > "$STUB_CFG/readcount"
+    : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$kind: $output" >&3
+    if [ "$kind" = busy ]; then
+      [ "$status" -eq 0 ]; [ "$output" = sent ]
+    else
+      [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+    fi
+    [ "$(calls '^orca terminal send ')" -eq 1 ]
+    [ "$(calls '^orca terminal read ')" -eq 3 ]
+  done
+}
+
+@test "keepalive orca: malformed read shapes diagnose fields without echoing observation" {
+  keepalive_orca_setup
+  for raw in broken null '[]' '{}' '{"result":null}' '{"result":{"terminal":[]}}' '{"result":{"terminal":{"tail":null}}}' '{"result":{"terminal":{"tail":[false]}}}' '{"result":{"terminal":{"tail":[],"draft":false}}}'; do
+    printf '%s' "$raw" > "$STUB_CFG/screen"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 1 ]; [ "$output" = 'failed observe' ]
+    grep -q 'failed observe shape.*result.terminal' "$BATS_TEST_TMPDIR/stderr"
+  done
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: absent stream and unavailable sources never authorize sending" {
+  keepalive_orca_setup
+  for source in absent stream screen-unavailable; do
+    orca_screen 'ignored'
+    jq --arg s "$source" '.result.terminal |= (if $s == "absent" then del(.source) else .source=$s end)' "$STUB_CFG/screen" > "$STUB_CFG/screen.tmp"
+    mv "$STUB_CFG/screen.tmp" "$STUB_CFG/screen"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
+  done
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: nested turn_started succeeds but accepted queued and failed send do not" {
+  keepalive_orca_setup
+  echo '{"result":{"receipt":{"stages":["input_accepted","turn_started"]}}}' > "$STUB_CFG/send_json_term-11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]
+  for receipt in '{"result":{"stages":["input_accepted"]}}' '{"result":{"stages":["queued"]}}'; do
+    echo "$receipt" > "$STUB_CFG/send_json_term-11"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  done
+  echo '{"result":{"stages":["turn_started"]}}' > "$STUB_CFG/send_json_term-11"
+  echo 1 > "$STUB_CFG/send_exit_term-11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  [ "$(calls '^orca terminal send ')" -eq 4 ]
+}
+
+@test "keepalive orca: reobservation requires busy and independently proven empty input" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  for kind in empty input draft no-frame dialog malformed; do
+    orca_screen '✽ Working… (1s · thinking)
+────────────────
+❯
+────────────────
+? for shortcuts'
+    case "$kind" in
+      input) orca_screen 'esc to interrupt
+────────────────
+❯
+ human
+────────────────
+? for shortcuts' ;;
+      draft) orca_screen 'esc to interrupt
+────────────────
+❯
+────────────────
+? for shortcuts' human ;;
+      no-frame) orca_screen 'esc to interrupt' ;;
+      dialog) orca_screen 'esc to interrupt
+Enter to confirm' ;;
+      malformed) echo broken > "$STUB_CFG/screen" ;;
+    esac
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+    keepalive_orca_setup
+    echo 0 > "$STUB_CFG/readcount"
+    : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    if [ "$kind" = empty ]; then
+      [ "$status" -eq 0 ]; [ "$output" = sent ]
+    else
+      [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+    fi
+    if [ "$kind" = malformed ]; then
+      grep -q 'failed observe shape' "$BATS_TEST_TMPDIR/stderr"
+    fi
+    [ "$(calls '^orca terminal send ')" -eq 1 ]
+    [ "$(calls '^orca terminal read ')" -eq 3 ]
+    [ "$(calls '^orca .*create\|^orca .*close\|^orca terminal wait')" -eq 0 ]
+  done
+}
 
 @test "keepalive orca: sends once to idle empty screen and verifies unsupported provider by reobservation" {
   keepalive_orca_setup
   echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
-  jq -cn --arg s '✽ Working… (1s · thinking)' '{result:{source:"screen",tail:[$s,"❯"]}}' > "$STUB_CFG/screen_3"
+  orca_screen '✽ Working… (1s · thinking)
+────────────────
+❯
+────────────────
+? for shortcuts'
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+  keepalive_orca_setup
   run orca_keepalive keepalive /work/issue-11 reserved
   [ "$status" -eq 0 ]; [ "$output" = sent ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
@@ -8432,9 +8953,9 @@ if mode == "orca":
     add("draft", "nonempty-suggestion", box("❯ \x1b[2msuggestion\x1b[0m"), "skipped input-not-empty", draft="suggestion")
     add("draft", "empty-vs-input-tail", box("❯ human"), "skipped input-not-empty", draft="")
     for d in (None, False, [], {}): add("draft", repr(d), ready, "failed observe", draft=d)
-    for malformed in ({}, {"result": []}, {"result": {"source":"screen", "tail":[False]}}, {"result": {"source":"screen"}}):
+    for malformed in ({}, {"result": []}, {"result": {"terminal":{"source":"screen", "tail":[False]}}}, {"result": {"terminal":{"source":"screen"}}}):
         add("draft", repr(malformed), ready, "failed observe", observation=malformed)
-    add("draft", "not-screen", ready, "skipped unknown-state", observation={"result":{"source":"log", "tail":[]}})
+    add("draft", "not-screen", ready, "skipped unknown-state", observation={"result":{"terminal":{"source":"log", "tail":[]}}})
 for c in cases: print(json.dumps(c, ensure_ascii=False))
 PYCODE
   while IFS= read -r row; do
@@ -8442,8 +8963,8 @@ PYCODE
     expected="$(printf '%s' "$row" | jq -r '.expected')"
     : > "$STUB_LOG"
     echo 0 > "$STUB_CFG/readcount"
-    printf '%s' "$row" | jq -c 'if has("observation") then .observation else {result:({source:"screen",tail:(.screen|split("\n"))} + (if .omit_draft then {} else {draft:(if has("draft") then .draft else "" end)} end))} end' > "$STUB_CFG/screen"
-    printf '%s' "$row" | jq -c '{result:{source:"screen",tail:((.after // .screen)|split("\n")),draft:""}}' > "$STUB_CFG/screen_2"
+    printf '%s' "$row" | jq -c 'if has("observation") then .observation else {result:{terminal:({source:"screen",tail:(.screen|split("\n"))} + (if .omit_draft then {} else {draft:(if has("draft") then .draft else "" end)} end))}} end' > "$STUB_CFG/screen"
+    printf '%s' "$row" | jq -c '{result:{terminal:{source:"screen",tail:((.after // .screen)|split("\n")),draft:""}}}' > "$STUB_CFG/screen_2"
     run orca_keepalive keepalive /work/issue-11 reserved
     echo "$name: actual=$output expected=$expected" >&3
     [ "$output" = "$expected" ]
