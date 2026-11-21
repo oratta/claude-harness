@@ -1420,11 +1420,8 @@ resolve_stopped() {
   if child_record "$PARENT_TOP" "$n"; then rec="$ES_HIT"; su="$(es_get "$rec" stop_uuid)"; fi
   # 依存待ちの終了は判断モデルへ渡さず、停止記録を保ったまま親の依存照合へ返す。
   # マーカーは合図だけで、登録・解消の証拠や実行する指示としては使わない。
-  # 末尾の改行・空白・CR を落としてから最後の行を見る（合図の後ろの改行で判断へ流さない）。
-  if [ -e "$stopjson" ] && jq -e '
-    (.text // "" | gsub("[\\s\\r]+$"; "") | split("\n") | last | ltrimstr(" "))
-    | startswith("止まった理由: 依存待ち: ")
-  ' "$stopjson" >/dev/null 2>&1; then
+  # フェンスの文脈を失わないよう、切り詰め前の全文で判定した結果を使う。
+  if [ -e "$stopjson" ] && jq -e '.dependency_wait == true' "$stopjson" >/dev/null; then
     return 1
   fi
   # 会話ログを読めなかった止まりは JSON が無いので、引数を 2 つで呼ぶ
@@ -1758,8 +1755,11 @@ detect_stopped() {
 
 # 判断に渡す止まりの JSON を $STOP_DIR に書く（<子> <会話ログの JSON> <marked>）。detect_stopped と判断し直しが使う
 write_stop_json() {
+  local dependency_wait=false
+  printf '%s' "$2" | "$(dirname "$0")/epic-child-state.sh" --dependency-wait && dependency_wait=true
   printf '%s' "$2" | jq -c --argjson max "$(stop_text_max)" --argjson marked "$3" \
-    "$STOP_TEXT_CUT"' | .marked = $marked' > "$STOP_DIR/$(var_key "$1")"
+    --argjson dependency_wait "$dependency_wait" \
+    "$STOP_TEXT_CUT"' | .marked = $marked | .dependency_wait = $dependency_wait' > "$STOP_DIR/$(var_key "$1")"
 }
 
 # wait の長い待ちの判断し直し（--resolve）。基準と処理済みの版は、子の引数ごと（エピックは epic）に $RJ_DIR のファイルで持つ
