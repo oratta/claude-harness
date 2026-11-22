@@ -123,6 +123,8 @@ develop の手順書には `orca` のコマンドを書かず、端末の有無�
 ### Requirement: 完了を伝えるだけの子を起こす必要は既存の片付け条件で分ける
 `references/epic-loop.md` は、PR がマージ済みで実作業が残っていない子でも、親だけの片付けが全件には足りないと理由付きで記さなければならない（MUST）。既に done なら reap、既存の完了推定条件を満たす子なら wait --watch-done → done → reap を使い、「終えて」だけの reply を省く（MUST）。停止中または waiting の子は完了推定の対象外で、停止中の completed の子には既存 notify-closed を残す（MUST）。親の mark done の代行や状態記録の直接編集を手順にしてはならない（MUST NOT）。
 
+守備範囲: 入力は親の子状態記録、子のログ、GitHub の閉鎖状態、wait・reap・notify-closed の出力。防ぐ誤りは、片付け可能な子への不要な返事と、推定対象外の子の完了促進の省略・done の強制。done でも既存の安全確認で reap が `kept <N> dirty` を返して子を残すことは許容する。分類の穴を塞ぎ切ることは完了条件にしない。
+
 #### Scenario: done または完了推定可能な子には終了だけの返事を送らない
 - **WHEN** マージ済みで残作業のない子が done、または running・止まりの印なし・ログありで completed の閉鎖と最後の活動から各 EPIC_DISPATCH_DONE_IDLE_SEC 以上経過した場合の手順を読む
 - **THEN** reply で子を起こさず、前者は reap、後者は wait --watch-done の done を受けて reap すると分かる
