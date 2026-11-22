@@ -4,6 +4,8 @@
 
 UserPromptSubmit と Stop は、payload の `cwd` の git 最上位と `worktree` が一致する読める記録が1件で、`launcher` が `orca` / `tmux`、かつ `agent_id` が無い場合を候補とする（MUST）。通常入力と Stop の対象は、空でない文字列の payload `session_id` が `turn_input.session_id` と一致する場合に限る（MUST）。例外として、一致する起動指示の入力だけは未登録からの登録または別 ID への切替を行う（MUST）。一致条件は入力の送り手の要件と同じ親子・repo 照合とする。対象外の入力は無出力 exit 0 とし、記録全体を変えてはならない（MUST NOT）。対象外 Stop はターン情報を検査・更新せず、既存 `owner-message-number-check.sh` の出力・終了コードを維持する（MUST）。環境変数だけで対象にしてはならない（MUST NOT）。
 
+守備範囲: 本要件と以下の記録保存・送り手分類・終了拒否の要件は、Claude のフック payload・既存記録・指定ログを入力元とし、別セッションによる誤更新・誤登録と対象ターンの不正な保存を防ぐ。一致する起動指示の意図的な再送は受理し、起動元の認証は保証しない。意図的な偽装を含む穴を塞ぎ切ることや、強い所有権の証明を完了条件にしない。
+
 #### Scenario: Orca と tmux の子に同じ契約を適用する
 - **WHEN** `launcher` がそれぞれ `orca` と `tmux` の記録で、保存済み ID と同じ ID の子の UserPromptSubmit / Stop が呼ばれる
 - **THEN** 両方に同じ状態行の検査とターン情報の更新が適用される
