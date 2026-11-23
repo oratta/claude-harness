@@ -308,3 +308,106 @@ main_row() { # <ファイル> <uuid> <時刻> [<entrypoint>] [<isSidechain>]
   { user d0 2026-10-30T00:00:00.000Z 'はじめて'; } > "$LOG"
   [ "$(field .text_at)" = '' ]
 }
+
+# --- 作業待ち向け（background）の声かけ（#1792） ---
+bg_request() { python3 "$READER" --keepalive-text background; }
+bg_reply() {
+  jq -r '.background | .separator as $s | [.reply_prefix] + [.fields[] | . + " value"] | join($s)' "$PLUGIN_DIR/references/child-cache-keepalive.json"
+}
+user_text() { # <uuid> <時刻> <本文>
+  raw_user "$1" "$2" "$3"
+}
+reply_text() { # <uuid> <時刻> <本文>
+  jq -cn --arg u "$1" --arg t "$2" --arg x "$3" '{entrypoint: "cli", type: "assistant", uuid: $u, timestamp: $t, message: {role: "assistant", content: [{type: "text", text: $x}]}}'
+}
+base_log() {
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'
+    child c1 2026-10-30T00:01:00.000Z '作業を待ちます'
+    turn_end 2026-10-30T00:01:01.000Z; }
+}
+
+@test "keepalive text: the old text is unchanged, background is a different fixed text" {
+  old="$(python3 "$READER" --keepalive-text)"
+  [[ "$old" == 'キャッシュ維持のための声かけです。主の返事や親の判断ではありません。'* ]] || return 1
+  [[ "$old" == *'[child-cache-keepalive] | 待ち: <値> | 次: <値>'* ]] || return 1
+  bg="$(bg_request)"
+  [ "$bg" != "$old" ]
+  [[ "$bg" == '作業待ちのキャッシュ維持のための声かけです。'* ]] || return 1
+  [[ "$bg" == *'[child-background-cache-keepalive] | 待ち: <値> | 次: <値>'* ]] || return 1
+  run python3 "$READER" --keepalive-text other
+  [ "$status" -eq 1 ]
+}
+
+@test "background keepalive round trip keeps the statement, uuid, owner, inputs and input_after" {
+  for kind in old new; do
+    if [ "$kind" = old ]; then req="$(keepalive_request)"; rep="$(keepalive_reply)"; else req="$(bg_request)"; rep="$(bg_reply)"; fi
+    { base_log
+      user_text a1 2026-10-30T01:00:00.000Z "$req"
+      tool_result r1 2026-10-30T01:00:00.500Z none
+      local_command 2026-10-30T01:00:00.600Z mcp
+      local_output_system 2026-10-30T01:00:00.700Z
+      reply_text a2 2026-10-30T01:00:01.000Z "$rep"
+      turn_end 2026-10-30T01:00:02.000Z; } > "$LOG"
+    [ "$(field .uuid)" = c1 ]
+    [ "$(field .text)" = '作業を待ちます' ]
+    [ "$(field .at)" = 2026-10-30T00:01:00.000Z ]
+    [ "$(field .owner.text)" = 'はじめて' ]
+    [ "$(field .last_input_at)" = 2026-10-30T00:00:00.000Z ]
+    [ "$(field .input_after)" = false ]
+  done
+}
+
+@test "a reply of the other kind, a bare reply, a multi-line reply and an extra character are shown" {
+  stopped_rep="$(keepalive_reply)"; bg_rep="$(bg_reply)"
+  # 交差した種類
+  { base_log; user_text a1 2026-10-30T01:00:00.000Z "$(bg_request)"; reply_text a2 2026-10-30T01:00:01.000Z "$stopped_rep"; } > "$LOG"
+  [ "$(field .uuid)" = a2 ]
+  { base_log; user_text a1 2026-10-30T01:00:00.000Z "$(keepalive_request)"; reply_text a2 2026-10-30T01:00:01.000Z "$bg_rep"; } > "$LOG"
+  [ "$(field .uuid)" = a2 ]
+  # 固定文なし
+  { base_log; reply_text a2 2026-10-30T01:00:01.000Z "$bg_rep"; } > "$LOG"
+  [ "$(field .uuid)" = a2 ]
+  # 型違い・固定文のない専用応答（接頭辞だけ）・複数行
+  for bad in "$(jq -r .background.reply_prefix "$PLUGIN_DIR/references/child-cache-keepalive.json")" "$bg_rep"$'\n追加の行' "$bg_rep | 余分: x" 'ok'; do
+    { base_log; user_text a1 2026-10-30T01:00:00.000Z "$(bg_request)"; reply_text a2 2026-10-30T01:00:01.000Z "$bad"; } > "$LOG"
+    [ "$(field .uuid)" = a2 ]
+  done
+  # 一文字追加の固定文は通常入力
+  { base_log; user_text a1 2026-10-30T01:00:00.000Z "$(bg_request)x"; reply_text a2 2026-10-30T01:00:01.000Z "$bg_rep"; } > "$LOG"
+  [ "$(field .uuid)" = a2 ]
+  [ "$(field .last_input_at)" = 2026-10-30T01:00:00.000Z ]
+  [ "$(field .owner.text)" = "$(bg_request)x" ]
+}
+
+@test "a real user input between the background request and its reply ends the correspondence" {
+  { base_log
+    user_text a1 2026-10-30T01:00:00.000Z "$(bg_request)"
+    user d1 2026-10-30T01:00:01.000Z 'やっぱり別件'
+    reply_text a2 2026-10-30T01:00:02.000Z "$(bg_reply)"; } > "$LOG"
+  [ "$(field .uuid)" = a2 ]
+  [ "$(field .owner.text)" = 'やっぱり別件' ]
+  [ "$(field .input_after)" = false ]
+}
+
+@test "the fixed text switches between kinds and the owner typing it is not an input" {
+  { base_log
+    user_text a1 2026-10-30T01:00:00.000Z "$(keepalive_request)"
+    reply_text a2 2026-10-30T01:00:01.000Z "$(keepalive_reply)"
+    user_text a3 2026-10-30T01:10:00.000Z "$(bg_request)"
+    reply_text a4 2026-10-30T01:10:01.000Z "$(bg_reply)"; } > "$LOG"
+  [ "$(field .uuid)" = c1 ]
+  [ "$(field .input_after)" = false ]
+  [ "$(field .owner.text)" = 'はじめて' ]
+}
+
+@test "a background keepalive does not complete a running background task" {
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'
+    tool_use t1 2026-10-30T00:00:10.000Z tu1 Bash '{command: "sleep 9"}'
+    tool_result r1 2026-10-30T00:00:11.000Z tu1 '{backgroundTaskId: "b1"}'
+    child c1 2026-10-30T00:00:12.000Z '待ちます'
+    turn_end 2026-10-30T00:00:13.000Z
+    user_text a1 2026-10-30T01:00:00.000Z "$(bg_request)"
+    reply_text a2 2026-10-30T01:00:01.000Z "$(bg_reply)"; } > "$LOG"
+  [ "$(field .bg_running)" = true ]
+  [ "$(field .uuid)" = c1 ]
+}

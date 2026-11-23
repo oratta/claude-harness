@@ -77,6 +77,14 @@ blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$ou
     jq -e --arg v "$v" '.turn_state.value == $v and .turn_state.summary == "要約" and .turn_state.generation == .turn_input.generation and .turn_state.session_id == .turn_input.session_id and (.turn_state.recorded_at | endswith("Z"))' "$REC"
   done
 }
+@test "stop: inherited non-JSON RESERVED does not prevent ordinary state publication" {
+  register
+  export RESERVED='not json'
+  run stop '状態: 作業報告 — 通常の状態を保存'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  jq -e '.turn_state.value == "作業報告" and .turn_state.summary == "通常の状態を保存" and .turn_state.generation == .turn_input.generation and .turn_state.session_id == .turn_input.session_id' "$REC"
+}
 @test "stop: malformed lines block even on retry and clear previously published state" {
   register
   stop '状態: 完了 — done'
@@ -1017,4 +1025,66 @@ dep_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("dependen
   run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
   [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
+}
+
+# --- 作業待ち向け（background）の予約文（#1792） ---
+bg_text() { python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text background; }
+bg_reply() {
+  jq -r '.background | .separator as $s | [.reply_prefix] + [.fields[] | . + " value"] | join($s)' "$PLUGIN_DIR/references/child-cache-keepalive.json"
+}
+other_reply() {
+  jq -r '.separator as $s | [.reply_prefix] + [.fields[] | . + " value"] | join($s)' "$PLUGIN_DIR/references/child-cache-keepalive.json"
+}
+
+@test "background keepalive: reception and every kind of reply keep the whole record, plain and dependency_wait" {
+  for dep in plain wait; do
+    rm -f "$LOG"
+    SID=s1; register
+    if [ "$dep" = wait ]; then
+      stop "$dep_marker"$'\n状態: 作業報告 — a'
+      [ "$(jq -r '.turn_state.dependency_wait' "$REC")" = true ]
+    else
+      stop '状態: 作業報告 — a'
+    fi
+    snapshot
+    reserved="$(bg_text)"
+    run input "$reserved"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+    append_row user "$reserved"
+    for msg in "$(bg_reply)" "$(other_reply)" '逸脱した応答' $'複数行\n行目' $'状態: 完了 — 状態行付き' "$(bg_reply)"$'\n状態: 完了 — x'; do
+      run stop "$msg"; [ "$status" -eq 0 ]; [ -z "$output" ]
+      unchanged
+    done
+  done
+}
+
+@test "background keepalive: a changed text and a real input after it advance the generation and Stop is checked normally" {
+  register; stop '状態: 作業報告 — a'
+  reserved="$(bg_text)"
+  input "${reserved}x"
+  [ "$(jq -r .turn_input.generation "$REC")" = 2 ]
+  [ "$(jq -r .turn_state "$REC")" = null ]
+  input "$reserved"; append_row user "$reserved"
+  run stop "$(bg_reply)"; [ "$status" -eq 0 ]
+  [ "$(jq -r .turn_input.generation "$REC")" = 2 ]
+  input 'owner words'
+  [ "$(jq -r .turn_input.generation "$REC")" = 3 ]
+  [ "$(jq -r .turn_state "$REC")" = null ]
+  append_row user 'owner words'
+  run stop "$(bg_reply)"; blocked
+  run stop '状態: 完了 — done'; [ "$status" -eq 0 ]
+  jq -e '.turn_state.value == "完了" and .turn_state.generation == 3' "$REC"
+  # parent input after the reserved text
+  input "$reserved"; append_row user "$reserved"
+  input '親エピック #1 の判断: ok'
+  [ "$(jq -r .turn_input.generation "$REC")" = 4 ]
+  [ "$(jq -r .turn_input.sender "$REC")" = parent ]
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background keepalive: an unregistered or out-of-scope session leaves the record and gives no notice" {
+  snapshot
+  run input "$(bg_text)"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+  register; stop '状態: 作業報告 — a'
+  snapshot
+  SID=s2; run input "$(bg_text)"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
 }
