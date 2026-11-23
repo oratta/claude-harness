@@ -30,6 +30,16 @@ def status(text):
         return None
     return m[1], m[2].strip()
 
+def dependency_tail(text):
+    lines = text.rstrip().splitlines()
+    if status(text):
+        lines.pop()
+        while lines and not lines[-1].strip():
+            lines.pop()
+    tail = lines[-1] if lines else ''
+    tail = tail[1:] if tail.startswith(' ') else tail
+    return tail.startswith('止まった理由: 依存待ち: ')
+
 def text_of(row):
     c = row.get('message', {}).get('content')
     if isinstance(c, str):
@@ -70,7 +80,8 @@ def extension(r):
               and nonempty(s.get('session_id')) and s.get('value') in VALUES
               and nonempty(s.get('summary')) and bool(s['summary'].strip())
               and '\n' not in s['summary'] and '\r' not in s['summary'] and utc(s.get('recorded_at'))
-              and s['generation'] == i['generation'] and s['session_id'] == i['session_id'])
+              and s['generation'] == i['generation'] and s['session_id'] == i['session_id']
+              and ('dependency_wait' not in s or type(s['dependency_wait']) is bool))
         if not ok:
             raise ValueError('turn_state の型または世代が不正です')
 
@@ -100,15 +111,7 @@ mode = sys.argv[1]
 try:
     data = json.load(sys.stdin)
     if mode == 'dependency':
-        text = data.get('text') or ''
-        lines = text.rstrip().splitlines()
-        if status(text):
-            lines.pop()
-            while lines and not lines[-1].strip():
-                lines.pop()
-        tail = lines[-1] if lines else ''
-        tail = tail[1:] if tail.startswith(' ') else tail
-        raise SystemExit(0 if tail.startswith('止まった理由: 依存待ち: ') else 1)
+        raise SystemExit(0 if dependency_tail(data.get('text') or '') else 1)
     r, p, reserved = data['record'], data['payload'], data['reserved']
     # Scope is checked both before acquiring a lock and on the locked input snapshot.
     if not target(r, p, mode in ('input', 'scope-input')):
@@ -183,8 +186,11 @@ try:
         if not parsed:
             print(json.dumps({'action': 'block', 'reason': '最終非空行に 状態: <主の返事待ち|作業報告|完了> — <空でない中身> を、引用・コードの外に書いてください。'}, ensure_ascii=False))
         else:
-            print(json.dumps({'action': 'save', 'state': dict(generation=i['generation'], session_id=sid,
-                       value=parsed[0], summary=parsed[1], recorded_at=now)}, ensure_ascii=False))
+            state = dict(generation=i['generation'], session_id=sid,
+                         value=parsed[0], summary=parsed[1], recorded_at=now)
+            if parsed[0] == '作業報告' and dependency_tail(text):
+                state['dependency_wait'] = True
+            print(json.dumps({'action': 'save', 'state': state}, ensure_ascii=False))
 except (ValueError, OSError, TypeError, KeyError) as e:
     print(json.dumps({'action': 'error', 'reason': str(e)}, ensure_ascii=False))
     raise SystemExit(2)
