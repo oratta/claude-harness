@@ -394,12 +394,18 @@ printf '%s\n' "$1" >> "$SLEEP_CALLS"
 SH
   chmod +x "$BATS_TEST_TMPDIR/bin/sleep"
   export PATH="$BATS_TEST_TMPDIR/bin:$PATH" EPIC_STATE_LOCK_TIMEOUT=31
-  for event in UserPromptSubmit Stop; do
+  for event in UserPromptSubmit Stop retry; do
     : > "$SLEEP_CALLS"
     p="$(payload "$event" '状態: 完了 — published')"
-    run bash -c 'printf "%s" "$1" | "$2"' _ "$p" "$HOOK"
+    if [ "$event" = retry ]; then
+      p="$(jq '.hook_event_name="Stop" | .stop_hook_active=true' <<< "$p")"
+    fi
+    run_stop_payload "$p"
     if [ "$event" = UserPromptSubmit ]; then
-      [ "$status" -eq 2 ]; [[ "$output" == *入力受付のロックに失敗* ]] || return 1
+      [ "$status" -eq 2 ]; [[ "$stderr" == *入力受付のロックに失敗* ]] || return 1
+    elif [ "$event" = retry ]; then
+      [ "$status" -eq 0 ]; [ -z "$output" ]
+      [[ "$stderr" == *保存または無効化に失敗*"$REC"* ]] || return 1
     else
       blocked; [[ "$output" == *保存または無効化に失敗* ]] || return 1
     fi
@@ -439,4 +445,125 @@ SH
   run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
   [ "$(rec_get 11 stop)" = resumed ]; [ "$(calls '^judge ')" -eq 1 ]
+}
+
+# Capture streams independently: allowing Stop must not emit a block on stdout.
+run_stop_payload() {
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr "$HOOK" <<< "$1"
+}
+processing_failure_pair() {
+  local msg="$1" reason="$2" path="${3:-$REC}" flag
+  for flag in missing false string; do
+    p="$(payload Stop "$msg")"
+    case "$flag" in
+      missing) p="$(jq 'del(.stop_hook_active)' <<< "$p")" ;;
+      string) p="$(jq '.stop_hook_active="true"' <<< "$p")" ;;
+    esac
+    run_stop_payload "$p"
+    blocked
+    [[ "$(jq -r .reason <<< "$output")" == *"$reason"*"$path"* ]] || return 1
+  done
+  for _ in 1 2; do
+    run_stop_payload "$(payload Stop "$msg" | jq '.stop_hook_active=true')"
+    [ "$status" -eq 0 ]; [ -z "$output" ]
+    [[ "$stderr" == *"$reason"*"$path"* ]] || return 1
+  done
+}
+
+@test "processing-retry: preparation failures block first and repeatedly allow only boolean true" {
+  # Keep each failure independent, including failures before a single record is chosen.
+  original="$(cat "$REC")"
+  msg='状態: 完了 — x'
+  mkdir "$BATS_TEST_TMPDIR/entry"
+  cp "$HOOK" "$BATS_TEST_TMPDIR/entry/epic-child-state.sh"
+  for script in epic-state.sh owner-message-number-check.sh; do
+    ln -s "$PLUGIN_DIR/scripts/$script" "$BATS_TEST_TMPDIR/entry/$script"
+  done
+  for failure in missing-input extension missing-log invalid-json correspondence duplicate config reserved; do
+    printf '%s\n' "$original" > "$REC"
+    unset EPIC_STATE_LOCK_TIMEOUT
+    export EPIC_STATE_LOCK_TIMEOUT=0
+    input next
+    append_row assistant "$msg"
+    path="$REC"; reason=''
+    case "$failure" in
+      missing-input) printf '%s\n' "$original" > "$REC"; reason='入力情報がありません' ;;
+      extension) jq '.turn_input.generation="bad"' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"; reason='型が不正' ;;
+      missing-log) rm -f "$LOG"; reason='No such file' ;;
+      invalid-json) printf 'invalid json\n' > "$LOG"; reason='Expecting value' ;;
+      correspondence) append_row assistant other; reason='対応しません' ;;
+      duplicate) cp "$REC" "$EPIC_STATE_ROOT/o.r-1/duplicate.json"; path="$EPIC_STATE_ROOT"; reason='複数' ;;
+      config) export EPIC_STATE_LOCK_TIMEOUT=invalid; reason='設定が不正' ;;
+      reserved) real_hook="$HOOK"; HOOK="$BATS_TEST_TMPDIR/entry/epic-child-state.sh"; reason='予約文を読めません' ;;
+    esac
+    before="$(jq 'del(.updated_at)' "$REC")"
+    processing_failure_pair "$msg" "$reason" "$path"
+    # Invalidating an existing turn is permitted; no new valid state is published.
+    [ "$(jq 'del(.updated_at)' "$REC")" = "$before" ]
+    [ "$(jq -r '.turn_state // null' "$REC")" = null ]
+    if [ "$failure" = duplicate ]; then
+      [ "$(jq 'del(.updated_at)' "$EPIC_STATE_ROOT/o.r-1/duplicate.json")" = "$before" ]
+      rm -f "$EPIC_STATE_ROOT/o.r-1/duplicate.json"
+      run input next; [ "$status" -eq 0 ]
+    fi
+    [ "$failure" != reserved ] || HOOK="$real_hook"
+    rm -f "$LOG"
+  done
+}
+
+@test "processing-retry: save and invalidation failures preserve JSON and recover in the same generation" {
+  mkdir "$BATS_TEST_TMPDIR/bin"
+  export REAL_MV="$(command -v mv)" FAIL_REC="$REC"
+  cat > "$BATS_TEST_TMPDIR/bin/mv" <<'SH'
+#!/usr/bin/env bash
+if [ "${3-}" = "$FAIL_REC" ] && [ "${FAIL_REPLACE:-}" = yes ]; then exit 1; fi
+exec "$REAL_MV" "$@"
+SH
+  chmod +x "$BATS_TEST_TMPDIR/bin/mv"
+  export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
+  for failure in lock replace; do
+    for msg in '状態: 完了 — new' '欠落' '状態: 不明 — invalid'; do
+      input next
+      stop '状態: 作業報告 — previously published'
+      generation="$(jq -r .turn_input.generation "$REC")"
+      before="$(cat "$REC")"
+      append_row assistant "$msg"
+      case "$failure" in
+        lock) mkdir "$REC.lock" ;;
+        replace) export FAIL_REPLACE=yes ;;
+      esac
+      processing_failure_pair "$msg" '保存または無効化に失敗'
+      [ "$(cat "$REC")" = "$before" ]
+      if [ "$failure" = lock ]; then
+        [ -d "$REC.lock" ]; rmdir "$REC.lock"
+      else
+        [ ! -d "$REC.lock" ]; unset FAIL_REPLACE
+      fi
+      # A recovered retry still validates and clears malformed state before saving.
+      if [ "$msg" != '状態: 完了 — new' ]; then
+        run_stop_payload "$(payload Stop "$msg" | jq '.stop_hook_active=true')"
+        blocked
+        [ "$(jq -r .turn_state "$REC")" = null ]
+      fi
+      msg_fixed='状態: 完了 — recovered'
+      append_row assistant "$msg_fixed"
+      run_stop_payload "$(payload Stop "$msg_fixed" | jq '.stop_hook_active=true')"
+      [ "$status" -eq 0 ]; [ -z "$output" ]; [ -z "$stderr" ]
+      jq -e --argjson g "$generation" '.turn_input.generation == $g and .turn_state.generation == $g and .turn_state.summary == "recovered" and .opaque.keep and .stop_uuid == "parent-uuid" and .session == "terminal"' "$REC"
+    done
+  done
+}
+
+@test "processing-retry: new input wins over retry save and invalidation" {
+  for msg in '状態: 完了 — old' '欠落'; do
+    input next
+    append_row assistant "$msg"
+    generation="$(jq -r .turn_input.generation "$REC")"
+    race_at_lock
+    run_stop_payload "$(payload Stop "$msg" | jq '.stop_hook_active=true')"
+    [ "$status" -eq 0 ]; [ -z "$output" ]; [ -z "$stderr" ]
+    jq -e --argjson g "$generation" '.turn_input.generation == ($g + 1) and .turn_state == null and .stop_uuid == "parent-uuid" and .opaque.keep' "$REC"
+    unset INJECT_INPUT
+  done
 }
