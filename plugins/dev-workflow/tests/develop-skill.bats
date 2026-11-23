@@ -562,6 +562,16 @@ refute() {
   ! grep -qF 'その子の中で直さず**新しい子 issue** を切ってエピックに追加する' <<<"$common" || return 1
 }
 
+@test "epic (#1647): children added mid-run are not launched until the owner is asked, and approval covers only children listed at that time" {
+  common="$(sed -n '/^\*\*別セッション方式とサブエージェント方式に共通\*\*:/,/^### 完了条件/p' "${SKILL_DIR}/references/epic.md")"
+  for token in '回している途中で足された子' '起票と依存の紐付けまで' '起動する前に主へ 1 問で聞く' \
+               '`launch` に渡さない' '全部やってよい' 'その発言の時点で挙がっていた子にだけ効く'; do
+    grep -qF "$token" <<<"$common" || { echo "missing: $token"; return 1; }
+  done
+  grep -qF '`未起動（主の判断待ち）`' "${SKILL_DIR}/references/epic-loop.md" || return 1
+  grep -qF '`未起動（<理由>）`' "${SKILL_DIR}/references/epic-loop.md" || return 1
+}
+
 @test "epic (#1646): restarted children retain trusted notes but stage C overrides their placement" {
   note="$(grep '^子のセッションの本体' "${SKILL_DIR}/references/epic.md")"
   for token in '起動し直したセッションを含む' 'author_association' 'OWNER' 'MEMBER' 'COLLABORATOR' \
