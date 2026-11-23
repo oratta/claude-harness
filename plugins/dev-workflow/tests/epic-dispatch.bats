@@ -382,6 +382,12 @@ if [ "$1 $2" = "pr list" ]; then
   cat "$STUB_CFG/pr_out" 2>/dev/null
   exit "$(cat "$STUB_CFG/pr_exit" 2>/dev/null || echo 0)"
 fi
+# stop-judge の --paginate 付きコメント取得（生 JSON）。
+if [ "$1 $2" = "api --paginate" ] && [ "$#" -eq 3 ]; then
+  issue="${3%/comments}"; issue="${issue##*/}"
+  cat "$STUB_CFG/comments_$issue" 2>/dev/null || echo "[]"
+  exit 0
+fi
 case "${2-}" in
   */comments)
     # Raw paginated JSON is used by keepalive. Existing --jq fixtures below
@@ -7557,6 +7563,27 @@ log_resolve_ready() {
   [ "$(calls '^orca terminal send')" -eq 0 ]
   [ ! -e "$STUB_CFG/comment_400" ]
   [ ! -e "$STUB_CFG/comment_11" ]
+}
+
+@test "wait --resolve log: completion headings use the real judge to dismiss without a model or reply" {
+  for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
+    log_resolve_ready
+    printf '0\n' > "$STUB_CFG/ghcount_11"
+    export EPIC_DISPATCH_JUDGE="$PLUGIN_DIR/scripts/stop-judge.sh"
+    export EPIC_DISPATCH_JUDGE_CMD='echo model-called >> "$STUB_LOG"; exit 1'
+    put_chat 11 s1 "$(said d1 "$(ago 300)" "$heading"$'\n作業を終えた。issue は開いたまま待つ。')" "$(turn_end "$(ago 300)")"
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = "closed 11" ]
+    [ "$(rec_get 11 stop)" = resumed ]
+    [ "$(rec_get 11 stop_uuid)" = d1 ]
+    [ -n "$(rec_get 11 stop_at)" ]
+    [ "$(calls '^model-called')" -eq 0 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^gh issue comment')" -eq 0 ]
+    [ ! -e "$STUB_CFG/comment_400" ]
+    [ ! -e "$STUB_CFG/comment_11" ]
+  done
 }
 
 @test "wait --resolve log: a not-a-question that cannot be written back still wakes the parent" {
