@@ -704,6 +704,16 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
     '今の PR で直せるのは例外 3 種に当たるときだけ'
 }
 
+@test "failed list (#1646): mixed findings send only blockers and first-round stage A to W" {
+  failed="$(grep '^1周目で failed にするとき' "$TRIAGE")"
+  has_all "$failed" 'W に戻す修正対象一覧は止める指摘と段 A の指摘だけ' \
+    '段 A・この PR で直す' '段 A に当たらない止めない指摘は任意の修正候補としても渡さず' \
+    'G の振り分けの記録に残す' 'G が手順3へ進むとき' '段 B 以降に当て'
+  row="$(grep -E '^\| 1 \|' "$TRIAGE")"
+  has_all "$row" '段 A だけを W の修正対象一覧に載せる' 'それ以外は G の振り分けの記録に残す'
+  ! grep -qF '止めない指摘は failed の PR コメントに一覧で残し' <<<"$failed"
+}
+
 @test "acceptance scope (#1389): the mark is only a reference, G decides, and a missing mark gets no supplement" {
   a="$(nonblocking_para '段 A（')"
   has_all "$a" '`受け入れ条件の要否`' '参考にとどめ' 'G の照合' '印が無い指摘は G が' '補足を頼まず' \
@@ -884,6 +894,26 @@ $(nonblocking_para '段 C（')"
   # 保留の解除と合格条件は、置き場所の決め方を triage.md に向ける
   grep -F '**切り出しの確認**' "$HOLD" | grep -F '| 切り出す |' | grep -qF '主が切り出すと答えた止める指摘'
   grep -F '主が切り出すと答えて follow-up issue に切ったもの' "$PASS_STAGE" | grep -qF '主が切り出すと答えた止める指摘'
+}
+
+@test "epic follow-up (#1646): C ineffective, D no candidate, E worthwhile stays outside despite notes" {
+  c="$(nonblocking_para '段 C（')"
+  has_all "$c" 'エピックの本文の完了条件を根拠に決める' '効かない指摘は段 D へ進める' \
+    '効く指摘は、候補探しの結果で次の表のとおりに分ける'
+  has_all "$(nonblocking_para '段 E（')" '見合えばエピックの外の新しい issue を作り' '見合わなければ捨てて'
+  # G の行き先を develop の共通規則と注意書きが上書きしない。
+  epic="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  common="$(sed -n '/^\*\*別セッション方式とサブエージェント方式に共通\*\*:/,/^### 完了条件/p' "$epic")"
+  has_all "$common" 'レビュー由来は G の振り分けを保つ' '段 C で完了条件に効くものだけ' '効かないものは段 D・段 E'
+  has_all "$(grep '^子のセッションの本体' "$epic")" '段 C の境界を優先' '注意書きを理由に子にしない' 'コメント自体は W・R1・G に引き継ぐ'
+  has_all "$(grep 'エピックの注意書き:' "$DEVELOP_SKILL")" '段 C で完了条件に効くとした問題だけ' '注意書きを理由に子にしない'
+}
+
+@test "epic follow-up (#1646): same-place D candidate gets a reference without expanding acceptance or adding children" {
+  has_all "$(nonblocking_para '段 D（')" '同じ場所を直す open の issue の候補があれば' \
+    '参考。この issue の受け入れ条件には足さない' '最も近い 1 件' 'その issue をエピックの子にも配布の前提にも足さない'
+  c="$(nonblocking_para '段 C（')"
+  has_all "$c" 'その子 issue の受け入れ条件に足す' 'その issue をエピックの子に足す' '当たる issue が無い | 新しい子 issue を作る'
 }
 
 @test "nonblocking triage (#985): the reviewer block asks for a condition and the brief passes recorded answers" {
@@ -2348,7 +2378,7 @@ triage_line() {
   l="$(triage_line '1周目で failed にするとき')"
   has_all "$l" 'follow-up issue はまだ切らない' '未解決の止めない指摘を振り分け表の段 B 以降に当て'
   l="$(grep -E '^\| 1 \|' "$TRIAGE")"
-  has_all "$l" '| `stages/triage-nonblocking.md` の「止めない指摘の振り分け表」に回す（1周目は上の段落どおり failed の一覧に残す） |'
+  has_all "$l" '| `stages/triage-nonblocking.md` の「止めない指摘の振り分け表」に回す（1周目は段 A だけを W の修正対象一覧に載せる。それ以外は G の振り分けの記録に残す） |'
 }
 
 @test "nonblocking destinations (#1017): the stage table sends each stage to its own destination" {

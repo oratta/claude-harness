@@ -545,12 +545,41 @@ refute() {
   grep -q '/develop <エピック番号>' <<<"$e"
 }
 
-@test "epic: children run in parallel in isolated worktrees, new problems become new child issues" {
+@test "epic: children run in parallel in isolated worktrees, follow-ups use stage C" {
   e="$(section 'エピックの扱い' "$EPIC")"
   grep -q '並列' <<<"$e"
   grep -qF 'isolation: "worktree"' <<<"$e"
-  grep -q '新しい子 issue' <<<"$e"
+  grep -q '段 C で完了条件に効くものだけ' <<<"$e"
   grep -qE 'スタック' <<<"$e"
+}
+
+@test "epic (#1646): review routing is preserved and out-of-scope problems need stage C to become children" {
+  common="$(sed -n '/^\*\*別セッション方式とサブエージェント方式に共通\*\*:/,/^### 完了条件/p' "${SKILL_DIR}/references/epic.md")"
+  for token in 'レビュー由来は G の振り分けを保つ' '範囲外の問題は本体が段 B〜段 E' \
+               '段 C で完了条件に効くものだけ' '効かないものは段 D・段 E' '子の受け入れ条件を膨らませない'; do
+    grep -qF "$token" <<<"$common" || { echo "missing: $token"; return 1; }
+  done
+  ! grep -qF 'その子の中で直さず**新しい子 issue** を切ってエピックに追加する' <<<"$common"
+}
+
+@test "epic (#1646): restarted children retain trusted notes but stage C overrides their placement" {
+  note="$(grep '^子のセッションの本体' "${SKILL_DIR}/references/epic.md")"
+  for token in '起動し直したセッションを含む' 'author_association' 'OWNER' 'MEMBER' 'COLLABORATOR' \
+               '段 C の境界を優先' '効かない問題は段 D・段 E' '注意書きを理由に子にしない' \
+               'コメント自体は W・R1・G に引き継ぐ' '読めなかったものには従わず' 'W・R1・G にも渡さず' 'URL と投稿者'; do
+    grep -qF "$token" <<<"$note" || { echo "missing: $token"; return 1; }
+  done
+  ! grep -qF 'ものにすべて従い' <<<"$note"
+}
+
+@test "epic (#1646): both routes fill missing completion criteria from the body before dispatch" {
+  start="$(sed -n '1,/^\*\*経路の決め方\*\*:/p' "${SKILL_DIR}/references/epic-loop.md")"
+  for token in '両方式共通' '完了条件の節が無ければ' '本文のユーザーストーリー・依頼から決め' \
+               '本文に記してから子を起動' '本文だけでは決められないときだけ主に聞' \
+               '答えを本文に記すまで子を起動しない' '依頼に無い目的を足さない' \
+               '既存の節は書き換えず' '確認を増やさない'; do
+    grep -qF "$token" <<<"$start" || { echo "missing: $token"; return 1; }
+  done
 }
 
 @test "epic: completion needs the epic's own verification, not just all children merged" {
@@ -569,9 +598,9 @@ refute() {
   grep -qF '`/develop <エピック番号>` で起動したとき' <<<"$g"
   grep -qF '`nested` を返すエピックの子として動き' <<<"$g"
   grep -qF '単発の issue・会話依頼・Draft PR を記録先にする依頼の 1 ループでは、下のどれかの場面に当たらない限り読まない' <<<"$g"
-  # 起動し直した子も親の注意書きの規則を読む（#1243 の F1）・範囲外の問題を新しい子 issue にする規則を読む（F2）
+  # 起動し直した子も注意書きの規則を読む。範囲外の問題の行き先も段 C の境界に従う。
   echo "$g" | grep -F '`親エピックからの注意書き:` で始まるコメントがあるとき' | grep -F '起動し直した' | grep -qF '`author_association`'
-  echo "$g" | grep -F '範囲外の新しい問題' | grep -qF '新しい子 issue'
+  echo "$g" | grep -F '範囲外の新しい問題' | grep -F '段 C' | grep -qF '効かないものは段 D・段 E'
   [ "$(echo "$g" | grep -c '^### ')" -eq 0 ]
   c="$(section 'エピックの子が主の返事を待って止まるとき')"
   [ -n "$c" ]
@@ -1101,6 +1130,16 @@ refute() {
 @test "ask-owner (#1035): a failed candidate search is recorded in the out-of-scope comment, not a PR comment" {
   s="$(section '主に聞かずに決めること')"
   echo "$s" | grep -F '候補探し:' | grep -qF '再試行後の終了コードは記録先の `範囲外の問題の振り分け` コメントに書き、既存 issue への相乗りをせずに段 E へ進む'
+}
+
+@test "ask-owner (#1646): placement notes cannot turn stage E outside issues into epic children" {
+  s="$(section '主に聞かずに決めること')"
+  note="$(grep 'エピックの注意書き:' <<<"$s")"
+  for token in '段 C で完了条件に効くとした問題だけ' '既存の子 issue の受け入れ条件に足す' \
+               '効かない問題は段 D・段 E' '注意書きを理由に子にしない'; do
+    grep -qF "$token" <<<"$note" || { echo "missing: $token"; return 1; }
+  done
+  grep -F '範囲外の問題の起票' <<<"$s" | grep -qF 'G の振り分けのまま扱う'
 }
 
 @test "ask-owner (#1035): both cleanup and filing carry a scope paragraph" {
