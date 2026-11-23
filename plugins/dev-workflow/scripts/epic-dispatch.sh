@@ -110,6 +110,11 @@
 #   記録の stop が stopped のものを排他つきで stopped-seen に書き換え（そのあと Orca の印へ写す）、書けたら
 #   「止まった子」とする（書けなければ失敗したポーリングに数える）。出力は `closed <N>...`・
 #   `done <N>...`・`stopped <N>...` を該当するものだけこの順に（1〜3 行）出して exit 0。
+#   主が子のタブで打った入力から始まった主の返事待ち（turn_input.sender が owner・有効な turn_state の値が主の返事待ち）は
+#   止まりに数えない。turn_state.recorded_at から EPIC_DISPATCH_OWNER_AWAY_SEC（非負整数・既定 3600 秒）以上たち、
+#   主の新しい入力が無ければ、排他つきで記録の owner_away_told に今回のターンを書いてから `owner-away <N>...` を
+#   unrecorded の次の行に出して exit 0（同じターンでは二度出さない）。子には何も送らず、端末を閉じず、起動し直さず、
+#   stop・stop_uuid も変えず、--resolve・声かけ・長い待ちにも渡さない（#1745。references/epic-stop.md）。
 #   --watch-done も --watch-stopped（子 1 件以上）も無ければ記録を読まない。
 #   --resolve <epic>（--watch-stopped と位置引数の子が 1 件以上あるときだけ働く）を付けると、止まった子ごとに
 #   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child> <止まりの
@@ -321,6 +326,7 @@ wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-sto
   done <N>...        子が完了の印を付けた、または --watch-done の子の完了を推定した。exit 0
   stopped <N>...     子が主の返事待ちで止まった（--watch-stopped）。exit 0
   unrecorded <N>...  --resolve で子には返事を送ったが、エピックへの 1 行を残せなかった。exit 0
+  owner-away <N>...  主が子のタブで打った入力から始まった主の返事待ちが EPIC_DISPATCH_OWNER_AWAY_SEC（既定 3600 秒）続いた（--watch-stopped）。子には何も送らない。同じターンでは一度だけ。exit 0
   expired <N>...     主に伝え済みの止まりだけが続き、EPIC_DISPATCH_OWNER_WAIT_SEC（既定 43200 秒）たった。exit 0
   timeout [<N>...]   上限に達した。exit 2。上限は --timeout か EPIC_DISPATCH_TIMEOUT。どちらも無ければ親の会話キャッシュの有効期限から決める
   error gh <N>... / error workspaces  3 回続けて確認に失敗した（stderr に理由）。exit 1
@@ -1746,8 +1752,8 @@ WAIT_TURN_DEFS='
     and ($i.received_at | utc) and ($i.transcript_path | nonempty and startswith("/"))
     and ($i.transcript_offset | integer(0)) and has("turn_state");
   # 停止対象の共通部分。dependency_wait は欠落か boolean のときだけ有効（記録全体の読取は拒まない）。
-  def stop_base:
-    valid_input and .status != "done" and .turn_input.sender != "owner"
+  def turn_valid:
+    valid_input and .status != "done"
     and (.turn_state | type == "object")
     and (.turn_state.generation | integer(1)) and (.turn_state.session_id | nonempty)
     and .turn_state.generation == .turn_input.generation
@@ -1755,10 +1761,16 @@ WAIT_TURN_DEFS='
     and ((.turn_state | has("dependency_wait") | not) or (.turn_state.dependency_wait | type == "boolean"))
     and (.turn_state.summary | nonempty and test("[^[:space:]]") and (test("[\\r\\n]") | not))
     and (.turn_state.recorded_at | utc);
+  def turn_key: .turn_input | {generation,session_id};
+  def stop_base: turn_valid and .turn_input.sender != "owner";
+  # 主が打った入力から始まった主の返事待ち。時間がたてば owner-away で主に知らせる（子には何もしない。#1745）
+  def owner_asked: turn_valid and .turn_input.sender == "owner" and .turn_state.value == "主の返事待ち";
+  def owner_away($now; $sec):
+    owner_asked and ((.turn_state.recorded_at | fromdateiso8601) + $sec <= $now)
+    and ((.owner_away_told // null) != turn_key);
   def owner_question: stop_base and .turn_state.value == "主の返事待ち";
   def dependency_stop: stop_base and .turn_state.value == "作業報告" and .turn_state.dependency_wait == true;
   def target: owner_question or dependency_stop;
-  def turn_key: .turn_input | {generation,session_id};
 '
 
 # 受領済みで、同じ世代の有効な停止を現在も保っているか。一度の読取で照合する。
@@ -1850,6 +1862,26 @@ detect_stopped() {
   mirror_state "$f" "$(es_get "$f" worktree)" stopped-seen
   [ -z "$json" ] || write_stop_json "$n" "$json" "$marked"
   return 0
+}
+
+# 主が子のタブで打った入力から始まった主の返事待ちが EPIC_DISPATCH_OWNER_AWAY_SEC 以上続いたかを見て、
+# 一度だけ owner_away_told に今回のターンを書く（<子の引数> <記録>）。0 = 今回知らせる、1 = 知らせない、3 = 記録を書けなかった。
+# 子に何も送らず、stop・stop_uuid も変えない。書く直前に入力が更新されていたら書かない
+detect_owner_away() {
+  local f="$2" snapshot rc=0 nowsec sec="${EPIC_DISPATCH_OWNER_AWAY_SEC-3600}"
+  nowsec="$(date +%s)"
+  snapshot="$(es_read "$f" | jq -ce --argjson now "$nowsec" --argjson sec "$sec" "$WAIT_TURN_DEFS"'
+    select(owner_away($now; $sec)) | {turn_input,turn_state}')" || return 1
+  [ -n "$snapshot" ] || return 1
+  es_modify "$f" "$WAIT_TURN_DEFS"'
+    if owner_away($nowsec; $sec) and .turn_input == $snapshot.turn_input and .turn_state == $snapshot.turn_state
+    then .owner_away_told = turn_key else empty end' \
+    --argjson snapshot "$snapshot" --argjson nowsec "$nowsec" --argjson sec "$sec" >/dev/null 2>>"$errf" || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    4) return 1 ;;
+    *) return 3 ;;
+  esac
 }
 
 # 判断に渡す止まりの JSON を $STOP_DIR に書く（<子> <会話ログの JSON> <marked>）。detect_stopped と判断し直しが使う
@@ -2013,6 +2045,10 @@ cmd_wait() {
     is_num "$ownerwait" \
       || { echo "EPIC_DISPATCH_OWNER_WAIT_SEC must be a non-negative integer: $ownerwait" >&2; usage; }
   fi
+  if [ "$watchstop" -eq 1 ]; then
+    is_num "${EPIC_DISPATCH_OWNER_AWAY_SEC-3600}" \
+      || { echo "EPIC_DISPATCH_OWNER_AWAY_SEC must be a non-negative integer: ${EPIC_DISPATCH_OWNER_AWAY_SEC-}" >&2; usage; }
+  fi
   # --resolve は --watch-stopped（子 1 件以上）のときだけ働く。返事の送り方の設定は待つ前に確かめる
   [ "$watchstop" -eq 1 ] || resolve=""
   if [ -n "$resolve" ]; then
@@ -2031,7 +2067,7 @@ cmd_wait() {
     PARENT_TOP="$(toplevel)" || PARENT_TOP=""
   fi
 
-  local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f seen
+  local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f seen away
   # 長い待ちに入った時刻（SECONDS）。空は入っていない
   local lwstart="" pollfail
   # 止まりの JSON の置き場（子の引数を var_key にした名前で 1 ファイル。ポーリングごとに空にする）
@@ -2052,7 +2088,7 @@ cmd_wait() {
   fi
   SECONDS=0
   while :; do
-    closed=""; failed=""; marked=""; stopped=""; unrecorded=""; wsfail=0; : > "$errf"
+    closed=""; failed=""; marked=""; stopped=""; unrecorded=""; away=""; wsfail=0; : > "$errf"
     for n in "$@"; do
       rec=""
       if [ -n "$PARENT_TOP" ] && child_record "$PARENT_TOP" "$n" 2>/dev/null; then rec="$ES_HIT"; fi
@@ -2112,6 +2148,12 @@ cmd_wait() {
           0) stopped="$stopped $n" ;;
           3) wsfail=1 ;;
         esac
+        # 主が子のタブで打った返事待ちが長く続いたら、主に知らせる（子には何もしない）
+        detect_owner_away "$n" "$ES_HIT"
+        case $? in
+          0) away="$away $n" ;;
+          3) wsfail=1 ;;
+        esac
       done
     fi
     # --resolve: 止まった子ごとに判断し、通して記録できた子は出力から外す
@@ -2127,11 +2169,12 @@ cmd_wait() {
       done
       stopped="$still"
     fi
-    if [ -n "$closed" ] || [ -n "$marked" ] || [ -n "$stopped" ] || [ -n "$unrecorded" ]; then
+    if [ -n "$closed" ] || [ -n "$marked" ] || [ -n "$stopped" ] || [ -n "$unrecorded" ] || [ -n "$away" ]; then
       [ -n "$closed" ] && echo "closed${closed}"
       [ -n "$marked" ] && echo "done${marked}"
       [ -n "$stopped" ] && echo "stopped${stopped}"
       [ -n "$unrecorded" ] && echo "unrecorded${unrecorded}"
+      [ -n "$away" ] && echo "owner-away${away}"
       exit 0
     fi
     pollfail=0
