@@ -21,5 +21,5 @@
 ## Impact
 
 - `plugins/dev-workflow/skills/develop/references/epic.md`、`epic-loop.md`（文書のみ）
-- `plugins/dev-workflow/tests/develop-skill.bats`、`epic-dispatch.bats`（文書の検査を足す）
+- `plugins/dev-workflow/tests/develop-skill.bats`（文書の検査を足す）
 - `plugins/dev-workflow/changes/1647.md`（変更の記録）。常時注入の予算には触れない
