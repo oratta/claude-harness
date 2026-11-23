@@ -108,7 +108,8 @@ PY
     grep -qF "$term" "$REF" || { echo "missing: $term"; return 1; }
   done
   # CI 分類表や停止済み子の予約文そのものを複製しない。
-  ! grep -qE '^\|.*(settled|timeout|ready|escalate).*\|' "$REF"
+  run grep -qE '^\|.*(settled|timeout|ready|escalate).*\|' "$REF"
+  [ "$status" -ne 0 ]
 }
 
 @test "change record separates cost comparison from post merge observation" {
