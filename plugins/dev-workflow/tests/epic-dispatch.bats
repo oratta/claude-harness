@@ -9631,7 +9631,7 @@ help_env() {
 # owner-away（#1745）: put_turn の後に recorded_at を <秒> 前にする（<子> <秒>）
 age_turn() {
   local f; f="$(rec_of 1122 "$1")"
-  jq -c --arg t "$(date -u -r "$(( $(date +%s) - $2 ))" +%Y-%m-%dT%H:%M:%SZ)" '.turn_state.recorded_at = $t' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  jq -c --arg t "$(ago "$2")" '.turn_state.recorded_at = $t' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 }
 away_wait() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch-stopped 11; }
 no_touch() {
