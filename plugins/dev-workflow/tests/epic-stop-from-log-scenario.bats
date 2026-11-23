@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 #
-# 記録も印も無い止まりの検知（issue #1382 の受け入れ条件 1 件目。実機の子の止まり方の回帰）。
-# spec: dev-workflow-develop「wait は子の会話ログから止まった子を検知する」「親の側は子の発言の本文を公開のコメントに載せない」
-# 子が停止の記録も mark も残さずターンを終えた会話ログを置き、epic-dispatch.sh wait だけを当てる。
+# 状態記録による停止検知とログ本文の非公開契約（#1744）。
+# spec: dev-workflow-develop「wait は子の状態の記録だけで止まった子を検知する」「親の側は子の発言の本文を公開のコメントに載せない」
+# 状態記録の有無と会話ログを独立に用意し、epic-dispatch.sh wait を当てる。
 # 固定するのは stopped の検知、判断のコマンドに渡る止まりの JSON、子 issue のコメントの中身まで。判断の中身は対象外。
 # 実行: scripts/test.sh epic-stop-from-log-scenario
 # EPIC_STOP_SCENARIO_SCRIPT で対象のスクリプトを差し替えられる（スクリプトの写しを壊して落ちることを確かめるため）。
@@ -66,7 +66,22 @@ stub() {
 
 dispatch() { PATH="$STUB_BIN:$PATH" bash "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/stderr"; }
 
-@test "stop scenario: wait returns a child that left no record and no mark" {
+record_turn() {
+  jq '.turn_input={generation:1,session_id:"s1",sender:"parent",received_at:"2026-01-01T00:00:00Z",
+      transcript_path:"/tmp/child.jsonl",transcript_offset:0}
+    | .turn_state={generation:1,session_id:"s1",value:"主の返事待ち",summary:"確認待ち",recorded_at:"2026-01-01T00:00:01Z"}' \
+    "$RECORD" > "$RECORD.tmp" && mv "$RECORD.tmp" "$RECORD"
+}
+
+@test "stop scenario: a log alone never reaches the judge" {
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ ! -e "$STUB_CFG/judge_argc" ]
+  [ "$(jq -r .stop "$RECORD")" = '' ]
+}
+
+@test "stop scenario: wait returns a recorded parent wait with no mark" {
+  record_turn
   run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
@@ -76,6 +91,7 @@ dispatch() { PATH="$STUB_BIN:$PATH" bash "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/std
 }
 
 @test "stop scenario: --resolve hands the stop JSON to the judge" {
+  record_turn
   run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
@@ -86,10 +102,96 @@ dispatch() { PATH="$STUB_BIN:$PATH" bash "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/std
 }
 
 @test "stop scenario: an escalation posts the uuid and never the statement" {
+  record_turn
   run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
   [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: $SAID_UUID" ]
   [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
   ! grep -qF "$SECRET" "$STUB_CFG/comment_11" || return 1
+}
+
+@test "stop recovery: a missing uuid is filled without receiving or judging the turn again" {
+  record_turn
+  local projects="$CLAUDE_PROJECTS_DIR"
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/unavailable"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(jq -r .stop_uuid "$RECORD")" = '' ]
+  local received; received="$(jq -c '[.stop_turn,.stop_at]' "$RECORD")"
+  rm -f "$STUB_CFG/judge_argc"
+  export CLAUDE_PROJECTS_DIR="$projects"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(jq -r .stop_uuid "$RECORD")" = "$SAID_UUID" ]
+  [ "$(jq -c '[.stop_turn,.stop_at]' "$RECORD")" = "$received" ]
+  [ ! -e "$STUB_CFG/judge_argc" ]
+  run dispatch told 11 "$SAID_UUID"
+  [ "$status" -eq 0 ]; [ "$output" = 'told 11' ]
+  run dispatch dismiss 11
+  [ "$status" -eq 0 ]; [ "$output" = 'dismissed 11' ]
+}
+
+@test "stop recovery: another session cannot fill a missing uuid" {
+  record_turn
+  jq '.stop="stopped-seen" | .stop_uuid="" | .stop_turn={generation:1,session_id:"other"}
+    | .turn_input.session_id="other" | .turn_state.session_id="other"' "$RECORD" > "$RECORD.tmp"
+  mv "$RECORD.tmp" "$RECORD"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(jq -r .stop_uuid "$RECORD")" = '' ]
+}
+
+@test "stop types: float generations and offsets never reach stopped or the judge" {
+  local mutation
+  for mutation in '.turn_input.generation=1.0 | .turn_state.generation=1.0' '.turn_state.generation=1.0' '.turn_input.transcript_offset=0.0'; do
+    record_turn
+    jq "$mutation" "$RECORD" > "$RECORD.tmp" && mv "$RECORD.tmp" "$RECORD"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ ! -e "$STUB_CFG/judge_argc" ]
+  done
+}
+
+@test "stop legacy: stopped-seen without stop_turn is not received or judged again" {
+  record_turn
+  jq '.stop="stopped-seen" | .stop_uuid="old" | .stop_at="2026-01-01T00:00:02Z" | del(.stop_turn)' "$RECORD" > "$RECORD.tmp"
+  mv "$RECORD.tmp" "$RECORD"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(jq -r .stop_uuid "$RECORD")" = old ]
+  [ "$(jq -r .stop_at "$RECORD")" = '2026-01-01T00:00:02Z' ]
+  [ ! -e "$STUB_CFG/judge_argc" ]
+}
+
+@test "stop legacy: an owner input resumes stopped-seen without stop_turn" {
+  record_turn
+  jq '.stop="stopped-seen" | del(.stop_turn) | .turn_input.generation=2
+    | .turn_input.sender="owner" | .turn_state=null' "$RECORD" > "$RECORD.tmp"
+  mv "$RECORD.tmp" "$RECORD"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(jq -r .stop "$RECORD")" = resumed ]
+  [ ! -e "$STUB_CFG/judge_argc" ]
+}
+
+@test "stop resolve: read failures after detection preserve stopped output" {
+  record_turn
+  local failure original="$SCRIPT" copy="$BATS_TEST_TMPDIR/plugin"
+  mkdir -p "$copy"
+  cp -R "$PLUGIN_DIR/scripts" "$copy/scripts"
+  for failure in 'child_record() { return 3; }' 'es_read() { return 1; }'; do
+    python3 - "$original" "$copy/scripts/epic-dispatch.sh" "$failure" <<'PY'
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+text = text.replace('resolve_stopped() {', 'resolve_stopped() {\n  ' + sys.argv[3])
+pathlib.Path(sys.argv[2]).write_text(text)
+PY
+    SCRIPT="$copy/scripts/epic-dispatch.sh"
+    record_turn
+    jq '.stop="" | del(.stop_turn)' "$RECORD" > "$RECORD.tmp" && mv "$RECORD.tmp" "$RECORD"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+    [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+    [ ! -e "$STUB_CFG/judge_argc" ]
+  done
 }

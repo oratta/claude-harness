@@ -208,6 +208,7 @@ parent_fixture() {
   for text in "$marker" "$marker"$'\n状態: 作業報告 — 依存の完了待ち' "$marker"$'\r\n状態: 作業報告 — 依存の完了待ち  \r\n \r\n'; do
     printf 0 > "$STUB_CFG/ghcount_11"
     put_record 11
+    put_turn 11
     put_chat 11 s1 "$(said d1 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
     run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
     [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
@@ -223,6 +224,7 @@ parent_fixture() {
     log_resolve_ready
     printf 0 > "$STUB_CFG/ghcount_11"
     put_record 11
+    put_turn 11
     put_chat 11 s1 "$(said d1 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
     judge_says judge_out 問いではない 完了の報告 '' なし
     run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
@@ -457,6 +459,7 @@ SH
   padding="$(python3 -c 'print("x" * 8500)')"
   text=$'```\n'"$padding"$'\n```\n'"$marker"$'\n状態: 作業報告 — 待機'
   put_record 11
+  put_turn 11
   put_chat 11 s1 "$(said d1 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
   run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
@@ -467,11 +470,26 @@ SH
   printf 0 > "$STUB_CFG/ghcount_11"
   text=$'```\n'"$padding"$'\n'"$marker"$'\n状態: 作業報告 — 例'
   put_record 11
+  put_turn 11
   put_chat 11 s1 "$(said d2 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
   judge_says judge_out 問いではない 完了の報告 '' なし
   run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
   [ "$(rec_get 11 stop)" = resumed ]; [ "$(calls '^judge ')" -eq 1 ]
+}
+
+@test "dependency-wait: markers cannot promote missing owner or reporting state" {
+  parent_fixture
+  marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
+  for pair in missing 'owner 主の返事待ち' 'parent 作業報告'; do
+    printf 0 > "$STUB_CFG/ghcount_11"
+    put_record 11
+    [ "$pair" = missing ] || put_turn 11 $pair
+    put_chat 11 s1 "$(said d1 "$(ago 300)" "$marker")" "$(turn_end "$(ago 300)")"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
+  done
 }
 
 @test "session: unregistered ordinary inputs and Stop never claim the child" {
@@ -965,7 +983,7 @@ dep_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("dependen
   jq -e '.turn_state == null and .stop_uuid == "parent-uuid"' "$REC"
 }
 
-@test "dependency_wait: a parent without knowledge of the field reads the same result" {
+@test "dependency_wait: an owner-sent work report with the field stays excluded like a record without turn state" {
   parent_fixture
   marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
   for extra in none flag; do
@@ -978,8 +996,25 @@ dep_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("dependen
       mv "$f.tmp" "$f"
     fi
     put_chat 11 s1 "$(said d1 "$(ago 300)" "$marker"$'\n状態: 作業報告 — a')" "$(turn_end "$(ago 300)")"
+    # #1744: none has no turn state; flag is sender owner. Owner turns are never stop targets, and dependency_wait:true must not change that.
     run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
-    [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
-    [ "$(rec_get 11 stop)" = stopped-seen ]
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
   done
+}
+
+@test "dependency_wait: a parent-sent work report with the field is received as a dependency stop" {
+  parent_fixture
+  marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
+  printf 0 > "$STUB_CFG/ghcount_11"
+  put_record 11
+  f="$(rec_of 1122 11)"
+  jq '.turn_input={generation:1,session_id:"s1",sender:"parent",received_at:"2026-01-01T00:00:00Z",transcript_path:"/x",transcript_offset:0}
+      | .turn_state={generation:1,session_id:"s1",value:"作業報告",summary:"a",recorded_at:"2026-01-01T00:00:00Z",dependency_wait:true}' "$f" > "$f.tmp"
+  mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$marker"$'\n状態: 作業報告 — a')" "$(turn_end "$(ago 300)")"
+  # #1744: the pair of the owner case above; parent turns with dependency_wait:true are stops.
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
 }

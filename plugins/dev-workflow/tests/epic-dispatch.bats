@@ -96,7 +96,61 @@ put_record() {
   done
   f="$(rec_of "$(printf '%s' "$j" | jq -r .epic)" "$(printf '%s' "$j" | jq -r .child)")"
   mkdir -p "$(dirname "$f")"
+  # These legacy fixtures describe a stopped child; include its recorded turn explicitly.
+  case "$(printf '%s' "$j" | jq -r .stop)" in
+    stopped|stopped-seen)
+      j="$(printf '%s' "$j" | jq -c '.turn_input={generation:1,session_id:"s1",sender:"parent",
+        received_at:"2026-01-01T00:00:00Z",transcript_path:"/tmp/child.jsonl",transcript_offset:0}
+        | .turn_state={generation:1,session_id:"s1",value:"主の返事待ち",summary:"確認待ち",recorded_at:"2026-01-01T00:00:01Z"}
+        | if .stop == "stopped-seen" then .stop_turn={generation:1,session_id:"s1"} else . end')" ;;
+  esac
   printf '%s\n' "$j" > "$f"
+}
+
+# Explicit turn fixture: the hook's recorded input and terminal state, independent of logs/marks.
+put_turn() {
+  local f; f="$(rec_of 1122 "$1")"
+  jq -c --arg sender "${2:-parent}" --arg value "${3:-主の返事待ち}" --argjson gen "${4:-1}" '
+    .turn_input = {generation:$gen, session_id:"s1", sender:$sender,
+      received_at:"2026-01-01T00:00:00Z", transcript_path:"/tmp/child.jsonl", transcript_offset:0}
+    | .turn_state = {generation:$gen, session_id:"s1", value:$value, summary:"確認待ち",
+      recorded_at:"2026-01-01T00:00:01Z"}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+@test "wait recorded state: parent and startup waiting are detected without a log" {
+  make_stub orca
+  for sender in parent startup; do
+    put_record 11
+    put_turn 11 "$sender"
+    wait_stop
+    [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+  done
+}
+
+@test "wait recorded state: owner and nonwaiting states never become stops even with a mark and question" {
+  make_stub orca
+  for pair in 'owner 主の返事待ち' 'owner 作業報告' 'parent 作業報告' 'parent 完了' 'startup 完了'; do
+    put_record 11 stop=stopped
+    put_turn 11 $pair
+    put_chat 11 s1 "$(asked d1 "$(ago 300)")"
+    wait_stop
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  done
+}
+
+@test "wait recorded state: missing null malformed or mismatched extensions do not use marks or logs" {
+  make_stub orca
+  local mutation f
+  for mutation in 'del(.turn_input,.turn_state)' '.turn_state=null' '.turn_state=[]'     '.turn_input.generation=true' '.turn_state.generation=2' '.turn_state.session_id="other"'     '.turn_input.transcript_offset=-1' '.turn_input.transcript_path="relative"'     '.turn_state.summary=""' '.turn_state.summary="a\nb"' '.turn_state.recorded_at="2026-02-30T00:00:00Z"'; do
+    put_record 11 stop=stopped
+    put_turn 11
+    f="$(rec_of 1122 11)"
+    jq -c "$mutation" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    put_chat 11 s1 "$(asked d1 "$(ago 300)")"
+    wait_stop
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  done
 }
 
 # 記録のパス（<エピック o/r#E> <子 o/r#N>。既定はエピック oratta/claude-harness#1122 の子 <N> を番号だけで渡す形も可）
@@ -2936,6 +2990,7 @@ infer_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "marked 11 stopped" ]
   echo /work/parent > "$STUB_CFG/toplevel"
+  put_turn 11 parent 主の返事待ち 2
   run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
   [ "$status" -eq 0 ] || { echo "3rd: status=$status output=$output"; false; }
   [ "$output" = "stopped 11" ]
@@ -7330,187 +7385,90 @@ bg_note() { printf '{"type":"user","entrypoint":"cli","uuid":"n-%s","timestamp":
 asked() { printf '{"type":"assistant","entrypoint":"cli","uuid":"%s","timestamp":"%s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"どちらですか"}]}}]}}' "$1" "$2"; }
 wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch-stopped 11; }
 
-@test "wait log: a child with no record of a stop and no mark is returned with its uuid and the time" {
+@test "wait state: logs and marks alone never detect a stop" {
   make_stub orca
-  gh_seq 11 open
+  for stop in '' stopped stopped-seen resumed; do
+    put_record 11 "stop=$stop"
+    local f; f="$(rec_of 1122 11)"
+    jq 'del(.turn_input,.turn_state)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    put_chat 11 s1 "$(asked d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+    wait_stop
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  done
+}
+
+@test "wait state: logs supply uuid and text but not idle turn or background eligibility" {
+  make_stub orca
   put_record 11
-  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
-  run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
-  [ "$status" -eq 0 ]
-  [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop)" = stopped-seen ]
-  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  put_turn 11
+  put_chat 11 s1 "$(bg_start t1 "$(ago 2)")" "$(said d1 "$(ago 1)")"
+  wait_stop
+  [ "$output" = 'stopped 11' ]; [ "$(rec_get 11 stop_uuid)" = d1 ]
   [ "$(rec_get 11 stop_at)" != null ]
-  [ "$(calls "--comment epic-stopped-seen\$")" -eq 1 ]
 }
 
-@test "wait log: mid-turn, input after the statement, or a done record is not a stop" {
+@test "wait state: re-marking or changing log uuid cannot receive the same turn twice" {
   make_stub orca
   put_record 11
-  put_chat 11 s1 "$(said d1 "$(ago 300)")"
+  put_turn 11
   wait_stop
-  [ "$status" -eq 2 ]
-  [ -z "$(rec_get 11 stop)" ]
-  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(chat_line user "$(ago 290)" '続けて')"
+  [ "$output" = 'stopped 11' ]
+  local before f; before="$(rec_get 11 stop_at)"; f="$(rec_of 1122 11)"
+  jq '.stop="stopped"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(asked d2 "$(ago 1)")"
   wait_stop
-  [ "$status" -eq 2 ]
-  put_record 11 status=done
-  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  [ "$status" -eq 2 ]; [ "$(rec_get 11 stop_at)" = "$before" ]
+  put_turn 11 parent 主の返事待ち 2
   wait_stop
-  [ "$status" -eq 2 ]
-  [ -z "$(rec_get 11 stop)" ]
+  [ "$output" = 'stopped 11' ]; [ "$(rec_get 11 stop_uuid)" = d2 ]
 }
 
-@test "wait log: a background notification is not an input" {
-  make_stub orca
-  put_record 11
-  put_chat 11 s1 "$(bg_start t1 "$(ago 400)")" "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(bg_note t1 "$(ago 200)")"
-  wait_stop
-  [ "$output" = "stopped 11" ]
-}
-
-@test "wait log: a local command and a ! line are not inputs, so the stop stays pending" {
-  make_stub orca
-  put_record 11
-  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" \
-    "$(chat_line user "$(ago 200)" '<command-name>/mcp</command-name>')" \
-    "$(chat_line user "$(ago 200)" '<local-command-stdout>done</local-command-stdout>')" \
-    "$(chat_line user "$(ago 190)" '<bash-input>git status</bash-input>')" \
-    "$(chat_line user "$(ago 190)" '<bash-stdout>clean</bash-stdout>')"
-  wait_stop
-  [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = d1 ]
-  gh_seq 11 open
-  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
-  [ "$status" -eq 2 ]
-  [ "$(rec_get 11 stop)" = stopped-seen ]
-  run dispatch pending-owner 11
-  [ "$output" = "pending 11 d1" ]
-}
-
-@test "wait log: idle times depend on background tasks, an unanswered question does not wait, and bad values use the defaults" {
-  make_stub orca
-  put_record 11
-  put_chat 11 s1 "$(said d1 "$(ago 60)")" "$(turn_end "$(ago 60)")"
-  wait_stop
-  [ "$status" -eq 2 ]
-  EPIC_DISPATCH_STOP_IDLE_SEC=abc wait_stop
-  [ "$status" -eq 2 ]
-  EPIC_DISPATCH_STOP_IDLE_SEC=30 wait_stop
-  [ "$output" = "stopped 11" ]
-  put_record 11
-  put_chat 11 s1 "$(bg_start t1 "$(ago 700)")" "$(said d1 "$(ago 600)")" "$(turn_end "$(ago 600)")"
-  wait_stop
-  [ "$status" -eq 2 ]
-  put_chat 11 s1 "$(bg_start t1 "$(ago 2000)")" "$(said d1 "$(ago 1900)")" "$(turn_end "$(ago 1900)")"
-  wait_stop
-  [ "$output" = "stopped 11" ]
-  put_record 11
-  put_chat 11 s1 "$(chat_line assistant "$(ago 12)" '確認します' '{"uuid":"d0"}')" "$(asked d2 "$(ago 10)")"
-  wait_stop
-  [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = d2 ]
-}
-
-@test "wait log: subagent activity counts as the last activity" {
-  make_stub orca
-  put_record 11
-  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
-  d="$(dirname "$(ls "$BATS_TEST_TMPDIR"/projects/*/s1.jsonl)")"
-  mkdir -p "$d/s1/subagents"
-  chat_line assistant "$(ago 5)" '調査中' > "$d/s1/subagents/a.jsonl"
-  wait_stop
-  [ "$status" -eq 2 ]
-}
-
-@test "wait log: a marked child waits for the end of the turn, a question or the long idle time" {
-  make_stub orca
-  put_record 11 stop=stopped
-  put_chat 11 s1 "$(said d1 "$(ago 30)")"
-  wait_stop
-  [ "$status" -eq 2 ]
-  [ "$(rec_get 11 stop)" = stopped ]
-  put_chat 11 s1 "$(said d1 "$(ago 5)")" "$(turn_end "$(ago 5)")"
-  wait_stop
-  [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = d1 ]
-  put_record 11 stop=stopped
-  put_chat 11 s1 "$(said d2 "$(ago 2000)")"
-  wait_stop
-  [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = d2 ]
-}
-
-@test "wait log: a marked child with no readable log is returned with an empty uuid" {
-  make_stub orca
-  put_record 11 stop=stopped
-  wait_stop
-  [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop)" = stopped-seen ]
-  [ -z "$(rec_get 11 stop_uuid)" ]
-}
-
-@test "wait log: the same statement is not judged twice, and an empty stop_uuid is filled silently" {
-  make_stub orca
-  put_record 11 stop=resumed stop_uuid=d1
-  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
-  wait_stop
-  [ "$status" -eq 2 ]
-  [ "$(rec_get 11 stop)" = resumed ]
-  put_record 11 stop=stopped-seen stop_at=2026-01-01T00:00:00Z
-  wait_stop
-  [ "$status" -eq 2 ]
-  [ "$(rec_get 11 stop_uuid)" = d1 ]
-  [ "$(rec_get 11 stop_at)" = 2026-01-01T00:00:00Z ]
-  [ "$(rec_get 11 stop)" = stopped-seen ]
-}
-
-@test "wait log: a log uuid outside [0-9a-f-] reaches neither the record nor pending-owner" {
+@test "wait state: malformed uuid is never propagated" {
   make_stub orca
   set_current 400
-  put_record 11 stop=stopped-seen
+  put_record 11
+  put_turn 11
   put_chat 11 s1 "$(said 'a-1;pending-12' "$(ago 300)")" "$(turn_end "$(ago 300)")"
   wait_stop
-  [ "$status" -eq 2 ]
-  [ "$(rec_get 11 stop_uuid)" = null ]
+  [ "$output" = 'stopped 11' ]; [ -z "$(rec_get 11 stop_uuid)" ]
   run dispatch pending-owner 11
-  [ "$status" -eq 0 ]
   [ "$output" = 'pending 11' ]
 }
 
-@test "wait log: movement after the stop is written as resumed, for positional and --watch-done children" {
+@test "wait state: a new owner input with null state resumes without logs or uuid" {
   make_stub orca
-  put_record 11 stop=stopped-seen stop_uuid=d1
-  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" "$(chat_line user "$(ago 200)" '続けて')"
+  put_record 11 stop=stopped-seen
+  put_turn 11 owner 作業報告 2
+  local f; f="$(rec_of 1122 11)"
+  jq '.turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
   wait_stop
-  [ "$status" -eq 2 ]
-  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$status" -eq 2 ]; [ "$(rec_get 11 stop)" = resumed ]
   [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
-  put_record 12 stop=stopped-seen stop_uuid=d1
-  put_chat 12 s1 "$(said d1 "$(ago 300)")" "$(said d2 "$(ago 10)")"
-  run dispatch wait --interval 0 --timeout 0 --watch-done 12
-  [ "$(rec_get 12 stop)" = resumed ]
 }
 
-@test "wait log: a keepalive round trip is not movement" {
+@test "wait state: a legacy stopped-seen is resumed by a later parent input and its new question is received (P4-F1)" {
   make_stub orca
-  put_record 11 stop=stopped-seen stop_uuid=d1
-  put_chat 11 s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")" \
-    "$(chat_line user "$(ago 200)" "$(render_keepalive)" '{"uuid":"k1"}')" \
-    "$(chat_line assistant "$(ago 190)" "$(keepalive_reply)" '{"uuid":"k2"}')"
+  # Legacy record written before stop_turn existed: built without the fixture's stop_turn completion.
+  put_record 11
+  put_turn 11 parent 主の返事待ち 2
+  local f; f="$(rec_of 1122 11)"
+  jq '.stop="stopped-seen" | .stop_uuid="old" | .stop_at="2026-01-01T00:00:02Z" | del(.stop_turn)
+    | .turn_input.received_at="2026-01-01T00:00:05Z" | .turn_state.recorded_at="2026-01-01T00:00:06Z"' \
+    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  [ "$(jq -c '.stop_turn' "$f")" = null ]
   wait_stop
-  [ "$status" -eq 2 ]
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
   [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(jq -c '.stop_turn' "$f")" = '{"generation":2,"session_id":"s1"}' ]
 }
 
-@test "wait log: restating after a background notification resumes first and is a new stop" {
+@test "wait state: log movement alone does not resume a received turn" {
   make_stub orca
   put_record 11 stop=stopped-seen stop_uuid=d1
-  put_chat 11 s1 "$(said d1 "$(ago 400)")" "$(turn_end "$(ago 400)")" "$(bg_note t1 "$(ago 300)")" "$(said d2 "$(ago 290)")" "$(turn_end "$(ago 290)")"
+  put_chat 11 s1 "$(said d2 "$(ago 1)")" "$(chat_line user "$(ago 1)" '続けて')"
   wait_stop
-  [ "$output" = "stopped 11" ]
-  [ "$(rec_get 11 stop_uuid)" = d2 ]
-  [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
+  [ "$status" -eq 2 ]; [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
 }
 
 # 記録も印も無い子 11 が会話ログで止まっていて端末が 1 つある環境（2 回目のポーリングで子 11 が閉じる）
@@ -7520,6 +7478,7 @@ log_resolve_ready() {
   set_current 400
   gh_seq 11 open closed
   put_record 11
+  put_turn 11
   set_terms 11 term-a-11
   put_chat 11 s1 "$(said d1 "$(ago 300)" 'ここに秘密の本文')" "$(turn_end "$(ago 300)")"
 }
@@ -9168,6 +9127,14 @@ chat_on_poll() {
   printf 'printf "%%s\\n" %s >> %q\n' "$(printf '%q ' "$@")" "$dir/s1.jsonl" > "$STUB_CFG/hook_${n}_$c"
 }
 
+turn_on_poll() {
+  local n="$1" c="$2" sender="$3" gen="$4" f
+  f="$(rec_of 1122 "$n")"
+  printf 'jq %q %q > %q.tmp && mv %q.tmp %q\n' \
+    ".turn_input.generation=$gen | .turn_input.sender=\"$sender\" | .turn_state=$(if [ "$sender" = owner ]; then echo null; else printf '{generation:%s,session_id:"s1",value:"主の返事待ち",summary:"新しい問い",recorded_at:"2026-01-01T00:00:02Z"}' "$gen"; fi)" \
+    "$f" "$f" "$f" "$f" >> "$STUB_CFG/hook_${n}_$c"
+}
+
 @test "wait owner-wait: only told stops do not time out at the limit and end with expired" {
   told_ready 11
   EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
@@ -9219,6 +9186,7 @@ chat_on_poll() {
 @test "wait owner-wait: a new question during the long wait ends with stopped" {
   told_ready 11
   chat_on_poll 11 4 "$(asked d2 "$(ago 1)")"
+  turn_on_poll 11 4 parent 2
   EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
@@ -9227,7 +9195,7 @@ chat_on_poll() {
 
 @test "wait owner-wait: an owner reply after the usual limit ends with timeout" {
   told_ready 11
-  chat_on_poll 11 4 "$(chat_line user "$(ago 1)" 'A でお願いします')"
+  turn_on_poll 11 4 owner 2
   EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
   [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "timeout 11" ]
@@ -9463,6 +9431,7 @@ rejudge_ready() {
   make_judge
   set_current 400
   put_record 11 stop=resumed
+  put_turn 11
   set_terms 11 term-a-11
   gh_seq 11 open
   gh_seq 22 open closed
@@ -9640,6 +9609,384 @@ help_env() {
 @test "header comment points at epic-loop.md, not the removed epic.md section" {
   ! sed -n 1,5p "$SCRIPT" | grep -qF 'epic.md「回し方」' || return 1
   sed -n 1,5p "$SCRIPT" | grep -qF 'epic-loop.md'
+}
+
+@test "wait intervention: owner turns with large old logs never judge send close or restart" {
+  for value in 主の返事待ち 作業報告; do
+    resolve_pass
+    put_transcript 90 150001
+    put_turn 11 owner "$value"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+  done
+}
+
+@test "wait intervention: an owner input or invalid state during judgement discards a pass" {
+  local mutation f
+  for mutation in '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' '.turn_state=null' '.turn_input.session_id="new" | .turn_state.session_id="new"'; do
+    resolve_pass
+    put_transcript 90 150001
+    f="$(rec_of 1122 11)"
+    printf 'jq %q %q > %q.tmp && mv %q.tmp %q\n' "$mutation" "$f" "$f" "$f" "$f" > "$STUB_CFG/judge_hook"
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$output" = 'closed 11' ]
+    [ "$(calls '^judge ')" -eq 1 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    [ ! -e "$STUB_CFG/comment_400" ]
+  done
+}
+
+@test "wait intervention: keepalive cannot bypass owner or invalid state" {
+  keepalive_wait_setup
+  for value in 主の返事待ち 作業報告; do
+    reset_keepalive_poll
+    put_turn 11 owner "$value"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+  done
+}
+
+@test "wait intervention: material changes cannot rejudge owner or invalid turns" {
+  rejudge_ready 11
+  put_turn 11 owner 主の返事待ち
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  change_on_poll 11 2 2026-02-01T00:00:00Z changed '[]'
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "wait owner-wait: log-only question or owner input stays received until expired" {
+  local row
+  for row in "$(asked d2 "$(ago 1)")" "$(chat_line user "$(ago 1)" 'A でお願いします')"; do
+    told_ready 11
+    printf 0 > "$STUB_CFG/ghcount_11"
+    chat_on_poll 11 2 "$row"
+    EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+    [ "$status" -eq 0 ]; [ "$output" = 'expired 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]; [ "$(rec_get 11 stop_uuid)" = d1 ]
+  done
+}
+
+@test "wait intervention: every nonpass result leaves large old terminals untouched" {
+  local verdict
+  for verdict in escalation no-question failure malformed empty; do
+    resolve_pass
+    put_transcript 90 150001
+    case "$verdict" in
+      escalation) judge_says judge_out 主に上げる 要確認 '' ;;
+      no-question) judge_says judge_out 問いではない 報告 '' ;;
+      failure) echo 1 > "$STUB_CFG/judge_exit" ;;
+      malformed) echo broken > "$STUB_CFG/judge_out" ;;
+      empty) judge_says judge_out 通す 範囲内 '' ;;
+    esac
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ]
+    [ "$(calls '^judge ')" -eq 1 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    [ ! -e "$STUB_CFG/comment_400" ]
+  done
+}
+
+@test "wait state: a new input at receipt lock cannot accept the stale stop" {
+  make_stub orca
+  put_record 11
+  put_turn 11
+  local f; f="$(rec_of 1122 11)"
+  cat > "$STUB_BIN/mkdir" <<EOF_STUB
+#!/bin/bash
+if [ "\$1" = "$f.lock" ]; then
+  jq '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+fi
+/bin/mkdir "\$@"
+EOF_STUB
+  chmod +x "$STUB_BIN/mkdir"
+  wait_stop
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop)" = '' ]; [ "$(rec_get 11 stop_turn)" = null ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "keepalive recovery: filling an empty received uuid enables told and keepalive" {
+  keepalive_wait_setup
+  local f dir
+  f="$(rec_of 1122 11)"
+  jq '.stop_uuid=""' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  jq -c 'if .uuid != null then .message.content="元の質問？" else . end' "$dir/s.jsonl" > "$dir/s1.jsonl"
+  rm -f "$dir/s.jsonl"
+  gh_seq 11 open
+  run dispatch wait --watch-stopped --interval 0 --timeout 0 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop_uuid)" = "$MAIN_UUID" ]
+  run dispatch told 11 "$MAIN_UUID"
+  [ "$status" -eq 0 ]; [ "$output" = 'told 11' ]
+  gh_seq 11 open closed
+  reset_keepalive_poll
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+# P3-F1 recovery (#1744): a parent-started work report saved with dependency_wait:true
+# is received from the state record alone and restarted with reply --as parent.
+@test "dependency wait: real child report wakes the parent and restarts after the dependency closes (P3-F1)" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11
+  set_terms 11 term-a-11
+  local wt="$BATS_TEST_TMPDIR/work/issue-11" log="$BATS_TEST_TMPDIR/child.jsonl"
+  local dep_url='https://github.com/oratta/claude-harness/issues/22' text payload
+  git init -q "$wt"
+  wt="$(cd "$wt" && pwd -P)"
+  local f; f="$(rec_of 1122 11)"
+  jq --arg w "$wt" '.worktree=$w' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  # #1766: the hook records only registered sessions, so the child's startup input registers s1 first.
+  payload="$(jq -cn --arg w "$wt" --arg l "$log" '{hook_event_name:"UserPromptSubmit",cwd:$w,
+    session_id:"s1",transcript_path:$l,prompt:"/develop #11 （エピック #1122 の子。親ワークツリー /parent から Orca で起動）"}')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ "$(rec_get 11 turn_input.sender)" = startup ]
+  payload="$(printf '%s' "$payload" | jq -c '.prompt="親エピック #400 の判断: 続ける"')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ "$(rec_get 11 turn_input.sender)" = parent ]
+  printf '%s\n' '{"id":22,"number":22,"state":"open"}' > "$STUB_CFG/dependency_22"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by -X POST -F issue_id=22
+  [ "$status" -eq 0 ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]; [ "$(printf '%s' "$output" | jq '.[0].id')" -eq 22 ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh issue comment 11 --body "$(printf '子の停止: 依存待ち\n依存先: %s\n待つ理由: 前提の修正\n再開条件: 前提の完了\n再開に要る途中経過: commit aaa111\n再開手順: ゲートを取り直す' "$dep_url")"
+  [ "$status" -eq 0 ]
+  text="$(printf '登録と途中経過を保存した。\n止まった理由: 依存待ち: %s\n状態: 作業報告 — 前提の完了後に再開する' "$dep_url")"
+  jq -cn --arg text "$text" '{type:"assistant",sessionId:"s1",message:{role:"assistant",content:$text}}' > "$log"
+  payload="$(printf '%s' "$payload" | jq -c --arg text "$text" '.hook_event_name="Stop" | .last_assistant_message=$text')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  [ "$(rec_get 11 turn_state.value)" = 作業報告 ]
+  [ "$(jq -c '.turn_state.dependency_wait' "$f")" = true ]
+  gh_seq 11 open
+  gh_seq 22 open closed
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(jq -c '.stop_turn' "$f")" = '{"generation":2,"session_id":"s1"}' ]
+  # The same generation is never received twice.
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  case "$output" in 'pending 11'|'pending 11 '*) ;; *) echo "$output"; false ;; esac
+  # The prerequisite closes through the existing wait closing notification.
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 22' ]
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 22' ]
+  jq '.state="closed" | .state_reason="completed"' "$STUB_CFG/registered_dependency" > "$STUB_CFG/closed_dependency"
+  mv "$STUB_CFG/closed_dependency" "$STUB_CFG/registered_dependency"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]; [ "$(printf '%s' "$output" | jq -r '.[0].state_reason')" = completed ]
+  run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
+  [ "$status" -eq 0 ]; [ "$output" = 'relaunched 11' ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" '/develop #11 '
+  grep -qF '依存が解けたので再開する' "$STUB_CFG/sent_term-11"
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 1 ]
+}
+
+# #1744: set turn_state.dependency_wait on child <N> to a JSON value, or delete it with "absent".
+set_dep() {
+  local f; f="$(rec_of 1122 "$1")"
+  if [ "$2" = absent ]; then
+    jq 'del(.turn_state.dependency_wait)' "$f" > "$f.tmp"
+  else
+    jq --argjson v "$2" '.turn_state.dependency_wait = $v' "$f" > "$f.tmp"
+  fi
+  mv "$f.tmp" "$f"
+}
+
+@test "dependency wait state: only boolean true on a parent work report is a stop; others never judge" {
+  make_stub orca
+  make_judge
+  set_current 400
+  local v
+  for v in absent false '"true"' 1 null '[]' '{}'; do
+    put_record 11
+    put_turn 11 parent 作業報告
+    set_dep 11 "$v"
+    gh_seq 11 open
+    : > "$STUB_LOG"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 2 ] || { echo "v=$v $output"; false; }
+    [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal')" -eq 0 ]
+  done
+}
+
+@test "dependency wait state: owner questions pass with absent or false and are excluded by non-boolean" {
+  make_stub orca
+  make_judge
+  set_current 400
+  local v
+  for v in absent false; do
+    put_record 11
+    put_turn 11 parent 主の返事待ち
+    set_dep 11 "$v"
+    wait_stop
+    [ "$status" -eq 0 ] || { echo "v=$v $output"; false; }
+    [ "$output" = 'stopped 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+  done
+  for v in '"true"' 1 null '[]' '{}'; do
+    put_record 11
+    put_turn 11 parent 主の返事待ち
+    set_dep 11 "$v"
+    gh_seq 11 open
+    : > "$STUB_LOG"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 2 ] || { echo "v=$v $output"; false; }
+    [ "$output" = 'timeout 11' ]
+    [ "$(rec_get 11 turn_state.value)" = 主の返事待ち ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal')" -eq 0 ]
+  done
+}
+
+@test "dependency wait state: a dependency stop is received without a log and never judged" {
+  make_stub orca
+  make_judge
+  set_current 400
+  local sender
+  for sender in parent startup; do
+    put_record 11
+    put_turn 11 "$sender" 作業報告
+    set_dep 11 true
+    gh_seq 11 open
+    : > "$STUB_LOG"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal')" -eq 0 ]
+    run dispatch pending-owner 11
+    [ "$status" -eq 0 ]; [ "$output" = 'pending 11' ]
+  done
+}
+
+@test "dependency wait state: pending-owner keeps a received dependency stop even when the log moved" {
+  make_stub orca
+  set_current 400
+  set_terms 11 term-a-11
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_turn 11 parent 作業報告
+  set_dep 11 true
+  local f; f="$(rec_of 1122 11)"
+  jq '.stop_turn={generation:1,session_id:"s1"}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(said d1 "$(ago 300)" 'a')" "$(said d2 "$(ago 200)" 'b')" "$(turn_end "$(ago 200)")"
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ "$output" = 'pending 11 d1' ]
+  # reply --as parent does not drop the valid dependency stop because of the moved log either.
+  run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
+  [ "$status" -eq 0 ]; [ "$output" = 'relaunched 11' ]
+  jq '.stop="stopped-seen"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  # A changed generation is not restored from the old stop.
+  jq '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "dependency wait state: owner turns with dependency_wait true and large old logs never intervene" {
+  local value
+  for value in 主の返事待ち 作業報告; do
+    resolve_pass
+    put_transcript 90 150001
+    put_turn 11 owner "$value"
+    set_dep 11 true
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+  done
+}
+
+@test "dependency wait state: an owner input after receipt makes reply --as parent skip without a log" {
+  make_stub orca
+  set_current 400
+  set_terms 11 term-a-11
+  put_record 11
+  put_turn 11 parent 作業報告
+  set_dep 11 true
+  wait_stop
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  local f; f="$(rec_of 1122 11)"
+  jq '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  : > "$STUB_LOG"
+  run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped 11 not-stopped' ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  # The next wait records the resume; the old stop is not restored as a dependency stop.
+  wait_stop
+  [ "$(rec_get 11 stop)" = resumed ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "dependency wait state: keepalive does not poke a dependency stop" {
+  keepalive_wait_setup
+  local f; f="$(rec_of 1122 11)"
+  jq '.turn_state.value="作業報告" | .turn_state.dependency_wait=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  reset_keepalive_poll
+  keepalive_chat 3000
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  case "$(jq -r '.keepalive' "$f")" in *' skipped not-stopped') ;; *) jq -r .keepalive "$f"; false ;; esac
+}
+
+@test "dependency wait state: material changes do not rejudge a dependency stop" {
+  rejudge_ready 11
+  local f; f="$(rec_of 1122 11)"
+  jq '.turn_state.value="作業報告" | .turn_state.dependency_wait=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'A でお願いします')]"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "dependency wait state: an old parent work report without the field is not supplemented from log or comments" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11
+  put_turn 11 parent 作業報告
+  local dep_url='https://github.com/oratta/claude-harness/issues/22'
+  printf '%s\n' '{"id":22,"number":22,"state":"open"}' > "$STUB_CFG/dependency_22"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by -X POST -F issue_id=22
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh issue comment 11 --body "$(printf '子の停止: 依存待ち\n依存先: %s' "$dep_url")"
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '止まった理由: 依存待ち: %s\n状態: 作業報告 — 待つ' "$dep_url")")" "$(turn_end "$(ago 300)")"
+  gh_seq 11 open
+  : > "$STUB_LOG"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal')" -eq 0 ]
 }
 
 # #1742: direct replies share wait --resolve's size/time decision.
