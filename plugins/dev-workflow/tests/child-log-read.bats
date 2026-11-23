@@ -293,3 +293,18 @@ main_row() { # <ファイル> <uuid> <時刻> [<entrypoint>] [<isSidechain>]
   run python3 "$READER" --main-log "$BATS_TEST_TMPDIR/none" "$MAINU"
   [ "$status" -eq 1 ]
 }
+
+@test "text_at is the time of the child's text, while at moves to the AskUserQuestion that follows it" {
+  { child c1 2026-10-30T00:01:00.000Z '聞きます'
+    tool_use a1 2026-10-30T00:01:05.000Z tu1 AskUserQuestion '{questions: [{question: "A にしますか"}]}'; } > "$LOG"
+  [ "$(field .at)" = 2026-10-30T00:01:05.000Z ]
+  [ "$(field .text_at)" = 2026-10-30T00:01:00.000Z ]
+}
+
+@test "text_at equals at when there is no question tool, and is empty without a child statement" {
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'
+    child c1 2026-10-30T00:01:00.000Z '続けますか'; } > "$LOG"
+  [ "$(field .text_at)" = 2026-10-30T00:01:00.000Z ]
+  { user d0 2026-10-30T00:00:00.000Z 'はじめて'; } > "$LOG"
+  [ "$(field .text_at)" = '' ]
+}

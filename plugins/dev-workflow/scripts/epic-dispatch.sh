@@ -1614,15 +1614,35 @@ try:
     last_request = None
     owner = question = None
     pending = False
+    rows = []
     for line in open(files[0], encoding="utf-8"):
         try: d = json.loads(line)
         except ValueError: continue
+        # child-log-read.py の read_rows と同じ読み方（辞書で、type が user・assistant・system・queue-operation の行だけ）
+        if isinstance(d, dict) and d.get("type") in ("user", "assistant", "system", "queue-operation"): rows.append(d)
+    def not_input(d, content, i):
+        # Not the owner's reply (same reading as child-log-read.py is_notification / NOT_INPUT_PREFIXES / local_command):
+        # background task notifications, ! lines and their output, and a command line Claude Code handled itself.
+        origin = d.get("origin")
+        if isinstance(origin, dict) and origin.get("kind") == "task-notification": return True
+        st = content.lstrip()
+        if st.startswith(("<task-notification", "<local-command-", "<bash-input>", "<bash-stdout>", "<bash-stderr>")): return True
+        if "<command-name>" in st:
+            for e in rows[i + 1:]:
+                if not isinstance(e, dict) or e.get("type") == "queue-operation" or e.get("isSidechain"): continue
+                if e.get("type") == "system": return e.get("subtype") == "local_command"
+                m = e.get("message")
+                following = text_of(m.get("content")) if isinstance(m, dict) else ""
+                return e.get("type") == "user" and following.lstrip().startswith("<local-command-")
+        return False
+    for i, d in enumerate(rows):
         if not isinstance(d, dict) or d.get("isSidechain") or d.get("isMeta"): continue
         msg = d.get("message")
         if not isinstance(msg, dict): continue
         t = stamp(d.get("timestamp"))
         content = text_of(msg.get("content"))
         if d.get("type") == "user" and content.strip():
+            if not_input(d, content, i): continue
             if content == os.environ["KEEPALIVE_TEXT"]:
                 pending = True
             else:
@@ -1932,7 +1952,7 @@ rj_store() { printf '%s %s\n' "$2" "$3" > "$(rj_key "$1")"; }
 rejudge_init() {
   local epic="$1" k api snap ua
   shift
-  [ -n "$RJ_DIR" ] || RJ_DIR="$(mktemp -d)"
+  [ -n "$RJ_DIR" ] || RJ_DIR="$(mktemp -d)" || { echo "could not create a temporary directory" >&2; exit 1; }
   rm -f "$RJ_DIR"/*
   for k in epic "$@"; do
     api="$(rj_api "$k" "$epic")"
@@ -2071,7 +2091,9 @@ cmd_wait() {
   # 長い待ちに入った時刻（SECONDS）。空は入っていない
   local lwstart="" pollfail
   # 止まりの JSON の置き場（子の引数を var_key にした名前で 1 ファイル。ポーリングごとに空にする）
-  local errf; errf="$(mktemp)"; STOP_DIR="$(mktemp -d)"; trap 'rm -f "$errf"; rm -rf "$STOP_DIR" ${RJ_DIR:+"$RJ_DIR"}' EXIT
+  STOP_DIR="$(mktemp -d)" || { echo "could not create a temporary directory" >&2; exit 1; }
+  local errf; errf="$(mktemp)"
+  trap 'rm -f "$errf"; rm -rf "$STOP_DIR" ${RJ_DIR:+"$RJ_DIR"}' EXIT
   # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
   # 1 時間か判定できなければ 3000（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
   # 起動の時点で 1 回だけ決める（待つ間は親がリクエストを出さないので変わらない）。references/reply-after-idle.md
@@ -2364,7 +2386,7 @@ def col(at, text):
     return (t.astimezone(JST).strftime("%Y-%m-%d %H:%M"), " ".join(text.split())[:80] or "-")
 
 owner = log["owner"] or {"at": "", "text": ""}
-print("\t".join(col(owner["at"], owner["text"]) + col(log["at"], log["text"])))
+print("\t".join(col(owner["at"], owner["text"]) + col(log["text_at"], log["text"])))
 ' 2>/dev/null
 }
 

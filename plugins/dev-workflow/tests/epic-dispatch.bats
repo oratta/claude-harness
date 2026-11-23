@@ -7153,6 +7153,64 @@ chat_line() {
   [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
 }
 
+@test "child-log: the child time is the time of the text, not of the AskUserQuestion that follows it" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z 'はじめて')" \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z '聞きます')" \
+    '{"type":"assistant","entrypoint":"cli","uuid":"a1","timestamp":"2026-10-26T06:30:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"AskUserQuestion","input":{"questions":[{"question":"A にしますか"}]}}]}}'
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '11\t2026-10-26 15:00\tはじめて\t2026-10-26 15:01\t聞きます')" ]
+}
+
+# mktemp -d を失敗させ、rm は呼ばれた引数を記録する。ルート直下 1 階層のパス（/* の展開）を受けたら本物の rm は呼ばない
+mktemp_fail_stubs() { # <何回目の mktemp -d から失敗するか>
+  cat > "$STUB_BIN/mktemp" <<'STUB'
+#!/bin/bash
+case " $* " in
+  *" -d "*)
+    n=$(( $(cat "$BATS_TEST_TMPDIR/mktemp_d.count" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$BATS_TEST_TMPDIR/mktemp_d.count"
+    [ "$n" -lt "$MKTEMP_FAIL_FROM" ] || exit 1 ;;
+esac
+exec /usr/bin/mktemp "$@"
+STUB
+  cat > "$STUB_BIN/rm" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "$BATS_TEST_TMPDIR/rm.log"
+for a in "$@"; do
+  case "$a" in -*) ;; *) if printf '%s' "$a" | grep -qE '^/[^/]+$'; then exit 0; fi ;; esac
+done
+exec /bin/rm "$@"
+STUB
+  chmod +x "$STUB_BIN/mktemp" "$STUB_BIN/rm"
+  export MKTEMP_FAIL_FROM="$1"
+  : > "$BATS_TEST_TMPDIR/rm.log"
+  rm -f "$BATS_TEST_TMPDIR/mktemp_d.count"
+}
+
+@test "wait: when the first mktemp -d fails it stops with a message and runs no rm at all" {
+  keepalive_wait_setup
+  mktemp_fail_stubs 1
+  run dispatch wait --watch-stopped --interval 0 --timeout 0 11
+  [ "$status" -eq 1 ] || return 1
+  grep -qF 'could not create a temporary directory' "$BATS_TEST_TMPDIR/stderr" || return 1
+  [ ! -s "$BATS_TEST_TMPDIR/rm.log" ] || return 1
+}
+
+@test "wait --resolve: when the mktemp -d for the rejudge directory fails it stops and never removes a glob of the root" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  mktemp_fail_stubs 2
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 1 ] || return 1
+  grep -qF 'could not create a temporary directory' "$BATS_TEST_TMPDIR/stderr" || return 1
+  ! grep -qE '(^| )/[^/ ]+( |$)' "$BATS_TEST_TMPDIR/rm.log" || return 1
+}
+
 @test "child-log: a parent judgment reply is not an owner message but a relayed owner reply is" {
   make_stub orca
   set_current 400
@@ -8893,6 +8951,46 @@ open(p, 'w').write(''.join(json.dumps(r)+'\n' for r in rows))
 PYCODE
   keepalive_wait_run
   [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped cache-future"
+}
+
+# 質問のあとに足す主の側の行（時刻は質問のあと・今より前）。声かけの判定が主の返事に数えるかを見る
+keepalive_append_user() { # <本文> [追加の JSON 項目]
+  local dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  chat_line user "$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 3900))" '$t | todate')" "$1" "${2-}" >> "$dir/s.jsonl"
+}
+
+@test "keepalive wait: background task notifications and local command lines are not the owner's reply, a real line is" {
+  keepalive_wait_setup
+  local mode
+  for mode in notification-origin notification-text bang local-command-output command-name-mcp real; do
+    keepalive_chat 3000
+    case "$mode" in
+      notification-origin) keepalive_append_user '<task-notification><task-id>b1</task-id></task-notification>' '{"origin":{"kind":"task-notification"}}' ;;
+      notification-text) keepalive_append_user '<task-notification><task-id>b2</task-id></task-notification>' ;;
+      bang) keepalive_append_user '<bash-input>git status</bash-input>'; keepalive_append_user '<bash-stdout>clean</bash-stdout><bash-stderr></bash-stderr>' ;;
+      local-command-output) keepalive_append_user '<local-command-stdout>done</local-command-stdout>' ;;
+      command-name-mcp)
+        keepalive_append_user '<command-name>/mcp</command-name>
+<command-message>mcp</command-message>
+<command-args></command-args>'
+        keepalive_append_user '<local-command-stdout>MCP dialog dismissed</local-command-stdout>' ;;
+      real) keepalive_append_user 'こちらで進めて' ;;
+    esac
+    keepalive_wait_run
+    if [ "$mode" = real ]; then
+      [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped answered"
+    else
+      [ "$(calls '^orca terminal send ')" -eq 1 ] || { echo "mode=$mode"; return 1; }
+    fi
+  done
+}
+
+@test "keepalive wait: a slash command sent to the model (no local output after it) still counts as the owner's reply" {
+  keepalive_wait_setup
+  keepalive_append_user '<command-name>/dev-workflow:develop</command-name>
+<command-args>11</command-args>'
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped answered"
 }
 
 @test "keepalive wait: the record carries why nothing was sent (dialog, expired, answered, not-stopped, no-session)" {
