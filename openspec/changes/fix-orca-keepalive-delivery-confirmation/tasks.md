@@ -12,10 +12,10 @@
 
 ## 3. 統合検証
 
-- [ ] 3.1 `bash -n plugins/dev-workflow/scripts/epic-launch-orca.sh`、`shellcheck --severity=warning plugins/dev-workflow/scripts/epic-launch-orca.sh`、`bats plugins/dev-workflow/tests/epic-dispatch.bats`、`openspec validate fix-orca-keepalive-delivery-confirmation --type change --strict` を実行し、各 exit 0 を確認する。tmux・起動/reply・dispatch の既存の出力や結果記録を壊していないことも既存統合テストで確認する。触る範囲: plugins/dev-workflow/scripts/epic-launch-orca.sh:111-268、plugins/dev-workflow/tests/epic-dispatch.bats:1-9706（統合検証のみ）、openspec/changes/fix-orca-keepalive-delivery-confirmation/（artifact 検証のみ）
+- [x] 3.1 `bash -n plugins/dev-workflow/scripts/epic-launch-orca.sh`、`shellcheck --severity=warning plugins/dev-workflow/scripts/epic-launch-orca.sh`、`bats plugins/dev-workflow/tests/epic-dispatch.bats`、`openspec validate fix-orca-keepalive-delivery-confirmation --type change --strict` を実行し、各 exit 0 を確認する。tmux・起動/reply・dispatch の既存の出力や結果記録を壊していないことも既存統合テストで確認する。触る範囲: plugins/dev-workflow/scripts/epic-launch-orca.sh:111-268、plugins/dev-workflow/tests/epic-dispatch.bats:1-9706（統合検証のみ）、openspec/changes/fix-orca-keepalive-delivery-confirmation/（artifact 検証のみ）
 
 ## Workflow follow-up
 
-- 実装開始には独立仕様レビューの APPROVE が必要。本工程は仕様作成までであり、上の実装タスクは未実行。
+- 独立仕様レビュー R1 の APPROVE 後に上の実装タスクを実行し、関連5ファイルの913件・静的検査・OpenSpec strict 検証がすべて exit 0 で完了した。マージ後の実機確認は下記のとおり未完了。
 - 工程 (3b) で archive・Draft PR・仕様宣言を行う。マージとauto-merge有効化はこの worker の対象外。
 - マージ後の実機 send / cache は未確認。背景待機中の子を避け、通常の声かけ条件を満たす会話15万トークン未満・前景が入力待ちの子を選ぶ。候補が無ければ未完了を維持する。実機の識別子・会話量・入力待ちの根拠・send 結果・予約文への返事・その後の request の cache_read_input_tokens と会話量の比較を #1728 と #1732 に記録し、fixture の成功で代替しない。ログを保存するなら LLM_LOG_DIR を用い、未設定なら保存先を確認する。触る範囲: plugins/dev-workflow/skills/develop/references/epic-keepalive-watch.md:1-18（手順参照）、GitHub issues #1728 / #1732（実機証拠の記録先）

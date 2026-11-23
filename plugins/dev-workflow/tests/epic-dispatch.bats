@@ -8580,14 +8580,15 @@ import sys
 text = Path(sys.argv[1]).read_text()
 for term in ["skipped busy", "正しい非送信", "15万トークン未満", "前景が入力待ち",
              "通常の声かけ条件", "候補が無ければ", "実機確認は未完了", "#1728", "#1732",
-             "識別子", "会話量", "入力待ちの根拠", "送信結果", "予約文への返事",
-             "cache_read_input_tokens", "会話量との比較", "fixture", "代替しない",
-             "生ログ", "リポジトリへ保存しない", "LLM_LOG_DIR", "未設定なら保存先を確認",
+             "fixture", "代替しない",
              "10件", "すべてbypass", "非bypass", "未確認・未対応", "認識範囲を広げない",
              "plugins/dev-workflow/changes/1752.md"]:
     assert term in text, term
-record = (Path(sys.argv[1]).parents[4] / "changes/1752.md").read_text()
-for term in ["Orca 1.4.269", "2026-11-23", "10件", "非bypass候補0件", "truncated=false",
+record = (Path(sys.argv[1]).parents[3] / "changes/1752.md").read_text()
+for term in ["識別子", "会話量", "入力待ちの根拠", "send 結果", "予約文への返事",
+             "cache_read_input_tokens", "会話量の比較", "生ログ", "repo に置かず",
+             "LLM_LOG_DIR", "未設定なら確認",
+             "Orca 1.4.269", "2026-11-23", "10件", "非bypass候補0件", "truncated=false",
              "orca terminal list --limit 100 --json", "orca terminal read --terminal <handle> --screen --json"]:
     assert term in record, term
 PYCODE
