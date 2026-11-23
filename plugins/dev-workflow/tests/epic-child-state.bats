@@ -488,6 +488,35 @@ SH
   done
 }
 
+@test "session: qualified child startup registers an unregistered record" {
+  input '/develop O/R#2 （エピック #1 の子。起動）'
+  jq -e '.turn_input.generation == 1 and .turn_input.sender == "startup" and .turn_input.session_id == "s1" and .turn_state == null' "$REC"
+}
+
+@test "session: qualified child relaunch switches with a new generation" {
+  register
+  stop '状態: 主の返事待ち — original'
+  SID=s2
+  input '/develop o/r#2 （エピック #1 の子。返事を受けて起動し直し）'
+  jq -e '.turn_input.generation == 2 and .turn_input.sender == "startup" and .turn_input.session_id == "s2" and .turn_state == null' "$REC"
+  run stop missing; blocked
+  run stop '状態: 完了 — relaunched'; [ "$status" -eq 0 ]; [ -z "$output" ]
+  jq -e '.turn_state.generation == 2 and .turn_state.session_id == "s2" and .turn_state.value == "完了"' "$REC"
+}
+
+@test "session: qualified child startup rejects mismatched child or parent identity" {
+  for phase in unregistered registered; do
+    if [ "$phase" = registered ]; then
+      SID=s1; register; stop '状態: 完了 — original'
+    fi
+    snapshot
+    SID=s2
+    for p in '/develop wrong/repo#2 （エピック #1 の子。起動）' '/develop o/r#99 （エピック #1 の子。起動）' '/develop o/r#2 （エピック #99 の子。起動）' '/develop o/r#2 （エピック #1 の子。エピックのリポジトリ wrong/repo。起動）'; do
+      run input "$p"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+    done
+  done
+}
+
 @test "session: S1 S2 S1 interleaving preserves bytes and timestamp then saves the real child" {
   register; stop '状態: 作業報告 — original'
   snapshot

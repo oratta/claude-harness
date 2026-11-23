@@ -46,7 +46,7 @@ UserPromptSubmit と Stop は、payload の `cwd` の git 最上位と `worktree
 
 子のターン情報は schema=1 の既存 JSON の任意項目 `turn_input` と `turn_state` に保存しなければならない（MUST）。旧記録で両方が無くても本体の記録は読めるものとし、新項目の型検査を既存の親用の読めない記録の判定に加えてはならない（MUST NOT）。新フックは既存の `status` / `stop`・親が書く停止情報・端末の `session`・未知項目を保ち、共通の `updated_at` とこの2項目だけを更新する（MUST）。両項目が無い記録を未登録とし、一致する起動指示の入力だけで初回登録する（MUST）。任意の通常入力や Stop から登録してはならない（MUST NOT）。
 
-#### Scenario: 旧記録に通常入力から拡張を作る
+#### Scenario: 旧記録に一致する起動指示から拡張を作る
 - **WHEN** ターン情報の無い schema=1 の記録で、親子・エピックの repo が一致する起動指示を受ける
 - **THEN** 世代1と `sender: startup` の `turn_input` と `turn_state: null` が追加され、`status` / `stop` / `stop_uuid` / `stop_at` / `told_uuid` / `keepalive` / `session` と未知項目は元のままである
 

@@ -77,10 +77,11 @@ def extension(r):
 def startup(r, prompt):
     if not isinstance(prompt, str):
         return False
-    start = re.match(r'^/develop #([0-9]+) （エピック #([0-9]+) の子。([^）]*)）', prompt)
-    if not start or start[1] != str(r['number']) or start[2] != r['epic'].rsplit('#', 1)[1]:
+    start = re.match(r'^/develop (?:([^\s#]+)#|#)([0-9]+) （エピック #([0-9]+) の子。([^）]*)）', prompt)
+    if (not start or (start[1] is not None and start[1].lower() != r['repo'])
+            or start[2] != str(r['number']) or start[3] != r['epic'].rsplit('#', 1)[1]):
         return False
-    repo = re.search(r'エピックのリポジトリ ([^。]+)。', start[3])
+    repo = re.search(r'エピックのリポジトリ ([^。]+)。', start[4])
     return (repo[1] == r['epic'].split('#')[0] if repo
             else r['repo'] == r['epic'].split('#')[0])
 
@@ -139,8 +140,6 @@ try:
                          sender=sender, received_at=now, transcript_path=path, transcript_offset=offset)
         print(json.dumps({'action': 'input', 'input': new_input}, ensure_ascii=False))
     else:
-        if i is None:
-            raise ValueError('入力情報がありません')
         if i['session_id'] != sid or i['transcript_path'] != path:
             print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
         rows = []
@@ -203,7 +202,6 @@ pass_owner() { [ -z "$OWNER" ] || printf '%s\n' "$OWNER"; exit "$OWNER_RC"; }
 block() { jq -cn --arg reason "$1" '{decision:"block",reason:$reason}'; exit 0; }
 fail() {
   local reason="${1}: ${RECORD:-$ES_ROOT}"
-  case "$1" in *入力情報がありません*) reason="${reason}。通常入力を送り直してください。" ;; esac
   if [ "$EVENT" = Stop ]; then block "$reason"; fi
   printf '%s\n' "$reason" >&2
   exit 2
@@ -250,7 +248,6 @@ if jq -e '.decision == "block"' <<< "$OWNER" >/dev/null 2>&1; then
   REASON="$(jq -r .reason <<< "$OWNER")${REASON:+ / $REASON}"
 fi
 [ "$PLAN_RC" -eq 0 ] || ACTION=block
-jq -e 'has("turn_input")' <<< "$CUR" >/dev/null || fail "$REASON"
 STATE=null
 [ "$ACTION" != save ] || STATE="$(jq -c .state <<< "$PLAN")"
 # Compare the whole input snapshot under the same lock used by incoming prompts.
