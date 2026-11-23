@@ -658,7 +658,7 @@
     {
       "source": "skills/pr-review-gate/stages/reviewer-brief.md",
       "line": 21,
-      "text": "**再実行に書き込める一時ディレクトリが要る（#1401）**: 再実行に書き込める一時ディレクトリが要るテスト（bats・`mktemp` を使う bash テスト・`pytest` など）は、読み取り専用サンドボックスのレビュアー（Codex の `impl-review` 等）では一時ディレクトリに書けず、再実行が途中または開始前に失敗する。`TMPDIR` / `BATS_TMPDIR` にどのディレクトリを渡しても書けないので、指示文に書き足しても直らない（`openspec/specs/codex-worker/spec.md` が read-only role に `writableRoots` を与えることを禁じている）。だから、変えたファイルに関係するテストに、再実行に書き込める一時ディレクトリが要るテストが含まれ、再実行が要るレビューは、起こす側が Claude のレビュアー（`dev-workflow:reviewer`）に回す。Claude のレビュアーには書き込める一時ディレクトリ（scratchpad 配下など）を作って `TMPDIR` と `BATS_TMPDIR` に同じパスで渡し、`export TMPDIR=<パス> BATS_TMPDIR=<パス>` してから再実行するよう指示に書く。Codex の読み取り専用レビュアーに回したときに再実行できなかった場合は、CI と作業者の実行を再実行の代わりにせず、再実行できなかったことを要約に書き、起こす側が同じ固定 HEAD で Claude のレビュアーを起こし直す（一周目の三表の補足ではないので補足済み回数は増やさず、`review-incomplete` で止めない）。"
+      "text": "**再実行に書き込める一時ディレクトリが要る（#1401）**: 再実行に書き込める一時ディレクトリが要るテスト（bats のほか、`mktemp` を使う bash テスト、`BATS_TMPDIR` / `TMPDIR` に書くテスト、`pytest` のように一時ファイルを書くテスト）は、読み取り専用サンドボックスのレビュアー（Codex の `impl-review` 等）では一時ディレクトリに書けず、再実行が途中または開始前に失敗する。`TMPDIR` / `BATS_TMPDIR` にどのディレクトリを渡しても書けないので、指示文に書き足しても直らない（`openspec/specs/codex-worker/spec.md` が read-only role に `writableRoots` を与えることを禁じている）。だから、変えたファイルに関係するテストに、再実行に書き込める一時ディレクトリが要るテストが含まれ、再実行が要るレビューは、起こす側が Claude のレビュアー（`dev-workflow:reviewer`）に回す。Claude のレビュアーには書き込める一時ディレクトリ（scratchpad 配下など）を作って `TMPDIR` と `BATS_TMPDIR` に同じパスで渡し、`export TMPDIR=<パス> BATS_TMPDIR=<パス>` してから再実行するよう指示に書く。Codex の読み取り専用レビュアーに回したときに再実行できなかった場合は、CI と作業者の実行を再実行の代わりにせず、再実行できなかったことを要約に書き、起こす側が同じ固定 HEAD で Claude のレビュアーを起こし直す（一周目の三表の補足ではないので補足済み回数は増やさず、`review-incomplete` で止めない）。"
     },
     {
       "source": "skills/pr-review-gate/stages/reviewer-brief.md",
@@ -683,7 +683,7 @@
     {
       "source": "skills/pr-review-gate/stages/reviewer-brief.md",
       "line": 67,
-      "text": "| JSON の `confidence_score` | 検証 | `confidence_score` を `confirmed` の代わりにしない（`confirmed` は実行・テストで裏取りしたことを指す）。裏取りの記述が無い指摘は `plausible` として扱う |"
+      "text": "| JSON の `confidence_score` | 検証 | `confidence_score` を `confirmed` の代わりにしない。裏取りの記述が無い指摘は `plausible` として扱う |"
     },
     {
       "source": "skills/pr-review-gate/stages/reviewer-brief.md",
