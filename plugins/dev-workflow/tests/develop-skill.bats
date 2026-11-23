@@ -1406,6 +1406,33 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   run grep -F 'EPIC_DISPATCH_RELAUNCH_MIN_TOKENS' "$f"; [ "$status" -eq 1 ]
 }
 
+@test "epic-stop: step 8 takes the stop from the state record only and leaves owner-started turns alone (#1760)" {
+  f="$SKILL_DIR/references/epic-stop.md"
+  p="$(grep -E '^8\. `stopped <N>\.\.\.`' "$f")"
+  [ -n "$p" ]
+  printf '%s\n' "$p" | grep -qF '状態の記録だけで決める'
+  printf '%s\n' "$p" | grep -qF '主が子のタブで打った入力から始まったターン'
+  printf '%s\n' "$p" | grep -qF '返事を送らず・端末を閉じず・起動し直さない'
+  printf '%s\n' "$p" | grep -qF '状態の記録が無いまま終わったターンは止まりとして扱わず'
+  printf '%s\n' "$p" | grep -qF '会話ログや経過時間から止まりを探さない'
+}
+
+@test "epic-stop: the owner reply and the delegated reply leave the relaunch to reply's own table (#1760)" {
+  f="$SKILL_DIR/references/epic-stop.md"
+  p="$(grep -E '^8\. `stopped <N>\.\.\.`' "$f")"
+  printf '%s\n' "$p" | grep -qF '`reply` が `references/reply-after-idle.md` の子の表で自動判定する'
+  run grep -F '表でそのまま送るか起動し直すかを決め' "$f"; [ "$status" -eq 1 ]
+  run grep -F '表で決める）にする' "$f"; [ "$status" -eq 1 ]
+  grep -F '委任で送る' "$f" | grep -qF '`reply` が表で自動判定する'
+}
+
+@test "reply-after-idle: the child table applies to recorded stops only and is read from the top (#1760)" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -qF '表の対象は状態の記録で止まりと決まった子だけ' "$f"
+  grep -qF '主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない' "$f"
+  grep -qF '表は上から順に読み、最初に当たった行で決める' "$f"
+}
+
 @test "skill: step 7 drops a pending child whose pass on the epic matches the latest stop record" {
   p="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p" | grep -qF 'エピックのコメントの `親の判断: 子 #N 通した`'
