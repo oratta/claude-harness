@@ -14,9 +14,13 @@
 - **WHEN** 子 11 が open、status が running で、型・世代・セッションが正しい組の sender が parent または startup、value が作業報告、`dependency_wait` が `true` であり、まだ受けていない状態で `wait --interval 0 --timeout 0 --watch-stopped 11` を実行する
 - **THEN** stop を stopped-seen に記録して受領した組を残し、stdout は `stopped 11`、exit 0 となる。会話ログが無い・読めない場合も同じである
 
-#### Scenario: 返事待ちは dependency_wait の欠落と false で通し、非 boolean で除外する
-- **WHEN** 子 11 が open、status が running で、型・世代・セッションが正しい組の sender が parent、value が主の返事待ちであり、`dependency_wait` が欠落・`false`・`"true"`・`1`・`null`・配列・オブジェクトのいずれかで、まだ受けていない状態で `wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11` を実行する
-- **THEN** 欠落と `false` では `stopped 11`、exit 0 となる。それ以外では記録は読めるが stdout に `stopped 11` は出ず、判断役・子への送信・端末終了・再起動を呼ばない
+#### Scenario: 返事待ちは dependency_wait の欠落と false で通す
+- **WHEN** 子 11 が open、status が running で、型・世代・セッションが正しい組の sender が parent、value が主の返事待ちであり、`dependency_wait` が欠落または `false` で、まだ受けていない状態で `wait --interval 0 --timeout 0 --watch-stopped 11` を実行する（`--resolve` なし）
+- **THEN** stop を stopped-seen に記録し、stdout は `stopped 11`、exit 0 となる
+
+#### Scenario: 返事待ちでも dependency_wait が boolean でなければ除外する
+- **WHEN** 子 11 が open、status が running で、型・世代・セッションが正しい組の sender が parent、value が主の返事待ちであり、`dependency_wait` が `"true"`・`1`・`null`・配列・オブジェクトのいずれかで、まだ受けていない状態で `wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11` を実行する
+- **THEN** 記録は読めるが停止対象にせず、stdout に `stopped 11` は出ず、判断役・子への送信・端末終了・再起動を呼ばない
 
 #### Scenario: 主が子のタブで話しているターンには介入しない
 - **WHEN** sender が owner の有効な組で、value が主の返事待ちまたは作業報告であり（作業報告には `dependency_wait: true` と依存待ちのマーカーを持つものを含む）、会話量が 150,001 トークン、最後の活動が 3600 秒以上前で、古い stopped または stopped-seen の印も残る状態で `wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11` を実行する
