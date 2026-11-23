@@ -683,7 +683,7 @@
     {
       "source": "skills/pr-review-gate/stages/reviewer-brief.md",
       "line": 67,
-      "text": "| JSON の `confidence_score` | 検証 | `confidence_score` を `confirmed` の代わりにしない（`confirmed` は実行・テストで裏取りしたことを指す）。裏取りの記述が無い指摘は `plausible` として扱う |"
+      "text": "| JSON の `confidence_score` | 検証 | `confidence_score` を `confirmed` の代わりにしない。裏取りの記述が無い指摘は `plausible` として扱う |"
     },
     {
       "source": "skills/pr-review-gate/stages/reviewer-brief.md",
@@ -1523,7 +1523,7 @@
     {
       "source": "skills/pr-review-gate/stages/reviewer-brief.md",
       "line": 61,
-      "text": "**Codex が優先度付きの形で返したときの読み替え**: 書式を指定しない `codex exec` は、指摘に `[P1]` のような優先度の見出しを付けて返す（2026-09-21 に実測。#349 の PR コメントに記録）。書式ブロックを貼っても Codex がこの形や JSON で返したときは、次の表で固定書式に読み替える。"
+      "text": "**Codex が優先度付きの形で返したときの読み替え**: 書式を指定しない `codex exec` は、指摘に `[P1]` のような優先度の見出しを付けて返す（実測済み）。書式ブロックを貼っても Codex がこの形や JSON で返したときは、次の表で固定書式に読み替える。"
     },
     {
       "source": "skills/pr-review-gate/stages/reviewer-brief.md",
