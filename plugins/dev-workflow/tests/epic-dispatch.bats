@@ -9738,8 +9738,12 @@ EOF_STUB
   wt="$(cd "$wt" && pwd -P)"
   local f; f="$(rec_of 1122 11)"
   jq --arg w "$wt" '.worktree=$w' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  # #1766: the hook records only registered sessions, so the child's startup input registers s1 first.
   payload="$(jq -cn --arg w "$wt" --arg l "$log" '{hook_event_name:"UserPromptSubmit",cwd:$w,
-    session_id:"s1",transcript_path:$l,prompt:"親エピック #400 の判断: 続ける"}')"
+    session_id:"s1",transcript_path:$l,prompt:"/develop #11 （エピック #1122 の子。親ワークツリー /parent から Orca で起動）"}')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ "$(rec_get 11 turn_input.sender)" = startup ]
+  payload="$(printf '%s' "$payload" | jq -c '.prompt="親エピック #400 の判断: 続ける"')"
   run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
   [ "$status" -eq 0 ]; [ "$(rec_get 11 turn_input.sender)" = parent ]
   printf '%s\n' '{"id":22,"number":22,"state":"open"}' > "$STUB_CFG/dependency_22"
@@ -9761,7 +9765,7 @@ EOF_STUB
   run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
   [ "$(rec_get 11 stop)" = stopped-seen ]
-  [ "$(jq -c '.stop_turn' "$f")" = '{"generation":1,"session_id":"s1"}' ]
+  [ "$(jq -c '.stop_turn' "$f")" = '{"generation":2,"session_id":"s1"}' ]
   # The same generation is never received twice.
   run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
   [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
