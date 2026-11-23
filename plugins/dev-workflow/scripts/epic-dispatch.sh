@@ -139,10 +139,10 @@
 #   次のポーリングに回し、失敗したポーリングには数えない
 #   jq が無い・今のワークツリーを読めない（rev-parse の失敗）なら stdout に何も出さず exit 1
 # reply: 今のワークツリーを parent_worktree に持つ <child> の記録が 1 件で（その worktree が子のワークツリー）、
-#   端末があり（--relaunch なし）、子のセッションの端末（agentIdentity が claude の端末、無ければタイトルに
+#   端末があり（明示・自動判定の起動し直しなし）、子のセッションの端末（agentIdentity が claude の端末、無ければタイトルに
 #   Claude Code を含む端末がちょうど 1 つ）が決まれば、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
 #   owner は `主の返事（親エピック #<epic> 経由）: `）を付けた文を送り、ターンの開始まで確かめて `sent <child>`。
-#   端末が 0 か --relaunch なら（--relaunch は先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
+#   端末が 0 か明示・自動判定で起動し直すなら（起動し直しは先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
 #   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`。
 #   端末はあるが子のセッションの端末を決められない（シェルの端末だけも含む）
 #   ときは `failed <child> ambiguous-terminal`。記録が 0 件は `failed <child> no-worktree`、2 件以上は
@@ -219,7 +219,7 @@
 #   無ければ物理メモリの GiB（`sysctl -n hw.memsize` のバイト、読めなければ
 #   EPIC_DISPATCH_MEMINFO_FILE（テスト用。既定 /proc/meminfo）の MemTotal の kB）を 4 で割って切り捨て、最小 1。
 #   どちらも読めなければ 2 で、stderr に `physical memory not readable`。launch も同じ値を使う
-# wait --resolve が通す返事は、送る前に references/reply-after-idle.md の子の表で起動し直すかを決める:
+# reply の両送り手（明示 --relaunch なし）と wait --resolve が通す返事は、送る前に references/reply-after-idle.md の子の表で起動し直すかを決める:
 #   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
 #   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前なら、
 #   compact_boundary の有無と会話量によらず --relaunch 相当。
@@ -304,7 +304,7 @@ launch [--note <text>] [--base <branch>] <epic> <child>...
 reply [--relaunch] --as <parent|owner> <epic> <child> <text>
   子の端末に返事を届ける。1 行。exit 0、failed なら 1。
   sent <N>          子のセッションへ送った
-  relaunched <N>    --relaunch で、閉じて起動し直した
+  relaunched <N>    明示 --relaunch・reply の自動判定・端末なしで起動し直した
   skipped <N> not-stopped  止まりの印が無く何も送らない
   failed <N> <理由>
 
@@ -1083,6 +1083,17 @@ cmd_reply() {
   [ -n "$3" ] || { echo "the reply text must not be empty" >&2; usage; }
   agent_setup "$1" || usage
   need_parent
+  if [ "$relaunch" -eq 0 ]; then
+    is_num "${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" || { echo "EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS must be a non-negative integer" >&2; usage; }
+    is_num "${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" || { echo "EPIC_DISPATCH_RELAUNCH_IDLE_SEC must be a non-negative integer" >&2; usage; }
+    # 判定できない記録のエラーは deliver_reply が従来どおり返す。
+    # notify-closed の手動分類には広げず、直接の返事だけ既存判定を使う。
+    if child_record "$PARENT_TOP" "$2"; then
+      local rec="$ES_HIT" path
+      path="$(es_get "$rec" worktree)"
+      [ -z "$path" ] || relaunch="$(decide_relaunch "$path" "$(es_get "$rec" stop_uuid)")"
+    fi
+  fi
   launchers_gate "$2"
   deliver_reply "$relaunch" "$as" "$1" "$2" "$3"
   case $? in 0|2) exit 0 ;; *) exit 1 ;; esac
