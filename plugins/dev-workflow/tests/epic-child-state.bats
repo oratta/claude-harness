@@ -183,6 +183,7 @@ parent_fixture() {
   for text in "$marker" "$marker"$'\n状態: 作業報告 — 依存の完了待ち' "$marker"$'\r\n状態: 作業報告 — 依存の完了待ち  \r\n \r\n'; do
     printf 0 > "$STUB_CFG/ghcount_11"
     put_record 11
+    put_turn 11
     put_chat 11 s1 "$(said d1 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
     run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
     [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
@@ -198,6 +199,7 @@ parent_fixture() {
     log_resolve_ready
     printf 0 > "$STUB_CFG/ghcount_11"
     put_record 11
+    put_turn 11
     put_chat 11 s1 "$(said d1 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
     judge_says judge_out 問いではない 完了の報告 '' なし
     run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
@@ -423,6 +425,7 @@ SH
   padding="$(python3 -c 'print("x" * 8500)')"
   text=$'```\n'"$padding"$'\n```\n'"$marker"$'\n状態: 作業報告 — 待機'
   put_record 11
+  put_turn 11
   put_chat 11 s1 "$(said d1 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
   run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
@@ -433,9 +436,24 @@ SH
   printf 0 > "$STUB_CFG/ghcount_11"
   text=$'```\n'"$padding"$'\n'"$marker"$'\n状態: 作業報告 — 例'
   put_record 11
+  put_turn 11
   put_chat 11 s1 "$(said d2 "$(ago 300)" "$text")" "$(turn_end "$(ago 300)")"
   judge_says judge_out 問いではない 完了の報告 '' なし
   run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
   [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
   [ "$(rec_get 11 stop)" = resumed ]; [ "$(calls '^judge ')" -eq 1 ]
+}
+
+@test "dependency-wait: markers cannot promote missing owner or reporting state" {
+  parent_fixture
+  marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
+  for pair in missing 'owner 主の返事待ち' 'parent 作業報告'; do
+    printf 0 > "$STUB_CFG/ghcount_11"
+    put_record 11
+    [ "$pair" = missing ] || put_turn 11 $pair
+    put_chat 11 s1 "$(said d1 "$(ago 300)" "$marker")" "$(turn_end "$(ago 300)")"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
+  done
 }

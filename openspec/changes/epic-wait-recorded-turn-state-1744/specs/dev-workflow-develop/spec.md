@@ -12,7 +12,7 @@
 
 #### Scenario: 主が子のタブで話しているターンには介入しない
 - **WHEN** sender が owner の有効な組で、value が主の返事待ちまたは作業報告であり、会話量が 150,001 トークン、最後の活動が 3600 秒以上前で、古い stopped または stopped-seen の印も残る状態で `wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11` を実行する
-- **THEN** stdout に `stopped 11` は出ず、判断役・子への送信・orca terminal close・再起動を呼ばない。単発確認は既存の timeout と exit 0 で終わる
+- **THEN** stdout に `stopped 11` は出ず、判断役・子への送信・orca terminal close・再起動を呼ばない。子 11 が open の単発確認は、既存どおり stdout `timeout 11`、exit 2 で終わる。
 
 #### Scenario: 作業報告と完了は親の判断に渡さない
 - **WHEN** sender が parent または startup で value が作業報告または完了であり、会話ログに問いや依存待ちマーカーがある
