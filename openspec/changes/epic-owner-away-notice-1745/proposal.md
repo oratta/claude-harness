@@ -14,6 +14,7 @@
 ### Modified Capabilities
 
 - `dev-workflow-epic-state`: 主が打ったターンの時間による知らせ（`owner-away`）を足す
+- `dev-workflow-develop`: 要件「wait は子の状態の記録だけで止まった子を検知する」の Scenario「主が子のタブで話しているターンには介入しない」を、閾値前は `timeout`・閾値後は `owner-away`（exit 0）に分けて更新する（MODIFIED。既存 Scenario が閾値後の owner の返事待ちにも `timeout`・exit 2 を求めていて衝突するため）
 
 ## Impact
 

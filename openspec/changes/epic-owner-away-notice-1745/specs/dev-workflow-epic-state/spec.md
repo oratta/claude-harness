@@ -31,3 +31,11 @@
 #### Scenario: 知らせは子の記録と端末に触れない
 - **WHEN** `owner-away 11` を返した直後の記録を読む
 - **THEN** `stop`・`stop_uuid` は変わらず、`owner_away_told` は今回のターンの `generation` と `session_id` を持つ。送信・`orca terminal close`・`--relaunch` は呼ばれていない
+
+### Requirement: owner-away の守備範囲を限る
+
+上の 2 つの要件（主が打った返事待ちの知らせ・owner-away の一度きりの記録）は、入力として扱うものを、子の記録の `turn_input` / `turn_state` / `owner_away_told` と `EPIC_DISPATCH_OWNER_AWAY_SEC` の値に限らなければならない（MUST）。拾いたい誤りは、主が話している最中の子への送信と端末の終了、同じ問いの繰り返しの知らせ、主が答えたあとの知らせである。次は通してよく、止めない: 親や起動時の入力のターン（既存の停止の経路で扱う）・状態記録の無い古い子（知らせない）・別の経路で解決済みの問いへの余分な 1 回の知らせ。穴が見つかるたびに塞ぎ切ることは完了条件にしない。
+
+#### Scenario: 親が送った入力のターンと古い子は知らせの対象にしない
+- **WHEN** `turn_input.sender` が `parent` の返事待ち、または `turn_input` / `turn_state` の無い記録に `wait --watch-stopped` を実行する
+- **THEN** `owner-away` は返らない（前者は既存の `stopped` の経路、後者は何も返さない）
