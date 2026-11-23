@@ -85,6 +85,24 @@ PY
   done
 }
 
+@test "maintenance stops re-arming 12 hours after the first timer without dropping work" {
+  local first="$BATS_TEST_TMPDIR/first" rearm="$BATS_TEST_TMPDIR/rearm"
+  sed -n '/^## 2\./,/^## 3\./p' "$REF" > "$first"
+  sed -n '/^## 3\./,/^## 既存契約/p' "$REF" > "$rearm"
+  local term
+  # 初回のタイマーを置いた時刻を基点として保持し、再設置で更新しない。
+  for term in '最初のタイマーを置いた時刻' '基点' '再設置で基点を更新しない'; do
+    grep -qF "$term" "$first" || { echo "missing in 2: $term"; return 1; }
+  done
+  # 再設置は初回から 12 時間未満に限り、到達・超過では置かず元作業を保持する。
+  for term in '最初のタイマーを置いた時刻から 12 時間未満' '12 時間に達した通知' \
+    '12 時間を超えた通知' '次のタイマーを置かない' '元作業と実行 ID を保持' \
+    '完了通知を待ち続ける' '一度の書き直しを受け入れる' \
+    '上限到達を理由に元作業を止めたり捨てたりしない' '維持タイマーも再開しない'; do
+    grep -qF "$term" "$rearm" || { echo "missing in 3: $term"; return 1; }
+  done
+}
+
 @test "shared input scope covers sources errors acceptable inputs and limits" {
   local scope="$BATS_TEST_TMPDIR/scope"
   sed -n '/^## 入力判定の守備範囲$/,/^## 1\./p' "$REF" > "$scope"
@@ -116,8 +134,18 @@ PY
   local record="$PLUGIN_DIR/changes/1743.md" term
   [ -f "$record" ]
   for term in 'https://github.com/oratta/claude-harness/issues/1743#issuecomment-7087935739' \
-    '外部依存' '45 分' '5m / unknown' '二回の cache-read' '24 時間' \
+    'https://github.com/oratta/claude-harness/issues/1743#issuecomment-7089486648' \
+    '外部依存' '45 分' '5m / unknown' '二回の cache-read' '24 時間' '12 時間' \
+    '約 $1.32' '$1.60' '約 $2.52' '旧方針' '上限後' \
     '新規入力・出力' '未実施' '60 分超' 'cache_read_input_tokens'; do
     grep -qF "$term" "$record" || { echo "missing: $term"; return 1; }
+  done
+}
+
+@test "reference cost note links the 12 hour comparison and keeps the old figure separate" {
+  local term
+  for term in 'https://github.com/oratta/claude-harness/issues/1743#issuecomment-7089486648' \
+    '12 時間' '約 $1.32' '$1.60' '約 $2.52' '旧方針' '上限後' '総費用の保証ではない'; do
+    grep -qF "$term" "$REF" || { echo "missing: $term"; return 1; }
   done
 }
