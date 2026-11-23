@@ -1410,7 +1410,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   f="$SKILL_DIR/references/epic-stop.md"
   p="$(grep -E '^8\. `stopped <N>\.\.\.`' "$f")"
   [ -n "$p" ]
-  printf '%s\n' "$p" | grep -qF '状態の記録だけで決まる'
+  printf '%s\n' "$p" | grep -qF '状態の記録だけで決める'
   printf '%s\n' "$p" | grep -qF '主が子のタブで打った入力から始まったターン'
   printf '%s\n' "$p" | grep -qF '返事を送らず・端末を閉じず・起動し直さない'
   printf '%s\n' "$p" | grep -qF '状態の記録が無いまま終わったターンは止まりとして扱わず'
