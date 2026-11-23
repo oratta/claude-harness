@@ -201,7 +201,7 @@ spawn・再開・Codex 委譲の前は毎回、必ず `references/pr-token-budge
 
 ## エピックの子が主の返事を待って止まるとき
 
-別セッション方式（Orca・tmux）で起動されたエピックの子のセッション（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返すセッション）は、主の返事を待って止まる前と、`親エピック #` か `主の返事（親エピック #` で始まる入力が届いたとき（起動し直されたセッションの最初の指示に付いて届いたときを含む）に、`references/epic-child-stop.md` を Read してその手順に従う。`nested` でないセッションは読まない。
+`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返す子は、主の返事待ちで止まる前と、`親エピック #` か `主の返事（親エピック #` で始まる入力の受信時（セッション再起動後の最初の指示に付く場合も含む）に、`references/epic-child-stop.md` を Read して従う。`nested` 以外は読まない。`nested` の本体が自分の agent・CI・Monitor・Codex を 60 分以上待ちうる場合、開始・延長前に `references/child-background-wait.md` を Read する。
 
 ## モデル
 
