@@ -294,7 +294,7 @@ SH
   export OWNER_CALLS="$BATS_TEST_TMPDIR/owner-calls"
   cat > "$BATS_TEST_TMPDIR/entry/owner-message-number-check.sh" <<'SH'
 #!/usr/bin/env bash
-cat >/dev/null
+cat > "$OWNER_CALLS.input"
 printf 'called\n' >> "$OWNER_CALLS"
 printf 'guard-output\n'
 exit 7
@@ -303,6 +303,7 @@ SH
   run bash -c 'printf "%s" "$1" | "$2"' _ "$p" "$BATS_TEST_TMPDIR/entry/epic-child-state.sh"
   [ "$status" -eq 7 ]; [ "$output" = guard-output ]
   [ "$(wc -l < "$OWNER_CALLS" | tr -d ' ')" = 1 ]
+  [ "$(cat "$OWNER_CALLS.input")" = "$p" ]
 }
 
 @test "input: same-second generation, cross-repo mismatch, tmux and malformed optional fields" {
