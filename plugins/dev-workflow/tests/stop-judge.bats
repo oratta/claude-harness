@@ -437,7 +437,7 @@ not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の
         mark) extra='{marked: true}' ;;
         reason) text="$heading"$'\n止まった理由: PR のマージ待ち' ;;
       esac
-      payload="$(jq -cn --arg t "$text" ". + {text: \$t}" <<< "$extra")"
+      payload="$(jq -cn --arg t "$text" "$extra + {text: \$t}")"
       run judge 400 11 "$(stop_json "$payload")"
       [ "$status" -eq 0 ]
       [ "${lines[0]}" = '判断: 通す' ]

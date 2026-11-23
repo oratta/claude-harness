@@ -7568,6 +7568,7 @@ log_resolve_ready() {
 @test "wait --resolve log: completion headings use the real judge to dismiss without a model or reply" {
   for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
     log_resolve_ready
+    printf '0\n' > "$STUB_CFG/ghcount_11"
     export EPIC_DISPATCH_JUDGE="$PLUGIN_DIR/scripts/stop-judge.sh"
     export EPIC_DISPATCH_JUDGE_CMD='echo model-called >> "$STUB_LOG"; exit 1'
     put_chat 11 s1 "$(said d1 "$(ago 300)" "$heading"$'\n作業を終えた。issue は開いたまま待つ。')" "$(turn_end "$(ago 300)")"

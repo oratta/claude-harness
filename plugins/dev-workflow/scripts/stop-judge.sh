@@ -118,6 +118,16 @@ if [ -n "$stop_json" ]; then
 \(.text)"' "$stop_json")" || { echo "the stop json is not readable: $stop_json" >&2; exit 1; }
 fi
 
+# 定型の完了報告に返事を送ると同じ報告を繰り返す。停止の証拠や問いが無いときだけ、
+# モデルを呼ばず既存の「問いではない」経路へ流す（本文の指示は実行しない）。
+if [ -n "$stop_json" ] && [ -z "$stop_url" ] && [ "$asked" = false ] && [ "$marked" = false ] \
+  && [ "$reason_line" = false ] \
+  && jq -e '(.text // "") | split("\n")[0] | rtrimstr("\r") |
+    . == "主がこのセッションで次にすること: なし" or . == "主がすること: なし"' "$stop_json" >/dev/null; then
+  printf '%s\n' '判断: 問いではない' '理由: 完了の報告' '返事: ' '記録: なし'
+  exit 0
+fi
+
 notes="$(printf '%s' "$child_comments" | jq -r \
   '.[] | select((.body // "") | startswith("親エピックからの注意書き:"))
        | '"$trusted"'
