@@ -2,7 +2,9 @@
 """Read a child's conversation log for epic-dispatch.sh (wait, pending-owner, child-log).
 
   child-log-read.py <dir>            print one JSON object, or exit 1 when no log is readable
-  child-log-read.py --keepalive-text print the fixed keepalive request
+  child-log-read.py --keepalive-text [background]
+                                     print the fixed keepalive request (stopped child by default,
+                                     the waiting-on-background-work one with "background")
   child-log-read.py --main-log <dir> <stop_uuid>
                                      print the path of the main conversation's log, or exit 1
 
@@ -53,6 +55,15 @@ NOT_INPUT_PREFIXES = ("<local-command-", "<bash-input>", "<bash-stdout>", "<bash
 def load_keepalive():
     with open(DEFINITION, encoding="utf-8") as f:
         return json.load(f)
+
+
+def keepalive_kinds(definition):
+    """The definitions of both keepalive kinds: the top-level (stopped child) and "background"."""
+    kinds = [definition]
+    background = definition.get("background")
+    if isinstance(background, dict):
+        kinds.append(background)
+    return kinds
 
 
 def keepalive_request(definition):
@@ -209,10 +220,10 @@ def safe_uuid(value):
 
 
 def walk(rows, definition):
-    keepalive = keepalive_request(definition)
+    requests = {keepalive_request(kind): kind for kind in keepalive_kinds(definition)}
     owner = child = last_input = None
     input_index = -1
-    awaiting_keepalive = False
+    awaiting_keepalive = None
     turn_ended = False
     asked = {}
     started = set()
@@ -263,11 +274,11 @@ def walk(rows, definition):
             if local_command(rows, i, s):
                 continue
             # Exact, unabridged reserved input, including when the owner typed it.
-            if s == keepalive:
-                awaiting_keepalive = True
+            if s in requests:
+                awaiting_keepalive = requests[s]
                 continue
             # A real user turn (including a parent judgment) ends correspondence.
-            awaiting_keepalive = False
+            awaiting_keepalive = None
             last_input = d["timestamp"]
             input_index = i
             turn_ended = False
@@ -291,8 +302,8 @@ def walk(rows, definition):
             s = text_of(content)
             if s is None or not s.strip():
                 continue
-            matched = awaiting_keepalive and keepalive_reply(definition, s)
-            awaiting_keepalive = False
+            matched = awaiting_keepalive is not None and keepalive_reply(awaiting_keepalive, s)
+            awaiting_keepalive = None
             if matched:
                 continue
             child = {"index": i, "uuid": d.get("uuid") or "", "at": d["timestamp"], "text_at": d["timestamp"], "text": s}
@@ -325,6 +336,12 @@ def main(argv):
         if path is None:
             return 1
         print(path)
+        return 0
+    if len(argv) == 3 and argv[1] == "--keepalive-text":
+        if argv[2] != "background" or not isinstance(load_keepalive().get("background"), dict):
+            print(__doc__, file=sys.stderr)
+            return 1
+        print(keepalive_request(load_keepalive()["background"]))
         return 0
     if len(argv) != 2:
         print(__doc__, file=sys.stderr)
