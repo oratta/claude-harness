@@ -8995,3 +8995,163 @@ help_env() {
   ! sed -n 1,5p "$SCRIPT" | grep -qF 'epic.md「回し方」' || return 1
   sed -n 1,5p "$SCRIPT" | grep -qF 'epic-loop.md'
 }
+
+# #1742: direct replies share wait --resolve's size/time decision.
+reply_auto_ready() {
+  reply_ready term-a-11
+  put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
+  : > "$STUB_LOG"
+}
+
+assert_reply_auto() {
+  local as="$1" expected="$2" sent header
+  run dispatch reply --as "$as" 400 11 '回答'
+  [ "$status" -eq 0 ] || { echo "$output"; cat "$BATS_TEST_TMPDIR/stderr"; return 1; }
+  if [ "$expected" = 1 ]; then
+    [ "$output" = 'relaunched 11' ]
+    [ "$(calls '^orca terminal close')" -eq 1 ]
+    [ "$(calls '^orca terminal create')" -eq 1 ]
+    [ "$(first_line '^orca terminal close')" -lt "$(first_line '^orca terminal create')" ]
+    sent="$(cat "$STUB_CFG/sent_term-11")"
+    starts_with "$sent" '/develop #11 '
+  else
+    [ "$output" = 'sent 11' ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    sent="$(cat "$STUB_CFG/sent_term-a-11")"
+  fi
+  case "$as" in
+    parent) header='親エピック #400 の判断（主の承認ではない）: 回答' ;;
+    owner) header='主の返事（親エピック #400 経由）: 回答' ;;
+  esac
+  [[ "$sent" == *"$header" ]]
+}
+
+@test "reply auto: both senders use size boundaries with context exit 0 and 2" {
+  for as in parent owner; do
+    for ctx in 149999 150000 150001; do
+      for cap in 1 999999; do
+        reply_auto_ready
+        put_transcript 5 "$ctx"
+        expected=0
+        [ "$ctx" -lt 150000 ] || expected=1
+        DEV_WORKFLOW_CONTEXT_CAP="$cap" assert_reply_auto "$as" "$expected"
+      done
+    done
+  done
+}
+
+@test "reply auto: both senders use the 3600-second boundary regardless of compact" {
+  for as in parent owner; do
+    for compact in 0 1; do
+      reply_auto_ready
+      put_transcript 60 100000 "$compact"
+      assert_reply_auto "$as" 1
+    done
+  done
+}
+
+@test "reply auto: missing ambiguous and partly unmeasurable logs use independent conditions" {
+  for as in parent owner; do
+    reply_auto_ready
+    assert_reply_auto "$as" 0
+    put_transcript 5 160000 0 s1
+    put_transcript 5 160000 0 s2
+    assert_reply_auto "$as" 0
+    reply_auto_ready
+    put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
+    # stop_uuid selects the main log even with an unrelated second log.
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s2.jsonl)"
+    printf '%s\n' '{"type":"assistant","entrypoint":"cli","uuid":"other"}' > "$file"
+    assert_reply_auto "$as" 1
+    reply_auto_ready
+    put_transcript 60 0
+    assert_reply_auto "$as" 1
+    reply_auto_ready
+    put_transcript 5 150000
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+    sed 's/"timestamp":"[^"]*"/"timestamp":"unknown"/g' "$file" > "$BATS_TEST_TMPDIR/unknown.jsonl"
+    cp "$BATS_TEST_TMPDIR/unknown.jsonl" "$file"
+    assert_reply_auto "$as" 1
+    reply_auto_ready
+    put_transcript 5 0
+    assert_reply_auto "$as" 0
+    # Remove fixture logs before checking the next sender's missing-log case.
+    rm -f "$file" "${file%/*}/s2.jsonl"
+  done
+}
+
+@test "reply auto: threshold overrides and zero apply to both senders" {
+  for as in parent owner; do
+    reply_auto_ready
+    put_transcript 5 150000
+    EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=200000 assert_reply_auto "$as" 0
+    reply_auto_ready
+    EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=0 assert_reply_auto "$as" 1
+    reply_auto_ready
+    put_transcript 60 100000
+    EPIC_DISPATCH_RELAUNCH_IDLE_SEC=7200 assert_reply_auto "$as" 0
+    reply_auto_ready
+    put_transcript 5 100000
+    EPIC_DISPATCH_RELAUNCH_IDLE_SEC=0 assert_reply_auto "$as" 1
+    reply_auto_ready
+    EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=1 assert_reply_auto "$as" 0
+  done
+}
+
+@test "reply auto: invalid thresholds fail before terminal operations but explicit relaunch bypasses them" {
+  for as in parent owner; do
+    for name in EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS EPIC_DISPATCH_RELAUNCH_IDLE_SEC; do
+      for val in '' -1 150k; do
+        reply_auto_ready
+        run env "$name=$val" "$SCRIPT" reply --as "$as" 400 11 '回答'
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"$name"* ]]
+        [[ "$output" == *'usage:'* ]]
+        [ "$(calls '^orca terminal')" -eq 0 ]
+      done
+    done
+    reply_auto_ready
+    put_transcript 5 100000
+    EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=bad EPIC_DISPATCH_RELAUNCH_IDLE_SEC='' \
+      run dispatch reply --relaunch --as "$as" 400 11 '回答'
+    [ "$status" -eq 0 ]
+    [ "$output" = 'relaunched 11' ]
+  done
+}
+
+@test "reply auto: resumed records and moved logs suppress even a selected relaunch" {
+  for as in parent owner; do
+    reply_auto_ready
+    put_transcript 60 160000
+    put_record 11 status=running stop=resumed stop_uuid=$MAIN_UUID
+    run dispatch reply --as "$as" 400 11 '回答'
+    [ "$status" -eq 0 ]
+    [ "$output" = 'skipped 11 not-stopped' ]
+    [ "$(calls '^orca terminal')" -eq 0 ]
+    reply_auto_ready
+    put_record 11 status=waiting stop=stopped-seen stop_uuid=$MAIN_UUID
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+    printf '%s\n' '{"type":"user","uuid":"new","message":{"content":"回答済み"}}' >> "$file"
+    run dispatch reply --as "$as" 400 11 '回答'
+    [ "$status" -eq 0 ]
+    [ "$output" = 'skipped 11 not-stopped' ]
+    [ "$(calls '^orca terminal')" -eq 0 ]
+  done
+}
+
+@test "reply auto: docs distinguish automatic reply from manual notify-closed" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -F -- '--as parent' "$f" | grep -F -- '--as owner' | grep -F -- '--relaunch' | grep -qF '自動判定'
+  grep -F 'notify-closed' "$f" | grep -qF '本体が'
+  grep -F '明示' "$f" | grep -qF -- '--relaunch'
+}
+
+@test "reply auto: cleanup docs skip finish-only replies within existing safe conditions" {
+  f="$PLUGIN_DIR/skills/develop/references/epic-loop.md"
+  grep -F '親だけ' "$f" | grep -qF '全対象には足りない'
+  grep -F '終えて' "$f" | grep -F 'reply' | grep -qF '省く'
+  grep -F 'waiting' "$f" | grep -F 'stopped-seen' | grep -qF '完了推定の対象外'
+  grep -F 'not-done' "$f" | grep -qF 'reap'
+  grep -F 'notify-closed' "$f" | grep -qF 'mark done'
+}
