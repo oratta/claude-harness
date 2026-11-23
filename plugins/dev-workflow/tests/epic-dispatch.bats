@@ -7166,24 +7166,49 @@ chat_line() {
   [ "$output" = "$(printf '11\t2026-10-26 15:00\tはじめて\t2026-10-26 15:01\t聞きます')" ]
 }
 
-@test "wait: when mktemp -d fails it stops with a message and never runs rm on a glob of the root" {
-  keepalive_wait_setup
+# mktemp -d を失敗させ、rm は呼ばれた引数を記録する。ルート直下 1 階層のパス（/* の展開）を受けたら本物の rm は呼ばない
+mktemp_fail_stubs() { # <何回目の mktemp -d から失敗するか>
   cat > "$STUB_BIN/mktemp" <<'STUB'
 #!/bin/bash
-case " $* " in *" -d "*) exit 1 ;; esac
+case " $* " in
+  *" -d "*)
+    n=$(( $(cat "$BATS_TEST_TMPDIR/mktemp_d.count" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$BATS_TEST_TMPDIR/mktemp_d.count"
+    [ "$n" -lt "$MKTEMP_FAIL_FROM" ] || exit 1 ;;
+esac
 exec /usr/bin/mktemp "$@"
 STUB
   cat > "$STUB_BIN/rm" <<'STUB'
 #!/bin/bash
 printf '%s\n' "$*" >> "$BATS_TEST_TMPDIR/rm.log"
+for a in "$@"; do
+  case "$a" in -*) ;; *) if printf '%s' "$a" | grep -qE '^/[^/]+$'; then exit 0; fi ;; esac
+done
 exec /bin/rm "$@"
 STUB
   chmod +x "$STUB_BIN/mktemp" "$STUB_BIN/rm"
+  export MKTEMP_FAIL_FROM="$1"
   : > "$BATS_TEST_TMPDIR/rm.log"
+  rm -f "$BATS_TEST_TMPDIR/mktemp_d.count"
+}
+
+@test "wait: when the first mktemp -d fails it stops with a message and runs no rm at all" {
+  keepalive_wait_setup
+  mktemp_fail_stubs 1
   run dispatch wait --watch-stopped --interval 0 --timeout 0 11
-  [ "$status" -eq 1 ]
-  grep -qF 'could not create a temporary directory' "$BATS_TEST_TMPDIR/stderr"
-  ! grep -qE '(^| )/(bin|etc|usr)( |$)' "$BATS_TEST_TMPDIR/rm.log"
+  [ "$status" -eq 1 ] || return 1
+  grep -qF 'could not create a temporary directory' "$BATS_TEST_TMPDIR/stderr" || return 1
+  [ ! -s "$BATS_TEST_TMPDIR/rm.log" ] || return 1
+}
+
+@test "wait --resolve: when the mktemp -d for the rejudge directory fails it stops and never removes a glob of the root" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  mktemp_fail_stubs 2
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 1 ] || return 1
+  grep -qF 'could not create a temporary directory' "$BATS_TEST_TMPDIR/stderr" || return 1
+  ! grep -qE '(^| )/[^/ ]+( |$)' "$BATS_TEST_TMPDIR/rm.log" || return 1
 }
 
 @test "child-log: a parent judgment reply is not an owner message but a relayed owner reply is" {

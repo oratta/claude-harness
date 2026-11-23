@@ -303,7 +303,7 @@ def walk(rows, definition):
     for i, uuid, at, asked_now in sorted(asked.values(), key=lambda v: v[0]):
         questions.extend(asked_now)
         if child is None or i > child["index"]:
-            child = {"index": i, "uuid": uuid, "at": at, "text_at": text_at or at, "text": text}
+            child = {"index": i, "uuid": uuid, "at": at, "text_at": text_at if text else at, "text": text}
             text_at = child["text_at"]
     return {
         "uuid": safe_uuid(child["uuid"]) if child else "",

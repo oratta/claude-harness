@@ -1618,7 +1618,8 @@ try:
     for line in open(files[0], encoding="utf-8"):
         try: d = json.loads(line)
         except ValueError: continue
-        rows.append(d)
+        # child-log-read.py の read_rows と同じ読み方（辞書で、type が user・assistant・system・queue-operation の行だけ）
+        if isinstance(d, dict) and d.get("type") in ("user", "assistant", "system", "queue-operation"): rows.append(d)
     def not_input(d, content, i):
         # Not the owner's reply (same reading as child-log-read.py is_notification / NOT_INPUT_PREFIXES / local_command):
         # background task notifications, ! lines and their output, and a command line Claude Code handled itself.
@@ -1951,7 +1952,7 @@ rj_store() { printf '%s %s\n' "$2" "$3" > "$(rj_key "$1")"; }
 rejudge_init() {
   local epic="$1" k api snap ua
   shift
-  [ -n "$RJ_DIR" ] || RJ_DIR="$(mktemp -d)"
+  [ -n "$RJ_DIR" ] || RJ_DIR="$(mktemp -d)" || { echo "could not create a temporary directory" >&2; exit 1; }
   rm -f "$RJ_DIR"/*
   for k in epic "$@"; do
     api="$(rj_api "$k" "$epic")"
@@ -2090,8 +2091,8 @@ cmd_wait() {
   # 長い待ちに入った時刻（SECONDS）。空は入っていない
   local lwstart="" pollfail
   # 止まりの JSON の置き場（子の引数を var_key にした名前で 1 ファイル。ポーリングごとに空にする）
+  STOP_DIR="$(mktemp -d)" || { echo "could not create a temporary directory" >&2; exit 1; }
   local errf; errf="$(mktemp)"
-  STOP_DIR="$(mktemp -d)" || { rm -f "$errf"; echo "could not create a temporary directory" >&2; exit 1; }
   trap 'rm -f "$errf"; rm -rf "$STOP_DIR" ${RJ_DIR:+"$RJ_DIR"}' EXIT
   # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
   # 1 時間か判定できなければ 3000（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
