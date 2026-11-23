@@ -118,7 +118,7 @@ try:
         action = 'ignore'
         if (mode == 'scope-input' and 'turn_input' not in r and 'turn_state' not in r
                 and nonempty(p.get('session_id')) and isinstance(p.get('prompt'), str)
-                and p['prompt'] != reserved):
+                and p['prompt'] not in reserved):
             action = 'notify'
         print(json.dumps({'action': action})); raise SystemExit(0)
     if mode.startswith('scope-'):
@@ -133,7 +133,7 @@ try:
         prompt = p.get('prompt')
         if not isinstance(prompt, str):
             raise ValueError('prompt が文字列ではありません')
-        if prompt == reserved:
+        if prompt in reserved:
             print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
         sender = 'owner'
         if (not i or i['session_id'] != sid) and startup(r, prompt):
@@ -167,7 +167,7 @@ try:
                     rows.append((pos, row['type'], text))
         # A reserved user input preserves the original turn, even if its reply deviates.
         users = [row for row in rows if row[1] == 'user']
-        if users and users[-1][2] == reserved:
+        if users and users[-1][2] in reserved:
             print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
         assistants = [row for row in rows if row[1] == 'assistant']
         if not assistants:
@@ -233,15 +233,22 @@ HITS="$(es_find_by_worktree "$TOP" 2>/dev/null)"
 [ -n "$HITS" ] || pass_owner
 [ "$(printf '%s\n' "$HITS" | wc -l | tr -d ' ')" = 1 ] || fail '対象の子の記録が複数あります'
 RECORD="$HITS"
+# Both reserved texts (stopped child, then waiting on background work) as a JSON array.
+read_reserved() {
+  local stopped background
+  stopped="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || return 1
+  background="$(python3 -I "$DIR/child-log-read.py" --keepalive-text background)" || return 1
+  RESERVED="$(jq -cn --arg a "$stopped" --arg b "$background" '[$a,$b]')"
+}
 prepare() {
-  jq -cn --argjson record "$1" --argjson payload "$INPUT" --arg reserved "${RESERVED-}" \
+  jq -cn --argjson record "$1" --argjson payload "$INPUT" --argjson reserved "${RESERVED:-[]}" \
     '{record:$record,payload:$payload,reserved:$reserved}' | python3 -I -c "$PY_SRC" "$2"
 }
 CUR="$(es_read "$RECORD")" || fail '対象判定で記録を読めません'
 SCOPE=scope-stop
 [ "$EVENT" != UserPromptSubmit ] || SCOPE=scope-input
 if [ "$EVENT" = UserPromptSubmit ]; then
-  RESERVED="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
+  read_reserved || fail '予約文を読めません'
 fi
 PLAN="$(prepare "$CUR" "$SCOPE")" || fail "$(jq -r '.reason // "対象を識別できません"' <<< "$PLAN")"
 [ "$(jq -r .action <<< "$PLAN")" != ignore ] || pass_owner
@@ -256,7 +263,7 @@ es_check_env || fail '状態保存の設定が不正です'
 # Finish the lock failure path before the hook's 30-second timeout.
 EPIC_STATE_LOCK_TIMEOUT="$(python3 -I -c 'import sys; print(min(int(sys.argv[1]), 20))' "${EPIC_STATE_LOCK_TIMEOUT-10}")" || fail 'ロック待ち時間を設定できません'
 if [ "$EVENT" = Stop ]; then
-  RESERVED="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
+  read_reserved || fail '予約文を読めません'
 fi
 if [ "$EVENT" = UserPromptSubmit ]; then
   es_lock "$RECORD" || fail '入力受付のロックに失敗しました'
