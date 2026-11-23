@@ -9864,6 +9864,8 @@ set_dep() {
 
 @test "dependency wait state: pending-owner keeps a received dependency stop even when the log moved" {
   make_stub orca
+  set_current 400
+  set_terms 11 term-a-11
   put_record 11 stop=stopped-seen stop_uuid=d1
   put_turn 11 parent 作業報告
   set_dep 11 true
@@ -9872,6 +9874,10 @@ set_dep() {
   put_chat 11 s1 "$(said d1 "$(ago 300)" 'a')" "$(said d2 "$(ago 200)" 'b')" "$(turn_end "$(ago 200)")"
   run dispatch pending-owner 11
   [ "$status" -eq 0 ]; [ "$output" = 'pending 11 d1' ]
+  # reply --as parent does not drop the valid dependency stop because of the moved log either.
+  run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
+  [ "$status" -eq 0 ]; [ "$output" = 'relaunched 11' ]
+  jq '.stop="stopped-seen"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
   # A changed generation is not restored from the old stop.
   jq '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
   run dispatch pending-owner 11

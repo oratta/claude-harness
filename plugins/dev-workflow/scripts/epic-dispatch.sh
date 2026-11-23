@@ -1033,8 +1033,10 @@ deliver_reply() {
     fi
   fi
   # 記録がまだ stopped-seen でも、子が mark resumed を呼ばず会話ログだけで先へ進んでいる（止まりの発言より新しい発言か
-  # 入力がある）ことがある。会話ログを読めたときだけ、その子も再開済みとして送らない（読めなければ今までどおり送る）
-  if [ -z "$expected" ] && [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ]; then
+  # 入力がある）ことがある。会話ログを読めたときだけ、その子も再開済みとして送らない（読めなければ今までどおり送る）。
+  # 状態記録で有効な依存待ちの停止は、会話ログの進みで止めない（pending-owner と同じ）。
+  if [ -z "${6-}" ] && [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ] \
+    && ! received_dependency_stop "$rec"; then
     json="$(record_log_json "$rec")" || json=""
     if [ -n "$json" ] && log_moved "$json" "$(es_get "$rec" stop_uuid)"; then
       echo "skipped $n not-stopped"; return 2
