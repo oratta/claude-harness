@@ -207,7 +207,14 @@ pass_owner() { [ -z "$OWNER" ] || printf '%s\n' "$OWNER"; exit "$OWNER_RC"; }
 block() { jq -cn --arg reason "$1" '{decision:"block",reason:$reason}'; exit 0; }
 fail() {
   local reason="${1}: ${RECORD:-$ES_ROOT}"
-  if [ "$EVENT" = Stop ]; then block "$reason"; fi
+  if [ "$EVENT" = Stop ]; then
+    # Waive only processing failures on retry; preserve the existing guard result.
+    if jq -e '.stop_hook_active == true' <<< "$INPUT" >/dev/null 2>&1; then
+      printf '%s\n' "$reason" >&2
+      pass_owner
+    fi
+    block "$reason"
+  fi
   printf '%s\n' "$reason" >&2
   exit 2
 }
@@ -264,7 +271,7 @@ if jq -e '.decision == "block"' <<< "$OWNER" >/dev/null 2>&1; then
   ACTION=block
   REASON="$(jq -r .reason <<< "$OWNER")${REASON:+ / $REASON}"
 fi
-[ "$PLAN_RC" -eq 0 ] || ACTION=block
+[ "$PLAN_RC" -eq 0 ] || ACTION=error
 STATE=null
 [ "$ACTION" != save ] || STATE="$(jq -c .state <<< "$PLAN")"
 # Compare the whole input snapshot under the same lock used by incoming prompts.
@@ -274,5 +281,8 @@ es_modify "$RECORD" 'if .turn_input == $snapshot then .turn_state=$state else em
 RC=$?
 [ "$RC" -ne 4 ] || pass_owner
 [ "$RC" -eq 0 ] || fail "Stop の保存または無効化に失敗しました${REASON:+ / $REASON}"
-[ "$ACTION" = save ] || { [ "$PLAN_RC" -ne 0 ] || block "$REASON"; fail "$REASON"; }
-pass_owner
+case "$ACTION" in
+  save) pass_owner ;;
+  block) block "$REASON" ;;
+  *) fail "$REASON" ;;
+esac
