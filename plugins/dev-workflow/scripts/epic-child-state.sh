@@ -78,12 +78,12 @@ def startup(r, prompt):
     if not isinstance(prompt, str):
         return False
     start = re.match(r'^/develop (?:([^\s#]+)#|#)([0-9]+) （エピック #([0-9]+) の子。([^）]*)）', prompt)
-    if (not start or (start[1] is not None and start[1].lower() != r['repo'])
+    if (not start or (start[1] is not None and start[1].lower() != r['repo'].lower())
             or start[2] != str(r['number']) or start[3] != r['epic'].rsplit('#', 1)[1]):
         return False
     repo = re.search(r'エピックのリポジトリ ([^。]+)。', start[4])
-    return (repo[1] == r['epic'].split('#')[0] if repo
-            else r['repo'] == r['epic'].split('#')[0])
+    return (repo[1].lower() == r['epic'].split('#')[0].lower() if repo
+            else r['repo'].lower() == r['epic'].split('#')[0].lower())
 
 def target(r, p, is_input):
     sid = p.get('session_id')
@@ -112,7 +112,12 @@ try:
     r, p, reserved = data['record'], data['payload'], data['reserved']
     # Scope is checked both before acquiring a lock and on the locked input snapshot.
     if not target(r, p, mode in ('input', 'scope-input')):
-        print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
+        action = 'ignore'
+        if (mode == 'scope-input' and 'turn_input' not in r and 'turn_state' not in r
+                and nonempty(p.get('session_id')) and isinstance(p.get('prompt'), str)
+                and p['prompt'] != reserved):
+            action = 'notify'
+        print(json.dumps({'action': action})); raise SystemExit(0)
     if mode.startswith('scope-'):
         print(json.dumps({'action': 'target'})); raise SystemExit(0)
     extension(r)
@@ -222,12 +227,24 @@ prepare() {
 CUR="$(es_read "$RECORD")" || fail '対象判定で記録を読めません'
 SCOPE=scope-stop
 [ "$EVENT" != UserPromptSubmit ] || SCOPE=scope-input
+if [ "$EVENT" = UserPromptSubmit ]; then
+  RESERVED="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
+fi
 PLAN="$(prepare "$CUR" "$SCOPE")" || fail "$(jq -r '.reason // "対象を識別できません"' <<< "$PLAN")"
 [ "$(jq -r .action <<< "$PLAN")" != ignore ] || pass_owner
+if [ "$(jq -r .action <<< "$PLAN")" = notify ]; then
+  jq -cn --arg path "$RECORD" --argjson record "$CUR" '
+    {hookSpecificOutput:{hookEventName:"UserPromptSubmit",additionalContext:
+      ("記録: " + $path + " / 親: " + $record.epic + " / 子: " + $record.repo + "#" + ($record.number|tostring)
+       + "。子セッションは未登録で、入力記録・状態行検査は適用されていない。本来の子として作業中なら、その子のセッションへ一致する起動指示を送り直して登録を確認する。別用途なら対応不要。")}}'
+  exit 0
+fi
 es_check_env || fail '状態保存の設定が不正です'
 # Finish the lock failure path before the hook's 30-second timeout.
 EPIC_STATE_LOCK_TIMEOUT="$(python3 -I -c 'import sys; print(min(int(sys.argv[1]), 20))' "${EPIC_STATE_LOCK_TIMEOUT-10}")" || fail 'ロック待ち時間を設定できません'
-RESERVED="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
+if [ "$EVENT" = Stop ]; then
+  RESERVED="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
+fi
 if [ "$EVENT" = UserPromptSubmit ]; then
   es_lock "$RECORD" || fail '入力受付のロックに失敗しました'
   trap 'es_unlock "$RECORD"' EXIT

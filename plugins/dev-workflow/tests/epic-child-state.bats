@@ -35,6 +35,10 @@ append_row() {
     '{type:$t,sessionId:$s,message:{role:$t,content:[{type:"text",text:$text}]}}' >> "$LOG"
 }
 stop() { append_row assistant "$1"; payload Stop "$1" | "$HOOK"; }
+notified() {
+  [ "$status" -eq 0 ]
+  jq -e --arg path "$REC" '.hookSpecificOutput | .hookEventName == "UserPromptSubmit" and (.additionalContext | contains($path) and contains("o/r#2") and contains("o/r#1") and contains("子セッションは未登録") and contains("入力記録・状態行検査は適用されていない") and contains("本来の子") and contains("送り直して登録を確認") and contains("別用途なら対応不要"))' <<< "$output"
+}
 blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$output" == *'"decision":"block"'* ]]; }
 
 @test "input: first and consecutive inputs preserve parent fields and invalidate state" {
@@ -459,9 +463,10 @@ SH
 @test "session: unregistered ordinary inputs and Stop never claim the child" {
   snapshot
   reserved="$(python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text)"
-  for p in hello '親エピック #1 の判断: ok' '主の返事（親エピック #1 経由）: ok' "$reserved"; do
-    run input "$p"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+  for p in hello '親エピック #1 の判断: ok' '主の返事（親エピック #1 経由）: ok'; do
+    run input "$p"; notified; unchanged
   done
+  run input "$reserved"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
   for msg in missing '状態: 完了 — x' '/develop #2 （エピック #1 の子。起動）'; do
     run stop "$msg"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
   done
@@ -476,7 +481,7 @@ SH
       snapshot
       SID=other
       for p in '/develop #99 （エピック #1 の子。エピックのリポジトリ parent/repo。起動）' '/develop #2 （エピック #99 の子。エピックのリポジトリ parent/repo。起動）' '/develop #2 （エピック #1 の子。エピックのリポジトリ wrong/repo。起動）' '/develop #2 （エピック #1 の子。起動）' '引用: /develop #2 （エピック #1 の子。エピックのリポジトリ parent/repo。起動）'; do
-        run input "$p"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+        run input "$p"; [ "$status" -eq 0 ]; if [ "$phase" = unregistered ]; then notified; else [ -z "$output" ]; fi; unchanged
       done
       input '/develop #2 （エピック #1 の子。エピックのリポジトリ parent/repo。返事を受けて起動し直し） 主の返事（親エピック #1 経由）: ok'
       expected=1; [ "$phase" != registered ] || expected=3
@@ -513,7 +518,7 @@ SH
     snapshot
     SID=s2
     for p in '/develop wrong/repo#2 （エピック #1 の子。起動）' '/develop o/r#99 （エピック #1 の子。起動）' '/develop o/r#2 （エピック #99 の子。起動）' '/develop o/r#2 （エピック #1 の子。エピックのリポジトリ wrong/repo。起動）'; do
-      run input "$p"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+      run input "$p"; [ "$status" -eq 0 ]; if [ "$phase" = unregistered ]; then notified; else [ -z "$output" ]; fi; unchanged
     done
   done
 }
@@ -576,7 +581,8 @@ SH
 }
 
 @test "session: unrelated Stop preserves direct guard output, exit code and one invocation" {
-  register; stop '状態: 完了 — original'
+  for phase in unregistered registered; do
+  if [ "$phase" = registered ]; then SID=s1; register; stop '状態: 完了 — original'; fi
   snapshot
   SID=s2
   for msg in missing '#1670 の対応を進めますか？'; do
@@ -586,7 +592,7 @@ SH
     run "$HOOK" <<< "$p"
     [ "$status" -eq "$expected_rc" ]; [ "$output" = "$expected" ]; unchanged
   done
-  mkdir "$BATS_TEST_TMPDIR/entry"
+  mkdir -p "$BATS_TEST_TMPDIR/entry"
   cp "$HOOK" "$BATS_TEST_TMPDIR/entry/epic-child-state.sh"
   ln -s "$PLUGIN_DIR/scripts/epic-state.sh" "$BATS_TEST_TMPDIR/entry/epic-state.sh"
   export OWNER_CALLS="$BATS_TEST_TMPDIR/owner-calls"
@@ -601,6 +607,8 @@ SH
   run "$BATS_TEST_TMPDIR/entry/epic-child-state.sh" <<< "$p"
   [ "$status" -eq 7 ]; [ "$output" = guard-output ]; unchanged
   [ "$(wc -l < "$OWNER_CALLS" | tr -d ' ')" = 1 ]
+  rm -f "${OWNER_CALLS}"
+  done
 }
 
 @test "session: lock recheck rejects an old input after startup switches the session" {
@@ -631,5 +639,53 @@ SH
     [ "$status" -eq 0 ]
     jq -e '.turn_input.session_id == "s2" and .turn_input.sender == "startup" and .turn_state == null' "$REC"
     unset INJECT_INPUT
+  done
+}
+
+@test "migration: mixed repo case registers and relaunches without rewriting identity" {
+  for launcher in orca tmux; do
+    for parent in O/R Parent/Repo; do
+      jq --arg l "$launcher" --arg e "$parent#1" 'del(.turn_input,.turn_state) | .launcher=$l | .repo="O/r" | .epic=$e' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+      SID=s1
+      input "/develop o/R#2 （エピック #1 の子。エピックのリポジトリ $(printf '%s' "$parent" | tr '[:upper:]' '[:lower:]')。起動）"
+      jq -e --arg e "$parent#1" '.repo == "O/r" and .epic == $e and .turn_input.generation == 1 and .turn_input.sender == "startup"' "$REC"
+      SID=s2
+      input "/develop O/R#2 （エピック #1 の子。エピックのリポジトリ $parent。再起動）"
+      jq -e '.turn_input.generation == 2 and .turn_input.session_id == "s2" and .turn_input.sender == "startup"' "$REC"
+      snapshot
+      SID=s3
+      for p in '/develop other/repo#2 （エピック #1 の子。エピックのリポジトリ parent/repo。起動）' '/develop o/r#2 （エピック #1 の子。エピックのリポジトリ other/repo。起動）'; do
+        run input "$p"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+      done
+      if [ "$parent" = O/R ]; then
+        register
+        jq -e '.turn_input.generation == 3 and .turn_input.sender == "startup"' "$REC"
+      fi
+    done
+  done
+}
+
+@test "migration: unmatched inputs notify without locks or logs then resend activates Stop" {
+  for launcher in orca tmux; do
+    jq --arg l "$launcher" 'del(.turn_input,.turn_state) | .launcher=$l' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+    snapshot
+    mkdir "$REC.lock"
+    export EPIC_STATE_LOCK_TIMEOUT=abc
+    for prompt in hello '/develop wrong/repo#2 （エピック #1 の子。起動）'; do
+      # A directory cannot be read as a transcript; notification must not inspect it.
+      p="$(payload UserPromptSubmit "$prompt" | jq --arg l "$BATS_TEST_TMPDIR" '.transcript_path=$l')"
+      run "$HOOK" <<< "$p"; notified; unchanged
+    done
+    reserved="$(python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text)"
+    run input "$reserved"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+    for v in 'null' '""' '{}'; do
+      p="$(payload UserPromptSubmit hello | jq --argjson v "$v" '.session_id=$v')"
+      run "$HOOK" <<< "$p"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+    done
+    rmdir "$REC.lock"
+    export EPIC_STATE_LOCK_TIMEOUT=0
+    register
+    jq -e '.turn_input.session_id == "s1" and .turn_input.sender == "startup" and .turn_input.generation == 1' "$REC"
+    run stop missing; blocked
   done
 }
