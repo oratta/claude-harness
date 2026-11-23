@@ -576,9 +576,9 @@ refute() {
   c="$(section 'エピックの子が主の返事を待って止まるとき')"
   [ -n "$c" ]
   grep -qF '`references/epic-child-stop.md` を Read' <<<"$c"
-  grep -qF '主の返事を待って止まる前' <<<"$c"
+  grep -qF '主の返事待ちで止まる前' <<<"$c"
   grep -qF '`主の返事（親エピック #`' <<<"$c"
-  grep -qF '`nested` でないセッションは読まない' <<<"$c"
+  grep -qF '`nested` 以外は読まない' <<<"$c"
   # 参照の節からも辿れる
   generated="$(develop_procedures)"
   grep -qF '`references/epic.md`' <<<"$generated"

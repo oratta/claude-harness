@@ -2587,3 +2587,32 @@ no_point_section() { awk '/^#### 6-0\. 論点なしの宣言の確認/{f=1;print
   printf '%s\n' "$l" | grep -qF '宣言を写さない'
   printf '%s\n' "$l" | grep -qF 'アクションの行に畳み'
 }
+
+@test "preflight (#1765): check final per-word tables before posting and report failures" {
+  block="$(reviewer_block)"
+  check="$(echo "$block" | grep '^投稿前の自己検査:')"
+  for token in '最終の表そのもの' '語ごと' 'python3 plugins/dev-workflow/scripts/review-hit-set.py --repo <repo> <table-file>' \
+    '--head を付けない' '非 0' '修正して再実行' 'exit 0' '検査した語数・コマンド・exit code' \
+    '実行できない理由' '検査済みと記さない' '抜粋' '列名' 'プレースホルダ' 'バッククォート' \
+    '本文全体' '空表' '全ヒット要約' 'contract:' 'missing:' 'extra:' 'summary:'; do
+    echo "$check" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  # The existing scope and output order remain part of the contract.
+  echo "$block" | grep -qF '変更点の一覧` → `照合表` → `ハンク被覆` → 三表の自己点検 → 指摘'
+  echo "$block" | grep -qF '区画を渡されたときは、その区画のファイルの全ハンクを読み'
+  echo "$block" | grep -qF '照合表` の検索範囲と全ヒットはリポジトリ全体のまま'
+}
+
+@test "preflight (#1765): enumerate exact uncovered hunks before requesting supplements" {
+  file="${PLUGIN_DIR}/skills/pr-review-gate/stages/gate-triage.md"
+  check="$(grep '^3\. 固定した PR diff' "$file")"
+  for token in '@@ -0,0 +1,N @@' '全区画の実際の被覆行の和集合' \
+    '他区画で被覆済み' '「新規」' '被覆に数えない' '補足を依頼する前' \
+    '未被覆の全ハンク' 'ファイルと正確なハンクヘッダー' '補足要求'; do
+    echo "$check" | grep -qF -- "$token" || { echo "missing: $token"; return 1; }
+  done
+  receive="$(awk '/^## 補足レビュー結果の受領/{f=1;next} /^## /{f=0} f' "$file")"
+  for token in '補足済み回数: 1' '残差' 'review-incomplete' '合格処理へ進まない'; do
+    echo "$receive" | grep -qF -- "$token" || return 1
+  done
+}

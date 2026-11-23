@@ -8233,6 +8233,82 @@ $D
   [ "$output" = 'skipped unknown-state' ]; [ "$(calls '^orca terminal send ')" -eq 0 ]
 }
 
+# Synthetic delivery regressions based on the history fixture; not real send/cache evidence.
+@test "keepalive orca: completed wait history and echo permit only new foreground execution after send" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  local marker
+  for marker in '✽ Working… (1s · thinking)' 'esc to interrupt'; do
+    orca_history_screen "$W|$D|❯ reserved|$marker"
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+    orca_history_screen "$W|$D"
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$marker: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = sent ]
+    [ "$(calls '^orca terminal read .*--screen.*--json')" -eq 3 ]
+    [ "$(calls '^orca terminal send .*--text reserved --enter ')" -eq 1 ]
+    [ "$(calls '^orca ')" -eq 5 ] # list + two pre-reads + send + post-read only
+  done
+}
+
+@test "keepalive orca: completed wait echo and unknown footer never authorize a pre-send" {
+  keepalive_orca_setup
+  local kind
+  for kind in echo unknown-footer; do
+    orca_history_screen "$W|$D|❯ reserved"
+    if [ "$kind" = unknown-footer ]; then
+      orca_screen '──────────────
+❯
+──────────────
+unknown footer'
+    fi
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+}
+
+@test "keepalive orca: completed wait echo cannot bypass any other delivery condition" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  local kind
+  for kind in echo background normal multiline dim draft no-frame multiple unknown-footer dialog source malformed; do
+    orca_history_screen "$W|$D|❯ reserved|esc to interrupt"
+    python3 - "$STUB_CFG/screen" "$kind" <<'PYCODE'
+import json, sys
+p, kind = sys.argv[1:]
+d = json.load(open(p)); t = d["result"]["terminal"]; rows = t["tail"]
+if kind == "echo": rows.remove("esc to interrupt")
+if kind == "background": rows[rows.index("esc to interrupt")] = "✻ Waiting for 2 background agents to finish"
+if kind == "normal": rows[rows.index("❯")] = "❯ human"
+if kind == "multiline": rows[rows.index("❯")] = "❯\n\n human\n continued"
+if kind == "dim": rows[rows.index("❯")] = "❯ \x1b[2msuggestion\x1b[0m"
+if kind == "draft": t["draft"] = "human"
+if kind == "no-frame": rows[:] = rows[:4]
+if kind == "multiple": rows += ["──────────────", "❯", "──────────────", "? for shortcuts"]
+if kind == "unknown-footer": rows[-1] = "unknown footer"
+if kind == "dialog": rows.insert(0, "Enter to confirm")
+if kind == "source": t["source"] = "stream"
+if kind == "malformed": t["tail"] = [False]
+json.dump(d, open(p, "w"))
+PYCODE
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+    orca_history_screen "$W|$D"
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$kind: $output" >&3
+    [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+    [ "$(calls '^orca terminal send .*--text reserved --enter ')" -eq 1 ]
+    [ "$(calls '^orca terminal read .*--screen.*--json')" -eq 3 ]
+    [ "$(calls '^orca ')" -eq 5 ]
+    if [ "$kind" = malformed ]; then
+      grep -q 'failed observe shape' "$BATS_TEST_TMPDIR/stderr"
+    fi
+  done
+}
+
 @test "keepalive orca: after send a wait line alone is failed send, never resent" {
   keepalive_orca_setup
   echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
@@ -8495,6 +8571,28 @@ user@host work %'
   run orca_keepalive keepalive /work/issue-11 reserved
   [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+@test "keepalive verification: parent procedure separates real send cache evidence and unobserved footers" {
+  run python3 - "$PLUGIN_DIR/skills/develop/references/epic-keepalive-watch.md" <<'PYCODE'
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text()
+for term in ["skipped busy", "正しい非送信", "15万トークン未満", "前景が入力待ち",
+             "通常の声かけ条件", "候補が無ければ", "実機確認は未完了", "#1728", "#1732",
+             "fixture", "代替しない",
+             "10件", "すべてbypass", "非bypass", "未確認・未対応", "認識範囲を広げない",
+             "plugins/dev-workflow/changes/1752.md"]:
+    assert term in text, term
+record = (Path(sys.argv[1]).parents[3] / "changes/1752.md").read_text()
+for term in ["識別子", "会話量", "入力待ちの根拠", "send 結果", "予約文への返事",
+             "cache_read_input_tokens", "会話量の比較", "生ログ", "repo に置かず",
+             "LLM_LOG_DIR", "未設定なら確認",
+             "Orca 1.4.269", "2026-11-23", "10件", "非bypass候補0件", "truncated=false",
+             "orca terminal list --limit 100 --json", "orca terminal read --terminal <handle> --screen --json"]:
+    assert term in record, term
+PYCODE
+  [ "$status" -eq 0 ]
 }
 
 @test "keepalive launch: orca start and deliver relaunch disable prompt suggestions" {
