@@ -1007,7 +1007,7 @@ cmd_launch() {
 # 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する
 deliver_reply() {
   local relaunch="$1" as="$2" epic="$3" n="$4" text="$5"
-  local msg rec path res prompt json erefs=" " xrepo_epic=""
+  local msg rec path res prompt json erefs=" " xrepo_epic="" expected="${6-}"
   child_record "$PARENT_TOP" "$n"
   case $? in
     0) ;;
@@ -1026,7 +1026,7 @@ deliver_reply() {
   esac
   # 記録がまだ stopped-seen でも、子が mark resumed を呼ばず会話ログだけで先へ進んでいる（止まりの発言より新しい発言か
   # 入力がある）ことがある。会話ログを読めたときだけ、その子も再開済みとして送らない（読めなければ今までどおり送る）
-  if [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ]; then
+  if [ -z "$expected" ] && [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ]; then
     json="$(record_log_json "$rec")" || json=""
     if [ -n "$json" ] && log_moved "$json" "$(es_get "$rec" stop_uuid)"; then
       echo "skipped $n not-stopped"; return 2
@@ -1054,6 +1054,9 @@ deliver_reply() {
   fi
   # 部品がセッションの一覧を 1 回だけ読み、子のセッションへ送るか、閉じて起動し直すかを決める
   # （出力は sent / relaunched <session> / failed <理由> の 1 行）
+  if [ -n "$expected" ]; then
+    wait_received "$rec" "$expected" >/dev/null || { echo "skipped $n not-stopped"; return 2; }
+  fi
   res="$(launcher deliver "$path" "$relaunch" "$msg" "$agent_cmd" "$prompt")"
   case "$res" in
     sent) echo "sent $n"; return 0 ;;
@@ -1415,9 +1418,12 @@ resolve_stopped() {
   local judge="${EPIC_DISPATCH_JUDGE:-$(dirname "$0")/stop-judge.sh}"
   local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body rl wpath
   local head1="親の判断: 判断できなかった"
-  local rec="" su="" stopjson
+  local rec="" su="" stopjson turn
   stopjson="$STOP_DIR/$(var_key "$n")"
   if child_record "$PARENT_TOP" "$n"; then rec="$ES_HIT"; su="$(es_get "$rec" stop_uuid)"; fi
+  # 受領した世代の有効な停止だけを判断へ渡す。明示的な reply の契約には適用しない。
+  [ -n "$rec" ] || return 0
+  turn="$(wait_received "$rec")" || return 0
   # 依存待ちの終了は判断モデルへ渡さず、停止記録を保ったまま親の依存照合へ返す。
   # マーカーは合図だけで、登録・解消の証拠や実行する指示としては使わない。
   # フェンスの文脈を失わないよう、切り詰め前の全文で判定した結果を使う。
@@ -1430,6 +1436,8 @@ resolve_stopped() {
   else
     out="$("$judge" "$epic" "$n")"; rc=$?
   fi
+  # 判断中に子へ入力があった、または状態が無効になったら、判断全体を破棄する。
+  wait_received "$rec" "$turn" >/dev/null || return 0
   l1="$(printf '%s\n' "$out" | sed -n 1p)"
   l2="$(printf '%s\n' "$out" | sed -n 2p)"
   l3="$(printf '%s\n' "$out" | sed -n 3p)"
@@ -1448,7 +1456,7 @@ resolve_stopped() {
     return 1
   elif [ "$l1" = "判断: 問いではない" ]; then
     rc=3
-    [ -z "$rec" ] || { stop_to_resumed "$rec"; rc=$?; }
+    [ -z "$rec" ] || { stop_to_resumed "$rec" "$turn"; rc=$?; }
     # 4 は判断のあいだに止まりが外れていた場合で、戻すものが無い
     case "$rc" in
       0|4) printf '問いではない %s %s\n' "$n" "$reason" >&2; return 0 ;;
@@ -1463,8 +1471,9 @@ resolve_stopped() {
     # 子のワークツリーのパスは記録の worktree から読む（読めなければそのまま送る）
     wpath=""
     [ -z "$rec" ] || wpath="$(es_get "$rec" worktree)"
+    wait_received "$rec" "$turn" >/dev/null || return 0
     [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath" "$su")"
-    res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply")"
+    res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply" "$turn")"
     case "$res" in
       # 送る直前に子が再開済みだった（主が子のタブで答えた）。送らず、エピックにも残さない
       "skipped $n not-stopped") return 0 ;;
@@ -1617,9 +1626,10 @@ PY
 # Only a normal continuing poll calls this. Recheck local state and substantive
 # input after remote reads, then use the launcher's own screen reobservation.
 keepalive_child() {
-  local n="$1" f wt name childcomments epiccomments epic repo enum text now out why
+  local n="$1" f wt name childcomments epiccomments epic repo enum text now out why turn
   child_record "$PARENT_TOP" "$n" || return 0
   f="$ES_HIT"
+  turn="$(wait_received "$f")" || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ "$(es_get "$f" stop)" = stopped-seen ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ "$(es_get "$f" status)" != "done" ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ -z "$(es_get "$f" launch_failed)" ] || { keepalive_note "$f" "skipped launch-failed"; return 0; }
@@ -1640,6 +1650,7 @@ keepalive_child() {
   [ "$(es_get "$f" launcher)" = "$name" ] || return 0
   why="$(keepalive_candidate "$f" "$childcomments" "$epiccomments" "$(date +%s)" "$text")" \
     || { keepalive_note "$f" "skipped ${why:-no-transcript}"; return 0; }
+  wait_received "$f" "$turn" >/dev/null || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   out="$(launcher_run "$name" keepalive "$wt" "$text")"
   case "$out" in
     sent) keepalive_note "$f" "sent" ;;
@@ -1673,8 +1684,13 @@ record_log_json() {
 # 受けた止まり（stopped-seen で stop_uuid がある）を再開に書き換え、Orca の印へ写す（<記録>）。stop_uuid・stop_at は変えない。
 # wait の再開の確かめ・--resolve の「問いではない」・dismiss が使う。戻り値は es_modify と同じ
 stop_to_resumed() {
-  local f="$1" rc=0
-  es_modify "$f" 'if .stop == "stopped-seen" and (.stop_uuid // "") != "" then .stop = "resumed" else empty end' \
+  local f="$1" rc=0 condition
+  condition='(.stop_uuid // "") != ""'
+  if [ -n "${2-}" ]; then
+    condition='target and turn_key == $expected and .stop_turn == $expected'
+  fi
+  es_modify "$f" "$WAIT_TURN_DEFS"'if .stop == "stopped-seen" and ('"$condition"')
+    then .stop = "resumed" else empty end' --argjson expected "${2:-null}" \
     >/dev/null 2>>"$errf" || rc=$?
   [ "$rc" -ne 0 ] || mirror_state "$f" "$(es_get "$f" worktree)" resumed
   return "$rc"
@@ -1710,10 +1726,11 @@ WAIT_TURN_DEFS='
   def turn_key: .turn_input | {generation,session_id};
 '
 
-# 有効な停止の世代・セッションを返す。expected があれば同じ停止だけを認める。
-wait_target() {
+# 受領済みで、同じ世代の有効な停止を現在も保っているか。一度の読取で照合する。
+wait_received() {
   es_read "$1" | jq -ce "$WAIT_TURN_DEFS"'
-    select(target) | turn_key | select($expected == null or . == $expected)' \
+    select(target and .stop == "stopped-seen" and turn_key == .stop_turn)
+    | turn_key | select($expected == null or . == $expected)' \
     --argjson expected "${2:-null}" 2>/dev/null
 }
 
@@ -1853,6 +1870,7 @@ rejudge_changed() {
     rm -f "$STOP_DIR/$(var_key "$n")"
     if child_record "$PARENT_TOP" "$n" 2>/dev/null; then
       rec="$ES_HIT"
+      wait_received "$rec" >/dev/null || continue
       json="$(record_log_json "$rec")" && [ -n "$json" ] && write_stop_json "$n" "$json" false
     fi
     resolve_stopped "$epic" "$n" >/dev/null
@@ -2000,7 +2018,7 @@ cmd_wait() {
         3) wsfail=1 ;;
       esac
     done
-    # 止まった子は、閉じていない位置引数の子だけを、印と会話ログで検知し、排他つきで受けた印に書き換えてから数える
+    # 止まった子は、閉じていない位置引数の有効な終了状態だけを、排他つきで受領してから数える
     if [ "$watchstop" -eq 1 ]; then
       rm -f "$STOP_DIR"/*
       for n in "$@"; do

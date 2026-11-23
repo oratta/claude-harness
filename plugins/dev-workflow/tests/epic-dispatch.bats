@@ -8465,6 +8465,14 @@ chat_on_poll() {
   printf 'printf "%%s\\n" %s >> %q\n' "$(printf '%q ' "$@")" "$dir/s1.jsonl" > "$STUB_CFG/hook_${n}_$c"
 }
 
+turn_on_poll() {
+  local n="$1" c="$2" sender="$3" gen="$4" f
+  f="$(rec_of 1122 "$n")"
+  printf 'jq %q %q > %q.tmp && mv %q.tmp %q\n' \
+    ".turn_input.generation=$gen | .turn_input.sender=\"$sender\" | .turn_state=$(if [ "$sender" = owner ]; then echo null; else printf '{generation:%s,session_id:"s1",value:"主の返事待ち",summary:"新しい問い",recorded_at:"2026-01-01T00:00:02Z"}' "$gen"; fi)" \
+    "$f" "$f" "$f" "$f" >> "$STUB_CFG/hook_${n}_$c"
+}
+
 @test "wait owner-wait: only told stops do not time out at the limit and end with expired" {
   told_ready 11
   EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
@@ -8516,6 +8524,7 @@ chat_on_poll() {
 @test "wait owner-wait: a new question during the long wait ends with stopped" {
   told_ready 11
   chat_on_poll 11 4 "$(asked d2 "$(ago 1)")"
+  turn_on_poll 11 4 parent 2
   EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
@@ -8524,7 +8533,7 @@ chat_on_poll() {
 
 @test "wait owner-wait: an owner reply after the usual limit ends with timeout" {
   told_ready 11
-  chat_on_poll 11 4 "$(chat_line user "$(ago 1)" 'A でお願いします')"
+  turn_on_poll 11 4 owner 2
   EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
   [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "timeout 11" ]
@@ -8760,6 +8769,7 @@ rejudge_ready() {
   make_judge
   set_current 400
   put_record 11 stop=resumed
+  put_turn 11
   set_terms 11 term-a-11
   gh_seq 11 open
   gh_seq 22 open closed
@@ -8937,4 +8947,112 @@ help_env() {
 @test "header comment points at epic-loop.md, not the removed epic.md section" {
   ! sed -n 1,5p "$SCRIPT" | grep -qF 'epic.md「回し方」' || return 1
   sed -n 1,5p "$SCRIPT" | grep -qF 'epic-loop.md'
+}
+
+@test "wait intervention: owner turns with large old logs never judge send close or restart" {
+  for value in 主の返事待ち 作業報告; do
+    resolve_pass
+    put_transcript 90 150001
+    put_turn 11 owner "$value"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+  done
+}
+
+@test "wait intervention: an owner input or invalid state during judgement discards a pass" {
+  local mutation f
+  for mutation in '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' '.turn_state=null' '.turn_input.session_id="new" | .turn_state.session_id="new"'; do
+    resolve_pass
+    put_transcript 90 150001
+    f="$(rec_of 1122 11)"
+    printf 'jq %q %q > %q.tmp && mv %q.tmp %q\n' "$mutation" "$f" "$f" "$f" "$f" > "$STUB_CFG/judge_hook"
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$output" = 'closed 11' ]
+    [ "$(calls '^judge ')" -eq 1 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    [ ! -e "$STUB_CFG/comment_400" ]
+  done
+}
+
+@test "wait intervention: keepalive cannot bypass owner or invalid state" {
+  keepalive_wait_setup
+  for value in 主の返事待ち 作業報告; do
+    reset_keepalive_poll
+    put_turn 11 owner "$value"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+  done
+}
+
+@test "wait intervention: material changes cannot rejudge owner or invalid turns" {
+  rejudge_ready 11
+  put_turn 11 owner 主の返事待ち
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  change_on_poll 11 2 2026-02-01T00:00:00Z changed '[]'
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "wait owner-wait: log-only question or owner input stays received until expired" {
+  local row
+  for row in "$(asked d2 "$(ago 1)")" "$(chat_line user "$(ago 1)" 'A でお願いします')"; do
+    told_ready 11
+    printf 0 > "$STUB_CFG/ghcount_11"
+    chat_on_poll 11 2 "$row"
+    EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+    [ "$status" -eq 0 ]; [ "$output" = 'expired 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]; [ "$(rec_get 11 stop_uuid)" = d1 ]
+  done
+}
+
+@test "wait intervention: every nonpass result leaves large old terminals untouched" {
+  local verdict
+  for verdict in escalation no-question failure malformed empty; do
+    resolve_pass
+    put_transcript 90 150001
+    case "$verdict" in
+      escalation) judge_says judge_out 主に上げる 要確認 '' ;;
+      no-question) judge_says judge_out 問いではない 報告 '' ;;
+      failure) echo 1 > "$STUB_CFG/judge_exit" ;;
+      malformed) echo broken > "$STUB_CFG/judge_out" ;;
+      empty) judge_says judge_out 通す 範囲内 '' ;;
+    esac
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ]
+    [ "$(calls '^judge ')" -eq 1 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    [ ! -e "$STUB_CFG/comment_400" ]
+  done
+}
+
+@test "wait state: a new input at receipt lock cannot accept the stale stop" {
+  make_stub orca
+  put_record 11
+  put_turn 11
+  local f; f="$(rec_of 1122 11)"
+  cat > "$STUB_BIN/mkdir" <<EOF_STUB
+#!/bin/bash
+if [ "\$1" = "$f.lock" ]; then
+  jq '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+fi
+/bin/mkdir "\$@"
+EOF_STUB
+  chmod +x "$STUB_BIN/mkdir"
+  wait_stop
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop)" = '' ]; [ "$(rec_get 11 stop_turn)" = null ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
 }
