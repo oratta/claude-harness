@@ -19,14 +19,14 @@
 
 ### 1. 停止対象の述語を二つの種類に分ける（裁定の 2）
 
-`WAIT_TURN_DEFS` に、共通部分（有効な組・owner でない・status が done でない・summary と時刻の型）を持つ述語と、種類を表す二つの述語を置く。
+`WAIT_TURN_DEFS` に、共通部分（有効な組・owner でない・status が done でない・summary と時刻の型・`turn_state.dependency_wait` が欠落か boolean）を持つ述語と、種類を表す二つの述語を置く。
 
 - `owner_question`: `turn_state.value == "主の返事待ち"`
 - `dependency_stop`: `turn_state.value == "作業報告"` かつ `turn_state.dependency_wait == true`（jq の `== true` で、`"true"`・`1`・`null` などは偽）
 
 `target` は共通部分かつ（`owner_question` または `dependency_stop`）とする。受領・二重受領の防止・再開の記録・`wait_received` は `target` のまま共有するので、依存待ちの停止にも同じ世代・セッションの排他更新が掛かる。
 
-親の側で `dependency_wait` を型不正として記録全体を拒むことはしない（`dev-workflow-epic-state` が既存の親用の記録検査に型検査を足すことを禁じている）。boolean の `true` でなければ依存待ちでないとして扱うだけにする。
+記録全体を読めることと、停止対象として有効であることを分ける。親の側で `dependency_wait` を型不正として記録全体を拒むことはしない（`dev-workflow-epic-state` が既存の親用の記録検査に型検査を足すことを禁じている）ので、既存の親用の記録検査は変えず、記録は従来どおり読める。そのうえで停止対象の共通部分で、`turn_state` に `dependency_wait` が存在して boolean でない記録（`"true"`・`1`・`null`・配列・オブジェクト）を、value によらず停止対象から外す（`主の返事待ち` でも外す。`dev-workflow-epic-state` の「終了状態は3値と中身と保存時刻を同じ世代で持つ」は任意項目を boolean と定めており、それを満たさない終了状態は有効な停止として扱わない）。jq では `(.turn_state | has("dependency_wait") | not) or (.turn_state.dependency_wait | type == "boolean")` の形で書き、存在する `null` も除外する。欠落と `false` は除外しないので、`dependency_wait` を持たない返事待ちと `false` の返事待ちは従来どおり `owner_question` として通る。
 
 採らなかった案: 依存待ちを `主の返事待ち` と書かせる案と、親がログやコメントから停止に格上げする案は、裁定で退けられた（返事待ちと混ざり判断役・声かけに流れる／旧ログの補完で owner のターンに介入しうる）。
 

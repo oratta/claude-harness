@@ -2,7 +2,7 @@
 
 ### Requirement: wait は子の状態の記録だけで止まった子を検知する
 
-`wait --watch-stopped` は、閉じていない位置引数の子で `status != done` の記録について、`dev-workflow-epic-state` の「有効な終了状態は入力との世代とセッションの一致で決まる」を満たし、`turn_input.sender` が `parent` または `startup` で、次のどちらかに当たるときだけ停止の対象にしなければならない（MUST）。①`turn_state.value` が `主の返事待ち`（以下、返事待ちの停止）。②`turn_state.value` が `作業報告` で、かつ `turn_state.dependency_wait` が JSON の `true`（以下、依存待ちの停止。項目の生成条件と型は `dev-workflow-epic-state` の「終了状態は3値と中身と保存時刻を同じ世代で持つ」（任意の boolean の型）・「子は検査済みの依存待ちの作業報告だけに依存待ち情報を保存する」・「依存待ち情報は終了状態と一緒に無効化し排他更新する」に従い、ここでは規定し直さない）。欠落・null・型不正・不一致・owner・通常の作業報告（`dependency_wait` が無い、`false`、または boolean でない）・完了は対象外とする（MUST）。`dependency_wait` の欠落を依存待ちの証拠にしてはならない（MUST NOT）。印、会話ログ、依存待ちのマーカー、停止コメント、質問ツール、経過時間から対象に格上げしてはならない（MUST NOT）。この条件は既存の印・ログ・依存待ちによる停止規定に優先する。
+`wait --watch-stopped` は、閉じていない位置引数の子で `status != done` の記録について、`dev-workflow-epic-state` の「有効な終了状態は入力との世代とセッションの一致で決まる」を満たし、`turn_input.sender` が `parent` または `startup` で、次のどちらかに当たるときだけ停止の対象にしなければならない（MUST）。①`turn_state.value` が `主の返事待ち`（以下、返事待ちの停止）。②`turn_state.value` が `作業報告` で、かつ `turn_state.dependency_wait` が JSON の `true`（以下、依存待ちの停止。項目の生成条件と型は `dev-workflow-epic-state` の「終了状態は3値と中身と保存時刻を同じ世代で持つ」（任意の boolean の型）・「子は検査済みの依存待ちの作業報告だけに依存待ち情報を保存する」・「依存待ち情報は終了状態と一緒に無効化し排他更新する」に従い、ここでは規定し直さない）。欠落・null・型不正・不一致・owner・通常の作業報告（`dependency_wait` が無い、`false`、または boolean でない）・完了は対象外とする（MUST）。`turn_state` に `dependency_wait` が存在して boolean でない記録は、value が `主の返事待ち` でも対象外とする（MUST）。記録全体を読めるかの既存の親用の記録検査はこの型を見ず、ここでの除外は停止対象として有効かの判定だけで行う。`dependency_wait` の欠落と `false` は返事待ちの停止を妨げない（MUST NOT）。`dependency_wait` の欠落を依存待ちの証拠にしてはならない（MUST NOT）。印、会話ログ、依存待ちのマーカー、停止コメント、質問ツール、経過時間から対象に格上げしてはならない（MUST NOT）。この条件は既存の印・ログ・依存待ちによる停止規定に優先する。
 
 判定の守備範囲は要件「wait の状態記録による判定の守備範囲を限る」に従う。
 
@@ -13,6 +13,10 @@
 #### Scenario: 親の入力から始まった依存待ちの作業報告を返す
 - **WHEN** 子 11 が open、status が running で、型・世代・セッションが正しい組の sender が parent または startup、value が作業報告、`dependency_wait` が `true` であり、まだ受けていない状態で `wait --interval 0 --timeout 0 --watch-stopped 11` を実行する
 - **THEN** stop を stopped-seen に記録して受領した組を残し、stdout は `stopped 11`、exit 0 となる。会話ログが無い・読めない場合も同じである
+
+#### Scenario: 返事待ちは dependency_wait の欠落と false で通し、非 boolean で除外する
+- **WHEN** 子 11 が open、status が running で、型・世代・セッションが正しい組の sender が parent、value が主の返事待ちであり、`dependency_wait` が欠落・`false`・`"true"`・`1`・`null`・配列・オブジェクトのいずれかで、まだ受けていない状態で `wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11` を実行する
+- **THEN** 欠落と `false` では `stopped 11`、exit 0 となる。それ以外では記録は読めるが stdout に `stopped 11` は出ず、判断役・子への送信・端末終了・再起動を呼ばない
 
 #### Scenario: 主が子のタブで話しているターンには介入しない
 - **WHEN** sender が owner の有効な組で、value が主の返事待ちまたは作業報告であり（作業報告には `dependency_wait: true` と依存待ちのマーカーを持つものを含む）、会話量が 150,001 トークン、最後の活動が 3600 秒以上前で、古い stopped または stopped-seen の印も残る状態で `wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11` を実行する
@@ -141,7 +145,7 @@ wait は `--watch-stopped`・位置引数の子・正の interval/timeout を持
 この守備範囲は、「wait は子の状態の記録だけで止まった子を検知する」・「wait は同じ終了状態を二度新規判断しない」・「wait は入力世代の更新を再開として記録に書く」・「wait・pending-owner・child-log は子の会話ログを同じ読み取りで読む」・「長い待ちは止まりの変化で既存の行で返る」・「長い待ちのあいだは材料が更新されたときだけ判断し直す」・「親は dependency_wait の無い古い作業報告を依存待ちに補わない」に適用する（MUST）。入力元は子フックの turn_input / turn_state（`dependency_wait` を含む）、親が排他更新した受領情報・印、共通読取のログ出力、gh の issue 本文・コメント・開閉状態。拾う誤りは不正状態の停止扱い、通常の作業報告や項目欠落の停止扱い、依存待ちの停止の判断・再判断・声かけへの流入、二重受領、古い停止への判断・送信・再起動、ログだけの停止・再開・依存待ちの補完、不正 uuid の伝播、親投稿等だけによる再判断。正しい parent の返事待ちと依存待ちはログが読めなくても通す。状態の要約・送り手・判断内容の真偽と、`dependency_wait` が示す依存の登録・解消の真偽は保証せず、ログ本文・時刻はそのまま出してよい。入力の崩れ方や並行更新の穴を塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 不正入力を採用しない
-- **WHEN** turn_input / turn_state の欠落・null・型不正・世代／セッション不一致、sender が owner、value が `dependency_wait: true` を持たない作業報告・完了、または `dependency_wait` が boolean でない入力を読む
+- **WHEN** turn_input / turn_state の欠落・null・型不正・世代／セッション不一致、sender が owner、value が `dependency_wait: true` を持たない作業報告・完了、または `dependency_wait` が存在して boolean でない入力（value が主の返事待ちでも）を読む
 - **THEN** 停止対象にしてはならない（MUST NOT）。同じ終了状態の二重受領、更新前の古い停止への判断・送信、ログや uuid だけによる停止・再開の推測、不正な uuid の記録・出力への伝播、親自身の判断コメント・ラベル・タイトルだけの変化による再判断も行ってはならない（MUST NOT）
 
 #### Scenario: 記録の意味と真の送り手は推定しない

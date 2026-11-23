@@ -693,7 +693,7 @@ dep_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("dependen
   jq -e '.turn_state == null and .stop_uuid == "parent-uuid"' "$REC"
 }
 
-@test "dependency_wait: a parent without knowledge of the field reads the same result" {
+@test "dependency_wait: an owner-sent work report with the field stays excluded like a record without turn state" {
   parent_fixture
   marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
   for extra in none flag; do
@@ -706,7 +706,7 @@ dep_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("dependen
       mv "$f.tmp" "$f"
     fi
     put_chat 11 s1 "$(said d1 "$(ago 300)" "$marker"$'\n状態: 作業報告 — a')" "$(turn_end "$(ago 300)")"
-    # #1744: work reports are not stop targets; the flag alone must not change that.
+    # #1744: none has no turn state; flag is sender owner. Owner turns are never stop targets, and dependency_wait:true must not change that.
     run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
     [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
     [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
