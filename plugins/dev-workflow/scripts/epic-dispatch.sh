@@ -1782,12 +1782,12 @@ resume_moved() {
   local n="$1" f rc=0
   child_record "$PARENT_TOP" "$n" 2>/dev/null || return 0
   f="$ES_HIT"
-  # 旧版の受領済み記録は再受領しない。owner 入力なら再開、現在の停止なら受領キーを補う。
+  # 旧版の受領済み記録は再受領しない。owner 入力か受領より後の入力なら再開、現在の停止なら受領キーを補う。
   if es_read "$f" | jq -e "$WAIT_TURN_DEFS"'
     .stop == "stopped-seen" and .stop_turn == null and valid_input' >/dev/null 2>&1; then
     es_modify "$f" "$WAIT_TURN_DEFS"'
       if .stop == "stopped-seen" and .stop_turn == null and valid_input
-      then if .turn_input.sender == "owner" then .stop = "resumed"
+      then if .turn_input.sender == "owner" or ((.stop_at // "") < .turn_input.received_at) then .stop = "resumed"
         elif target then .stop_turn = turn_key else empty end
       else empty end' >/dev/null 2>>"$errf" || rc=$?
     case "$rc" in

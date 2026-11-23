@@ -7446,6 +7446,22 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
   [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
 }
 
+@test "wait state: a legacy stopped-seen is resumed by a later parent input and its new question is received (P4-F1)" {
+  make_stub orca
+  # Legacy record written before stop_turn existed: built without the fixture's stop_turn completion.
+  put_record 11
+  put_turn 11 parent 主の返事待ち 2
+  local f; f="$(rec_of 1122 11)"
+  jq '.stop="stopped-seen" | .stop_uuid="old" | .stop_at="2026-01-01T00:00:02Z" | del(.stop_turn)
+    | .turn_input.received_at="2026-01-01T00:00:05Z" | .turn_state.recorded_at="2026-01-01T00:00:06Z"' \
+    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  [ "$(jq -c '.stop_turn' "$f")" = null ]
+  wait_stop
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(jq -c '.stop_turn' "$f")" = '{"generation":2,"session_id":"s1"}' ]
+}
+
 @test "wait state: log movement alone does not resume a received turn" {
   make_stub orca
   put_record 11 stop=stopped-seen stop_uuid=d1
