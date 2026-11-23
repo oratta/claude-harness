@@ -4,8 +4,8 @@
 
 ## 1. 状態記録による検知と受領
 
-- [ ] 1.1 親の fixture に有効な turn_input / turn_state の組を明示できる補助を用意し、parent / startup の主の返事待ちの検知、owner の主の返事待ち・作業報告、親側の作業報告・完了、記録なし・null・型不正・世代不一致・セッション不一致をテストする。古い停止印やログ中の問いが対象判定を覆さないこと、ログなしでも有効状態を検知することを含める。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1-450（setup / put_record）、plugins/dev-workflow/tests/epic-dispatch.bats:7250-7545（wait log の既存検知ケース）
-- [ ] 1.2 スクリプト内に既存の有効な終了状態の契約を満たす判定を設け、detect_stopped と resume_moved を状態記録に切り替える。同じ世代・セッションの二重受領を防ぎ、受領の排他更新時にも読んだ組を比較する。入力更新による再開を記録し、uuid・アイドル時間・印だけによる検知や再開判定を除く。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:1664-1764（record_log_json / resume_moved / detect_stopped / write_stop_json）、plugins/dev-workflow/scripts/epic-dispatch.sh:1965-2015（wait の検知ループ）
+- [x] 1.1 親の fixture に有効な turn_input / turn_state の組を明示できる補助を用意し、parent / startup の主の返事待ちの検知、owner の主の返事待ち・作業報告、親側の作業報告・完了、記録なし・null・型不正・世代不一致・セッション不一致をテストする。古い停止印やログ中の問いが対象判定を覆さないこと、ログなしでも有効状態を検知することを含める。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:1-450（setup / put_record）、plugins/dev-workflow/tests/epic-dispatch.bats:7250-7545（wait log の既存検知ケース）
+- [x] 1.2 スクリプト内に既存の有効な終了状態の契約を満たす判定を設け、detect_stopped と resume_moved を状態記録に切り替える。同じ世代・セッションの二重受領を防ぎ、受領の排他更新時にも読んだ組を比較する。入力更新による再開を記録し、uuid・アイドル時間・印だけによる検知や再開判定を除く。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:1664-1764（record_log_json / resume_moved / detect_stopped / write_stop_json）、plugins/dev-workflow/scripts/epic-dispatch.sh:1965-2015（wait の検知ループ）
 
 ## 2. 自動判断と送信の入口
 
