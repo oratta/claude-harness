@@ -3,8 +3,8 @@
 ## 1. 本体の長い待ちの契約と検査
 
 - [x] 1.1 `child-background-wait.md` に再開可能性による分岐、TTL / 時刻の根拠、45 分の有限タイマーの雛形、実作業保持、ID 照合と取消、5m / unknown / スリープ時の限界を書く。spec の「長い待ちの入力判定の守備範囲を共有する」に従い、入力元・拾う誤り・通してよい入力例・穴を塞ぎ切ることを完了条件にしない旨の共通段落を置き、各入力判定から参照する。CI・停止・予約文・Codex は design の既存正本を参照する。本体のターン終了と依存待ちでのセッション終了を区別する。同時に `child-background-wait.bats` を新設し、正常 / 失敗の sleep スタブで雛形を実行して、60 秒を 45 回、一度だけの通知、途中失敗では非ゼロかつ成功通知なしを確認する。`bats plugins/dev-workflow/tests/child-background-wait.bats` が合格すること。触る範囲: plugins/dev-workflow/skills/develop/references/child-background-wait.md（新規）、plugins/dev-workflow/tests/child-background-wait.bats（新規）
-- [ ] 1.2 SKILL.md に nested の本体が agent・CI・Monitor・Codex の待ちに入る前に新 reference を読む条件付き入口を置く。`child-background-wait.bats` に入口のリンク解決と、外部依存への移行失敗・実行中作業・既存の短い期限・通知競合・取消後の遅延通知・TTL 5m/unknown の各契約が正本に記述される検査を加え、同テストを通す。守備範囲の共通段落の 4 要素と、移行成否・通知種別・維持可否の各判定からの参照も確認し、観測後の TTL 切替を通す例が維持成功の保証にならず、自己通知の成功が元作業の完了根拠にならないことをレビューで確かめる。既存の CI の timeout や停止済み子の受信契約をコピーしない。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:202-204（子の入口）、plugins/dev-workflow/tests/child-background-wait.bats（新規）
-- [ ] 1.3 `changes/1743.md` に選んだ扱い・費用比較コメントの URL・維持費用の限界・マージ後の実機確認項目を残す。版番号や rules / description を変えず、記録と PR から未検証の項目が分かることを確認する。触る範囲: plugins/dev-workflow/changes/1743.md（新規）
+- [x] 1.2 SKILL.md に nested の本体が agent・CI・Monitor・Codex の待ちに入る前に新 reference を読む条件付き入口を置く。`child-background-wait.bats` に入口のリンク解決と、外部依存への移行失敗・実行中作業・既存の短い期限・通知競合・取消後の遅延通知・TTL 5m/unknown の各契約が正本に記述される検査を加え、同テストを通す。守備範囲の共通段落の 4 要素と、移行成否・通知種別・維持可否の各判定からの参照も確認し、観測後の TTL 切替を通す例が維持成功の保証にならず、自己通知の成功が元作業の完了根拠にならないことをレビューで確かめる。既存の CI の timeout や停止済み子の受信契約をコピーしない。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:202-204（子の入口）、plugins/dev-workflow/tests/child-background-wait.bats（新規）
+- [x] 1.3 `changes/1743.md` に選んだ扱い・費用比較コメントの URL・維持費用の限界・マージ後の実機確認項目を残す。版番号や rules / description を変えず、記録と PR から未検証の項目が分かることを確認する。触る範囲: plugins/dev-workflow/changes/1743.md（新規）
 
 ## 2. 統合確認
 

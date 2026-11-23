@@ -1,6 +1,6 @@
 # 子の本体が長い背景作業を待つとき
 
-対象は `scripts/epic-dispatch.sh route`（子の番号なし）が `nested` の Claude の本体。agent・自分の PR の CI・Monitor・Codex コマンドを全体で 60 分以上待つ見込みなら、開始前または延長前に読む。委譲された worker は本体用タイマーを起動せず、[subagent-waiting.md](subagent-waiting.md) に従う。
+対象は `scripts/epic-dispatch.sh route`（子の番号なし）が `nested` の Claude の本体。agent・自分の PR の CI・Monitor・Codex コマンドを全体で 60 分以上待つ見込みなら、開始前または延長前に読む。委譲された worker は本体用タイマーを起動せず、[subagent-waiting.md](../../../references/subagent-waiting.md) に従う。
 
 ## 入力判定の守備範囲
 
