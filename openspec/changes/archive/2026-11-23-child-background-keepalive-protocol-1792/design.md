@@ -21,7 +21,7 @@ issue で指定された新旧プロトコルの分離を、次の互換な形�
 - トップレベルの旧 4 項目と値はそのまま残し、`background` オブジェクトに同じ 4 項目を持たせる。新形式の接頭辞は `[child-background-cache-keepalive]`、欄名は既存と同じ `待ち:`・`次:`、区切りは ` | ` とする。
 - 新しい `request_template` は次の一つの固定文とする。`{reply_format}` は既存と同じ生成規則で展開する。
 
-> 作業待ちのキャッシュ維持のための声かけです。主の返事や親の判断、作業の完了通知ではありません。ツール・調査・新しい作業・印の変更・記録の投稿をせず、元の作業とその実行 ID・自己タイマーを保ち、現在の会話だけから次の型の一行だけを返して元の作業待ちを続けてください: {reply_format}。各値は短くし、改行と区切り文字を含めないでください。
+固定文の正本は `plugins/dev-workflow/references/child-cache-keepalive.json` の `background.request_template` とする。
 
 - `child-log-read.py --keepalive-text` は旧固定文を同じバイト列で出す。`--keepalive-text background` で新固定文を生成する。通常のログ読取呼出しと JSON 出力の形は変えない。
 

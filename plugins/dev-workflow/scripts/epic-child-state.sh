@@ -234,6 +234,7 @@ HITS="$(es_find_by_worktree "$TOP" 2>/dev/null)"
 [ "$(printf '%s\n' "$HITS" | wc -l | tr -d ' ')" = 1 ] || fail '対象の子の記録が複数あります'
 RECORD="$HITS"
 # Both reserved texts (stopped child, then waiting on background work) as a JSON array.
+RESERVED='[]'
 read_reserved() {
   local stopped background
   stopped="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || return 1
@@ -241,7 +242,7 @@ read_reserved() {
   RESERVED="$(jq -cn --arg a "$stopped" --arg b "$background" '[$a,$b]')"
 }
 prepare() {
-  jq -cn --argjson record "$1" --argjson payload "$INPUT" --argjson reserved "${RESERVED:-[]}" \
+  jq -cn --argjson record "$1" --argjson payload "$INPUT" --argjson reserved "$RESERVED" \
     '{record:$record,payload:$payload,reserved:$reserved}' | python3 -I -c "$PY_SRC" "$2"
 }
 CUR="$(es_read "$RECORD")" || fail '対象判定で記録を読めません'

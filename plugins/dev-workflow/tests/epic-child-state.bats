@@ -77,6 +77,14 @@ blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$ou
     jq -e --arg v "$v" '.turn_state.value == $v and .turn_state.summary == "要約" and .turn_state.generation == .turn_input.generation and .turn_state.session_id == .turn_input.session_id and (.turn_state.recorded_at | endswith("Z"))' "$REC"
   done
 }
+@test "stop: inherited non-JSON RESERVED does not prevent ordinary state publication" {
+  register
+  export RESERVED='not json'
+  run stop '状態: 作業報告 — 通常の状態を保存'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  jq -e '.turn_state.value == "作業報告" and .turn_state.summary == "通常の状態を保存" and .turn_state.generation == .turn_input.generation and .turn_state.session_id == .turn_input.session_id' "$REC"
+}
 @test "stop: malformed lines block even on retry and clear previously published state" {
   register
   stop '状態: 完了 — done'

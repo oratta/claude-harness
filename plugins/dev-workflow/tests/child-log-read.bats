@@ -328,12 +328,12 @@ base_log() {
 
 @test "keepalive text: the old text is unchanged, background is a different fixed text" {
   old="$(python3 "$READER" --keepalive-text)"
-  [[ "$old" == 'キャッシュ維持のための声かけです。主の返事や親の判断ではありません。'* ]]
-  [[ "$old" == *'[child-cache-keepalive] | 待ち: <値> | 次: <値>'* ]]
+  [[ "$old" == 'キャッシュ維持のための声かけです。主の返事や親の判断ではありません。'* ]] || return 1
+  [[ "$old" == *'[child-cache-keepalive] | 待ち: <値> | 次: <値>'* ]] || return 1
   bg="$(bg_request)"
   [ "$bg" != "$old" ]
-  [[ "$bg" == '作業待ちのキャッシュ維持のための声かけです。'* ]]
-  [[ "$bg" == *'[child-background-cache-keepalive] | 待ち: <値> | 次: <値>'* ]]
+  [[ "$bg" == '作業待ちのキャッシュ維持のための声かけです。'* ]] || return 1
+  [[ "$bg" == *'[child-background-cache-keepalive] | 待ち: <値> | 次: <値>'* ]] || return 1
   run python3 "$READER" --keepalive-text other
   [ "$status" -eq 1 ]
 }
