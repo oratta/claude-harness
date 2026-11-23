@@ -37,7 +37,7 @@ append_row() {
 stop() { append_row assistant "$1"; payload Stop "$1" | "$HOOK"; }
 notified() {
   [ "$status" -eq 0 ]
-  jq -e --arg path "$REC" '.hookSpecificOutput | .hookEventName == "UserPromptSubmit" and (.additionalContext | contains($path) and contains("o/r#2") and contains("o/r#1") and contains("子セッションは未登録") and contains("入力記録・状態行検査は適用されていない") and contains("本来の子") and contains("送り直して登録を確認") and contains("別用途なら対応不要"))' <<< "$output"
+  jq -e --arg path "$REC" --arg child "$(jq -r '.repo + "#" + (.number|tostring)' "$REC")" --arg epic "$(jq -r .epic "$REC")" '.hookSpecificOutput | .hookEventName == "UserPromptSubmit" and (.additionalContext | contains($path) and contains($child) and contains($epic) and contains("子セッションは未登録") and contains("入力記録・状態行検査は適用されていない") and contains("本来の子") and contains("送り直して登録を確認") and contains("別用途なら対応不要"))' <<< "$output"
 }
 blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$output" == *'"decision":"block"'* ]]; }
 
@@ -594,7 +594,7 @@ SH
   done
   mkdir -p "$BATS_TEST_TMPDIR/entry"
   cp "$HOOK" "$BATS_TEST_TMPDIR/entry/epic-child-state.sh"
-  ln -s "$PLUGIN_DIR/scripts/epic-state.sh" "$BATS_TEST_TMPDIR/entry/epic-state.sh"
+  ln -sf "$PLUGIN_DIR/scripts/epic-state.sh" "$BATS_TEST_TMPDIR/entry/epic-state.sh"
   export OWNER_CALLS="$BATS_TEST_TMPDIR/owner-calls"
   cat > "$BATS_TEST_TMPDIR/entry/owner-message-number-check.sh" <<'SH'
 #!/usr/bin/env bash
@@ -650,7 +650,7 @@ SH
       input "/develop o/R#2 （エピック #1 の子。エピックのリポジトリ $(printf '%s' "$parent" | tr '[:upper:]' '[:lower:]')。起動）"
       jq -e --arg e "$parent#1" '.repo == "O/r" and .epic == $e and .turn_input.generation == 1 and .turn_input.sender == "startup"' "$REC"
       SID=s2
-      input "/develop O/R#2 （エピック #1 の子。エピックのリポジトリ $parent。再起動）"
+      input "/develop O/R#2 （エピック #1 の子。エピックのリポジトリ ${parent}。再起動）"
       jq -e '.turn_input.generation == 2 and .turn_input.session_id == "s2" and .turn_input.sender == "startup"' "$REC"
       snapshot
       SID=s3
