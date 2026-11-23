@@ -2,7 +2,7 @@
 
 エピックの子（別セッション方式の子セッション）と親（エピックを回すセッション）に、止まってから時間がたって返事を送るときの規則。すべての develop セッションは開始時に worktree-local の idleCompaction を false にする（`SKILL.md`「開始時の idle compaction 設定」）。通常の自動コンパクトは維持する。
 
-子は会話量が閾値以上、または 60 分以上止まったら起動し直す。直接の `reply --as parent` / `--as owner` は `--relaunch` なしでも自動判定する。コンパクトされた子は develop の `SKILL.md` の中身を持たずに進むためである（#1039 の決定を #1323 で覆した）。親も 60 分以上なら記録から起動し直す（「親への適用」）。
+子は会話量が閾値以上、または 60 分以上止まったら起動し直す。コンパクトされた子は develop の `SKILL.md` の中身を持たずに進むためである（#1039 の決定を #1323 で覆した）。親も 60 分以上なら記録から起動し直す（「親への適用」）。
 
 送信・起動し直しの手順本体は `references/epic-stop.md` 手順 8（`scripts/epic-dispatch.sh reply`、#1034）と `references/epic-loop.md` 手順 4（停止中の completed の子への `scripts/epic-dispatch.sh notify-closed`、#1093）に置き、ここを参照する。
 
@@ -39,7 +39,7 @@ disk 上の成功を live 反映済みとは扱わない。check / apply の後�
 
 ## そのまま送るか、起動し直すか（子）
 
-直接の `reply` と `wait --resolve` は、子に返事を送る前に上から順に自動判定する。明示の `--relaunch` は自動判定と閾値検査を行わず、強制的に起動し直す。`notify-closed` は従来どおり本体がこの表で分類し、必要なら `--relaunch` を付ける。
+`reply --as parent` / `--as owner` と `wait --resolve` は子の表で自動判定する。明示の `--relaunch` は自動判定・閾値検査をせず起動し直す。`notify-closed` は本体が表で分類し、必要なら `--relaunch` を付ける。
 
 | 子の状態 | 扱い | 理由 |
 |---|---|---|
