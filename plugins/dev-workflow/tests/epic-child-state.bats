@@ -712,3 +712,19 @@ dep_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("dependen
     [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
   done
 }
+
+@test "dependency_wait: a parent-sent work report with the field is received as a dependency stop" {
+  parent_fixture
+  marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
+  printf 0 > "$STUB_CFG/ghcount_11"
+  put_record 11
+  f="$(rec_of 1122 11)"
+  jq '.turn_input={generation:1,session_id:"s1",sender:"parent",received_at:"2026-01-01T00:00:00Z",transcript_path:"/x",transcript_offset:0}
+      | .turn_state={generation:1,session_id:"s1",value:"作業報告",summary:"a",recorded_at:"2026-01-01T00:00:00Z",dependency_wait:true}' "$f" > "$f.tmp"
+  mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$marker"$'\n状態: 作業報告 — a')" "$(turn_end "$(ago 300)")"
+  # #1744: the pair of the owner case above; parent turns with dependency_wait:true are stops.
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
+}
