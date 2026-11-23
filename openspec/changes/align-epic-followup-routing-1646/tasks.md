@@ -17,10 +17,10 @@
 
 ## 4. 統合の確認と変更の記録
 
-- [ ] 4.1 issue の受け入れ条件 4 つと変更した手順・回帰テストを照合する。完了条件の補完・全周共通の判定・段 D／段 E の 3 要件について、入力元・拾う誤り・許容する具体例・保証の限界と実装が食い違わず、全面的な意味検査を追加していないことを確認する。既存の注意書き引継ぎ要件の MODIFIED と epic.md を照合し、投稿者の検査・引継ぎを維持しつつ置き場所指定の例外を適用し、「すべて従う」だけの規定が同期後に残らないことを確かめる。`openspec validate align-epic-followup-routing-1646 --type change --strict`、`bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/epic-dispatch.bats tests/develop-startup-budget.bats tests/injection-budget.bats`、`git diff --check` がすべて終了コード 0。予算値は変更しない。触る範囲: openspec/changes/align-epic-followup-routing-1646/specs/dev-workflow-develop/spec.md:1-264、openspec/changes/align-epic-followup-routing-1646/specs/dev-workflow-pr-review-gate/spec.md:1-106（シナリオ・守備範囲との照合。追加編集は必要時のみ）、openspec/specs/dev-workflow-develop/spec.md:2042-2136（既存要件との照合）
+- [x] 4.1 issue の受け入れ条件 4 つと変更した手順・回帰テストを照合する。完了条件の補完・全周共通の判定・段 D／段 E の 3 要件について、入力元・拾う誤り・許容する具体例・保証の限界と実装が食い違わず、全面的な意味検査を追加していないことを確認する。既存の注意書き引継ぎ要件の MODIFIED と epic.md を照合し、投稿者の検査・引継ぎを維持しつつ置き場所指定の例外を適用し、「すべて従う」だけの規定が同期後に残らないことを確かめる。`openspec validate align-epic-followup-routing-1646 --type change --strict`、`bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/epic-dispatch.bats tests/develop-startup-budget.bats tests/injection-budget.bats tests/develop-epic-scene-budget.bats`、`git diff --check` がすべて終了コード 0。本体の判断に従い、新規段落を短縮しても超える場面だけ `tests/develop-epic-scene-budget.txt` を実測値に合わせる。`tests/injection-budget.txt` は変更しない。触る範囲: openspec/changes/align-epic-followup-routing-1646/specs/dev-workflow-develop/spec.md:1-264、openspec/changes/align-epic-followup-routing-1646/specs/dev-workflow-pr-review-gate/spec.md:1-106（シナリオ・守備範囲との照合。追加編集は必要時のみ）、openspec/specs/dev-workflow-develop/spec.md:2042-2136（既存要件との照合）
 - [x] 4.2 plugins/dev-workflow/changes/1646.md に、完了条件による振り分け、開始時の補完、W に渡す指摘の境界と確認したテストを記録する。issue #1646 の範囲だけであることを差分で確かめる。触る範囲: plugins/dev-workflow/changes/1646.md（新規）
 
-4.1 の指定検査はすべて exit 0（Bats は 1,174 件）。ただし関連検査の `tests/develop-epic-scene-budget.bats` が 14 件中 1 件失敗し、11 場面で予算超過したため未完として残す。`nested-entry` は 8,142 > 7,515 バイト、`parent-start` は 61,295 > 60,150 バイト。予算値と指定段落外は変えず、本体に短縮方針の判断を返す。
+4.1 の指定検査は場面別予算を含む 6 ファイルで 1,188 件、exit 0。注意書きの境界本文を共通規則へ集約し、開始時の補完手順も短縮した。本体の判断に従い、なお超過した 11 場面だけ予算を実測値へ更新した（余白 0 バイト）。既存シナリオと守備範囲の境界を保ち、指定外の段落と `tests/injection-budget.txt` は変更していない。
 
 ## Workflow follow-up
 

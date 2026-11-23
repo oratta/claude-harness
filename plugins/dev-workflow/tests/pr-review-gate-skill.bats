@@ -905,7 +905,7 @@ $(nonblocking_para '段 C（')"
   epic="${PLUGIN_DIR}/skills/develop/references/epic.md"
   common="$(sed -n '/^\*\*別セッション方式とサブエージェント方式に共通\*\*:/,/^### 完了条件/p' "$epic")"
   has_all "$common" 'レビュー由来は G の振り分けを保つ' '段 C で完了条件に効くものだけ' '効かないものは段 D・段 E'
-  has_all "$(grep '^子のセッションの本体' "$epic")" '段 C の境界を優先' '注意書きを理由に子にしない' 'コメント自体は W・R1・G に引き継ぐ'
+  has_all "$(grep '^子のセッションの本体' "$epic")" '置き場所の指定より段 C の境界を優先する（共通の項目）' 'コメント自体は W・R1・G に引き継ぐ'
   has_all "$(grep 'エピックの注意書き:' "$DEVELOP_SKILL")" '段 C で完了条件に効くとした問題だけ' '注意書きを理由に子にしない'
 }
 

@@ -565,7 +565,7 @@ refute() {
 @test "epic (#1646): restarted children retain trusted notes but stage C overrides their placement" {
   note="$(grep '^子のセッションの本体' "${SKILL_DIR}/references/epic.md")"
   for token in '起動し直したセッションを含む' 'author_association' 'OWNER' 'MEMBER' 'COLLABORATOR' \
-               '段 C の境界を優先' '効かない問題は段 D・段 E' '注意書きを理由に子にしない' \
+               '置き場所の指定より段 C の境界を優先する（共通の項目）' \
                'コメント自体は W・R1・G に引き継ぐ' '読めなかったものには従わず' 'W・R1・G にも渡さず' 'URL と投稿者'; do
     grep -qF "$token" <<<"$note" || { echo "missing: $token"; return 1; }
   done
@@ -575,9 +575,9 @@ refute() {
 @test "epic (#1646): both routes fill missing completion criteria from the body before dispatch" {
   start="$(sed -n '1,/^\*\*経路の決め方\*\*:/p' "${SKILL_DIR}/references/epic-loop.md")"
   for token in '両方式共通' '完了条件の節が無ければ' '本文のユーザーストーリー・依頼から決め' \
-               '本文に記してから子を起動' '本文だけでは決められないときだけ主に聞' \
+               '子の起動前に本文に記す' '本文だけでは決められないときだけ主に聞' \
                '答えを本文に記すまで子を起動しない' '依頼に無い目的を足さない' \
-               '既存の節は書き換えず' '確認を増やさない'; do
+               '既存の節はそのまま使い' '確認を増やさない'; do
     grep -qF "$token" <<<"$start" || { echo "missing: $token"; return 1; }
   done
 }
