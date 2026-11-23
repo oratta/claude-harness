@@ -559,7 +559,7 @@ refute() {
                '段 C で完了条件に効くものだけ' '効かないものは段 D・段 E' '子の受け入れ条件を膨らませない'; do
     grep -qF "$token" <<<"$common" || { echo "missing: $token"; return 1; }
   done
-  ! grep -qF 'その子の中で直さず**新しい子 issue** を切ってエピックに追加する' <<<"$common"
+  ! grep -qF 'その子の中で直さず**新しい子 issue** を切ってエピックに追加する' <<<"$common" || return 1
 }
 
 @test "epic (#1646): restarted children retain trusted notes but stage C overrides their placement" {
@@ -569,7 +569,7 @@ refute() {
                'コメント自体は W・R1・G に引き継ぐ' '読めなかったものには従わず' 'W・R1・G にも渡さず' 'URL と投稿者'; do
     grep -qF "$token" <<<"$note" || { echo "missing: $token"; return 1; }
   done
-  ! grep -qF 'ものにすべて従い' <<<"$note"
+  ! grep -qF 'ものにすべて従い' <<<"$note" || return 1
 }
 
 @test "epic (#1646): both routes fill missing completion criteria from the body before dispatch" {

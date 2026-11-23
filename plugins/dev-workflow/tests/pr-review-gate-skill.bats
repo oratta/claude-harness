@@ -711,7 +711,7 @@ has_all() {  # $1 = 本文, 残り = 固定文字列。無い語を表示して�
     'G の振り分けの記録に残す' 'G が手順3へ進むとき' '段 B 以降に当て'
   row="$(grep -E '^\| 1 \|' "$TRIAGE")"
   has_all "$row" '段 A だけを W の修正対象一覧に載せる' 'それ以外は G の振り分けの記録に残す'
-  ! grep -qF '止めない指摘は failed の PR コメントに一覧で残し' <<<"$failed"
+  ! grep -qF '止めない指摘は failed の PR コメントに一覧で残し' <<<"$failed" || return 1
 }
 
 @test "acceptance scope (#1389): the mark is only a reference, G decides, and a missing mark gets no supplement" {
