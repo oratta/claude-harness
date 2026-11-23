@@ -197,7 +197,9 @@ def wait_state(frame):
         return "released"
     return "unknown"
 frame = resolve_frame()
-wait = wait_state(frame)
+# History release authorizes only pre-send readiness. After send, delivery
+# requires foreground execution and independently checked frame/draft emptiness.
+wait = "none" if after_send else wait_state(frame)
 footer_seen = re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on|⏵⏵ bypass permissions on", screen)
 if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
     print("skipped dialog")
