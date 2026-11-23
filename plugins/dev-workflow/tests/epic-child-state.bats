@@ -161,6 +161,14 @@ blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$ou
   blocked
 }
 
+@test "docs: dependency wait hands the Stop-saved boolean to the parent without changing the status line" {
+  doc="$PLUGIN_DIR/skills/develop/references/epic-child-stop.md"
+  for term in '状態: 作業報告 — <依存先と再開条件の短い要約>' 'dependency_wait: true' '停止の印を付ける操作は不要'; do
+    grep -qF "$term" "$doc"
+  done
+  ! sed -n '/## 依存待ちで終了する/,/## エピックの子が/p' "$doc" | grep -qF '親が会話ログから検知する' || return 1
+}
+
 @test "docs: every normal child turn declares state and input classification is not authorization" {
   doc="$PLUGIN_DIR/skills/develop/references/epic-child-stop.md"
   for term in '毎ターン' '状態: 作業報告 —' '状態: 主の返事待ち —' '状態: 完了 —' 'turn_input' '権限の証明ではない' '予約文' '時刻'; do
@@ -396,12 +404,18 @@ printf '%s\n' "$1" >> "$SLEEP_CALLS"
 SH
   chmod +x "$BATS_TEST_TMPDIR/bin/sleep"
   export PATH="$BATS_TEST_TMPDIR/bin:$PATH" EPIC_STATE_LOCK_TIMEOUT=31
-  for event in UserPromptSubmit Stop; do
+  for event in UserPromptSubmit Stop retry; do
     : > "$SLEEP_CALLS"
     p="$(payload "$event" '状態: 完了 — published')"
-    run bash -c 'printf "%s" "$1" | "$2"' _ "$p" "$HOOK"
+    if [ "$event" = retry ]; then
+      p="$(jq '.hook_event_name="Stop" | .stop_hook_active=true' <<< "$p")"
+    fi
+    run_stop_payload "$p"
     if [ "$event" = UserPromptSubmit ]; then
-      [ "$status" -eq 2 ]; [[ "$output" == *入力受付のロックに失敗* ]] || return 1
+      [ "$status" -eq 2 ]; [[ "$stderr" == *入力受付のロックに失敗* ]] || return 1
+    elif [ "$event" = retry ]; then
+      [ "$status" -eq 0 ]; [ -z "$output" ]
+      [[ "$stderr" == *保存または無効化に失敗*"$REC"* ]] || return 1
     else
       blocked; [[ "$output" == *保存または無効化に失敗* ]] || return 1
     fi
@@ -453,6 +467,246 @@ SH
     put_record 11
     [ "$pair" = missing ] || put_turn 11 $pair
     put_chat 11 s1 "$(said d1 "$(ago 300)" "$marker")" "$(turn_end "$(ago 300)")"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]
+  done
+}
+
+# Capture streams independently: allowing Stop must not emit a block on stdout.
+run_stop_payload() {
+  bats_require_minimum_version 1.5.0
+  run --separate-stderr "$HOOK" <<< "$1"
+}
+processing_failure_pair() {
+  local msg="$1" reason="$2" path="${3:-$REC}" flag
+  for flag in missing false string; do
+    p="$(payload Stop "$msg")"
+    case "$flag" in
+      missing) p="$(jq 'del(.stop_hook_active)' <<< "$p")" ;;
+      string) p="$(jq '.stop_hook_active="true"' <<< "$p")" ;;
+    esac
+    run_stop_payload "$p"
+    blocked
+    [[ "$(jq -r .reason <<< "$output")" == *"$reason"*"$path"* ]] || return 1
+  done
+  for _ in 1 2; do
+    run_stop_payload "$(payload Stop "$msg" | jq '.stop_hook_active=true')"
+    [ "$status" -eq 0 ]; [ -z "$output" ]
+    [[ "$stderr" == *"$reason"*"$path"* ]] || return 1
+  done
+}
+
+@test "processing-retry: preparation failures block first and repeatedly allow only boolean true" {
+  # Keep each failure independent, including failures before a single record is chosen.
+  original="$(cat "$REC")"
+  msg='状態: 完了 — x'
+  mkdir "$BATS_TEST_TMPDIR/entry"
+  cp "$HOOK" "$BATS_TEST_TMPDIR/entry/epic-child-state.sh"
+  for script in epic-state.sh owner-message-number-check.sh; do
+    ln -s "$PLUGIN_DIR/scripts/$script" "$BATS_TEST_TMPDIR/entry/$script"
+  done
+  for failure in missing-input extension missing-log invalid-json correspondence duplicate config reserved; do
+    printf '%s\n' "$original" > "$REC"
+    unset EPIC_STATE_LOCK_TIMEOUT
+    export EPIC_STATE_LOCK_TIMEOUT=0
+    input next
+    append_row assistant "$msg"
+    path="$REC"; reason=''
+    case "$failure" in
+      missing-input) printf '%s\n' "$original" > "$REC"; reason='入力情報がありません' ;;
+      extension) jq '.turn_input.generation="bad"' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"; reason='型が不正' ;;
+      missing-log) rm -f "$LOG"; reason='No such file' ;;
+      invalid-json) printf 'invalid json\n' > "$LOG"; reason='Expecting value' ;;
+      correspondence) append_row assistant other; reason='対応しません' ;;
+      duplicate) cp "$REC" "$EPIC_STATE_ROOT/o.r-1/duplicate.json"; path="$EPIC_STATE_ROOT"; reason='複数' ;;
+      config) export EPIC_STATE_LOCK_TIMEOUT=invalid; reason='設定が不正' ;;
+      reserved) real_hook="$HOOK"; HOOK="$BATS_TEST_TMPDIR/entry/epic-child-state.sh"; reason='予約文を読めません' ;;
+    esac
+    before="$(jq 'del(.updated_at)' "$REC")"
+    processing_failure_pair "$msg" "$reason" "$path"
+    # Invalidating an existing turn is permitted; no new valid state is published.
+    [ "$(jq 'del(.updated_at)' "$REC")" = "$before" ]
+    [ "$(jq -r '.turn_state // null' "$REC")" = null ]
+    if [ "$failure" = duplicate ]; then
+      [ "$(jq 'del(.updated_at)' "$EPIC_STATE_ROOT/o.r-1/duplicate.json")" = "$before" ]
+      rm -f "$EPIC_STATE_ROOT/o.r-1/duplicate.json"
+      run input next; [ "$status" -eq 0 ]
+    fi
+    [ "$failure" != reserved ] || HOOK="$real_hook"
+    rm -f "$LOG"
+  done
+}
+
+@test "processing-retry: save and invalidation failures preserve JSON and recover in the same generation" {
+  mkdir "$BATS_TEST_TMPDIR/bin"
+  export REAL_MV="$(command -v mv)" FAIL_REC="$REC"
+  cat > "$BATS_TEST_TMPDIR/bin/mv" <<'SH'
+#!/usr/bin/env bash
+if [ "${3-}" = "$FAIL_REC" ] && [ "${FAIL_REPLACE:-}" = yes ]; then exit 1; fi
+exec "$REAL_MV" "$@"
+SH
+  chmod +x "$BATS_TEST_TMPDIR/bin/mv"
+  export PATH="$BATS_TEST_TMPDIR/bin:$PATH"
+  for failure in lock replace; do
+    for msg in '状態: 完了 — new' '欠落' '状態: 不明 — invalid'; do
+      input next
+      stop '状態: 作業報告 — previously published'
+      generation="$(jq -r .turn_input.generation "$REC")"
+      before="$(cat "$REC")"
+      append_row assistant "$msg"
+      case "$failure" in
+        lock) mkdir "$REC.lock" ;;
+        replace) export FAIL_REPLACE=yes ;;
+      esac
+      processing_failure_pair "$msg" '保存または無効化に失敗'
+      [ "$(cat "$REC")" = "$before" ]
+      if [ "$failure" = lock ]; then
+        [ -d "$REC.lock" ]; rmdir "$REC.lock"
+      else
+        [ ! -d "$REC.lock" ]; unset FAIL_REPLACE
+      fi
+      # A recovered retry still validates and clears malformed state before saving.
+      if [ "$msg" != '状態: 完了 — new' ]; then
+        run_stop_payload "$(payload Stop "$msg" | jq '.stop_hook_active=true')"
+        blocked
+        [ "$(jq -r .turn_state "$REC")" = null ]
+      fi
+      msg_fixed='状態: 完了 — recovered'
+      append_row assistant "$msg_fixed"
+      run_stop_payload "$(payload Stop "$msg_fixed" | jq '.stop_hook_active=true')"
+      [ "$status" -eq 0 ]; [ -z "$output" ]; [ -z "$stderr" ]
+      jq -e --argjson g "$generation" '.turn_input.generation == $g and .turn_state.generation == $g and .turn_state.summary == "recovered" and .opaque.keep and .stop_uuid == "parent-uuid" and .session == "terminal"' "$REC"
+    done
+  done
+}
+
+@test "processing-retry: new input wins over retry save and invalidation" {
+  for msg in '状態: 完了 — old' '欠落'; do
+    input next
+    append_row assistant "$msg"
+    generation="$(jq -r .turn_input.generation "$REC")"
+    race_at_lock
+    run_stop_payload "$(payload Stop "$msg" | jq '.stop_hook_active=true')"
+    [ "$status" -eq 0 ]; [ -z "$output" ]; [ -z "$stderr" ]
+    jq -e --argjson g "$generation" '.turn_input.generation == ($g + 1) and .turn_state == null and .stop_uuid == "parent-uuid" and .opaque.keep' "$REC"
+    unset INJECT_INPUT
+  done
+}
+
+dep_marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
+dep_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("dependency_wait")) then (.turn_state.dependency_wait|tojson) else "absent" end' "$REC"; }
+
+@test "dependency_wait: saved only for a checked dependency-wait work report" {
+  input next
+  run stop "$dep_marker"$'\n状態: 作業報告 — 前提の完了後に再開'; [ "$status" -eq 0 ]; [ -z "$output" ]
+  jq -e '.turn_state.value == "作業報告" and .turn_state.dependency_wait == true and .turn_state.generation == 1 and .turn_state.summary == "前提の完了後に再開" and .opaque.keep' "$REC"
+  # CRLF, trailing blank lines and one leading space keep the existing grammar
+  for msg in "$dep_marker"$'\r\n状態: 作業報告 — a\r\n \r\n' " $dep_marker"$'\n\n状態: 作業報告 — a'; do
+    input next; stop "$msg"
+    [ "$(dep_of)" = true ]
+  done
+  # two leading spaces, ordinary report, separating prose, other values, quoting
+  for msg in "  $dep_marker"$'\n状態: 作業報告 — a' '通常の報告
+状態: 作業報告 — a' "$dep_marker"$'\n後続\n状態: 作業報告 — a' "$dep_marker"$'\n状態: 主の返事待ち — a' "$dep_marker"$'\n状態: 完了 — a' "> $dep_marker"$'\n状態: 作業報告 — a' $'```\n'"$dep_marker"$'\n```\n状態: 作業報告 — a'; do
+    input next; stop "$msg"
+    jq -e '.turn_state != null' "$REC"
+    [ "$(dep_of)" = absent ]
+  done
+  # long body, unclosed fence, missing status line
+  input next
+  run stop "$(printf 'x%.0s' {1..20000})"$'\n'"$dep_marker"$'\n状態: 作業報告 — long'; [ "$status" -eq 0 ]
+  [ "$(dep_of)" = true ]
+  input next
+  run stop $'```\n'"$dep_marker"$'\n状態: 作業報告 — a'; blocked
+  [ "$(jq -r .turn_state "$REC")" = null ]
+  input next
+  run stop "$dep_marker"; blocked
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "dependency_wait: owner-guard rejection and rewrite do not carry the mark" {
+  input next
+  stop "$dep_marker"$'\n状態: 作業報告 — a'
+  [ "$(dep_of)" = true ]
+  run stop '通常の報告
+状態: 作業報告 — b'
+  [ "$status" -eq 0 ]; [ "$(dep_of)" = absent ]
+  [ "$(jq -r .turn_state.summary "$REC")" = b ]
+  stop "$dep_marker"$'\n状態: 作業報告 — a'
+  run stop $'#1670 の対応を進めますか？\n状態: 主の返事待ち — c'
+  blocked
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "dependency_wait: next input of every sender clears it and keeps parent fields" {
+  for p in hello '親エピック #1（o/r）の判断: ok' '/develop #2 （エピック #1 の子。親ワークツリー /parent から Orca で起動）'; do
+    input next
+    stop "$dep_marker"$'\n状態: 作業報告 — a'
+    [ "$(dep_of)" = true ]
+    SID=s9; input "$p"; SID=s1
+    jq -e '.turn_state == null and .stop_uuid == "parent-uuid" and .opaque.keep' "$REC"
+  done
+  # reserved text keeps the mark
+  input next; stop "$dep_marker"$'\n状態: 作業報告 — a'
+  before="$(cat "$REC")"
+  reserved="$(python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text)"
+  input "$reserved"; append_row user "$reserved"
+  run stop 'キャッシュ維持の応答'; [ "$status" -eq 0 ]
+  [ "$(cat "$REC")" = "$before" ]
+}
+
+@test "dependency_wait: only boolean passes the type check; old records stay readable" {
+  input next
+  stop "$dep_marker"$'\n状態: 作業報告 — a'
+  for v in true false; do
+    jq --argjson v "$v" '.turn_state.dependency_wait=$v' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+    es_read "$REC" >/dev/null
+    run input again; [ "$status" -eq 0 ]
+    stop "$dep_marker"$'\n状態: 作業報告 — a'
+  done
+  jq 'del(.turn_state.dependency_wait)' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+  run input again; [ "$status" -eq 0 ]
+  for bad in '"true"' 1 null '[]' '{}'; do
+    input next; stop "$dep_marker"$'\n状態: 作業報告 — a'
+    jq --argjson v "$bad" '.turn_state.dependency_wait=$v' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+    before="$(cat "$REC")"
+    run input again; [ "$status" -eq 2 ]
+    [ "$(cat "$REC")" = "$before" ]
+    jq 'del(.turn_state.dependency_wait)' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+  done
+  # record without turn fields: first input and Stop work as before
+  es_new_record o/r 1 o/r 2 orca /parent "$WORK" child main running stopped > "$REC"
+  input first; jq -e '.turn_input.generation == 1 and .turn_state == null' "$REC"
+}
+
+@test "dependency_wait: stale Stop and late input do not publish the mark" {
+  input next
+  append_row assistant "$dep_marker"$'\n状態: 作業報告 — old'
+  input newer
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$(payload Stop "$dep_marker"$'\n状態: 作業報告 — old')" "$HOOK"
+  [ "$status" -eq 0 ]; [ "$(jq -r .turn_state "$REC")" = null ]
+  input race
+  race_at_lock
+  run stop "$dep_marker"$'\n状態: 作業報告 — late'
+  [ "$status" -eq 0 ]
+  jq -e '.turn_state == null and .stop_uuid == "parent-uuid"' "$REC"
+}
+
+@test "dependency_wait: a parent without knowledge of the field reads the same result" {
+  parent_fixture
+  marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
+  for extra in none flag; do
+    printf 0 > "$STUB_CFG/ghcount_11"
+    put_record 11
+    if [ "$extra" = flag ]; then
+      f="$(rec_of 1122 11)"
+      jq '.turn_input={generation:1,session_id:"s1",sender:"owner",received_at:"2026-01-01T00:00:00Z",transcript_path:"/x",transcript_offset:0}
+          | .turn_state={generation:1,session_id:"s1",value:"作業報告",summary:"a",recorded_at:"2026-01-01T00:00:00Z",dependency_wait:true}' "$f" > "$f.tmp"
+      mv "$f.tmp" "$f"
+    fi
+    put_chat 11 s1 "$(said d1 "$(ago 300)" "$marker"$'\n状態: 作業報告 — a')" "$(turn_end "$(ago 300)")"
+    # #1744: work reports are not stop targets; the flag alone must not change that.
     run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
     [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
     [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal send')" -eq 0 ]

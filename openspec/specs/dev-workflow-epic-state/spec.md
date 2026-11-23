@@ -457,29 +457,40 @@ Orca の部品は、見つけた clone のパスに当たるリポジトリを `
 
 知らないサブコマンドと引数の数の違う呼び出し（`keepalive` は引数がちょうど 2 個でない場合を含む）には、stdout を空にして stderr に使い方を出して exit 2 で終わらなければならない（MUST）。
 
-親が子を起動するとき、Orca/tmux の両起動部品は `claude` に渡る起動引数に `--prompt-suggestions false` を付けなければならない（MUST）。`start` と `deliver` の起動し直しのいずれにも適用する。Orca の `draft` では Claude Code の提案文と人の入力を区別できないためである。設定ファイルや別の識別の仕組みを作ってはならず（MUST NOT）、これより前に起動された子の非空の `draft` も人の入力として扱わなければならない（MUST）。
+親が子を起動するとき、Orca/tmux の両起動部品は `claude` に渡る起動引数に `--prompt-suggestions false` を付けなければならない（MUST）。`start` と `deliver` の起動し直しのいずれにも適用する。Orca の画面と任意の `draft` では Claude Code の提案文と人の入力を常に区別できないためである。設定ファイルや別の識別の仕組みを作ってはならず（MUST NOT）、これより前に起動された子の非空の入力表示や `draft` も人の入力として扱わなければならない（MUST）。
 
 `keepalive` は前景が空いた入力待ちで入力欄が空のときだけ送信し、初回と送信直前の観測に次の判定を適用しなければならない（MUST）。空の `❯` だけで入力待ちと判断してはならず（MUST NOT）、前景の状態と空欄の両方を確認する。
 
 | 画面・入力の観測 | 判定 |
 |---|---|
 | 記号＋`…`＋`(Ns · …)` のスピナー行（例: `✢ Hullaballooing… (1s · thinking)`） | 空の `❯` と同居しても実行中として `skipped busy` |
+| Orca のバックグラウンドエージェント待機行（送信前） | 行頭の `✻✽✶✢✳✺` のいずれかの記号と空白に続く `Waiting for N background agent` / `agents`（N は数字、末尾の ` to finish` と行頭・行末の空白は任意）を、一意な入力枠より前の履歴に観測したら `skipped busy`。待機行より後（入力枠の上罫線より前）に、既知の前景完了行が 1 行でもあるときだけ古い待機として解除する。完了行は行全体が、既知の記号、`Worked`/`Churned`/`Brewed`/`Sautéed`/`Cogitated`/`Baked`/`Cooked`/`Crunched` のいずれか、` for <時間> · done <時刻> AM|PM`、任意の ` · N shell(s) still running` の形式。本文中の `done` や未知の動詞では解除しない。最後の完了行から上罫線までは空行と `※ recap: … (turn off recaps in /config)` だけを許し、ほかの行が残れば `skipped unknown-state`。通知・空行・未完の状態行が挟まるだけで完了行が無ければ `skipped busy`。完了後に再び待機行があれば `skipped busy`。入力枠内・後方の待機行は完了行で解除しない。一意な入力枠・下罫線・既知フッターを確定できない画面（枠なし・複数枠）は、ほかの busy / dialog / 入力済み判定に当たらなければ `skipped unknown-state`。解除は `ready` を直接返す根拠にせず、入力領域の検査を通った場合だけ `ready`。一覧内の `Waiting for parent reply` などの状態表示だけではこの待機行とみなさない |
 | AskUserQuestion の `Enter to select · ↑/↓ to navigate` | `skipped dialog` |
 | 許可画面の `Do you want to proceed?` または `Esc to cancel · Tab to amend` | `skipped dialog` |
 | フォルダ信頼確認の `Enter to confirm · Esc to cancel` | `skipped dialog` |
-| Orca の画面と `draft` | `orca terminal read --terminal <handle> --screen --json` を使う。`status: running` は入力待ちと実行中を分けないため判定に使わない。stream の tail だけでも判定しない。画面で前景の入力待ちを確認したうえで、`draft` のキーが無いか空なら空欄、非空なら `skipped input-not-empty` |
+| Orca の画面と任意の `draft` | `orca terminal read --terminal <handle> --screen --json` の `result.terminal.tail`（文字列の配列）と `result.terminal.source` を読む。source が screen でない場合（欠落を含む）は `skipped unknown-state`。`status: running` は入力待ちと実行中の区別に使わない。画面の一意な入力枠の領域全体が空のときだけ空欄とし、任意の `result.terminal.draft` が非空なら `skipped input-not-empty`。draft の欠落や空文字だけで空欄とは決めない。薄字の提案を含め文字があれば入力済みとする |
 | tmux の画面 | `tmux capture-pane -p -e -t <pane>` で前景の入力待ちを確認し、`❯ ` の後が空なら空欄。薄字 `\e[2m` の提案文だけなら空欄とみなしてよい（MAY）。それ以外の文字は `skipped input-not-empty` |
 | `· N shell still running` の表示 | バックグラウンドのシェルだけなら前景は空いているため、他の条件を満たせば送信可 |
+
+Orca の入力枠は上罫線・`❯` から下罫線までの一意な領域と、既知の Claude Code フッターで確認しなければならない（MUST）。フッターは shortcuts・cycle・manual-mode の既知の表示に加え、`⏵⏵ bypass permissions on` に `(shift+tab to cycle)`、`·` で始まる操作案内がこの順に続く表示を認め、どちらも省略を許す。後者の下罫線とフッターの間には複数のカスタム statusline を許す。
+
+フッターは原則として最終可視行で確認する。ただし ANSI 装飾と空行を除いた観測で bypass フッターが一つだけあり、その下の全行が先頭の `⏺ main` と、それに続く一行以上の `◯ <空白を含まない名前><2 文字以上の空白><空でない状態表示>` からなる既知のエージェント一覧なら、その一覧を末尾判定から除外してよい（MAY）。各行の前後の空白は許す。一覧を除外しても、入力領域全体と任意の draft の検査、および観測全体の busy / dialog の検査を省いてはならない（MUST NOT）。未知の行、main 行の欠落、既知の行形式に合わない折り返しなどの一覧は除外してはならず（MUST NOT）、先行する busy / dialog / 非空 draft の判定に当たらなければ `skipped unknown-state` としなければならない（MUST）。入力領域内の改行・空行・プロンプトやフッターに似た入力を捨ててはならない（MUST NOT）。複数の開始枠やフッターの後にシェル表示がある画面では送ってはならない（MUST NOT）。
 
 前景の入力待ち・空欄を確定できない場合は `skipped unknown-state` としなければならない（MUST）。上の実行中や選択画面を観測した場合は、空の入力欄が同居しても送信してはならない（MUST NOT）。
 
 この要件の検査（知らないサブコマンドと引数の数、`list`・`repos`・端末の一覧の読み取り、子のセッションの端末の選び方、`keepalive` の対象状態と出力）の守備範囲は次のとおりである。入力の出どころは `epic-dispatch.sh`（同じプラグインの中の呼び出し元）と、`orca` が返す JSON・端末画面の CLI 出力である（tmux の観測は要件「tmux の部品は…」に従う）。拾いたい誤りは、`epic-dispatch.sh` と部品のサブコマンドの名前か引数の並びが食い違うこと、`orca` の JSON の形が変わって読めないこと（読めないときは 0 件として扱わず失敗にする）、子のセッションの端末を 1 つに決められないのに送ること、`keepalive` で実行中・入力済み・選択画面・観測不能な端末に送ること、送れないときに作成・終了・入力消去をすることである。`epic-dispatch.sh` が検査済みの値（待ち時間・起動コマンド・指示と返事の文・子の呼び方・ワークツリーのパス）は、部品の中で検査し直さずにそのまま通してよい（MAY）。`keepalive` で空欄を確認できない出力は送らない。CLI 観測と送信の間の主の並行入力を原子的に排除することや、引数の中身の妥当性、`orca` の JSON・画面のあらゆる崩れ方を塞ぎ切ることは、この要件の完了条件としない。
 
-Orca の部品は、各サブコマンドで次の `orca` のコマンドだけを呼び、Orca の機能を自前で作り直してはならない（MUST NOT）: `available` は `orca` が PATH にあるか（無ければ stderr に `orca is not on PATH`）、`here` は `orca worktree current --json`、`prepare` は `orca worktree set --worktree path:<親> --issue <E>`、`list` は `orca worktree list --json`（`isArchived` が true のものを除き、`workspaceStatus` の `completed` → `done`・`in-review` → `waiting`・それ以外 → `running`、`comment` の `epic-stopped` → `stopped`・`epic-stopped-seen` → `stopped-seen`・`epic-resumed` → `resumed`・それ以外 → 空に読み替える）、`repos` は `orca repo list --json`、`unregistered` は stdout に `not-in-orca`、`create` は `orca worktree create`（`repo_id` が空でなければ `--repo id:<repo_id>`、続けて `--name issue-<N> --issue <N> --base-branch origin/<起点> --parent-worktree path:<親> --json`）、`start`・`deliver` は `orca terminal list`・`send`・`create`・`wait --for tui-idle`・`close --all`、`keepalive` は `orca terminal list --worktree path:<wt> --json`・`orca terminal read --terminal <handle> --screen --json` による既存端末/画面/draft の観測と、`orca terminal send --terminal <handle> --text <text> --enter --wait-submit <EPIC_DISPATCH_SUBMIT_WAIT> --json` だけ（`turn_started` を確認したときだけ `sent`。実行中の子が idle になるのを待つ `terminal wait`、create/close、入力消去、再試行の送信は許さない）、`close` は `orca terminal close --worktree path:<wt> --all`（失敗したら端末の一覧を stderr に出し、`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT` 秒待って 1 回だけ閉じ直す）、`remove` は `orca worktree rm --worktree path:<wt>`（`--force` を付けない。stderr に `terminal sweep failed` があれば `rm-failed-terminal-sweep`、それ以外の失敗は `rm-failed`）、`mirror` は `orca worktree set --worktree <current か path:<wt>>` に `done` → `--workspace-status completed`、`waiting` → `--workspace-status in-review`、`stopped` → `--comment epic-stopped`、`resumed` → `--comment epic-resumed`、`stopped-seen` → `--comment epic-stopped-seen` を付けたもの。
+Orca の部品は、各サブコマンドで次の `orca` のコマンドだけを呼び、Orca の機能を自前で作り直してはならない（MUST NOT）: `available` は `orca` が PATH にあるか（無ければ stderr に `orca is not on PATH`）、`here` は `orca worktree current --json`、`prepare` は `orca worktree set --worktree path:<親> --issue <E>`、`list` は `orca worktree list --json`（`isArchived` が true のものを除き、`workspaceStatus` の `completed` → `done`・`in-review` → `waiting`・それ以外 → `running`、`comment` の `epic-stopped` → `stopped`・`epic-stopped-seen` → `stopped-seen`・`epic-resumed` → `resumed`・それ以外 → 空に読み替える）、`repos` は `orca repo list --json`、`unregistered` は stdout に `not-in-orca`、`create` は `orca worktree create`（`repo_id` が空でなければ `--repo id:<repo_id>`、続けて `--name issue-<N> --issue <N> --base-branch origin/<起点> --parent-worktree path:<親> --json`）、`start`・`deliver` は `orca terminal list`・`send`・`create`・`wait --for tui-idle`・`close --all`、`keepalive` は `orca terminal list --worktree path:<wt> --json`・`orca terminal read --terminal <handle> --screen --json` による既存端末/画面/任意の draft の観測と、`orca terminal send --terminal <handle> --text <text> --enter --wait-submit <EPIC_DISPATCH_SUBMIT_WAIT> --json` だけ（送信が exit 0 で、send 応答の stages 配列の `turn_started` を確認したとき、または以下の送信後再観測で到達確認したときだけ `sent`。入力受付だけでは成功としない。実行中の子が idle になるのを待つ `terminal wait`、create/close、入力消去、再試行の送信は許さない）、`close` は `orca terminal close --worktree path:<wt> --all`（失敗したら端末の一覧を stderr に出し、`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT` 秒待って 1 回だけ閉じ直す）、`remove` は `orca worktree rm --worktree path:<wt>`（`--force` を付けない。stderr に `terminal sweep failed` があれば `rm-failed-terminal-sweep`、それ以外の失敗は `rm-failed`）、`mirror` は `orca worktree set --worktree <current か path:<wt>>` に `done` → `--workspace-status completed`、`waiting` → `--workspace-status in-review`、`stopped` → `--comment epic-stopped`、`resumed` → `--comment epic-resumed`、`stopped-seen` → `--comment epic-stopped-seen` を付けたもの。
 
 既存操作で Orca の部品を使うとき、`epic-dispatch.sh` の stdout・exit code・stderr の文言・記録の中身と、`orca`・`git`・`gh` の呼び出しの順と回数は、起動部品へ切り出す前と同じでなければならない（MUST）。新たな声かけの観測・送信と、子の起動引数への `--prompt-suggestions false` の追加をこの同一性の対象外とし、wait の既存の出力・終了理由を変えてはならない（MUST NOT）。`epic-dispatch.sh` は待ち時間の環境変数（`EPIC_DISPATCH_READY_TIMEOUT_MS`・`EPIC_DISPATCH_SUBMIT_WAIT`・`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT`）を今と同じ位置で検査して既定を当て、その値を同じ名前の環境変数で起動部品に渡す（MUST）。`repos` は 1 回の `launch` で多くても 1 回だけ呼ぶ（MUST）。`launch` と `adopt` は、要件「記録の launcher ごとに起動部品を選ぶ」の順で部品を選び、`reply`・`notify-closed`・`wait --resolve`・`reap` は子の記録の `launcher` の部品を呼ぶ（MUST）。部品の `available` を呼ぶ相手は操作で分かれる（MUST。要件「記録の launcher ごとに起動部品を選ぶ」が正本）: `launch`・`adopt` は選んだ部品、`reply`・`notify-closed`・`wait --resolve`・`reap` は対象の子の記録の `launcher` の部品である。入口で別の部品（例: 使えない Orca）を先に探して全体を終えてはならない（MUST NOT）。Orca の部品の `available` が失敗したときの `orca is not on PATH` での exit 1 は、Orca の部品を呼ぶ操作（記録の `launcher` が `orca` の子、または部品を決める記録が無い場合）の挙動で、tmux の記録の子には掛からない。
 
-`keepalive` の送る文は dispatch が共通定義から生成した一つの引数で渡し、部品は展開・改変しない（MUST）。送信直前に既存セッション・入力待ち・空欄・選択画面でないことを再観測し、いずれか不明なら送らず `skipped unknown-state` とする（MUST）。読み取り自体の失敗や壊れた出力は `failed observe`（一覧なら `failed terminal-list`）とし、セッション無しとみなさない（MUST）。`keepalive` は記録の launcher の部品を選び、対象外・失敗でも別の部品へ切り替えない（MUST）。送信後の確認待ち以外に子が入力待ちになるまで待たず、同じ呼び出しで再送しない（MUST NOT）。
+`keepalive` の送る文は dispatch が共通定義から生成した一つの引数で渡し、部品は展開・改変しない（MUST）。送信直前に既存セッション・入力待ち・空欄・選択画面でないことを再観測し、いずれか不明なら送らず `skipped unknown-state` とする（MUST）。読み取り自体の失敗や壊れた出力は `failed observe`（一覧なら `failed terminal-list`）とし、セッション無しとみなさない（MUST）。`keepalive` は記録の launcher の部品を選び、対象外・失敗でも別の部品へ切り替えない（MUST）。送信後の確認待ち以外に子が入力待ちになるまで待たず、同じ呼び出しで再送しない（MUST NOT）。send が exit 0 でも `turn_started` を確認できなければ、同じ構造の read で 1 回だけ再観測してよい（MAY）。このときは送信前には無かった前景の実行中表示と、入力枠全体および任意の draft が空であることの両方を確認した場合だけ `sent` とし、未確認なら `failed send` / exit 1 としなければならない（MUST）。busy という分類結果だけで空欄を確認したことにしてはならない（MUST NOT）。バックグラウンドエージェントの待機行だけを、新しい前景ターンの開始の証拠としてはならない（MUST NOT）。
+
+Orca の画面 read が JSON として壊れている、`result.terminal` が object でない、tail が欠落または文字列配列でない、任意の draft が文字列でない場合は、stderr に `failed observe shape` と期待するフィールドを出さなければならない（MUST）。送信前は stdout `failed observe` / exit 1、送信後の再観測なら stdout `failed send` / exit 1 とし、画面や JSON 全体を診断に複写してはならない（MUST NOT）。
+
+Orca keepalive の履歴の待機解除規則は送信前の二度の観測に適用し、送信後の再観測の到達条件には使ってはならない（MUST NOT）。send が exit 0 で turn_started が無い場合の再観測では、履歴の待機解除結果にかかわらず、正常な観測構造・source=screen・一意な既知入力枠と既知フッター・dialog 不在・入力領域全体と任意 draft の空欄・送信前に無かった前景実行表示をすべて確認した場合だけ sent としなければならない（MUST）。背景待機行だけ、完了行だけ、送信文エコーだけを到達成功の証拠にしてはならない（MUST NOT）。前景実行は既存のスピナーまたは esc to interrupt で確認し、未観測の非bypassフッターを推測して認識範囲を広げてはならない（MUST NOT）。
+
+この責務分離は Orca CLI が返す送信後画面を対象に、古い待機履歴と新しい送信文エコーが同居することによる到達失敗の誤記録を防ぐ。例えば、既知枠の外の完了後に送信文エコーが残っていても、新しい前景実行と入力枠全体・任意 draft の空欄を満たす画面は通してよい。エコー自体の内容の照合や、並行入力による別ターンとの原子的な区別は保証せず、未知の表示の穴をすべて塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 知らないサブコマンドは exit 2
 - **WHEN** `bash plugins/dev-workflow/scripts/epic-launch-orca.sh nosuch` を実行する
@@ -522,7 +533,7 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 - **THEN** `claude` に `--prompt-suggestions false` が渡り、設定ファイルや別の識別の仕組みを作らない
 
 #### Scenario: Orca の空欄は画面だけでなく draft で確認する
-- **WHEN** 前景の入力待ちで `status: running`、画面の `❯` は空で、draft が無い場合・空文字の場合・人の入力が入った場合・変更前に起動した子の提案文が入った場合を用意し、他の送信条件を満たす
+- **WHEN** `result.terminal.source` が screen で、tail の一意な入力枠全体が空、`status: running`、`result.terminal.draft` が無い場合・空文字の場合・人の入力が入った場合・変更前に起動した子の提案文が入った場合を用意し、他の送信条件を満たす
 - **THEN** 前の二つだけ送信可能とし、後の二つは `skipped input-not-empty`（exit 0）で入力を保持する
 
 #### Scenario: 空のプロンプトと同居する実行中や選択画面には送らない
@@ -536,6 +547,70 @@ Orca の部品は、各サブコマンドで次の `orca` のコマンドだけ�
 #### Scenario: Orca の観測と送信の限定を守る
 - **WHEN** Orca の keepalive を実行し、一覧が壊れている場合、画面が読めない場合、一意だが入力状態を決定できない場合、または送信直前の再観測で入力済みに変わった場合をそれぞれ用意する
 - **THEN** 順に `failed terminal-list`（exit 1）/ `failed observe`（exit 1）/ `skipped unknown-state`（exit 0）/ `skipped input-not-empty`（exit 0）となり、send/create/close/wait は呼ばれない。送信可能な場合も許す呼び出しは list/read/send だけである
+
+#### Scenario: 実測の Orca 画面と statusline で入力待ちを認識する
+- **WHEN** Orca 1.4.263 の実測 read を元にした fixture が `result.terminal` に source=screen、tail、tailRows、cursor 類を持ち draft は無く、tail に一意な上罫線・空の `❯`・下罫線・複数の statusline・末尾の `⏵⏵ bypass permissions on · 1 shell · ← 3 agents · ↓ to manage` があり、他の送信条件を満たす
+- **THEN** 空欄の入力待ちとして送信可能とし、send の到達を確認した場合だけ `sent` / exit 0 を返す。statusline のパスや数値に依存しない
+
+#### Scenario: draft が無くても入力領域全体を調べる
+- **WHEN** 現行構造で draft が無く、入力枠の `❯` の後、折り返し行、空行の後、または薄字に文字がある場合を用意する
+- **THEN** 全て `skipped input-not-empty` / exit 0 となり、send は呼ばれず入力を保持する。複数の開始枠で一意に決まらない場合は `skipped unknown-state` とする
+
+#### Scenario: バックグラウンドエージェント完了待ちは busy とする
+- **WHEN** Orca の送信前観測に `✻ Waiting for 1 background agent to finish` または `✻ Waiting for 2 background agents to finish` があり、空の入力枠・bypass フッター・既知のエージェント一覧が続くが、スピナーも `esc to interrupt` も dialog も無い
+- **THEN** `skipped busy` / exit 0 となり、send は呼ばれない
+
+#### Scenario: bypass フッターの下の既知の一覧は空欄判定を妨げない
+- **WHEN** Orca の一意な入力枠が空で、複数の statusline の下に一つの `⏵⏵ bypass permissions on (shift+tab to cycle) · ← 3 agents · ↓ to manage` があり、その下の全可視行が `⏺ main` と一行以上の `◯ child-1  Waiting for parent reply     10s · ↓ 45.7k tokens` の形式で、busy / dialog が無く draft は欠落または空文字である
+- **THEN** 分類は `ready` となる。初回と送信直前の両観測で他の送信条件も満たせば一度だけ送信し、到達を確認した場合だけ `sent` / exit 0 とする
+
+#### Scenario: 既知の一覧があっても入力済みなら送らない
+- **WHEN** busy / dialog が無い Orca の入力枠と bypass フッターの下に既知のエージェント一覧があり、`❯` の後、空行の後の継続行、または任意の draft に人の入力がある
+- **THEN** `skipped input-not-empty` / exit 0 となり、send は呼ばれず入力を保持する
+
+#### Scenario: フッターの下の未知の一覧は読み飛ばさない
+- **WHEN** busy / dialog と非空 draft が無い Orca の空の入力枠の下に bypass フッターがあるが、その後に未知の一覧行、既知の行形式に合わない折り返し、main 行の無い一覧、またはシェル表示が残っている
+- **THEN** `skipped unknown-state` / exit 0 となり、send は呼ばれない
+
+#### Scenario: 観測構造の不一致を診断する
+- **WHEN** 送信前の read が不正 JSON、result.terminal の欠落、terminal の配列、tail の欠落、tail の文字列、tail の非文字列要素、または draft の非文字列のいずれかである
+- **THEN** stdout は `failed observe` / exit 1、stderr に `failed observe shape` と期待するフィールドが出て、send は呼ばれない。観測全体は出力しない
+
+#### Scenario: source が画面でなければ送らない
+- **WHEN** 現行構造の tail は文字列配列だが source が欠落、stream、screen-unavailable のいずれかである
+- **THEN** `skipped unknown-state` / exit 0 となり send は呼ばれない
+
+#### Scenario: 現行 send receipt のターン開始を認識する
+- **WHEN** 二度の送信前観測が ready で、send が exit 0、現行の send 応答の stages 配列に turn_started がある（配列が receipt の内側にある場合を含む）
+- **THEN** send は 1 回、stdout は `sent` / exit 0 となる。input_accepted だけの応答ではこの条件を満たさない
+
+#### Scenario: ターン開始が未確認でも画面の実行開始と空欄で到達確認する
+- **WHEN** 二度の送信前観測が ready で、send は exit 0 だが turn_started が無く、1 回の送信後 read で新しい前景の実行中表示と、一意な入力枠全体および任意の draft の空欄を確認する
+- **THEN** `sent` / exit 0 とし、read は合計 3 回、send は合計 1 回で、wait/create/close/再送/入力消去を行わない
+
+#### Scenario: 送信後の busy だけでは到達確認しない
+- **WHEN** turn_started が無い send の後に、busy 表示だけで入力枠が見えない画面、busy だが入力済みの枠、非空の draft、idle のままの画面、または構造が壊れた read を再観測する
+- **THEN** いずれも `failed send` / exit 1 で再送しない。構造が壊れた場合は stderr に `failed observe shape` も出す
+
+#### Scenario: エージェント一覧がある送信後画面でも前景実行と空欄を必要とする
+- **WHEN** 二度の送信前観測が ready で、send は exit 0 だが turn_started が無く、送信後 read に一意な入力枠・bypass フッター・既知のエージェント一覧があり、バックグラウンド待機行だけの空欄画面、idle の空欄画面、`esc to interrupt` と空欄の画面、`esc to interrupt` と入力済みの画面をそれぞれ観測する
+- **THEN** 前景実行と空欄を確認できる三番目だけ `sent` / exit 0 とし、残りは `failed send` / exit 1 とする。いずれも再送しない
+
+#### Scenario: 送信後の古い待機と完了後のエコーは到達確認を妨げない
+- **WHEN** 二度の送信前観測は古い待機→既知完了→空欄の既知枠で ready、send は exit 0 だが turn_started が無く、送信後画面に古い待機→既知完了→送信文エコー→新しい既知の前景実行表示があり、既知枠全体と任意 draft は空で dialog が無い
+- **THEN** stdout は `sent` / exit 0、read は合計3回、send は合計1回となり、再送・入力消去・create/close/wait は行わない
+
+#### Scenario: 同じ完了後エコーは送信前の待機解除には使えない
+- **WHEN** 送信前の画面に古い待機→既知完了→送信文エコーがあり、既知枠全体と任意 draft は空で、前景スピナーも dialog も無い
+- **THEN** `skipped unknown-state` / exit 0 となり、send は0回で、送信前の待機解除条件は緩まない
+
+#### Scenario: 履歴解除を除外しても他の到達条件を省かない
+- **WHEN** send は exit 0 だが turn_started が無く、古い待機→既知完了→送信文エコーを含む送信後画面について、前景実行表示が無い場合、背景待機行だけの場合、前景実行があっても入力枠に通常文字または薄字がある場合、非空 draft、枠なし・複数枠・未知フッター、dialog、source が screen でない場合、壊れた観測をそれぞれ用意する
+- **THEN** すべて `failed send` / exit 1 で、send は合計1回のまま、再送も入力消去もしない。壊れた観測には既存の `failed observe shape` 診断を出す
+
+#### Scenario: 未観測の非bypassフッターを送信許可にしない
+- **WHEN** 送信前画面が空欄でも既知フッターを持たず、busy / dialog / 非空 draft の先行判定にも当たらない
+- **THEN** `skipped unknown-state` / exit 0 で send は0回となる。送信後再観測でも未知フッターしか無い場合は `failed send` / exit 1 となり再送しない
 
 ### Requirement: 記録の launcher ごとに起動部品を選ぶ
 
@@ -869,9 +944,21 @@ UserPromptSubmit と Stop のターン状態フックは、payload の `cwd` の
 
 `turn_state` は `null` またはオブジェクトとし、オブジェクトは `generation` / `session_id`（入力と同じ型）・`value`（`主の返事待ち` / `作業報告` / `完了`）・`summary`（空白だけでない一行の文字列）・`recorded_at`（UTC `YYYY-MM-DDTHH:MM:SSZ`）を持たなければならない（MUST）。`summary` は状態行の中身の前後の空白を除いた写しとし、停止理由の正本を置き換えてはならない（MUST NOT）。
 
+オブジェクトに任意の `dependency_wait` を認め、存在するときは JSON boolean でなければならない（MUST）。欠落・`false` は依存待ちの証拠にせず、子側は型不正を既存の拡張不正として扱い、有効な終了状態として採用してはならない（MUST NOT）。両ターン項目の無い旧記録、または本項目の無い旧終了状態を引き続き読めるものとし、既存の親用の記録検査にこの型検査を加えてはならない（MUST NOT）。
+
+守備範囲: 入力は子フックの書くローカル JSON。型の強制変換と欠落の誤認を防ぐ。形式が正しく実作業と一致しない要約、boolean `false` は通してよい。意味判定や入力検査の穴を塞ぎ切ることを完了条件にしない。
+
 #### Scenario: 3つの状態を保存する
 - **WHEN** 対象の子が各世代で `状態: 主の返事待ち — マージの許容を答えてください`、`状態: 作業報告 — 調査を報告しました`、`状態: 完了 — 子の受け入れ条件を満たしました` で終わる
 - **THEN** それぞれ `value` と `summary` が分かれて保存され、入力の世代とセッションID、Stop の保存時刻が記録される。入力の送り手と受付時刻は変更されない
+
+#### Scenario: boolean だけを任意項目の型として認める
+- **WHEN** それ以外は有効な終了状態の `dependency_wait` がそれぞれ `true`、`false`、欠落、文字列 `"true"`、数 `1`、`null`、配列、オブジェクトの記録を子側フックが検査する
+- **THEN** 最初の3つは本項目の型検査を通り、後の5つは既存の拡張不正の扱いになり、新たな有効状態を保存しない。`false` と欠落は依存待ちの証拠にならない
+
+#### Scenario: 旧記録と変更前の親を維持する
+- **WHEN** ターン情報の無い旧記録で通常入力と Stop を通す、または本項目の無い旧終了状態を子フックが読む。また、変更前の親が本項目の無い記録と boolean 項目の付いた記録を読む
+- **THEN** 子側は欠落だけを理由に拒否せず、旧記録への通常入力で従来どおりターン情報を作る。親の出力と判定は新項目だけでは変わらず、欠落に依存待ちの証拠を補わない
 
 ### Requirement: 有効な終了状態は入力との世代とセッションの一致で決まる
 
@@ -895,25 +982,33 @@ UserPromptSubmit と Stop のターン状態フックは、payload の `cwd` の
 
 ### Requirement: 状態行の欠落と不正は修正するまで停止を拒否する
 
-通常ターンの状態行が無い・値が3値以外・中身が空のとき、Stop は `decision: block` と正しい型を案内する `reason` の JSON を stdout に出し exit 0 としなければならない（MUST）。`stop_hook_active: true` でも免除してはならない（MUST NOT）。差し戻しで世代を増やさず、不正な状態を保存してはならない（MUST NOT）。
+通常ターンの状態行が無い・値が3値以外・中身が空のとき、Stop は `decision: block` と正しい型を案内する `reason` の JSON を stdout に出し exit 0 としなければならない（MUST）。状態行の欠落・形式不備だけなら `stop_hook_active: true` でも免除してはならない（MUST NOT）。ただし、同じ入力の既存状態の無効化に失敗した場合は、要件「対象の子が現在ターンを確認できないときは保存せず終了を拒否する」の処理失敗の契約を優先し、真偽値 `stop_hook_active: true` の再停止は理由・記録パスを stderr に出し、stdout 空・exit 0 で通さなければならない（MUST）。差し戻しで世代を増やさず、不正な状態を保存してはならない（MUST NOT）。
+
+守備範囲: 入力の出どころは hook payload の `stop_hook_active` / `last_assistant_message`、payload が指定する会話ログ、ローカルの子の JSON と無効化処理の結果である。拾う誤りは状態行の欠落・値や区切りや中身の不正、および無効化失敗を形式不備だけの拒否と取り違えることである。形式が正しく実作業と意味が一致しない状態行は通してよく、状態行不備でも無効化失敗を伴う真偽値 `stop_hook_active: true` の再停止は診断を残して通す。作業実態の意味判定や入力検査の穴を塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 行が無ければ書き足させる
-- **WHEN** 対象の子の通常ターンが `調査が終わりました` だけで Stop を呼ぶ
-- **THEN** `decision: block` の理由に状態行の追加が示され、終了を許さず、`turn_state` は `null` のままである
+- **WHEN** 対象の子の通常ターンが `調査が終わりました` だけで Stop を呼び、同じ入力の既存状態の無効化が成功する
+- **THEN** `decision: block` の理由に状態行の追加が示され、終了を許さず、`turn_state` は `null` である
 
 #### Scenario: 値と区切りと中身を検査する
-- **WHEN** 最終行が `状態: 停止 — 確認してください`、`状態: 完了 - 済み`、`状態: 作業報告 —   ` のいずれかである
+- **WHEN** 最終行が `状態: 停止 — 確認してください`、`状態: 完了 - 済み`、`状態: 作業報告 —   ` のいずれかで、同じ入力の既存状態の無効化が成功する
 - **THEN** どれも Stop が block し、有効な状態を保存しない
 
 #### Scenario: 再停止でも未修正なら拒否し修正後だけ保存する
-- **WHEN** 不正な最終行を `stop_hook_active: true` で再送し、その後正しい最終行で同じ世代の Stop を呼ぶ
+- **WHEN** 不正な最終行を `stop_hook_active: true` で再送して同じ入力の既存状態の無効化が成功し、その後正しい最終行で同じ世代の Stop を呼ぶ
 - **THEN** 再送も block し、修正後は block を出さずその世代に状態を保存する
+
+#### Scenario: 状態行不備と無効化失敗が重なる再停止は処理失敗を優先する
+- **WHEN** 状態行が欠落または不正な対象の子の `stop_hook_active: true` の Stop で、同世代の既存状態の無効化に必要なロック取得または記録の置き換えが失敗する
+- **THEN** 状態行不備だけを理由に block し続けず、stdout 空・exit 0 で停止を通し、stderr に無効化失敗の理由と記録パスを出す。不正な状態を保存せず、元の JSON を保つ。停止許可は無効化成功や有効な終了状態の保存を意味しない
 
 ### Requirement: 既存 Stop が拒否した発言を終了状態として公開しない
 
-Stop の共通入口は既存 `owner-message-number-check.sh` に同じ payload を1回渡し、結果を保存前に受け取る（MUST）。2本を別 hook として並列登録してはならない（MUST NOT）。既存 Stop または状態行側が拒否した通常ターンは、理由を返して状態を保存せず、同じ入力の既存状態を `null` に戻す（MUST）。無効化も世代・セッション・ログ境界をロック内で再照合し、新世代に触れず、失敗は理由付きの block とする（MUST）。
+Stop の共通入口は既存 `owner-message-number-check.sh` に同じ payload を1回渡し、結果を保存前に受け取る（MUST）。2本を別 hook として並列登録してはならない（MUST NOT）。既存 Stop または状態行側が拒否した通常ターンは、理由を返して状態を保存せず、同じ入力の既存状態を `null` に戻す（MUST）。無効化も世代・セッション・ログ境界をロック内で再照合し、新世代に触れず、失敗は要件「対象の子が現在ターンを確認できないときは保存せず終了を拒否する」の処理失敗として扱う（MUST）。
 
 既存 Stop の1回限定・解除設定・fail-soft は変えず、状態行側は再試行でも検査する（MUST）。対象外では既存 Stop の出力・終了コードを保ち、予約文を含めターン情報の更新から除外した入力の状態には触れない（MUST）。
+
+守備範囲: 入力の出どころは hook payload、指定された会話ログ、ローカルの子の JSON、既存 Stop の判定結果と無効化処理の結果である。拾う誤りは拒否された発言の新たな公開、同世代の無効化漏れ、別世代の上書き、および無効化失敗を成功と取り違えることである。状態行不備でも無効化失敗を伴う真偽値 `stop_hook_active: true` の再停止は診断を残して通してよく、書き換えられない元の JSON に古い状態が残ることを許容する。停止許可を無効化成功や完了の根拠とせず、入力検査の穴を塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 正しい状態行でも既存 Stop の拒否中は未終了である
 - **WHEN** 通常入力後、子が `#1670 の対応を進めますか？` と最終行 `状態: 主の返事待ち — 続行の判断を待っています` で Stop を呼び、既存 Stop が block を返す
@@ -925,11 +1020,15 @@ Stop の共通入口は既存 `owner-message-number-check.sh` に同じ payload 
 
 #### Scenario: 同じ世代の既存状態を拒否時に無効化する
 - **WHEN** 同じ入力の `turn_state` が既にある通常ターンの Stop を、既存 Stop または状態行側の検査が拒否する
-- **THEN** 同じ世代の状態をロック内で `null` に戻し、拒否された発言を有効な終了状態として残さない。照合中に新入力になった場合は新世代を変更しない
+- **THEN** 無効化に成功した場合は同じ世代の状態をロック内で `null` に戻し、拒否された発言を有効な終了状態として残さず拒否理由を返す。無効化に失敗した場合は元の JSON を保ち、処理失敗の契約に従って初回は block、真偽値 `stop_hook_active: true` の再停止は stderr に理由・記録パスを出し stdout 空・exit 0 で通す。照合中に新入力になった場合は新世代を変更しない
 
 #### Scenario: 一般セッションの既存 Stop の拒否を保つ
 - **WHEN** 一致する子の記録が無いセッションで既存 Stop が拒否する発言を共通入口に渡す
 - **THEN** 既存 Stop を単独実行したものと同じ拒否理由・終了コードになり、新規の記録は作らず状態行も要求しない
+
+#### Scenario: 再停止で拒否状態の無効化に失敗しても処理失敗として停止を通す
+- **WHEN** 状態行の不備を検出した対象の子の `stop_hook_active: true` の Stop で、同世代の状態を無効化するロック取得または記録の置き換えに失敗する
+- **THEN** stdout は空で exit 0、stderr に無効化の失敗理由と記録パスを出す。元の JSON と親の停止情報、新しい入力の世代を壊さず、ロックを自動で消さない
 
 ### Requirement: 古い Stop は新しい入力の世代に状態を書けない
 
@@ -949,19 +1048,43 @@ Stop は payload のセッションと指定ログの最終発言が現在の入
 
 ### Requirement: 対象の子が現在ターンを確認できないときは保存せず終了を拒否する
 
-対象の子の Stop で入力情報が未作成・拡張が型不正・指定ログが読めない・最終発言との対応が不明・保存が失敗のときは、状態を捏造せず `decision: block` と処理失敗の理由・記録パスを返さなければならない（MUST）。入力情報が無い場合は通常入力の送り直しを案内する。複数の一致記録は勝手に選ばず、入力フックでは exit 2、Stop では block としなければならない（MUST）。
+対象候補の子の Stop で入力情報が未作成・拡張が型不正・指定ログが読めない・最終発言との対応が不明・記録や設定や予約文が読めない・保存や無効化が失敗・記録が複数一致のときは、状態を捏造せず処理失敗として扱わなければならない（MUST）。`stop_hook_active` が JSON の真偽値 `true` 以外なら、`decision: block` と理由・記録パスの JSON を stdout に出し exit 0 とする（MUST）。入力情報が無い場合は通常入力の送り直しを案内する。複数一致は勝手に選ばず、入力フックでは exit 2 とする（MUST）。
+
+処理失敗で `stop_hook_active: true` なら、理由と記録パス（1件に確定できないときは状態保存ルート）を stderr に出し、stdout は空で exit 0 として停止を通さなければならない（MUST）。保存成功や完了を捏造し、元の JSON・親の停止情報・別世代を壊し、残存ロックを自動で消してはならない（MUST NOT）。状態行の欠落・形式不備自体にはこの免除を適用せず、保存・無効化が成功する限り再停止でも block する（MUST）。
+
+守備範囲: 入力の出どころは hook payload、指定された会話ログ、ローカルの子の JSON と状態保存設定、共有正本から生成した予約文、および保存・無効化処理の結果である。拾う誤りは入力情報の欠落・拡張の型不正・ログや記録や設定や予約文の読み取り失敗・発言との対応不明・複数一致・保存や無効化の失敗と、それらを形式不備や保存成功と取り違えることである。処理失敗が続く真偽値 `stop_hook_active: true` の再停止は通してよく、状態行不備を検出していても無効化失敗が重なれば同じ契約で通す。停止許可から作業の完了を推定せず、子が直せない入力や記録を推測で補完せず、入力検査の穴を塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 更新前から走っていたターンには入力を作らない
-- **WHEN** 記録は一致するが `turn_input` の無い子が正しい状態行で Stop を呼ぶ
+- **WHEN** 記録は一致するが `turn_input` の無い子が正しい状態行で、`stop_hook_active` が false または未指定の Stop を呼ぶ
 - **THEN** 状態を保存せず block し、通常入力を送り直す案内が返る
 
 #### Scenario: 保存失敗を成功にしない
-- **WHEN** 現在世代の正しい状態行に対しロック取得か記録の置き換えが失敗する
+- **WHEN** 現在世代の正しい状態行に対し、`stop_hook_active` が false または未指定の Stop でロック取得か記録の置き換えが失敗する
 - **THEN** Stop は block し、行の形式ではなく保存に失敗した理由を示す。元の JSON と既存の停止情報を壊さず、ロックを自動で消さない
 
 #### Scenario: 複数の記録と読めないログを推測で処理しない
-- **WHEN** 一致する読める記録が2件ある、または対象の子の指定ログを読めない
+- **WHEN** 一致する読める記録が2件ある、または対象の子の指定ログを読めず、`stop_hook_active` が false または未指定の Stop を呼ぶ
 - **THEN** 記録を更新せず処理失敗を示す。Stop では block、複数一致の入力受付では exit 2 である
+
+#### Scenario: 入力情報が無い再停止は診断を残して通す
+- **WHEN** `turn_input` の無い対象の子が `stop_hook_active: true` で Stop を呼ぶ
+- **THEN** stdout は空で exit 0、stderr に入力情報が無い理由と通常入力の送り直しの案内と記録パスを出す。入力情報や終了状態を作らない
+
+#### Scenario: 処理失敗が続く再停止も block しない
+- **WHEN** 拡張の型不正・指定ログの読み取り失敗・最終発言との対応不明・記録の複数一致・設定や予約文の読み取り失敗のいずれかが続いたまま、対象候補の子が `stop_hook_active: true` で繰り返し Stop を呼ぶ
+- **THEN** 各呼び出しは stdout 空・exit 0 で、stderr に処理失敗の理由と記録パスまたは状態保存ルートを出す。有効な終了状態を新たに公開せず、世代や親の停止情報を壊さない
+
+#### Scenario: ロック残存や置き換え失敗の再停止は保存成功にせず通す
+- **WHEN** 対象の子の `stop_hook_active: true` の Stop で、終了状態の保存に必要なロックを取れない、または記録の置き換えが失敗する
+- **THEN** stdout は空で exit 0、stderr に保存失敗の理由と記録パスを出す。元の JSON を保持し、ロックを自動で消さず、保存できた状態として公開しない
+
+#### Scenario: 文字列の再停止フラグでは免除しない
+- **WHEN** 処理失敗した対象の子の Stop で `stop_hook_active` が文字列の `"true"` である
+- **THEN** 処理失敗は理由とパスを持つ JSON で block され、真偽値 true の免除を受けない
+
+#### Scenario: 処理失敗が復旧した再停止は通常どおり保存する
+- **WHEN** 同じ入力世代で処理失敗の原因が解消し、既存 Stop が許可し、ログから現在発言と正しい状態行を確認できる `stop_hook_active: true` の Stop を呼ぶ
+- **THEN** 状態を同じ世代に保存し、block を出さず終了する。再停止フラグだけを理由に保存を省かず、新しい入力に変わっていれば既存の世代照合でその入力を保つ
 
 ### Requirement: 声かけ予約文の往復はターン情報の更新から除外する
 
@@ -1008,3 +1131,77 @@ Stop は payload のセッションと指定ログの最終発言が現在の入
 - **THEN** 親のログ推定・出力・送信・起動し直しに関する既存の期待値は変更せずに通る
 
 以上の追加要件の入力検査に共通する守備範囲: 入力の出どころは hook payload、payload が指定する会話ログ1本、ローカルの既存の子の JSON、共有正本から生成した予約文、既存 Stop の判定結果である。拾う誤りは、対象セッションの取り違え、起動形・先頭接頭辞と本文の引用の誤分類、拡張の型や値の不正、通常入力時の無効化漏れ、世代・セッション・ログ境界の不一致、状態行の欠落・不正、および既存 Stop が拒否した発言の公開である。形式は正しいが実作業と意味が一致しない `状態: 完了 — 作業が済みました`、主が直接送った予約文、主が直接送った先頭 `親エピック #` の文を輸送上 `parent` に分類することは通してよい。送り手は権限の証明ではなく、作業実態の意味判定や全ログ探索による真の送り手の推定はしない。入力検査の穴を塞ぎ切ることを完了条件にしない。
+
+### Requirement: 子は検査済みの依存待ちの作業報告だけに依存待ち情報を保存する
+
+子の Stop は現在の入力との世代・セッション・指定ログの対応、状態行、既存 Stop の許可を確認した発言だけを保存し、その `value` が `作業報告` かつ既存の依存待ち末尾形式を満たす場合だけ、同じ `turn_state` に `dependency_wait: true` を保存しなければならない（MUST）。それ以外の新しい状態では項目を省く（MUST）。末尾形式は状態行を除いた最終非空行の `止まった理由: 依存待ち: <依存先 URL>` とし、行頭は空白なし又は半角空白1個を許す。引用・フェンス内の印は数えず、文脈は発言全文から判定する（MUST）。
+
+守備範囲: 入力は hook payload と指定ログの今回の終了発言。引用例・古い発言・通常報告の誤認を防ぐ。形式は正しいが未登録の依存先を挙げた報告は通してよく、boolean は登録成功や解消を証明しない。GitHub との照合・作業実態の意味判定や入力検査の穴を塞ぎ切ることを完了条件にしない。
+
+#### Scenario: 成功した依存待ちの作業報告に同じターンで印を付ける
+- **WHEN** 対象の子が今回の指定ログに `止まった理由: 依存待ち: https://github.com/o/r/issues/22` と最終行 `状態: 作業報告 — 前提の完了後に再開` を残し、既存 Stop も許可する
+- **THEN** 実フックは `value: 作業報告`、対応する summary・保存時刻・入力と同じ世代とセッション、boolean `dependency_wait: true` を一つの終了状態として保存する
+
+#### Scenario: 既存の末尾の空白と行頭の契約を維持する
+- **WHEN** 上の正しい末尾が CRLF 又は LF で、末尾に空白行がある、又は依存待ち印の行頭に半角空白1個がある。別のケースでは印の行頭に半角空白2個以上がある
+- **THEN** 前者は `true` を保存し、後者は正しい状態行自体は保存しても `dependency_wait` を付けない
+
+#### Scenario: 通常の作業報告と別の状態値には印を付けない
+- **WHEN** 今回の正しい状態行が通常の作業報告だけ、又は本文中に印があっても状態行の直前の非空行が別の文章である。別のケースでは印の直後の正しい状態値が `主の返事待ち` 又は `完了` である
+- **THEN** 許可された状態行の値を保存するが `dependency_wait` を付けない。`作業報告` を他の状態値へ変換しない
+
+#### Scenario: 引用と閉じたコード例の印を数えない
+- **WHEN** 正しい作業報告の状態行の前に、`> 止まった理由: 依存待ち: https://github.com/o/r/issues/22` の引用、又は閉じたコードフェンス内だけの印がある
+- **THEN** 状態行は保存できるが `dependency_wait` を付けない
+
+#### Scenario: 未閉鎖フェンス内の末尾は終了状態を作れない
+- **WHEN** 長い本文を含む発言の未閉鎖のコードフェンス内に依存待ち印と状態行がある
+- **THEN** 全文の文脈から状態行自体を不正として差し戻し、無効化成功時は `turn_state: null` であり `dependency_wait` を保存しない
+
+#### Scenario: 検査済みの今回の発言以外から印を作らない
+- **WHEN** 正しい依存待ち形式でも入力の世代・セッション・ログ境界が古い、又は状態行を欠く、又は既存 Stop が拒否する
+- **THEN** 新しい有効な依存待ち状態を保存しない。古い Stop は新世代を変更せず、差し戻しと処理失敗は既存の契約に従う
+
+### Requirement: 依存待ち情報は終了状態と一緒に無効化し排他更新する
+
+`dependency_wait` の保存・無効化は `turn_state` 全体と同じロック・世代再照合・一時ファイルからの置き換えで行い、独立した古い印を残してはならない（MUST NOT）。通常入力は新世代と `turn_state: null` を原子的に保存し、Stop 差し戻しは同じ入力の状態全体を `null` に戻す（MUST）。予約文・遅い Stop・保存や無効化の失敗は既存契約を維持し、失敗を無効化成功としてはならない（MUST NOT）。
+
+守備範囲: 入力は hook payload・指定ログ・ローカル JSON と排他更新の結果。印の持ち越しと新世代の破壊を防ぐ。予約文の往復による保持、置き換え失敗での旧 JSON の残存は既存契約どおり許す。停止許可を保存成功と見なさず、競合や入力検査の穴を塞ぎ切ることを完了条件にしない。
+
+#### Scenario: 次の通常入力で依存待ちも消える
+- **WHEN** `dependency_wait: true` の有効状態がある子へ主・親・起動形の通常入力が届き、保存が成功する
+- **THEN** 新世代の `turn_input` と `turn_state: null` が一度に保存され、古い依存待ち項目は残らない。既存の親の停止情報と未知項目は保たれる
+
+#### Scenario: 同じ入力の Stop 差し戻しで依存待ちも消える
+- **WHEN** 同世代に `dependency_wait: true` が既にあり、今回の発言を既存 Stop 又は状態行検査が拒否し、無効化が成功する
+- **THEN** 世代を増やさず状態全体を `null` にする。修正後は同じ世代の新しい発言だけを検査して保存する
+
+#### Scenario: 同じ世代でも通常報告への書き直しに印を持ち越さない
+- **WHEN** 依存待ちを保存した同じ入力世代に、正しい通常の作業報告で再び Stop を呼ぶ
+- **THEN** 新しい作業報告の状態には `dependency_wait` が無く、古い `true` を継承しない
+
+#### Scenario: 更新競合で新入力を古い依存待ちへ戻さない
+- **WHEN** 依存待ちの保存又は差し戻しの計画を作ったあと、ロック取得前に新しい通常入力が保存される
+- **THEN** 古い Stop は新世代を保存も無効化もせず、新入力と `turn_state: null` が保たれる。親の項目と未知項目を失わない
+
+#### Scenario: 予約文と保存失敗の扱いを維持する
+- **WHEN** 依存待ちの有効状態へ予約文の往復が届く、又は通常入力・Stop の保存や無効化がロックや置き換えの失敗で完了しない
+- **THEN** 予約文では元の情報を保つ。失敗時は元の JSON を壊さず、既存契約の診断と exit・再停止時の処理を維持し、依存待ちの保存や無効化に成功したとは扱わない
+
+### Requirement: 声かけの実機確認は適格な入力待ちの子で行い未確認を区別する
+
+マージ後の声かけ確認手順は、既存の声かけ条件を満たし会話15万トークン未満で前景が入力待ちの子を選ぶよう明記しなければならない（MUST）。背景エージェント待機中の子の skipped busy は正しい非送信として扱い、別の適格な子が無ければ実機確認を未完了にしなければならない（MUST）。実機送信・返事・次の request の cache_read_input_tokens と会話量の比較を #1728 と #1732 に記録し、fixture の成功で代替してはならない（MUST NOT）。非bypassの未知フッターは実画面確認前に対応せず、観測不能なら制限と未確認を明記しなければならない（MUST）。生ログの保存先は LLM_LOG_DIR とし、未設定なら確認し、リポジトリへ保存してはならない（MUST NOT）。
+
+この確認は実機の画面・会話ログと fixture 結果を入力とし、背景待機や合成成功を実機成功と混同する誤りを防ぐ。fixture が通って実機未確認の状態は許す。あらゆる未観測画面を塞ぎ切ることは完了条件にしない。
+
+#### Scenario: 背景待機中の子しか無い場合は実機確認を終わらせない
+- **WHEN** 実機確認候補がすべて背景エージェント待機中で、別の会話15万トークン未満の適格な入力待ちの子が無い
+- **THEN** skipped busy を到達失敗と呼ばず、実機確認は未完了と記録して条件が整うのを待つ
+
+#### Scenario: 適格な子の実機証拠をエピックへ残す
+- **WHEN** 適格な子で実際の声かけと返事、その後の request の usage を確認する
+- **THEN** 子の識別子・会話量・入力待ちである観測・送信結果・予約文への返事・cache_read_input_tokens と会話量の比較を #1728 と #1732 に記録し、生ログはリポジトリへ保存しない
+
+#### Scenario: fixture が通っても実機条件が無ければ未確認を残す
+- **WHEN** 回帰 fixture が成功しても、実機送信または cache 利用を観測できない、あるいは非bypassの未知フッターを観測できない
+- **THEN** 未確認の項目と観測範囲・制限を記録し、fixture 成功や推測を実機成功・非bypass対応の根拠にしない

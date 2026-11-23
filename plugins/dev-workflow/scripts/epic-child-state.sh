@@ -30,6 +30,16 @@ def status(text):
         return None
     return m[1], m[2].strip()
 
+def dependency_tail(text):
+    lines = text.rstrip().splitlines()
+    if status(text):
+        lines.pop()
+        while lines and not lines[-1].strip():
+            lines.pop()
+    tail = lines[-1] if lines else ''
+    tail = tail[1:] if tail.startswith(' ') else tail
+    return tail.startswith('止まった理由: 依存待ち: ')
+
 def text_of(row):
     c = row.get('message', {}).get('content')
     if isinstance(c, str):
@@ -70,7 +80,8 @@ def extension(r):
               and nonempty(s.get('session_id')) and s.get('value') in VALUES
               and nonempty(s.get('summary')) and bool(s['summary'].strip())
               and '\n' not in s['summary'] and '\r' not in s['summary'] and utc(s.get('recorded_at'))
-              and s['generation'] == i['generation'] and s['session_id'] == i['session_id'])
+              and s['generation'] == i['generation'] and s['session_id'] == i['session_id']
+              and ('dependency_wait' not in s or type(s['dependency_wait']) is bool))
         if not ok:
             raise ValueError('turn_state の型または世代が不正です')
 
@@ -78,15 +89,7 @@ mode = sys.argv[1]
 try:
     data = json.load(sys.stdin)
     if mode == 'dependency':
-        text = data.get('text') or ''
-        lines = text.rstrip().splitlines()
-        if status(text):
-            lines.pop()
-            while lines and not lines[-1].strip():
-                lines.pop()
-        tail = lines[-1] if lines else ''
-        tail = tail[1:] if tail.startswith(' ') else tail
-        raise SystemExit(0 if tail.startswith('止まった理由: 依存待ち: ') else 1)
+        raise SystemExit(0 if dependency_tail(data.get('text') or '') else 1)
     r, p, reserved = data['record'], data['payload'], data['reserved']
     extension(r)
     sid, path = p.get('session_id'), p.get('transcript_path')
@@ -157,8 +160,11 @@ try:
         if not parsed:
             print(json.dumps({'action': 'block', 'reason': '最終非空行に 状態: <主の返事待ち|作業報告|完了> — <空でない中身> を、引用・コードの外に書いてください。'}, ensure_ascii=False))
         else:
-            print(json.dumps({'action': 'save', 'state': dict(generation=i['generation'], session_id=sid,
-                       value=parsed[0], summary=parsed[1], recorded_at=now)}, ensure_ascii=False))
+            state = dict(generation=i['generation'], session_id=sid,
+                         value=parsed[0], summary=parsed[1], recorded_at=now)
+            if parsed[0] == '作業報告' and dependency_tail(text):
+                state['dependency_wait'] = True
+            print(json.dumps({'action': 'save', 'state': state}, ensure_ascii=False))
 except (ValueError, OSError, TypeError, KeyError) as e:
     print(json.dumps({'action': 'error', 'reason': str(e)}, ensure_ascii=False))
     raise SystemExit(2)
@@ -182,7 +188,14 @@ block() { jq -cn --arg reason "$1" '{decision:"block",reason:$reason}'; exit 0; 
 fail() {
   local reason="${1}: ${RECORD:-$ES_ROOT}"
   case "$1" in *入力情報がありません*) reason="${reason}。通常入力を送り直してください。" ;; esac
-  if [ "$EVENT" = Stop ]; then block "$reason"; fi
+  if [ "$EVENT" = Stop ]; then
+    # Only processing failures are waived on retry; status-line blocks still apply.
+    if jq -e '.stop_hook_active == true' <<< "$INPUT" >/dev/null 2>&1; then
+      printf '%s\n' "$reason" >&2
+      exit 0
+    fi
+    block "$reason"
+  fi
   printf '%s\n' "$reason" >&2
   exit 2
 }
@@ -222,7 +235,7 @@ if jq -e '.decision == "block"' <<< "$OWNER" >/dev/null 2>&1; then
   ACTION=block
   REASON="$(jq -r .reason <<< "$OWNER")${REASON:+ / $REASON}"
 fi
-[ "$PLAN_RC" -eq 0 ] || ACTION=block
+[ "$PLAN_RC" -eq 0 ] || ACTION=error
 jq -e 'has("turn_input")' <<< "$CUR" >/dev/null || fail "$REASON"
 STATE=null
 [ "$ACTION" != save ] || STATE="$(jq -c .state <<< "$PLAN")"
@@ -233,5 +246,8 @@ es_modify "$RECORD" 'if .turn_input == $snapshot then .turn_state=$state else em
 RC=$?
 [ "$RC" -ne 4 ] || pass_owner
 [ "$RC" -eq 0 ] || fail "Stop の保存または無効化に失敗しました${REASON:+ / $REASON}"
-[ "$ACTION" = save ] || { [ "$PLAN_RC" -ne 0 ] || block "$REASON"; fail "$REASON"; }
-pass_owner
+case "$ACTION" in
+  save) pass_owner ;;
+  block) block "$REASON" ;;
+  *) fail "$REASON" ;;
+esac

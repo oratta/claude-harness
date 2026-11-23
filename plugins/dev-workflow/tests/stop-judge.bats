@@ -411,6 +411,42 @@ one_record() {
 }
 not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の報告' '返事:' > "$STUB_CFG/model_out"; }
 
+# 完了報告はモデルが「通す」と返す設定でも機械で問いではないとする。
+@test "stop-judge json: completion headings bypass the model without a current record" {
+  one_record 2026-10-26T04:00:00Z
+  for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
+    run judge 400 11 "$(stop_json "{text: \"$heading\\n作業を終えた。issue は開いたまま待つ。\"}")"
+    [ "$status" -eq 0 ]
+    [ "${lines[0]}" = '判断: 問いではない' ]
+    [ "${lines[1]}" = '理由: 完了の報告' ]
+    [ "${lines[2]}" = '返事: ' ]
+    [ "${lines[3]}" = '記録: なし' ]
+    [ ! -e "$STUB_CFG/model_in" ]
+  done
+}
+
+@test "stop-judge json: completion headings preserve records, questions, marks and stop-reason lines" {
+  for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
+    for protection in record question mark reason state; do
+      printf '[]' > "$STUB_CFG/comments_11"
+      extra='{}'
+      text="$heading"
+      case "$protection" in
+        record) one_record 2026-10-26T06:00:00Z ;;
+        question) extra='{questions: ["どちらですか"]}' ;;
+        mark) extra='{marked: true}' ;;
+        reason) text="$heading"$'\n止まった理由: PR のマージ待ち' ;;
+        state) text="$heading"$'\r\n作業を終えた。\r\n状態: 主の返事待ち — マージの承認\r\n\n  \r\n' ;;
+      esac
+      payload="$(jq -cn --arg t "$text" "$extra + {text: \$t}")"
+      run judge 400 11 "$(stop_json "$payload")"
+      [ "$status" -eq 0 ]
+      [ "${lines[0]}" = '判断: 通す' ]
+      [ -e "$STUB_CFG/model_in" ]
+    done
+  done
+}
+
 @test "stop-judge json: a record older than the last input is not passed, the statement is, and line 4 is none" {
   one_record 2026-10-26T04:00:00Z
   run judge 400 11 "$(stop_json)"
