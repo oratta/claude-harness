@@ -8,7 +8,7 @@
 
 ## 2. 統合確認
 
-- [ ] 2.1 `bats plugins/dev-workflow/tests/child-background-wait.bats plugins/dev-workflow/tests/epic-child-no-ask-tool.bats plugins/dev-workflow/tests/ci-watch-entry.bats plugins/dev-workflow/tests/subagent-waiting.bats tests/develop-startup-budget.bats tests/injection-budget.bats` と `openspec validate child-background-wait-cache --type change --strict` を実行し、成功を記録する。既存の待ち契約や注入予算が落ちたら理由を調べ、予算を自動で広げない。触る範囲: plugins/dev-workflow/tests/child-background-wait.bats（新規）、plugins/dev-workflow/skills/develop/references/child-background-wait.md（新規）、plugins/dev-workflow/skills/develop/SKILL.md:202-204
+- [x] 2.1 `bats plugins/dev-workflow/tests/child-background-wait.bats plugins/dev-workflow/tests/epic-child-no-ask-tool.bats plugins/dev-workflow/tests/ci-watch-entry.bats plugins/dev-workflow/tests/subagent-waiting.bats tests/develop-startup-budget.bats tests/injection-budget.bats` と `openspec validate child-background-wait-cache --type change --strict` を実行し、成功を記録する。既存の待ち契約や注入予算が落ちたら理由を調べ、予算を自動で広げない。触る範囲: plugins/dev-workflow/tests/child-background-wait.bats（新規）、plugins/dev-workflow/skills/develop/references/child-background-wait.md（新規）、plugins/dev-workflow/skills/develop/SKILL.md:202-204
 
 ## Workflow follow-up
 
