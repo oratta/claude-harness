@@ -9068,10 +9068,10 @@ assert_reply_auto() {
     put_transcript 60 0
     assert_reply_auto "$as" 1
     reply_auto_ready
-    put_transcript 5 150000
+    # Keep the main log selectable while only its latest usage row has no valid time.
+    put_transcript 5 0
     file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
-    sed 's/"timestamp":"[^"]*"/"timestamp":"unknown"/g' "$file" > "$BATS_TEST_TMPDIR/unknown.jsonl"
-    cp "$BATS_TEST_TMPDIR/unknown.jsonl" "$file"
+    printf '%s\n' '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":150000}}}' >> "$file"
     assert_reply_auto "$as" 1
     reply_auto_ready
     put_transcript 5 0
@@ -9130,9 +9130,10 @@ assert_reply_auto() {
     [ "$output" = 'skipped 11 not-stopped' ]
     [ "$(calls '^orca terminal')" -eq 0 ]
     reply_auto_ready
+    put_transcript 60 160000
     put_record 11 status=waiting stop=stopped-seen stop_uuid=$MAIN_UUID
     file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
-    printf '%s\n' '{"type":"user","uuid":"new","message":{"content":"回答済み"}}' >> "$file"
+    printf '{"type":"user","uuid":"d2","timestamp":"%s","message":{"content":"回答済み"}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$file"
     run dispatch reply --as "$as" 400 11 '回答'
     [ "$status" -eq 0 ]
     [ "$output" = 'skipped 11 not-stopped' ]

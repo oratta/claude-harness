@@ -4,7 +4,7 @@
 
 子は会話量が閾値以上、または 60 分以上止まったら起動し直す。直接の `reply --as parent` / `--as owner` は `--relaunch` なしでも自動判定する。コンパクトされた子は develop の `SKILL.md` の中身を持たずに進むためである（#1039 の決定を #1323 で覆した）。親も 60 分以上なら記録から起動し直す（「親への適用」）。
 
-送り方と起動し直し方の手順本体はここに書かない。止まった子を親が解決する手順（#1034。develop の `references/epic-stop.md` の手順 8 と `scripts/epic-dispatch.sh reply`）と、止まったまま completed で閉じた子に完了を促す手順（#1093。`references/epic-loop.md` の手順 4 と `scripts/epic-dispatch.sh notify-closed`）が書き、ここを参照する。
+送信・起動し直しの手順本体は `references/epic-stop.md` 手順 8（`scripts/epic-dispatch.sh reply`、#1034）と `references/epic-loop.md` 手順 4（停止中の completed の子への `scripts/epic-dispatch.sh notify-closed`、#1093）に置き、ここを参照する。
 
 ## 開始時の設定
 
@@ -54,7 +54,7 @@ disk 上の成功を live 反映済みとは扱わない。check / apply の後�
 - **会話量 N**: 同じトランスクリプトを `plugins/dev-workflow/scripts/subagent-context.sh --file <トランスクリプト>` で測った `context_tokens`。最後の有効な assistant usage の input・cache_creation・cache_read の合計で、出力や累計や compact 前の最大値ではない。末尾の API エラーや全部 0 の usage は飛ばす。exit 0 と 2 はどちらも計測成功として値を比較する
 - **最後のリクエストの時刻**: 子のワークツリーのセッションのトランスクリプト（`~/.claude/projects/` 配下の jsonl）の最後のリクエストの時刻
 
-直接の `reply` の両送り手と `wait --resolve` が親の代わりに通す返事は、本体ではなく `epic-dispatch.sh` が同じ子の表で決める。本体が `--relaunch` の指定を忘れても直接の `reply` に判定が掛かる。会話量条件と時間条件は独立した OR で、`compact_boundary` の有無は除外条件にしない。会話量を読めなくても時間条件が真なら起動し直し、時刻を読めなくても会話量条件が真なら起動し直す。どちらも真と確認できなければそのまま送る。トランスクリプトが無い・2 本以上ある・読めない場合もそのまま送る（端末が無いときは既存の送信処理に従う）。
+自動判定は `epic-dispatch.sh` が行う。会話量条件と時間条件は独立した OR で、`compact_boundary` は除外条件にしない。会話量を読めなくても時間条件が真なら、時刻を読めなくても会話量条件が真なら起動し直す。どちらも真と確認できなければそのまま送る。本体ログが無い・一意に決まらない・読めない場合も同じ（端末なしは既存の送信処理に従う）。
 
 会話量の閾値は `EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS`（既定 150000）、60 分は `EPIC_DISPATCH_RELAUNCH_IDLE_SEC`（既定 3600 秒）で変えられる。未設定時だけ既定を使い、数字だけの非負整数を受け付ける。0 なら計測できた値はすべて条件を満たす。空・負数・単位付きなら、自動判定する `reply` は端末操作前、有効な `--resolve` は待つ前に変数名と使い方を出して exit 1。サブエージェント用の閾値は子の起動し直しの閾値に流用しない。
 
