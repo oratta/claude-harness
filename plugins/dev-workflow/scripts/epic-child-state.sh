@@ -74,6 +74,27 @@ def extension(r):
         if not ok:
             raise ValueError('turn_state の型または世代が不正です')
 
+def startup(r, prompt):
+    if not isinstance(prompt, str):
+        return False
+    start = re.match(r'^/develop #([0-9]+) （エピック #([0-9]+) の子。([^）]*)）', prompt)
+    if not start or start[1] != str(r['number']) or start[2] != r['epic'].rsplit('#', 1)[1]:
+        return False
+    repo = re.search(r'エピックのリポジトリ ([^。]+)。', start[3])
+    return (repo[1] == r['epic'].split('#')[0] if repo
+            else r['repo'] == r['epic'].split('#')[0])
+
+def target(r, p, is_input):
+    sid = p.get('session_id')
+    if not nonempty(sid):
+        return False
+    if 'turn_input' not in r and 'turn_state' not in r:
+        return is_input and startup(r, p.get('prompt'))
+    i = r.get('turn_input')
+    if not isinstance(i, dict) or not nonempty(i.get('session_id')):
+        raise ValueError('turn_input / turn_state の型が不正です')
+    return i['session_id'] == sid or (is_input and startup(r, p.get('prompt')))
+
 mode = sys.argv[1]
 try:
     data = json.load(sys.stdin)
@@ -88,6 +109,11 @@ try:
         tail = tail[1:] if tail.startswith(' ') else tail
         raise SystemExit(0 if tail.startswith('止まった理由: 依存待ち: ') else 1)
     r, p, reserved = data['record'], data['payload'], data['reserved']
+    # Scope is checked both before acquiring a lock and on the locked input snapshot.
+    if not target(r, p, mode in ('input', 'scope-input')):
+        print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
+    if mode.startswith('scope-'):
+        print(json.dumps({'action': 'target'})); raise SystemExit(0)
     extension(r)
     sid, path = p.get('session_id'), p.get('transcript_path')
     if not nonempty(sid) or not nonempty(path) or not os.path.isabs(path):
@@ -101,12 +127,8 @@ try:
         if prompt == reserved:
             print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
         sender = 'owner'
-        start = re.match(r'^/develop #([0-9]+) （エピック #([0-9]+) の子。([^）]*)）', prompt)
-        if (start and (not i or i['session_id'] != sid)
-                and start[1] == str(r['number']) and start[2] == r['epic'].rsplit('#', 1)[1]):
-            repo = re.search(r'エピックのリポジトリ ([^。]+)。', start[3])
-            if (repo and repo[1] == r['epic'].split('#')[0]) or (not repo and r['repo'] == r['epic'].split('#')[0]):
-                sender = 'startup'
+        if (not i or i['session_id'] != sid) and startup(r, prompt):
+            sender = 'startup'
         if sender != 'startup' and prompt.startswith(('親エピック #', '主の返事（親エピック #')):
             sender = 'parent'
         try:
@@ -195,14 +217,19 @@ HITS="$(es_find_by_worktree "$TOP" 2>/dev/null)"
 [ -n "$HITS" ] || pass_owner
 [ "$(printf '%s\n' "$HITS" | wc -l | tr -d ' ')" = 1 ] || fail '対象の子の記録が複数あります'
 RECORD="$HITS"
+prepare() {
+  jq -cn --argjson record "$1" --argjson payload "$INPUT" --arg reserved "${RESERVED-}" \
+    '{record:$record,payload:$payload,reserved:$reserved}' | python3 -I -c "$PY_SRC" "$2"
+}
+CUR="$(es_read "$RECORD")" || fail '対象判定で記録を読めません'
+SCOPE=scope-stop
+[ "$EVENT" != UserPromptSubmit ] || SCOPE=scope-input
+PLAN="$(prepare "$CUR" "$SCOPE")" || fail "$(jq -r '.reason // "対象を識別できません"' <<< "$PLAN")"
+[ "$(jq -r .action <<< "$PLAN")" != ignore ] || pass_owner
 es_check_env || fail '状態保存の設定が不正です'
 # Finish the lock failure path before the hook's 30-second timeout.
 EPIC_STATE_LOCK_TIMEOUT="$(python3 -I -c 'import sys; print(min(int(sys.argv[1]), 20))' "${EPIC_STATE_LOCK_TIMEOUT-10}")" || fail 'ロック待ち時間を設定できません'
 RESERVED="$(python3 -I "$DIR/child-log-read.py" --keepalive-text)" || fail '予約文を読めません'
-prepare() {
-  jq -cn --argjson record "$1" --argjson payload "$INPUT" --arg reserved "$RESERVED" \
-    '{record:$record,payload:$payload,reserved:$reserved}' | python3 -I -c "$PY_SRC" "$2"
-}
 if [ "$EVENT" = UserPromptSubmit ]; then
   es_lock "$RECORD" || fail '入力受付のロックに失敗しました'
   trap 'es_unlock "$RECORD"' EXIT
