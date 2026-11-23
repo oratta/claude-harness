@@ -48,6 +48,9 @@ setup() {
   STUB_BIN="${BATS_TEST_TMPDIR}/bin"
   export STUB_CFG="${BATS_TEST_TMPDIR}/cfg"
   export STUB_LOG="${BATS_TEST_TMPDIR}/calls.log"
+  # put_turn の recorded_at は古い固定値なので、owner-away（#1745）に当たらないよう既定の時間を十分長くする。
+  # owner-away を確かめるテストだけが EPIC_DISPATCH_OWNER_AWAY_SEC を上書きする
+  export EPIC_DISPATCH_OWNER_AWAY_SEC=999999999
   mkdir -p "$STUB_BIN" "$STUB_CFG"
   : > "$STUB_LOG"
   printf '%s\n' '{"result":{"worktree":{"repoId":"repo-a","path":"/work/parent"}}}' > "$STUB_CFG/current_json"
@@ -9623,6 +9626,109 @@ help_env() {
     [ "$(calls '^orca terminal close')" -eq 0 ]
     [ "$(calls '^orca terminal create')" -eq 0 ]
   done
+}
+
+# owner-away（#1745）: put_turn の後に recorded_at を <秒> 前にする（<子> <秒>）
+age_turn() {
+  local f; f="$(rec_of 1122 "$1")"
+  jq -c --arg t "$(ago "$2")" '.turn_state.recorded_at = $t' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+away_wait() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch-stopped 11; }
+no_touch() {
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^judge ')" -eq 0 ]
+}
+
+@test "wait owner-away: an owner question older than the default 3600s is reported once and touches nothing" {
+  make_stub orca
+  put_record 11
+  put_transcript 90 150001
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  stop_before="$(rec_get 11 stop)"
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+  [ "$status" -eq 0 ]; [ "$output" = 'owner-away 11' ]
+  no_touch
+  [ "$(rec_get 11 stop)" = "$stop_before" ]
+  [ "$(rec_get 11 owner_away_told.generation)" = 1 ]
+  [ "$(rec_get 11 owner_away_told.session_id)" = s1 ]
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  no_touch
+}
+
+@test "wait owner-away: the default is 3600 seconds" {
+  make_stub orca
+  put_record 11
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3500
+  unset EPIC_DISPATCH_OWNER_AWAY_SEC
+  away_wait
+  [ "$output" = 'timeout 11' ]
+  age_turn 11 3700
+  away_wait
+  [ "$output" = 'owner-away 11' ]
+}
+
+@test "wait owner-away: not reported before the time, and the time is set by EPIC_DISPATCH_OWNER_AWAY_SEC" {
+  make_stub orca
+  put_record 11
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 120
+  EPIC_DISPATCH_OWNER_AWAY_SEC=7200 away_wait
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 owner_away_told)" = null ]
+  EPIC_DISPATCH_OWNER_AWAY_SEC=60 away_wait
+  [ "$status" -eq 0 ]; [ "$output" = 'owner-away 11' ]
+  no_touch
+}
+
+@test "wait owner-away: a new owner input or non-owner or non-question turn is not reported" {
+  make_stub orca
+  local mutation
+  for mutation in '.turn_input.generation=2' '.turn_state=null' '.turn_input.sender="parent" | .turn_state.value="作業報告"' '.turn_state.value="作業報告"' '.turn_state.value="完了"' '.status="done"'; do
+    put_record 11
+    put_turn 11 owner 主の返事待ち
+    age_turn 11 7200
+    f="$(rec_of 1122 11)"
+    jq -c "$mutation" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    EPIC_DISPATCH_OWNER_AWAY_SEC=60 away_wait
+    [ "$output" = 'timeout 11' ]
+    no_touch
+  done
+}
+
+@test "wait owner-away: a parent question still goes through the stopped path" {
+  make_stub orca
+  put_record 11
+  put_turn 11 parent 主の返事待ち
+  age_turn 11 7200
+  EPIC_DISPATCH_OWNER_AWAY_SEC=60 away_wait
+  [ "$output" = 'stopped 11' ]
+}
+
+@test "wait owner-away: a record without turn state is not reported" {
+  make_stub orca
+  put_record 11
+  EPIC_DISPATCH_OWNER_AWAY_SEC=0 away_wait
+  [ "$output" = 'timeout 11' ]
+}
+
+@test "wait owner-away: an invalid EPIC_DISPATCH_OWNER_AWAY_SEC is a usage error" {
+  make_stub orca
+  put_record 11
+  EPIC_DISPATCH_OWNER_AWAY_SEC=abc away_wait
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  grep -qF 'EPIC_DISPATCH_OWNER_AWAY_SEC' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "wait owner-away: documented in the usage, the header and the references" {
+  grep -q 'owner-away <N>' "$SCRIPT"
+  grep -q 'EPIC_DISPATCH_OWNER_AWAY_SEC' "$SCRIPT"
+  grep -q 'owner-away' "${PLUGIN_DIR}/skills/develop/references/epic-stop.md"
+  grep -q 'owner-away' "${PLUGIN_DIR}/skills/develop/references/epic.md"
 }
 
 @test "wait intervention: an owner input or invalid state during judgement discards a pass" {

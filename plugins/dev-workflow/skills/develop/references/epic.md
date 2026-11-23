@@ -28,7 +28,7 @@ develop の SKILL.md から移した節。読むのは、`/develop <エピック
 |---|---|
 | nested の子・エピック化の判断 | この入口 `references/epic.md` |
 | 親の開始・通常進行・復元 | `references/epic-loop.md` |
-| 親が stopped / pending-owner を扱う直前 | `references/epic-stop.md` |
+| 親が stopped / owner-away / pending-owner を扱う直前 | `references/epic-stop.md` |
 | 子が停止する前・親からの返事受信時 | `references/epic-child-stop.md` |
 | 親が PR のマージ待ちを扱う前 | `references/epic-merge-wait.md` |
 | 親が別リポジトリの子を扱う前 | `references/epic-multirepo.md` |
@@ -46,6 +46,7 @@ develop の SKILL.md から移した節。読むのは、`/develop <エピック
 
 **別セッション方式とサブエージェント方式に共通**:
 
+- 主が子のタブで打った入力から始まったターンには、親は返事も端末の終了もしない。`主の返事待ち` が `EPIC_DISPATCH_OWNER_AWAY_SEC`（既定 3600 秒）続くと `owner-away` で起こされ、主に知らせるだけにする（`references/epic-stop.md`）
 - スタック PR（子 B が子 A のブランチを base にする）は避け、A マージ後に B を main から切る。やむを得ずスタックしたら、A マージ後に本体が B の base を main に張り替える（自動では切り替わらない）
 - 子の実装中に新しい問題が見つかっても、子の受け入れ条件を膨らませない。レビュー由来は G の振り分けを保つ。範囲外の問題は本体が段 B〜段 E の問いで行き先を決め（`skills/pr-review-gate/stages/triage-nonblocking.md`、段 C は `stages/triage-epic.md`）、段 C で完了条件に効くものだけを子にできる。効かないものは段 D・段 E に進め、既存 issue への参考コメント・エピックの外の issue・捨てるに分ける。注意書きでもこの境界を変えない
 - 親が起動してよいのは、回し始めに挙がっていた子と主が起動を承認した子だけ。回している途中で足された子（範囲外の問題・ゲートの仕分け・子の停止から起票）は起票と依存の紐付けまでで止め、起動する前に主へ 1 問で聞く。それまで `launch` に渡さない（状態表は `未起動（主の判断待ち）`）。主の「全部やってよい」などの承認は、その発言の時点で挙がっていた子にだけ効く

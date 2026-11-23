@@ -63,7 +63,7 @@
 | `launch` | `launched`・`skipped`・`deferred` | `failed`（手順 6）、exit 1 で `failed` の行が無いとき |
 | `reply` | `sent`・`relaunched`・`skipped <N> not-stopped`（手順 6） | `failed` |
 | `notify-closed` | `notified`・`skipped`・`unrecorded`（エピックに 1 行を残す） | `failed` |
-| `wait` | `closed`・`done`・`unrecorded`・`timeout`（手順 5） | `stopped`（手順 8）・`expired`（手順 9）・`error` |
+| `wait` | `closed`・`done`・`unrecorded`・`timeout`（手順 5） | `stopped`（手順 8）・`owner-away`（`references/epic-stop.md` の owner-away の節）・`expired`（手順 9）・`error` |
 | `reap` | `reaped`・`gone`・`kept`（手順 3 で本体が確かめる） | exit 1 |
 | `adopt` | `adopted`・`skipped`・`none`・`failed <N> ambiguous`／`state-unreadable` | 理由の無い `failed`、stdout が空の exit 1 |
 | `dismiss`・`told` | `dismissed`・`told`・`skipped <N> not-stopped`・`skipped <N> uuid-mismatch`（手順 8） | `failed <N>`（手順 6） |
