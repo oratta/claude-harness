@@ -427,7 +427,7 @@ not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の
 
 @test "stop-judge json: completion headings preserve records, questions, marks and stop-reason lines" {
   for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
-    for protection in record question mark reason; do
+    for protection in record question mark reason state; do
       printf '[]' > "$STUB_CFG/comments_11"
       extra='{}'
       text="$heading"
@@ -436,6 +436,7 @@ not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の
         question) extra='{questions: ["どちらですか"]}' ;;
         mark) extra='{marked: true}' ;;
         reason) text="$heading"$'\n止まった理由: PR のマージ待ち' ;;
+        state) text="$heading"$'\r\n作業を終えた。\r\n状態: 主の返事待ち — マージの承認\r\n\n  \r\n' ;;
       esac
       payload="$(jq -cn --arg t "$text" "$extra + {text: \$t}")"
       run judge 400 11 "$(stop_json "$payload")"

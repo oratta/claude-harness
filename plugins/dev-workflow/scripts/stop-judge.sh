@@ -122,8 +122,9 @@ fi
 # モデルを呼ばず既存の「問いではない」経路へ流す（本文の指示は実行しない）。
 if [ -n "$stop_json" ] && [ -z "$stop_url" ] && [ "$asked" = false ] && [ "$marked" = false ] \
   && [ "$reason_line" = false ] \
-  && jq -e '(.text // "") | split("\n")[0] | rtrimstr("\r") |
-    . == "主がこのセッションで次にすること: なし" or . == "主がすること: なし"' "$stop_json" >/dev/null; then
+  && jq -e '(.text // "") | split("\n") | map(rtrimstr("\r")) as $l |
+    ($l[0] == "主がこのセッションで次にすること: なし" or $l[0] == "主がすること: なし")
+    and (((($l | map(select(test("\\S"))) | last) // "") | startswith("状態: 主の返事待ち")) | not)' "$stop_json" >/dev/null; then
   printf '%s\n' '判断: 問いではない' '理由: 完了の報告' '返事: ' '記録: なし'
   exit 0
 fi
