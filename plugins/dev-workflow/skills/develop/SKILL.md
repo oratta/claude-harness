@@ -203,6 +203,8 @@ spawn・再開・Codex 委譲の前は毎回、必ず `references/pr-token-budge
 
 別セッション方式（Orca・tmux）で起動されたエピックの子のセッション（`scripts/epic-dispatch.sh route`（子の番号なし）が `nested` を返すセッション）は、主の返事を待って止まる前と、`親エピック #` か `主の返事（親エピック #` で始まる入力が届いたとき（起動し直されたセッションの最初の指示に付いて届いたときを含む）に、`references/epic-child-stop.md` を Read してその手順に従う。`nested` でないセッションは読まない。
 
+`nested` の本体が agent・CI・Monitor・Codex の 60 分以上になりうる待ちを開始・延長する前に、`references/child-background-wait.md` を Read する。
+
 ## モデル
 
 モデルの起動・再開（失敗ループを含む）を扱う前に、必ず `../../references/codex-develop.md`（plugin の `references/codex-develop.md`）の「起動と role 解決」を Read して従う。役割の格は下表、対応は `references/model-tier-map.json`、残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`）はここに再掲しない。優先順位は `references/decision-criteria.md` が正本。V と引き継ぎの判定役と論点なしの確認役は表の明示値を使う。
