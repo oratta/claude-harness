@@ -295,17 +295,20 @@ def walk(rows, definition):
             awaiting_keepalive = False
             if matched:
                 continue
-            child = {"index": i, "uuid": d.get("uuid") or "", "at": d["timestamp"], "text": s}
+            child = {"index": i, "uuid": d.get("uuid") or "", "at": d["timestamp"], "text_at": d["timestamp"], "text": s}
 
     questions = []
     text = child["text"] if child else ""
+    text_at = child["text_at"] if child else ""
     for i, uuid, at, asked_now in sorted(asked.values(), key=lambda v: v[0]):
         questions.extend(asked_now)
         if child is None or i > child["index"]:
-            child = {"index": i, "uuid": uuid, "at": at, "text": text}
+            child = {"index": i, "uuid": uuid, "at": at, "text_at": text_at or at, "text": text}
+            text_at = child["text_at"]
     return {
         "uuid": safe_uuid(child["uuid"]) if child else "",
         "at": child["at"] if child else "",
+        "text_at": text_at,
         "text": text,
         "questions": questions,
         "turn_ended": turn_ended,
