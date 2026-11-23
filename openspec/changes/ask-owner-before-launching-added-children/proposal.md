@@ -16,7 +16,7 @@
 
 ### Modified Capabilities
 
-- `dev-workflow-develop`: エピックの親が子を起動してよい条件（要件を 1 つ足す。既存の要件の文は変えない）
+- `dev-workflow-develop`: エピックの親が子を起動してよい条件（要件を 2 つ足す。既存の要件の文は変えない）
 
 ## Impact
 
