@@ -166,7 +166,7 @@ blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$ou
   for term in '状態: 作業報告 — <依存先と再開条件の短い要約>' 'dependency_wait: true' '停止の印を付ける操作は不要'; do
     grep -qF "$term" "$doc"
   done
-  ! sed -n '/## 依存待ちで終了する/,/## エピックの子が/p' "$doc" | grep -qF '親が会話ログから検知する'
+  ! sed -n '/## 依存待ちで終了する/,/## エピックの子が/p' "$doc" | grep -qF '親が会話ログから検知する' || return 1
 }
 
 @test "docs: every normal child turn declares state and input classification is not authorization" {
@@ -577,7 +577,7 @@ SH
 }
 
 dep_marker='止まった理由: 依存待ち: https://github.com/o/r/issues/22'
-dep_of() { jq -r '.turn_state.dependency_wait // "absent"' "$REC"; }
+dep_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("dependency_wait")) then (.turn_state.dependency_wait|tojson) else "absent" end' "$REC"; }
 
 @test "dependency_wait: saved only for a checked dependency-wait work report" {
   input next
