@@ -110,3 +110,88 @@ record_turn() {
   [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
   ! grep -qF "$SECRET" "$STUB_CFG/comment_11" || return 1
 }
+
+@test "stop recovery: a missing uuid is filled without receiving or judging the turn again" {
+  record_turn
+  local projects="$CLAUDE_PROJECTS_DIR"
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/unavailable"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(jq -r .stop_uuid "$RECORD")" = '' ]
+  local received; received="$(jq -c '[.stop_turn,.stop_at]' "$RECORD")"
+  rm -f "$STUB_CFG/judge_argc"
+  export CLAUDE_PROJECTS_DIR="$projects"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(jq -r .stop_uuid "$RECORD")" = "$SAID_UUID" ]
+  [ "$(jq -c '[.stop_turn,.stop_at]' "$RECORD")" = "$received" ]
+  [ ! -e "$STUB_CFG/judge_argc" ]
+  run dispatch told 11 "$SAID_UUID"
+  [ "$status" -eq 0 ]; [ "$output" = 'told 11' ]
+  run dispatch dismiss 11
+  [ "$status" -eq 0 ]; [ "$output" = 'dismissed 11' ]
+}
+
+@test "stop recovery: another session cannot fill a missing uuid" {
+  record_turn
+  jq '.stop="stopped-seen" | .stop_uuid="" | .stop_turn={generation:1,session_id:"other"}
+    | .turn_input.session_id="other" | .turn_state.session_id="other"' "$RECORD" > "$RECORD.tmp"
+  mv "$RECORD.tmp" "$RECORD"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(jq -r .stop_uuid "$RECORD")" = '' ]
+}
+
+@test "stop types: float generations and offsets never reach stopped or the judge" {
+  local mutation
+  for mutation in '.turn_input.generation=1.0 | .turn_state.generation=1.0' '.turn_state.generation=1.0' '.turn_input.transcript_offset=0.0'; do
+    record_turn
+    jq "$mutation" "$RECORD" > "$RECORD.tmp" && mv "$RECORD.tmp" "$RECORD"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ ! -e "$STUB_CFG/judge_argc" ]
+  done
+}
+
+@test "stop legacy: stopped-seen without stop_turn is not received or judged again" {
+  record_turn
+  jq '.stop="stopped-seen" | .stop_uuid="old" | .stop_at="2026-01-01T00:00:02Z" | del(.stop_turn)' "$RECORD" > "$RECORD.tmp"
+  mv "$RECORD.tmp" "$RECORD"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(jq -r .stop_uuid "$RECORD")" = old ]
+  [ "$(jq -r .stop_at "$RECORD")" = '2026-01-01T00:00:02Z' ]
+  [ ! -e "$STUB_CFG/judge_argc" ]
+}
+
+@test "stop legacy: an owner input resumes stopped-seen without stop_turn" {
+  record_turn
+  jq '.stop="stopped-seen" | del(.stop_turn) | .turn_input.generation=2
+    | .turn_input.sender="owner" | .turn_state=null' "$RECORD" > "$RECORD.tmp"
+  mv "$RECORD.tmp" "$RECORD"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(jq -r .stop "$RECORD")" = resumed ]
+  [ ! -e "$STUB_CFG/judge_argc" ]
+}
+
+@test "stop resolve: read failures after detection preserve stopped output" {
+  record_turn
+  local failure original="$SCRIPT" copy="$BATS_TEST_TMPDIR/plugin"
+  mkdir -p "$copy"
+  cp -R "$PLUGIN_DIR/scripts" "$copy/scripts"
+  for failure in 'child_record() { return 3; }' 'es_read() { return 1; }'; do
+    python3 - "$original" "$copy/scripts/epic-dispatch.sh" "$failure" <<'PY'
+import pathlib, sys
+text = pathlib.Path(sys.argv[1]).read_text()
+text = text.replace('resolve_stopped() {', 'resolve_stopped() {\n  ' + sys.argv[3])
+pathlib.Path(sys.argv[2]).write_text(text)
+PY
+    SCRIPT="$copy/scripts/epic-dispatch.sh"
+    record_turn
+    jq '.stop="" | del(.stop_turn)' "$RECORD" > "$RECORD.tmp" && mv "$RECORD.tmp" "$RECORD"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 1122 11
+    [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+    [ ! -e "$STUB_CFG/judge_argc" ]
+  done
+}

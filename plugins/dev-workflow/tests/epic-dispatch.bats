@@ -9056,3 +9056,73 @@ EOF_STUB
   [ "$(rec_get 11 stop)" = '' ]; [ "$(rec_get 11 stop_turn)" = null ]
   [ "$(calls '^orca worktree set')" -eq 0 ]
 }
+
+@test "keepalive recovery: filling an empty received uuid enables told and keepalive" {
+  keepalive_wait_setup
+  local f dir
+  f="$(rec_of 1122 11)"
+  jq '.stop_uuid=""' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  jq -c 'if .uuid != null then .message.content="元の質問？" else . end' "$dir/s.jsonl" > "$dir/s1.jsonl"
+  rm -f "$dir/s.jsonl"
+  gh_seq 11 open
+  run dispatch wait --watch-stopped --interval 0 --timeout 0 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop_uuid)" = "$MAIN_UUID" ]
+  run dispatch told 11 "$MAIN_UUID"
+  [ "$status" -eq 0 ]; [ "$output" = 'told 11' ]
+  gh_seq 11 open closed
+  reset_keepalive_poll
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+# P3-F1 reproduction: preserve the approved exclusion of 作業報告 while exposing
+# the dependency-resume contract that cannot currently be reached from that state.
+@test "dependency wait: real child report reproduces missing parent wakeup and restart (P3-F1)" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11
+  set_terms 11 term-a-11
+  local wt="$BATS_TEST_TMPDIR/work/issue-11" log="$BATS_TEST_TMPDIR/child.jsonl"
+  local dep_url='https://github.com/oratta/claude-harness/issues/22' text payload
+  git init -q "$wt"
+  wt="$(cd "$wt" && pwd -P)"
+  local f; f="$(rec_of 1122 11)"
+  jq --arg w "$wt" '.worktree=$w' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  payload="$(jq -cn --arg w "$wt" --arg l "$log" '{hook_event_name:"UserPromptSubmit",cwd:$w,
+    session_id:"s1",transcript_path:$l,prompt:"親エピック #400 の判断: 続ける"}')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ "$(rec_get 11 turn_input.sender)" = parent ]
+  printf '%s\n' '{"id":22,"number":22,"state":"open"}' > "$STUB_CFG/dependency_22"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by -X POST -F issue_id=22
+  [ "$status" -eq 0 ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]; [ "$(printf '%s' "$output" | jq '.[0].id')" -eq 22 ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh issue comment 11 --body "$(printf '子の停止: 依存待ち\n依存先: %s\n待つ理由: 前提の修正\n再開条件: 前提の完了\n再開に要る途中経過: commit aaa111\n再開手順: ゲートを取り直す' "$dep_url")"
+  [ "$status" -eq 0 ]
+  text="$(printf '登録と途中経過を保存した。\n止まった理由: 依存待ち: %s\n状態: 作業報告 — 前提の完了後に再開する' "$dep_url")"
+  jq -cn --arg text "$text" '{type:"assistant",sessionId:"s1",message:{role:"assistant",content:$text}}' > "$log"
+  payload="$(printf '%s' "$payload" | jq -c --arg text "$text" '.hook_event_name="Stop" | .last_assistant_message=$text')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  [ "$(rec_get 11 turn_state.value)" = 作業報告 ]
+  gh_seq 11 open
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  jq '.state="closed" | .state_reason="completed"' "$STUB_CFG/registered_dependency" > "$STUB_CFG/closed_dependency"
+  mv "$STUB_CFG/closed_dependency" "$STUB_CFG/registered_dependency"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]; [ "$(printf '%s' "$output" | jq -r '.[0].state_reason')" = completed ]
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped 11 not-stopped' ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+}
