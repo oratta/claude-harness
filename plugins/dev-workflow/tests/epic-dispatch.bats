@@ -9024,7 +9024,7 @@ assert_reply_auto() {
     parent) header='親エピック #400 の判断（主の承認ではない）: 回答' ;;
     owner) header='主の返事（親エピック #400 経由）: 回答' ;;
   esac
-  [[ "$sent" == *"$header" ]]
+  [[ "$sent" == *"$header" ]] || return 1
 }
 
 @test "reply auto: both senders use size boundaries with context exit 0 and 2" {
@@ -9106,8 +9106,8 @@ assert_reply_auto() {
         reply_auto_ready
         run env "$name=$val" "$SCRIPT" reply --as "$as" 400 11 '回答'
         [ "$status" -eq 1 ]
-        [[ "$output" == *"$name"* ]]
-        [[ "$output" == *'usage:'* ]]
+        [[ "$output" == *"$name"* ]] || return 1
+        [[ "$output" == *'usage:'* ]] || return 1
         [ "$(calls '^orca terminal')" -eq 0 ]
       done
     done
