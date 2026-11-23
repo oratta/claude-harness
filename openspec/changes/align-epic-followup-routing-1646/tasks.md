@@ -4,7 +4,7 @@
 
 ## 1. エピックの子にする境界をそろえる
 
-- [ ] 1.1 epic.md の共通規則と SKILL.md の「エピックの注意書き」・参照案内を直す。レビュー由来は G の結果を保ち、範囲外の問題も段 C で完了条件に効くものだけを子にできること、効かないものは注意書きによらず段 D・段 E に進むことをそろえる。develop-skill.bats に境界・注意書き・外の issue の検査を追加し、`bats plugins/dev-workflow/tests/develop-skill.bats` が終了コード 0。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:45-50（注意書き・両方式に共通）、plugins/dev-workflow/skills/develop/SKILL.md:73-77（範囲外の問題の起票）・251-261（参照案内）、plugins/dev-workflow/tests/develop-skill.bats:535-575・1092-1111
+- [ ] 1.1 epic.md の共通規則と SKILL.md の「エピックの注意書き」・参照案内を直す。レビュー由来は G の結果を保ち、範囲外の問題も段 C で完了条件に効くものだけを子にできること、効かないものは注意書きによらず段 D・段 E に進むことをそろえる。epic.md の「すべて従う」にも置き場所の例外を入れ、投稿者の検査と対象外・取得不能の扱い、対象コメントの W・R1・G への引継ぎは維持する。develop-skill.bats に境界・注意書き・外の issue の検査を追加し、起動し直した子でも対象コメントを引き継ぎつつ効かない問題を子にしないシナリオと照合する。`bats plugins/dev-workflow/tests/develop-skill.bats` が終了コード 0。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:43-50（注意書き・両方式に共通）、plugins/dev-workflow/skills/develop/SKILL.md:73-77（範囲外の問題の起票）・251-261（参照案内）、plugins/dev-workflow/tests/develop-skill.bats:535-575・1092-1111
 
 ## 2. 完了条件が無いエピックの開始を補う
 
@@ -17,12 +17,12 @@
 
 ## 4. 統合の確認と変更の記録
 
-- [ ] 4.1 issue の受け入れ条件 4 つと変更した手順・回帰テストを照合し、`openspec validate align-epic-followup-routing-1646 --type change --strict`、`bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats tests/develop-startup-budget.bats tests/injection-budget.bats`、`git diff --check` がすべて終了コード 0。予算値は変更しない。触る範囲: openspec/changes/align-epic-followup-routing-1646/specs/dev-workflow-develop/spec.md:1-161、openspec/changes/align-epic-followup-routing-1646/specs/dev-workflow-pr-review-gate/spec.md:1-102（シナリオとの照合。追加編集は必要時のみ）
+- [ ] 4.1 issue の受け入れ条件 4 つと変更した手順・回帰テストを照合する。完了条件の補完・全周共通の判定・段 D／段 E の 3 要件について、入力元・拾う誤り・許容する具体例・保証の限界と実装が食い違わず、全面的な意味検査を追加していないことを確認する。既存の注意書き引継ぎ要件の MODIFIED と epic.md を照合し、投稿者の検査・引継ぎを維持しつつ置き場所指定の例外を適用し、「すべて従う」だけの規定が同期後に残らないことを確かめる。`openspec validate align-epic-followup-routing-1646 --type change --strict`、`bats plugins/dev-workflow/tests/develop-skill.bats plugins/dev-workflow/tests/pr-review-gate-skill.bats plugins/dev-workflow/tests/epic-dispatch.bats tests/develop-startup-budget.bats tests/injection-budget.bats`、`git diff --check` がすべて終了コード 0。予算値は変更しない。触る範囲: openspec/changes/align-epic-followup-routing-1646/specs/dev-workflow-develop/spec.md:1-264、openspec/changes/align-epic-followup-routing-1646/specs/dev-workflow-pr-review-gate/spec.md:1-106（シナリオ・守備範囲との照合。追加編集は必要時のみ）、openspec/specs/dev-workflow-develop/spec.md:2042-2136（既存要件との照合）
 - [ ] 4.2 plugins/dev-workflow/changes/1646.md に、完了条件による振り分け、開始時の補完、W に渡す指摘の境界と確認したテストを記録する。issue #1646 の範囲だけであることを差分で確かめる。触る範囲: plugins/dev-workflow/changes/1646.md（新規）
 
 ## Workflow follow-up
 
 - 本体が独立した R1 を起こし、issue #1646 に APPROVE が記録されるまで実装しない。
 - 後続の実装対象は 5 ファイルを超える見込み。規模超過の扱い・分割は本体が判断する。W が独自に範囲を削ったり子 issue を増やしたりしない。
-- 実装と必要なレビュー後、finish 工程で archive し、delta を main spec に同期する。触る範囲: openspec/specs/dev-workflow-develop/spec.md:203-257・2194-2265、openspec/specs/dev-workflow-pr-review-gate/spec.md:414-437・1984-2023・2206-2221、openspec/changes/align-epic-followup-routing-1646/（archive）
+- 実装と必要なレビュー後、finish 工程で archive し、delta を main spec に同期する。注意書き引継ぎ要件の置き場所指定の例外も同期し、投稿者の検査と引継ぎを保つ。触る範囲: openspec/specs/dev-workflow-develop/spec.md:203-257・2042-2136・2194-2265、openspec/specs/dev-workflow-pr-review-gate/spec.md:414-437・1984-2023・2206-2221、openspec/changes/align-epic-followup-routing-1646/（archive）
 - PR・仕様宣言・ゲート・マージの遷移は本体が進める。この spec 工程では実装・archive・merge をしない。
