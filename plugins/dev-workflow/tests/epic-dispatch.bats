@@ -9724,9 +9724,9 @@ EOF_STUB
   [ "$(calls '^orca terminal send ')" -eq 1 ]
 }
 
-# P3-F1 reproduction: preserve the approved exclusion of 作業報告 while exposing
-# the dependency-resume contract that cannot currently be reached from that state.
-@test "dependency wait: real child report reproduces missing parent wakeup and restart (P3-F1)" {
+# P3-F1 recovery (#1744): a parent-started work report saved with dependency_wait:true
+# is received from the state record alone and restarted with reply --as parent.
+@test "dependency wait: real child report wakes the parent and restarts after the dependency closes (P3-F1)" {
   make_stub orca
   make_judge
   set_current 400
@@ -9755,22 +9755,34 @@ EOF_STUB
   run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
   [ "$status" -eq 0 ]; [ -z "$output" ]
   [ "$(rec_get 11 turn_state.value)" = 作業報告 ]
+  [ "$(jq -c '.turn_state.dependency_wait' "$f")" = true ]
   gh_seq 11 open
+  gh_seq 22 open closed
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(jq -c '.stop_turn' "$f")" = '{"generation":1,"session_id":"s1"}' ]
+  # The same generation is never received twice.
   run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
   [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
   run dispatch pending-owner 11
-  [ "$status" -eq 0 ]; [ -z "$output" ]
+  [ "$status" -eq 0 ]
+  case "$output" in 'pending 11'|'pending 11 '*) ;; *) echo "$output"; false ;; esac
+  # The prerequisite closes through the existing wait closing notification.
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 22' ]
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 22' ]
   jq '.state="closed" | .state_reason="completed"' "$STUB_CFG/registered_dependency" > "$STUB_CFG/closed_dependency"
   mv "$STUB_CFG/closed_dependency" "$STUB_CFG/registered_dependency"
   run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
   [ "$status" -eq 0 ]; [ "$(printf '%s' "$output" | jq -r '.[0].state_reason')" = completed ]
-  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
-  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
   run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
-  [ "$status" -eq 0 ]; [ "$output" = 'skipped 11 not-stopped' ]
+  [ "$status" -eq 0 ]; [ "$output" = 'relaunched 11' ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" '/develop #11 '
+  grep -qF '依存が解けたので再開する' "$STUB_CFG/sent_term-11"
   [ "$(calls '^judge ')" -eq 0 ]
-  [ "$(calls '^orca terminal send')" -eq 0 ]
-  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 1 ]
 }
 
 # #1742: direct replies share wait --resolve's size/time decision.

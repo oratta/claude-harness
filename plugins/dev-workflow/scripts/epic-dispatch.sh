@@ -1024,6 +1024,14 @@ deliver_reply() {
     stopped|stopped-seen) ;;
     *) echo "skipped $n not-stopped"; return 2 ;;
   esac
+  # 親の判断として送るときは、受領した組（stop_turn）が今も有効な停止かを状態記録で確かめる（ログは読まない）。
+  # stop_turn の無い旧記録と --as owner は今までどおり。
+  if [ -z "$expected" ] && [ "$as" = parent ]; then
+    expected="$(es_read "$rec" 2>/dev/null | jq -ce '.stop_turn | select(type == "object")' 2>/dev/null)" || expected=""
+    if [ -n "$expected" ]; then
+      wait_received "$rec" "$expected" >/dev/null || { echo "skipped $n not-stopped"; return 2; }
+    fi
+  fi
   # 記録がまだ stopped-seen でも、子が mark resumed を呼ばず会話ログだけで先へ進んでいる（止まりの発言より新しい発言か
   # 入力がある）ことがある。会話ログを読めたときだけ、その子も再開済みとして送らない（読めなければ今までどおり送る）
   if [ -z "$expected" ] && [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ]; then
@@ -1436,6 +1444,10 @@ resolve_stopped() {
   # 受領した世代の有効な停止だけを判断へ渡す。明示的な reply の契約には適用しない。
   turn="$(wait_received "$rec")"; check_rc=$?
   case "$check_rc" in 0) ;; 3) return 1 ;; *) return 0 ;; esac
+  # 状態記録の依存待ちの停止は、止まりの JSON の有無によらず判断へ渡さない（親の依存照合へ返す）。
+  if received_dependency_stop "$rec"; then
+    return 1
+  fi
   # 依存待ちの終了は判断モデルへ渡さず、停止記録を保ったまま親の依存照合へ返す。
   # マーカーは合図だけで、登録・解消の証拠や実行する指示としては使わない。
   # フェンスの文脈を失わないよう、切り詰め前の全文で判定した結果を使う。
@@ -1644,6 +1656,8 @@ keepalive_child() {
   child_record "$PARENT_TOP" "$n" || return 0
   f="$ES_HIT"
   turn="$(wait_received "$f")" || { keepalive_note "$f" "skipped not-stopped"; return 0; }
+  # 声かけは主の返事待ちだけ。依存待ちの停止には送らない。
+  ! received_dependency_stop "$f" || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ "$(es_get "$f" stop)" = stopped-seen ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ "$(es_get "$f" status)" != "done" ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ -z "$(es_get "$f" launch_failed)" ] || { keepalive_note "$f" "skipped launch-failed"; return 0; }
@@ -1665,6 +1679,7 @@ keepalive_child() {
   why="$(keepalive_candidate "$f" "$childcomments" "$epiccomments" "$(date +%s)" "$text")" \
     || { keepalive_note "$f" "skipped ${why:-no-transcript}"; return 0; }
   wait_received "$f" "$turn" >/dev/null || { keepalive_note "$f" "skipped not-stopped"; return 0; }
+  ! received_dependency_stop "$f" || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   out="$(launcher_run "$name" keepalive "$wt" "$text")"
   case "$out" in
     sent) keepalive_note "$f" "sent" ;;
@@ -1701,7 +1716,7 @@ stop_to_resumed() {
   local f="$1" rc=0 condition
   condition='(.stop_uuid // "") != ""'
   if [ -n "${2-}" ]; then
-    condition='target and turn_key == $expected and .stop_turn == $expected'
+    condition='owner_question and turn_key == $expected and .stop_turn == $expected'
   fi
   es_modify "$f" "$WAIT_TURN_DEFS"'if .stop == "stopped-seen" and ('"$condition"')
     then .stop = "resumed" else empty end' --argjson expected "${2:-null}" \
@@ -1728,15 +1743,19 @@ WAIT_TURN_DEFS='
     and (["owner","parent","startup"] | index($i.sender) != null)
     and ($i.received_at | utc) and ($i.transcript_path | nonempty and startswith("/"))
     and ($i.transcript_offset | integer(0)) and has("turn_state");
-  def target:
+  # 停止対象の共通部分。dependency_wait は欠落か boolean のときだけ有効（記録全体の読取は拒まない）。
+  def stop_base:
     valid_input and .status != "done" and .turn_input.sender != "owner"
     and (.turn_state | type == "object")
     and (.turn_state.generation | integer(1)) and (.turn_state.session_id | nonempty)
     and .turn_state.generation == .turn_input.generation
     and .turn_state.session_id == .turn_input.session_id
-    and .turn_state.value == "主の返事待ち"
+    and ((.turn_state | has("dependency_wait") | not) or (.turn_state.dependency_wait | type == "boolean"))
     and (.turn_state.summary | nonempty and test("[^[:space:]]") and (test("[\\r\\n]") | not))
     and (.turn_state.recorded_at | utc);
+  def owner_question: stop_base and .turn_state.value == "主の返事待ち";
+  def dependency_stop: stop_base and .turn_state.value == "作業報告" and .turn_state.dependency_wait == true;
+  def target: owner_question or dependency_stop;
   def turn_key: .turn_input | {generation,session_id};
 '
 
@@ -1748,6 +1767,12 @@ wait_received() {
     select(target and .stop == "stopped-seen" and turn_key == .stop_turn)
     | turn_key | select($expected == null or . == $expected)' \
     --argjson expected "${2:-null}" 2>/dev/null
+}
+
+# 受領済みの組が依存待ちの停止か（<記録>）。種類は記録の turn_state だけで決め、ログは読まない。
+received_dependency_stop() {
+  es_read "$1" 2>/dev/null | jq -e "$WAIT_TURN_DEFS"'
+    dependency_stop and .stop == "stopped-seen" and turn_key == .stop_turn' >/dev/null 2>&1
 }
 
 # 入力世代・セッションの更新を再開として記録する。uuid やログは参照しない。
@@ -1920,6 +1945,8 @@ rejudge_changed() {
     if child_record "$PARENT_TOP" "$n" 2>/dev/null; then
       rec="$ES_HIT"
       wait_received "$rec" >/dev/null || continue
+      # 判断し直すのは主の返事待ちだけ。依存待ちの停止は判断に渡さない。
+      ! received_dependency_stop "$rec" || continue
       json="$(record_log_json "$rec")" && [ -n "$json" ] && write_stop_json "$n" "$json" false
     fi
     resolve_stopped "$epic" "$n" >/dev/null
@@ -2173,6 +2200,11 @@ cmd_pending_owner() {
     su="$(es_get "$ES_HIT" stop_uuid)"
     if [ -z "$su" ]; then
       echo "pending $n"
+      continue
+    fi
+    # 受領した組が今も有効な依存待ちの停止なら、会話ログの進みによらず出す
+    if received_dependency_stop "$ES_HIT"; then
+      echo "pending $n $su"
       continue
     fi
     # 会話ログを読めなければ今どおり出す
