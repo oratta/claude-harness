@@ -1832,13 +1832,14 @@ try:
                     after = after or seen
                     pending = False
             continue
-        if any(b.get("type") == "tool_use" for b in blocks(msg)):
+        has_tool = any(b.get("type") == "tool_use" for b in blocks(msg))
+        if has_tool:
             after = after or seen
         if content.strip():
             if pending:
                 # 型違いでも返事の到着として扱う（一行・ツールなしの成功とは数えない）
                 pending = False
-            elif is_marker(content):
+            elif is_marker(content) and not has_tool:
                 seen, after = True, False
             else:
                 after = after or seen
