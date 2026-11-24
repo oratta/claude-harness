@@ -118,3 +118,96 @@ python3 -B plugins/dev-workflow/scripts/epic-granularity.py --input plugins/dev-
 ```
 
 その他の統合検査の結果は実装＋verifyのreturnに記載する。全体 `scripts/test.sh` は CI の `bats shard N/4` / `bats suites` に任せ、ローカルで全体成功とは宣言しない。
+
+## 関連Batsの検索
+
+ブランチ全体の変更ファイル（`git diff --name-only origin/main...HEAD`）について、パスと basename の和集合で検索した。CIの発見規則に合わせ `_longruns/` を除外する。最終変更一覧で再検索して追加スイートがないことも確認した。
+
+```sh
+git grep -l -F -e openspec/changes/epic-granularity-planner/.openspec.yaml -e .openspec.yaml -e openspec/changes/epic-granularity-planner/design.md -e design.md -e openspec/changes/epic-granularity-planner/proposal.md -e proposal.md -e openspec/changes/epic-granularity-planner/specs/dev-workflow-develop/spec.md -e spec.md -e openspec/changes/epic-granularity-planner/specs/dev-workflow-escalation-tripwires/spec.md -e spec.md -e openspec/changes/epic-granularity-planner/specs/epic-granularity/spec.md -e spec.md -e openspec/changes/epic-granularity-planner/tasks.md -e tasks.md -e plugins/dev-workflow/changes/1802.md -e 1802.md -e plugins/dev-workflow/docs/epic-granularity-validation.md -e epic-granularity-validation.md -e plugins/dev-workflow/references/epic-granularity-coefficients.json -e epic-granularity-coefficients.json -e plugins/dev-workflow/scripts/epic-granularity.py -e epic-granularity.py -e plugins/dev-workflow/skills/develop/references/epic-granularity.md -e epic-granularity.md -e plugins/dev-workflow/skills/develop/references/epic-loop.md -e epic-loop.md -e plugins/dev-workflow/skills/develop/references/epic.md -e epic.md -e plugins/dev-workflow/skills/develop/references/roles/worker/common.md -e common.md -e plugins/dev-workflow/skills/develop/references/roles/worker/spec.md -e spec.md -e plugins/dev-workflow/skills/develop/references/spec-decision.md -e spec-decision.md -e plugins/dev-workflow/templates/escalation-tripwires.md -e escalation-tripwires.md -e plugins/dev-workflow/tests/develop-skill.bats -e develop-skill.bats -e plugins/dev-workflow/tests/epic-granularity-workflow.bats -e epic-granularity-workflow.bats -e plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1701.expected.json -e epic-1701.expected.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1701.json -e epic-1701.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1732.expected.json -e epic-1732.expected.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1732.json -e epic-1732.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/outputs.json -e outputs.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/sources.json -e sources.json -e plugins/dev-workflow/tests/test_epic_granularity.py -e test_epic_granularity.py -- '*.bats' ':(exclude)_longruns/'
+```
+
+検索結果52ファイルを引数にした実行コマンド:
+
+```sh
+bats \
+  plugins/casting/tests/casting-check.bats \
+  plugins/casting/tests/casting-consultation.bats \
+  plugins/casting/tests/casting-delegation.bats \
+  plugins/casting/tests/casting-init.bats \
+  plugins/casting/tests/casting-injection.bats \
+  plugins/casting/tests/casting-resolve.bats \
+  plugins/casting/tests/casting-set.bats \
+  plugins/casting/tests/casting-structure.bats \
+  plugins/dev-workflow/tests/context-tripwire.bats \
+  plugins/dev-workflow/tests/develop-adapter-review-routing.bats \
+  plugins/dev-workflow/tests/develop-channel-mode.bats \
+  plugins/dev-workflow/tests/develop-idle-compaction.bats \
+  plugins/dev-workflow/tests/develop-roles.bats \
+  plugins/dev-workflow/tests/develop-skill.bats \
+  plugins/dev-workflow/tests/develop-trivial-light-path.bats \
+  plugins/dev-workflow/tests/develop-worker-stages.bats \
+  plugins/dev-workflow/tests/epic-dispatch.bats \
+  plugins/dev-workflow/tests/epic-granularity-workflow.bats \
+  plugins/dev-workflow/tests/forbidden-words-check.bats \
+  plugins/dev-workflow/tests/git-destructive-guard.bats \
+  plugins/dev-workflow/tests/handoff-declaration.bats \
+  plugins/dev-workflow/tests/model-escalation-policy.bats \
+  plugins/dev-workflow/tests/model-switch-recache-notice.bats \
+  plugins/dev-workflow/tests/owner-escalation-narrowing.bats \
+  plugins/dev-workflow/tests/owner-message-number-check.bats \
+  plugins/dev-workflow/tests/parent-merge.bats \
+  plugins/dev-workflow/tests/pr-review-gate-long-comment.bats \
+  plugins/dev-workflow/tests/pr-review-gate-skill.bats \
+  plugins/dev-workflow/tests/pr-state.bats \
+  plugins/dev-workflow/tests/prompt-tripwires-refresh.bats \
+  plugins/dev-workflow/tests/risk-carryover-check.bats \
+  plugins/dev-workflow/tests/role-agent-types.bats \
+  plugins/dev-workflow/tests/shared-references.bats \
+  plugins/dev-workflow/tests/spec-decision-and-review.bats \
+  plugins/dev-workflow/tests/spec-touch-check.bats \
+  plugins/dev-workflow/tests/spec-wording-sync-light-path.bats \
+  plugins/dev-workflow/tests/subagent-start-context.bats \
+  plugins/dev-workflow/tests/subagent-waiting.bats \
+  plugins/dev-workflow/tests/tripwire-hook.bats \
+  plugins/dev-workflow/tests/unclear-reply-rephrase.bats \
+  plugins/infra/tests/infra-fixes.bats \
+  plugins/statusline/tests/statusline-copy-update.bats \
+  tests/agents-md-sync.bats \
+  tests/bats-assertion-guard.bats \
+  tests/ci-bats-shards.bats \
+  tests/develop-epic-scene-budget.bats \
+  tests/develop-worker-question-proxy.bats \
+  tests/develop-worker-stage-budget.bats \
+  tests/hook-python-isolation.bats \
+  tests/openspec-specs-format.bats \
+  tests/owner-question-style.bats \
+  tests/public-private-split.bats
+```
+
+## 統合検査結果
+
+2026-11-24 の実装＋verify。検査の対象ロジック・fixtureは commit `541090be`、その後は本記録とtasksのチェック更新だけ。
+
+| コマンド | exit | 結果 |
+|---|---:|---|
+| `python3 -B -m unittest discover -s plugins/dev-workflow/tests -p test_epic_granularity.py -v` | 0 | 17件。exit 1/2、履歴期待JSON一致、出力量と追加削除行数の再検算を含む |
+| `python3 -B plugins/dev-workflow/scripts/epic-granularity.py --input plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1701.json` | 0 | 1子、期待JSON一致 |
+| 同CLI `--input plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1732.json` | 0 | 23子、期待JSON一致 |
+| `bats plugins/dev-workflow/tests/epic-granularity-workflow.bats` | 0 | 7件 |
+| `bats tests/injection-budget.bats tests/develop-epic-scene-budget.bats tests/develop-worker-stage-budget.bats` | 0 | 109件、予算変更なし |
+| 上記workflowと3予算ファイルを一括指定したBats | 0 | 116件 |
+| `scripts/lint.sh` | 0 | CIの静的検査。shellcheckとplugin validationを含む |
+| `scripts/test-auto-merge-workflow.sh` | 0 | 145件 |
+| `OPENSPEC_TELEMETRY=0 openspec validate epic-granularity-planner --type change --strict` | 0 | changeのstrict検証 |
+| `git diff --check` | 0 | 空白検査 |
+| 前節の関連52ファイルへの `bats` | 1 | 2603件中、旧条件・旧文言アサーション3件だけ失敗。他2600件成功 |
+| `bats plugins/dev-workflow/tests/develop-skill.bats`（3件修正後） | 0 | 178件すべて成功。未解消の失敗0件 |
+
+旧アサーションは「2本以上を条件にする」「証拠の送り先をエピックという語で検査する」「wire 1 がエピック化／Workflow実行へ進む」だった。承認済み仕様に対応し、複数group・親への証拠・量の再計算へ揃えた。動作範囲を追加する修正ではない。
+
+TDDの最初の `-k read_contract` は exit 1（未実装の欠落／矛盾拒否）、実装後は exit 0。固定diff本文の再検算を追加した際にテスト補助変数の衝突で一度exit 1になり、修正後の17件はexit 0。同じテストの2回連続失敗はない。
+
+CIの `shellcheck` ジョブから静的検査2コマンドを収集してローカル実行した。`bats shard N/4` の `scripts/test.sh` 全体と結果集約 `bats suites` はCIに任せる（この工程ではPR未作成、CIの成功は未確認）。依存インストール・結果集約だけのrunはローカル検査に数えない。未導入の検査なし。
+
+画面確認: 不要
