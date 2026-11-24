@@ -63,7 +63,7 @@ gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由
 
 ## 分割判定（単一 change か複数 change か）
 
-仕様化すると判定した場合、規模を判定する。判定の基準（単一 change で足りる・複数 change に割れる・境界の定義）は `skills/develop/references/spec-decision.md` Step C。
+仕様化すると判定した場合、`skills/develop/references/spec-decision.md` Step C と `references/epic-granularity.md` に従い作業を粒度計算に通し、入力・出力を記録する。個数だけで分けず、計画の group と依存順を使う。
 
 複数 change に割れた場合の振る舞いはモードで分かれる:
 
