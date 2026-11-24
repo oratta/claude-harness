@@ -5382,13 +5382,16 @@ worker_slots() { cat "$PLUGIN_DIR/skills/develop/references/epic-worker-slots.md
 
 MAIN_UUID=aaaaaaaa-1111-4111-8111-111111111111
 
-# 子 11 のトランスクリプトを置く（<何分前の最後のリクエスト> <会話量> [compact 1] [ファイル名]）
+# 子 11 のトランスクリプトを置く（<何分前の最後のリクエスト> <会話量> [compact 1] [ファイル名] [固定 timestamp]）
 put_transcript() {
-  local ago="$1" ctx="$2" compact="${3-0}" name="${4-s1}"
+  local ago="$1" ctx="$2" compact="${3-0}" name="${4-s1}" fixed_ts="${5-}"
   local p="$BATS_TEST_TMPDIR/work/issue-11" dir ts
   dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$p" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$dir"
-  ts="$(python3 -c "import datetime,sys;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  ts="$fixed_ts"
+  if [ -z "$ts" ]; then
+    ts="$(python3 -c "import datetime,sys;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  fi
   {
     printf '{"type":"assistant","entrypoint":"cli","uuid":"%s","timestamp":"%s","message":{"content":"q","usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$MAIN_UUID" "$ts" "$ctx"
     printf '{"type":"system","subtype":"turn_duration","timestamp":"%s"}\n' "$ts"
@@ -10195,6 +10198,7 @@ set_dep() {
 
 # #1742: direct replies share wait --resolve's size/time decision.
 reply_auto_ready() {
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
   reply_ready term-a-11
   put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
   : > "$STUB_LOG"
@@ -10249,12 +10253,31 @@ assert_reply_auto() {
 }
 
 @test "reply auto: missing ambiguous and partly unmeasurable logs use independent conditions" {
+  # Control only the fixture clock: the two generation calls cross a second boundary.
+  local fixture_now='' shared_ts file
+  python3() {
+    if [ -n "$fixture_now" ] && [ "$1" = -c ] && [[ "$2" == *'datetime.datetime.now(datetime.timezone.utc)'* ]]; then
+      local code="$2"
+      code="${code//datetime.datetime.now(datetime.timezone.utc)/datetime.datetime.fromisoformat('$fixture_now')}"
+      command python3 -c "$code"
+    else
+      command python3 "$@"
+    fi
+  }
   for as in parent owner; do
     reply_auto_ready
+    [ "$CLAUDE_PROJECTS_DIR" = "$BATS_TEST_TMPDIR/projects" ]
     assert_reply_auto "$as" 0
-    put_transcript 5 160000 0 s1
-    put_transcript 5 160000 0 s2
+    fixture_now='2026-01-01T00:00:00+00:00'
+    shared_ts='2025-12-31T23:55:00.000Z'
+    put_transcript 5 160000 0 s1 "$shared_ts"
+    fixture_now='2026-01-01T00:00:01+00:00'
+    put_transcript 5 160000 0 s2 "$shared_ts"
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+    [ "$(jq -r 'select(.subtype == "turn_duration") | .timestamp' "$file")" = "$shared_ts" ]
+    [ "$(jq -r 'select(.subtype == "turn_duration") | .timestamp' "${file%/*}/s2.jsonl")" = "$shared_ts" ]
     assert_reply_auto "$as" 0
+    fixture_now=''
     reply_auto_ready
     put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
     # stop_uuid selects the main log even with an unrelated second log.
@@ -10283,6 +10306,9 @@ assert_reply_auto() {
     reply_auto_ready
     put_transcript 5 150000
     EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=200000 assert_reply_auto "$as" 0
+    reply_auto_ready
+    put_transcript 5 100000
+    assert_reply_auto "$as" 0
     reply_auto_ready
     EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=0 assert_reply_auto "$as" 1
     reply_auto_ready
