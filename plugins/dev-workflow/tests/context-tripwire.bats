@@ -656,6 +656,37 @@ assert_context_diagnostics() {
   [ -z "$(find "$WORK/cache-installed" -name '*.pyc' -o -name __pycache__)" ]
 }
 
+# hook の stdout を JSON として解析して検査する。$1=event $2=kind（notice=診断だけ / notify=締め通知＋追記 / deny=拒否＋追加）
+assert_hook_json() {
+  HOOK_OUT="$output" python3 - "$1" "$2" <<'PYCHK'
+import json, os, sys
+ev, kind = sys.argv[1:3]
+d = json.loads(os.environ["HOOK_OUT"])
+assert list(d) == ["hookSpecificOutput"], d
+h = d["hookSpecificOutput"]
+assert h["hookEventName"] == ev, h
+ac = h.get("additionalContext", "")
+assert "根拠モデルと異なるため、案内した手順でしきい値を再検証する必要がある" in ac, ac
+assert "次の return に、再検証が要る旨" in ac and "要求モデル" in ac and "対象指標" in ac, ac
+assert "token-thresholds.md" in ac and "cache-installed" in ac, ac
+for key in ("decision", "continue", "systemMessage"):
+    assert key not in d and key not in h, d
+if kind == "notice":
+    assert "permissionDecision" not in h and "permissionDecisionReason" not in h, h
+    assert set(h) == {"hookEventName", "additionalContext"}, h
+    for bad in ("締め", "commit", "return せよ", "return の 1 行目"):
+        assert bad not in ac, (bad, ac)
+elif kind == "notify":
+    assert "permissionDecision" not in h, h
+    assert ac.startswith("[dev-workflow 途中計測]") and "return の 1 行目" in ac, ac
+    assert "\n\n[dev-workflow 再検証通知]" in ac, ac
+elif kind == "deny":
+    assert h["permissionDecision"] == "deny", h
+    assert h["permissionDecisionReason"].startswith("[dev-workflow 強制停止]"), h
+    assert "再検証" not in h["permissionDecisionReason"], h
+PYCHK
+}
+
 threshold_hook() {
   payload "$1" "$AGENT_ID" "${2:-Edit}" > "$WORK/payload.json"
   "$SCRIPT" < "$WORK/payload.json"
@@ -693,7 +724,7 @@ threshold_hook() {
     threshold_record "$f" "$model" 499 append
     run --separate-stderr threshold_hook PostToolUse
     [ "$status" -eq 0 ]
-    [ -z "$output" ]
+    assert_hook_json PostToolUse notice
     assert_context_diagnostics
     [[ "$stderr" == *context_hard_cap* ]] || return 1
   done
@@ -711,19 +742,20 @@ threshold_hook() {
         [ "$status" -eq 0 ]
         assert_context_diagnostics
         if [ "$event" = PostToolUse ] && [ "$ctx" -gt 500 ]; then
-          [[ "$output" == *additionalContext* ]] || return 1
+          assert_hook_json PostToolUse notify
         elif [ "$event" = PreToolUse ] && [ "$ctx" -gt 600 ]; then
-          [[ "$output" == *'"deny"'* ]] || return 1
+          assert_hook_json PreToolUse deny
         else
-          [ -z "$output" ]
+          assert_hook_json "$event" notice
         fi
       done
     done
   done
   export DEV_WORKFLOW_CONTEXT_CAP=700 DEV_WORKFLOW_CONTEXT_HARD_CAP=800
   run --separate-stderr threshold_hook PostToolUse
-  [ -z "$output" ]
+  assert_hook_json PostToolUse notice
   assert_context_diagnostics
+  [ -z "$(find "$WORK" -name '*state*' -o -name '*notified*')" ]
 }
 
 @test "thresholds: hook whitespace overrides unrelated env and reversed ordering" {
@@ -786,7 +818,8 @@ PYFIX
   threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"claude-opus-5-5"' 100
   run --separate-stderr threshold_hook PostToolUse
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  assert_hook_json PostToolUse notice
+  [[ "$output" == *other-model*context_cap* ]] || return 1
   [[ "$stderr" == *revalidation_required*other-model*context_cap*"$GUIDE"* ]] || return 1
   [[ "$stderr" == *context_hard_cap* ]] || return 1
   [[ "$stderr" != *unknown_model* ]] || return 1
@@ -826,6 +859,174 @@ PYFIX
   SCRIPT="$WORK/hook-link"
   run --separate-stderr threshold_hook PostToolUse
   [ "$status" -eq 0 ]
-  [ -z "$output" ]
+  assert_hook_json PostToolUse notice
   assert_context_diagnostics
+}
+
+@test "notice: a known model within the evidence stays silent on both streams for both events" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"claude-opus-5-5"' 50
+  local event
+  for event in PostToolUse PreToolUse; do
+    run --separate-stderr threshold_hook "$event"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    [ -z "$stderr" ]
+  done
+}
+
+@test "notice: unknown and evidence-mismatch models get a notice-only JSON within the cap for both events" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  local f="$SUBAGENTS/agent-${AGENT_ID}.jsonl" event kind
+  for kind in unknown mismatch; do
+    if [ "$kind" = unknown ]; then
+      threshold_record "$f" '"new-model"' 50
+    else
+      python3 - "$TABLE" <<'PYFIX'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p))
+for record in d['models']['claude-opus-5-5'].values(): record['decided_models']=['other-model']
+with open(p,'w') as f: json.dump(d,f)
+PYFIX
+      threshold_record "$f" '"claude-opus-5-5"' 50
+    fi
+    for event in PostToolUse PreToolUse; do
+      run --separate-stderr threshold_hook "$event" Read
+      [ "$status" -eq 0 ]
+      assert_hook_json "$event" notice
+      [[ "$stderr" == *revalidation_required* ]] || return 1
+    done
+  done
+}
+
+@test "notice: the notice tells the recipient what to do and what not to do" {
+  threshold_plugin
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 50
+  run --separate-stderr threshold_hook PostToolUse
+  local ac
+  ac="$(echo "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"])')"
+  [[ "$ac" == *"この通知だけを理由に今の作業を止めない"* ]] || return 1
+  [[ "$ac" == *"自分で再検証も始めない"* ]] || return 1
+  [[ "$ac" == *"次の return に、再検証が要る旨（要求モデル・根拠モデル・対象指標）を書く"* ]] || return 1
+  [[ "$ac" == *"new-model"* ]] || return 1
+}
+
+@test "notice: over the cap the existing notification is kept and the notice is a separate paragraph" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 501
+  run --separate-stderr threshold_hook PostToolUse
+  assert_hook_json PostToolUse notify
+  local plain
+  plain="$(echo "$output" | python3 -c '
+import json,sys
+ac=json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"]
+print(ac.split("\n\n[dev-workflow 再検証通知]")[0])')"
+  [[ "$plain" == *"501 tokens"*"DEV_WORKFLOW_CONTEXT_CAP=500"*"今の工程を締め"* ]] || return 1
+  [[ "$plain" != *再検証* ]] || return 1
+}
+
+@test "notice: over the hard cap the deny reason is unchanged and additionalContext is added to the same output" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  local tool
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 601
+  for tool in Edit Bash; do
+    run --separate-stderr threshold_hook PreToolUse "$tool"
+    [ "$status" -eq 0 ]
+    assert_hook_json PreToolUse deny
+  done
+  # 再検証通知の無い既知モデルでは理由が同じで additionalContext が無い
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"claude-opus-5-5"' 601
+  run --separate-stderr threshold_hook PreToolUse Edit
+  [[ "$output" == *'"deny"'* ]] || return 1
+  [[ "$output" != *additionalContext* ]] || return 1
+}
+
+@test "notice: read-only tools and cap-to-hard edits are not denied, and hard <= cap only carries the notice" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  local tool
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 601
+  for tool in Read Grep Glob; do
+    run --separate-stderr threshold_hook PreToolUse "$tool"
+    assert_hook_json PreToolUse notice
+  done
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 550
+  for tool in Edit Bash; do
+    run --separate-stderr threshold_hook PreToolUse "$tool"
+    assert_hook_json PreToolUse notice
+  done
+  export DEV_WORKFLOW_CONTEXT_CAP=100 DEV_WORKFLOW_CONTEXT_HARD_CAP=100
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 9999
+  for tool in Edit Bash Write; do
+    run --separate-stderr threshold_hook PreToolUse "$tool"
+    assert_hook_json PreToolUse notice
+  done
+  run --separate-stderr threshold_hook PostToolUse Read
+  assert_hook_json PostToolUse notify
+}
+
+@test "notice: the override does not remove the notice and repeated calls repeat it" {
+  threshold_plugin
+  export DEV_WORKFLOW_CONTEXT_CAP=900 DEV_WORKFLOW_CONTEXT_HARD_CAP=950
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 50
+  local n
+  for n in 1 2 3; do
+    run --separate-stderr threshold_hook PostToolUse
+    assert_hook_json PostToolUse notice
+  done
+}
+
+@test "notice: silent paths stay silent on stdout (off, no transcript, invalid thresholds, main thread)" {
+  threshold_plugin
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 50
+  run --separate-stderr env DEV_WORKFLOW_CONTEXT_TRIPWIRE=off "$SCRIPT" < <(payload PostToolUse "$AGENT_ID" Read)
+  [ -z "$output" ]
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "" Read)'"
+  [ -z "$output" ]
+  rm "$SUBAGENTS/agent-${AGENT_ID}.jsonl"
+  run --separate-stderr threshold_hook PostToolUse
+  [ -z "$output" ]
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' 50
+  export DEV_WORKFLOW_CONTEXT_CAP=0
+  run --separate-stderr threshold_hook PostToolUse
+  [ -z "$output" ]
+  [[ "$stderr" == *invalid_hook_threshold* ]] || return 1
+  [[ "$stderr" == *revalidation_required* ]] || return 1
+}
+
+# ロード可能な一時の共通処理モジュール。$1 に応じて API を壊す。
+broken_resolver() {
+  local kind="$1" dest="$WORK/cache-installed/scripts/token_thresholds.py"
+  case "$kind" in
+    missing_function) printf 'GUIDE = "x"\n' > "$dest" ;;
+    not_callable) printf 'resolve_thresholds = 42\n' > "$dest" ;;
+    raises) printf 'def resolve_thresholds(model, env):\n    raise RuntimeError("boom-cause")\n' > "$dest" ;;
+    missing_key) printf 'def resolve_thresholds(model, env):\n    return {"diagnostics": [{"code": "unknown_model", "message": "unknown_model: LEAK"}], "thresholds": {"context_cap": {"value": 1}}}\n' > "$dest" ;;
+  esac
+}
+
+@test "resolver API: missing, non-callable, raising or key-less resolvers fail open for both events" {
+  threshold_plugin
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"claude-opus-5-5"' 999999
+  local kind event
+  for kind in missing_function not_callable raises missing_key; do
+    broken_resolver "$kind"
+    for event in PostToolUse PreToolUse; do
+      run --separate-stderr threshold_hook "$event"
+      [ "$status" -eq 0 ]
+      [ -z "$output" ]
+      [[ "$stderr" == *"context-tripwire: resolver_unavailable"* ]] || return 1
+      [[ "$stderr" != *Traceback* ]] || return 1
+      [[ "$stderr" != *LEAK* ]] || return 1
+      [[ "$stderr" != *revalidation_required* ]] || return 1
+      [ "$(printf '%s\n' "$stderr" | wc -l)" -eq 1 ]
+    done
+  done
+  broken_resolver raises
+  run --separate-stderr threshold_hook PostToolUse
+  [[ "$stderr" == *boom-cause* ]] || return 1
 }

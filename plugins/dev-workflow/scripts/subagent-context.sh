@@ -162,33 +162,52 @@ if ctx is None:
     sys.exit(1)
 
 # 実行中のスクリプトの実体と同じ配布物を使い、cwd / Python 環境から探さない。
+# 共通処理との境界（取得・callable 確認・呼出し・必須結果の取り出し・診断の準備）で起きた
+# Exception は resolver_unavailable にする（BaseException や全体の握り潰しには広げない）。
+# 取り出しと検証を終えてから stderr・stdout に出す。
+def resolver_unavailable(error):
+    message = f"resolver_unavailable: {type(error).__name__}: {error}"
+    print(f"subagent-context: {message}", file=sys.stderr)
+    print(json.dumps({"agent": name, "file": chosen, "error": message}, ensure_ascii=False))
+    sys.exit(1)
+
 try:
     plugin = Path(os.environ["SCRIPT_PATH"]).resolve().parent.parent
     spec = importlib.util.spec_from_file_location("token_thresholds", plugin / "scripts/token_thresholds.py")
     resolver = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(resolver)
+    resolve = resolver.resolve_thresholds
+    if not callable(resolve):
+        raise TypeError("resolve_thresholds is not callable")
 except Exception as error:
-    message = f"resolver_unavailable: {error}"
-    print(f"subagent-context: {message}", file=sys.stderr)
-    print(json.dumps({"agent": name, "file": chosen, "error": message}))
-    sys.exit(1)
+    resolver_unavailable(error)
 env = {key: os.environ[key] for key in ("DEV_WORKFLOW_CONTEXT_CAP",) if key in os.environ}
 if os.environ["CAP"]:
     env["DEV_WORKFLOW_CONTEXT_CAP"] = os.environ["CAP"]
 try:
-    resolved = resolver.resolve_thresholds(model, env)
+    resolved = resolve(model, env)
 except ValueError as error:
     print(f"subagent-context: {error}", file=sys.stderr)
     print(json.dumps({"agent": name, "file": chosen, "error": str(error)}))
     sys.exit(1)
-for diagnostic in resolved["diagnostics"]:
-    if diagnostic["code"] == "unknown_model":
-        print(f"subagent-context: {diagnostic['message']}", file=sys.stderr)
-    elif diagnostic.get("metric") == "context_cap":
-        guide = plugin / "skills/develop/references/token-thresholds.md"
-        print(f"subagent-context: revalidation_required: {model or '不明'}; "
-              f"根拠モデル={diagnostic['decided_models']}; 対象=context_cap; 手順={guide}", file=sys.stderr)
-cap = resolved["thresholds"]["context_cap"]["value"]
+except Exception as error:
+    resolver_unavailable(error)
+try:
+    cap = resolved["thresholds"]["context_cap"]["value"]
+    if isinstance(cap, bool) or not isinstance(cap, int):
+        raise TypeError("threshold value is not an integer")
+    guide = plugin / "skills/develop/references/token-thresholds.md"
+    stderr_lines = []
+    for diagnostic in resolved["diagnostics"]:
+        if diagnostic["code"] == "unknown_model":
+            stderr_lines.append(f"subagent-context: {diagnostic['message']}")
+        elif diagnostic.get("metric") == "context_cap":
+            stderr_lines.append(f"subagent-context: revalidation_required: {model or '不明'}; "
+                                f"根拠モデル={diagnostic['decided_models']}; 対象=context_cap; 手順={guide}")
+except Exception as error:
+    resolver_unavailable(error)
+for line in stderr_lines:
+    print(line, file=sys.stderr)
 
 over = ctx > cap
 out = {"agent": name, "file": chosen, "context_tokens": ctx, "calls": calls,

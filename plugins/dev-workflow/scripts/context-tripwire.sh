@@ -82,6 +82,15 @@ STOP = (
     "return の 1 行目は必ず「工程中断:」にする（拒否された時点で予定していた作業が残っているため）。"
 )
 
+REVALIDATE = (
+    "[dev-workflow 再検証通知] 要求モデルがしきい値の根拠モデルと異なるため、"
+    "案内した手順でしきい値を再検証する必要がある。\n"
+    "{items}\n"
+    "手順: {guide}\n"
+    "この通知だけを理由に今の作業を止めない。自分で再検証も始めない。"
+    "次の return に、再検証が要る旨（要求モデル・根拠モデル・対象指標）を書く。"
+)
+
 
 def emit(obj):
     print(json.dumps(obj, ensure_ascii=False))
@@ -185,61 +194,91 @@ if measurement is None:
     sys.exit(0)
 
 ctx, model = measurement
+
+
+def resolver_unavailable(error):
+    print(f"context-tripwire: resolver_unavailable: {type(error).__name__}: {error}", file=sys.stderr)
+    sys.exit(0)
+
+
+# 共通処理との境界。取得・callable 確認・呼出し・必須結果の取り出しと診断の準備を終えてから出力する
+# （捕捉は Exception まで。BaseException や処理全体の握り潰しには広げない）。
 try:
     plugin = Path(sys.argv[1]).resolve().parent.parent
     spec = importlib.util.spec_from_file_location("token_thresholds", plugin / "scripts/token_thresholds.py")
     resolver = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(resolver)
+    resolve = resolver.resolve_thresholds
+    if not callable(resolve):
+        raise TypeError("resolve_thresholds is not callable")
 except Exception as error:
-    print(f"context-tripwire: resolver_unavailable: {error}", file=sys.stderr)
-    sys.exit(0)
+    resolver_unavailable(error)
 env = {key: os.environ[key] for key in ("DEV_WORKFLOW_CONTEXT_CAP", "DEV_WORKFLOW_CONTEXT_HARD_CAP")
        if key in os.environ}
 try:
-    resolved = resolver.resolve_thresholds(model, env)
+    resolved = resolve(model, env)
 except ValueError as error:
     print(f"context-tripwire: {error}", file=sys.stderr)
     sys.exit(0)
-for diagnostic in resolved["diagnostics"]:
-    if diagnostic["code"] == "unknown_model":
-        print(f"context-tripwire: {diagnostic['message']}", file=sys.stderr)
-    elif diagnostic.get("metric") in ("context_cap", "context_hard_cap"):
-        guide = plugin / "skills/develop/references/token-thresholds.md"
-        print(f"context-tripwire: revalidation_required: {model or '不明'}; "
-              f"根拠モデル={diagnostic['decided_models']}; 対象={diagnostic['metric']}; 手順={guide}", file=sys.stderr)
-cap = resolved["thresholds"]["context_cap"]["value"]
-hard = resolved["thresholds"]["context_hard_cap"]["value"]
+except Exception as error:
+    resolver_unavailable(error)
+try:
+    cap = resolved["thresholds"]["context_cap"]["value"]
+    hard = resolved["thresholds"]["context_hard_cap"]["value"]
+    for value in (cap, hard):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError("threshold value is not an integer")
+    guide = plugin / "skills/develop/references/token-thresholds.md"
+    stderr_lines = []
+    revalidations = []
+    for diagnostic in resolved["diagnostics"]:
+        if diagnostic["code"] == "unknown_model":
+            stderr_lines.append(f"context-tripwire: {diagnostic['message']}")
+        elif diagnostic.get("metric") in ("context_cap", "context_hard_cap"):
+            stderr_lines.append(f"context-tripwire: revalidation_required: {model or '不明'}; "
+                                f"根拠モデル={diagnostic['decided_models']}; 対象={diagnostic['metric']}; 手順={guide}")
+            revalidations.append(f"- 要求モデル={model or '不明'}; 根拠モデル={diagnostic['decided_models']}; "
+                                 f"対象指標={diagnostic['metric']}")
+except Exception as error:
+    resolver_unavailable(error)
+for line in stderr_lines:
+    print(line, file=sys.stderr)
 if cap <= 0 or hard <= 0:
     print(f"context-tripwire: invalid_hook_threshold: cap={cap}, hard={hard}; 両方に正数が必要", file=sys.stderr)
     sys.exit(0)
 
+# 本人に届く再検証通知（exit 0 の stderr は Claude に届かないので additionalContext にも入れる）。
+# 診断だけでは締め・拒否を要求しない。
+notice = None
+if revalidations:
+    notice = REVALIDATE.format(items="\n".join(revalidations), guide=guide)
+
 if event == "PostToolUse":
-    if ctx <= cap:
-        sys.exit(0)
-    emit({"hookSpecificOutput": {"hookEventName": "PostToolUse",
-                                 "additionalContext": NOTIFY.format(ctx=ctx, cap=cap)}})
+    if ctx > cap:
+        text = NOTIFY.format(ctx=ctx, cap=cap)
+        if notice:
+            text += "\n\n" + notice
+        emit({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}})
+    elif notice:
+        emit({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": notice}})
     sys.exit(0)
 
 # --- PreToolUse（強制停止）---
-if hard <= cap:                 # 閾値の大小が逆なら何もしない
-    sys.exit(0)
-if ctx <= hard:
-    sys.exit(0)
-
 tool = payload.get("tool_name")
-if tool not in ("Edit", "Write", "NotebookEdit", "Bash"):
-    sys.exit(0)                 # 読み取り系はここに来ない（matcher でも絞っている）が念のため
-
-# Bash はコマンド内容によらず全件拒否する（窓を開けない。#269 決定・2 回目）。
-# 検査側のトークン化（このプロセス）と実行するシェル（zsh/bash）のトークン化は
-# 一致を保証できず、受理する経路が1つでもあれば迂回が再発するため、内容は一切見ない。
-cwd = payload.get("cwd")
-cwd = cwd if isinstance(cwd, str) and cwd else "(cwd 不明)"
-reason = STOP.format(ctx=ctx, hard=hard, cwd=cwd)
-
-emit({"hookSpecificOutput": {"hookEventName": "PreToolUse",
-                             "permissionDecision": "deny",
-                             "permissionDecisionReason": reason}})
+if hard > cap and ctx > hard and tool in ("Edit", "Write", "NotebookEdit", "Bash"):
+    # Bash はコマンド内容によらず全件拒否する（窓を開けない。#269 決定・2 回目）。
+    # 検査側のトークン化（このプロセス）と実行するシェル（zsh/bash）のトークン化は
+    # 一致を保証できず、受理する経路が1つでもあれば迂回が再発するため、内容は一切見ない。
+    cwd = payload.get("cwd")
+    cwd = cwd if isinstance(cwd, str) and cwd else "(cwd 不明)"
+    out = {"hookEventName": "PreToolUse",
+           "permissionDecision": "deny",
+           "permissionDecisionReason": STOP.format(ctx=ctx, hard=hard, cwd=cwd)}
+    if notice:
+        out["additionalContext"] = notice
+    emit({"hookSpecificOutput": out})
+elif notice:
+    emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}})
 sys.exit(0)
 PY
 if [ -z "$PY_SRC" ]; then

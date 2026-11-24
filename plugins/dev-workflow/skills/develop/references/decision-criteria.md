@@ -39,7 +39,7 @@ W は名前付き spawn ＋ SendMessage 再開でコンテキストを引き継�
 
 両経路はそれぞれ計測に採用した usage と同じ assistant レコードの `message.model` を使う。欠落・非文字列・空白だけは不明とし、過去のレコード・親・環境から補わない。CLI は `--cap` > 文脈上限 env > モデル行 / fallback、hook は各文脈 env > モデル行 / fallback の順で、使う指標の env だけを渡す。env の空白だけは未設定、前後空白付き ASCII 非負整数は有効。CLI の有効な `--cap` は不正 env も遮蔽し、0 を許す。hook は両閾値に正数を要求し、どちらかが 0 なら両イベントとも判定しない。強制停止の閾値が文脈上限以下なら Pre だけ判定せず、Post の通知は保つ。
 
-fallback・利用指標の再検証診断は上書き時も呼出しごとに stderr へ出し、要求モデル・根拠モデル・指標・実行中の同梱プラグインの手順の絶対パスを案内する。stdout は従来の JSON だけに保つ。表・上書きの不正や共通処理のロード失敗は理由を stderr に出し、CLI は `error` の JSON と exit 1、hook は stdout 空・exit 0（fail-open）とする。hook の正数条件違反も理由付きで fail-open とし、失敗を隠れた定数で補わない。
+fallback・利用指標の再検証診断は上書き時も呼出しごとに stderr へ出し、要求モデル・根拠モデル・指標・実行中の同梱プラグインの手順の絶対パスを案内する。CLI の stdout は従来の測定 JSON だけに保つ。hook は exit 0 の stderr が Claude に届かないため、利用する指標に再検証が要るときは同じ診断を、その hook が動くサブエージェント本人に届く `additionalContext` にも入れる（閾値内なら通知だけの JSON、cap 超の PostToolUse は締め通知の本文のあとに別段落で追記、hard 超の PreToolUse は拒否の本文を変えず同じ出力へ追加）。本人は、この通知だけを理由に作業を止めず、自分で再検証も始めず、次の return に再検証が要る旨を書く。診断だけで締め・拒否はしない。再検証が要らない閾値内は従来どおり stdout 空。表・上書きの不正や共通処理のロード失敗・API 欠損（`resolver_unavailable`）は理由を stderr に出し、CLI は `error` の JSON と exit 1、hook は stdout 空・exit 0（fail-open）とする。hook の正数条件違反も理由付きで fail-open とし、失敗を隠れた定数で補わない。
 
 | 環境変数 | 既定 | 何が起きるか |
 |---|---|---|

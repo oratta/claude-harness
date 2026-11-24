@@ -638,3 +638,54 @@ PYFIX
     [[ "$stderr" != *context_hard_cap* ]] || return 1
   done
 }
+
+# ロード可能な一時の共通処理モジュール。$1 に応じて API を壊す。
+broken_resolver() {
+  local kind="$1" dest="$WORK/cache-installed/scripts/token_thresholds.py"
+  case "$kind" in
+    missing_function) printf 'GUIDE = "x"\n' > "$dest" ;;
+    not_callable) printf 'resolve_thresholds = 42\n' > "$dest" ;;
+    raises) printf 'def resolve_thresholds(model, env):\n    raise RuntimeError("boom-cause")\n' > "$dest" ;;
+    missing_key) printf 'def resolve_thresholds(model, env):\n    return {"diagnostics": [{"code": "unknown_model", "message": "unknown_model: LEAK"}], "thresholds": {}}\n' > "$dest" ;;
+  esac
+}
+
+@test "resolver API: missing, non-callable, raising or key-less resolvers give error JSON and exit 1 even with --cap" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl" kind extra
+  threshold_record "$f" '"claude-opus-5-5"' 100
+  for kind in missing_function not_callable raises missing_key; do
+    broken_resolver "$kind"
+    for extra in "--cap 999" ""; do
+      # shellcheck disable=SC2086
+      run --separate-stderr "$SCRIPT" --file "$f" $extra
+      [ "$status" -eq 1 ]
+      python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d["error"], str) and "resolver_unavailable" in d["error"], d' "$output"
+      [ "$(printf '%s\n' "$output" | wc -l)" -eq 1 ]
+      [[ "$stderr" == *"subagent-context: resolver_unavailable"* ]] || return 1
+      [[ "$stderr" != *Traceback* ]] || return 1
+      [[ "$stderr" != *LEAK* ]] || return 1
+      [[ "$stderr" != *revalidation_required* ]] || return 1
+      [ "$(printf '%s\n' "$stderr" | wc -l)" -eq 1 ]
+    done
+  done
+  broken_resolver raises
+  run --separate-stderr "$SCRIPT" --file "$f" --cap 999
+  [[ "$stderr" == *boom-cause* ]] || return 1
+}
+
+@test "notice: the CLI keeps stderr diagnostics and a measurement-only stdout JSON without hook fields" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl"
+  threshold_record "$f" '"new-model"' 100
+  run --separate-stderr "$SCRIPT" --file "$f"
+  [ "$status" -eq 0 ]
+  assert_context_diagnostics
+  python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["cap"] == 500 and d["context_tokens"] == 100, d
+for key in ("hookSpecificOutput", "additionalContext", "systemMessage", "permissionDecision"):
+    assert key not in d, d
+' "$output"
+}
