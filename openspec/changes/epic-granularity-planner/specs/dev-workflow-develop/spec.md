@@ -88,15 +88,19 @@ Step C は作業項目と消費・境界・現在の空き W 枠を計算器に�
 
 ### Requirement: 手順への組込みでは既存 issue を代表子へ集約する
 
-既存 issue の作業も同じ計算に通し、複数 issue をまとめた group に代表子を 1 本作らなければならない（MUST）。親・代表・元 issue に対応と受け入れ条件を残し、親の直接の子と起動・監視の対象を代表に統一する（SHALL）。元 issue を代表の sub-issue にしたり、代表と重ねて起動したりしてはならない（MUST NOT）。進行中 W／worktree／未マージ PR／状態記録のある issue は自動集約しない（SHALL）。
+既存 issue の作業も同じ計算に通し、group ごとに代表子を 1 本設けなければならない（MUST）。既存 issue の再利用は、group がその元 issue 1 本だけに対応し、その全項目が単一 group に収まり、他 group がその元 issue を参照しない場合に限る（MUST）。それ以外は group ごとに別々の代表子を新設し、元 issue を代表として再利用してはならない（MUST NOT）。親・代表・元 issue に対応と受け入れ条件を残し、親の直接の子と起動・監視の対象を代表に統一する（SHALL）。元 issue を代表の sub-issue にしたり、代表と重ねて起動したりしてはならない（MUST NOT）。進行中 W／worktree／未マージ PR／状態記録のある issue は自動集約しない（SHALL）。
 
 #### Scenario: 未着手の既存 issue 二つを一つにまとめる
 - **WHEN** 既存 A/B の全項目が計算後の group G に入り、どちらも未着手である
 - **THEN** 代表 C を親の直接の子にし、親と C に G と A/B の対応・受け入れ条件を残し、A/B に C へのコメントを残す。A/B は親の直接の子から外し、route/launch/wait/adopt へは C だけを渡す。C は sub-issue を持たない
 
+#### Scenario: 元 issue の全項目が単一 group に収まる
+- **WHEN** 未着手の元 A の全項目が group G に収まり、G は A だけに対応し、他 group が A を参照しない
+- **THEN** A を G の代表として再利用できる
+
 #### Scenario: 同じ元 issue が二つの group に分かれる
-- **WHEN** 元 A の項目が代表 C/D に分かれ、C だけがマージされた
-- **THEN** 対応表で A→C/D を保持し、A を閉じない。A の全受け入れ条件が満たされるまで精算待ちとする
+- **WHEN** 元 A の項目だけを容量で二つの group に分ける
+- **THEN** 各 group に別々の代表 C/D を新設し、どちらにも A を再利用しない。親の直接の子と route/launch/wait/adopt の対象は C/D だけにし、対応表で A→C/D を保持する。各 PR の Closes はそれぞれ C または D だけに向ける。C だけがマージされても A を閉じず、A の全受け入れ条件が満たされるまで精算待ちとする
 
 #### Scenario: 依存を代表に写す
 - **WHEN** 既存 A/B を C にまとめ、A に未完了の外部前提 X、A/B の間に内部依存、A に依存する外部後続 Y がある

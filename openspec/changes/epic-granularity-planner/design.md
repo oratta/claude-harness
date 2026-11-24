@@ -74,7 +74,7 @@ template は短い条件と参照だけに置き換え、長い JSON・計算式
 
 採用するのは「まとめ先の子を 1 本立てる」方式。PR に複数の既存 issue の Closes を並べるだけでは、起動・状態・レビュー記録先が元 issue ごとに残り、同じ PR に複数 W が起動しうる。代表子なら既存の repo/issue ごとの記録を変えずに済む。
 
-本体は計画の group ごとに代表子を新設する（既存 issue 1 本だけに対応する group はその issue を再利用）。代表子本文と親に「group id → item ids → 元 issue URL」の表と受け入れ条件の和集合を記し、元 issue に代表へのコメントを残す。元 issue を代表子の sub-issue にしない（nested の展開拒否に当たる）。親の直接の子は代表だけに付け替え、元 issue を route/launch/wait/adopt に渡さない。状態の schema と dispatch の完了計測は変更しない。
+本体は計画の group ごとに代表子を新設する。既存 issue を再利用できるのは、group がその元 issue 1 本だけに対応し、元 issue の全項目が単一 group に収まり、他 group がその元 issue を参照しない場合に限る。それ以外は group ごとに別々の代表子を新設し、元 issue を代表として再利用しない。同じ元 A だけを容量で二分した場合も、両 group に別々の代表 C/D を新設する。代表子本文と親に「group id → item ids → 元 issue URL」の表と受け入れ条件の和集合を記し、元 issue に代表へのコメントを残す。元 issue を代表子の sub-issue にしない（nested の展開拒否に当たる）。親の直接の子は代表だけに付け替え、元 issue を route/launch/wait/adopt に渡さない。状態の schema と dispatch の完了計測は変更しない。
 
 元 issue の項目が複数 group に分かれれば表は多対多とし、その元 issue の全 group が完了するまで元を閉じない。依存は item の DAG から代表子間へ写し、内部の辺を除く。元 issue に付いた外部依存も、既に満たされたものを除き関係する全代表へ写す。外部の後続から元 issue への依存は元が閉じるまで残す。既に W／worktree／未マージ PR／状態記録がある元 issue は自動集約せず、完了を待つか集約対象から外した理由を親に記録する。既存セッションを移し替えない。
 
