@@ -205,7 +205,7 @@ PYTEST
   [ -s "$ext" ]
   # 経路は準備ターンごとに記録で選び、nested だけで Orca としない。受信ターンでは切り替えない。
   for term in '待ちを準備する通常ターン' '予約文の受信ターンでは経路を切り替えない' \
-    'nested であることだけで Orca と判定しない' '`launcher` が `orca`' '`launch_failed` が空' \
+    'nested であることだけで Orca と判定しない' '`launcher` が `orca`' '`launch_failed` が空' '`status` が `running`' '`stop` が `stopped` / `stopped-seen` でない' \
     '`turn_input.sender`' '`parent` または `startup`' '送り手を確かめられないときは外部起こしを選ばない' \
     '自己タイマーは 0 個' '自分のものだけを取り消し' '取消が失敗・不明なら作業待ちの行を出さず' \
     '維持専用のタイマーや監視を重ねず' 'キャッシュ維持を保証したと報告しない'; do

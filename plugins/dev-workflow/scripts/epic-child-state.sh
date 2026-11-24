@@ -57,8 +57,10 @@ def background_tail(text):
     lines = [l for l in text.rstrip().splitlines()[:-1] if l.strip()]
     prev = lines[-1] if lines else ''
     before = lines[-2] if len(lines) >= 2 else ''
-    if not prev.startswith('作業待ち:'):
-        return 'bad' if dep_line(prev) and before.startswith('作業待ち:') else None
+    def marker_like(line):
+        return re.match(r'^\s*(?:[-+*]\s+|[0-9]+[.)]\s+)?(?:\*\*|__)?作業待ち[:：]', line) is not None
+    if not marker_like(prev):
+        return 'bad' if dep_line(prev) and marker_like(before) else None
     m = re.fullmatch('作業待ち: (' + BG_ID + ') (\\S+)', prev)
     if not m or not utc(m[2]) or parsed[0] != '作業報告' or dep_line(before):
         return 'bad'

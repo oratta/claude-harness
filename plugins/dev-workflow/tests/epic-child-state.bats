@@ -1113,7 +1113,7 @@ bgw_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("backgrou
 @test "background_wait: prose, quotes, code and lines in the middle are not markers" {
   register
   for msg in $'CI 待ち\n状態: 作業報告 — CI 待ち' '状態: 作業報告 — 作業待ち: task-17 2026-11-24T00:00:00Z' \
-    "$bg_marker"$'\n後続\n状態: 作業報告 — a' "> $bg_marker"$'\n状態: 作業報告 — a' " $bg_marker"$'\n状態: 作業報告 — a' \
+    "$bg_marker"$'\n後続\n状態: 作業報告 — a' "> $bg_marker"$'\n状態: 作業報告 — a' \
     $'```\n'"$bg_marker"$'\n```\n状態: 作業報告 — a' '状態: 作業報告 — 通常の報告'; do
     input next; run stop "$msg"; [ "$status" -eq 0 ]; [ -z "$output" ]
     jq -e '.turn_state.value == "作業報告"' "$REC"
@@ -1121,6 +1121,42 @@ bgw_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("backgrou
   done
   # an unclosed fence is still the existing status-line rejection
   input next; run stop $'```\n'"$bg_marker"$'\n状態: 作業報告 — a'; blocked
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: fullwidth colon blocks and clears the previous state" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run stop '作業待ち： task-17 2026-11-24T00:00:00Z'$'\n状態: 作業報告 — a'
+  blocked
+  [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || return 1
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: leading space blocks and clears the previous state" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run stop ' 作業待ち: task-17 2026-11-24T00:00:00Z'$'\n状態: 作業報告 — a'
+  blocked
+  [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || return 1
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: list blocks and clears the previous state" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run stop '- 作業待ち: task-17 2026-11-24T00:00:00Z'$'\n状態: 作業報告 — a'
+  blocked
+  [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || return 1
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: bold blocks and clears the previous state" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run stop '**作業待ち: task-17 2026-11-24T00:00:00Z**'$'\n状態: 作業報告 — a'
+  blocked
+  [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || return 1
   [ "$(jq -r .turn_state "$REC")" = null ]
 }
 

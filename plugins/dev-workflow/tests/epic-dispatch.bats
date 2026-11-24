@@ -10625,7 +10625,7 @@ bgw_text() { python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text ba
   for c in session sidechain sdk; do
     bgw_chat
     case "$c" in
-      session) sed -i '' "s/$BGW_SID/cccccccc-0000-4000-8000-000000000000/" "$(bgw_log)" ;;
+      session) sed -i.bak "s/$BGW_SID/cccccccc-0000-4000-8000-000000000000/" "$(bgw_log)" ;;
       sidechain) jq -c '.isSidechain=true' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
       sdk) jq -c '.entrypoint="sdk-py"' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
     esac
