@@ -534,7 +534,7 @@
         "implementation"
       ],
       "depends_on": [],
-      "sanctuary": false,
+      "sanctuary": true,
       "approval_wait": false,
       "files": [
         {
@@ -3005,7 +3005,7 @@
         "1670-pr1751-04",
         "1670-pr1751-05"
       ],
-      "sanctuary": false,
+      "sanctuary": true,
       "approval_wait": false,
       "files": [
         {
@@ -3380,7 +3380,7 @@
         "1670-pr1751-04",
         "1670-pr1751-05"
       ],
-      "sanctuary": false,
+      "sanctuary": true,
       "approval_wait": false,
       "files": [
         {
@@ -4112,7 +4112,7 @@
         "1792-pr1794-02",
         "1792-pr1794-03"
       ],
-      "sanctuary": false,
+      "sanctuary": true,
       "approval_wait": true,
       "files": [
         {
@@ -4525,7 +4525,7 @@
         "implementation"
       ],
       "depends_on": [],
-      "sanctuary": false,
+      "sanctuary": true,
       "approval_wait": false,
       "files": [
         {
@@ -5149,7 +5149,7 @@
         "1670-pr1751-04",
         "1670-pr1751-05"
       ],
-      "sanctuary": false,
+      "sanctuary": true,
       "approval_wait": false,
       "files": [
         {

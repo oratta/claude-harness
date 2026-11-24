@@ -26,7 +26,7 @@
         "documentation"
       ],
       "depends_on": [],
-      "sanctuary": false,
+      "sanctuary": true,
       "approval_wait": false,
       "files": [
         {

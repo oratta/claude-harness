@@ -27,15 +27,17 @@
   },
   "groups": [
     {
-      "C": 96410,
-      "E": 17114700,
-      "F": 46410,
-      "L": 478,
-      "S": 27383520,
-      "T": 12215859,
+      "C": 87332,
+      "E": 16890900,
+      "F": 37332,
+      "L": 466,
+      "S": 27025440,
+      "T": 11762867,
       "approval_wait": false,
-      "context_margin": 23590,
-      "depends_on": [],
+      "context_margin": 32668,
+      "depends_on": [
+        "G002"
+      ],
       "id": "G001",
       "item_ids": [
         "1471-pr1706-01",
@@ -44,15 +46,36 @@
         "1608-pr1710-01",
         "1608-pr1710-02",
         "1608-pr1710-03",
-        "1649-pr1704-01",
         "1649-pr1704-02"
       ],
-      "record_margin": 20616480,
+      "record_margin": 20974560,
       "repo": "oratta/claude-harness",
       "sanctuary": false,
       "source_issues": [
         "https://github.com/oratta/claude-harness/issues/1471",
         "https://github.com/oratta/claude-harness/issues/1608",
+        "https://github.com/oratta/claude-harness/issues/1649"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 59949,
+      "E": 8423800,
+      "F": 9949,
+      "L": 12,
+      "S": 13478080,
+      "T": 10396456,
+      "approval_wait": false,
+      "context_margin": 60051,
+      "depends_on": [],
+      "id": "G002",
+      "item_ids": [
+        "1649-pr1704-01"
+      ],
+      "record_margin": 34521920,
+      "repo": "oratta/claude-harness",
+      "sanctuary": true,
+      "source_issues": [
         "https://github.com/oratta/claude-harness/issues/1649"
       ],
       "unplaced_dependencies": []
@@ -83,7 +106,7 @@
       "item_ids": [
         "1608-pr1710-01",
         "1608-pr1710-02",
-        "1649-pr1704-01"
+        "1649-pr1704-02"
       ],
       "reason": "direct_dependency"
     },
@@ -92,16 +115,6 @@
         "1608-pr1710-01",
         "1608-pr1710-02",
         "1608-pr1710-03",
-        "1649-pr1704-01"
-      ],
-      "reason": "direct_dependency"
-    },
-    {
-      "item_ids": [
-        "1608-pr1710-01",
-        "1608-pr1710-02",
-        "1608-pr1710-03",
-        "1649-pr1704-01",
         "1649-pr1704-02"
       ],
       "reason": "direct_dependency"
@@ -129,7 +142,6 @@
         "1608-pr1710-01",
         "1608-pr1710-02",
         "1608-pr1710-03",
-        "1649-pr1704-01",
         "1649-pr1704-02"
       ],
       "reason": "shared_capability"
@@ -137,11 +149,11 @@
   ],
   "parallel_comparison": {
     "evaluated": false,
-    "merged_makespan": 12215859,
-    "merged_total_T": 12215859,
+    "merged_makespan": 22159323,
+    "merged_total_T": 22159323,
     "reason": "merged_or_capacity",
-    "selected_makespan": 12215859,
-    "selected_total_T": 12215859
+    "selected_makespan": 22159323,
+    "selected_total_T": 22159323
   },
   "schema_version": 1,
   "status": "planned",

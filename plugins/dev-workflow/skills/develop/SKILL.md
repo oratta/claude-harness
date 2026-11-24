@@ -217,7 +217,7 @@ spawn・再開・Codex 委譲の前は毎回、必ず `references/pr-token-budge
 | 論点なしの確認役（`needs-no-point-check` を受けて本体が起こす） | 上位（`opus`） | 引き継ぎの判定役と同じ（`dev-workflow:decider`・`request` を通らない・depleted のときは起こさない） |
 | G が要求するレビュアー（読んで判断する役） | 上位（`opus`） | 既定の種別は `dev-workflow:reviewer`。レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `--pre-class` を渡し、返った `role: decider` で `subagent_type: dev-workflow:decider` として起動する（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では `request` が返した `model` を使い、推奨モデルは参考値） |
 
-失敗の判断側・実行側の分類の定義は `templates/escalation-tripwires.md`。model は上の必読正本に従う。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格の理由にはならず、モデルは変えない。手渡しは `references/decision-criteria.md` が正本。規模超過（編集対象5ファイル超・作業項目が2回増えた）を W が return したら本体が change / 子 issue に分割する。
+失敗の判断側・実行側の分類の定義は `templates/escalation-tripwires.md`。model は上の必読正本に従う。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格の理由にはならず、モデルは変えない。手渡しは `references/decision-criteria.md` が正本。規模超過を W が return したら、本体が `references/epic-granularity.md` に従って再計算し、容量超過・配置不能・量が不明のときだけ組み直す（編集ファイル数や作業項目の増加回数だけでは分割しない）。
 
 ## 実行モード
 

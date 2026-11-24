@@ -30,14 +30,17 @@ PY
 from pathlib import Path
 import sys
 p = Path(sys.argv[1])
-for file in ['templates/escalation-tripwires.md', 'skills/develop/references/roles/worker/common.md']:
+for file in ['templates/escalation-tripwires.md', 'skills/develop/references/roles/worker/common.md', 'skills/develop/SKILL.md']:
     text = (p/file).read_text()
     assert 'epic-granularity.md' in text
     assert '容量超過' in text and '不明' in text and '再計算' in text
     assert '編集対象ファイルが5個を超えた' not in text
     assert '編集対象ファイルが 5 個を超えた' not in text
+    assert '編集対象5ファイル超' not in text
+    assert '作業項目が2回増えた' not in text
 text = (p/'skills/develop/references/epic-granularity.md').read_text()
 assert '6 ファイル' in text and '2 回' in text and '上限を広げない' in text
+assert '初期値であり運用調整前提' in (p/'templates/escalation-tripwires.md').read_text()
 PY
   [ "$status" -eq 0 ]
 }

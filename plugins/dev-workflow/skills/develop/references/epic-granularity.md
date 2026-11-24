@@ -52,7 +52,7 @@ files は repo 相対の正規化済み path、read/edit、必須の read_id・r
 - exit 0: 全項目を配置。exit 1: 不正入力／設定（stderr と JSON の診断）。exit 2: 単独でも容量外の項目を unplaced に保持。部分計画で成功としない。診断の path/read_id/読取量を確認し、必要情報を保存した作業・読取範囲・依存の再設計後だけ再入力する。同じ担当の読取範囲の名目上の分割や tokens の切詰めは禁止。分離できなければ未完了で返す。
 - F は子内の (repo, path, read_id) ごとの予定読取出力 tokens の和、L は変更行数の和。T=`ceil(9,900,000+49.9F)` は本体＋Claude サブエージェントの総消費。E=`ceil(8,200,000+18,650L)` は本体を除く Claude サブエージェント＋Codex の累計、S=`ceil(1.6E)` は計画用累計。T を記録先上限と比較しない。
 - C=`startup+reserve+F+追加保持量の和`。C と S がそれぞれ実効上限の `floor(0.8×cap)` 以下なら入る。margin は計画用上限との差。係数は `references/epic-granularity-coefficients.json` の版・出典を出力する。1.6 は停止例の中央値由来、0.8 は政策値。外挿には不確かさがあり、実消費・時間・精度の保証ではない。
-- repo の違い、聖域に触る／触らないの違い、承認待ちは分離する。承認待ちは一項目ずつの子。6 ファイルや多 capability だけでは分けない。
+- repo の違い、聖域に触る／触らないの違い、承認待ちは分離する。承認待ちは一項目ずつの子。6 ファイルや多 capability だけでは分けない。sanctuary は、edit するパスが対象リポの聖域定義（claude-harness では `.github/workflows/auto-merge.yml` の `SACRED`）に 1 つでも当たれば true。
 - 容量内の対を、直接依存の辺数→共通 capability 数→共有前提数の降順、併合後 T→項目 id 順でまとめる。その後に無関係な部分を量で詰める。merge_reasons は選択理由、groups.depends_on は子間 DAG（子内辺は除去）。unplaced_dependencies があればその前提の分解を待つ。
 - 空き 0/1 では並列化のために分けない。空き 2 以上だけ、関係を優先してまとめた部分を保ち、無関係・依存なし・共有 edit なしの部分を分離して代理 makespan を比較する。子ごとに T の切片を払い直す。同値なら少ない子を維持。parallel_comparison に比較値を残す。これは局所探索で最短時間の保証ではない。
 - worker_slots は計画時 snapshot であり起動許可ではない。空き 0 なら起動しない。実行直前に `epic-worker-slots.md` の空き枠と再開優先順を再確認する。
