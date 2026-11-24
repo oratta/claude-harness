@@ -26,7 +26,7 @@
     "id": "A", "repo": "oratta/claude-harness",
     "capabilities": ["example"], "depends_on": [],
     "sanctuary": false, "approval_wait": false,
-    "files": [{"path": "example.py", "access": "edit", "tokens": 1000, "source": "予測全文1000 tokens"}],
+    "files": [{"path": "example.py", "access": "edit", "read_id": "example-excerpt", "read_scope": "fixed-rev:example.py:1-20", "tokens": 1000, "source": "fixed-rev の1-20行の予定Bash出力1538文字 × 0.65、切上げ1000 tokens"}],
     "estimated_changed_lines": 100, "context_extra_tokens": 0,
     "estimate_source": "追加＋削除100行、保持出力はreserveで計上",
     "source_issues": ["https://github.com/oratta/claude-harness/issues/1802"]
@@ -41,14 +41,16 @@ python3 plugins/dev-workflow/scripts/epic-granularity.py --input "$TMPDIR/epic-i
 
 `limits` の値は例のコピーで決めない。context_cap は `scripts/subagent-context.sh` の実効 `cap`（`--cap`、`DEV_WORKFLOW_CONTEXT_CAP`、既定値の解決箇所）、record_cap は `scripts/pr-token-budget.sh` の実効 `cap`（`--cap`、`DEV_WORKFLOW_PR_TOKEN_CAP`、既定値の順）から本体が取得する。計測できない起動前は各スクリプトの設定解決箇所と現在の環境を確認する。親の信頼できる `子の PR トークン権限:` がある場合だけその値を使い、コメント URL と投稿者の権限を source に記す。60M を自動付与しない。CLI に上限の既定値はない。
 
-files は repo 相対の正規化済み path、read/edit、全文の非負整数 tokens、source を持つ。新規ファイルも予測全文を渡す。Read の結果を文字数から換算するなら `ceil(文字数 × 0.77)`、Bash なら `ceil(文字数 × 0.65)`。例えば Read 1,299 文字は 1,001 tokens、Bash 1,538 文字は 1,000 tokens。source に取得元の revision/URL・文字数・換算方法を記す。同じ repo/path は子内で最大量を一度だけ数え、変更行数（追加＋削除）は項目間でも加算する。追加保持量 context_extra_tokens と起動・reserve は必須。空の files は許すが、不明な量を 0 に置き換えない。
+files は repo 相対の正規化済み path、read/edit、必須の read_id・read_scope、予定出力の非負整数 tokens、source を持つ。read_scope は固定 revision の行範囲、diff の revision と hunk、検索条件など出力を特定する文字列。全文を読むときだけ全文量を渡す。Read の結果なら `ceil(文字数 × 0.77)`、Bash なら `ceil(文字数 × 0.65)`。例えば Read 1,299 文字は 1,001 tokens、Bash 1,538 文字は 1,000 tokens。source に revision/URL・範囲・出力文字数・換算方法を記す。
+
+同じ (repo, path, read_id) は一つの共有出力として子内で一度数える。入力全体で同じキーの read_scope または tokens が矛盾すれば exit 1。同じ path の別出力1,000＋2,000 tokensは F=3,000。部分的に重なる別出力も加算し、同じ出力を再取得する予定なら別 read_id を付けて計上する。範囲の意味や実物は CLI が照合しない。編集競合は引き続きファイル単位。変更行数（追加＋削除）は項目間でも加算する。追加保持量 context_extra_tokens と起動・reserve は必須。生成本文などの保持出力を F と追加保持量に二重計上しない。空の files は許すが、不明な量を 0 に置き換えない。読取量・共有は計画上の仮定で、過去の実測や #1799 と同じ検証済み予測精度とは呼ばない。
 
 入力検査は欠落、bool を整数として使う量、負数・非有限値、不正 repo/path、空 capability、重複 id、未知・自己・循環依存、不正な枠数を拒否する。source_issues は任意の GitHub issue URL 配列。出典の内容・権限と申告量の真偽は本体が確認する。形式が正しく申告 tokens が実物と違う入力は通す。列挙漏れや申告差をすべて防ぐことはこの検査の完了条件ではない。
 
 ## 結果を読む
 
-- exit 0: 全項目を配置。exit 1: 不正入力／設定（stderr と JSON の診断）。exit 2: 単独でも容量外の項目を unplaced に保持。部分計画で成功としない。項目を分解して再入力する。
-- F は repo/path ごとの最大全文 tokens の和、L は変更行数の和。T=`ceil(9,900,000+49.9F)` は本体＋Claude サブエージェントの総消費。E=`ceil(8,200,000+18,650L)` は本体を除く Claude サブエージェント＋Codex の累計、S=`ceil(1.6E)` は計画用累計。T を記録先上限と比較しない。
+- exit 0: 全項目を配置。exit 1: 不正入力／設定（stderr と JSON の診断）。exit 2: 単独でも容量外の項目を unplaced に保持。部分計画で成功としない。診断の path/read_id/読取量を確認し、必要情報を保存した作業・読取範囲・依存の再設計後だけ再入力する。同じ担当の読取範囲の名目上の分割や tokens の切詰めは禁止。分離できなければ未完了で返す。
+- F は子内の (repo, path, read_id) ごとの予定読取出力 tokens の和、L は変更行数の和。T=`ceil(9,900,000+49.9F)` は本体＋Claude サブエージェントの総消費。E=`ceil(8,200,000+18,650L)` は本体を除く Claude サブエージェント＋Codex の累計、S=`ceil(1.6E)` は計画用累計。T を記録先上限と比較しない。
 - C=`startup+reserve+F+追加保持量の和`。C と S がそれぞれ実効上限の `floor(0.8×cap)` 以下なら入る。margin は計画用上限との差。係数は `references/epic-granularity-coefficients.json` の版・出典を出力する。1.6 は停止例の中央値由来、0.8 は政策値。外挿には不確かさがあり、実消費・時間・精度の保証ではない。
 - repo の違い、聖域に触る／触らないの違い、承認待ちは分離する。承認待ちは一項目ずつの子。6 ファイルや多 capability だけでは分けない。
 - 容量内の対を、直接依存の辺数→共通 capability 数→共有前提数の降順、併合後 T→項目 id 順でまとめる。その後に無関係な部分を量で詰める。merge_reasons は選択理由、groups.depends_on は子間 DAG（子内辺は除去）。unplaced_dependencies があればその前提の分解を待つ。
@@ -61,7 +63,7 @@ files は repo 相対の正規化済み path、read/edit、全文の非負整数
 
 CLI 実行→記録先へ入力・出力を保存→代表子の作成の順。異なる所属にするなら逸脱した所属と理由を記録し、三境界・DAG・両容量を再検査する。個数だけの分割はしない。
 
-規模が増えたら、追加のファイル全文・変更行数・作業項目・保持出力を反映して再計算する。ファイルが 6 個、項目増加が 2 回というだけでは止めない。今の担当分を一つの子として C/S で確認し、容量超過／配置不能、または量が不明で再計算できなければ止まる。新しい計画が複数 group になった場合も W は独断で分割せず、更新入力・出力・成果を本体へ return する。上限を広げない。形式は正しいが量の過少申告で通る場合は続行可能とし、既存の実測停止判定を維持する。増分の申告漏れをすべて拾うことは停止判定の完了条件ではない。
+規模が増えたら、追加の予定読取範囲・出力量・変更行数・作業項目・保持出力を反映して再計算する。ファイルが 6 個、項目増加が 2 回というだけでは止めない。今の担当分を一つの子として C/S で確認し、容量超過／配置不能、または量が不明で再計算できなければ止まる。新しい計画が複数 group になった場合も W は独断で分割せず、更新入力・出力・成果を本体へ return する。上限を広げない。形式は正しいが量の過少申告で通る場合は続行可能とし、既存の実測停止判定を維持する。増分の申告漏れをすべて拾うことは停止判定の完了条件ではない。
 
 ## 既存 issue を代表子へ集約する
 

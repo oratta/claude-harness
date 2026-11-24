@@ -1,0 +1,1025 @@
+{
+  "boundaries": [
+    "different_repo",
+    "sanctuary_mismatch",
+    "approval_wait_singleton"
+  ],
+  "coefficient_source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012",
+  "coefficient_version": "1799-v1-policy-0.8",
+  "coefficients": {
+    "guard_basis": "停止例の実測/見積もりの中央値。信頼区間ではない",
+    "guard_multiplier": 1.6,
+    "planning_basis": "0.8 は本 change の政策値（20% の余裕）。測定結果ではない",
+    "planning_fraction": 0.8,
+    "record_intercept": 8200000,
+    "record_per_line": 18650,
+    "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012",
+    "total_intercept": 9900000,
+    "total_per_token": 49.9,
+    "uncertainty": "累計回帰は停止しなかった件からの外挿。実測/見積もりは0.9〜4.2倍。実時間・実消費・精度を保証しない。既存の実測停止判定を維持する",
+    "version": "1799-v1-policy-0.8"
+  },
+  "context": {
+    "reserve_tokens": 10000,
+    "reserve_tokens_source": "comparison assumption: reference example; temporary generated edits, summaries, tool feedback and reasoning retained once per group; no transcript measurement",
+    "startup_tokens": 40000,
+    "startup_tokens_source": "comparison assumption: current reference example; includes role instructions, issue body/conclusion and PR description from sources.json"
+  },
+  "groups": [
+    {
+      "C": 55488,
+      "E": 8200000,
+      "F": 5488,
+      "L": 0,
+      "S": 13120000,
+      "T": 10173852,
+      "approval_wait": true,
+      "context_margin": 64512,
+      "depends_on": [
+        "G002"
+      ],
+      "id": "G001",
+      "item_ids": [
+        "1264-decision"
+      ],
+      "record_margin": 34880000,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1264"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 90469,
+      "E": 25451250,
+      "F": 40469,
+      "L": 925,
+      "S": 40722000,
+      "T": 11919404,
+      "approval_wait": false,
+      "context_margin": 29531,
+      "depends_on": [],
+      "id": "G002",
+      "item_ids": [
+        "1388-pr1746-01",
+        "1388-pr1746-02",
+        "1388-pr1746-03",
+        "1761-pr1764-01",
+        "1761-pr1764-02",
+        "1761-pr1764-03"
+      ],
+      "record_margin": 7278000,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1388",
+        "https://github.com/oratta/claude-harness/issues/1761"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 119417,
+      "E": 15268350,
+      "F": 69417,
+      "L": 379,
+      "S": 24429360,
+      "T": 13363909,
+      "approval_wait": false,
+      "context_margin": 583,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007",
+        "G008",
+        "G012",
+        "G013",
+        "G014",
+        "G015"
+      ],
+      "id": "G003",
+      "item_ids": [
+        "1545-pr1790-01",
+        "1545-pr1790-02",
+        "1545-pr1790-03",
+        "1745-pr1788-01"
+      ],
+      "record_margin": 23570640,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1545",
+        "https://github.com/oratta/claude-harness/issues/1745"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 64584,
+      "E": 8461100,
+      "F": 14584,
+      "L": 14,
+      "S": 13537760,
+      "T": 10627742,
+      "approval_wait": false,
+      "context_margin": 55416,
+      "depends_on": [
+        "G006"
+      ],
+      "id": "G004",
+      "item_ids": [
+        "1670-pr1751-01",
+        "1670-pr1751-03"
+      ],
+      "record_margin": 34462240,
+      "repo": "oratta/claude-harness",
+      "sanctuary": true,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1670"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 107491,
+      "E": 21516100,
+      "F": 57491,
+      "L": 714,
+      "S": 34425760,
+      "T": 12768801,
+      "approval_wait": false,
+      "context_margin": 12509,
+      "depends_on": [
+        "G004",
+        "G006"
+      ],
+      "id": "G005",
+      "item_ids": [
+        "1670-pr1751-02"
+      ],
+      "record_margin": 13574240,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1670"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 92825,
+      "E": 24686600,
+      "F": 42825,
+      "L": 884,
+      "S": 39498560,
+      "T": 12036968,
+      "approval_wait": false,
+      "context_margin": 27175,
+      "depends_on": [
+        "G008"
+      ],
+      "id": "G006",
+      "item_ids": [
+        "1670-pr1751-04",
+        "1728-pr1749-03",
+        "1752-pr1778-02",
+        "1752-pr1778-03"
+      ],
+      "record_margin": 8501440,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1670",
+        "https://github.com/oratta/claude-harness/issues/1728",
+        "https://github.com/oratta/claude-harness/issues/1752"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 116326,
+      "E": 26961900,
+      "F": 66326,
+      "L": 1006,
+      "S": 43139040,
+      "T": 13209668,
+      "approval_wait": false,
+      "context_margin": 3674,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006"
+      ],
+      "id": "G007",
+      "item_ids": [
+        "1670-pr1751-05",
+        "1754-pr1762-01",
+        "1754-pr1762-02",
+        "1754-pr1762-03",
+        "1755-pr1763-02",
+        "1775-pr1780-02",
+        "1775-pr1780-03"
+      ],
+      "record_margin": 4860960,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1670",
+        "https://github.com/oratta/claude-harness/issues/1754",
+        "https://github.com/oratta/claude-harness/issues/1755",
+        "https://github.com/oratta/claude-harness/issues/1775"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 101560,
+      "E": 17338500,
+      "F": 51560,
+      "L": 490,
+      "S": 27741600,
+      "T": 12472844,
+      "approval_wait": false,
+      "context_margin": 18440,
+      "depends_on": [],
+      "id": "G008",
+      "item_ids": [
+        "1728-pr1749-01",
+        "1728-pr1749-02"
+      ],
+      "record_margin": 20258400,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1728"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 92903,
+      "E": 16219500,
+      "F": 42903,
+      "L": 430,
+      "S": 25951200,
+      "T": 12040860,
+      "approval_wait": false,
+      "context_margin": 27097,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007"
+      ],
+      "id": "G009",
+      "item_ids": [
+        "1729-decision",
+        "1756-pr1766-01",
+        "1756-pr1766-02"
+      ],
+      "record_margin": 22048800,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1729",
+        "https://github.com/oratta/claude-harness/issues/1756"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 119827,
+      "E": 17245250,
+      "F": 69827,
+      "L": 485,
+      "S": 27592400,
+      "T": 13384368,
+      "approval_wait": false,
+      "context_margin": 173,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007"
+      ],
+      "id": "G010",
+      "item_ids": [
+        "1742-pr1768-01",
+        "1742-pr1768-02",
+        "1742-pr1768-03"
+      ],
+      "record_margin": 20407600,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1742"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 95988,
+      "E": 23828700,
+      "F": 45988,
+      "L": 838,
+      "S": 38125920,
+      "T": 12194802,
+      "approval_wait": false,
+      "context_margin": 24012,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007",
+        "G010"
+      ],
+      "id": "G011",
+      "item_ids": [
+        "1743-pr1770-01",
+        "1743-pr1770-02",
+        "1755-pr1763-01",
+        "1773-pr1795-01",
+        "1773-pr1795-02"
+      ],
+      "record_margin": 9874080,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1743",
+        "https://github.com/oratta/claude-harness/issues/1755",
+        "https://github.com/oratta/claude-harness/issues/1773"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 110014,
+      "E": 21124450,
+      "F": 60014,
+      "L": 693,
+      "S": 33799120,
+      "T": 12894699,
+      "approval_wait": false,
+      "context_margin": 9986,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007",
+        "G013",
+        "G014",
+        "G015"
+      ],
+      "id": "G012",
+      "item_ids": [
+        "1744-pr1769-01",
+        "1745-pr1788-02",
+        "1745-pr1788-03",
+        "1760-pr1787-02"
+      ],
+      "record_margin": 14200880,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1744",
+        "https://github.com/oratta/claude-harness/issues/1745",
+        "https://github.com/oratta/claude-harness/issues/1760"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 115229,
+      "E": 25283400,
+      "F": 65229,
+      "L": 916,
+      "S": 40453440,
+      "T": 13154928,
+      "approval_wait": false,
+      "context_margin": 4771,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007"
+      ],
+      "id": "G013",
+      "item_ids": [
+        "1744-pr1769-02",
+        "1744-pr1769-04",
+        "1775-pr1780-01"
+      ],
+      "record_margin": 7546560,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1744",
+        "https://github.com/oratta/claude-harness/issues/1775"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 112075,
+      "E": 14037450,
+      "F": 62075,
+      "L": 313,
+      "S": 22459920,
+      "T": 12997543,
+      "approval_wait": false,
+      "context_margin": 7925,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007",
+        "G013"
+      ],
+      "id": "G014",
+      "item_ids": [
+        "1744-pr1769-03"
+      ],
+      "record_margin": 25540080,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1744"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 109257,
+      "E": 22933500,
+      "F": 59257,
+      "L": 790,
+      "S": 36693600,
+      "T": 12856925,
+      "approval_wait": false,
+      "context_margin": 10743,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007",
+        "G013"
+      ],
+      "id": "G015",
+      "item_ids": [
+        "1744-pr1769-05"
+      ],
+      "record_margin": 11306400,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1744"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 89974,
+      "E": 15193750,
+      "F": 39974,
+      "L": 375,
+      "S": 24310000,
+      "T": 11894703,
+      "approval_wait": false,
+      "context_margin": 30026,
+      "depends_on": [
+        "G006",
+        "G008"
+      ],
+      "id": "G016",
+      "item_ids": [
+        "1752-pr1778-01"
+      ],
+      "record_margin": 23690000,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1752"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 94004,
+      "E": 15548100,
+      "F": 44004,
+      "L": 394,
+      "S": 24876960,
+      "T": 12095800,
+      "approval_wait": false,
+      "context_margin": 25996,
+      "depends_on": [
+        "G004",
+        "G005",
+        "G006",
+        "G007",
+        "G009"
+      ],
+      "id": "G017",
+      "item_ids": [
+        "1756-pr1766-03",
+        "1784-pr1786-01"
+      ],
+      "record_margin": 23123040,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1756",
+        "https://github.com/oratta/claude-harness/issues/1784"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 93572,
+      "E": 10848300,
+      "F": 43572,
+      "L": 142,
+      "S": 17357280,
+      "T": 12074243,
+      "approval_wait": false,
+      "context_margin": 26428,
+      "depends_on": [
+        "G012",
+        "G013",
+        "G014",
+        "G015"
+      ],
+      "id": "G018",
+      "item_ids": [
+        "1760-pr1787-01"
+      ],
+      "record_margin": 30642720,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1760"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 109687,
+      "E": 23008100,
+      "F": 59687,
+      "L": 794,
+      "S": 36812960,
+      "T": 12878382,
+      "approval_wait": true,
+      "context_margin": 10313,
+      "depends_on": [
+        "G003",
+        "G006",
+        "G011",
+        "G012",
+        "G013",
+        "G014",
+        "G015",
+        "G016",
+        "G021",
+        "G023"
+      ],
+      "id": "G019",
+      "item_ids": [
+        "1777-pr1801-01"
+      ],
+      "record_margin": 11187040,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1777"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 92895,
+      "E": 11930000,
+      "F": 42895,
+      "L": 200,
+      "S": 19088000,
+      "T": 12040461,
+      "approval_wait": true,
+      "context_margin": 27105,
+      "depends_on": [
+        "G003",
+        "G006",
+        "G011",
+        "G012",
+        "G013",
+        "G014",
+        "G015",
+        "G016",
+        "G021",
+        "G023"
+      ],
+      "id": "G020",
+      "item_ids": [
+        "1777-pr1801-02"
+      ],
+      "record_margin": 28912000,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1777"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 72298,
+      "E": 12097850,
+      "F": 22298,
+      "L": 209,
+      "S": 19356560,
+      "T": 11012671,
+      "approval_wait": true,
+      "context_margin": 47702,
+      "depends_on": [
+        "G003",
+        "G006",
+        "G011",
+        "G012",
+        "G013",
+        "G014",
+        "G015",
+        "G016",
+        "G023"
+      ],
+      "id": "G021",
+      "item_ids": [
+        "1777-pr1801-03"
+      ],
+      "record_margin": 28643440,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1777"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 83397,
+      "E": 19893550,
+      "F": 33397,
+      "L": 627,
+      "S": 31829680,
+      "T": 11566511,
+      "approval_wait": true,
+      "context_margin": 36603,
+      "depends_on": [
+        "G003",
+        "G006",
+        "G011",
+        "G012",
+        "G013",
+        "G014",
+        "G015",
+        "G016",
+        "G021",
+        "G023"
+      ],
+      "id": "G022",
+      "item_ids": [
+        "1777-pr1801-04"
+      ],
+      "record_margin": 16170320,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1777"
+      ],
+      "unplaced_dependencies": []
+    },
+    {
+      "C": 96876,
+      "E": 18196400,
+      "F": 46876,
+      "L": 536,
+      "S": 29114240,
+      "T": 12239113,
+      "approval_wait": false,
+      "context_margin": 23124,
+      "depends_on": [],
+      "id": "G023",
+      "item_ids": [
+        "1792-pr1794-01",
+        "1792-pr1794-02",
+        "1792-pr1794-03"
+      ],
+      "record_margin": 18885760,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1792"
+      ],
+      "unplaced_dependencies": []
+    }
+  ],
+  "limits": {
+    "context_cap": 150000,
+    "context_cap_source": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/scripts/subagent-context.sh:34; existing default, no override in this comparison",
+    "context_planning_cap": 120000,
+    "record_cap": 60000000,
+    "record_cap_source": "https://github.com/oratta/claude-harness/issues/1732#issuecomment-7052891122; oratta OWNER; existing authority, not granted by fixture",
+    "record_planning_cap": 48000000
+  },
+  "measurement_targets": {
+    "C": "W保持文脈",
+    "E_S": "本体を除くClaudeサブエージェント＋Codex",
+    "T": "本体＋Claudeサブエージェント"
+  },
+  "merge_reasons": [
+    {
+      "item_ids": [
+        "1545-pr1790-01",
+        "1545-pr1790-02"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1545-pr1790-01",
+        "1545-pr1790-02",
+        "1745-pr1788-01"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1545-pr1790-01",
+        "1545-pr1790-02",
+        "1545-pr1790-03",
+        "1745-pr1788-01"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1744-pr1769-02",
+        "1744-pr1769-04"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1744-pr1769-02",
+        "1744-pr1769-04",
+        "1775-pr1780-01"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1754-pr1762-02",
+        "1754-pr1762-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1670-pr1751-05",
+        "1754-pr1762-02",
+        "1754-pr1762-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1670-pr1751-05",
+        "1754-pr1762-01",
+        "1754-pr1762-02",
+        "1754-pr1762-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1775-pr1780-02",
+        "1775-pr1780-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1670-pr1751-05",
+        "1754-pr1762-01",
+        "1754-pr1762-02",
+        "1754-pr1762-03",
+        "1775-pr1780-02",
+        "1775-pr1780-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1742-pr1768-02",
+        "1742-pr1768-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1742-pr1768-01",
+        "1742-pr1768-02",
+        "1742-pr1768-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1745-pr1788-02",
+        "1745-pr1788-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1744-pr1769-01",
+        "1745-pr1788-02",
+        "1745-pr1788-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1756-pr1766-01",
+        "1756-pr1766-02"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1744-pr1769-01",
+        "1745-pr1788-02",
+        "1745-pr1788-03",
+        "1760-pr1787-02"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1670-pr1751-05",
+        "1754-pr1762-01",
+        "1754-pr1762-02",
+        "1754-pr1762-03",
+        "1755-pr1763-02",
+        "1775-pr1780-02",
+        "1775-pr1780-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1752-pr1778-02",
+        "1752-pr1778-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1728-pr1749-03",
+        "1752-pr1778-02",
+        "1752-pr1778-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1761-pr1764-01",
+        "1761-pr1764-02"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1761-pr1764-01",
+        "1761-pr1764-02",
+        "1761-pr1764-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1388-pr1746-02",
+        "1388-pr1746-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1388-pr1746-01",
+        "1388-pr1746-02",
+        "1388-pr1746-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1670-pr1751-01",
+        "1670-pr1751-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1792-pr1794-02",
+        "1792-pr1794-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1792-pr1794-01",
+        "1792-pr1794-02",
+        "1792-pr1794-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1728-pr1749-01",
+        "1728-pr1749-02"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1756-pr1766-03",
+        "1784-pr1786-01"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1388-pr1746-01",
+        "1388-pr1746-02",
+        "1388-pr1746-03",
+        "1761-pr1764-01",
+        "1761-pr1764-02",
+        "1761-pr1764-03"
+      ],
+      "reason": "shared_capability"
+    },
+    {
+      "item_ids": [
+        "1743-pr1770-01",
+        "1755-pr1763-01"
+      ],
+      "reason": "shared_capability"
+    },
+    {
+      "item_ids": [
+        "1743-pr1770-01",
+        "1743-pr1770-02",
+        "1755-pr1763-01"
+      ],
+      "reason": "shared_capability"
+    },
+    {
+      "item_ids": [
+        "1773-pr1795-01",
+        "1773-pr1795-02"
+      ],
+      "reason": "shared_capability"
+    },
+    {
+      "item_ids": [
+        "1743-pr1770-01",
+        "1743-pr1770-02",
+        "1755-pr1763-01",
+        "1773-pr1795-01",
+        "1773-pr1795-02"
+      ],
+      "reason": "shared_capability"
+    },
+    {
+      "item_ids": [
+        "1670-pr1751-04",
+        "1728-pr1749-03",
+        "1752-pr1778-02",
+        "1752-pr1778-03"
+      ],
+      "reason": "shared_capability"
+    },
+    {
+      "item_ids": [
+        "1729-decision",
+        "1756-pr1766-01",
+        "1756-pr1766-02"
+      ],
+      "reason": "capacity_packing"
+    }
+  ],
+  "parallel_comparison": {
+    "evaluated": false,
+    "merged_makespan": 281899197,
+    "merged_total_T": 281899197,
+    "reason": "merged_or_capacity",
+    "selected_makespan": 281899197,
+    "selected_total_T": 281899197
+  },
+  "schema_version": 1,
+  "status": "planned",
+  "uncertainty": "累計回帰は停止しなかった件からの外挿。実測/見積もりは0.9〜4.2倍。実時間・実消費・精度を保証しない。既存の実測停止判定を維持する",
+  "unplaced": [],
+  "warnings": [
+    "Proxy makespan is not elapsed time or an optimality guarantee.",
+    "Declared quantities and source authority are not verified."
+  ],
+  "worker_slots": {
+    "available": 1,
+    "launch_authorized": false,
+    "max_parallel": 2,
+    "note": "snapshot only; recheck epic-worker-slots.md before launch",
+    "occupied": 1,
+    "source": "fixed comparison snapshot per approved design"
+  }
+}

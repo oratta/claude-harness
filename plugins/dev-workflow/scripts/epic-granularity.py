@@ -78,7 +78,7 @@ def validate(data, config):
     string(field(slots, 'source', 'worker_slots'), 'worker_slots.source')
     items = field(data, 'items', 'input')
     require(isinstance(items, list) and bool(items), 'items', 'expected nonempty array')
-    normalized = {}
+    normalized, reads = {}, {}
     for i in items:
         name = string(field(i, 'id', 'items'), 'items.id')
         require(name not in normalized, 'items.id', f'duplicate {name}')
@@ -110,8 +110,16 @@ def validate(data, config):
             require(access in ('read', 'edit'), prefix + '.files.access', 'expected read/edit')
             integer(field(f, 'tokens', prefix + '.files'), prefix + '.files.tokens')
             string(field(f, 'source', prefix + '.files'), prefix + '.files.source')
-            n['files'].append(dict(path=path, access=access, tokens=f['tokens'], source=f['source']))
-        n['files'].sort(key=lambda f: (f['path'], f['access'], f['tokens'], f['source']))
+            for key in ['read_id', 'read_scope']:
+                string(field(f, key, prefix + '.files'), prefix + '.files.' + key)
+            key = (repo, path, f['read_id'])
+            output = (f['read_scope'], f['tokens'])
+            require(key not in reads or reads[key] == output,
+                    prefix + '.files', f'conflicting read {key}: read_scope/tokens must agree')
+            reads[key] = output
+            n['files'].append(dict(path=path, access=access, tokens=f['tokens'], source=f['source'],
+                                   read_id=f['read_id'], read_scope=f['read_scope']))
+        n['files'].sort(key=lambda f: (f['path'], f['read_id'], f['read_scope'], f['access'], f['tokens'], f['source']))
         normalized[name] = n
     for name, i in normalized.items():
         for dep in i['depends_on']:
@@ -153,14 +161,18 @@ class Planner:
         for n in self.items:
             ancestors(n)
 
-    def estimate(self, group):
+    def reads(self, group):
         files = {}
         for name in group:
             i = self.items[name]
             for f in i['files']:
-                key = (i['repo'], f['path'])
-                files[key] = max(files.get(key, 0), f['tokens'])
-        f = sum(files.values())
+                key = (i['repo'], f['path'], f['read_id'])
+                files[key] = dict(repo=i['repo'], path=f['path'], read_id=f['read_id'],
+                                  read_scope=f['read_scope'], tokens=f['tokens'])
+        return [files[key] for key in sorted(files)]
+
+    def estimate(self, group):
+        f = sum(r['tokens'] for r in self.reads(group))
         l = sum(self.items[i]['estimated_changed_lines'] for i in group)
         t = ceil(self.n['total_intercept'] + self.n['total_per_token'] * f)
         e = ceil(self.n['record_intercept'] + self.n['record_per_line'] * l)
@@ -257,7 +269,8 @@ class Planner:
                 e = self.estimate({name})
                 unplaced.append(dict(item_id=name, **e, context_overflow=max(0, -e['context_margin']),
                                      record_overflow=max(0, -e['record_margin']),
-                                     reason='decompose item and resubmit; limits are unchanged'))
+                                     reads=self.reads({name}),
+                                     reason='redesign work, read scopes and dependencies preserving required information; resubmit without raising limits or truncating tokens'))
         groups = self.merge(groups, True)
         atoms = list(groups)
         groups = self.merge(groups, False)

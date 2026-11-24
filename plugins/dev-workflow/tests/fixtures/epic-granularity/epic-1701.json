@@ -1,0 +1,549 @@
+{
+  "schema_version": 1,
+  "limits": {
+    "context_cap": 150000,
+    "context_cap_source": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/scripts/subagent-context.sh:34; existing default, no override in this comparison",
+    "record_cap": 60000000,
+    "record_cap_source": "https://github.com/oratta/claude-harness/issues/1701#issuecomment-6995347805; oratta OWNER; existing authority, not granted by fixture"
+  },
+  "context": {
+    "startup_tokens": 40000,
+    "startup_tokens_source": "comparison assumption: current reference example; includes role instructions, issue body/conclusion and PR description from sources.json",
+    "reserve_tokens": 10000,
+    "reserve_tokens_source": "comparison assumption: reference example; temporary generated edits, summaries, tool feedback and reasoning retained once per group; no transcript measurement"
+  },
+  "worker_slots": {
+    "max_parallel": 2,
+    "occupied": 1,
+    "source": "fixed comparison snapshot per approved design"
+  },
+  "items": [
+    {
+      "id": "1649-pr1704-01",
+      "repo": "oratta/claude-harness",
+      "capabilities": [
+        "1649",
+        "documentation"
+      ],
+      "depends_on": [],
+      "sanctuary": false,
+      "approval_wait": false,
+      "files": [
+        {
+          "path": "plugins/dev-workflow/changes/1649.md",
+          "read_id": "pr1704-file01",
+          "read_scope": "git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- plugins/dev-workflow/changes/1649.md",
+          "tokens": 567,
+          "access": "edit",
+          "source": "outputs.json[pr1704-file01]; git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- plugins/dev-workflow/changes/1649.md; 872 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/references/codex-develop.md",
+          "read_id": "pr1704-file02",
+          "read_scope": "git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- plugins/dev-workflow/references/codex-develop.md",
+          "tokens": 1807,
+          "access": "edit",
+          "source": "outputs.json[pr1704-file02]; git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- plugins/dev-workflow/references/codex-develop.md; 2779 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/references/codex-develop.md",
+          "read_id": "pr1704-file02-context1",
+          "read_scope": "f0e45b7c9d3140cdb5a72f4899722cb776c64186:plugins/dev-workflow/references/codex-develop.md:46-71",
+          "tokens": 1925,
+          "access": "read",
+          "source": "outputs.json[pr1704-file02-context1]; f0e45b7c9d3140cdb5a72f4899722cb776c64186:plugins/dev-workflow/references/codex-develop.md:46-71; 2961 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/epic-granularity.md",
+          "read_id": "common-procedure",
+          "read_scope": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76",
+          "tokens": 871,
+          "access": "read",
+          "source": "outputs.json[common-procedure]; 49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76; 1339 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md",
+          "read_id": "pr1704-file03",
+          "read_scope": "git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md",
+          "tokens": 1530,
+          "access": "edit",
+          "source": "outputs.json[pr1704-file03]; git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md; 2353 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md",
+          "read_id": "pr1704-file03-context1",
+          "read_scope": "f0e45b7c9d3140cdb5a72f4899722cb776c64186:plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md:3-40",
+          "tokens": 3249,
+          "access": "read",
+          "source": "outputs.json[pr1704-file03-context1]; f0e45b7c9d3140cdb5a72f4899722cb776c64186:plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md:3-40; 4998 Unicode characters; ceil(chars * Bash 0.65)"
+        }
+      ],
+      "estimated_changed_lines": 12,
+      "context_extra_tokens": 0,
+      "estimate_source": "PR #1704 frozen diff; responsibility: documentation; assigned edit files only contribute L; complete implementation diffs shared as required contract; issue/PR instructions in startup, temporary generated edits and review notes in reserve, no double counting with F. ",
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1649"
+      ]
+    },
+    {
+      "id": "1649-pr1704-02",
+      "repo": "oratta/claude-harness",
+      "capabilities": [
+        "1649",
+        "tests"
+      ],
+      "depends_on": [],
+      "sanctuary": false,
+      "approval_wait": false,
+      "files": [
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/epic-granularity.md",
+          "read_id": "common-procedure",
+          "read_scope": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76",
+          "tokens": 871,
+          "access": "read",
+          "source": "outputs.json[common-procedure]; 49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76; 1339 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/tests/develop-adapter-review-routing.bats",
+          "read_id": "pr1704-file04",
+          "read_scope": "git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- plugins/dev-workflow/tests/develop-adapter-review-routing.bats",
+          "tokens": 1364,
+          "access": "edit",
+          "source": "outputs.json[pr1704-file04]; git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- plugins/dev-workflow/tests/develop-adapter-review-routing.bats; 2098 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/tests/develop-adapter-review-routing.bats",
+          "read_id": "pr1704-file04-context1",
+          "read_scope": "f0e45b7c9d3140cdb5a72f4899722cb776c64186:plugins/dev-workflow/tests/develop-adapter-review-routing.bats:16-52",
+          "tokens": 1287,
+          "access": "read",
+          "source": "outputs.json[pr1704-file04-context1]; f0e45b7c9d3140cdb5a72f4899722cb776c64186:plugins/dev-workflow/tests/develop-adapter-review-routing.bats:16-52; 1979 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "tests/develop-startup-budget.txt",
+          "read_id": "pr1704-file05",
+          "read_scope": "git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- tests/develop-startup-budget.txt",
+          "tokens": 218,
+          "access": "edit",
+          "source": "outputs.json[pr1704-file05]; git diff --no-renames --unified=3 f0e45b7c9d3140cdb5a72f4899722cb776c64186 537ec151f4a0e81ab120a2362e4605bff2462986 -- tests/develop-startup-budget.txt; 335 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "tests/develop-startup-budget.txt",
+          "read_id": "pr1704-file05-context1",
+          "read_scope": "f0e45b7c9d3140cdb5a72f4899722cb776c64186:tests/develop-startup-budget.txt:1-3",
+          "tokens": 59,
+          "access": "read",
+          "source": "outputs.json[pr1704-file05-context1]; f0e45b7c9d3140cdb5a72f4899722cb776c64186:tests/develop-startup-budget.txt:1-3; 90 Unicode characters; ceil(chars * Bash 0.65)"
+        }
+      ],
+      "estimated_changed_lines": 30,
+      "context_extra_tokens": 0,
+      "estimate_source": "PR #1704 frozen diff; responsibility: tests; assigned edit files only contribute L; complete implementation diffs shared as required contract; issue/PR instructions in startup, temporary generated edits and review notes in reserve, no double counting with F. ",
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1649"
+      ]
+    },
+    {
+      "id": "1471-pr1706-01",
+      "repo": "oratta/claude-harness",
+      "capabilities": [
+        "1471",
+        "documentation"
+      ],
+      "depends_on": [
+        "1471-pr1706-02"
+      ],
+      "sanctuary": false,
+      "approval_wait": false,
+      "files": [
+        {
+          "path": "openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/.openspec.yaml",
+          "read_id": "pr1706-file01",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/.openspec.yaml",
+          "tokens": 266,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file01]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/.openspec.yaml; 409 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/design.md",
+          "read_id": "pr1706-file02",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/design.md",
+          "tokens": 880,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file02]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/design.md; 1353 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/proposal.md",
+          "read_id": "pr1706-file03",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/proposal.md",
+          "tokens": 911,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file03]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/proposal.md; 1401 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/specs/dev-workflow-develop/spec.md",
+          "read_id": "pr1706-file04",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/specs/dev-workflow-develop/spec.md",
+          "tokens": 2240,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file04]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/specs/dev-workflow-develop/spec.md; 3445 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/tasks.md",
+          "read_id": "pr1706-file05",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/tasks.md",
+          "tokens": 1173,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file05]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/changes/archive/2026-11-19-idle-compaction-exclude-settings-local/tasks.md; 1804 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "openspec/specs/dev-workflow-develop/spec.md",
+          "read_id": "pr1706-file06",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/specs/dev-workflow-develop/spec.md",
+          "tokens": 2353,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file06]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- openspec/specs/dev-workflow-develop/spec.md; 3619 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "openspec/specs/dev-workflow-develop/spec.md",
+          "read_id": "pr1706-file06-context1",
+          "read_scope": "6552b20748d1ec2c190c4f8f686c0f03aec25838:openspec/specs/dev-workflow-develop/spec.md:4517-4572",
+          "tokens": 2301,
+          "access": "read",
+          "source": "outputs.json[pr1706-file06-context1]; 6552b20748d1ec2c190c4f8f686c0f03aec25838:openspec/specs/dev-workflow-develop/spec.md:4517-4572; 3539 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/changes/1471.md",
+          "read_id": "pr1706-file07",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/changes/1471.md",
+          "tokens": 818,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file07]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/changes/1471.md; 1258 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/scripts/develop-idle-compaction.py",
+          "read_id": "pr1706-file08",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/scripts/develop-idle-compaction.py",
+          "tokens": 1245,
+          "access": "read",
+          "source": "outputs.json[pr1706-file08]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/scripts/develop-idle-compaction.py; 1915 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/epic-granularity.md",
+          "read_id": "common-procedure",
+          "read_scope": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76",
+          "tokens": 871,
+          "access": "read",
+          "source": "outputs.json[common-procedure]; 49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76; 1339 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/reply-after-idle.md",
+          "read_id": "pr1706-file09",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/skills/develop/references/reply-after-idle.md",
+          "tokens": 1405,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file09]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/skills/develop/references/reply-after-idle.md; 2161 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/reply-after-idle.md",
+          "read_id": "pr1706-file09-context1",
+          "read_scope": "6552b20748d1ec2c190c4f8f686c0f03aec25838:plugins/dev-workflow/skills/develop/references/reply-after-idle.md:1-36",
+          "tokens": 2117,
+          "access": "read",
+          "source": "outputs.json[pr1706-file09-context1]; 6552b20748d1ec2c190c4f8f686c0f03aec25838:plugins/dev-workflow/skills/develop/references/reply-after-idle.md:1-36; 3256 Unicode characters; ceil(chars * Bash 0.65)"
+        }
+      ],
+      "estimated_changed_lines": 124,
+      "context_extra_tokens": 0,
+      "estimate_source": "PR #1706 frozen diff; responsibility: documentation; assigned edit files only contribute L; complete implementation diffs shared as required contract; issue/PR instructions in startup, temporary generated edits and review notes in reserve, no double counting with F. ",
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1471"
+      ]
+    },
+    {
+      "id": "1471-pr1706-02",
+      "repo": "oratta/claude-harness",
+      "capabilities": [
+        "1471",
+        "implementation"
+      ],
+      "depends_on": [],
+      "sanctuary": false,
+      "approval_wait": false,
+      "files": [
+        {
+          "path": "plugins/dev-workflow/scripts/develop-idle-compaction.py",
+          "read_id": "pr1706-file08",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/scripts/develop-idle-compaction.py",
+          "tokens": 1245,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file08]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/scripts/develop-idle-compaction.py; 1915 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/scripts/develop-idle-compaction.py",
+          "read_id": "pr1706-file08-context1",
+          "read_scope": "6552b20748d1ec2c190c4f8f686c0f03aec25838:plugins/dev-workflow/scripts/develop-idle-compaction.py:9-45",
+          "tokens": 704,
+          "access": "read",
+          "source": "outputs.json[pr1706-file08-context1]; 6552b20748d1ec2c190c4f8f686c0f03aec25838:plugins/dev-workflow/scripts/develop-idle-compaction.py:9-45; 1082 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/scripts/develop-idle-compaction.py",
+          "read_id": "pr1706-file08-context2",
+          "read_scope": "6552b20748d1ec2c190c4f8f686c0f03aec25838:plugins/dev-workflow/scripts/develop-idle-compaction.py:47-83",
+          "tokens": 1077,
+          "access": "read",
+          "source": "outputs.json[pr1706-file08-context2]; 6552b20748d1ec2c190c4f8f686c0f03aec25838:plugins/dev-workflow/scripts/develop-idle-compaction.py:47-83; 1656 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/epic-granularity.md",
+          "read_id": "common-procedure",
+          "read_scope": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76",
+          "tokens": 871,
+          "access": "read",
+          "source": "outputs.json[common-procedure]; 49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76; 1339 Unicode characters; ceil(chars * Bash 0.65)"
+        }
+      ],
+      "estimated_changed_lines": 25,
+      "context_extra_tokens": 0,
+      "estimate_source": "PR #1706 frozen diff; responsibility: implementation; assigned edit files only contribute L; complete implementation diffs shared as required contract; issue/PR instructions in startup, temporary generated edits and review notes in reserve, no double counting with F. ",
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1471"
+      ]
+    },
+    {
+      "id": "1471-pr1706-03",
+      "repo": "oratta/claude-harness",
+      "capabilities": [
+        "1471",
+        "tests"
+      ],
+      "depends_on": [
+        "1471-pr1706-02"
+      ],
+      "sanctuary": false,
+      "approval_wait": false,
+      "files": [
+        {
+          "path": "plugins/dev-workflow/scripts/develop-idle-compaction.py",
+          "read_id": "pr1706-file08",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/scripts/develop-idle-compaction.py",
+          "tokens": 1245,
+          "access": "read",
+          "source": "outputs.json[pr1706-file08]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/scripts/develop-idle-compaction.py; 1915 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/epic-granularity.md",
+          "read_id": "common-procedure",
+          "read_scope": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76",
+          "tokens": 871,
+          "access": "read",
+          "source": "outputs.json[common-procedure]; 49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76; 1339 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/tests/develop-idle-compaction.bats",
+          "read_id": "pr1706-file10",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/tests/develop-idle-compaction.bats",
+          "tokens": 2344,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file10]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- plugins/dev-workflow/tests/develop-idle-compaction.bats; 3605 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/tests/develop-idle-compaction.bats",
+          "read_id": "pr1706-file10-context1",
+          "read_scope": "6552b20748d1ec2c190c4f8f686c0f03aec25838:plugins/dev-workflow/tests/develop-idle-compaction.bats:181-198",
+          "tokens": 528,
+          "access": "read",
+          "source": "outputs.json[pr1706-file10-context1]; 6552b20748d1ec2c190c4f8f686c0f03aec25838:plugins/dev-workflow/tests/develop-idle-compaction.bats:181-198; 812 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "tests/develop-epic-scene-budget.txt",
+          "read_id": "pr1706-file11",
+          "read_scope": "git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- tests/develop-epic-scene-budget.txt",
+          "tokens": 378,
+          "access": "edit",
+          "source": "outputs.json[pr1706-file11]; git diff --no-renames --unified=3 6552b20748d1ec2c190c4f8f686c0f03aec25838 afb9955e3d5f0a0edde50b58906f365a451102ca -- tests/develop-epic-scene-budget.txt; 581 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "tests/develop-epic-scene-budget.txt",
+          "read_id": "pr1706-file11-context1",
+          "read_scope": "6552b20748d1ec2c190c4f8f686c0f03aec25838:tests/develop-epic-scene-budget.txt:1-11",
+          "tokens": 159,
+          "access": "read",
+          "source": "outputs.json[pr1706-file11-context1]; 6552b20748d1ec2c190c4f8f686c0f03aec25838:tests/develop-epic-scene-budget.txt:1-11; 244 Unicode characters; ceil(chars * Bash 0.65)"
+        }
+      ],
+      "estimated_changed_lines": 101,
+      "context_extra_tokens": 0,
+      "estimate_source": "PR #1706 frozen diff; responsibility: tests; assigned edit files only contribute L; complete implementation diffs shared as required contract; issue/PR instructions in startup, temporary generated edits and review notes in reserve, no double counting with F. ",
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1471"
+      ]
+    },
+    {
+      "id": "1608-pr1710-01",
+      "repo": "oratta/claude-harness",
+      "capabilities": [
+        "1608",
+        "documentation"
+      ],
+      "depends_on": [
+        "1608-pr1710-02",
+        "1649-pr1704-01",
+        "1649-pr1704-02"
+      ],
+      "sanctuary": false,
+      "approval_wait": false,
+      "files": [
+        {
+          "path": "plugins/dev-workflow/changes/1608.md",
+          "read_id": "pr1710-file01",
+          "read_scope": "git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/changes/1608.md",
+          "tokens": 1118,
+          "access": "edit",
+          "source": "outputs.json[pr1710-file01]; git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/changes/1608.md; 1720 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/scripts/codex-develop.py",
+          "read_id": "pr1710-file02",
+          "read_scope": "git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/scripts/codex-develop.py",
+          "tokens": 1421,
+          "access": "read",
+          "source": "outputs.json[pr1710-file02]; git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/scripts/codex-develop.py; 2185 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/epic-granularity.md",
+          "read_id": "common-procedure",
+          "read_scope": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76",
+          "tokens": 871,
+          "access": "read",
+          "source": "outputs.json[common-procedure]; 49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76; 1339 Unicode characters; ceil(chars * Bash 0.65)"
+        }
+      ],
+      "estimated_changed_lines": 12,
+      "context_extra_tokens": 0,
+      "estimate_source": "PR #1710 frozen diff; responsibility: documentation; assigned edit files only contribute L; complete implementation diffs shared as required contract; issue/PR instructions in startup, temporary generated edits and review notes in reserve, no double counting with F. ",
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1608"
+      ]
+    },
+    {
+      "id": "1608-pr1710-02",
+      "repo": "oratta/claude-harness",
+      "capabilities": [
+        "1608",
+        "implementation"
+      ],
+      "depends_on": [
+        "1649-pr1704-01",
+        "1649-pr1704-02"
+      ],
+      "sanctuary": false,
+      "approval_wait": false,
+      "files": [
+        {
+          "path": "plugins/dev-workflow/scripts/codex-develop.py",
+          "read_id": "pr1710-file02",
+          "read_scope": "git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/scripts/codex-develop.py",
+          "tokens": 1421,
+          "access": "edit",
+          "source": "outputs.json[pr1710-file02]; git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/scripts/codex-develop.py; 2185 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/scripts/codex-develop.py",
+          "read_id": "pr1710-file02-context1",
+          "read_scope": "f38e31aa82325637f43dbf8a90300fbf4aae5a61:plugins/dev-workflow/scripts/codex-develop.py:670-715",
+          "tokens": 2028,
+          "access": "read",
+          "source": "outputs.json[pr1710-file02-context1]; f38e31aa82325637f43dbf8a90300fbf4aae5a61:plugins/dev-workflow/scripts/codex-develop.py:670-715; 3119 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/epic-granularity.md",
+          "read_id": "common-procedure",
+          "read_scope": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76",
+          "tokens": 871,
+          "access": "read",
+          "source": "outputs.json[common-procedure]; 49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76; 1339 Unicode characters; ceil(chars * Bash 0.65)"
+        }
+      ],
+      "estimated_changed_lines": 9,
+      "context_extra_tokens": 0,
+      "estimate_source": "PR #1710 frozen diff; responsibility: implementation; assigned edit files only contribute L; complete implementation diffs shared as required contract; issue/PR instructions in startup, temporary generated edits and review notes in reserve, no double counting with F. ",
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1608"
+      ]
+    },
+    {
+      "id": "1608-pr1710-03",
+      "repo": "oratta/claude-harness",
+      "capabilities": [
+        "1608",
+        "tests"
+      ],
+      "depends_on": [
+        "1608-pr1710-02",
+        "1649-pr1704-01",
+        "1649-pr1704-02"
+      ],
+      "sanctuary": false,
+      "approval_wait": false,
+      "files": [
+        {
+          "path": "plugins/dev-workflow/scripts/codex-develop.py",
+          "read_id": "pr1710-file02",
+          "read_scope": "git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/scripts/codex-develop.py",
+          "tokens": 1421,
+          "access": "read",
+          "source": "outputs.json[pr1710-file02]; git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/scripts/codex-develop.py; 2185 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/skills/develop/references/epic-granularity.md",
+          "read_id": "common-procedure",
+          "read_scope": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76",
+          "tokens": 871,
+          "access": "read",
+          "source": "outputs.json[common-procedure]; 49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/skills/develop/references/epic-granularity.md:64-76; 1339 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/tests/test_codex_develop.py",
+          "read_id": "pr1710-file03",
+          "read_scope": "git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/tests/test_codex_develop.py",
+          "tokens": 1315,
+          "access": "edit",
+          "source": "outputs.json[pr1710-file03]; git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- plugins/dev-workflow/tests/test_codex_develop.py; 2022 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "plugins/dev-workflow/tests/test_codex_develop.py",
+          "read_id": "pr1710-file03-context1",
+          "read_scope": "f38e31aa82325637f43dbf8a90300fbf4aae5a61:plugins/dev-workflow/tests/test_codex_develop.py:1186-1222",
+          "tokens": 1612,
+          "access": "read",
+          "source": "outputs.json[pr1710-file03-context1]; f38e31aa82325637f43dbf8a90300fbf4aae5a61:plugins/dev-workflow/tests/test_codex_develop.py:1186-1222; 2480 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "tests/gate-reading-budget.txt",
+          "read_id": "pr1710-file04",
+          "read_scope": "git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- tests/gate-reading-budget.txt",
+          "tokens": 3279,
+          "access": "edit",
+          "source": "outputs.json[pr1710-file04]; git diff --no-renames --unified=3 f38e31aa82325637f43dbf8a90300fbf4aae5a61 2ec82ae46aec188679ce432e86ecd2ec1f92b9fe -- tests/gate-reading-budget.txt; 5044 Unicode characters; ceil(chars * Bash 0.65)"
+        },
+        {
+          "path": "tests/gate-reading-budget.txt",
+          "read_id": "pr1710-file04-context1",
+          "read_scope": "f38e31aa82325637f43dbf8a90300fbf4aae5a61:tests/gate-reading-budget.txt:63-158",
+          "tokens": 1861,
+          "access": "read",
+          "source": "outputs.json[pr1710-file04-context1]; f38e31aa82325637f43dbf8a90300fbf4aae5a61:tests/gate-reading-budget.txt:63-158; 2862 Unicode characters; ceil(chars * Bash 0.65)"
+        }
+      ],
+      "estimated_changed_lines": 165,
+      "context_extra_tokens": 0,
+      "estimate_source": "PR #1710 frozen diff; responsibility: tests; assigned edit files only contribute L; complete implementation diffs shared as required contract; issue/PR instructions in startup, temporary generated edits and review notes in reserve, no double counting with F. ",
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1608"
+      ]
+    }
+  ]
+}

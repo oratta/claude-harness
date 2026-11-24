@@ -17,7 +17,7 @@ CONFIG = ROOT / 'references/epic-granularity-coefficients.json'
 def item(name='A', **kwargs):
     value = dict(id=name, repo='owner/repo', capabilities=['feature'], depends_on=[],
                  sanctuary=False, approval_wait=False,
-                 files=[dict(path=f'{name}.py', access='edit', tokens=1000, source='fixture')],
+                 files=[dict(path=f'{name}.py', access='edit', tokens=1000, read_id='planned', read_scope='rev:1-20', source='fixture')],
                  estimated_changed_lines=50, context_extra_tokens=100, estimate_source='fixture')
     value.update(kwargs)
     return value
@@ -59,8 +59,8 @@ class PlannerTests(unittest.TestCase):
         g, = result['groups']
         for key, value in dict(F=1000, L=100, T=9949900, E=10065000, S=16104000, C=51200).items():
             self.assertEqual(g[key], value, key)
-        b['files'][0]['tokens'] = 2000
-        self.assertEqual(self.plan(payload(a, b))['groups'][0]['F'], 2000)
+        b['files'][0].update(tokens=2000, read_id='other', read_scope='rev:10-40')
+        self.assertEqual(self.plan(payload(a, b))['groups'][0]['F'], 3000)
         b['repo'] = 'other/repo'
         self.assertEqual(sum(g['F'] for g in self.plan(payload(a, b))['groups']), 3000)
         self.assertIn('Codex', json.dumps(result, ensure_ascii=False))
@@ -103,6 +103,53 @@ class PlannerTests(unittest.TestCase):
                 self.assertEqual(code, 1)
                 self.assertIn(field, err)
 
+    def test_read_contract_and_conflicts(self):
+        for key in ['read_id', 'read_scope']:
+            for value in [None, '', ' ', False]:
+                data = payload()
+                if value is None:
+                    del data['items'][0]['files'][0][key]
+                else:
+                    data['items'][0]['files'][0][key] = value
+                with self.subTest(key=key, value=value):
+                    code, _, err = self.run_cli(data)
+                    self.assertEqual(code, 1)
+                    self.assertIn(key, err)
+        for key, value in [('tokens', 1001), ('read_scope', 'rev:2-30')]:
+            a, b = item(), item('B', sanctuary=True)
+            b['files'] = copy.deepcopy(a['files'])
+            b['files'][0][key] = value
+            code, _, err = self.run_cli(payload(a, b))
+            self.assertEqual(code, 1)
+            self.assertIn('A.py', err)
+            self.assertIn('planned', err)
+
+    def test_distinct_overlapping_and_repeated_outputs(self):
+        a = item()
+        for scope in ['rev:10-30', 'rev:1-20']:
+            b = item('B', files=[dict(a['files'][0], read_id='again',
+                                      read_scope=scope, tokens=2000)])
+            self.assertEqual(self.plan(payload(a, b))['groups'][0]['F'], 3000)
+        a['files'].append(dict(a['files'][0], access='read', source='other citation'))
+        self.assertEqual(self.plan(payload(a))['groups'][0]['F'], 1000)
+
+    def test_large_whole_file_partial_read(self):
+        a = item(context_extra_tokens=0)
+        a['files'][0].update(read_scope='fixed-rev:100-120',
+                             source='whole file 200000 tokens; planned excerpt 1000 tokens')
+        self.assertEqual(self.plan(payload(a))['groups'][0]['C'], 51000)
+
+    def test_required_output_itself_exceeds_capacity(self):
+        a = item(context_extra_tokens=0)
+        a['files'][0]['tokens'] = 120001
+        r = self.plan(payload(a), code=2)
+        u, = r['unplaced']
+        self.assertEqual(u['context_overflow'], 50001)
+        self.assertEqual(u['reads'][0]['path'], 'A.py')
+        self.assertEqual(u['reads'][0]['read_id'], 'planned')
+        self.assertEqual(u['reads'][0]['tokens'], 120001)
+        self.assertIn('preserv', u['reason'])
+
     def test_dependency_errors(self):
         for items, term in [([item(), item()], 'duplicate'),
                             ([item(depends_on=['missing'])], 'missing'),
@@ -114,7 +161,8 @@ class PlannerTests(unittest.TestCase):
 
     def test_order_invariance(self):
         a, b, c = item(), item('B', depends_on=['A']), item('C', depends_on=['A', 'B'])
-        a['files'] += [dict(path='z.py', access='read', tokens=30, source='x')]
+        a['files'] += [dict(a['files'][0], read_id='second', read_scope='rev:15-40', tokens=2000)]
+        a['files'] += [dict(path='z.py', access='read', tokens=30, read_id='extra', read_scope='rev:1-3', source='x')]
         data = payload(a, b, c)
         expected = self.plan(data)
         data['items'].reverse()
@@ -216,6 +264,46 @@ class PlannerTests(unittest.TestCase):
         self.assertEqual((g['F'], g['L'], g['T'], g['E'], g['S'], g['C']),
                          (1000, 100, 9949900, 10065000, 16104000, 51000))
 
+    def test_historical_sources_are_complete_and_recountable(self):
+        directory = ROOT / 'tests/fixtures/epic-granularity'
+        sources = json.loads((directory / 'sources.json').read_text())
+        outputs = json.loads((directory / 'outputs.json').read_text())
+        for epic, count in [('1701', 3), ('1732', 21)]:
+            data = json.loads((directory / f'epic-{epic}.json').read_text())
+            self.assertEqual(len(sources['epics'][epic]['children']), count)
+            self.assertEqual({url.rsplit('/', 1)[-1] for i in data['items']
+                              for url in i['source_issues']},
+                             set(map(str, sources['epics'][epic]['children'])))
+            self.assertEqual(data['worker_slots']['max_parallel'], 2)
+            self.assertEqual(data['worker_slots']['occupied'], 1)
+            for i in data['items']:
+                changes = 0
+                for f in i['files']:
+                    evidence = sources['outputs'][f['read_id']]
+                    output = outputs[f['read_id']]
+                    self.assertTrue(output)
+                    self.assertEqual(len(output), evidence['characters'])
+                    self.assertEqual(f['tokens'], (len(output) * 65 + 99) // 100)
+                    self.assertEqual(f['read_scope'], evidence['scope'])
+                    if f['access'] == 'edit':
+                        changes += evidence['additions'] + evidence['deletions']
+                self.assertEqual(i['estimated_changed_lines'], changes)
+        for pr in sources['prs'].values():
+            pr_outputs = [o for o in sources['outputs'].values() if o.get('pr') == pr['number']]
+            self.assertEqual({o['path'] for o in pr_outputs}, {f['filename'] for f in pr['files']})
+            for f in pr['files']:
+                pieces = [o for o in pr_outputs if o['path'] == f['filename']]
+                self.assertEqual(sum(o['additions'] for o in pieces), f['additions'])
+                self.assertEqual(sum(o['deletions'] for o in pieces), f['deletions'])
+                for rid, o in sources['outputs'].items():
+                    if o in pieces:
+                        lines = outputs[rid].splitlines()
+                        self.assertTrue(lines[0].startswith('diff --git '))
+                        self.assertEqual(sum(line.startswith('+') and not line.startswith('+++')
+                                             for line in lines), o['additions'])
+                        self.assertEqual(sum(line.startswith('-') and not line.startswith('---')
+                                             for line in lines), o['deletions'])
+
     def test_historical_fixtures(self):
         for epic in [1701, 1732]:
             with self.subTest(epic=epic):
@@ -228,6 +316,11 @@ class PlannerTests(unittest.TestCase):
                 self.assertEqual(len(ids), len(set(ids)))
                 lookup = {i['id']: i for i in data['items']}
                 edges = {g['id']: g['depends_on'] for g in r['groups']}
+                owner = {i: g['id'] for g in r['groups'] for i in g['item_ids']}
+                for i in data['items']:
+                    for dep in i['depends_on']:
+                        if owner[i['id']] != owner[dep]:
+                            self.assertIn(owner[dep], edges[owner[i['id']]])
                 seen = set()
                 def visit(n, path):
                     self.assertNotIn(n, path)

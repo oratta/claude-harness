@@ -93,3 +93,18 @@ PY
   run env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$PLUGIN/tests" -p test_epic_granularity.py
   [ "$status" -eq 0 ]
 }
+
+@test "planned reads, incremental scopes and unplaced redesign have explicit instructions" {
+  run python3 - "$REF/epic-granularity.md" <<'PYTEST'
+from pathlib import Path
+import sys
+s = Path(sys.argv[1]).read_text()
+for term in ['read_id', 'read_scope', '(repo, path, read_id)', '矛盾',
+             '部分的に重なる', '再取得', '0.77', '0.65', '出力文字数',
+             '二重計上', '予定読取範囲', '必要情報を保存', '名目上',
+             '切詰め', '未完了', '検証済み予測精度']:
+    assert term in s, term
+assert '最大全文' not in s and '追加のファイル全文' not in s
+PYTEST
+  [ "$status" -eq 0 ]
+}

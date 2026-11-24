@@ -1,0 +1,162 @@
+{
+  "boundaries": [
+    "different_repo",
+    "sanctuary_mismatch",
+    "approval_wait_singleton"
+  ],
+  "coefficient_source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012",
+  "coefficient_version": "1799-v1-policy-0.8",
+  "coefficients": {
+    "guard_basis": "停止例の実測/見積もりの中央値。信頼区間ではない",
+    "guard_multiplier": 1.6,
+    "planning_basis": "0.8 は本 change の政策値（20% の余裕）。測定結果ではない",
+    "planning_fraction": 0.8,
+    "record_intercept": 8200000,
+    "record_per_line": 18650,
+    "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012",
+    "total_intercept": 9900000,
+    "total_per_token": 49.9,
+    "uncertainty": "累計回帰は停止しなかった件からの外挿。実測/見積もりは0.9〜4.2倍。実時間・実消費・精度を保証しない。既存の実測停止判定を維持する",
+    "version": "1799-v1-policy-0.8"
+  },
+  "context": {
+    "reserve_tokens": 10000,
+    "reserve_tokens_source": "comparison assumption: reference example; temporary generated edits, summaries, tool feedback and reasoning retained once per group; no transcript measurement",
+    "startup_tokens": 40000,
+    "startup_tokens_source": "comparison assumption: current reference example; includes role instructions, issue body/conclusion and PR description from sources.json"
+  },
+  "groups": [
+    {
+      "C": 96410,
+      "E": 17114700,
+      "F": 46410,
+      "L": 478,
+      "S": 27383520,
+      "T": 12215859,
+      "approval_wait": false,
+      "context_margin": 23590,
+      "depends_on": [],
+      "id": "G001",
+      "item_ids": [
+        "1471-pr1706-01",
+        "1471-pr1706-02",
+        "1471-pr1706-03",
+        "1608-pr1710-01",
+        "1608-pr1710-02",
+        "1608-pr1710-03",
+        "1649-pr1704-01",
+        "1649-pr1704-02"
+      ],
+      "record_margin": 20616480,
+      "repo": "oratta/claude-harness",
+      "sanctuary": false,
+      "source_issues": [
+        "https://github.com/oratta/claude-harness/issues/1471",
+        "https://github.com/oratta/claude-harness/issues/1608",
+        "https://github.com/oratta/claude-harness/issues/1649"
+      ],
+      "unplaced_dependencies": []
+    }
+  ],
+  "limits": {
+    "context_cap": 150000,
+    "context_cap_source": "49a220d160e65d0189225ec77f34c3948aea6b58:plugins/dev-workflow/scripts/subagent-context.sh:34; existing default, no override in this comparison",
+    "context_planning_cap": 120000,
+    "record_cap": 60000000,
+    "record_cap_source": "https://github.com/oratta/claude-harness/issues/1701#issuecomment-6995347805; oratta OWNER; existing authority, not granted by fixture",
+    "record_planning_cap": 48000000
+  },
+  "measurement_targets": {
+    "C": "W保持文脈",
+    "E_S": "本体を除くClaudeサブエージェント＋Codex",
+    "T": "本体＋Claudeサブエージェント"
+  },
+  "merge_reasons": [
+    {
+      "item_ids": [
+        "1608-pr1710-01",
+        "1608-pr1710-02"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1608-pr1710-01",
+        "1608-pr1710-02",
+        "1649-pr1704-01"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1608-pr1710-01",
+        "1608-pr1710-02",
+        "1608-pr1710-03",
+        "1649-pr1704-01"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1608-pr1710-01",
+        "1608-pr1710-02",
+        "1608-pr1710-03",
+        "1649-pr1704-01",
+        "1649-pr1704-02"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1471-pr1706-02",
+        "1471-pr1706-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1471-pr1706-01",
+        "1471-pr1706-02",
+        "1471-pr1706-03"
+      ],
+      "reason": "direct_dependency"
+    },
+    {
+      "item_ids": [
+        "1471-pr1706-01",
+        "1471-pr1706-02",
+        "1471-pr1706-03",
+        "1608-pr1710-01",
+        "1608-pr1710-02",
+        "1608-pr1710-03",
+        "1649-pr1704-01",
+        "1649-pr1704-02"
+      ],
+      "reason": "shared_capability"
+    }
+  ],
+  "parallel_comparison": {
+    "evaluated": false,
+    "merged_makespan": 12215859,
+    "merged_total_T": 12215859,
+    "reason": "merged_or_capacity",
+    "selected_makespan": 12215859,
+    "selected_total_T": 12215859
+  },
+  "schema_version": 1,
+  "status": "planned",
+  "uncertainty": "累計回帰は停止しなかった件からの外挿。実測/見積もりは0.9〜4.2倍。実時間・実消費・精度を保証しない。既存の実測停止判定を維持する",
+  "unplaced": [],
+  "warnings": [
+    "Proxy makespan is not elapsed time or an optimality guarantee.",
+    "Declared quantities and source authority are not verified."
+  ],
+  "worker_slots": {
+    "available": 1,
+    "launch_authorized": false,
+    "max_parallel": 2,
+    "note": "snapshot only; recheck epic-worker-slots.md before launch",
+    "occupied": 1,
+    "source": "fixed comparison snapshot per approved design"
+  }
+}
