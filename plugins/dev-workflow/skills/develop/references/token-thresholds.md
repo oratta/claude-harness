@@ -4,7 +4,7 @@
 
 初期登録の `claude-opus-5-5` / `claude-sonnet-5-5` は、[#1799 の結論](https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012)の測定対象ラベル `opus-5-5` / `sonnet-5-5` に対応する。日付付き ID を推測して足したものではない。調査役が sonnet だったことと測定対象は別である。累計の標本は Claude サブエージェントと Codex の混合で、固定 Codex ID 別の内訳は無いため Codex を測定済みモデルとして登録していない。根拠モデル集合は、全指標をそれぞれのモデルで単独検証した意味ではない。品質の最適値は未測定である。
 
-この部品は `subagent-context.sh`・`context-tripwire.sh`・`pr-token-budget.sh` へ**未配線**。この change だけでは既存 hook に通知は出ず、既存の停止・権限・fail-open は変わらない。後続 change が API と診断を各経路へ接続する。
+この部品は文脈の上限・強制停止（`subagent-context.sh`・`context-tripwire.sh`）と累計上限（`pr-token-budget.sh`）の 3 経路へ接続済み。文脈の 2 経路は計測に採用した usage と同じ assistant レコードの `message.model` で引く。累計は数えた各リクエストの `message.model` ごとに引いて最小値を使い、Codex の thread はモデルに数えず、数えたリクエストが無ければ fallback の値を診断なしで使う。どの経路も、モデルが欠落・空白なら不明として扱い、別名・親・環境から補わない。既存の停止・権限の意味は変わらない（呼出元の扱いの正本は [decision-criteria.md](decision-criteria.md) と [pr-token-budget.md](pr-token-budget.md)）。
 
 ## CLI と import API
 
@@ -28,9 +28,9 @@ Python からは `scripts` ディレクトリを import パスに置き、`from 
 - `thresholds` の各項目には採用した `value`、`source_kind`（`model` / `fallback` / `environment`）、表の根拠レコード `baseline` がある。上書きでも `baseline` は表の値と根拠を保ち、上書き値を検証済みと扱わない。
 - `diagnostics` は `code` と `message` の配列。再検証診断には `requested_model`・`decided_models`・`metric`・`guide`（この手順の repo 相対パス）も含む。fallback は現在値を引き上げないという安全側であって、未知モデルの窓に収まる保証ではない。
 
-`DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` / `DEV_WORKFLOW_PR_TOKEN_CAP` は対応する指標だけでモデル既定値より優先する。空文字・空白だけは未設定、前後空白を除いた ASCII 非負整数を受け付け、0 も通す。負数・小数・非数値は不正。指標間の大小関係や権限は判定しない。hook 接続時の正数チェックは後続 change の責務。`epic_child_token_cap` 用 env は無く、返すのは親が使える権限の候補値だけであり、`pr_token_cap` へ自動適用しない。呼出元の `--cap` はこの部品の外で引き続き最優先である。この CLI には `--cap` は無い。
+`DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` / `DEV_WORKFLOW_PR_TOKEN_CAP` は対応する指標だけでモデル既定値より優先する。空文字・空白だけは未設定、前後空白を除いた ASCII 非負整数を受け付け、0 も通す。負数・小数・非数値は不正。指標間の大小関係や権限は判定しない。正数の条件は呼出元が持つ（hook は文脈の両閾値に正数を求め、満たさなければ判定しない。CLI は 0 を通す）。`epic_child_token_cap` 用 env は無く、返すのは親が使える権限の候補値だけであり、`pr_token_cap` へ自動適用しない。呼出元の `--cap` はこの部品の外で引き続き最優先である。この CLI には `--cap` は無い。
 
-不正 env は API で名前と理由付きの `ValueError`（`invalid_override`）、CLI では stdout に `{"error":{"code":"invalid_override","message":"…"}}` と stderr に理由、exit 1。利用可能な `thresholds` は返さない。表の欠損・不正 JSON・schema 不一致・必須指標や根拠の欠落も同じエラー契約で code は `invalid_table`。隠れた第二の定数表へは倒さない。追加フィールドは許容する。共通処理の失敗を既存 hook の拒否へ結び付ける配線は今回行わない。
+不正 env は API で名前と理由付きの `ValueError`（`invalid_override`）、CLI では stdout に `{"error":{"code":"invalid_override","message":"…"}}` と stderr に理由、exit 1。利用可能な `thresholds` は返さない。表の欠損・不正 JSON・schema 不一致・必須指標や根拠の欠落も同じエラー契約で code は `invalid_table`。隠れた第二の定数表へは倒さない。追加フィールドは許容する。呼出元は共通処理の失敗を拒否に結び付けない。hook は理由を stderr に出して fail-open、CLI（`subagent-context.sh`・`pr-token-budget.sh`）は `error` の JSON と exit 1 で返す。
 
 ## 同じ集計を再実行する段取り
 

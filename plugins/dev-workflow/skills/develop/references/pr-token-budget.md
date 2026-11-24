@@ -24,11 +24,11 @@ scripts/pr-token-measure.sh --repo <owner>/<repo> <記録先番号> [PR 番号] 
 
 `pr-token-measure.sh` は、渡したすべての記録先番号の `Codex 消費:` コメントを全ページ取得して記録ファイルを作り、`pr-token-budget.sh` を `--codex-records` 付きで呼んで、その stdout（1 行 JSON）と exit code（0 / 2 / 1）をそのまま返す。取得に失敗したら（通信障害・認証エラー・`gh` か `jq` が無い等）`pr-token-budget.sh` を呼ばず、stderr に理由を出して exit 1 で終わる。この exit 1 は下の exit 1（計測できない）と同じ扱いにする。
 
-`--codex-home` には codex-develop の account と CODEX_HOME の対応表（`--account-home` / `--account-home-file`）にある全パスを渡す（本体の環境の `${CODEX_HOME:-$HOME/.codex}` はラッパーが足す）。記録先に `PR トークン上限:` のコメントがあれば、最新のものの値を `--cap` に渡す。上限の既定は 30,000,000（Claude 分と Codex 分の合計に対する値。環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` で変更可）。計測はこの reference の手順で、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置かない。
+`--codex-home` には codex-develop の account と CODEX_HOME の対応表（`--account-home` / `--account-home-file`）にある全パスを渡す（本体の環境の `${CODEX_HOME:-$HOME/.codex}` はラッパーが足す）。記録先に `PR トークン上限:` のコメントがあれば、最新のものの値を `--cap` に渡す。上限の既定は、数えたサブエージェントのリクエストのモデルでモデル別の表（[token-thresholds.md](token-thresholds.md)）から引いた値で、今はどのモデルも 30,000,000（Claude 分と Codex 分の合計に対する値。環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` で変更可、`--cap` が最優先）。表を引けないとき（表・上書きの不正、共通処理を読めない）も exit 1 で、下の exit 1（計測できない）と同じ扱いにする。stderr に `pr-token-budget: unknown_model` や `pr-token-budget: revalidation_required` の行が出たら、それだけを理由に spawn・再開・委譲を止めず、自分で再検証も始めず、この記録先の作業の最後の主への報告に、再検証が要る旨とその行を書く。計測はこの reference の手順で、adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` には置かない。
 
 **exit 2（上限超）**: spawn / SendMessage / Codex への委譲をしない。PR があれば PR、無ければ記録先に `needs-approval` を付け（引き継ぎの「ラベルの付け先」と同じ）、`references/handover.md` どおり引き継ぎを残し、主に「続けるか、範囲外として閉じるか」を問う。問いには合計（Claude 分と Codex 分の内訳）・体数・上限・残工程（次に起こそうとした役割と、そのあと残る工程）・推奨（どちらを選ぶかとその理由）を添え、判断材料なしで出さない。unmanned でも同じく止まり、問いを記録先のコメントに書いてサイクルを終える。
 
-- 「続ける」: 記録先に 1 行目が `PR トークン上限: <新上限>` のコメントを投稿し、以後この記録先の計測に `--cap <新上限>` を渡す。新上限は「その時点の合計 ＋ 直前の計測で上限に使った値（`--cap`、無ければ `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければ 30000000）」。後任の本体は記録先の最新の `PR トークン上限:` コメントの値を使う
+- 「続ける」: 記録先に 1 行目が `PR トークン上限: <新上限>` のコメントを投稿し、以後この記録先の計測に `--cap <新上限>` を渡す。新上限は「その時点の合計 ＋ 直前の計測で上限に使った値（直前の計測の出力の `cap`）」。後任の本体は記録先の最新の `PR トークン上限:` コメントの値を使う
 - 「範囲外として閉じる」: この記録先について以後サブエージェントを起こさず、Codex にも委譲しない。残作業を記録先にコメントしてサイクルを終える
 
 **記録先がエピックの子のとき**: 主に聞く前に、エピックの親が持つ子 1 件あたりの PR トークンの権限（エピックの 1 行目 `子の PR トークン権限: <値>` のコメント。既定 60000000）の内かを照らす。照らし方の正本は `references/epic-stop.md` の **PR トークン上限の子** の段落。
