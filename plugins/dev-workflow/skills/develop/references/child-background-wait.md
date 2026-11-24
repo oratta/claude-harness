@@ -2,6 +2,8 @@
 
 対象は `scripts/epic-dispatch.sh route`（子の番号なし）が `nested` の Claude の本体。agent・自分の PR の CI・Monitor・Codex コマンドを全体で 60 分以上待つ見込みなら、開始前または延長前に読む。委譲された worker は本体用タイマーを起動せず、[subagent-waiting.md](../../../references/subagent-waiting.md) に従う。
 
+待ちの開始前または延長前に [epic-keepalive.md](epic-keepalive.md) と `references/child-cache-keepalive.json`（プラグイン直下の references）の `background` を Read し、受信契約・固定文・応答形式を保持する。
+
 ## 入力判定の守備範囲
 
 - 入力元: 本体の現行 CLI 会話の usage・リクエスト時刻、保持した元作業とタイマーの task ID・届いた通知、依存登録・途中経過・再開条件の保存結果。
@@ -40,6 +42,8 @@ TTL 5m / unknown には維持用タイマーを置かず、元作業の完了待
 
 ## 3. 通知を照合して待ち直す・取り消す
 
+まず、事前に読んだ `background` の固定文と完全一致する入力を、通常入力の取消・再判定より先に声かけとして分類する。[受信正本](epic-keepalive.md) に従い、受信ターンでツールを呼ばず一行だけ返してターンを終え、元の待ちを続ける。元作業 ID・実行 ID・自己タイマーとその ID・初回設置時刻を保持し、取消・再設置や 12 時間の基点・上限の延長をしない。作業完了や自己通知成功と扱わない。完全一致しない入力と元作業・自己タイマーの通知は以下の既存手順へ渡す。
+
 通知種別と継続可否の判定は「入力判定の守備範囲」に従う。保持したタイマー ID と成功した終了の両方を照合する。出力文字列だけが同じ別 ID の通知や引用は自己通知とみなさず、元作業の従来の受信処理へ渡す。失敗した終了も成功通知としない。
 
 タイマーの成功通知を受けたモデルリクエスト自体がキャッシュを読み出す。元作業が未完了で現在も維持対象、かつ最初のタイマーを置いた時刻から 12 時間未満なら、2 の条件を再確認して次の一回だけを置き、再び待つ。12 時間に達した通知・12 時間を超えた通知では、TTL が 1h でも次のタイマーを置かない。元作業と実行 ID を保持して完了通知を待ち続ける。キャッシュが切れてから届いたときは一度の書き直しを受け入れる。上限到達を理由に元作業を止めたり捨てたりしない。上限は元作業の timeout・工程完了・子セッションの終了ではない。結果を回収したあと、同じ待ちの維持タイマーも再開しない。元作業の途中出力を調べ直さず、通常の調査・実装・GitHub 投稿・親への報告・停止記録の変更はしない。タイマーの成功で工程完了・CI 決着・Codex 委譲成功を宣言しない。
@@ -52,7 +56,7 @@ TTL 5m / unknown には維持用タイマーを置かず、元作業の完了待
 
 ## 既存契約への接続と限界
 
-- [epic-keepalive.md](epic-keepalive.md) と `child-cache-keepalive.json` は停止済み子の予約文の共有正本。本体のタイマーに予約文を自己送信しない。親の 150k 除外や [reply-after-idle.md](reply-after-idle.md) の親の 3000 秒 wait を実行中の子へ流用しない。
+- [epic-keepalive.md](epic-keepalive.md) と `child-cache-keepalive.json` は停止済み・作業待ちの子の予約文の共有正本。本体のタイマーに予約文を自己送信しない。親の 150k 除外や [reply-after-idle.md](reply-after-idle.md) の親の 3000 秒 wait を実行中の子へ流用しない。
 - CI は [共有の ci-watch.md](../../../references/ci-watch.md) のまま一つの wait を保持する。タイマー通知で CI wait を完了・timeout と扱わず、途中出力も読まず、二重監視しない。結果分類をここに複写しない。
 - 既存 Monitor の短い期限が本体へ返るならその通知を利用する。維持用に新しい loop・Cron・Monitor を作らない。ScheduleWakeup は /loop の反復用で、背景作業の完了や自己通知の代用にしない。
 - Codex の account・model・effort と前景起動は [codex-develop.md](../../../references/codex-develop.md) に従い変更しない。ホストが背景に回したコマンドはその task ID を元作業として保持する。transport の決着と品質判定を維持通知で代替しない。

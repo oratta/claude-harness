@@ -4,6 +4,7 @@
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   REF="$PLUGIN_DIR/skills/develop/references/child-background-wait.md"
+  KEEPALIVE="$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
   SKILL="$PLUGIN_DIR/skills/develop/SKILL.md"
   SNIP="$BATS_TEST_TMPDIR/timer.sh"
   [ -f "$REF" ]
@@ -148,4 +149,52 @@ PY
     '12 時間' '約 $1.32' '$1.60' '約 $2.52' '旧方針' '上限後' '総費用の保証ではない'; do
     grep -qF "$term" "$REF" || { echo "missing: $term"; return 1; }
   done
+}
+
+@test "keepalive canonical source selects both definitions and preserves stopped reception" {
+  local term
+  for term in '停止前' '作業待ちの開始前・延長前' 'トップレベル' '`background`' \
+    '`separator`' '`reply_prefix`' '`fields`' '`request_template`' \
+    '固定文と完全一致する入力' '通常の主の返事や親の判断より先に' \
+    '受信ターンではツールを呼ばない' '定義の読み直しも含む' \
+    '会話だけから各欄の短い値' '一行だけ返す' '値に改行や区切り文字を入れない' \
+    '元の質問・停止状態・停止記録を保って' 'epic-child-stop.md' \
+    'child-background-wait.md' '送信元の識別はしない' '型どおり'; do
+    grep -qF "$term" "$KEEPALIVE" || { echo "missing canonical contract: $term"; return 1; }
+  done
+  # 生成規則と固定文の本文は作業待ち側へ複製しない。
+  run grep -qE 'request_template|reply_prefix|キャッシュ維持のための声かけです' "$REF"
+  [ "$status" -eq 1 ]
+}
+
+@test "background wait preloads reception and classifies reserved input before cancellation" {
+  python3 - "$REF" <<'PYTEST'
+from pathlib import Path
+import sys
+s = Path(sys.argv[1]).read_text()
+preload = s.split('## 入力判定の守備範囲')[0]
+assert '開始前または延長前' in preload
+assert '[epic-keepalive.md](epic-keepalive.md)' in preload
+assert 'child-cache-keepalive.json' in preload and '`background`' in preload
+assert 'Read' in preload
+branch = s.split('## 3. 通知を照合して待ち直す・取り消す')[1]
+reserved = branch.index('固定文と完全一致する入力')
+cancel = branch.index('入力により待ち直す場合も既存タイマーを止めて')
+assert reserved < cancel
+assert '通常入力の取消・再判定より先に' in branch
+assert '完全一致しない入力' in branch and '既存手順' in branch
+PYTEST
+}
+
+@test "background keepalive ends the turn without changing work or the timer" {
+  local doc term
+  for doc in "$KEEPALIVE" "$REF"; do
+    for term in '一行だけ返してターンを終え' '元作業 ID・実行 ID・自己タイマーとその ID・初回設置時刻' \
+      '取消・再設置' '12 時間' '作業完了や自己通知成功と扱わない'; do
+      grep -qF "$term" "$doc" || { echo "missing in $doc: $term"; return 1; }
+    done
+  done
+  grep -qF 'ツール（定義の再読・タイマーの取消・再設置を含む）' "$KEEPALIVE" || return 1
+  grep -qF '調査・新しい作業・印や停止記録の変更・投稿を行わない' "$KEEPALIVE" || return 1
+  grep -qF '受信ターンでツールを呼ばず' "$REF" || return 1
 }
