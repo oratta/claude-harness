@@ -1088,3 +1088,160 @@ other_reply() {
   snapshot
   SID=s2; run input "$(bg_text)"; [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
 }
+
+# --- 作業待ちの明示行（background_wait、#1777） ---
+bg_marker='作業待ち: task-17 2026-11-24T00:00:00Z'
+bgw_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("background_wait")) then (.turn_state.background_wait|tojson) else "absent" end' "$REC"; }
+
+@test "background_wait: the line right before a work report is saved with the state" {
+  register
+  jq '.status="running" | .stop="resumed"' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+  run stop "$bg_marker"$'\n状態: 作業報告 — agent の結果待ち'; [ "$status" -eq 0 ]; [ -z "$output" ]
+  jq -e '.turn_state.value == "作業報告" and .turn_state.summary == "agent の結果待ち"
+    and .turn_state.background_wait == {id:"task-17",started_at:"2026-11-24T00:00:00Z"}
+    and (.turn_state | has("dependency_wait") | not)
+    and .turn_state.generation == .turn_input.generation and .turn_state.session_id == .turn_input.session_id
+    and .schema == 1 and .stop == "resumed" and .status == "running" and .opaque.keep' "$REC"
+  # CRLF, blank lines between and ids with the allowed punctuation
+  for msg in "$bg_marker"$'\r\n状態: 作業報告 — a\r\n' "$bg_marker"$'\n\n状態: 作業報告 — a' $'本文\n作業待ち: A.b_c:d-1 2026-02-28T23:59:59Z\n状態: 作業報告 — a'; do
+    input next; run stop "$msg"; [ "$status" -eq 0 ]; [ -z "$output" ]
+    [ "$(bgw_of)" != absent ] || return 1
+  done
+  [ "$(jq -r .turn_state.background_wait.id "$REC")" = A.b_c:d-1 ]
+}
+
+@test "background_wait: prose, quotes, code and lines in the middle are not markers" {
+  register
+  for msg in $'CI 待ち\n状態: 作業報告 — CI 待ち' '状態: 作業報告 — 作業待ち: task-17 2026-11-24T00:00:00Z' \
+    "$bg_marker"$'\n後続\n状態: 作業報告 — a' "> $bg_marker"$'\n状態: 作業報告 — a' \
+    $'```\n'"$bg_marker"$'\n```\n状態: 作業報告 — a' '状態: 作業報告 — 通常の報告'; do
+    input next; run stop "$msg"; [ "$status" -eq 0 ]; [ -z "$output" ]
+    jq -e '.turn_state.value == "作業報告"' "$REC"
+    [ "$(bgw_of)" = absent ] || { echo "msg=$msg"; return 1; }
+  done
+  # an unclosed fence is still the existing status-line rejection
+  input next; run stop $'```\n'"$bg_marker"$'\n状態: 作業報告 — a'; blocked
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: fullwidth colon blocks and clears the previous state" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run stop '作業待ち： task-17 2026-11-24T00:00:00Z'$'\n状態: 作業報告 — a'
+  blocked
+  [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || return 1
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: leading space blocks and clears the previous state" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run stop ' 作業待ち: task-17 2026-11-24T00:00:00Z'$'\n状態: 作業報告 — a'
+  blocked
+  [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || return 1
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: list blocks and clears the previous state" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run stop '- 作業待ち: task-17 2026-11-24T00:00:00Z'$'\n状態: 作業報告 — a'
+  blocked
+  [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || return 1
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: bold blocks and clears the previous state" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run stop '**作業待ち: task-17 2026-11-24T00:00:00Z**'$'\n状態: 作業報告 — a'
+  blocked
+  [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || return 1
+  [ "$(jq -r .turn_state "$REC")" = null ]
+}
+
+@test "background_wait: a malformed line, another value or a dependency wait blocks and publishes nothing" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  [ "$(bgw_of)" != absent ]
+  for msg in $'作業待ち:  2026-11-24T00:00:00Z\n状態: 作業報告 — a' $'作業待ち: task 17 2026-11-24T00:00:00Z\n状態: 作業報告 — a' \
+    $'作業待ち: -x 2026-11-24T00:00:00Z\n状態: 作業報告 — a' $'作業待ち: task-17 2026-02-30T00:00:00Z\n状態: 作業報告 — a' \
+    $'作業待ち: task-17 2026-11-24 00:00:00\n状態: 作業報告 — a' $'作業待ち: task-17\n状態: 作業報告 — a' \
+    $'作業待ち: task-17 2026-11-24T00:00:00+09:00\n状態: 作業報告 — a' \
+    "$bg_marker"$'\n状態: 完了 — a' "$bg_marker"$'\n状態: 主の返事待ち — a' \
+    "$dep_marker"$'\n'"$bg_marker"$'\n状態: 作業報告 — a' "$bg_marker"$'\n'"$dep_marker"$'\n状態: 作業報告 — a'; do
+    run stop "$msg"; blocked
+    [[ "$output" == *'作業待ち: <wait-id> <started-at>'* ]] || { echo "msg=$msg"; return 1; }
+    [ "$(jq -r .turn_state "$REC")" = null ] || return 1
+  done
+  run stop "$bg_marker"$'\n状態: 作業報告 — 直した'; [ "$status" -eq 0 ]; [ -z "$output" ]
+  [ "$(jq -r .turn_state.background_wait.id "$REC")" = task-17 ]
+}
+
+@test "background_wait: new input of every sender, a plain end and other values drop it" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  for p in hello '親エピック #1（o/r）の判断: ok'; do
+    input "$p"
+    jq -e '.turn_state == null and .stop_uuid == "parent-uuid"' "$REC"
+    stop "$bg_marker"$'\n状態: 作業報告 — a'
+  done
+  for msg in '状態: 作業報告 — 回収済み' '状態: 主の返事待ち — 判断を' '状態: 完了 — 済み'; do
+    input next; stop "$bg_marker"$'\n状態: 作業報告 — a'; [ "$(bgw_of)" != absent ]
+    input again; stop "$msg"
+    [ "$(bgw_of)" = absent ] || return 1
+  done
+}
+
+@test "background_wait: stale Stop and late input never publish it" {
+  register
+  append_row assistant "$bg_marker"$'\n状態: 作業報告 — old'
+  input newer
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$(payload Stop "$bg_marker"$'\n状態: 作業報告 — old')" "$HOOK"
+  [ "$status" -eq 0 ]; [ "$(jq -r .turn_state "$REC")" = null ]
+  input race
+  race_at_lock
+  run stop "$bg_marker"$'\n状態: 作業報告 — late'
+  [ "$status" -eq 0 ]
+  jq -e '.turn_state == null' "$REC"
+}
+
+@test "background_wait: only a well-typed object passes the type check; old records stay readable" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  run input again; [ "$status" -eq 0 ]
+  stop '状態: 作業報告 — 旧記録'
+  run input again; [ "$status" -eq 0 ]
+  for bad in true '"task-17"' null '[]' '{}' '{"id":"task-17"}' '{"id":1,"started_at":"2026-11-24T00:00:00Z"}' \
+    '{"id":"a b","started_at":"2026-11-24T00:00:00Z"}' '{"id":"task-17","started_at":"2026-13-01T00:00:00Z"}' \
+    '{"id":"task-17","started_at":"2026-11-24T00:00:00Z","x":1}'; do
+    input next; stop "$bg_marker"$'\n状態: 作業報告 — a'
+    jq --argjson v "$bad" '.turn_state.background_wait=$v' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+    before="$(cat "$REC")"
+    run input again; [ "$status" -eq 2 ] || { echo "bad=$bad"; return 1; }
+    [ "$(cat "$REC")" = "$before" ]
+    jq 'del(.turn_state.background_wait)' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+  done
+  # a valid pair on another value or together with dependency_wait is a broken extension too
+  for patch in '.turn_state.value="完了"' '.turn_state.dependency_wait=true'; do
+    input next; stop "$bg_marker"$'\n状態: 作業報告 — a'
+    jq "$patch" "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+    run input again; [ "$status" -eq 2 ]
+    jq 'del(.turn_state.background_wait) | .turn_state.value="作業報告" | del(.turn_state.dependency_wait)' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+  done
+  # dependency_wait false is allowed beside it
+  input next; stop "$bg_marker"$'\n状態: 作業報告 — a'
+  jq '.turn_state.dependency_wait=false' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+  run input again; [ "$status" -eq 0 ]
+}
+
+@test "background_wait: the reserved background text and its reply keep the pair and the whole record" {
+  register
+  stop "$bg_marker"$'\n状態: 作業報告 — a'
+  snapshot
+  reserved="$(bg_text)"
+  run input "$reserved"; [ "$status" -eq 0 ]; unchanged
+  append_row user "$reserved"
+  run stop "$(bg_reply)"; [ "$status" -eq 0 ]; [ -z "$output" ]
+  unchanged
+}

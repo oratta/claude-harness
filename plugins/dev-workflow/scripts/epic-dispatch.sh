@@ -445,11 +445,14 @@ issue_api() {
 # 既定を当てた値を同じ名前の環境変数で渡す（ready / submit は agent_setup、close_wait は reap が入れる。空なら部品の既定）
 LAUNCHER_DIR="${BASH_SOURCE[0]%/*}"
 close_wait=""
+# 作業待ちの声かけ（keepalive_background）の一呼び出しだけが 1 にする。親の環境の値は持ち越さない
+KEEPALIVE_BG_ALLOW=""
 launcher_run() {
   local name="$1"
   shift
   EPIC_DISPATCH_READY_TIMEOUT_MS="${ready-}" EPIC_DISPATCH_SUBMIT_WAIT="${submit-}" \
-    EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT="$close_wait" bash "$LAUNCHER_DIR/epic-launch-$name.sh" "$@"
+    EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT="$close_wait" \
+    EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT="${KEEPALIVE_BG_ALLOW-}" bash "$LAUNCHER_DIR/epic-launch-$name.sh" "$@"
 }
 
 # 今の操作が使う部品の名前（launch / adopt は pick_launcher、記録に従う操作は子の記録の launcher で決める）。
@@ -1683,7 +1686,8 @@ keepalive_child() {
   local n="$1" f wt name childcomments epiccomments epic repo enum text now out why turn
   child_record "$PARENT_TOP" "$n" || return 0
   f="$ES_HIT"
-  turn="$(wait_received "$f")" || { keepalive_note "$f" "skipped not-stopped"; return 0; }
+  # 受領済みの返事待ちでなければ、作業待ちの別経路だけを見る（#1777。停止済み子の条件は流用しない）
+  turn="$(wait_received "$f")" || { keepalive_background "$n" "$f"; return 0; }
   # 声かけは主の返事待ちだけ。依存待ちの停止には送らない。
   ! received_dependency_stop "$f" || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ "$(es_get "$f" stop)" = stopped-seen ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
@@ -1716,6 +1720,149 @@ keepalive_child() {
        case "$out" in failed\ *) keepalive_note "$f" "$out" ;; *) keepalive_note "$f" "failed send" ;; esac ;;
   esac
   return 0
+}
+
+# 作業待ちの子（#1777）への声かけ（<子> <記録>）。Stop が保存した background_wait・parent/startup の作業報告・
+# Orca の登録セッションを記録で確かめ、turn_input.transcript_path の現行 CLI 1 本（keepalive_background_log）で、
+# 最後の通常発言が同じ作業待ちの行と状態行であること・TTL 1h・最後の成功リクエストから 3000 以上 3600 秒未満・
+# 初回開始から min(43200, EPIC_DISPATCH_OWNER_WAIT_SEC) 秒未満を確かめる。停止済み子の stop_uuid・停止コメント・
+# 150k の除外は使わない。部品を呼ぶ直前に記録と会話を読み直し、どちらかが変わっていれば記録を書かずに見送る
+# （同じポーリングで取り直して送らない）。Orca の画面の背景待機の許可はこの一呼び出しだけに渡す
+keepalive_background() {
+  local n="$1" f="$2" key key2 wt text now why why2 out
+  key="$(es_read "$f" 2>/dev/null | jq -ce "$WAIT_TURN_DEFS"'select(bg_turn) | bg_key' 2>/dev/null)" \
+    || { keepalive_note "$f" "skipped not-stopped"; return 0; }
+  [ -z "$(es_get "$f" launch_failed)" ] || { keepalive_note "$f" "skipped launch-failed"; return 0; }
+  [ -n "$(es_get "$f" session)" ] || { keepalive_note "$f" "skipped no-session"; return 0; }
+  wt="$(es_get "$f" worktree)"; [ -d "$wt" ] || { keepalive_note "$f" "skipped no-worktree"; return 0; }
+  [ "$(es_get "$f" launcher)" = orca ] || { keepalive_note "$f" "skipped unsupported-launcher"; return 0; }
+  text="$(keepalive_text background)" || return 0
+  now="$(date +%s)"
+  why="$(keepalive_background_log "$f" "$now" "$text")" || { keepalive_note "$f" "skipped ${why:-no-transcript}"; return 0; }
+  now="$(date +%s)"
+  child_record "$PARENT_TOP" "$n" || return 0
+  [ "$ES_HIT" = "$f" ] || return 0
+  key2="$(es_read "$f" 2>/dev/null | jq -ce "$WAIT_TURN_DEFS"'select(bg_turn) | bg_key' 2>/dev/null)" || return 0
+  [ "$key2" = "$key" ] || return 0
+  why2="$(keepalive_background_log "$f" "$now" "$text")" || return 0
+  [ "$why2" = "$why" ] || return 0
+  out="$(KEEPALIVE_BG_ALLOW=1 launcher_run orca keepalive "$wt" "$text")"
+  case "$out" in
+    sent) keepalive_note "$f" "sent" ;;
+    skipped\ *) keepalive_note "$f" "$out" ;;
+    *) echo "keepalive $n: ${out:-failed send}" >&2
+       case "$out" in failed\ *) keepalive_note "$f" "$out" ;; *) keepalive_note "$f" "failed send" ;; esac ;;
+  esac
+  return 0
+}
+
+# 作業待ちの会話の判定（<記録> <今の epoch 秒> <固定文>）。読取専用で、turn_input.transcript_path の 1 本だけを読み、
+# sidechain / meta でない行のうち、発言と usage は sessionId が turn_input.session_id で entrypoint が cli の行だけを使う。
+# 送れるなら stdout に `ok <行数> <バイト数>` を出して 0、送れなければ skipped の理由の語を出して 1
+keepalive_background_log() {
+  command -v python3 >/dev/null 2>&1 || { echo no-transcript; return 1; }
+  REC="$1" NOW="$2" KEEPALIVE_TEXT="$3" \
+    OWNER_WAIT="$(num_or_default "${EPIC_DISPATCH_OWNER_WAIT_SEC-}" 43200)" python3 - <<'PY' 2>/dev/null
+import datetime, json, math, os, re
+
+def reject(reason):
+    print(reason)
+    raise SystemExit(1)
+def stamp(value):
+    try:
+        t = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return (t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)).timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return None
+def num(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0 else 0
+def blocks(msg):
+    c = msg.get("content")
+    if isinstance(c, str): return [{"type": "text", "text": c}]
+    return [b for b in c if isinstance(b, dict)] if isinstance(c, list) else []
+def text_of(msg):
+    return "\n".join(str(b.get("text", "")) for b in blocks(msg) if b.get("type") == "text")
+
+try:
+    now = int(os.environ["NOW"])
+    rec = json.load(open(os.environ["REC"]))
+    inp, state = rec["turn_input"], rec["turn_state"]
+    bg = state["background_wait"]
+    started = stamp(bg["started_at"])
+    # 基点は初回開始だけ（stop_at・更新時刻・声かけの時刻を使わない）。未来・不明・上限以上は送らない
+    if started is None or not 0 <= now - started < min(43200, int(os.environ["OWNER_WAIT"])): reject("expired")
+    path, sid = inp["transcript_path"], inp["session_id"]
+    marker = "作業待ち: %s %s" % (bg["id"], bg["started_at"])
+    status_line = "状態: %s — %s" % (state["value"], state["summary"])
+    def is_marker(text):
+        # Stop と同じく空行を飛ばし、最終行が記録の状態行、その直前が記録の作業待ちの行
+        lines = [l for l in text.rstrip().splitlines() if l.strip()]
+        if len(lines) < 2: return False
+        m = re.fullmatch(r"状態: (主の返事待ち|作業報告|完了) — (.+)", lines[-1])
+        return bool(m) and "状態: %s — %s" % (m[1], m[2].strip()) == status_line and lines[-2] == marker
+    if not isinstance(path, str) or not os.path.isabs(path) or not os.path.isfile(path): reject("no-transcript")
+    raw = open(path, "rb").read()
+    seen = False      # 最後の通常発言が記録と同じ作業待ちの行と状態行
+    after = False     # その後に通常入力・元作業の通知・新しい通常発言・ツールがある
+    pending = False   # 作業待ちの固定文を送り、まだ返事が無い
+    last_request = ttl = None
+    future = False    # 時刻が読めないか今より未来の成功リクエストがある
+    for line in raw.decode("utf-8", "replace").splitlines():
+        try: d = json.loads(line)
+        except ValueError: continue
+        if not isinstance(d, dict) or d.get("type") not in ("user", "assistant"): continue
+        if d.get("isSidechain") or d.get("isMeta"): continue
+        # 子の発言と usage は同じ会話の CLI の行だけ。入力の側は欠けた項目があっても数える（送らない側に倒す）
+        if d.get("type") == "assistant" and (d.get("sessionId") != sid or d.get("entrypoint") != "cli"): continue
+        if d.get("type") == "user" and d.get("sessionId", sid) != sid: continue
+        msg = d.get("message")
+        if not isinstance(msg, dict): continue
+        t = stamp(d.get("timestamp"))
+        content = text_of(msg)
+        if d.get("type") == "user":
+            origin = d.get("origin")
+            notice = (isinstance(origin, dict) and origin.get("kind") == "task-notification") \
+                or content.lstrip().startswith("<task-notification")
+            if notice:
+                after = after or seen
+            elif content.strip():
+                if content == os.environ["KEEPALIVE_TEXT"]:
+                    pending = True
+                else:
+                    after = after or seen
+                    pending = False
+            continue
+        if any(b.get("type") == "tool_use" for b in blocks(msg)):
+            after = after or seen
+        if content.strip():
+            if pending:
+                # 型違いでも返事の到着として扱う（一行・ツールなしの成功とは数えない）
+                pending = False
+            elif is_marker(content):
+                seen, after = True, False
+            else:
+                after = after or seen
+                seen = False
+        if d.get("isApiErrorMessage") or d.get("error") is not None: continue
+        u = msg.get("usage")
+        if not isinstance(u, dict): continue
+        if sum(num(u.get(k)) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")) > 0:
+            if t is None or t > now: future = True
+            else: last_request = t if last_request is None else max(last_request, t)
+        cc = u.get("cache_creation")
+        if isinstance(cc, dict) and t is not None:
+            h1, m5 = num(cc.get("ephemeral_1h_input_tokens")), num(cc.get("ephemeral_5m_input_tokens"))
+            if h1 + m5 > 0 and (ttl is None or t >= ttl[1]): ttl = ("1h" if h1 > 0 else "5m", t)
+    if after: reject("answered")
+    if not seen: reject("no-transcript")
+    if pending: reject("pending")
+    if ttl is None or ttl[0] != "1h": reject("cache-unknown")
+    if ttl[1] > now: reject("cache-future")
+    if future or last_request is None or not 3000 <= now - last_request < 3600: reject("out-of-window")
+    print("ok %d %d" % (raw.count(b"\n"), len(raw)))
+except (OSError, ValueError, KeyError, TypeError):
+    reject("no-transcript")
+PY
 }
 
 # 声かけの判定結果（<記録> <結果>）を記録の keepalive に `<UTC の時刻> <結果>` で書く。結果が前回と同じなら書き直さない。
@@ -1791,6 +1938,18 @@ WAIT_TURN_DEFS='
   def owner_question: stop_base and .turn_state.value == "主の返事待ち";
   def dependency_stop: stop_base and .turn_state.value == "作業報告" and .turn_state.dependency_wait == true;
   def target: owner_question or dependency_stop;
+  # #1777 作業待ち（Orca の外部起こし）。停止済み子の target とは別。Stop が保存した background_wait を厳密に読む。
+  def bg_marker:
+    (.turn_state.background_wait | type == "object" and (keys == ["id","started_at"])
+      and (.id | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$")) and (.started_at | utc));
+  def bg_turn:
+    turn_valid and .status == "running" and ((.stop // "") as $s | ["stopped","stopped-seen"] | index($s) == null)
+    and (.turn_input.sender as $i | ["parent","startup"] | index($i) != null)
+    and .turn_state.value == "作業報告" and ((.turn_state.dependency_wait // false) == false) and bg_marker;
+  # 送る直前の読み直しで同じ候補かを比べる組（keepalive・updated_at は含めない）
+  def bg_key: {epic, child, parent_worktree, worktree, launcher, session, launch_failed, status, stop,
+    input: (.turn_input | {generation, session_id, sender, transcript_path}), wait: .turn_state.background_wait,
+    state: (.turn_state | {generation, session_id, value, summary})};
 '
 
 # 受領済みで、同じ世代の有効な停止を現在も保っているか。一度の読取で照合する。
@@ -2341,7 +2500,7 @@ cmd_told() {
 # 固定の声かけ文を共有定義から生成する。wait の送信と child-log の完全一致に同じ生成を使う。
 # 返事の欄の意味や真偽は検証しない（#1374）。受信手順も停止前にこの定義を読む。
 keepalive_text() {
-  python3 "$LAUNCHER_DIR/child-log-read.py" --keepalive-text
+  python3 "$LAUNCHER_DIR/child-log-read.py" --keepalive-text "$@"
 }
 
 # 子の会話ログの置き場（<dir>）を child-log-read.py で読み、JSON を 1 行出す。読めなければ何も出さずに 1。

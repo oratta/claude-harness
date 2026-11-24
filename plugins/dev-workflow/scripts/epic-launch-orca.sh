@@ -116,6 +116,7 @@ import json, os, re, sys
 raw = os.environ["SCREEN"]
 mode = sys.argv[1]
 after_send = sys.argv[2] == "after-send"
+bg_allowed = mode == "orca" and not after_send and os.environ.get("EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT") == "1"
 if mode == "orca":
     try:
         d = json.loads(raw)["result"]["terminal"]
@@ -191,6 +192,11 @@ def wait_state(frame):
         return "busy"
     dones = [i for i in range(last + 1, top) if re.fullmatch(done_re, rows[i][1])]
     if not dones:
+        # #1777: dispatch が検査済みの作業待ちの一呼び出しだけに渡す許可。最後の待機行が入力枠より前にあり、
+        # その間が空行と recap だけのときに限り、待機行による busy を外す（前景・dialog・入力の検査は省かない）
+        if (bg_allowed and all(not rows[i][1].strip() or re.fullmatch(recap_re, rows[i][1])
+                               for i in range(last + 1, top))):
+            return "none"
         return "busy"
     if all(not rows[i][1].strip() or re.fullmatch(recap_re, rows[i][1])
            for i in range(dones[-1] + 1, top)):
