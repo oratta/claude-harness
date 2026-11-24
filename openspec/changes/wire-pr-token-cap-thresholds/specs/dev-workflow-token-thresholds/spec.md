@@ -30,6 +30,8 @@
 
 `pr-token-budget.sh` は、usage を合計した重複除去後の各リクエストと同じ assistant レコードの `message.model` を集め、モデルごとに共通の解決処理で `pr_token_cap` を引き、最小の値を上限の既定にしなければならない（MUST）。欠落・非文字列・空白だけは不明とし、meta の別名・親・環境から補わない（MUST NOT）。Codex の thread はモデルの集合に入れない。数えたリクエストが無ければ不明で解決した値を使う。
 
+守備範囲: 入力の出どころは、紐付いた各サブエージェントの会話記録の assistant レコードの `message.model` と同梱の表である。拾いたい誤りは、meta の別名や Codex 分を混ぜて常に未知モデル扱いになることと、混ざったモデルの片方を黙って落とすことである。通してよい入力は、前後に空白が付いた既知 ID（無加工で渡して未知扱いになる）、モデル申告の真偽、Codex のモデルの変化（集合に入れないので知らせない）である。これらの穴を塞ぎ切ることを完了条件にしない。
+
 #### Scenario: 登録済みモデルだけなら表の値を診断なしで使う
 
 - **WHEN** 紐付く 2 体の全リクエストの `message.model` が `claude-opus-5-5` と `claude-sonnet-5-5` で、上書きが無い
@@ -57,7 +59,9 @@
 
 ### Requirement: 累計計測の上書きは --cap と env の優先順位を守る
 
-`pr-token-budget.sh` の上限は `--cap` > `DEV_WORKFLOW_PR_TOKEN_CAP` > モデル行 / fallback の順でなければならない（MUST）。`--cap` は ASCII 非負整数でなければ exit 1 とし、有効な `--cap` があるときは env を共通処理に渡さない（不正な env も遮る）。env は共通処理の規則に従い、空白だけは未設定、前後空白付きの ASCII 非負整数は有効、0 も通す（MUST）。不正な env は `invalid_override` で exit 1 とする。
+`pr-token-budget.sh` の上限は `--cap` > `DEV_WORKFLOW_PR_TOKEN_CAP` > モデル行 / fallback の順でなければならない（MUST）。有効な `--cap` があるときは env を共通処理に渡さない。env は共通処理の規則に従い、空白だけは未設定、前後空白付きの ASCII 非負整数は有効、0 も通す（MUST）。不正な env は `invalid_override` で exit 1 とする。
+
+守備範囲: 入力の出どころは `--cap` と `DEV_WORKFLOW_PR_TOKEN_CAP` である。拾いたい誤りは、優先順位の取り違えと、不正な env を黙って既定値に戻すことである。通してよい入力は、有効な `--cap` に隠れる不正な env（例: `--cap 9000` と `DEV_WORKFLOW_PR_TOKEN_CAP=abc`）、0、文脈系の env の不正（共通処理に渡さないので見ない）である。これらの穴を塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 前後空白付きの env は有効
 
@@ -76,12 +80,14 @@
 
 ### Requirement: 累計計測の診断は既存 JSON と配布先の手順参照を保つ
 
-`pr-token-budget.sh` は、数えたモデルの `unknown_model` と、対象が `pr_token_cap` の `revalidation_required` を、上書き・`--cap` のときも呼び出しごとに `pr-token-budget: ` で始まる行で stderr に出さなければならない（MUST）。再検証の行には要求モデル・根拠モデル・対象・実行中のスクリプトと同じ配布物の `token-thresholds.md` の絶対パスを書く。同じ行は 1 回だけ出す。stdout の 1 行 JSON のキーと exit code の意味は変えない（MUST NOT 変える）。本体は診断だけで止まらない（MUST NOT）。
+`pr-token-budget.sh` は、数えたモデルの `unknown_model` と、対象が `pr_token_cap` の `revalidation_required` を、上書き時も呼び出しごとに `pr-token-budget: ` 付きで stderr に出さなければならない（MUST）。再検証の行には要求モデル・根拠モデル・対象と、同じ配布物の `token-thresholds.md` の絶対パスを書く。stdout の 1 行 JSON のキーと exit code の意味は変えない（MUST NOT 変える）。本体は診断だけを理由に spawn・再開・委譲を止めてはならない（MUST NOT）。
+
+守備範囲: 入力の出どころは、共通処理が返す診断と実行中のスクリプトの位置である。拾いたい誤りは、上書きや `--cap` のときに診断が消えること、別の配布物の手順を案内すること、stdout の JSON を壊すことである。通してよい入力は、測るたびに同じ診断が出ることと、診断の文言の細部である。これらの穴を塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 上書きしても診断を出し、JSON は変わらない
 
 - **WHEN** 未知モデルのリクエストを数え、`--cap 9000` を付けて実行する
-- **THEN** stderr に `pr-token-budget: unknown_model` と、`対象=pr_token_cap` と手順の絶対パスを含む `pr-token-budget: revalidation_required` の行が出て、stdout は従来のキーだけの 1 行 JSON で `cap` は 9000
+- **THEN** stderr に `pr-token-budget: unknown_model` と、`対象=pr_token_cap` と手順の絶対パスを含む `pr-token-budget: revalidation_required` の行が出て、同じ行は 1 回ずつで、stdout は従来のキーだけの 1 行 JSON で `cap` は 9000
 
 #### Scenario: 同梱の配布物の手順を示す
 
@@ -96,6 +102,8 @@
 ### Requirement: 累計の共通解決が失敗したら計測できないで終わる
 
 `pr-token-budget.sh` は、共通処理の取得・呼出し・結果の取り出しで起きた `Exception` を `resolver_unavailable: <型>: <文>` とし、表・上書きの不正（`ValueError`）はその理由として、どちらも stderr に理由、stdout に `error` の 1 行 JSON を出して exit 1 で終わらなければならない（MUST）。隠れた定数の上限で補ってはならない（MUST NOT）。exit 1 のあとの扱いは `pr-token-budget.md` の「計測できない」のとおり。
+
+守備範囲: 入力の出どころは配布物の表と `scripts/token_thresholds.py` である。拾いたい誤りは、壊れた表や欠けた共通処理を定数 30000000 で補って成功を装うことである。通してよい入力は、形式が正しい表（値や根拠の中身の正しさは見ない）である。予測できない障害すべてを扱い切ることを完了条件にしない。
 
 #### Scenario: 共通処理が無い配布物
 
