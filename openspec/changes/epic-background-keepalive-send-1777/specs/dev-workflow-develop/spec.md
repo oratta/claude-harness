@@ -86,7 +86,7 @@ Orca/tmux の起動部品は、キャッシュ維持の声かけを、既存の�
 
 ### Requirement: wait は明示された Orca の作業待ちにも声かけを送る
 
-wait は通常の正の interval/timeout・--watch-stopped・位置引数の子に限り、有効な作業待ち記録のある子へ共有定義 background の固定文を送らなければならない（MUST）。同じ親の一意な記録で、issue open、status=running、stop が stopped/stopped-seen でなく、起動失敗なし・worktree/session あり・launcher=orca を要求する（MUST）。有効な parent/startup の作業報告、dependency_wait 欠落/false、明示した background_wait を要し、owner・通常報告・依存待ち・完了・旧記録を補ってはならない（MUST NOT）。
+wait は通常の正の interval/timeout・--watch-stopped・位置引数の子に限り、有効な作業待ち記録のある子へ共有定義 background の固定文を送らなければならない（MUST）。同じ親の一意な記録で、issue open、status=running、stop が stopped/stopped-seen でなく、起動失敗なし・worktree/session あり・launcher=orca を要求する（MUST）。有効な parent/startup の作業報告、dependency_wait 欠落/false、明示した background_wait を要し、owner・通常報告・依存待ち・完了・旧記録を補ってはならない（MUST NOT）。送り手 owner の待ちは子も同じ照合で自己通知に戻る（`dev-workflow-child-background-wait`）。
 
 #### Scenario: 大きい会話の作業待ちに専用文を送る
 - **WHEN** 有効な Orca の作業待ちで会話量が 150001 トークン、他の時間・ログ・画面条件を全て満たす
@@ -95,6 +95,10 @@ wait は通常の正の interval/timeout・--watch-stopped・位置引数の子�
 #### Scenario: 作業待ちに格上げしない
 - **WHEN** 候補が owner ターン、marker の無い作業報告、dependency_wait=true、完了、状態 null・型不正・世代/セッション不一致、旧記録、別親、closed、waiting、done、起動失敗、worktree/session 不在、stopped または stopped-seen のいずれかである
 - **THEN** 作業待ち向けの送信は0回。ログの文章や古い停止印だけで補わない。停止済み子は既存の独立した経路だけで判断する
+
+#### Scenario: owner の入力のあとは親が送らず子が自己通知に戻る
+- **WHEN** 登録済み Orca の子が主の直接入力（owner）を処理したあと、60分超の作業待ちを続け、その turn_input の送り手が owner のままである
+- **THEN** 親の作業待ち向けの送信は0回で、子は外部用 marker を出さず既存の自己通知契約に従う。次の parent/startup の通常入力のあとで待ち直したときだけ外部起こしの対象になる
 
 #### Scenario: 外部起こしを使えない経路には作業待ち文を送らない
 - **WHEN** tmux の子または記録を持たないサブエージェント方式が作業を待つ
