@@ -28,6 +28,8 @@
 
 CLI は `--cap` > 文脈上限 env > モデル行 / fallback、hook は各文脈 env > モデル行 / fallback で解決しなければならない（MUST）。各呼出元は使う指標の env だけを渡し、CLI の有効な `--cap` は同 env を遮蔽する（MUST）。env は空白だけを未設定、前後空白付き ASCII 非負整数を有効とし、`--cap` は従来の ASCII 数字列だけとする（MUST）。CLI の 0 は有効、hook は cap / hard のどちらかが 0 なら stdout 空・exit 0 の fail-open とし、`hard <= cap` なら PreToolUse だけ fail-open にする（MUST）。
 
+守備範囲: 入力元は利用者の `--cap`・env と同梱表・共通処理。優先順位・形式・正数条件・大小関係の誤適用を拾う。有効な `--cap 100` に隠れる不正 env `abc` や未使用指標の不正 env は許容する。入力の穴の完全封鎖は完了条件にしない。
+
 #### Scenario: 有効な cap 引数は env を遮蔽する
 
 - **WHEN** CLI で `--cap 100` を指定し、文脈上限 env が `200` または `abc` である
@@ -79,7 +81,9 @@ CLI は `--cap` > 文脈上限 env > モデル行 / fallback、hook は各文脈
 
 ### Requirement: 文脈の共通解決が失敗しても hook はツールを止めない
 
-共通処理の invalid_table / invalid_override またはロード失敗時に、CLI は `error` 文字列を持つ 1 行 JSON と exit 1、hook は stdout 空と exit 0 を返し、いずれも呼出元名・コード・理由を stderr に出さなければならない（MUST）。ロード失敗のコードは resolver_unavailable、hook の正数条件違反は invalid_hook_threshold とする（MUST）。失敗時に隠れた定数や環境値だけで解決成功を装ってはならない（MUST NOT）。守備範囲は設定不良を通知して既存 fail-open へつなぐことであり、予測不能な全障害の完全処理は完了条件にしない。
+共通処理の invalid_table / invalid_override またはロード失敗時に、CLI は `error` 文字列を持つ 1 行 JSON と exit 1、hook は stdout 空と exit 0 を返し、いずれも呼出元名・コード・理由を stderr に出さなければならない（MUST）。ロード失敗のコードは resolver_unavailable、hook の正数条件違反は invalid_hook_threshold とする（MUST）。失敗時に隠れた定数や環境値だけで解決成功を装ってはならない（MUST NOT）。
+
+守備範囲は、利用者の引数・env、同梱表・共通処理を入力元とする設定不良・ロード失敗を通知して既存 fail-open へつなぐことである。不正な表や利用対象の不正 env、共通処理の欠損を黙って既定値で補い成功を装う誤りと、hook がそれらの失敗でツールを止める誤りを拾う。形式が正しい同梱表の根拠内容の真偽は検証せず、その表が通常の解決に通ることを許す。入力の穴の完全封鎖や予測不能な全障害の完全処理は完了条件にしない。
 
 #### Scenario: 壊れた表でも隠れた値を使わない
 
