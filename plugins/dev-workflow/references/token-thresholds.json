@@ -1,0 +1,131 @@
+{
+  "schema_version": 1,
+  "models": {
+    "claude-opus-5-5": {
+      "context_cap": {
+        "value": 150000,
+        "decided_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "decided_at": "2026-11-24",
+        "evidence": "1410 体の分布と W の手渡し 17 組。Opus 5.5 / Sonnet 5.5 の費用比較では引き上げる根拠がなく、品質の最適値は未測定。",
+        "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+      },
+      "context_hard_cap": {
+        "value": 220000,
+        "decided_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "decided_at": "2026-11-24",
+        "evidence": "1410 体のうち到達 0 体。強制停止が有効な線か、品質が保てる線かは未検証。",
+        "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+      },
+      "pr_token_cap": {
+        "value": 30000000,
+        "decided_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "decided_at": "2026-11-24",
+        "evidence": "38 件の Claude サブエージェント＋Codex の混合集計。測れた停止 10 件は超過、非停止 27 件の最大 28.1M。単一モデルの品質評価ではなく、品質の最適値は未測定。",
+        "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+      },
+      "epic_child_token_cap": {
+        "value": 60000000,
+        "decided_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "decided_at": "2026-11-24",
+        "evidence": "同じ 38 件の Claude サブエージェント＋Codex の混合集計で超過 6 件、p90 78.6M。エピックの子について親が使える権限の現行値を維持。単一モデルの評価ではなく、品質の最適値は未測定。",
+        "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+      }
+    },
+    "claude-sonnet-5-5": {
+      "context_cap": {
+        "value": 150000,
+        "decided_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "decided_at": "2026-11-24",
+        "evidence": "1410 体の分布と W の手渡し 17 組。Opus 5.5 / Sonnet 5.5 の費用比較では引き上げる根拠がなく、品質の最適値は未測定。",
+        "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+      },
+      "context_hard_cap": {
+        "value": 220000,
+        "decided_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "decided_at": "2026-11-24",
+        "evidence": "1410 体のうち到達 0 体。強制停止が有効な線か、品質が保てる線かは未検証。",
+        "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+      },
+      "pr_token_cap": {
+        "value": 30000000,
+        "decided_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "decided_at": "2026-11-24",
+        "evidence": "38 件の Claude サブエージェント＋Codex の混合集計。測れた停止 10 件は超過、非停止 27 件の最大 28.1M。単一モデルの品質評価ではなく、品質の最適値は未測定。",
+        "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+      },
+      "epic_child_token_cap": {
+        "value": 60000000,
+        "decided_models": [
+          "claude-opus-5-5",
+          "claude-sonnet-5-5"
+        ],
+        "decided_at": "2026-11-24",
+        "evidence": "同じ 38 件の Claude サブエージェント＋Codex の混合集計で超過 6 件、p90 78.6M。エピックの子について親が使える権限の現行値を維持。単一モデルの評価ではなく、品質の最適値は未測定。",
+        "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+      }
+    }
+  },
+  "fallback": {
+    "context_cap": {
+      "value": 150000,
+      "decided_models": [
+        "claude-opus-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "decided_at": "2026-11-24",
+      "evidence": "1410 体の分布と W の手渡し 17 組。Opus 5.5 / Sonnet 5.5 の費用比較では引き上げる根拠がなく、品質の最適値は未測定。",
+      "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+    },
+    "context_hard_cap": {
+      "value": 220000,
+      "decided_models": [
+        "claude-opus-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "decided_at": "2026-11-24",
+      "evidence": "1410 体のうち到達 0 体。強制停止が有効な線か、品質が保てる線かは未検証。",
+      "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+    },
+    "pr_token_cap": {
+      "value": 30000000,
+      "decided_models": [
+        "claude-opus-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "decided_at": "2026-11-24",
+      "evidence": "38 件の Claude サブエージェント＋Codex の混合集計。測れた停止 10 件は超過、非停止 27 件の最大 28.1M。単一モデルの品質評価ではなく、品質の最適値は未測定。",
+      "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+    },
+    "epic_child_token_cap": {
+      "value": 60000000,
+      "decided_models": [
+        "claude-opus-5-5",
+        "claude-sonnet-5-5"
+      ],
+      "decided_at": "2026-11-24",
+      "evidence": "同じ 38 件の Claude サブエージェント＋Codex の混合集計で超過 6 件、p90 78.6M。エピックの子について親が使える権限の現行値を維持。単一モデルの評価ではなく、品質の最適値は未測定。",
+      "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012"
+    }
+  }
+}
