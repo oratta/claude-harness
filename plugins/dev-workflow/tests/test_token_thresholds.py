@@ -163,8 +163,19 @@ class ThresholdTests(unittest.TestCase):
         for content in ('{', ''):
             path.write_text(content)
             with patch.object(self.module, 'TABLE_PATH', path):
-                with self.assertRaisesRegex(ValueError, 'invalid_table'):
+                with self.assertRaisesRegex(ValueError, 'invalid_table') as error:
                     self.resolve()
+                stdout, stderr = io.StringIO(), io.StringIO()
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    code = self.module.main([])
+                self.assertEqual(code, 1)
+                result = json.loads(stdout.getvalue())
+                self.assertEqual(result['error']['code'], 'invalid_table')
+                self.assertNotIn('thresholds', result)
+                reason = str(error.exception.__cause__)
+                self.assertTrue(reason)
+                self.assertIn(reason, result['error']['message'])
+                self.assertIn(reason, stderr.getvalue())
         path.unlink()
         with patch.object(self.module, 'TABLE_PATH', path):
             with self.assertRaisesRegex(ValueError, 'invalid_table'):
