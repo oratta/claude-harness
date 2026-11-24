@@ -275,7 +275,9 @@ Fable 以外の `model` は、要件「実行役の種別は対応表の上限�
 
 判定は必要条件であって十分条件ではなく、`agent_id` を持たない payload が python3 に渡ってよい（MAY）。その場合はパース後に `agent_id` フィールドが無いと判定され、何も出力せず exit 0 する。この向きの外し方が起きる頻度は payload の内容に依存する（PostToolUse の payload は `tool_response` を含むため、Read が読んだファイル内容・Bash の出力・Grep の結果にこの並びがあれば起動する。JSON シリアライザが `\b \f \n \r \t` 以外の制御文字を 4 桁 16 進で綴った出力も同じ）。判定を誤ってよいのはこの向き（余計に起動して無音で終わる）だけであり、逆向き（`agent_id` を持つ payload の早期 exit）は許されない（MUST NOT）。
 
-次のいずれかに当たるときは何も出力せず exit 0 で終わらなければならない（MUST。fail-open）: 上の 3 つ ／ stdin が読めない・JSON でない ／ 導出したトランスクリプトが無い・usage が読めない ／ 探索の上限に達した。しきい値解決の失敗・解決値の正数条件違反は stdout 空・exit 0 とし、理由を stderr に出さなければならない（MUST）。閾値以内でも stdout は空・exit 0 とし、fallback・再検証が必要なら stderr に診断を出す（MUST）。共通処理の正常な fallback だけを理由に判定を無効にしてはならない（MUST NOT）。
+次のいずれかに当たるときは何も出力せず exit 0 で終わらなければならない（MUST。fail-open）: 上の 3 つ ／ stdin が読めない・JSON でない ／ 導出したトランスクリプトが無い・usage が読めない ／ 探索の上限に達した。しきい値解決の失敗（共通処理の API 欠損・呼出し時の通常例外を含む）・解決値の正数条件違反は stdout 空・exit 0 とし、理由を stderr に出さなければならない（MUST）。再検証通知が無い閾値以内は stdout 空・exit 0 とし、fallback・再検証が必要なら stderr に診断を出す（MUST）。再検証通知があるときは、閾値以内でも stderr の診断に加えて、診断だけの単一 JSON（`hookSpecificOutput` の `hookEventName` と `additionalContext` のみ）を stdout に出して exit 0 とし、本人への通知経路とする（MUST）。出力の形・文面・決定フィールドを付けない規則は dev-workflow-token-thresholds の文脈計測の診断の要件に従う。共通処理の正常な fallback だけを理由に判定を無効にしてはならない（MUST NOT）。
+
+守備範囲は、同梱表・共通処理の結果と payload・ログを入力元とし、閾値以内の無音を理由に再検証の必要が本人に届かない誤りと、診断だけでツールを止める誤りを拾う。通知の到達は出力検査と公式の配送規則を根拠とし、実機観測や入力の穴の完全封鎖を完了条件にしない。通してよい入力の例は、根拠に含まれる既知モデルで閾値以内の呼出し（stdout も stderr も空で通す）と、`agent_id` を持たないが `\u00` を含む payload（python3 を起動したうえで無音で通す）である。
 
 #### Scenario: agent_id が無い呼び出しは python3 を起動せず無音
 
@@ -295,7 +297,7 @@ Fable 以外の `model` は、要件「実行役の種別は対応表の上限�
 #### Scenario: 上限内では無音
 
 - **WHEN** 導出したトランスクリプトの最後の usage 合算が解決した `context_cap` 以内である
-- **THEN** stdout は空・exit 0 で終わる。根拠に含まれる既知モデルなら stderr も空、fallback・再検証が必要なモデルなら stderr にだけ診断が出る
+- **THEN** 根拠に含まれる既知モデルなら stdout も stderr も空・exit 0 で終わる。fallback・再検証が必要なモデルなら stderr に診断が出ると同時に、stdout は `additionalContext` だけの再検証通知 JSON（拒否・締めの決定フィールドなし）になり、exit 0 で終わる
 
 #### Scenario: 測れないときは止めない
 
@@ -315,7 +317,7 @@ Fable 以外の `model` は、要件「実行役の種別は対応表の上限�
 #### Scenario: 5MB のトランスクリプトでも 100ms 未満
 
 - **WHEN** 5MB のトランスクリプトを対象に hook を 1 回実行する
-- **THEN** 実行時間が 100ms 未満で、stdout は閾値判定の結果だけであり、必要なモデル診断は stderr に出る
+- **THEN** 実行時間が 100ms 未満で、stdout は閾値判定の結果と必要な再検証通知だけであり、必要なモデル診断は stderr にも出る
 
 #### Scenario: 全解除できる
 
@@ -328,7 +330,11 @@ PostToolUse で計測値が `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を超�
 
 `additionalContext` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_CAP` の値 ／ 今の工程を締め、成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を列挙して return せよという指示 ／ **return の 1 行目の書き分け**（そのとき進めていた tasks グループの項目がすべて済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:`）。この通知は役割で出し分けないため、`tasks.md` を持たない受け手にも届く。したがって「tasks グループ」の指すものを本文の中で一意にしなければならない（MUST）: **`tasks.md` が無い場合は本体から渡された作業項目、G は pr-review-gate の手順 1〜5 を 1 グループとみなす**。
 
-役割（W / R1 / G / decider）による出し分けをしてはならない（MUST NOT。全サブエージェント一律）。出力は 1 回あたり数行に抑え、ツールの実行結果を書き換えてはならない（MUST NOT）。
+利用する文脈指標の再検証通知がある場合は、この `additionalContext` の既存本文を変えずに保ち、別段落で再検証通知を追記してよい（MAY。本文の保持は MUST）。再検証通知の文面・出力規則は dev-workflow-token-thresholds の文脈計測の診断の要件に従う。
+
+役割（W / R1 / G / decider）による出し分けをしてはならない（MUST NOT。全サブエージェント一律）。出力は 1 回あたり数行（再検証通知の段落を除く）に抑え、ツールの実行結果を書き換えてはならない（MUST NOT）。
+
+守備範囲は、締め通知の本文・書式を入力元の計測値と上限から作る誤りと、再検証通知の追記で既存の締め指示が消える誤りを拾う。追記の文面の細部や入力の穴の完全封鎖は完了条件にしない。通してよい入力の例は、cap 以下の PostToolUse（締め通知は出さない。再検証通知だけは付きうる）と、`agent_type` の違う payload（同じ本文を出す）である。
 
 #### Scenario: 上限超で締めの指示が additionalContext に出る
 
@@ -339,6 +345,11 @@ PostToolUse で計測値が `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を超�
 
 - **WHEN** 同じ payload で `additionalContext` を読む
 - **THEN** tasks グループが全部済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:` を 1 行目にする旨と、`tasks.md` が無い場合に何を 1 グループとみなすか（本体から渡された作業項目、G は pr-review-gate の手順 1〜5）が含まれる
+
+#### Scenario: 再検証通知は既存の締め通知を消さず別段落で足される
+
+- **WHEN** 再検証通知が出る未知モデルで、計測値が `DEV_WORKFLOW_CONTEXT_CAP` を超える PostToolUse payload を渡し、出力を解析する
+- **THEN** `additionalContext` は再検証通知が無い場合の本文をそのまま含み、そのあとの別段落に再検証通知を持つ。単一 JSON・exit 0
 
 #### Scenario: 役割で出し分けない
 
@@ -351,14 +362,21 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 `Bash` は**コマンド内容によらず拒否しなければならない**（MUST）。コマンド文字列を解析して一部の形だけを通す判定を置いてはならない（MUST NOT）。理由: 判定はこのプロセスの中でコマンド文字列をトークン化するが、実際に実行するのは別プロセスのシェル（zsh または bash）で、両者のトークン化は一致を保証できない。実際に、シェル側にだけ意味を持つ記法（zsh の ANSI-C クォート `$'…'`、シェルのブレース展開 `{a,b}` 等）を判定側が「危険でない 1 トークン」と誤認し、実行側では任意コマンドの引数に展開される迂回が 2 度にわたって実機で再現した（`git -c` の値読み飛ばし、および `git push $'--receive-pack=/tmp/x' origin main`）。受理する経路が 1 つでも残る限り、この種の迂回は形を変えて再発するため、`Bash` は内容を一切見ず全件拒否する構造に閉じる。
 
-拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とする（SHALL）。`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_HARD_CAP` の値 ／ `Bash` はコマンド内容によらず一切通らないこと ／ payload の `cwd`（＝そのサブエージェントの作業ツリーのパス）／ 編集済みファイルの一覧と、その作業ツリーのパス（`cwd`）を return に書けという指示 ／ commit は本体が行うという指示（サブエージェント自身は commit できないため）／ **return の 1 行目は `工程中断:` にすること**（強制停止で止まった時点で予定していた作業が残っているため、常に中断とする）。`-C <path>` や `-c <k=v>` といった、通る形についての案内を含めてはならない（MUST NOT）— 通る形は存在しないため。
+拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とする（SHALL）。`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_HARD_CAP` の値 ／ `Bash` はコマンド内容によらず一切通らないこと ／ payload の `cwd`（＝そのサブエージェントの作業ツリーのパス）／ 編集済みファイルの一覧と、その作業ツリーのパス（`cwd`）を return に書けという指示 ／ commit は本体が行うという指示（サブエージェント自身は commit できないため）／ **return の 1 行目は `工程中断:` にすること**（強制停止で止まった時点で予定していた作業が残っているため、常に中断とする）。`-C <path>` や `-c <k=v>` といった、通る形についての案内を含めてはならない（MUST NOT）— 通る形は存在しないため。利用する文脈指標の再検証通知がある場合は、`permissionDecision` と `permissionDecisionReason` を変更せず、同じ `hookSpecificOutput` に再検証の `additionalContext` を追加してよい（MAY。既存の拒否の保持は MUST）。
 
-`DEV_WORKFLOW_CONTEXT_HARD_CAP` は `DEV_WORKFLOW_CONTEXT_CAP` より大きくなければならず、小さいか等しい場合は fail-open（stdout 空・exit 0）とする（MUST）。必要なモデル診断はこの場合も stderr に出さなければならない（MUST）。ここでの環境変数名は共通処理で解決した値を指し、モデル別既定値も同じ比較に使う。
+`DEV_WORKFLOW_CONTEXT_HARD_CAP` は `DEV_WORKFLOW_CONTEXT_CAP` より大きくなければならず、小さいか等しい場合は PreToolUse で拒否しない（MUST）。この場合の stdout は、再検証通知が無ければ空、あれば診断だけの JSON とし、exit 0 とする。必要なモデル診断はこの場合も stderr に出さなければならない（MUST）。
+
+守備範囲は、閾値と対象ツールの判定を入力元とする拒否・非拒否の境界の誤りを拾う。再検証通知は拒否の条件を変えず、診断だけで拒否・締めを起こさない。入力の穴の完全封鎖は完了条件にしない。通してよい入力の例は、Read・Grep・Glob、cap 超かつ hard 以内の Edit・Bash、`hard <= cap` の設定での全ツールで、いずれも拒否しない（再検証通知の JSON は付きうる）。ここでの環境変数名は共通処理で解決した値を指し、モデル別既定値も同じ比較に使う。
 
 #### Scenario: 強制停止の閾値超で Edit が拒否される
 
 - **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP` を超える状態で `tool_name: "Edit"` の PreToolUse payload を渡す
 - **THEN** `permissionDecision: deny` の JSON を出力し、理由に計測値と「commit は本体が行う」と `工程中断:` が含まれる
+
+#### Scenario: 再検証通知があっても拒否の本文は変わらない
+
+- **WHEN** 再検証通知が出るモデルで、計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP` を超える `Edit` と `Bash` の PreToolUse payload を渡し、出力を解析する
+- **THEN** `permissionDecision` は `deny`、`permissionDecisionReason` は再検証通知が無い場合と同じ本文で、同じ `hookSpecificOutput` に再検証の `additionalContext` が加わる。exit 0
 
 #### Scenario: Bash はどんな形でも拒否される
 
@@ -373,12 +391,12 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 #### Scenario: 通知の閾値と強制停止の閾値の間では拒否しない
 
 - **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_CAP` 超・`DEV_WORKFLOW_CONTEXT_HARD_CAP` 以内の状態で `tool_name: "Edit"` または `tool_name: "Bash"`（`command: "git status"`）の PreToolUse payload を渡す
-- **THEN** どちらも stdout 空・exit 0 で終わる（編集も Bash も通る）。必要なモデル診断は stderr にだけ出る
+- **THEN** どちらも拒否されず exit 0 で終わる（編集も Bash も通る）。stdout は再検証通知が無ければ空、あれば `additionalContext` だけの診断 JSON（`permissionDecision` なし）。必要なモデル診断は stderr にも出る
 
 #### Scenario: 閾値の大小が逆なら何もしない
 
 - **WHEN** `DEV_WORKFLOW_CONTEXT_HARD_CAP` が `DEV_WORKFLOW_CONTEXT_CAP` 以下に設定されている
-- **THEN** PreToolUse は stdout 空・exit 0 で終わる。必要なモデル診断は stderr にだけ出る
+- **THEN** PreToolUse は拒否せず exit 0 で終わる。stdout は再検証通知が無ければ空、あれば診断だけの JSON。必要なモデル診断は stderr にも出る
 
 ### Requirement: worktree 隔離のサブエージェントでも途中計測が効く
 
