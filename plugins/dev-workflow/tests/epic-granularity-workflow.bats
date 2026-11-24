@@ -93,7 +93,8 @@ PY
 }
 
 @test "planner unit acceptance tests run in the Bats CI discovery path" {
-  run env PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s "$PLUGIN/tests" -p test_epic_granularity.py
+  # 実行は tests/python-suites.bats が git 追跡下の全 test_*.py を回す。ここでは発見の対象に入っていることだけを見る
+  run git -C "$PLUGIN" ls-files --error-unmatch tests/test_epic_granularity.py
   [ "$status" -eq 0 ]
 }
 
