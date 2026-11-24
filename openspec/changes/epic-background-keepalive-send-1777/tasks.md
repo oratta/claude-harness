@@ -18,7 +18,7 @@
 ## 4. 統合と変更記録
 
 - [ ] 4.1 `bats plugins/dev-workflow/tests/epic-child-state.bats plugins/dev-workflow/tests/child-background-wait.bats plugins/dev-workflow/tests/epic-dispatch.bats` を exit 0 にし、主の返事待ちの固定文・送信条件・150k 除外・既存の期限設定・tmux・停止受領・wait の出力/終了規則が変わらないことを確認する。共有 JSON と child-log の除外は変更不要で、作業待ちの受信がツールなし一行の既存契約へ接続していることも既存回帰で確かめる。`openspec validate epic-background-keepalive-send-1777 --type change --strict` と `git diff --check` を exit 0 にする。触る範囲: plugins/dev-workflow/tests/epic-child-state.bats:1-1090、plugins/dev-workflow/tests/child-background-wait.bats:1-200、plugins/dev-workflow/tests/epic-dispatch.bats:6992-10381、openspec/changes/epic-background-keepalive-send-1777/specs/（本 change の差分仕様）
-- [ ] 4.2 変更記録に外部起こしの対象・自己タイマーとの切替・初回開始からの12時間・互換性・実測未実施を記す。実作業中への誤送信、余分な応答/リクエスト、未計測の頻度と送信判定の制限を後続 PR のリスク宣言へ引き継ぐ文面を作り、記録と design の整合を確認する。この工程で主への質問や PR 作成は行わない。触る範囲: plugins/dev-workflow/changes/1777.md（新規）
+- [x] 4.2 変更記録に外部起こしの対象・自己タイマーとの切替・初回開始からの12時間・互換性・実測未実施を記す。実作業中への誤送信、余分な応答/リクエスト、未計測の頻度と送信判定の制限を後続 PR のリスク宣言へ引き継ぐ文面を作り、記録と design の整合を確認する。この工程で主への質問や PR 作成は行わない。触る範囲: plugins/dev-workflow/changes/1777.md（新規）
 
 ## Workflow follow-up
 
