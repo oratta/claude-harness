@@ -531,11 +531,11 @@ refute() {
   grep -q '^### 完了条件' <<<"$e"
 }
 
-@test "epic: conditions name 2+ PRs, multiple capabilities, or ordered children" {
+@test "epic: planner groups determine splitting, never capability or dependency counts alone" {
   e="$(section 'エピックの扱い' "$EPIC")"
-  grep -qE '2 本以上' <<<"$e"
-  grep -q 'capability' <<<"$e"
-  grep -q '順序依存' <<<"$e"
+  grep -qF 'epic-granularity.md' <<<"$e"
+  grep -q '粒度計算が複数 group' <<<"$e"
+  grep -q 'capability 数や順序依存だけでは分けない' <<<"$e"
 }
 
 @test "epic: creation binds Closes to children and wires dependencies via blocked_by" {
@@ -595,7 +595,7 @@ refute() {
 @test "epic: completion needs the epic's own verification, not just all children merged" {
   e="$(section 'エピックの扱い' "$EPIC")"
   grep -q '閉じない' <<<"$e"
-  grep -qE '証拠.*エピック' <<<"$e"
+  grep -qE '実機で確認.*証拠を親にコメント' <<<"$e"
 }
 
 # --- エピックの 2 節の移設（#1219） ---
@@ -683,13 +683,16 @@ refute() {
   grep -q 'モデルは変えない' <<<"$w4"
 }
 
-@test "tripwire template: wire 1 routes to return-to-main split or native Workflow execution, keeps heading and five wires" {
+@test "tripwire template: wire 1 returns quantities to main for replanning and keeps the other wires" {
   grep -q '^## 昇格トリップワイヤー' "$TRIPWIRES"
   w1="$(awk '/^1\. /{f=1} /^2\. /{f=0} f' "$TRIPWIRES")"
   grep -q '規模超過' <<<"$w1"
   grep -q '本体に return' <<<"$w1"
-  grep -q 'エピック化' <<<"$w1"
-  grep -q 'workflow-execution.md' <<<"$w1"
+  grep -q '再計算' <<<"$w1"
+  grep -q '容量超過／配置不能' <<<"$w1"
+  grep -q '量が不明' <<<"$w1"
+  grep -qF 'epic-granularity.md' <<<"$w1"
+  grep -q '上限を広げない' <<<"$w1"
   ! grep -q 'workflow 型へ' <<<"$w1" || return 1
   ! grep -qF '/lr:' "$TRIPWIRES" || return 1
   grep -q '失敗ループ' "$TRIPWIRES"

@@ -6,10 +6,13 @@
 # spec: dev-workflow decision-criteria「コンテキスト上限（サブエージェントの手渡し）」
 
 setup() {
+  bats_require_minimum_version 1.5.0
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/subagent-context.sh"
   WORK="$(mktemp -d)"
   PROJECTS="${WORK}/projects"
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_PR_TOKEN_CAP
+  unset AGENT_MODEL ANTHROPIC_MODEL
 }
 
 teardown() {
@@ -25,7 +28,7 @@ make_transcript() {
   printf '{"type":"user","isSidechain":true,"cwd":"%s","message":{"role":"user","content":"hi"}}\n' "$cwd" > "$f"
   for triple in "$@"; do
     IFS=, read -r i c r <<<"$triple"
-    printf '{"type":"assistant","message":{"model":"claude-sonnet-5","usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":10}}}\n' "$i" "$c" "$r" >> "$f"
+    printf '{"type":"assistant","message":{"model":"claude-sonnet-5-5","usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":10}}}\n' "$i" "$c" "$r" >> "$f"
   done
   echo "$f"
 }
@@ -48,7 +51,7 @@ PY
   local f
   f="$(make_transcript p1 s1 agent-a123.jsonl "$PWD" "1,2,3")"
   printf '{"name":"W-590"}' > "${f%.jsonl}.meta.json"
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$f" 6
 }
 
@@ -57,7 +60,7 @@ PY
   f="$(make_transcript p1 s1 agent-a123.jsonl "$PWD" "1,2,3")"
   for name in W-590-extra prefix-W-590; do
     printf '{"name":"%s"}' "$name" > "${f%.jsonl}.meta.json"
-    run "$SCRIPT" W-590 --projects "$PROJECTS"
+    run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
     [ "$status" -eq 1 ]
     [ "$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"])')" = "transcript not found" ]
   done
@@ -69,7 +72,7 @@ PY
     sess=$((sess + 1))
     f="$(make_transcript p1 "s$sess" "$fname" "$PWD" "1,2,3")"
     set_mtime "$f" "$((1000 + sess))"
-    run "$SCRIPT" W-590 --projects "$PROJECTS"
+    run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
     assert_transcript "$f" 6
   done
 }
@@ -82,7 +85,7 @@ PY
   printf '{"name":"W-590"}' > "${newer%.jsonl}.meta.json"
   set_mtime "$matching" 1000
   set_mtime "$newer" 2000
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$matching" 111
 }
 
@@ -96,7 +99,7 @@ PY
   set_mtime "$newer" 2000
   set_mtime "${older%.jsonl}.meta.json" 4000
   set_mtime "${newer%.jsonl}.meta.json" 3000
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$newer" 222
 }
 
@@ -108,7 +111,7 @@ PY
   printf '{"name":"W-590"}' > "${newer%.jsonl}.meta.json"
   set_mtime "$older" 1000
   set_mtime "$newer" 2000
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$newer" 222
 }
 
@@ -119,16 +122,16 @@ PY
   printf '{"name":"W-590"}' > "${meta%.jsonl}.meta.json"
   set_mtime "$legacy" 1000
   set_mtime "$meta" 2000
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$legacy" 111
 
   # 両方 cwd が一致した場合は探索元にかかわらずログの mtime で選ぶ。
   make_transcript p2 s2 agent-b456.jsonl "$PWD" "0,0,222" >/dev/null
   set_mtime "$meta" 2000
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$meta" 222
   set_mtime "$legacy" 3000
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$legacy" 111
 }
 
@@ -146,18 +149,18 @@ check_metadata_fallback() {
     no-name) printf '{}' > "$meta" ;;
     no-log) printf '{"name":"W-590"}' > "${legacy%/*}/agent-missing.meta.json" ;;
   esac
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$legacy" 111
 
   mv "$legacy" "$opaque"
   if [ -f "$meta" ]; then mv "$meta" "${opaque%.jsonl}.meta.json"; fi
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   [ "$status" -eq 1 ]
   [ "$(printf '%s' "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["error"])')" = "transcript not found" ]
 
   good="$(make_transcript p2 s2 agent-c789.jsonl "$PWD" "0,0,333")"
   printf '{"name":"W-590"}' > "${good%.jsonl}.meta.json"
-  run "$SCRIPT" W-590 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-590 --projects "$PROJECTS"
   assert_transcript "$good" 333
 }
 
@@ -187,14 +190,15 @@ check_metadata_fallback() {
 
 @test "script: is executable and prints usage without args" {
   [ -x "$SCRIPT" ]
-  run "$SCRIPT"
+  run --separate-stderr "$SCRIPT"
   [ "$status" -eq 1 ]
-  echo "$output" | grep -q 'usage'
+  [ -z "$output" ]
+  echo "$stderr" | grep -q 'usage'
 }
 
 @test "measure: sums input + cache_creation + cache_read of the LAST assistant record" {
   make_transcript p1 s1 agent-aW-42-abcd.jsonl /tmp/x "1000,2000,3000" "500,0,120000" >/dev/null
-  run "$SCRIPT" W-42 --projects "$PROJECTS" --cap 150000
+  run --separate-stderr "$SCRIPT" W-42 --projects "$PROJECTS" --cap 150000
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
@@ -208,16 +212,16 @@ PY
 
 @test "cap: exit 2 with over_cap=true when the last context exceeds the cap" {
   make_transcript p1 s1 agent-aW-42-abcd.jsonl /tmp/x "1000,0,160000" >/dev/null
-  run "$SCRIPT" W-42 --projects "$PROJECTS" --cap 150000
+  run --separate-stderr "$SCRIPT" W-42 --projects "$PROJECTS" --cap 150000
   [ "$status" -eq 2 ]
   echo "$output" | grep -q '"over_cap": true'
 }
 
 @test "cap: DEV_WORKFLOW_CONTEXT_CAP env sets the default cap" {
   make_transcript p1 s1 agent-aW-42-abcd.jsonl /tmp/x "1000,0,20000" >/dev/null
-  run env DEV_WORKFLOW_CONTEXT_CAP=10000 "$SCRIPT" W-42 --projects "$PROJECTS"
+  run --separate-stderr env DEV_WORKFLOW_CONTEXT_CAP=10000 "$SCRIPT" W-42 --projects "$PROJECTS"
   [ "$status" -eq 2 ]
-  run env DEV_WORKFLOW_CONTEXT_CAP=50000 "$SCRIPT" W-42 --projects "$PROJECTS"
+  run --separate-stderr env DEV_WORKFLOW_CONTEXT_CAP=50000 "$SCRIPT" W-42 --projects "$PROJECTS"
   [ "$status" -eq 0 ]
 }
 
@@ -228,7 +232,7 @@ PY
   sleep 1
   make_transcript p2 s2 agent-aW-7-2222.jsonl /elsewhere "0,0,1000" >/dev/null
   cd "$here"
-  run "$SCRIPT" W-7 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-7 --projects "$PROJECTS"
   [ "$status" -eq 2 ]
   echo "$output" | grep -q '"context_tokens": 300000'
   rm -rf "$here"
@@ -236,14 +240,14 @@ PY
 
 @test "lookup: exit 1 with an error field when no transcript matches" {
   mkdir -p "$PROJECTS"
-  run "$SCRIPT" nobody --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" nobody --projects "$PROJECTS"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q 'transcript not found'
 }
 
 @test "lookup: exit 1 when the transcript has no assistant usage yet" {
   make_transcript p1 s1 agent-aW-9-abcd.jsonl /tmp/x >/dev/null
-  run "$SCRIPT" W-9 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-9 --projects "$PROJECTS"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q 'no assistant usage'
 }
@@ -251,13 +255,13 @@ PY
 @test "measure: a malformed or non-object line does not abort the scan (later usage still read)" {
   f="$(make_transcript p1 s1 agent-aW-3-abcd.jsonl /tmp/x "0,0,5")"
   printf 'null\n{not json\n{"type":"assistant","message":{"usage":{"input_tokens":2,"cache_creation_input_tokens":0,"cache_read_input_tokens":10}}}\n' >> "$f"
-  run "$SCRIPT" W-3 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" W-3 --projects "$PROJECTS"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"context_tokens": 12'
 }
 
 @test "args: --cap without a value returns a one-line JSON error instead of a bare set -u failure" {
-  run "$SCRIPT" W-3 --cap
+  run --separate-stderr "$SCRIPT" W-3 --cap
   [ "$status" -eq 1 ]
   echo "$output" | grep -q '"error"'
 }
@@ -267,7 +271,7 @@ PY
 
 @test "--file: measures the given transcript without the name glob" {
   f="$(make_transcript p1 s1 agent-a1b2c3d4e5f60718.jsonl /tmp/x "1000,2000,3000" "500,0,120000")"
-  run "$SCRIPT" --file "$f" --cap 150000
+  run --separate-stderr "$SCRIPT" --file "$f" --cap 150000
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
@@ -281,19 +285,19 @@ PY
 
 @test "--file: exit 2 when the given transcript is over the cap" {
   f="$(make_transcript p1 s1 agent-a1b2c3d4e5f60718.jsonl /tmp/x "0,0,200000")"
-  run "$SCRIPT" --file "$f" --cap 150000
+  run --separate-stderr "$SCRIPT" --file "$f" --cap 150000
   [ "$status" -eq 2 ]
   echo "$output" | grep -q '"over_cap": true'
 }
 
 @test "--file: exit 1 when the given path is not readable" {
-  run "$SCRIPT" --file "${WORK}/does-not-exist.jsonl"
+  run --separate-stderr "$SCRIPT" --file "${WORK}/does-not-exist.jsonl"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q '"error"'
 }
 
 @test "--file: without a value returns a one-line JSON error" {
-  run "$SCRIPT" --file
+  run --separate-stderr "$SCRIPT" --file
   [ "$status" -eq 1 ]
   echo "$output" | grep -q '"error"'
 }
@@ -301,7 +305,7 @@ PY
 @test "--file: the name lookup path is unchanged by the addition" {
   # 名前指定の既存挙動（cwd 優先・出力フィールド・exit code）が --file 追加の前後で変わらない
   make_transcript p1 s1 agent-aW-9-abcd.jsonl /tmp/x "0,0,10" >/dev/null
-  run "$SCRIPT" W-9 --projects "$PROJECTS" --cap 150000
+  run --separate-stderr "$SCRIPT" W-9 --projects "$PROJECTS" --cap 150000
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
@@ -312,7 +316,7 @@ PY
 }
 
 @test "--help: the last line of the header is not the shebang-adjacent set line" {
-  run "$SCRIPT" --help
+  run --separate-stderr "$SCRIPT" --help
   [ "$status" -eq 0 ]
   ! echo "$output" | grep -q 'set -uo pipefail' || return 1
   echo "$output" | grep -q -- '--file'
@@ -324,22 +328,22 @@ PY
   now="$(date +%s)"
   python3 -c 'import os,sys; t=int(sys.argv[2]); os.utime(sys.argv[1],(t,t))' "$f" $((now-1000))
   # 両方超過
-  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-500))
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run --separate-stderr "$SCRIPT" --file "$f" --stop-since $((now-500))
   [ "$status" -eq 3 ]
   echo "$output" | grep -q '"unconfirmed_terminal": true'
   # 経過時間だけ超過（停止指示が直近）
-  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-5))
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run --separate-stderr "$SCRIPT" --file "$f" --stop-since $((now-5))
   [ "$status" -eq 0 ]
   # 無更新だけ不足（トランスクリプトが今更新された）
   touch "$f"
-  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run "$SCRIPT" --file "$f" --stop-since $((now-500))
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=100 DEV_WORKFLOW_STOP_CONFIRM_STALL=100 run --separate-stderr "$SCRIPT" --file "$f" --stop-since $((now-500))
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"unconfirmed_terminal": false'
 }
 
 @test "stop-since: non-numeric env threshold is rejected" {
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 1,1,1)"
-  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=abc run "$SCRIPT" --file "$f" --stop-since 1
+  DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT=abc run --separate-stderr "$SCRIPT" --file "$f" --stop-since 1
   [ "$status" -eq 1 ]
 }
 
@@ -354,7 +358,7 @@ add_error_records() {
 @test "api error: trailing zero-usage error record is skipped, over cap reported (exit 2)" {
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
   add_error_records "$f" 1
-  run "$SCRIPT" --file "$f"
+  run --separate-stderr "$SCRIPT" --file "$f"
   [ "$status" -eq 2 ]
   echo "$output" | grep -q '"context_tokens": 160000'
   echo "$output" | grep -q '"over_cap": true'
@@ -364,7 +368,7 @@ add_error_records() {
 @test "api error: under cap stays exit 0 with the previous usage" {
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,99990)"
   add_error_records "$f" 1
-  run "$SCRIPT" --file "$f"
+  run --separate-stderr "$SCRIPT" --file "$f"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"context_tokens": 100000'
   echo "$output" | grep -q '"over_cap": false'
@@ -373,7 +377,7 @@ add_error_records() {
 @test "api error: three trailing error records still use the last normal usage" {
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
   add_error_records "$f" 3
-  run "$SCRIPT" --file "$f"
+  run --separate-stderr "$SCRIPT" --file "$f"
   [ "$status" -eq 2 ]
   echo "$output" | grep -q '"context_tokens": 160000'
 }
@@ -381,7 +385,7 @@ add_error_records() {
 @test "api error: only error records means no usage (exit 1)" {
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD")"
   add_error_records "$f" 2
-  run "$SCRIPT" --file "$f"
+  run --separate-stderr "$SCRIPT" --file "$f"
   [ "$status" -eq 1 ]
   echo "$output" | grep -q 'no assistant usage yet'
 }
@@ -390,7 +394,7 @@ add_error_records() {
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
   printf '{"type":"assistant","error":{},"message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":99990,"output_tokens":5}}}\n' >> "$f"
   printf '{"type":"assistant","error":"","message":{"usage":{"input_tokens":10,"cache_creation_input_tokens":0,"cache_read_input_tokens":99990,"output_tokens":5}}}\n' >> "$f"
-  run "$SCRIPT" --file "$f"
+  run --separate-stderr "$SCRIPT" --file "$f"
   [ "$status" -eq 2 ]
   echo "$output" | grep -q '"context_tokens": 160000'
   echo "$output" | grep -q '"last_record": "api_error"'
@@ -399,7 +403,7 @@ add_error_records() {
 @test "api error: error record without usage still sets last_record" {
   f="$(make_transcript p s agent-aW-1.jsonl "$PWD" 10,0,159990)"
   printf '{"type":"assistant","isApiErrorMessage":true,"message":{"model":"<synthetic>"}}\n' >> "$f"
-  run "$SCRIPT" --file "$f"
+  run --separate-stderr "$SCRIPT" --file "$f"
   [ "$status" -eq 2 ]
   echo "$output" | grep -q '"context_tokens": 160000'
   echo "$output" | grep -q '"last_record": "api_error"'
@@ -411,7 +415,7 @@ add_error_records() {
   f="$(make_transcript p s agent-a1.jsonl "$PWD" 1000,0,0)"
   printf '{"name":"W-590"}\n' > "${f%.jsonl}.meta.json"
   mkdir -p "${WORK}/home"
-  run env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" "$SCRIPT" W-590
+  run --separate-stderr env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" "$SCRIPT" W-590
   echo "$output"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "\"file\": \"$f\""
@@ -424,7 +428,7 @@ add_error_records() {
   PROJECTS="${WORK}/explicit"
   f="$(make_transcript p s agent-W-590.jsonl "$PWD" 2000,0,0)"
   mkdir -p "${WORK}/home"
-  run env HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" CLAUDE_PROJECTS_DIR="$PROJECTS" "$SCRIPT" W-590
+  run --separate-stderr env HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" CLAUDE_PROJECTS_DIR="$PROJECTS" "$SCRIPT" W-590
   echo "$output"
   [ "$status" -eq 0 ]
   [ -f "$other" ]
@@ -435,7 +439,7 @@ add_error_records() {
 @test "search root: with neither variable set, \$HOME/.claude/projects is searched" {
   PROJECTS="${WORK}/home/.claude/projects"
   f="$(make_transcript p s agent-W-590.jsonl "$PWD" 3000,0,0)"
-  run env -u CLAUDE_PROJECTS_DIR -u CLAUDE_CONFIG_DIR HOME="${WORK}/home" "$SCRIPT" W-590
+  run --separate-stderr env -u CLAUDE_PROJECTS_DIR -u CLAUDE_CONFIG_DIR HOME="${WORK}/home" "$SCRIPT" W-590
   echo "$output"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "\"file\": \"$f\""
@@ -445,9 +449,243 @@ add_error_records() {
 @test "search root: an empty CLAUDE_CONFIG_DIR falls back to \$HOME/.claude/projects" {
   PROJECTS="${WORK}/home/.claude/projects"
   f="$(make_transcript p s agent-W-590.jsonl "$PWD" 4000,0,0)"
-  run env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR= "$SCRIPT" W-590
+  run --separate-stderr env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR= "$SCRIPT" W-590
   echo "$output"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q "\"file\": \"$f\""
   echo "$output" | grep -q '"context_tokens": 4000'
+}
+
+# 配布先を模したコピー。元の表・共通処理・手順は編集しない。
+threshold_plugin() {
+  local dest="$WORK/cache-installed"
+  mkdir -p "$dest/scripts" "$dest/references" "$dest/skills/develop/references"
+  cp "$PLUGIN_DIR/scripts/"{subagent-context.sh,context-tripwire.sh,token_thresholds.py} "$dest/scripts/"
+  cp "$PLUGIN_DIR/references/token-thresholds.json" "$dest/references/"
+  cp "$PLUGIN_DIR/skills/develop/references/token-thresholds.md" "$dest/skills/develop/references/"
+  SCRIPT="$dest/scripts/$(basename "$SCRIPT")"
+  TABLE="$dest/references/token-thresholds.json"
+  GUIDE="$dest/skills/develop/references/token-thresholds.md"
+  python3 - "$TABLE" <<'PYFIX'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1]); d = json.loads(p.read_text())
+for row, cap, hard in [(d['models']['claude-opus-5-5'], 100, 200),
+                       (d['models']['claude-sonnet-5-5'], 300, 400),
+                       (d['fallback'], 500, 600)]:
+    row['context_cap']['value'] = cap
+    row['context_hard_cap']['value'] = hard
+p.write_text(json.dumps(d))
+PYFIX
+  cd "$WORK"
+}
+
+# $2 は JSON のモデル値。missing は model フィールドなし。$4=append なら追記。
+threshold_record() {
+  mkdir -p "$(dirname "$1")"
+  python3 - "$@" <<'PYFIX'
+import json, sys
+p, model, ctx = sys.argv[1:4]
+m = {'usage': {'input_tokens': int(ctx), 'output_tokens': 1}}
+if model != 'missing':
+    m['model'] = json.loads(model)
+with open(p, 'a' if len(sys.argv) > 4 else 'w') as f:
+    f.write(json.dumps({'type': 'assistant', 'message': m}) + '\n')
+PYFIX
+}
+
+assert_context_diagnostics() {
+  [[ "$stderr" == *unknown_model* ]] || return 1
+  [[ "$stderr" == *revalidation_required* ]] || return 1
+  [[ "$stderr" == *context_cap* ]] || return 1
+  [[ "$stderr" == *"$GUIDE"* ]] || return 1
+  [[ "$stderr" != *pr_token_cap* ]] || return 1
+  [[ "$stderr" != *epic_child_token_cap* ]] || return 1
+  [ -f "$GUIDE" ]
+  [ -z "$(find "$WORK/cache-installed" -name '*.pyc' -o -name __pycache__)" ]
+}
+
+@test "thresholds: bundled model row, last usage, and trailing API errors stay paired" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl" model
+  threshold_record "$f" '"claude-sonnet-5-5"' 350
+  threshold_record "$f" '"claude-opus-5-5"' 101 append
+  printf '%s\n' '{"type":"assistant","isApiErrorMessage":true,"message":{"model":"claude-sonnet-5-5","usage":{"input_tokens":0}}}' >> "$f"
+  run --separate-stderr "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  [ -z "$stderr" ]
+  python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["cap"] == 100 and d["context_tokens"] == 101 and d["last_record"] == "api_error"' "$output"
+  for model in claude-opus-5-5 claude-sonnet-5-5; do
+    threshold_record "$f" "\"$model\"" 100
+    run --separate-stderr "$SCRIPT" --file "$f"
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    local expected=100
+    [ "$model" = claude-opus-5-5 ] || expected=300
+    python3 -c 'import json,sys; assert json.loads(sys.argv[1])["cap"] == int(sys.argv[2])' "$output" "$expected"
+  done
+  mkdir -p "$PROJECTS/p/s/subagents"
+  cp "$f" "$PROJECTS/p/s/subagents/agent-hash.jsonl"
+  printf '{"name":"named"}' > "$PROJECTS/p/s/subagents/agent-hash.meta.json"
+  run --separate-stderr "$SCRIPT" named --projects "$PROJECTS"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'"cap": 300'* ]] || return 1
+}
+
+@test "thresholds: missing and unknown models use fallback without borrowing other sources" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl" model
+  export AGENT_MODEL=claude-opus-5-5 ANTHROPIC_MODEL=claude-opus-5-5
+  for model in missing null 42 '[]' '""' '"   "' '"new-model"' '"opus"' '"sonnet"' '" claude-opus-5-5 "'; do
+    threshold_record "$f" '"claude-opus-5-5"' 90
+    threshold_record "$f" "$model" 499 append
+    run --separate-stderr "$SCRIPT" --file "$f"
+    [ "$status" -eq 0 ]
+    python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert d["cap"] == 500 and d["context_tokens"] == 499' "$output"
+    assert_context_diagnostics
+    [[ "$stderr" != *context_hard_cap* ]] || return 1
+  done
+}
+
+@test "thresholds: CLI override precedence, whitespace, zero and exact boundaries" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl" value
+  threshold_record "$f" '"claude-opus-5-5"' 100
+  export DEV_WORKFLOW_CONTEXT_HARD_CAP=bad DEV_WORKFLOW_PR_TOKEN_CAP=bad
+  for value in '' '  ' 100 ' 100 '; do
+    export DEV_WORKFLOW_CONTEXT_CAP="$value"
+    run --separate-stderr "$SCRIPT" --file "$f"
+    [ "$status" -eq 0 ]
+    [[ "$output" == *'"cap": 100'* ]] || return 1
+    [ -z "$stderr" ]
+  done
+  for value in 200 abc; do
+    export DEV_WORKFLOW_CONTEXT_CAP="$value"
+    run --separate-stderr "$SCRIPT" --file "$f" --cap 99
+    [ "$status" -eq 2 ]
+    [[ "$output" == *'"cap": 99'* ]] || return 1
+  done
+  export DEV_WORKFLOW_CONTEXT_CAP=0
+  run --separate-stderr "$SCRIPT" --file "$f"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *'"cap": 0'* ]] || return 1
+  run --separate-stderr "$SCRIPT" --file "$f" --cap 0
+  [ "$status" -eq 2 ]
+  for value in ' 100 ' abc -1 1.5 １２; do
+    run --separate-stderr "$SCRIPT" --file "$f" --cap "$value"
+    [ "$status" -eq 1 ]
+  done
+  for value in abc -1 1.5 １２; do
+    export DEV_WORKFLOW_CONTEXT_CAP="$value"
+    run --separate-stderr "$SCRIPT" --file "$f"
+    [ "$status" -eq 1 ]
+    [[ "$stderr" == *subagent-context*invalid_override* ]] || return 1
+    python3 -c 'import json,sys; assert isinstance(json.loads(sys.argv[1])["error"], str)' "$output"
+  done
+}
+
+@test "thresholds: known model with different evidence warns without fallback" {
+  threshold_plugin
+  python3 - "$TABLE" <<'PYFIX'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p))
+d['models']['claude-opus-5-5']['context_cap']['decided_models']=['other-model']
+with open(p,'w') as f: json.dump(d,f)
+PYFIX
+  threshold_record "$WORK/agent-test.jsonl" '"claude-opus-5-5"' 100
+  run --separate-stderr "$SCRIPT" --file "$WORK/agent-test.jsonl"
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *revalidation_required*other-model*context_cap*"$GUIDE"* ]] || return 1
+  [[ "$stderr" != *unknown_model* ]] || return 1
+}
+
+@test "thresholds: invalid table and unavailable resolver fail even with explicit cap" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl" kind
+  threshold_record "$f" '"claude-opus-5-5"' 100
+  cp "$TABLE" "$WORK/table-backup.json"
+  for kind in malformed schema missing resolver; do
+    cp "$WORK/table-backup.json" "$TABLE"
+    case "$kind" in
+      malformed) printf '{' > "$TABLE" ;;
+      schema) printf '{}' > "$TABLE" ;;
+      missing) rm "$TABLE" ;;
+      resolver) rm "$WORK/cache-installed/scripts/token_thresholds.py" ;;
+    esac
+    run --separate-stderr "$SCRIPT" --file "$f" --cap 999
+    [ "$status" -eq 1 ]
+    python3 -c 'import json,sys; assert isinstance(json.loads(sys.argv[1])["error"], str)' "$output"
+    [[ "$stderr" == *subagent-context* ]] || return 1
+    if [ "$kind" = resolver ]; then
+      [[ "$stderr" == *resolver_unavailable* ]] || return 1
+    else
+      [[ "$stderr" == *invalid_table* ]] || return 1
+    fi
+  done
+}
+
+@test "thresholds: unknown model diagnostics repeat despite explicit overrides and symlink entry" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl" repeat
+  threshold_record "$f" '"new-model"' 100
+  ln -s "$SCRIPT" "$WORK/measure-link"
+  SCRIPT="$WORK/measure-link"
+  for repeat in 1 2; do
+    DEV_WORKFLOW_CONTEXT_CAP=bad run --separate-stderr "$SCRIPT" --file "$f" --cap 100
+    [ "$status" -eq 0 ]
+    assert_context_diagnostics
+    [[ "$output" == *'"cap": 100'* ]] || return 1
+    [[ "$stderr" != *context_hard_cap* ]] || return 1
+  done
+}
+
+# ロード可能な一時の共通処理モジュール。$1 に応じて API を壊す。
+broken_resolver() {
+  local kind="$1" dest="$WORK/cache-installed/scripts/token_thresholds.py"
+  case "$kind" in
+    missing_function) printf 'GUIDE = "x"\n' > "$dest" ;;
+    not_callable) printf 'resolve_thresholds = 42\n' > "$dest" ;;
+    raises) printf 'def resolve_thresholds(model, env):\n    raise RuntimeError("boom-cause")\n' > "$dest" ;;
+    missing_key) printf 'def resolve_thresholds(model, env):\n    return {"diagnostics": [{"code": "unknown_model", "message": "unknown_model: LEAK"}], "thresholds": {}}\n' > "$dest" ;;
+  esac
+}
+
+@test "resolver API: missing, non-callable, raising or key-less resolvers give error JSON and exit 1 even with --cap" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl" kind extra
+  threshold_record "$f" '"claude-opus-5-5"' 100
+  for kind in missing_function not_callable raises missing_key; do
+    broken_resolver "$kind"
+    for extra in "--cap 999" ""; do
+      # shellcheck disable=SC2086
+      run --separate-stderr "$SCRIPT" --file "$f" $extra
+      [ "$status" -eq 1 ]
+      python3 -c 'import json,sys; d=json.loads(sys.argv[1]); assert isinstance(d["error"], str) and "resolver_unavailable" in d["error"], d' "$output"
+      [ "$(printf '%s\n' "$output" | wc -l)" -eq 1 ]
+      [[ "$stderr" == *"subagent-context: resolver_unavailable"* ]] || return 1
+      [[ "$stderr" != *Traceback* ]] || return 1
+      [[ "$stderr" != *LEAK* ]] || return 1
+      [[ "$stderr" != *revalidation_required* ]] || return 1
+      [ "$(printf '%s\n' "$stderr" | wc -l)" -eq 1 ]
+    done
+  done
+  broken_resolver raises
+  run --separate-stderr "$SCRIPT" --file "$f" --cap 999
+  [[ "$stderr" == *boom-cause* ]] || return 1
+}
+
+@test "notice: the CLI keeps stderr diagnostics and a measurement-only stdout JSON without hook fields" {
+  threshold_plugin
+  local f="$WORK/agent-test.jsonl"
+  threshold_record "$f" '"new-model"' 100
+  run --separate-stderr "$SCRIPT" --file "$f"
+  [ "$status" -eq 0 ]
+  assert_context_diagnostics
+  python3 -c '
+import json, sys
+d = json.loads(sys.argv[1])
+assert d["cap"] == 500 and d["context_tokens"] == 100, d
+for key in ("hookSpecificOutput", "additionalContext", "systemMessage", "permissionDecision"):
+    assert key not in d, d
+' "$output"
 }

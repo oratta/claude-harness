@@ -95,6 +95,10 @@ SH
       # 本体のうしろに共通の判定ファイル（git-guard-scratchpad.py）のパスを 1 つ渡す（#1133）
       [ "$(cat "${WORK}/argc")" = 4 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
       [ "$(cat "${WORK}/arg4")" = "${SCRIPTS}/git-guard-scratchpad.py" ] || { echo "$h: arg4=$(cat "${WORK}/arg4")"; return 1; }
+    elif [ "$h" = context-tripwire ]; then
+      # 本体のうしろに自分自身のパス（プラグインの場所を引く起点。#1800）を 1 つ渡す
+      [ "$(cat "${WORK}/argc")" = 4 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
+      [ "$(cat "${WORK}/arg4")" = "${SCRIPTS}/context-tripwire.sh" ] || { echo "$h: arg4=$(cat "${WORK}/arg4")"; return 1; }
     else
       [ "$(cat "${WORK}/argc")" = 3 ] || { echo "$h: argc=$(cat "${WORK}/argc")"; return 1; }
     fi
