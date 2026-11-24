@@ -172,9 +172,20 @@ class PlannerTests(unittest.TestCase):
         self.assertIn('direct_dependency', json.dumps(result))
         # A+C fit; A+B and B+C don't. Contraction would create a cycle.
         data = payload(item(context_extra_tokens=20000),
+                       item('B', depends_on=['A'], context_extra_tokens=48001),
+                       item('C', depends_on=['B'], context_extra_tokens=20000))
+        groups = self.plan(data)['groups']
+        self.assertEqual([g['item_ids'] for g in groups], [['A'], ['B'], ['C']])
+        self.assertEqual([g['depends_on'] for g in groups], [[], ['G001'], ['G002']])
+
+    def test_cycle_fixture_boundary_allows_exact_capacity(self):
+        data = payload(item(context_extra_tokens=20000),
                        item('B', depends_on=['A'], context_extra_tokens=48000),
                        item('C', depends_on=['B'], context_extra_tokens=20000))
-        self.assertEqual(len(self.plan(data)['groups']), 3)
+        groups = self.plan(data)['groups']
+        self.assertEqual([g['item_ids'] for g in groups], [['A', 'B'], ['C']])
+        self.assertEqual(groups[0]['context_margin'], 0)
+        self.assertEqual([g['depends_on'] for g in groups], [[], ['G001']])
 
     def test_slots_parallel_and_conflicts(self):
         data = payload(item(capabilities=['a']), item('B', capabilities=['b']))

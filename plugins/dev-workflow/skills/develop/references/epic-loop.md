@@ -97,7 +97,7 @@
 
 ## 完了時の片付けと報告
 
-集約した場合は `references/epic-granularity.md` の精算を確認する。代表の完了一件を一回だけ数え、元の閉鎖を加算しない。未精算があれば親は閉じない。
+集約時は `references/epic-granularity.md` の精算・進捗計上を確認し、未精算なら閉じない。
 
 別セッション方式では、動いている子が無くなったときの報告の前に、エピックの状態ディレクトリ（`${EPIC_STATE_ROOT:-~/.claude/epic-state}/<owner>.<repo>-<エピック番号>/`）が `clear` で消えていることを確かめる（残っていれば `scripts/epic-dispatch.sh clear <エピック番号>` を呼ぶ。上の **clear の扱い**。exit 1 は stderr を添えて主に報告する）。
 
