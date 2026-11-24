@@ -97,7 +97,7 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/spec-decisi
 - **THEN** どちらも explore と summarize を最安のまま残し、それ以外の役の上限を中位とする。「全役割 Sonnet 固定」の語を含まない
 
 ### Requirement: サブエージェントのコンテキスト上限と手渡し
-`plugins/dev-workflow/scripts/subagent-context.sh` は、対象のトランスクリプトの最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。対象の指定は次の 2 通りとする（SHALL）: `--file <path>` はそのファイルを直接測る（`agent` はファイル名から導く）。`<agent-name>` は `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}/*/*/subagents/` 内の `agent-<id>.meta.json` の `name` が指定名と完全一致する場合、対応する実在の `agent-<id>.jsonl` を候補に加え、従来の名前 glob（`agent-*<name>-*.jsonl` と `agent-*<name>.jsonl`）による候補と統合して重複を除かなければならない（SHALL）。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、その中でログの更新時刻が新しいものを選び、一致するものが無ければ全候補で最新のログを選ばなければならない（SHALL）。metadata が無い・`name` が一致しない・壊れている場合も従来のファイル名探索にフォールバックし、候補が無ければ `transcript not found` を含む JSON を出力して exit 1 としなければならない（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、exit 2 なら再開せず、前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）と記録先を渡して新しい W / G を spawn しなければならない（MUST。モデルは変えない）。W は工程の終わりに必ず return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
+`plugins/dev-workflow/scripts/subagent-context.sh` は、対象のトランスクリプトの最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。対象の指定は次の 2 通りとする（SHALL）: `--file <path>` はそのファイルを直接測る（`agent` はファイル名から導く）。`<agent-name>` は `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}/*/*/subagents/` 内の `agent-<id>.meta.json` の `name` が指定名と完全一致する場合、対応する実在の `agent-<id>.jsonl` を候補に加え、従来の名前 glob（`agent-*<name>-*.jsonl` と `agent-*<name>.jsonl`）による候補と統合して重複を除かなければならない（SHALL）。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、その中でログの更新時刻が新しいものを選び、一致するものが無ければ全候補で最新のログを選ばなければならない（SHALL）。metadata が無い・`name` が一致しない・壊れている場合も従来のファイル名探索にフォールバックし、候補が無ければ `transcript not found` を含む JSON を出力して exit 1 としなければならない（SHALL）。上限は計測に採用した assistant レコードの `message.model` を使って共通処理から解決した `context_cap` とし、`--cap` > `DEV_WORKFLOW_CONTEXT_CAP` > モデル別既定値 / fallback（初期値 150000）の順に適用しなければならない（SHALL）。モデル入力・上書き・診断の契約は dev-workflow-token-thresholds の文脈計測の要件に従う（MUST）。上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないとき、または共通処理を解決できないときは `error` を持つ 1 行 JSON と exit 1 にし、exit 1 は作業を止めない（fail-open。SHALL）。fallback・再検証と解決失敗の理由は stderr に出し、stdout の 1 行 JSON を保つ（MUST）。develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、exit 2 なら再開せず、前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）と記録先を渡して新しい W / G を spawn しなければならない（MUST。モデルは変えない）。W は工程の終わりに必ず return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
 
 守備範囲: 名前探索で扱う入力は、Claude Code が生成するローカルの metadata（`agent-<id>.meta.json`）とトランスクリプト（JSONL）である。防ぐのは、metadata の `name` の部分一致による誤採用、候補を統合せず cwd 一致優先・ログの更新時刻順を適用しないことによる誤選択、metadata の破損による探索停止である。metadata の `name` が指定名と不一致でも、従来のファイル名 glob に一致するログは候補として採用してよい。未知の入力による穴をすべて塞ぐことは、この要件の完了条件にしない（MUST NOT）。探索先は 1 か所で、別の設定フォルダの下の会話記録は探さない（そのセッションの W は `transcript not found` の exit 1 になる）。
 
@@ -265,7 +265,7 @@ Fable 以外の `model` は、要件「実行役の種別は対応表の上限�
 
 導出したパスが存在しないときは `<transcript_path の親ディレクトリ>/<session_id>/subagents/` 以下を**深さ 3 段まで**（`subagents/` 直下を 1 段目と数える）`agent-<agent_id>.jsonl` で探してよい（MAY。入れ子のサブエージェント）。この探索は毎ツール呼び出しのコストになるため上限を設けなければならず（MUST）、走査したディレクトリエントリが 200 件を超えるか探索が 20ms を超えたら打ち切って何も出力せず exit 0 とする（SHALL）。
 
-読み取りはファイル末尾の固定 256KB だけを対象とし、そこに現れる最後の `assistant` レコードの usage を合算する（MUST）。この 256KB は環境変数で上書きできる形にしてはならない（MUST NOT。小さすぎる値を与えられると静かに fail-open して途中計測が全体で無効になるため。変更は仕様変更として扱う）。トランスクリプトが 5MB でも hook 1 回の実行時間は 100ms 未満でなければならない（MUST）。
+読み取りはファイル末尾の固定 256KB だけを対象とし、そこに現れる最後の `assistant` レコードの usage を合算する（MUST）。しきい値はこの計測レコードの `message.model` を使って共通処理から取得した `context_cap` / `context_hard_cap` とし、モデル入力・上書き・正数条件・診断は dev-workflow-token-thresholds の文脈計測の要件に従わなければならない（MUST）。この 256KB は環境変数で上書きできる形にしてはならない（MUST NOT。小さすぎる値を与えられると静かに fail-open して途中計測が全体で無効になるため。変更は仕様変更として扱う）。トランスクリプトが 5MB でも hook 1 回の実行時間は 100ms 未満でなければならない（MUST）。
 
 `DEV_WORKFLOW_CONTEXT_TRIPWIRE` が `off` である・`python3` が無い・読み込んだ stdin が**メインスレッドからの呼び出しであることを JSON をパースせずに判定できる**のいずれかは、**python3 を起動する前に判定して** exit 0 しなければならない（MUST）。この hook は install 先の全ユーザーの全ツール呼び出しで走り、大多数がメインスレッドであるため、そこに python3 の起動コストを課してはならない（MUST NOT）。
 
@@ -275,7 +275,7 @@ Fable 以外の `model` は、要件「実行役の種別は対応表の上限�
 
 判定は必要条件であって十分条件ではなく、`agent_id` を持たない payload が python3 に渡ってよい（MAY）。その場合はパース後に `agent_id` フィールドが無いと判定され、何も出力せず exit 0 する。この向きの外し方が起きる頻度は payload の内容に依存する（PostToolUse の payload は `tool_response` を含むため、Read が読んだファイル内容・Bash の出力・Grep の結果にこの並びがあれば起動する。JSON シリアライザが `\b \f \n \r \t` 以外の制御文字を 4 桁 16 進で綴った出力も同じ）。判定を誤ってよいのはこの向き（余計に起動して無音で終わる）だけであり、逆向き（`agent_id` を持つ payload の早期 exit）は許されない（MUST NOT）。
 
-次のいずれかに当たるときは何も出力せず exit 0 で終わらなければならない（MUST。fail-open）: 上の 3 つ ／ stdin が読めない・JSON でない ／ 導出したトランスクリプトが無い・usage が読めない ／ 探索の上限に達した ／ 閾値の環境変数が正の整数でない ／ 閾値以内。
+次のいずれかに当たるときは何も出力せず exit 0 で終わらなければならない（MUST。fail-open）: 上の 3 つ ／ stdin が読めない・JSON でない ／ 導出したトランスクリプトが無い・usage が読めない ／ 探索の上限に達した。しきい値解決の失敗・解決値の正数条件違反は stdout 空・exit 0 とし、理由を stderr に出さなければならない（MUST）。閾値以内でも stdout は空・exit 0 とし、fallback・再検証が必要なら stderr に診断を出す（MUST）。共通処理の正常な fallback だけを理由に判定を無効にしてはならない（MUST NOT）。
 
 #### Scenario: agent_id が無い呼び出しは python3 を起動せず無音
 
@@ -294,8 +294,8 @@ Fable 以外の `model` は、要件「実行役の種別は対応表の上限�
 
 #### Scenario: 上限内では無音
 
-- **WHEN** 導出したトランスクリプトの最後の usage 合算が `DEV_WORKFLOW_CONTEXT_CAP` 以内である
-- **THEN** 何も出力せず exit 0 で終わる
+- **WHEN** 導出したトランスクリプトの最後の usage 合算が解決した `context_cap` 以内である
+- **THEN** stdout は空・exit 0 で終わる。根拠に含まれる既知モデルなら stderr も空、fallback・再検証が必要なモデルなら stderr にだけ診断が出る
 
 #### Scenario: 測れないときは止めない
 
@@ -315,7 +315,7 @@ Fable 以外の `model` は、要件「実行役の種別は対応表の上限�
 #### Scenario: 5MB のトランスクリプトでも 100ms 未満
 
 - **WHEN** 5MB のトランスクリプトを対象に hook を 1 回実行する
-- **THEN** 実行時間が 100ms 未満で、出力は閾値判定の結果だけである
+- **THEN** 実行時間が 100ms 未満で、stdout は閾値判定の結果だけであり、必要なモデル診断は stderr に出る
 
 #### Scenario: 全解除できる
 
@@ -353,7 +353,7 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とする（SHALL）。`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_HARD_CAP` の値 ／ `Bash` はコマンド内容によらず一切通らないこと ／ payload の `cwd`（＝そのサブエージェントの作業ツリーのパス）／ 編集済みファイルの一覧と、その作業ツリーのパス（`cwd`）を return に書けという指示 ／ commit は本体が行うという指示（サブエージェント自身は commit できないため）／ **return の 1 行目は `工程中断:` にすること**（強制停止で止まった時点で予定していた作業が残っているため、常に中断とする）。`-C <path>` や `-c <k=v>` といった、通る形についての案内を含めてはならない（MUST NOT）— 通る形は存在しないため。
 
-`DEV_WORKFLOW_CONTEXT_HARD_CAP` は `DEV_WORKFLOW_CONTEXT_CAP` より大きくなければならず、小さいか等しい場合は fail-open（何もしない）とする（MUST）。
+`DEV_WORKFLOW_CONTEXT_HARD_CAP` は `DEV_WORKFLOW_CONTEXT_CAP` より大きくなければならず、小さいか等しい場合は fail-open（stdout 空・exit 0）とする（MUST）。必要なモデル診断はこの場合も stderr に出さなければならない（MUST）。ここでの環境変数名は共通処理で解決した値を指し、モデル別既定値も同じ比較に使う。
 
 #### Scenario: 強制停止の閾値超で Edit が拒否される
 
@@ -373,12 +373,12 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 #### Scenario: 通知の閾値と強制停止の閾値の間では拒否しない
 
 - **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_CAP` 超・`DEV_WORKFLOW_CONTEXT_HARD_CAP` 以内の状態で `tool_name: "Edit"` または `tool_name: "Bash"`（`command: "git status"`）の PreToolUse payload を渡す
-- **THEN** どちらも何も出力せず exit 0 で終わる（編集も Bash も通る）
+- **THEN** どちらも stdout 空・exit 0 で終わる（編集も Bash も通る）。必要なモデル診断は stderr にだけ出る
 
 #### Scenario: 閾値の大小が逆なら何もしない
 
 - **WHEN** `DEV_WORKFLOW_CONTEXT_HARD_CAP` が `DEV_WORKFLOW_CONTEXT_CAP` 以下に設定されている
-- **THEN** PreToolUse は何も出力せず exit 0 で終わる
+- **THEN** PreToolUse は stdout 空・exit 0 で終わる。必要なモデル診断は stderr にだけ出る
 
 ### Requirement: worktree 隔離のサブエージェントでも途中計測が効く
 
