@@ -10379,3 +10379,432 @@ assert_reply_auto() {
   grep -F 'not-done' "$f" | grep -qF 'reap'
   grep -F 'notify-closed' "$f" | grep -qF 'mark done'
 }
+
+# --- 作業待ちの子への声かけ（#1777 epic-background-keepalive-send） ---
+# 記録: Orca の作業報告に background_wait。会話: turn_input.transcript_path の現行 CLI 1 本。
+BGW_SID=bbbbbbbb-2222-4222-8222-222222222222
+bgw_log() { printf '%s/bgw.jsonl' "$BATS_TEST_TMPDIR"; }
+bgw_stamp() { jq -rn --argjson t "$1" '$t | todate'; }
+# bgw_record [sender] [value] [dependency_wait] [started_at の何秒前] [項目=値...]（put_record に渡す）
+bgw_record() {
+  local sender="${1:-parent}" value="${2:-作業報告}" dep="${3:-false}" age="${4-3600}" f
+  shift 4 2>/dev/null || shift "$#"
+  put_record 11 session=term-11 "$@"
+  f="$(rec_of 1122 11)"
+  jq -c --arg sender "$sender" --arg value "$value" --argjson dep "$dep" --arg path "$(bgw_log)" \
+    --arg sid "$BGW_SID" --arg started "$(bgw_stamp "$((KEEPALIVE_TEST_NOW - age))")" '
+    .turn_input = {generation:2, session_id:$sid, sender:$sender, received_at:"2026-01-01T00:00:00Z",
+      transcript_path:$path, transcript_offset:0}
+    | .turn_state = {generation:2, session_id:$sid, value:$value, summary:"agent A の結果待ち",
+      recorded_at:"2026-01-01T00:00:01Z", dependency_wait:$dep,
+      background_wait:{id:"agent-A1", started_at:$started}}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+bgw_started() { jq -r .turn_state.background_wait.started_at "$(rec_of 1122 11)"; }
+# bgw_chat [最後のリクエストの何秒前] [TTL] [キャッシュ書き込みの何秒前]: 依頼 → ツール → 作業待ちの行と状態行
+bgw_chat() {
+  python3 - "$(bgw_log)" "$KEEPALIVE_TEST_NOW" "${1-3000}" "${2-1h}" "${3-7200}" "$BGW_SID" "$(bgw_started)" <<'PYCODE'
+import datetime, json, sys
+p, now, age, ttl, wage, sid, started = sys.argv[1:]
+now, age, wage = int(now), int(age), int(wage)
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+base = dict(sessionId=sid, entrypoint='cli')
+rows = [dict(base, type='user', timestamp=stamp(now-9000), message=dict(role='user', content='親エピック #1122 から: 続けて')),
+        dict(base, type='assistant', timestamp=stamp(now-wage), message=dict(content=[dict(type='tool_use', id='t1', name='Agent', input={})],
+             usage=dict(input_tokens=10, cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens': 100}))),
+        dict(base, type='user', timestamp=stamp(now-wage+1), message=dict(role='user', content=[dict(type='tool_result', tool_use_id='t1', content='async_launched')])),
+        dict(base, type='assistant', timestamp=stamp(now-age), message=dict(content=[dict(type='text',
+             text='agent A を待ちます。\n\n作業待ち: agent-A1 %s\n状態: 作業報告 — agent A の結果待ち' % started)],
+             usage=dict(input_tokens=0, cache_read_input_tokens=200000)))]
+with open(p, 'w') as f:
+    for row in rows: f.write(json.dumps(row, ensure_ascii=False)+'\n')
+PYCODE
+}
+# bgw_append <user|assistant> <本文> [何秒前] [追加の JSON]
+bgw_append() {
+  local extra="${4:-}"; [ -n "$extra" ] || extra='{}'
+  jq -cn --arg type "$1" --arg text "$2" --arg ts "$(bgw_stamp "$((KEEPALIVE_TEST_NOW - ${3-2000}))")" \
+    --arg sid "$BGW_SID" --argjson extra "$extra" \
+    '{type:$type, sessionId:$sid, entrypoint:"cli", timestamp:$ts, message:{role:$type, content:$text}} + $extra' >> "$(bgw_log)"
+}
+bgw_setup() {
+  keepalive_orca_setup
+  set_current 400
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  export KEEPALIVE_TEST_NOW=2000000000
+  # date +%s の k 回目の前に $STUB_CFG/date_hook_<k> があれば実行する（観測の途中の変化を差し込む）
+  cat > "$STUB_BIN/date" <<'DATE'
+#!/bin/bash
+if [ "$*" = '+%s' ]; then
+  k=$(( $(cat "$STUB_CFG/datecount" 2>/dev/null || echo 0) + 1 )); echo "$k" > "$STUB_CFG/datecount"
+  [ ! -e "$STUB_CFG/date_hook_$k" ] || bash "$STUB_CFG/date_hook_$k" >/dev/null 2>&1
+  echo "$KEEPALIVE_TEST_NOW"
+else /bin/date "$@"; fi
+DATE
+  chmod +x "$STUB_BIN/date"
+  bgw_record
+  bgw_chat
+}
+bgw_run() {
+  reset_keepalive_poll
+  rm -f "$STUB_CFG/datecount"
+  gh_seq 11 open closed
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  # 依存待ち・完了の記録は wait の既存の止まりの検知が先に返す（出力の契約は既存のまま）
+  [ "${1-}" = any ] || { [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]; }
+}
+bgw_sends() { [ "$(calls '^orca terminal send ')" -eq "$1" ]; }
+bgw_text() { python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text background; }
+
+@test "background keepalive: a large Orca work wait gets the background text once without stop-only steps" {
+  bgw_setup
+  bgw_run
+  bgw_sends 1
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "$(bgw_text)" ]
+  [ "$(cat "$STUB_CFG/sent_term-11")" != "$(python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text)" ]
+  keepalive_note_is sent
+  [ "$(rec_get 11 stop)" = "" ]
+  [ "$(calls '^gh issue comment ')" -eq 0 ]; [ "$(calls '/comments')" -eq 0 ]
+  [ "$(calls '^orca terminal create ')" -eq 0 ]; [ "$(calls '^orca terminal close ')" -eq 0 ]
+}
+
+@test "background keepalive: owner, plain report, dependency wait, done, waiting, stopped and malformed records send nothing" {
+  bgw_setup
+  local c
+  for c in owner plain dep done waiting stopped badid extra gen tmux failed nosession noworktree; do
+    case "$c" in
+      owner) bgw_record owner ;;
+      dep) bgw_record parent 作業報告 true ;;
+      done) bgw_record parent 完了 ;;
+      waiting) bgw_record parent 作業報告 false 3600 status=waiting ;;
+      stopped|stopped-seen) bgw_record parent 作業報告 false 3600 stop="$c" ;;
+      tmux) bgw_record parent 作業報告 false 3600 launcher=tmux ;;
+      failed) bgw_record parent 作業報告 false 3600 launch_failed=x ;;
+      nosession) bgw_record; jq -c '.session=""' "$(rec_of 1122 11)" > "$BATS_TEST_TMPDIR/r" && mv "$BATS_TEST_TMPDIR/r" "$(rec_of 1122 11)" ;;
+      noworktree) bgw_record parent 作業報告 false 3600 worktree=/nonexistent/issue-11 ;;
+      *) bgw_record ;;
+    esac
+    local f; f="$(rec_of 1122 11)"
+    case "$c" in
+      plain) jq -c 'del(.turn_state.background_wait)' "$f" > "$f.t" ;;
+      badid) jq -c '.turn_state.background_wait.id="bad id"' "$f" > "$f.t" ;;
+      extra) jq -c '.turn_state.background_wait.x=1' "$f" > "$f.t" ;;
+      gen) jq -c '.turn_state.generation=1' "$f" > "$f.t" ;;
+      *) cp "$f" "$f.t" ;;
+    esac
+    mv "$f.t" "$f"
+    bgw_chat
+    bgw_run any
+    echo "$c: $output / $(jq -r .keepalive "$f")" >&3
+    bgw_sends 0
+  done
+  # stopped-seen のまま新しい作業待ちの組になった子は、wait の既存の再開の確かめが resumed にしてから判定する
+  bgw_record parent 作業報告 false 3600 stop=stopped-seen; bgw_chat; bgw_run
+  [ "$(rec_get 11 stop)" = resumed ]
+  # 理由の語: 作業待ちでも条件外は not-stopped、Orca 以外は unsupported-launcher
+  bgw_record parent 作業報告 false 3600 launcher=tmux; bgw_run; keepalive_note_is "skipped unsupported-launcher"
+  bgw_record owner; bgw_run; keepalive_note_is "skipped not-stopped"
+}
+
+@test "background keepalive: one-shot, no watch-stopped and watch-done only polls do not read or send" {
+  bgw_setup
+  local args
+  for args in "--watch-stopped --interval 0 --timeout 0 11" "--interval 1 --timeout 100 11" "--watch-stopped --interval 1 --timeout 0 11"; do
+    reset_keepalive_poll; rm -f "$STUB_CFG/datecount"
+    gh_seq 11 open closed
+    # shellcheck disable=SC2086
+    run dispatch wait $args
+    bgw_sends 0
+    [ "$(cat "$STUB_CFG/readcount")" -eq 0 ]
+    [ "$(rec_get 11 keepalive)" = null ]
+  done
+}
+
+@test "background keepalive: request window 2999/3000/3599/3600, future and missing usage" {
+  bgw_setup
+  local age
+  for age in 2999 3000 3599 3600 -5; do
+    bgw_chat "$age"
+    bgw_run
+    if [ "$age" = 3000 ] || [ "$age" = 3599 ]; then bgw_sends 1; else bgw_sends 0; keepalive_note_is "skipped out-of-window"; fi
+  done
+}
+
+@test "background keepalive: TTL comes from the current log only (5m, none, future, other log)" {
+  bgw_setup
+  bgw_chat 3000 5m; bgw_run; bgw_sends 0; keepalive_note_is "skipped cache-unknown"
+  bgw_chat 3000 1h -100; bgw_run; bgw_sends 0; keepalive_note_is "skipped cache-future"
+  # 別の CLI ログの 1h 書き込みは借りない
+  keepalive_extra_log past cli 3000 dddddddd-1111-4111-8111-111111111111 1h 3500
+  bgw_chat 3000 5m; bgw_run; bgw_sends 0; keepalive_note_is "skipped cache-unknown"
+  # cache-read だけの最後のリクエストと 2 時間前の 1h 書き込みは送れる
+  bgw_chat 3000 1h 7200; bgw_run; bgw_sends 1
+}
+
+@test "background keepalive: 12 hour base 43199/43200, owner-wait 0/3600/86400 and a bad base" {
+  bgw_setup
+  local age
+  for age in 43199 43200; do
+    bgw_record parent 作業報告 false "$age"; bgw_chat
+    bgw_run
+    if [ "$age" = 43199 ]; then bgw_sends 1; else bgw_sends 0; keepalive_note_is "skipped expired"; fi
+  done
+  export EPIC_DISPATCH_OWNER_WAIT_SEC=86400
+  bgw_record parent 作業報告 false 43200; bgw_chat; bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+  bgw_record parent 作業報告 false 43199; bgw_chat; bgw_run; bgw_sends 1
+  export EPIC_DISPATCH_OWNER_WAIT_SEC=3600
+  bgw_record parent 作業報告 false 3600; bgw_chat; bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+  bgw_record parent 作業報告 false 3599; bgw_chat; bgw_run; bgw_sends 1
+  export EPIC_DISPATCH_OWNER_WAIT_SEC=0
+  bgw_record parent 作業報告 false 0; bgw_chat; bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+  unset EPIC_DISPATCH_OWNER_WAIT_SEC
+  # 未来の基点
+  bgw_record parent 作業報告 false -60; bgw_chat; bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+}
+
+@test "background keepalive: the base does not move with the poll, a resend or a re-wait" {
+  bgw_setup
+  local started; started="$(bgw_started)"
+  bgw_run; bgw_sends 1
+  [ "$(bgw_started)" = "$started" ]
+  # 返事のあと、親の再開と待ち直し（同じ組）のあとも基点は記録のまま
+  bgw_append user "$(bgw_text)" 2990
+  bgw_append assistant '[child-background-cache-keepalive] 待ち: agent A | 次: 回収' 2980
+  bgw_append user '親エピック #1122 から: 状況は' 2970
+  bgw_append assistant "続けて待ちます。
+作業待ち: agent-A1 $started
+状態: 作業報告 — agent A の結果待ち" 2960 '{"message":{"content":"続けて待ちます。\n作業待ち: agent-A1 '"$started"'\n状態: 作業報告 — agent A の結果待ち","usage":{"cache_read_input_tokens":5}}}'
+  bgw_record parent 作業報告 false 3600
+  jq -c --arg s "$started" '.turn_state.background_wait.started_at=$s | .turn_input.generation=3 | .turn_state.generation=3' \
+    "$(rec_of 1122 11)" > "$BATS_TEST_TMPDIR/r" && mv "$BATS_TEST_TMPDIR/r" "$(rec_of 1122 11)"
+  # 最後のリクエストは 2960 秒前なので窓の外。基点は 3600 秒前のまま
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped out-of-window"
+  [ "$(bgw_started)" = "$started" ]
+}
+
+@test "background keepalive: a pending previous keepalive is not repeated, a reply clears it" {
+  bgw_setup
+  bgw_append user "$(bgw_text)" 2500
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped pending"
+  bgw_append assistant '[child-background-cache-keepalive] 待ち: agent A | 次: 回収' 2490 '{"message":{"content":"[child-background-cache-keepalive] 待ち: agent A | 次: 回収","usage":{"cache_read_input_tokens":5}}}'
+  # 返事のリクエストが 2490 秒前なので窓の外
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped out-of-window"
+}
+
+@test "background keepalive: a later input, task notification, new utterance or tool use is answered" {
+  bgw_setup
+  local c
+  for c in input input-no-session notice-no-session notice notice-origin utterance tool other-marker; do
+    bgw_chat
+    case "$c" in
+      input) bgw_append user '主の直接の入力' 2900 ;;
+      # 入力の側は sessionId・entrypoint が欠けても入力として数える（送らない側に倒す）
+      input-no-session) bgw_append user '主の直接の入力' 2900
+        jq -c 'if .type == "user" then del(.sessionId, .entrypoint) else . end' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+      notice-no-session) bgw_append user '<task-notification><task-id>agent-A1</task-id></task-notification>' 2900
+        jq -c 'if .type == "user" then del(.sessionId, .entrypoint) else . end' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+      notice) bgw_append user '<task-notification><task-id>agent-A1</task-id></task-notification>' 2900 ;;
+      notice-origin) bgw_append user 'agent done' 2900 '{"origin":{"kind":"task-notification"}}' ;;
+      utterance) bgw_append assistant '別の話です' 2900 ;;
+      tool) bgw_append assistant '' 2900 '{"message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{}}]}}' ;;
+      other-marker) bgw_append assistant "作業待ち: agent-B1 $(bgw_started)
+状態: 作業報告 — agent A の結果待ち" 2900 ;;
+    esac
+    bgw_run
+    echo "$c: $(rec_get 11 keepalive)" >&3
+    bgw_sends 0; keepalive_note_is "skipped answered"
+  done
+}
+
+@test "background keepalive: a marker and a tool use in the same assistant utterance is not a send candidate" {
+  bgw_setup
+  # 正常経路: 作業待ちの行と状態行だけの発言は送れる
+  bgw_chat; bgw_run; bgw_sends 1
+  # 同じ発言に tool_use も入っているときは、作業待ちの記録として数えない（親は送らない）
+  bgw_chat
+  jq -c 'if .type == "assistant" and (.message.usage.cache_read_input_tokens == 200000)
+    then .message.content += [{type:"tool_use", id:"t9", name:"Bash", input:{}}] else . end' \
+    "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)"
+  grep -q '"t9"' "$(bgw_log)"
+  bgw_run; bgw_sends 0
+  local note; note="$(rec_get 11 keepalive)"
+  case "$note" in *"skipped answered"*|*"skipped no-transcript"*) ;; *) echo "unexpected: $note" >&3; false ;; esac
+}
+
+@test "background keepalive: missing, unreadable or other-session logs never borrow another log" {
+  bgw_setup
+  rm -f "$(bgw_log)"
+  keepalive_extra_log past cli 3000 dddddddd-1111-4111-8111-111111111111 1h 3500
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped no-transcript"
+  # 別セッションの行だけ・sidechain だけ・sdk だけ
+  local c
+  for c in session sidechain sdk; do
+    bgw_chat
+    case "$c" in
+      session) sed -i.bak "s/$BGW_SID/cccccccc-0000-4000-8000-000000000000/" "$(bgw_log)" ;;
+      sidechain) jq -c '.isSidechain=true' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+      sdk) jq -c '.entrypoint="sdk-py"' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+    esac
+    bgw_run
+    echo "$c: $(rec_get 11 keepalive)" >&3
+    bgw_sends 0
+  done
+  # 会話の最後の発言の作業待ちの行が記録と違う
+  bgw_chat
+  jq -c '.turn_state.background_wait.id="agent-Z9"' "$(rec_of 1122 11)" > "$BATS_TEST_TMPDIR/r" && mv "$BATS_TEST_TMPDIR/r" "$(rec_of 1122 11)"
+  bgw_run; bgw_sends 0
+}
+
+@test "background keepalive: a record or log change before the launcher call sends nothing in that poll" {
+  bgw_setup
+  local c f; f="$(rec_of 1122 11)"
+  for c in input done owner other-wait session worktree launcher notice utterance grow; do
+    bgw_record; bgw_chat
+    case "$c" in
+      input) echo "jq -c '.turn_input.generation=3 | .turn_state=null' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      done) echo "jq -c '.status=\"done\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      owner) echo "jq -c '.turn_input.sender=\"owner\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      other-wait) echo "jq -c '.turn_state.background_wait.id=\"agent-B2\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      session) echo "jq -c '.session=\"term-99\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      worktree) echo "jq -c '.parent_worktree=\"/work/other\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      launcher) echo "jq -c '.launcher=\"tmux\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      notice) printf '%s\n' "printf '%s\n' '{\"type\":\"user\",\"sessionId\":\"$BGW_SID\",\"timestamp\":\"$(bgw_stamp $((KEEPALIVE_TEST_NOW-10)))\",\"message\":{\"content\":\"<task-notification>x</task-notification>\"}}' >> '$(bgw_log)'" ;;
+      utterance) printf '%s\n' "printf '%s\n' '{\"type\":\"assistant\",\"sessionId\":\"$BGW_SID\",\"entrypoint\":\"cli\",\"timestamp\":\"$(bgw_stamp $((KEEPALIVE_TEST_NOW-10)))\",\"message\":{\"content\":\"新しい発言\"}}' >> '$(bgw_log)'" ;;
+      grow) printf '%s\n' "printf '%s\n' '{\"type\":\"system\",\"subtype\":\"x\"}' >> '$(bgw_log)'" ;;
+    esac > "$STUB_CFG/date_hook_3"
+    bgw_run
+    echo "$c: $(jq -r .keepalive "$f")" >&3
+    bgw_sends 0
+    [ "$(cat "$STUB_CFG/readcount")" -eq 0 ]
+    # 判定前の記録は書かない（既存の理由と時刻を変えない）
+    [ "$(jq -r .keepalive "$f")" = null ]
+  done
+  rm -f "$STUB_CFG/date_hook_3"
+}
+
+@test "background keepalive: the same skip reason keeps its time across polls" {
+  bgw_setup
+  bgw_chat 2999
+  bgw_run; keepalive_note_is "skipped out-of-window"
+  local first; first="$(rec_get 11 keepalive)"
+  sleep 1
+  bgw_run; [ "$(rec_get 11 keepalive)" = "$first" ]
+}
+
+@test "background keepalive: the stopped child path still ignores a work-wait record and keeps its own text" {
+  keepalive_wait_setup
+  keepalive_wait_run
+  bgw_sends 1
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "$(python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text)" ]
+}
+
+# Orca の画面: 検査済みの作業待ちの一呼び出しだけが背景待機行を許す
+bgw_classify() {
+  sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+  run env EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT="${1-}" bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca ${3-}' _ \
+    "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen" "${2-}"
+}
+
+@test "keepalive orca: the background wait permission releases only a known wait line right before the frame" {
+  keepalive_orca_setup
+  local c reason hist
+  local cases=(
+    "ready|conv|$W"
+    "ready|conv|✻ Waiting for 2 background agents to finish||"
+    "ready|$W|$R"
+    "skipped busy|$W|conv"
+    "skipped busy|$W|✻ Thinking about it"
+    "skipped busy|conv|$W|✶ Thinking… (3s · esc to interrupt)"
+    "skipped dialog|conv|$W|Do you want to proceed?"
+  )
+  for c in "${cases[@]}"; do
+    reason="${c%%|*}"; hist="${c#*|}"
+    orca_history_screen "$hist"
+    bgw_classify 1
+    echo "$hist: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$reason" ]
+    # 許可なし（空・親の環境の 0）は従来どおり busy
+    bgw_classify ""
+    [ "$output" != ready ]
+  done
+  # 入力枠の中・後ろの待機行、入力済み・draft は許可があっても送らない
+  orca_screen "conv
+──────────────
+❯
+$W
+──────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  bgw_classify 1; [ "$output" = "skipped busy" ]
+  orca_screen "conv
+──────────────
+❯
+──────────────
+$W
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  bgw_classify 1; [ "$output" != ready ]
+  orca_history_screen "conv|$W"
+  jq -c '.result.terminal.draft="human"' "$STUB_CFG/screen" > "$STUB_CFG/s" && mv "$STUB_CFG/s" "$STUB_CFG/screen"
+  bgw_classify 1; [ "$output" = "skipped input-not-empty" ]
+  orca_screen "conv
+$W
+──────────────
+❯ human
+──────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  bgw_classify 1; [ "$output" = "skipped input-not-empty" ]
+  # 送信後の観測では許可を使わない（背景待機行だけでは到達の証拠にならない）
+  orca_history_screen "conv|$W"
+  bgw_classify 1 after-send; [ "$output" != busy-empty ]
+}
+
+orca_keepalive_bg() { EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT=1 orca_keepalive "$@"; }
+
+@test "keepalive orca: the permission is checked on both observations and a wait-only post-send screen is failed send" {
+  keepalive_orca_setup
+  orca_history_screen "conv|$W"
+  # 許可ありで 2 回とも背景待機だけ → 送る（turn_started あり）
+  : > "$STUB_LOG"; echo 0 > "$STUB_CFG/readcount"
+  run orca_keepalive_bg keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]; bgw_sends 1
+  # 許可なしは同じ画面で skipped busy
+  : > "$STUB_LOG"; echo 0 > "$STUB_CFG/readcount"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$output" = "skipped busy" ]; bgw_sends 0
+  # 2 回目の観測で前景スピナー・dialog・draft に変わる
+  local second
+  for second in spinner dialog draft; do
+    orca_history_screen "conv|$W"
+    case "$second" in
+      spinner) orca_history_screen "conv|$W|✶ Thinking… (3s · esc to interrupt)" ;;
+      dialog) orca_history_screen "conv|$W|Do you want to proceed?" ;;
+      draft) jq -c '.result.terminal.draft="human"' "$STUB_CFG/screen" > "$STUB_CFG/s" && mv "$STUB_CFG/s" "$STUB_CFG/screen" ;;
+    esac
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_2"
+    orca_history_screen "conv|$W"
+    : > "$STUB_LOG"; echo 0 > "$STUB_CFG/readcount"
+    run orca_keepalive_bg keepalive /work/issue-11 reserved
+    echo "$second: $output" >&3
+    [ "$status" -eq 0 ]; [[ "$output" == skipped\ * ]]; bgw_sends 0
+    rm -f "$STUB_CFG/screen_2"
+  done
+  # turn_started が無く、送信後の画面が背景待機行だけ → failed send・再送なし
+  orca_history_screen "conv|$W"
+  echo '{"ok":true,"result":{"stages":["input_accepted"]}}' > "$STUB_CFG/send_json_term-11"
+  : > "$STUB_LOG"; echo 0 > "$STUB_CFG/readcount"
+  run orca_keepalive_bg keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = "failed send" ]; bgw_sends 1
+  [ "$(calls '^orca terminal wait ')" -eq 0 ]
+}
+
+@test "background keepalive: dispatch passes the permission only on the work-wait call, never inherited" {
+  bgw_setup
+  # 背景待機行のある画面: 作業待ちは送る
+  orca_history_screen "conv|$W"
+  bgw_run; bgw_sends 1
+  # 停止済み子は親の環境に 1 があっても許可を受け継がず skipped busy
+  keepalive_wait_setup
+  orca_history_screen "conv|$W"
+  export EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT=1 KEEPALIVE_BG_ALLOW=1
+  keepalive_wait_run
+  bgw_sends 0; keepalive_note_is "skipped busy"
+  unset EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT KEEPALIVE_BG_ALLOW
+}
