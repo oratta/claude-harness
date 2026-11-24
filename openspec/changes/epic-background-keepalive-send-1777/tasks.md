@@ -2,7 +2,7 @@
 
 ## 1. 作業待ち記録と子の待ち方
 
-- [ ] 1.1 Stop フックに直前の明示行の解析と `turn_state.background_wait={id,started_at}` の保存・型検査を追加する。既存の3状態・dependency_wait・排他更新・新入力の無効化・遅い Stop・予約文除外は保つ。正しい行、引用/コード/本文途中、書式不正、依存待ちとの併存、旧記録、新入力、marker 無しの通常終了を Bats で確認し `bats plugins/dev-workflow/tests/epic-child-state.bats` を exit 0 にする。触る範囲: plugins/dev-workflow/scripts/epic-child-state.sh:10-211（状態の解析・拡張検査・保存計画）、plugins/dev-workflow/scripts/epic-child-state.sh:265-302（排他更新）、plugins/dev-workflow/tests/epic-child-state.bats:1-1090
+- [x] 1.1 Stop フックに直前の明示行の解析と `turn_state.background_wait={id,started_at}` の保存・型検査を追加する。既存の3状態・dependency_wait・排他更新・新入力の無効化・遅い Stop・予約文除外は保つ。正しい行、引用/コード/本文途中、書式不正、依存待ちとの併存、旧記録、新入力、marker 無しの通常終了を Bats で確認し `bats plugins/dev-workflow/tests/epic-child-state.bats` を exit 0 にする。触る範囲: plugins/dev-workflow/scripts/epic-child-state.sh:10-211（状態の解析・拡張検査・保存計画）、plugins/dev-workflow/scripts/epic-child-state.sh:265-302（排他更新）、plugins/dev-workflow/tests/epic-child-state.bats:1-1090
 - [ ] 1.2 子の専用手順に、状態記録による Orca 経路確認・通常の準備ターンでだけ自己タイマーを取消して外部用 marker を出す手順・同じ未回収作業の待ち ID と初回開始の保持を記す。Orca の新規自己タイマー0個、tmux の既存自己通知、worker の既存待機、取消失敗時の非公開と元作業保持に加え、直近の入力の送り手が owner のときは外部用 marker を出さず親の送信0回・自己通知は既存条件どおり（TTL 1h・最近の成功リクエスト・45分以内の返り無しで一つ）、次の parent/startup 入力で外部起こしへ戻るときは待ちの組と初回開始を保持し、owner 切替でも基点が延びないことをテストし `bats plugins/dev-workflow/tests/child-background-wait.bats` を exit 0 にする。固定文・受信・異種予約文の判断は作り直さない。触る範囲: plugins/dev-workflow/skills/develop/references/child-background-wait.md:3-64、plugins/dev-workflow/tests/child-background-wait.bats:1-200
 
 ## 2. 親の送信判定

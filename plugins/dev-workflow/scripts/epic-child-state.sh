@@ -40,6 +40,33 @@ def dependency_tail(text):
     tail = tail[1:] if tail.startswith(' ') else tail
     return tail.startswith('止まった理由: 依存待ち: ')
 
+# The work-wait marker (#1777): only the line right before the final status line,
+# outside quotes and code (blank lines between are skipped like the dependency tail).
+BG_ID = r'[A-Za-z0-9][A-Za-z0-9._:-]*'
+BG_BAD = ('作業待ち: <wait-id> <started-at> の行は、作業報告の状態行の直前にだけ置き、'
+          'wait-id は [A-Za-z0-9][A-Za-z0-9._:-]*、started-at は UTC の YYYY-MM-DDTHH:MM:SSZ にし、'
+          '依存待ちの行と一緒に書かないでください。')
+def dep_line(line):
+    line = line[1:] if line.startswith(' ') else line
+    return line.startswith('止まった理由: 依存待ち: ')
+def background_tail(text):
+    """None (no marker), 'bad', or {id, started_at} for a status-checked text."""
+    parsed = status(text)
+    if not parsed:
+        return None
+    lines = [l for l in text.rstrip().splitlines()[:-1] if l.strip()]
+    prev = lines[-1] if lines else ''
+    before = lines[-2] if len(lines) >= 2 else ''
+    if not prev.startswith('作業待ち:'):
+        return 'bad' if dep_line(prev) and before.startswith('作業待ち:') else None
+    m = re.fullmatch('作業待ち: (' + BG_ID + ') (\\S+)', prev)
+    if not m or not utc(m[2]) or parsed[0] != '作業報告' or dep_line(before):
+        return 'bad'
+    return dict(id=m[1], started_at=m[2])
+def background_ok(b):
+    return (isinstance(b, dict) and set(b) == {'id', 'started_at'} and isinstance(b['id'], str)
+            and re.fullmatch(BG_ID, b['id']) is not None and utc(b['started_at']))
+
 def text_of(row):
     c = row.get('message', {}).get('content')
     if isinstance(c, str):
@@ -81,7 +108,9 @@ def extension(r):
               and nonempty(s.get('summary')) and bool(s['summary'].strip())
               and '\n' not in s['summary'] and '\r' not in s['summary'] and utc(s.get('recorded_at'))
               and s['generation'] == i['generation'] and s['session_id'] == i['session_id']
-              and ('dependency_wait' not in s or type(s['dependency_wait']) is bool))
+              and ('dependency_wait' not in s or type(s['dependency_wait']) is bool)
+              and ('background_wait' not in s or (background_ok(s['background_wait'])
+                   and s['value'] == '作業報告' and s.get('dependency_wait') is not True)))
         if not ok:
             raise ValueError('turn_state の型または世代が不正です')
 
@@ -183,13 +212,18 @@ try:
         if old(assistants[-1]):
             print(json.dumps({'action': 'ignore'})); raise SystemExit(0)
         parsed = status(text)
+        wait = background_tail(text) if parsed else None
         if not parsed:
             print(json.dumps({'action': 'block', 'reason': '最終非空行に 状態: <主の返事待ち|作業報告|完了> — <空でない中身> を、引用・コードの外に書いてください。'}, ensure_ascii=False))
+        elif wait == 'bad':
+            print(json.dumps({'action': 'block', 'reason': BG_BAD}, ensure_ascii=False))
         else:
             state = dict(generation=i['generation'], session_id=sid,
                          value=parsed[0], summary=parsed[1], recorded_at=now)
             if parsed[0] == '作業報告' and dependency_tail(text):
                 state['dependency_wait'] = True
+            if wait:
+                state['background_wait'] = wait
             print(json.dumps({'action': 'save', 'state': state}, ensure_ascii=False))
 except (ValueError, OSError, TypeError, KeyError) as e:
     print(json.dumps({'action': 'error', 'reason': str(e)}, ensure_ascii=False))
