@@ -10593,10 +10593,15 @@ bgw_text() { python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text ba
 @test "background keepalive: a later input, task notification, new utterance or tool use is answered" {
   bgw_setup
   local c
-  for c in input notice notice-origin utterance tool other-marker; do
+  for c in input input-no-session notice-no-session notice notice-origin utterance tool other-marker; do
     bgw_chat
     case "$c" in
       input) bgw_append user '主の直接の入力' 2900 ;;
+      # 入力の側は sessionId・entrypoint が欠けても入力として数える（送らない側に倒す）
+      input-no-session) bgw_append user '主の直接の入力' 2900
+        jq -c 'if .type == "user" then del(.sessionId, .entrypoint) else . end' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+      notice-no-session) bgw_append user '<task-notification><task-id>agent-A1</task-id></task-notification>' 2900
+        jq -c 'if .type == "user" then del(.sessionId, .entrypoint) else . end' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
       notice) bgw_append user '<task-notification><task-id>agent-A1</task-id></task-notification>' 2900 ;;
       notice-origin) bgw_append user 'agent done' 2900 '{"origin":{"kind":"task-notification"}}' ;;
       utterance) bgw_append assistant '別の話です' 2900 ;;
