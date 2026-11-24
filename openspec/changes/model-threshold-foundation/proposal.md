@@ -8,7 +8,7 @@
 
 - 固定モデル ID ごとに 150,000 / 220,000 / 30,000,000 / 60,000,000 と、各値の測定対象モデル・判断日・実測の出典を持つ表を追加する。
 - 表を引く共通処理を追加する。未登録・モデル不明は安全側の共通既定値へ倒し、出力に理由を残す。測定対象と異なるモデルには再検証を知らせる。明示の数値環境変数を既定値より優先する。
-- #1799 の集計を再実行する段取りを 1 か所にまとめ、値の変更ごとに同じ手順の結果を残す契約とする。decision-criteria.md から表と手順へリンクする。
+- #1799 の集計を再実行する段取りを 1 か所にまとめ、値の変更ごとに同じ手順の結果を残す契約とする。decision-criteria.md から表と手順へリンクし、配置規則を共通部品の表・利用契約を許容する文に直す。未配線期間の既存経路の説明と、新しい表の役割を明示する。
 - 単独で呼べる共通処理のテストを追加する。既存の計測・停止スクリプトへの配線は後続 change とする。
 
 ## Capabilities
@@ -19,7 +19,9 @@
 
 ### Modified Capabilities
 
-なし。既存の `dev-workflow-execution-strategy` と `dev-workflow-pr-token-budget` の計測・停止・権限はこの change では変えない。
+- `dev-workflow-develop`: コンテキスト上限の規則の配置要件を改定し、共通部品の JSON 表に数値、解決処理と利用手順に環境変数名を置くことを許容する。decision-criteria.md の既存経路の説明と共通部品の役割・未配線を区別し、W / G 向け宣言や他の面への再掲禁止を維持する。
+
+既存の `dev-workflow-execution-strategy` と `dev-workflow-pr-token-budget` の計測・停止・権限はこの change では変えない。
 
 ## Impact
 
@@ -29,7 +31,7 @@
 2. `plugins/dev-workflow/scripts/token_thresholds.py`（新規の共通処理・CLI）
 3. `plugins/dev-workflow/tests/test_token_thresholds.py`（新規の unittest）
 4. `plugins/dev-workflow/skills/develop/references/token-thresholds.md`（新規の再検証手順）
-5. `plugins/dev-workflow/skills/develop/references/decision-criteria.md`（入口の追記）
+5. `plugins/dev-workflow/skills/develop/references/decision-criteria.md`（入口と配置規則の改定）
 
 Python 3 標準ライブラリだけを使う。`subagent-context.sh`・`context-tripwire.sh`・`pr-token-budget.sh` とそれらのテスト、`pr-token-budget.md` は変更しない。#1802 の粒度計算や集計スクリプトの追加は対象外。後続は change 1 のマージ後に開始する change 2（文脈上限の配線）と change 3（累計上限の配線）で、両者は互いに独立する。
 
