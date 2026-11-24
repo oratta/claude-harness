@@ -12,7 +12,7 @@ change `model-context-threshold-wiring`（archive 済み・編集しない）は
 
 ### 2. 出力の組み立て
 
-利用する文脈指標に `revalidation_required` があるとき、要求モデル・根拠モデル・対象指標・手順の絶対パスを含む再検証通知文を作り、stderr にも同じ診断を出す。通知文は「根拠モデルと異なるため、案内した手順でしきい値を再検証する必要がある」と明示し、締め・return・拒否は要求しない。
+利用する文脈指標に `revalidation_required` があるとき、要求モデル・根拠モデル・対象指標・手順の絶対パスを含む再検証通知文を作り、stderr にも同じ診断を出す。通知文は「根拠モデルと異なるため、案内した手順でしきい値を再検証する必要がある」と明示し、締め・今すぐの return・拒否は要求しない。受けた本人は、この通知だけを理由に作業を止めず、自分で再検証も始めず、次の return に再検証が要る旨（要求モデル・根拠モデル・対象指標）を書く。通知文にこの動きを明示する。
 
 | 状況 | stdout |
 |---|---|
@@ -26,7 +26,7 @@ change `model-context-threshold-wiring`（archive 済み・編集しない）は
 
 ### 3. 解決失敗の境界
 
-両スクリプトとも、ロード時の try の中で `resolve = resolver.resolve_thresholds` の取得と callable 確認までを行い、呼出しは `resolve(model, env)` にする。`ValueError` は既存どおり `invalid_table` / `invalid_override`。API 欠損・非 callable・呼出しの `RuntimeError` 等と、必須の戻り値の欠損・診断準備の例外は `resolver_unavailable` にする。捕捉は resolver との境界に限り、`BaseException` や処理全体の握り潰しにしない。CLI は呼出元名・コード・理由を stderr、error 文字列を持つ 1 行 JSON を stdout に出して exit 1。hook は stderr に同じ情報を出して stdout 空・exit 0。途中出力や traceback は出さない。
+両スクリプトとも、ロード時の try の中で `resolve = resolver.resolve_thresholds` の取得と callable 確認までを行い、呼出しは `resolve(model, env)` にする。`ValueError` は既存どおり `invalid_table` / `invalid_override`。API 欠損・非 callable・呼出しの `RuntimeError` 等と、必須の戻り値の欠損・診断準備の例外は `resolver_unavailable` にする。捕捉は resolver との境界に限り、`BaseException` や処理全体の握り潰しにしない。CLI は呼出元名・コード・理由を stderr、error 文字列を持つ 1 行 JSON を stdout に出して exit 1。hook は stderr に同じ情報を出して stdout 空・exit 0。途中出力や traceback は出さない。そのため、結果の取り出しと検証を終えてから stderr と stdout に出す順で実装し、必須キー欠損の戻り値では fallback や再検証の診断を先に出さない。
 
 ### 4. 仕様の同期範囲
 

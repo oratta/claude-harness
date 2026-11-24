@@ -37,7 +37,9 @@ CLI は `--cap` > 文脈上限 env > モデル行 / fallback、hook は各文脈
 
 hook は、利用する文脈指標に `revalidation_required` があるとき、同じ再検証診断を stderr に加え、その hook が動くサブエージェント本人に届く `hookSpecificOutput.additionalContext` にも入れなければならない（MUST）。exit 0 の stderr は Claude に届かず、`additionalContext` は PreToolUse / PostToolUse とも Claude の文脈に配送されるため、本人への通知経路は `additionalContext` とする。再検証通知文は、要求モデル・根拠モデル・対象指標・手順の絶対パスを含み、「根拠モデルと異なるため、案内した手順でしきい値を再検証する必要がある」と明示する（MUST）。診断だけでは締め・return・拒否を要求してはならず、`permissionDecision`・`decision`・`continue:false`・`systemMessage` を付けてはならない（MUST NOT）。
 
-hook の stdout は次のとおりとする（MUST）。
+再検証通知を受けた本人は、この通知だけを理由に今の作業を止めず、自分で再検証も始めず、次の return に再検証が要る旨（要求モデル・根拠モデル・対象指標）を書く。通知文はこの動きを明示する（MUST）。
+
+hook の stdout は次のとおりとする。この一覧は、解決が成功し正数条件を満たしたあとに当てる。解除・計測不能・解決失敗・正数条件違反では stdout 空が優先し、診断は stderr だけに出す（MUST）。
 - 再検証通知が無く閾値以内、または拒否も通知もしない場合: 空。
 - 再検証通知があり、閾値以内（cap 内の両イベント、cap 超 hard 以内の PreToolUse、`hard <= cap` の PreToolUse を含む）: 当該イベントの `hookEventName` と再検証通知だけを持つ単一 JSON。exit 0。
 - cap 超の PostToolUse: 既存の通知本文をそのまま保ち、別段落で再検証通知を追記した単一 JSON。
@@ -55,11 +57,11 @@ hook の stdout は次のとおりとする（MUST）。
 #### Scenario: 診断だけでは締めも拒否もしない
 
 - **WHEN** 再検証通知が出る未知モデルと既知モデルの根拠違いで、cap 内の PostToolUse と PreToolUse を実行し、出力を解析する
-- **THEN** 出力に `permissionDecision`・`decision`・`continue`・`systemMessage` が無く、`additionalContext` に締め・return・commit を求める文が無い。ツールは拒否されず exit 0
+- **THEN** 出力に `permissionDecision`・`decision`・`continue`・`systemMessage` が無く、`additionalContext` に締め・今すぐの return・commit を求める文が無く、次の return に再検証が要る旨を書くよう案内する文がある。ツールは拒否されず exit 0
 
 #### Scenario: 環境上書きと再呼出しでも注意を消さない
 
-- **WHEN** 未知モデルの文脈 env を上書きして、同じログで呼出しを繰り返す
+- **WHEN** 未知モデルの文脈 env を有効な正の値で上書きして、同じログで呼出しを繰り返す
 - **THEN** 採用値は上書きに従うが、各呼出しの stderr と hook の `additionalContext` に同じモデルの fallback と再検証の診断が残る。通知抑制用の状態ファイルを作らない
 
 #### Scenario: 既知モデルでも根拠と違えば再検証を出す
@@ -101,4 +103,4 @@ hook の stdout は次のとおりとする（MUST）。
 #### Scenario: ロードできても解決 API が使えなければ拒否も未捕捉例外もない
 
 - **WHEN** ロード可能な一時の共通処理モジュールで、①解決関数の欠損、②非 callable、③呼出し時の `RuntimeError`、④必須キーを欠く戻り値のそれぞれを用意し、測定可能なログで両スクリプトを実行する（CLI の有効な `--cap` がある場合も含む）
-- **THEN** CLI は `error` 文字列を持つ 1 行 JSON と exit 1、hook は PreToolUse・PostToolUse とも stdout 空・exit 0 で、stderr に呼出元名・resolver_unavailable・原因を出す。stdout にも stderr にも traceback は出ず、既存の invalid_table / invalid_override の検査は変わらない
+- **THEN** CLI は `error` 文字列を持つ 1 行 JSON と exit 1、hook は PreToolUse・PostToolUse とも stdout 空・exit 0 で、stderr に呼出元名・resolver_unavailable・原因を出す。stdout にも stderr にも traceback は出ず、既存の invalid_table / invalid_override の検査は変わらない。④の場合、stderr は呼出元名・resolver_unavailable・原因の行だけで、その前に fallback や再検証の診断を出さない
