@@ -459,12 +459,12 @@ Orca の部品は、見つけた clone のパスに当たるリポジトリを `
 
 親が子を起動するとき、Orca/tmux の両起動部品は `claude` に渡る起動引数に `--prompt-suggestions false` を付けなければならない（MUST）。`start` と `deliver` の起動し直しのいずれにも適用する。Orca の画面と任意の `draft` では Claude Code の提案文と人の入力を常に区別できないためである。設定ファイルや別の識別の仕組みを作ってはならず（MUST NOT）、これより前に起動された子の非空の入力表示や `draft` も人の入力として扱わなければならない（MUST）。
 
-`keepalive` は前景が空いた入力待ちで入力欄が空のときだけ送信し、初回と送信直前の観測に次の判定を適用しなければならない（MUST）。空の `❯` だけで入力待ちと判断してはならず（MUST NOT）、前景の状態と空欄の両方を確認する。
+`keepalive` は前景が空いた入力待ちで入力欄が空のときだけ送信する。検査済みの作業待ちを dispatch が明示した Orca 呼び出しだけは、要件「Orca の作業待ち許可は既知の背景待機行だけに限る」に従い、既知の背景待機行による busy の例外を適用する（MUST）。その他の呼び出しでは従来の背景待機拒否を保ち、初回と送信直前の観測に次の判定を適用しなければならない（MUST）。空の `❯` だけで入力待ちと判断してはならず（MUST NOT）、前景の状態と空欄の両方を確認する。
 
 | 画面・入力の観測 | 判定 |
 |---|---|
 | 記号＋`…`＋`(Ns · …)` のスピナー行（例: `✢ Hullaballooing… (1s · thinking)`） | 空の `❯` と同居しても実行中として `skipped busy` |
-| Orca のバックグラウンドエージェント待機行（送信前） | 行頭の `✻✽✶✢✳✺` のいずれかの記号と空白に続く `Waiting for N background agent` / `agents`（N は数字、末尾の ` to finish` と行頭・行末の空白は任意）を、一意な入力枠より前の履歴に観測したら `skipped busy`。待機行より後（入力枠の上罫線より前）に、既知の前景完了行が 1 行でもあるときだけ古い待機として解除する。完了行は行全体が、既知の記号、`Worked`/`Churned`/`Brewed`/`Sautéed`/`Cogitated`/`Baked`/`Cooked`/`Crunched` のいずれか、` for <時間> · done <時刻> AM|PM`、任意の ` · N shell(s) still running` の形式。本文中の `done` や未知の動詞では解除しない。最後の完了行から上罫線までは空行と `※ recap: … (turn off recaps in /config)` だけを許し、ほかの行が残れば `skipped unknown-state`。通知・空行・未完の状態行が挟まるだけで完了行が無ければ `skipped busy`。完了後に再び待機行があれば `skipped busy`。入力枠内・後方の待機行は完了行で解除しない。一意な入力枠・下罫線・既知フッターを確定できない画面（枠なし・複数枠）は、ほかの busy / dialog / 入力済み判定に当たらなければ `skipped unknown-state`。解除は `ready` を直接返す根拠にせず、入力領域の検査を通った場合だけ `ready`。一覧内の `Waiting for parent reply` などの状態表示だけではこの待機行とみなさない |
+| Orca のバックグラウンドエージェント待機行（送信前。検査済み作業待ちの明示許可が無い呼び出し） | 行頭の `✻✽✶✢✳✺` のいずれかの記号と空白に続く `Waiting for N background agent` / `agents`（N は数字、末尾の ` to finish` と行頭・行末の空白は任意）を、一意な入力枠より前の履歴に観測したら `skipped busy`。待機行より後（入力枠の上罫線より前）に、既知の前景完了行が 1 行でもあるときだけ古い待機として解除する。完了行は行全体が、既知の記号、`Worked`/`Churned`/`Brewed`/`Sautéed`/`Cogitated`/`Baked`/`Cooked`/`Crunched` のいずれか、` for <時間> · done <時刻> AM|PM`、任意の ` · N shell(s) still running` の形式。本文中の `done` や未知の動詞では解除しない。最後の完了行から上罫線までは空行と `※ recap: … (turn off recaps in /config)` だけを許し、ほかの行が残れば `skipped unknown-state`。通知・空行・未完の状態行が挟まるだけで完了行が無ければ `skipped busy`。完了後に再び待機行があれば `skipped busy`。入力枠内・後方の待機行は完了行で解除しない。一意な入力枠・下罫線・既知フッターを確定できない画面（枠なし・複数枠）は、ほかの busy / dialog / 入力済み判定に当たらなければ `skipped unknown-state`。解除は `ready` を直接返す根拠にせず、入力領域の検査を通った場合だけ `ready`。一覧内の `Waiting for parent reply` などの状態表示だけではこの待機行とみなさない |
 | AskUserQuestion の `Enter to select · ↑/↓ to navigate` | `skipped dialog` |
 | 許可画面の `Do you want to proceed?` または `Esc to cancel · Tab to amend` | `skipped dialog` |
 | フォルダ信頼確認の `Enter to confirm · Esc to cancel` | `skipped dialog` |
@@ -557,7 +557,7 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 - **THEN** 全て `skipped input-not-empty` / exit 0 となり、send は呼ばれず入力を保持する。複数の開始枠で一意に決まらない場合は `skipped unknown-state` とする
 
 #### Scenario: バックグラウンドエージェント完了待ちは busy とする
-- **WHEN** Orca の送信前観測に `✻ Waiting for 1 background agent to finish` または `✻ Waiting for 2 background agents to finish` があり、空の入力枠・bypass フッター・既知のエージェント一覧が続くが、スピナーも `esc to interrupt` も dialog も無い
+- **WHEN** 作業待ちの明示許可が無い Orca の送信前観測に `✻ Waiting for 1 background agent to finish` または `✻ Waiting for 2 background agents to finish` があり、空の入力枠・bypass フッター・既知のエージェント一覧が続くが、スピナーも `esc to interrupt` も dialog も無い
 - **THEN** `skipped busy` / exit 0 となり、send は呼ばれない
 
 #### Scenario: bypass フッターの下の既知の一覧は空欄判定を妨げない
@@ -826,15 +826,15 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 
 ### Requirement: 判定より前に外れる skipped の理由は次の語に限る
 
-判定より前に外れるときの `skipped` の理由は次の語に限る（MUST）。`not-stopped`（`stop` が `stopped-seen` でないか `status` が `done`）・`no-session`（`session` が空）・`launch-failed`・`no-worktree`・`unsupported-launcher`（`launcher` が `orca`・`tmux` でない）・`gh-failed`（子かエピックのコメントを読めない）。
+判定より前に外れるときの `skipped` の理由は次の語に限る（MUST）。`not-stopped`（既存の返事待ちでも有効な作業待ちでもないか、対象の status/stop/状態の条件を満たさない）・`no-session`（`session` が空）・`launch-failed`・`no-worktree`・`unsupported-launcher`（停止済み子では `launcher` が `orca`・`tmux` でない。作業待ちでは `orca` でない）・`gh-failed`（子かエピックのコメントを読めない）。
 
 #### Scenario: 止まっていない子には not-stopped が 1 回だけ書かれる
-- **WHEN** `stop` が `stopped-seen` でない子を 2 回続けてポーリングする
+- **WHEN** 作業待ち情報が無く `stop` が `stopped-seen` でない子を 2 回続けてポーリングする
 - **THEN** 記録の `keepalive` は `<時刻> skipped not-stopped` で、2 回目は時刻が変わらない
 
 ### Requirement: 会話ログによる skipped の理由は次の語に限る
 
-会話ログによって送らないときの `skipped` の理由は次の語に限る（MUST）。`no-transcript`（本体のログなし）・`cache-unknown`（選んだログの最後のキャッシュの書き込みが 1 時間の枠でないか読めない）・`cache-future`（その時刻が今より未来）・`expired`（止まりから `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定 43200）以上、または基点を読めない）・`answered`（親が通した判断がある、または主が答えた）・`no-question`・`out-of-window`（最後のリクエストからの経過が送る範囲にない）・`too-large`（会話量が起動し直しの閾値以上）・`pending`（前の声かけに返事が来ていない）。
+会話ログによって送らないときの `skipped` の理由は次の語に限る（MUST）。`no-transcript`（本体のログなし）・`cache-unknown`（選んだログの最後のキャッシュの書き込みが 1 時間の枠でないか読めない）・`cache-future`（その時刻が今より未来）・`expired`（停止済み子は止まりから `EPIC_DISPATCH_OWNER_WAIT_SEC` 秒（既定43200）以上、または基点を読めない。作業待ちは初回開始が不正・未来、または初回開始から min(43200, 同設定) 秒以上）・`answered`（親が通した判断がある、または主が答えた。作業待ちでは記録後の通常入力・元作業通知・新しい通常発言も含む）・`no-question`（停止済み子だけ）・`out-of-window`（最後のリクエストからの経過が送る範囲にない）・`too-large`（停止済み子の会話量が起動し直しの閾値以上。作業待ちには適用しない）・`pending`（前の声かけに返事が来ていない）。
 
 #### Scenario: 送らなかった理由が記録から読める
 - **WHEN** 起動部品が `skipped dialog` を返す、止まりから 43200 秒を過ぎている、画面は送れるが親が通した判断が既にある、をそれぞれ用意する
@@ -1266,12 +1266,14 @@ Stop は payload のセッションと指定ログの最終発言が現在の入
 
 ### Requirement: 声かけの実機確認は適格な入力待ちの子で行い未確認を区別する
 
-マージ後の声かけ確認手順は、既存の声かけ条件を満たし会話15万トークン未満で前景が入力待ちの子を選ぶよう明記しなければならない（MUST）。背景エージェント待機中の子の skipped busy は正しい非送信として扱い、別の適格な子が無ければ実機確認を未完了にしなければならない（MUST）。実機送信・返事・次の request の cache_read_input_tokens と会話量の比較を #1728 と #1732 に記録し、fixture の成功で代替してはならない（MUST NOT）。非bypassの未知フッターは実画面確認前に対応せず、観測不能なら制限と未確認を明記しなければならない（MUST）。生ログの保存先は LLM_LOG_DIR とし、未設定なら確認し、リポジトリへ保存してはならない（MUST NOT）。
+停止済み子向けのマージ後の声かけ確認手順は、既存の声かけ条件を満たし会話15万トークン未満で前景が入力待ちの子を選ぶよう明記しなければならない（MUST）。背景エージェント待機中の子の skipped busy は正しい非送信として扱い、別の適格な子が無ければ実機確認を未完了にしなければならない（MUST）。実機送信・返事・次の request の cache_read_input_tokens と会話量の比較を #1728 と #1732 に記録し、fixture の成功で代替してはならない（MUST NOT）。非bypassの未知フッターは実画面確認前に対応せず、観測不能なら制限と未確認を明記しなければならない（MUST）。生ログの保存先は LLM_LOG_DIR とし、未設定なら確認し、リポジトリへ保存してはならない（MUST NOT）。
+
+作業待ち向けの実機確認は dev-workflow-develop の「作業待ちの維持だけで親を起こさず実測と区別する」に従い、大きい会話や背景待機行を一律に除外しない（MUST）。作業待ちに限る送信許可を、停止済み子向けの画面認識の緩和に使ってはならない（MUST NOT）。
 
 この確認は実機の画面・会話ログと fixture 結果を入力とし、背景待機や合成成功を実機成功と混同する誤りを防ぐ。fixture が通って実機未確認の状態は許す。あらゆる未観測画面を塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 背景待機中の子しか無い場合は実機確認を終わらせない
-- **WHEN** 実機確認候補がすべて背景エージェント待機中で、別の会話15万トークン未満の適格な入力待ちの子が無い
+- **WHEN** 停止済み子向けの実機確認候補がすべて背景エージェント待機中で、別の会話15万トークン未満の適格な入力待ちの子が無い
 - **THEN** skipped busy を到達失敗と呼ばず、実機確認は未完了と記録して条件が整うのを待つ
 
 #### Scenario: 適格な子の実機証拠をエピックへ残す
@@ -1321,3 +1323,91 @@ Stop は payload のセッションと指定ログの最終発言が現在の入
 #### Scenario: 親が送った入力のターンと古い子は知らせの対象にしない
 - **WHEN** `turn_input.sender` が `parent` の返事待ち、または `turn_input` / `turn_state` の無い記録に `wait --watch-stopped` を実行する
 - **THEN** `owner-away` は返らない（前者は既存の `stopped` の経路、後者は何も返さない）
+
+### Requirement: 子は作業報告の直前の明示行だけを作業待ちとして保存する
+
+判定の守備範囲は同 change の「作業待ちの記録の入力検査に共通の守備範囲」に従う。
+
+対象の子の Stop は、引用・コード外の最終状態行の直前にある `作業待ち: <wait-id> <started-at>` だけを作業待ちとして保存しなければならない（MUST）。wait-id は `[A-Za-z0-9][A-Za-z0-9._:-]*`、started-at は有効な UTC `YYYY-MM-DDTHH:MM:SSZ` とする（MUST）。状態が作業報告で dependency_wait が欠落/false の場合だけ `turn_state.background_wait={id,started_at}` を状態と同じ排他更新で保存する（MUST）。不正な直前行や依存待ちとの併存は Stop を拒否して修正を求める（MUST）。
+
+#### Scenario: 通常の背景待ちを記録する
+- **WHEN** 登録済みの子が `作業待ち: task-17 2026-11-24T00:00:00Z` の直後に `状態: 作業報告 — agent の結果待ち` と書いて通常ターンを終える
+- **THEN** 同じ入力世代・session_id の turn_state に id=task-17 と started_at を保存し、value は作業報告のまま。schema=1、親所有の stop/status、未知項目を保つ
+
+#### Scenario: 自然言語や引用から推測しない
+- **WHEN** summary に「CI 待ち」があるだけ、marker がコード内・引用内・本文途中にあるだけ、または marker が無い通常の作業報告である
+- **THEN** background_wait を付与せず、旧記録や依存待ちの文を補わない
+
+#### Scenario: 不正な作業待ち行を公開しない
+- **WHEN** 直前の作業待ち行が空 ID・空白を含む ID・不正 UTC、または状態が完了/主の返事待ち、または dependency_wait=true と併存している
+- **THEN** 有効な作業待ちを保存せず Stop を拒否し修正を求める。保存失敗も通常の Stop 保存失敗と同じ扱いで、成功した待ちを親に見せない
+
+### Requirement: 作業待ち情報は同じターンの任意拡張として有効性を判定する
+
+判定の守備範囲は同 change の「作業待ちの記録の入力検査に共通の守備範囲」に従う。
+
+background_wait は任意のオブジェクトとし、存在するときは正しい id/started_at、作業報告、dependency_wait 欠落/false、入力と一致する整数 generation と session_id を要求する（MUST）。子フックと作業待ち送信判定は型強制変換せず無効な組を拒否しなければならない（MUST）。親の基本記録検査は拡張せず、項目の無い旧記録も読み続ける（MUST）。新しい通常入力の turn_state=null、marker の無い通常終了、返事待ち・完了で古い作業待ちを残してはならない（MUST NOT）。
+
+#### Scenario: 無効な型と古い組を候補にしない
+- **WHEN** background_wait が true・文字列・null・配列・空オブジェクト、ID/時刻の型不正、または入力と状態の世代/セッション不一致である
+- **THEN** 親は作業待ち送信を0回にし、子フックは既存の拡張不正として有効状態を採用しない。基本記録を旧記録として読めることとは区別する
+
+#### Scenario: 新入力と待ち終了で無効化する
+- **WHEN** 有効な作業待ちに通常入力が入り、または元作業回収後に marker の無い通常の作業報告/返事待ち/完了を保存する
+- **THEN** 通常入力は同じ排他更新で状態全体を null にし、その後の通常終了は background_wait を残さない。遅い Stop は新入力へ旧情報を書けない
+
+#### Scenario: 既存の予約文除外を再利用する
+- **WHEN** 有効な作業待ちに共有定義の background 固定文とその一行応答が対応する
+- **THEN** #1792/#1793 の既存除外により turn_input/turn_state・recorded_at・待ちの組は変わらず、child-log の通常発言にも加わらない
+
+### Requirement: 作業待ちの記録の入力検査に共通の守備範囲
+
+作業待ちの保存（子の Stop）と有効性の判定（子フックと親の送信判定）は、次の守備範囲を共有しなければならない（MUST）。入力は hook payload、指定された現行 CLI 会話ログ、子の記録（`turn_input`・`turn_state`・`background_wait`）である。拾う誤りは、引用・コード・本文途中の marker の誤読、不正な ID・UTC・型の保存、別世代・別セッション・旧記録の格上げ、依存待ちや owner の入力の作業待ち扱いである。形式は正しいが実態と合わない marker（作業は終了済み・別作業を待つ）や、最終観測後の子の再開は通してよい。意味の判定や穴を塞ぎ切ることは完了条件にしない（限界は design.md「明示記録の誤申告」、誤送信は後続 PR のリスク宣言で扱う）。
+
+#### Scenario: 形式が正しい誤申告は通る
+- **WHEN** 実作業はすでに終わっているが、子が正しい形式の `作業待ち:` 行と作業報告を出して Stop する
+- **THEN** 形式と世代の検査を通れば保存し、実態の食い違いを理由に拒否しない。誤送信の可能性はリスク宣言で扱う
+
+#### Scenario: 拾う誤りは形式と世代で止める
+- **WHEN** marker が引用・コード内にある、ID や UTC が不正、別世代または別セッションの組、または owner の入力に紐づく旧い組である
+- **THEN** 作業待ちとして保存・採用せず、保存の拒否または送信0回にする
+
+### Requirement: 作業待ちの送信は登録された現行 CLI 一本で判定する
+
+作業待ち送信は turn_input.transcript_path と session_id が指す一本の現行 CLI 会話を読み、最後の通常の子発言が保存済みと同じ作業待ち行・状態行であることを要求する（MUST）。記録の session は端末ハンドルであり会話選択に使ってはならない（MUST NOT）。TTL・成功リクエスト・前回未応答・後続入力/通知の判定はこの一本だけから読み、曖昧・不正・欠落・別セッション・sidechain/SDK しか無い場合は送らない（MUST）。子の発言と usage は sessionId 一致かつ entrypoint=cli の行だけを数え（MUST）、入力の行は sessionId が別のときだけ除き、sessionId や entrypoint が欠けていても入力として数えて送らない側に倒す（MUST）。停止済み子の stop_uuid による既存の選択は変更してはならない（MUST NOT）。
+
+#### Scenario: stop_uuid を要求せず現行ログを選ぶ
+- **WHEN** 有効な作業待ちに turn_input.transcript_path の現行 CLI ログがあり、session_id と marker/状態が一致するが stop_uuid は無い。別の古い CLI と SDK のログもある
+- **THEN** 現行一本だけで判定し、別ログの usage は採用しない。stop_uuid が無いだけでは作業待ちを拒否しない
+
+#### Scenario: 読めない現在を過去ログで補わない
+- **WHEN** 現行 path が欠落・読取不能、session_id 不一致、通常発言の marker と記録が不一致、または現在の有効な CLI usage が無いが、古いログに1h書込がある
+- **THEN** 作業待ち送信を0回にし、過去ログから TTL や最後の発言を借りない
+
+#### Scenario: 項目の欠けた入力は数え、欠けた子の発言は数えない
+- **WHEN** 現行ログの作業待ちの発言のあとに、sessionId や entrypoint の無い通常入力・元作業の通知がある。別の場合として、作業待ちの発言や usage の行が entrypoint=cli でないか sessionId を欠く
+- **THEN** 前者は記録後の入力として `skipped answered`、後者はその行を子の発言・usage に数えず、作業待ちの発言が見つからなければ `skipped no-transcript` で、どちらも送信0回
+
+#### Scenario: 送らない理由は決まった順で一つだけ書く
+- **WHEN** 作業待ち送信の判定で複数の理由に同時に当たる
+- **THEN** expired（初回開始の不正・未来・上限以上）、現行ログの path の欠落・読取不能による no-transcript、answered、記録と同じ作業待ちの発言が無い no-transcript、pending、cache-unknown、cache-future、out-of-window（読めないか未来の成功リクエストを含む）の順で最初に当たった理由だけを記録する
+
+### Requirement: Orca の作業待ち許可は既知の背景待機行だけに限る
+
+dispatch は検査済みの作業待ち候補の Orca 一呼び出しだけに背景待機の送信許可を明示しなければならない（MUST）。部品は初回と送信直前の両観測で、最後の既知の背景待機行が一意な入力枠より前にあり、その間が空行と recap の行だけの場合に限り busy の例外とする（MUST）。前景スピナー・esc to interrupt・dialog・非空の入力/draft・未知表示・枠内/後方の待機行、待機行と入力枠の間に会話や未知の行がある古い待機行は許可しない（MUST NOT）。停止済み子・tmux に許可を継承せず、送信は一度、既存の到達確認と結果語彙を保つ（MUST）。
+
+#### Scenario: 作業待ちだけ背景エージェント表示を許す
+- **WHEN** 検査済み作業待ちの呼び出しで、既知の `✻ Waiting for 2 background agents to finish` が一意な空の入力枠の直前（間は空行か recap の行だけ）にあり、既知フッター、空/欠落 draft、前景実行と dialog の不在を二度確認する
+- **THEN** send を一回だけ許す。同じ画面でも通常の停止済み子の keepalive は既存どおり skipped busy。親環境の許可値を通常経路へ持ち越さない
+
+#### Scenario: 作業待ちでも広く busy を解除しない
+- **WHEN** 作業待ちの画面に前景スピナー、esc to interrupt、dialog、入力/draft、未知の待機文やフッター、複数枠、入力枠内/後方の待機行がある
+- **THEN** 適切な skipped busy/dialog/input-not-empty/unknown-state で送らず、元の端末と入力を保つ。壊れた JSON は failed observe とする
+
+#### Scenario: 会話が挟まる古い待機行は許可があっても busy のまま
+- **WHEN** 作業待ちの許可付きの呼び出しで、既知の待機行と一意な空の入力枠の間に会話の行や未知の行（`✻ Thinking about it` など）がある
+- **THEN** skipped busy で送らない。待機行の後に既知の完了行があるときの既存の履歴解除は変えない
+
+#### Scenario: 背景待機表示だけを送信成功としない
+- **WHEN** 作業待ちに一回 send したが turn_started が無く、送信後再観測には背景待機行だけがあり新しい前景実行を確認できない
+- **THEN** failed send、exit 1 とし、再送・terminal wait・入力消去を行わない。新しい前景実行と空欄が揃う場合だけ既存どおり sent とする
