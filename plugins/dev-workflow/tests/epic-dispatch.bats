@@ -8808,7 +8808,7 @@ reset_keepalive_poll() {
     case "$args" in
       *--timeout\ 0*|*--watch-done*) [ "$status" -eq 2 ] ;;
       *) [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ] ;;
-    esac || [ "$status" -eq 2 ]
+    esac
     [ "$(calls '^orca terminal send ')" -eq 0 ]
   done
   reset_keepalive_poll
