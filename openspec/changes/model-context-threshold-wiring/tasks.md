@@ -10,7 +10,7 @@
 
 ## 2. 統合を確認する
 
-- [ ] 2.1 repo 外の一時配置と別 cwd で両経路が同じ同梱表を使うこと、片方だけのモデル / override 解釈が残らないことを、`bats plugins/dev-workflow/tests/subagent-context.bats plugins/dev-workflow/tests/context-tripwire.bats` で確認する。共通部品の回帰は `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_token_thresholds.py'`、構文は `bash -n plugins/dev-workflow/scripts/subagent-context.sh plugins/dev-workflow/scripts/context-tripwire.sh`、差分は `git diff --check` で確認する。テストは各タスクで追加済みのケースを使い、この項目だけに作成を先送りしない。触る範囲: plugins/dev-workflow/scripts/subagent-context.sh:32-179、plugins/dev-workflow/scripts/context-tripwire.sh:23-233、plugins/dev-workflow/tests/subagent-context.bats:8-453、plugins/dev-workflow/tests/context-tripwire.bats:11-605、plugins/dev-workflow/skills/develop/references/decision-criteria.md:32-65（照合と既存ケースの統合実行）
+- [x] 2.1 repo 外の一時配置と別 cwd で両経路が同じ同梱表を使うこと、片方だけのモデル / override 解釈が残らないことを、`bats plugins/dev-workflow/tests/subagent-context.bats plugins/dev-workflow/tests/context-tripwire.bats` で確認する。共通部品の回帰は `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p 'test_token_thresholds.py'`、構文は `bash -n plugins/dev-workflow/scripts/subagent-context.sh plugins/dev-workflow/scripts/context-tripwire.sh`、差分は `git diff --check` で確認する。テストは各タスクで追加済みのケースを使い、この項目だけに作成を先送りしない。触る範囲: plugins/dev-workflow/scripts/subagent-context.sh:32-179、plugins/dev-workflow/scripts/context-tripwire.sh:23-233、plugins/dev-workflow/tests/subagent-context.bats:8-453、plugins/dev-workflow/tests/context-tripwire.bats:11-605、plugins/dev-workflow/skills/develop/references/decision-criteria.md:32-65（照合と既存ケースの統合実行）
 
 ## Workflow follow-up
 
