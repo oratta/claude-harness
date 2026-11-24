@@ -9,11 +9,14 @@
 #       同「worktree 隔離のサブエージェントでも途中計測が効く」
 
 setup() {
+  bats_require_minimum_version 1.5.0
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/context-tripwire.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
   WORK="$(mktemp -d)"
   PROJECTS="${WORK}/projects"
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP DEV_WORKFLOW_PR_TOKEN_CAP
+  unset AGENT_MODEL ANTHROPIC_MODEL
   SLUG="-Users-x-repo"
   SESS="11111111-2222-3333-4444-555555555555"
   AGENT_ID="ab9e20b3cde9ae07"
@@ -41,7 +44,7 @@ make_transcript() {
   local triple i c r
   for triple in "$@"; do
     IFS=, read -r i c r <<<"$triple"
-    printf '{"type":"assistant","message":{"model":"claude-sonnet-5","usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":10}}}\n' "$i" "$c" "$r" >> "$f"
+    printf '{"type":"assistant","message":{"model":"claude-sonnet-5-5","usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":10}}}\n' "$i" "$c" "$r" >> "$f"
   done
   echo "$f"
 }
@@ -90,7 +93,7 @@ escape_prefix() {
 
 @test "measure: sums input + cache_creation + cache_read of the LAST assistant record" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "1000,2000,3000" "500,0,200000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   # 合算は 500+0+200000 = 200500（最後のレコードだけ）。cap 150000 超なので通知が出る
   echo "$output" | python3 -c "import json,sys; d=json.load(sys.stdin); assert '200500' in d['hookSpecificOutput']['additionalContext'], d"
@@ -102,7 +105,7 @@ escape_prefix() {
   printf 'null\n' >> "$f"
   printf '{"type":"assistant","message":{"usage":{"input_tokens":100,"cache_creation_input_tokens":400,"cache_read_input_tokens":199500,"output_tokens":1}}}\n' >> "$f"
   printf '{"type":"user","message":{"role":"user","content":"x"}}\n' >> "$f"
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   echo "$output" | python3 -c "import json,sys; d=json.load(sys.stdin); assert '200000' in d['hookSpecificOutput']['additionalContext'], d"
 }
@@ -110,13 +113,13 @@ escape_prefix() {
 @test "measure: transcript without any usage is silent (fail-open)" {
   mkdir -p "$SUBAGENTS"
   printf '{"type":"user","message":{"role":"user","content":"hi"}}\n' > "${SUBAGENTS}/agent-${AGENT_ID}.jsonl"
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "measure: missing transcript is silent (fail-open)" {
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -125,11 +128,11 @@ escape_prefix() {
   # 末尾 256KB に最後の assistant usage が含まれる短いトランスクリプトで比較する。
   # 末尾 256KB の外にある場合は hook 側が fail-open で無音になり、一致しないのが正しい挙動。
   f="$(make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "1000,2000,3000" "7000,3000,90000")"
-  run "${PLUGIN_DIR}/scripts/subagent-context.sh" --file "$f" --cap 150000
+  run --separate-stderr "${PLUGIN_DIR}/scripts/subagent-context.sh" --file "$f" --cap 150000
   [ "$status" -eq 0 ]
   from_script="$(echo "$output" | python3 -c 'import json,sys; print(json.load(sys.stdin)["context_tokens"])')"
   # hook は上限内だと無音なので、cap を小さくして additionalContext 中の計測値を読む
-  run bash -c "DEV_WORKFLOW_CONTEXT_CAP=1000 '$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "DEV_WORKFLOW_CONTEXT_CAP=1000 '$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   from_hook="$(echo "$output" | python3 -c 'import json,re,sys; print(re.search(r"(\d+) tokens", json.load(sys.stdin)["hookSpecificOutput"]["additionalContext"]).group(1))')"
   [ "$from_script" = "$from_hook" ]
@@ -146,11 +149,11 @@ escape_prefix() {
   chmod +x "${shim}/python3"
   p="$(payload PostToolUse "" Read)"
   # proposal の約束「その並びを含まないメインスレッド payload では python3 が起動しない」を機械で固定する。
-  # 否定の assert は set -e が ! を無視するので run + status で書く。
+  # 否定の assert は set -e が ! を無視するので run --separate-stderr + status で書く。
   printf '%s' "$p" > "${WORK}/mainthread-payload.json"
-  run grep -qF -- "$(escape_prefix)" "${WORK}/mainthread-payload.json"
+  run --separate-stderr grep -qF -- "$(escape_prefix)" "${WORK}/mainthread-payload.json"
   [ "$status" -ne 0 ]
-  run bash -c "PATH=\"${shim}:\$PATH\" '$SCRIPT' <<< '$p'"
+  run --separate-stderr bash -c "PATH=\"${shim}:\$PATH\" '$SCRIPT' <<< '$p'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
   [ ! -f "${WORK}/python3-was-called" ]
@@ -160,7 +163,7 @@ escape_prefix() {
 }
 
 @test "early exit: mainthread payload mentioning agent_id in a command stays silent" {
-  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "" Bash "grep agent_id foo.json")'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "" Bash "grep agent_id foo.json")'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -172,13 +175,13 @@ escape_prefix() {
   payload PreToolUse "$AGENT_ID" Bash "git status" > "${WORK}/escaped-key-278-raw.json"
   escape_agent_id_key "${WORK}/escaped-key-278-raw.json" > "${WORK}/escaped-key-278.json"
   # 生表記は消えている（早期 exit の従来の判定には当たらない）
-  run grep -qF -- '"agent_id"' "${WORK}/escaped-key-278.json"
+  run --separate-stderr grep -qF -- '"agent_id"' "${WORK}/escaped-key-278.json"
   [ "$status" -ne 0 ]
   # それでも JSON としては同じ agent_id を持つ
   python3 -c 'import json,sys; assert json.load(open(sys.argv[1]))["agent_id"] == sys.argv[2]' \
     "${WORK}/escaped-key-278.json" "$AGENT_ID"
   # 期待は生表記の payload と同じ deny
-  run bash -c "'$SCRIPT' < '${WORK}/escaped-key-278.json'"
+  run --separate-stderr bash -c "'$SCRIPT' < '${WORK}/escaped-key-278.json'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"permissionDecision": *"deny"'
 }
@@ -190,44 +193,44 @@ escape_prefix() {
   esc="$(python3 -c 'print(chr(92) + "u0061gent_id", end="")')"
   payload PostToolUse "" Bash "grep -F ${esc} foo.json" > "${WORK}/escape-only-278.json"
   grep -qF -- "$(escape_prefix)" "${WORK}/escape-only-278.json"
-  run grep -qF -- '"agent_id"' "${WORK}/escape-only-278.json"
+  run --separate-stderr grep -qF -- '"agent_id"' "${WORK}/escape-only-278.json"
   [ "$status" -ne 0 ]
   # python3 には渡る（早期 exit しない）ことを、PATH に置いた偽 python3 で確かめる
   shim="${WORK}/shim-escape"; mkdir -p "$shim"
   printf '#!/bin/sh\ntouch "%s/python3-escape-called"\nexit 0\n' "$WORK" > "${shim}/python3"
   chmod +x "${shim}/python3"
-  run bash -c "PATH=\"${shim}:\$PATH\" '$SCRIPT' < '${WORK}/escape-only-278.json'"
+  run --separate-stderr bash -c "PATH=\"${shim}:\$PATH\" '$SCRIPT' < '${WORK}/escape-only-278.json'"
   [ "$status" -eq 0 ]
   [ -f "${WORK}/python3-escape-called" ]
   # 実物の python3 に渡しても無音のまま終わる
-  run bash -c "'$SCRIPT' < '${WORK}/escape-only-278.json'"
+  run --separate-stderr bash -c "'$SCRIPT' < '${WORK}/escape-only-278.json'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "fail-open: DEV_WORKFLOW_CONTEXT_TRIPWIRE=off silences everything" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,900000" >/dev/null
-  run bash -c "DEV_WORKFLOW_CONTEXT_TRIPWIRE=off '$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "DEV_WORKFLOW_CONTEXT_TRIPWIRE=off '$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "fail-open: a non-integer cap is silent" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,900000" >/dev/null
-  run bash -c "DEV_WORKFLOW_CONTEXT_CAP=abc '$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "DEV_WORKFLOW_CONTEXT_CAP=abc '$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "fail-open: unparsable stdin is silent" {
-  run bash -c "printf '{\"agent_id\": broken' | '$SCRIPT'"
+  run --separate-stderr bash -c "printf '{\"agent_id\": broken' | '$SCRIPT'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "silent: under the cap nothing is emitted" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "1000,1000,1000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -236,21 +239,21 @@ escape_prefix() {
 
 @test "nested: a transcript two levels below subagents/ is found" {
   make_transcript "${SUBAGENTS}/agent-parent" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q additionalContext
 }
 
 @test "nested: a transcript three levels below subagents/ is found" {
   make_transcript "${SUBAGENTS}/a/b" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q additionalContext
 }
 
 @test "nested: deeper than three levels is not found (fail-open)" {
   make_transcript "${SUBAGENTS}/a/b/c" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -259,7 +262,7 @@ escape_prefix() {
   mkdir -p "${SUBAGENTS}/deep"
   for i in $(seq 1 260); do : > "${SUBAGENTS}/filler-${i}.jsonl"; done
   make_transcript "${SUBAGENTS}/deep" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -268,7 +271,7 @@ escape_prefix() {
 
 @test "notify: over the cap emits hookSpecificOutput.additionalContext and exits 0" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
@@ -296,7 +299,7 @@ PY
 
 @test "notify: PostToolUse never denies" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,900000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Write)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Write)'"
   [ "$status" -eq 0 ]
   ! echo "$output" | grep -q permissionDecision || return 1
 }
@@ -305,7 +308,7 @@ PY
 
 @test "hard stop: Edit is denied above the hard cap" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Edit)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Edit)'"
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
@@ -323,7 +326,7 @@ PY
 @test "hard stop: Write and NotebookEdit are denied too" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
   for tool in Write NotebookEdit; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" "$tool")'"
+    run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" "$tool")'"
     [ "$status" -eq 0 ]
     echo "$output" | grep -q '"permissionDecision": *"deny"'
   done
@@ -332,7 +335,7 @@ PY
 @test "hard stop: read-only tools are never denied" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,900000" >/dev/null
   for tool in Read Grep Glob; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" "$tool")'"
+    run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" "$tool")'"
     [ "$status" -eq 0 ]
     [ -z "$output" ]
   done
@@ -340,14 +343,14 @@ PY
 
 @test "hard stop: between cap and hard cap edits still pass" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,180000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Edit)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Edit)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
 
 @test "hard stop: an inverted pair of thresholds is fail-open" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,900000" >/dev/null
-  run bash -c "DEV_WORKFLOW_CONTEXT_CAP=220000 DEV_WORKFLOW_CONTEXT_HARD_CAP=150000 '$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Edit)'"
+  run --separate-stderr bash -c "DEV_WORKFLOW_CONTEXT_CAP=220000 DEV_WORKFLOW_CONTEXT_HARD_CAP=150000 '$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Edit)'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -373,7 +376,7 @@ PY
     "git status && rm -rf build" "git status | head" "git status; rm x" \
     "npm test" "gh pr comment 1 --body x" \
     "git reset --hard" "git clean -f" "git -C /wt checkout -- ."; do
-    run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
+    run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
     [ "$status" -eq 0 ]
     echo "$output" | grep -q '"permissionDecision": *"deny"'
   done
@@ -384,7 +387,7 @@ PY
   # 単一引用符を含む実値なので、外側の '$(...)' 埋め込みを避けてファイル経由で渡す
   cmd='git -c '\''diff.external=sh -c "touch /tmp/pr269-bypass"'\'' diff HEAD^ HEAD'
   payload PreToolUse "$AGENT_ID" Bash "$cmd" > "$WORK/bypass-payload.json"
-  run bash -c "'$SCRIPT' < '$WORK/bypass-payload.json'"
+  run --separate-stderr bash -c "'$SCRIPT' < '$WORK/bypass-payload.json'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"permissionDecision": *"deny"'
 }
@@ -394,7 +397,7 @@ PY
   # zsh の $'...' を含む実値。'$(...)' 埋め込みを避けファイル経由で渡す（1 周目と同じ理由）
   cmd='git push $'\''--receive-pack=/tmp/pr269-bypass2'\'' origin main'
   payload PreToolUse "$AGENT_ID" Bash "$cmd" > "$WORK/bypass2-payload.json"
-  run bash -c "'$SCRIPT' < '$WORK/bypass2-payload.json'"
+  run --separate-stderr bash -c "'$SCRIPT' < '$WORK/bypass2-payload.json'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"permissionDecision": *"deny"'
 }
@@ -403,14 +406,14 @@ PY
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
   # $ を一切使わない変種（ゲートの「$ を拒否する」案がこの時点で既に破れていた根拠）
   cmd='git push {--receive-pack=/tmp/x,origin} main'
-  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "$cmd")'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"permissionDecision": *"deny"'
 }
 
 @test "bash deny: an empty command string is denied (fail-closed)" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "")'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "")'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"permissionDecision": *"deny"'
 }
@@ -426,7 +429,7 @@ d = {"hook_event_name": "PreToolUse", "session_id": os.environ["SESS"],
 print(json.dumps(d, ensure_ascii=False))
 PY
 )"
-  run bash -c "'$SCRIPT' <<< '$p_missing'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$p_missing'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"permissionDecision": *"deny"'
 
@@ -439,14 +442,14 @@ d = {"hook_event_name": "PreToolUse", "session_id": os.environ["SESS"],
 print(json.dumps(d, ensure_ascii=False))
 PY
 )"
-  run bash -c "'$SCRIPT' <<< '$p_nonstr'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$p_nonstr'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"permissionDecision": *"deny"'
 }
 
 @test "hard stop: between cap and hard cap Bash still passes" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,180000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "git status")'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Bash "git status")'"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
 }
@@ -454,7 +457,7 @@ PY
 @test "bash deny: reason carries cwd, ctx/hard, the no-Bash notice, and the edited-files instruction, and omits -C/-c wording" {
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
   p="$(payload PreToolUse "$AGENT_ID" Bash 'git status')"
-  run bash -c "'$SCRIPT' <<< '$p'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$p'"
   [ "$status" -eq 0 ]
   python3 - "$output" <<'PY'
 import json, sys
@@ -510,7 +513,7 @@ PY
   #      このときだけ「大 <= 小 x 2」かつ「小 <= 基準 x 3」で判定する。前者は末尾でなく全行を
   #      JSON パースする回帰（大が小の数倍）を、後者は hook 全体が一様に遅くなる回帰（基準は
   #      hook に依存しないので、小だけが基準から離れる）を落とす。
-  run python3 - "$SCRIPT" "$p" "$ps_" <<'PY'
+  run --separate-stderr python3 - "$SCRIPT" "$p" "$ps_" <<'PY'
 import subprocess, sys, time
 script, big, small = sys.argv[1], sys.argv[2].encode(), sys.argv[3].encode()
 best = {"big": None, "small": None, "ref": None}
@@ -596,10 +599,233 @@ PY
   # ファイル名に名前が入らない（#243 の直接原因）。hook は名前ではなく agent_id で引く。
   AGENT_ID="a1b2c3d4e5f60718"
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "0,0,300000" >/dev/null
-  run bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PostToolUse "$AGENT_ID" Read)'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q additionalContext
-  run bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Edit)'"
+  run --separate-stderr bash -c "'$SCRIPT' <<< '$(payload PreToolUse "$AGENT_ID" Edit)'"
   [ "$status" -eq 0 ]
   echo "$output" | grep -q '"permissionDecision": *"deny"'
+}
+
+# 配布先を模したコピー。元の表・共通処理・手順は編集しない。
+threshold_plugin() {
+  local dest="$WORK/cache-installed"
+  mkdir -p "$dest/scripts" "$dest/references" "$dest/skills/develop/references"
+  cp "$PLUGIN_DIR/scripts/"{subagent-context.sh,context-tripwire.sh,token_thresholds.py} "$dest/scripts/"
+  cp "$PLUGIN_DIR/references/token-thresholds.json" "$dest/references/"
+  cp "$PLUGIN_DIR/skills/develop/references/token-thresholds.md" "$dest/skills/develop/references/"
+  SCRIPT="$dest/scripts/$(basename "$SCRIPT")"
+  TABLE="$dest/references/token-thresholds.json"
+  GUIDE="$dest/skills/develop/references/token-thresholds.md"
+  python3 - "$TABLE" <<'PYFIX'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1]); d = json.loads(p.read_text())
+for row, cap, hard in [(d['models']['claude-opus-5-5'], 100, 200),
+                       (d['models']['claude-sonnet-5-5'], 300, 400),
+                       (d['fallback'], 500, 600)]:
+    row['context_cap']['value'] = cap
+    row['context_hard_cap']['value'] = hard
+p.write_text(json.dumps(d))
+PYFIX
+  cd "$WORK"
+}
+
+# $2 は JSON のモデル値。missing は model フィールドなし。$4=append なら追記。
+threshold_record() {
+  mkdir -p "$(dirname "$1")"
+  python3 - "$@" <<'PYFIX'
+import json, sys
+p, model, ctx = sys.argv[1:4]
+m = {'usage': {'input_tokens': int(ctx), 'output_tokens': 1}}
+if model != 'missing':
+    m['model'] = json.loads(model)
+with open(p, 'a' if len(sys.argv) > 4 else 'w') as f:
+    f.write(json.dumps({'type': 'assistant', 'message': m}) + '\n')
+PYFIX
+}
+
+assert_context_diagnostics() {
+  [[ "$stderr" == *unknown_model* ]] || return 1
+  [[ "$stderr" == *revalidation_required* ]] || return 1
+  [[ "$stderr" == *context_cap* ]] || return 1
+  [[ "$stderr" == *"$GUIDE"* ]] || return 1
+  [[ "$stderr" != *pr_token_cap* ]] || return 1
+  [[ "$stderr" != *epic_child_token_cap* ]] || return 1
+  [ -f "$GUIDE" ]
+  [ -z "$(find "$WORK/cache-installed" -name '*.pyc' -o -name __pycache__)" ]
+}
+
+threshold_hook() {
+  payload "$1" "$AGENT_ID" "${2:-Edit}" > "$WORK/payload.json"
+  "$SCRIPT" < "$WORK/payload.json"
+}
+
+@test "thresholds: last usage selects bundled model row and exact boundaries" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  local f="$SUBAGENTS/agent-${AGENT_ID}.jsonl" ctx
+  for ctx in 100 101 200 201; do
+    threshold_record "$f" '"claude-sonnet-5-5"' 350
+    threshold_record "$f" '"claude-opus-5-5"' "$ctx" append
+    run --separate-stderr threshold_hook PostToolUse
+    [ "$status" -eq 0 ]
+    [ -z "$stderr" ]
+    if [ "$ctx" -gt 100 ]; then [[ "$output" == *additionalContext* ]] || return 1; else [ -z "$output" ]; fi
+    run --separate-stderr threshold_hook PreToolUse
+    [ "$status" -eq 0 ]
+    if [ "$ctx" -gt 200 ]; then [[ "$output" == *'"deny"'* ]] || return 1; else [ -z "$output" ]; fi
+  done
+  threshold_record "$f" '"claude-sonnet-5-5"' 201
+  run --separate-stderr threshold_hook PostToolUse
+  [ -z "$output" ]
+  [ -z "$stderr" ]
+}
+
+@test "thresholds: missing and unknown models never borrow another record or environment" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  export AGENT_MODEL=claude-opus-5-5 ANTHROPIC_MODEL=claude-opus-5-5
+  local f="$SUBAGENTS/agent-${AGENT_ID}.jsonl" model
+  printf '{"type":"assistant","message":{"model":"claude-opus-5-5"}}\n' > "$TRANSCRIPT_PATH"
+  for model in missing null 42 '[]' '""' '"   "' '"new-model"' '"opus"' '"sonnet"' '" claude-opus-5-5 "'; do
+    threshold_record "$f" '"claude-opus-5-5"' 201
+    threshold_record "$f" "$model" 499 append
+    run --separate-stderr threshold_hook PostToolUse
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+    assert_context_diagnostics
+    [[ "$stderr" == *context_hard_cap* ]] || return 1
+  done
+}
+
+@test "thresholds: unknown model warns on every call within cap, notify and deny with overrides" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  local ctx event repeat
+  for ctx in 499 501 601; do
+    threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"new-model"' "$ctx"
+    for event in PostToolUse PreToolUse; do
+      for repeat in 1 2; do
+        run --separate-stderr threshold_hook "$event"
+        [ "$status" -eq 0 ]
+        assert_context_diagnostics
+        if [ "$event" = PostToolUse ] && [ "$ctx" -gt 500 ]; then
+          [[ "$output" == *additionalContext* ]] || return 1
+        elif [ "$event" = PreToolUse ] && [ "$ctx" -gt 600 ]; then
+          [[ "$output" == *'"deny"'* ]] || return 1
+        else
+          [ -z "$output" ]
+        fi
+      done
+    done
+  done
+  export DEV_WORKFLOW_CONTEXT_CAP=700 DEV_WORKFLOW_CONTEXT_HARD_CAP=800
+  run --separate-stderr threshold_hook PostToolUse
+  [ -z "$output" ]
+  assert_context_diagnostics
+}
+
+@test "thresholds: hook whitespace overrides unrelated env and reversed ordering" {
+  threshold_plugin
+  local value event
+  export DEV_WORKFLOW_PR_TOKEN_CAP=bad
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"claude-opus-5-5"' 201
+  for value in '' '  ' ' 100 '; do
+    export DEV_WORKFLOW_CONTEXT_CAP="$value" DEV_WORKFLOW_CONTEXT_HARD_CAP=' 200 '
+    run --separate-stderr threshold_hook PreToolUse
+    [[ "$output" == *'"deny"'* ]] || return 1
+    [ -z "$stderr" ]
+  done
+  for value in 99 100; do
+    export DEV_WORKFLOW_CONTEXT_CAP=100 DEV_WORKFLOW_CONTEXT_HARD_CAP="$value"
+    run --separate-stderr threshold_hook PreToolUse
+    [ -z "$output" ]
+    run --separate-stderr threshold_hook PostToolUse
+    [[ "$output" == *additionalContext* ]] || return 1
+  done
+}
+
+@test "thresholds: zero or invalid hook overrides fail open with a reason for both events" {
+  threshold_plugin
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"claude-opus-5-5"' 999
+  local pair event value
+  for pair in '0 200' '100 0' '0 0'; do
+    read -r DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP <<< "$pair"
+    export DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+    for event in PostToolUse PreToolUse; do
+      run --separate-stderr threshold_hook "$event"
+      [ "$status" -eq 0 ]
+      [ -z "$output" ]
+      [[ "$stderr" == *context-tripwire*invalid_hook_threshold* ]] || return 1
+    done
+  done
+  for value in abc -1 1.5 １２; do
+    for pair in cap hard; do
+      export DEV_WORKFLOW_CONTEXT_CAP=100 DEV_WORKFLOW_CONTEXT_HARD_CAP=200
+      if [ "$pair" = cap ]; then export DEV_WORKFLOW_CONTEXT_CAP="$value"; else export DEV_WORKFLOW_CONTEXT_HARD_CAP="$value"; fi
+      for event in PostToolUse PreToolUse; do
+        run --separate-stderr threshold_hook "$event"
+        [ "$status" -eq 0 ]
+        [ -z "$output" ]
+        [[ "$stderr" == *context-tripwire*invalid_override* ]] || return 1
+      done
+    done
+  done
+}
+
+@test "thresholds: known model evidence mismatch warns only about used metrics" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  python3 - "$TABLE" <<'PYFIX'
+import json,sys
+p=sys.argv[1]; d=json.load(open(p))
+for record in d['models']['claude-opus-5-5'].values(): record['decided_models']=['other-model']
+with open(p,'w') as f: json.dump(d,f)
+PYFIX
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"claude-opus-5-5"' 100
+  run --separate-stderr threshold_hook PostToolUse
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *revalidation_required*other-model*context_cap*"$GUIDE"* ]] || return 1
+  [[ "$stderr" == *context_hard_cap* ]] || return 1
+  [[ "$stderr" != *unknown_model* ]] || return 1
+  [[ "$stderr" != *pr_token_cap* ]] || return 1
+}
+
+@test "thresholds: broken table or missing resolver fails open even with both overrides" {
+  threshold_plugin
+  threshold_record "$SUBAGENTS/agent-${AGENT_ID}.jsonl" '"claude-opus-5-5"' 999999
+  cp "$TABLE" "$WORK/table-backup.json"
+  local kind event
+  for kind in malformed schema missing resolver; do
+    cp "$WORK/table-backup.json" "$TABLE"
+    case "$kind" in
+      malformed) printf '{' > "$TABLE" ;;
+      schema) printf '{}' > "$TABLE" ;;
+      missing) rm "$TABLE" ;;
+      resolver) rm "$WORK/cache-installed/scripts/token_thresholds.py" ;;
+    esac
+    for event in PostToolUse PreToolUse; do
+      run --separate-stderr threshold_hook "$event"
+      [ "$status" -eq 0 ]
+      [ -z "$output" ]
+      [[ "$stderr" == *context-tripwire* ]] || return 1
+      if [ "$kind" = resolver ]; then [[ "$stderr" == *resolver_unavailable* ]] || return 1; else [[ "$stderr" == *invalid_table* ]] || return 1; fi
+    done
+  done
+}
+
+@test "thresholds: hook keeps its tail usage rule for API errors and uses real script location" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  local f="$SUBAGENTS/agent-${AGENT_ID}.jsonl"
+  threshold_record "$f" '"claude-opus-5-5"' 201
+  printf '%s\n' '{"type":"assistant","isApiErrorMessage":true,"message":{"model":"new-model","usage":{"input_tokens":0}}}' >> "$f"
+  ln -s "$SCRIPT" "$WORK/hook-link"
+  SCRIPT="$WORK/hook-link"
+  run --separate-stderr threshold_hook PostToolUse
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  assert_context_diagnostics
 }

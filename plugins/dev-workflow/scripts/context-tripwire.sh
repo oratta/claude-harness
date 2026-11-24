@@ -55,7 +55,9 @@ esac
 # -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
 PY_SRC=""
 IFS= read -r -d '' PY_SRC <<'PY' || true
-import json, os, sys, time
+import importlib.util, json, os, sys, time
+from pathlib import Path
+sys.dont_write_bytecode = True
 
 TAIL = 256 * 1024        # 末尾だけ読む。環境変数化しない（design Decision 5）
 ENTRY_BUDGET = 200       # 探索で走査するディレクトリエントリの上限
@@ -83,17 +85,6 @@ STOP = (
 
 def emit(obj):
     print(json.dumps(obj, ensure_ascii=False))
-
-
-def env_int(name, default):
-    """正の整数でなければ None（＝ fail-open）。未設定は既定値。"""
-    v = os.environ.get(name)
-    if v is None or v.strip() == "":
-        return default
-    v = v.strip()
-    if not v.isdigit() or int(v) <= 0:
-        return None
-    return int(v)
 
 
 def find_transcript(root, fname):
@@ -155,7 +146,10 @@ def measure(path):
             v = u.get(k)
             return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
 
-        return n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+        model = msg.get("model")
+        if not isinstance(model, str) or not model.strip():
+            model = None
+        return n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens"), model
     return None
 
 
@@ -178,11 +172,6 @@ if os.sep in agent_id or os.sep in session_id or agent_id in (".", "..") or sess
 if event not in ("PostToolUse", "PreToolUse"):
     sys.exit(0)
 
-cap = env_int("DEV_WORKFLOW_CONTEXT_CAP", 150000)
-hard = env_int("DEV_WORKFLOW_CONTEXT_HARD_CAP", 220000)
-if cap is None or hard is None:
-    sys.exit(0)
-
 root = os.path.join(os.path.dirname(transcript_path), session_id, "subagents")
 fname = "agent-%s.jsonl" % agent_id
 target = os.path.join(root, fname)
@@ -191,8 +180,37 @@ if not os.path.isfile(target):
 if not target:
     sys.exit(0)
 
-ctx = measure(target)
-if ctx is None:
+measurement = measure(target)
+if measurement is None:
+    sys.exit(0)
+
+ctx, model = measurement
+try:
+    plugin = Path(sys.argv[1]).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("token_thresholds", plugin / "scripts/token_thresholds.py")
+    resolver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(resolver)
+except Exception as error:
+    print(f"context-tripwire: resolver_unavailable: {error}", file=sys.stderr)
+    sys.exit(0)
+env = {key: os.environ[key] for key in ("DEV_WORKFLOW_CONTEXT_CAP", "DEV_WORKFLOW_CONTEXT_HARD_CAP")
+       if key in os.environ}
+try:
+    resolved = resolver.resolve_thresholds(model, env)
+except ValueError as error:
+    print(f"context-tripwire: {error}", file=sys.stderr)
+    sys.exit(0)
+for diagnostic in resolved["diagnostics"]:
+    if diagnostic["code"] == "unknown_model":
+        print(f"context-tripwire: {diagnostic['message']}", file=sys.stderr)
+    elif diagnostic.get("metric") in ("context_cap", "context_hard_cap"):
+        guide = plugin / "skills/develop/references/token-thresholds.md"
+        print(f"context-tripwire: revalidation_required: {model or '不明'}; "
+              f"根拠モデル={diagnostic['decided_models']}; 対象={diagnostic['metric']}; 手順={guide}", file=sys.stderr)
+cap = resolved["thresholds"]["context_cap"]["value"]
+hard = resolved["thresholds"]["context_hard_cap"]["value"]
+if cap <= 0 or hard <= 0:
+    print(f"context-tripwire: invalid_hook_threshold: cap={cap}, hard={hard}; 両方に正数が必要", file=sys.stderr)
     sys.exit(0)
 
 if event == "PostToolUse":
@@ -230,4 +248,4 @@ if [ -z "$PY_SRC" ]; then
   echo "context-tripwire: 判定の本体を読めなかったため、判定していない" >&2
   exit 1
 fi
-printf '%s' "$payload" | python3 -I -c "$PY_SRC"
+printf '%s' "$payload" | python3 -I -c "$PY_SRC" "${BASH_SOURCE[0]}"

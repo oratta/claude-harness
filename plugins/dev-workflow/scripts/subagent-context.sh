@@ -31,7 +31,7 @@ set -uo pipefail
 
 name=""
 file=""
-cap="${DEV_WORKFLOW_CONTEXT_CAP:-150000}"
+cap=""
 stop_since=""
 stop_timeout="${DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT:-1800}"
 stop_stall="${DEV_WORKFLOW_STOP_CONFIRM_STALL:-600}"
@@ -59,17 +59,17 @@ if [ -n "$file" ] && [ -z "$name" ]; then
   name="$(basename "$file")"; name="${name#agent-}"; name="${name%.jsonl}"
 fi
 if [ -z "$name" ]; then echo "usage: subagent-context.sh <agent-name> [--cap N] | --file <path> [--cap N]" >&2; exit 1; fi
-if ! [[ "$cap" =~ ^[0-9]+$ ]]; then echo '{"error":"DEV_WORKFLOW_CONTEXT_CAP must be a positive integer"}'; exit 1; fi
 for v in "$stop_timeout" "$stop_stall"; do
   if ! [[ "$v" =~ ^[0-9]+$ ]]; then echo '{"error":"DEV_WORKFLOW_STOP_CONFIRM_TIMEOUT / _STALL must be positive integers"}'; exit 1; fi
 done
 command -v python3 >/dev/null 2>&1 || { echo '{"error":"python3 not found"}'; exit 1; }
 
-NAME="$name" CAP="$cap" PROJECTS="$projects" CWD="$PWD" FILE="$file" STOP_SINCE="$stop_since" STOP_TIMEOUT="$stop_timeout" STOP_STALL="$stop_stall" python3 <<'PY'
-import glob, json, os, sys
+SCRIPT_PATH="${BASH_SOURCE[0]}" NAME="$name" CAP="$cap" PROJECTS="$projects" CWD="$PWD" FILE="$file" STOP_SINCE="$stop_since" STOP_TIMEOUT="$stop_timeout" STOP_STALL="$stop_stall" python3 <<'PY'
+import glob, importlib.util, json, os, sys
+from pathlib import Path
+sys.dont_write_bytecode = True
 
 name = os.environ["NAME"]
-cap = int(os.environ["CAP"])
 projects = os.environ["PROJECTS"]
 cwd = os.environ["CWD"]
 
@@ -117,6 +117,7 @@ def first_cwd(path):
 chosen = files[0] if direct else next((p for p in files if first_cwd(p) == cwd), files[0])
 
 ctx = None
+model = None
 calls = 0
 trailing_err = False
 try:
@@ -149,6 +150,9 @@ try:
             trailing_err = False
             calls += 1
             ctx = n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+            model = msg.get("model")
+            if not isinstance(model, str) or not model.strip():
+                model = None
 except Exception as e:
     print(json.dumps({"agent": name, "file": chosen, "error": str(e)}))
     sys.exit(1)
@@ -156,6 +160,35 @@ except Exception as e:
 if ctx is None:
     print(json.dumps({"agent": name, "file": chosen, "error": "no assistant usage yet", "calls": 0}))
     sys.exit(1)
+
+# 実行中のスクリプトの実体と同じ配布物を使い、cwd / Python 環境から探さない。
+try:
+    plugin = Path(os.environ["SCRIPT_PATH"]).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("token_thresholds", plugin / "scripts/token_thresholds.py")
+    resolver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(resolver)
+except Exception as error:
+    message = f"resolver_unavailable: {error}"
+    print(f"subagent-context: {message}", file=sys.stderr)
+    print(json.dumps({"agent": name, "file": chosen, "error": message}))
+    sys.exit(1)
+env = {key: os.environ[key] for key in ("DEV_WORKFLOW_CONTEXT_CAP",) if key in os.environ}
+if os.environ["CAP"]:
+    env["DEV_WORKFLOW_CONTEXT_CAP"] = os.environ["CAP"]
+try:
+    resolved = resolver.resolve_thresholds(model, env)
+except ValueError as error:
+    print(f"subagent-context: {error}", file=sys.stderr)
+    print(json.dumps({"agent": name, "file": chosen, "error": str(error)}))
+    sys.exit(1)
+for diagnostic in resolved["diagnostics"]:
+    if diagnostic["code"] == "unknown_model":
+        print(f"subagent-context: {diagnostic['message']}", file=sys.stderr)
+    elif diagnostic.get("metric") == "context_cap":
+        guide = plugin / "skills/develop/references/token-thresholds.md"
+        print(f"subagent-context: revalidation_required: {model or '不明'}; "
+              f"根拠モデル={diagnostic['decided_models']}; 対象=context_cap; 手順={guide}", file=sys.stderr)
+cap = resolved["thresholds"]["context_cap"]["value"]
 
 over = ctx > cap
 out = {"agent": name, "file": chosen, "context_tokens": ctx, "calls": calls,
