@@ -92,9 +92,9 @@ develop の本体は、その記録先のために Agent ツールでサブエ�
 - **THEN** 集計は中断せず、その 2 行は合計から外れ、`skipped_lines` に 2 が加わる
 
 ### Requirement: 出力と exit code
-`pr-token-budget.sh <番号>... [--cap <tokens>] [--projects <dir>] [--codex-records <file>] [--codex-home <dir>]...` は、stdout に 1 行 JSON を SHALL 出す。キーは少なくとも `records`（渡した番号の配列）・`claude_tokens`・`codex_tokens`・`total_tokens`（`claude_tokens + codex_tokens`）・`agent_count`・`codex_threads`・`cap`・`over_cap`・`unresolved`・`codex_unresolved`・`skipped_lines`・`agents`（各サブエージェントの `name`・`description`・`model`・`tokens`・`requests`）・`codex`（各 thread の `thread_id`・`tokens`・`source`（`record` か `rollout`））とする。上限は Claude 分と Codex 分を分けず、`total_tokens` に 1 本で MUST 掛ける。上限は `--cap`、無ければ環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければ 30000000 を使う。走査対象は `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}/*/*/subagents/agent-*.meta.json`（`--projects` で差し替え）とする。
+`pr-token-budget.sh <番号>... [--cap <tokens>] [--projects <dir>] [--codex-records <file>] [--codex-home <dir>]...` は、stdout に 1 行 JSON を SHALL 出す。キーは少なくとも `records`（渡した番号の配列）・`claude_tokens`・`codex_tokens`・`total_tokens`（`claude_tokens + codex_tokens`）・`agent_count`・`codex_threads`・`cap`・`over_cap`・`unresolved`・`codex_unresolved`・`skipped_lines`・`agents`（各サブエージェントの `name`・`description`・`model`・`tokens`・`requests`）・`codex`（各 thread の `thread_id`・`tokens`・`source`（`record` か `rollout`））とする。上限は Claude 分と Codex 分を分けず、`total_tokens` に 1 本で MUST 掛ける。上限は `--cap`、無ければ環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければ数えたリクエストのモデルで共通の解決処理が返す `pr_token_cap`（モデルの集め方・値が分かれたときの採り方・診断の正本は `dev-workflow-token-thresholds` の累計計測の要件）を使い、出力の `cap` は採用した上限とする（MUST）。走査対象は `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}/*/*/subagents/agent-*.meta.json`（`--projects` で差し替え）とする。
 
-exit code は、`total_tokens` が上限以下なら 0、上限を超えたら 2、引数エラー・python3 が無い・カレントディレクトリがリポジトリでないときは 1 と MUST する。紐付くサブエージェントが 0 体のときはエラーにせず、合計 0 で exit 0 と SHALL する。
+exit code は、`total_tokens` が上限以下なら 0、上限を超えたら 2、引数エラー・python3 が無い・カレントディレクトリがリポジトリでない・上限を解決できない（表や上書きの不正、共通の解決処理を読めない）ときは 1 と MUST する。紐付くサブエージェントが 0 体であること自体はエラーにせず、合計 0 で exit 0 と SHALL する（上限を解決できなければ 0 体でも exit 1）。
 
 守備範囲: 想定する入力の出どころは、`--projects`、環境変数 `CLAUDE_PROJECTS_DIR` / `CLAUDE_CONFIG_DIR` / `HOME` で決まる 1 か所の projects ディレクトリと、`--cap` / `DEV_WORKFLOW_PR_TOKEN_CAP` の上限の値である。拾いたい誤りは、Claude Code が会話記録を書いた設定フォルダと違う場所を探して Claude 分を 0 と数え、上限の判定が効かないことである。通ることを許す入力は、1 つの記録先を別々の `CLAUDE_CONFIG_DIR` のセッションで進めたときの別の設定フォルダ側の消費（数えず、合計は少なく出る）と、会話記録の無い場所を指す `CLAUDE_CONFIG_DIR`（紐付く 0 体として合計 0・exit 0）である。これらの穴が見つかるたびに探索先を増やして塞ぎ切ることを完了条件にしない。
 
@@ -126,6 +126,10 @@ exit code は、`total_tokens` が上限以下なら 0、上限を超えたら 2
 - **WHEN** `--cap` に数字でない値を渡す
 - **THEN** exit 1
 
+#### Scenario: 上書きの無い既定はモデル別の表の値
+- **WHEN** `--cap` も `DEV_WORKFLOW_PR_TOKEN_CAP` も無く、数えたリクエストのモデルが `claude-opus-5-5` だけである
+- **THEN** 出力の `cap` は表の `claude-opus-5-5` 行の `pr_token_cap`（30000000）で、stderr に診断は出ない
+
 #### Scenario: CLAUDE_CONFIG_DIR の下の消費を数える
 - **GIVEN** `CLAUDE_PROJECTS_DIR` が未設定で、`CLAUDE_CONFIG_DIR` が指す一時ディレクトリの `projects/*/*/subagents/` に記録先 `288` のサブエージェントの会話記録があり、`HOME` の下には無い
 - **WHEN** `pr-token-budget.sh 288` を `--projects` なしで実行する
@@ -148,7 +152,7 @@ develop の本体は、その記録先のためにサブエージェントを sp
 
 exit 2 のときは spawn / SendMessage / Codex への委譲をしてはならず MUST NOT、`needs-approval` を付けて（付け先は PR があれば PR、無ければ記録先。`dev-workflow-develop` の「ラベルの付け先」と同じ）主に「続けるか、範囲外として閉じるか」の 2 択を出して止まる。2 択そのものは PR-A と同じだが、判断材料なしで出してはならず MUST NOT、問いには現在の合計・体数・上限・残工程（次に起こそうとした役割と、そのあと残る工程）・本体の推奨（どちらを選ぶかとその理由）を MUST 含める。unmanned でも同じく止まり、サイクルを終える。この手順は `skills/develop/references/pr-token-budget.md` に SHALL 書く。
 
-主が「続ける」を選んだら、本体は記録先に 1 行目が `PR トークン上限: <新上限>` のコメントを投稿し、以後その記録先の計測に `--cap <新上限>` を MUST 渡す。新上限は「その時点の合計 ＋ 直前の計測で上限に使った値（`--cap`、無ければ環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければ 30000000 の順で決まった値）」とする。後任の本体は、記録先の最新の `PR トークン上限:` コメントの値を使う。主が「範囲外として閉じる」を選んだら、本体はその記録先について以後サブエージェントを起こさず Codex にも委譲せず、残作業を記録先にコメントしてサイクルを終える。
+主が「続ける」を選んだら、本体は記録先に 1 行目が `PR トークン上限: <新上限>` のコメントを投稿し、以後その記録先の計測に `--cap <新上限>` を MUST 渡す。新上限は「その時点の合計 ＋ 直前の計測で上限に使った値（直前の計測の出力の `cap`。`--cap`、無ければ環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP`、無ければモデル別の表の値の順で決まる）」とする。後任の本体は、記録先の最新の `PR トークン上限:` コメントの値を使う。主が「範囲外として閉じる」を選んだら、本体はその記録先について以後サブエージェントを起こさず Codex にも委譲せず、残作業を記録先にコメントしてサイクルを終える。
 
 記録先がエピックの子のときは、主の返事を待つ前に、エピックの親が持つ「子 1 件あたりの PR トークンの権限」（エピックの 1 行目 `子の PR トークン権限: <値>` のコメント。既定 60000000）の内かが照らされる（MUST）。別セッション方式の子は今までどおり止まって最後の発言に見込みを書き、起こされた親が照らす。サブエージェント方式では親を兼ねる本体が、主に聞く前に自分で照らす（MUST。権限の置き場・照らす担い手・通す条件の正本は `dev-workflow-develop` の要件「エピックの親は子 1 件あたりの PR トークンの権限をエピックのコメントに置く」「親は権限のコメントが無ければ既定値で投稿して主に伝える」「親は PR トークン上限の止まりを権限に照らして続けさせる」「権限の内でない止まりは主に上げ、主が権限を広げたら照らし直す」「親の権限で続けた上限は子の本体が記録先に書く」「サブエージェント方式では親を兼ねる本体が権限に照らす」）。権限との照合の守備範囲（入力・拾いたい誤り・止めないもの）は `dev-workflow-develop` の要件「親は PR トークン上限の止まりを権限に照らして続けさせる」に置き、この要件には置かない。止まる上限そのもの（既定 30000000）は変えない（MUST NOT 変える）。親の権限の内として続けるときの新上限は、上の「合計 ＋ 直前の上限」ではなく権限の値とする（MUST）。本体は記録先に、1 行目が `PR トークン上限: <権限>` で、2 行目以降に `決めた人:`（親の判断か、サブエージェント方式で親を兼ねる本体か）・`権限:`（権限のコメントの URL）・`停止の記録:`（子の停止の記録の URL か `なし`。記録を残さない止まりは `なし`）を書いたコメントを投稿し、以後 `--cap <権限>` を渡す（MUST）。権限の内でなければ、上の手順どおり主に問う。エピックの子でない記録先の扱いは変えない。
 

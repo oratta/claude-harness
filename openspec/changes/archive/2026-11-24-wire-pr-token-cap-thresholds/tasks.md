@@ -20,4 +20,4 @@
 
 ## 4. 記録
 
-- [ ] 4.1 変更の記録 `plugins/dev-workflow/changes/<PR 番号>.md` を finish の段で書く（PR 番号は PR を作るまで分からない）。触る範囲: plugins/dev-workflow/changes/<PR 番号>.md（新規）
+- [x] 4.1 変更の記録 `plugins/dev-workflow/changes/<PR 番号>.md` を finish の段で書く（PR 番号は PR を作るまで分からない）。触る範囲: plugins/dev-workflow/changes/<PR 番号>.md（新規）
