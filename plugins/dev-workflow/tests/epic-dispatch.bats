@@ -10615,6 +10615,21 @@ bgw_text() { python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text ba
   done
 }
 
+@test "background keepalive: a marker and a tool use in the same assistant utterance is not a send candidate" {
+  bgw_setup
+  # 正常経路: 作業待ちの行と状態行だけの発言は送れる
+  bgw_chat; bgw_run; bgw_sends 1
+  # 同じ発言に tool_use も入っているときは、作業待ちの記録として数えない（親は送らない）
+  bgw_chat
+  jq -c 'if .type == "assistant" and (.message.usage.cache_read_input_tokens == 200000)
+    then .message.content += [{type:"tool_use", id:"t9", name:"Bash", input:{}}] else . end' \
+    "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)"
+  grep -q '"t9"' "$(bgw_log)"
+  bgw_run; bgw_sends 0
+  local note; note="$(rec_get 11 keepalive)"
+  case "$note" in *"skipped answered"*|*"skipped no-transcript"*) ;; *) echo "unexpected: $note" >&3; false ;; esac
+}
+
 @test "background keepalive: missing, unreadable or other-session logs never borrow another log" {
   bgw_setup
   rm -f "$(bgw_log)"
