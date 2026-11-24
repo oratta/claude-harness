@@ -34,19 +34,19 @@
 - 通常の正の interval/timeout、`--watch-stopped`、位置引数の子。片付けだけの `--watch-done`・単発確認・失敗したポーリングは除外。`--resolve` の有無で作業待ちを stopped にしない。
 - 同じ親の一意な記録、issue open、status=running、stop が stopped / stopped-seen でない、起動失敗なし、worktree と session がある、launcher=orca。
 - 有効な turn_input / turn_state の同世代・同セッションで sender=parent または startup、value=作業報告、dependency_wait が欠落か false、background_wait が正しい。owner ターンの旧情報から送らない。
-- `turn_input.transcript_path` の一意な現行 CLI 会話で session_id を照合する。記録の `session` は端末ハンドルなので会話 ID に使わない。最新の通常の子発言が記録と同じ marker と状態行を持ち、その後に通常入力・元作業通知・新たな通常発言が無い。別ログの TTL・質問・古い stop_uuid は使わない。
+- `turn_input.transcript_path` の一意な現行 CLI 会話で session_id を照合する。記録の `session` は端末ハンドルなので会話 ID に使わない。最新の通常の子発言が記録と同じ marker と状態行を持ち、その後に通常入力・元作業通知・新たな通常発言が無い。別ログの TTL・質問・古い stop_uuid は使わない。子の発言と usage は sessionId 一致かつ entrypoint=cli の行だけを数え、入力の行は sessionId が別のときだけ除く（sessionId や entrypoint が欠けた入力も数え、送らない側に倒す）。
 - その一本から最後の有効な cache creation の TTL=1h と、cache-read を含む最後の成功 CLI リクエスト開始を別々に読む。3000 秒以上 3600 秒未満だけ許し、未来・不明・失効・5m は非送信。停止済み子の会話量上限は適用しないが、usage が読めることは必要。
 - 同じ現行会話の前回の作業待ち向け固定文が未応答なら送らない。型違いでも既存どおり返事の到着と表示を扱い、一行・ツールなし・一リクエストの成功とは数えない。正常な一往復は既存の共有読取に従う。
 
 状態→会話→状態と会話の再読→Orca 一覧→二度の画面観測→send 一回、の順で最終確認する。再読で親子・path・launcher・session・世代・状態・待ちの組が変われば見送り、新しい候補として同じポーリング内で取り直して送らない。状態のロックはネットワーク呼び出し中に保持しない。記録の読み取りは dispatch、画面は launcher の責務を保つ。
 
-送信判定結果は既存 `keepalive` に記録し、連続して同じ理由なら時刻を更新しない。新たな無効候補も `skipped not-stopped`、現行会話なしは `no-transcript`、期限と基点不正は `expired`、通常入力・通知・通常発言による失効は `answered`、前回未応答は `pending` を使う。作業待ちは `too-large` / `no-question` で落とさない。送信・返事・期限到達だけで wait の行や終了理由、停止印を増やさない。
+送信判定結果は既存 `keepalive` に記録し、連続して同じ理由なら時刻を更新しない。新たな無効候補も `skipped not-stopped`、現行会話なしは `no-transcript`、期限と基点不正は `expired`、通常入力・通知・通常発言による失効は `answered`、前回未応答は `pending` を使う。会話の判定で複数に当たるときは expired → path 欠落・読取不能の no-transcript → answered → 作業待ちの発言なしの no-transcript → pending → cache-unknown → cache-future → out-of-window の順で最初の一つを記録する。作業待ちは `too-large` / `no-question` で落とさない。送信・返事・期限到達だけで wait の行や終了理由、停止印を増やさない。
 
 ### 3. Orca の背景待機許可は検査済み候補の一呼び出しに限る
 
-既存 `keepalive <worktree> <text>` の引数数・結果語彙・tmux の契約を保つ。dispatch から Orca 部品への一呼び出しだけに `EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT=1` を渡す。停止済み子の経路では明示的に無効にし、親環境から値を継承して誤って有効化しない。部品はこの内部指定でのみ、既知の背景待機行が一意の入力枠より前にあることによる busy を解除できる。部品自身は記録を読まず、固定文の内容から状態を推測しない。
+既存 `keepalive <worktree> <text>` の引数数・結果語彙・tmux の契約を保つ。dispatch から Orca 部品への一呼び出しだけに `EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT=1` を渡す。停止済み子の経路では明示的に無効にし、親環境から値を継承して誤って有効化しない。部品はこの内部指定でのみ、最後の既知の背景待機行が一意の入力枠より前にあり、その間が空行と recap の行だけのときに限り、待機行による busy を解除できる。部品自身は記録を読まず、固定文の内容から状態を推測しない。
 
-許す範囲は既存の記号＋`Waiting for N background agent(s)`（任意の ` to finish`）だけ。待機行が入力枠内・後方にある、未知の表示・枠・フッター・一覧、前景スピナーや `esc to interrupt`、dialog、非空の入力領域・draft は許さない。状態が作業待ちでも画面の他の検査を省かない。初回と送信直前の二回とも同じ条件で確かめ、どちらかが外れれば send しない。
+許す範囲は既存の記号＋`Waiting for N background agent(s)`（任意の ` to finish`）だけ。待機行が入力枠内・後方にある、待機行と入力枠の間に会話や未知の行が挟まる（古い待機行）、未知の表示・枠・フッター・一覧、前景スピナーや `esc to interrupt`、dialog、非空の入力領域・draft は許さない。状態が作業待ちでも画面の他の検査を省かない。初回と送信直前の二回とも同じ条件で確かめ、どちらかが外れれば send しない。
 
 送信は一度だけ。`turn_started` または既存の送信後 read で新しい前景実行と空欄を確認する契約を保ち、背景待機行自体を到達の証拠にしない。send 成功は受信の一行応答やリクエスト数の証明ではない。通常 keepalive の既知待機履歴の解除、入力欄検査、非bypassの未観測範囲は変更しない。
 
