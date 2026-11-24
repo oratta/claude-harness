@@ -198,3 +198,51 @@ PYTEST
   grep -qF '調査・新しい作業・印や停止記録の変更・投稿を行わない' "$KEEPALIVE" || return 1
   grep -qF '受信ターンでツールを呼ばず' "$REF" || return 1
 }
+
+@test "orca external wake is chosen from the own record and has no self timer" {
+  local ext="$BATS_TEST_TMPDIR/ext" term
+  sed -n '/^## 外部起こしを選べるかを確かめる/,/^## 2\./p' "$REF" > "$ext"
+  [ -s "$ext" ]
+  # 経路は準備ターンごとに記録で選び、nested だけで Orca としない。受信ターンでは切り替えない。
+  for term in '待ちを準備する通常ターン' '予約文の受信ターンでは経路を切り替えない' \
+    'nested であることだけで Orca と判定しない' '`launcher` が `orca`' '`launch_failed` が空' \
+    '`turn_input.sender`' '`parent` または `startup`' '送り手を確かめられないときは外部起こしを選ばない' \
+    '自己タイマーは 0 個' '自分のものだけを取り消し' '取消が失敗・不明なら作業待ちの行を出さず' \
+    '維持専用のタイマーや監視を重ねず' 'キャッシュ維持を保証したと報告しない'; do
+    grep -qF "$term" "$ext" || { echo "missing: $term"; return 1; }
+  done
+  # 作業待ちの行は状態行の直前に置く形で示し、Stop フックの書式と合う。
+  python3 - "$ext" <<'PY'
+import re, sys
+s = open(sys.argv[1]).read()
+block = s.split('```text\n')[1].split('```')[0].splitlines()
+assert block[0].startswith('作業待ち: <待ち ID> '), block
+assert block[1].startswith('状態: 作業報告 — '), block
+assert '[A-Za-z0-9][A-Za-z0-9._:-]*' in s
+PY
+  # 2 のタイマーは外部起こしでは置かない。
+  sed -n '/^## 2\./,/^## 3\./p' "$REF" | grep -qF '外部起こしを選んだ待ちには、この節のタイマーを置かない'
+}
+
+@test "owner input returns to self notification without moving the 12 hour base" {
+  local ext="$BATS_TEST_TMPDIR/ext" term
+  sed -n '/^## 外部起こしを選べるかを確かめる/,/^## 2\./p' "$REF" > "$ext"
+  for term in '送り手が `owner`' '外部起こしを選ばず、作業待ちの行を出さない' \
+    '自己タイマー 0 個を引きずらず' 'TTL 1h・最後の成功リクエストから 3600 秒未満・45 分以内の返りが無い' \
+    '自己通知を一つ置く' '待ちの組と初回開始は捨てず' '切替時刻からやり直さない' \
+    '次に `parent` か `startup` の通常入力' '待ちの組と初回開始を保ったまま' \
+    '最も早く始めた未回収の作業を待ち続けるあいだは同じ待ちの組' \
+    '待ち ID と初回開始を取り直さない' '全結果を回収したあとの別の作業だけ' \
+    '上限到達で元作業を止めない'; do
+    grep -qF "$term" "$ext" || { echo "missing: $term"; return 1; }
+  done
+}
+
+@test "tmux and workers keep the existing wait contract without the external marker" {
+  local ext="$BATS_TEST_TMPDIR/ext" term
+  sed -n '/^## 外部起こしを選べるかを確かめる/,/^## 2\./p' "$REF" > "$ext"
+  for term in 'tmux・登録を確かめられない本体・送り手が owner' '自己通知の契約を保ち、作業待ちの行を出さない' \
+    'tmux の初回タイマーの基点も変えない' '委譲 worker は本体用タイマーを起動せず'; do
+    grep -qF "$term" "$ext" || { echo "missing: $term"; return 1; }
+  done
+}
