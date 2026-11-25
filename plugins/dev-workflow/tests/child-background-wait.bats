@@ -199,6 +199,35 @@ PYTEST
   grep -qF '受信ターンでツールを呼ばず' "$REF" || return 1
 }
 
+@test "keepalive definition path points at the plugin-root references and both kinds are remembered" {
+  local line
+  line=$(sed -n 3p "$KEEPALIVE")
+  printf '%s' "$line" | grep -qF 'references/child-cache-keepalive.json`（プラグイン直下の references）' || return 1
+  printf '%s' "$line" | grep -qF 'トップレベルと `background` の両方' || return 1
+  grep -qF '今の状態と違う種類の固定文' "$KEEPALIVE" || return 1
+  grep -qF '一致した種類の型で一行だけ返し' "$KEEPALIVE" || return 1
+  grep -qF '保つものは今の状態に従う' "$KEEPALIVE" || return 1
+}
+
+@test "background wait remembers both kinds and keeps the held wait state on a stopped-child phrase" {
+  python3 - "$REF" <<'PYTEST'
+from pathlib import Path
+import sys
+s = Path(sys.argv[1]).read_text()
+preload = s.split('## 入力判定の守備範囲')[0]
+assert 'トップレベルと `background` の両方' in preload
+branch = s.split('## 3. 通知を照合して待ち直す・取り消す')[1].split('通知種別と継続可否')[0]
+assert '停止済み子向けの固定文' in branch
+assert '一致した種類の型で一行だけ返し' in branch
+assert '保持しているもの' in branch and '待ちの組' in branch and '自己タイマー' in branch
+PYTEST
+}
+
+@test "stopped child keeps the stop state when it receives the background phrase" {
+  grep -qF '作業待ち向けの固定文' "$KEEPALIVE" || return 1
+  grep -qF '停止状態を保って一行だけ返し' "$KEEPALIVE" || return 1
+}
+
 @test "orca external wake is chosen from the own record and has no self timer" {
   local ext="$BATS_TEST_TMPDIR/ext" term
   sed -n '/^## 外部起こしを選べるかを確かめる/,/^## 2\./p' "$REF" > "$ext"
