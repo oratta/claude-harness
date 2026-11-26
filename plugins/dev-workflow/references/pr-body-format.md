@@ -107,7 +107,7 @@ issue は既存 4 節（概要 / 触るファイル・関数 / 受け入れ条�
 ```
 
 生成ロジックの正本は `plugins/dev-workflow/skills/issueify/SKILL.md`。各リポにインストールされる
-issue テンプレート（`.github/ISSUE_TEMPLATE/agent-task.md` 等）は flatmate の `new-resident` が配り、この 6 節に従う。
+issue テンプレート（`.github/ISSUE_TEMPLATE/agent-task.md` 等）は各リポジトリが持ち、この 6 節に従う。
 
 ## 承認を求めるコメント
 

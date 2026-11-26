@@ -5,18 +5,30 @@ Claude Code が既に書いている会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.
 読んで集計する。会話ログは既定 30 日で消えるので、台帳のパス（プラグイン設定の「台帳ファイルのパス」、または環境変数 `COST_LEDGER_PATH`）を設定すると
 リポジトリ外の台帳へ焼き付けて、そこから読む（下の「台帳」）。
 
+## コマンド名
+
+本体組み込みの `/cost`（利用量の表示）と名前が衝突するため、`claude -p "/cost 272"` のような非対話の呼び出しではプラグインのコマンドに届かない。
+プラグインのコマンドは `/cost-ledger:cost <番号>` と名前空間付きで打つ。`claude --plugin-dir <plugins/cost-ledger>` で開発中の版を読み込んだときも同じ。
+スクリプトの探索は、コマンド本文の読み込み時に置換される `${CLAUDE_PLUGIN_ROOT}` を先頭候補にする（`commands/cost.md`）ので、`--plugin-dir` で読み込んだ版のスクリプトが使われる。
+
 ## 実行時に必要なもの
 
 | 依存 | 用途 |
 |---|---|
 | **python3**（3.8 以上） | 集計エンジン本体。JSONL の 1 パス処理と辞書集計に使う |
 | **git 2.31 以上** | `rev-parse --path-format=absolute --git-common-dir` で worktree を親リポジトリに畳む |
-| **gh**（認証済み） | 渡された番号が PR か issue かの判別。コスト計算そのものはオフラインで完結する |
+| **gh**（認証済み） | 渡された番号が PR か issue かの判別と、子を持たない issue の閉じた PR の問い合わせ。コスト計算そのものはオフラインで完結する |
 
 ## 帰属の考え方
 
 帰属の鍵は 2 本立てで、互いに独立している。同じ行が両方に帰属することがあるので、
 `/cost <PR番号>` と `/cost <issue番号>` の値を足して総額としては**ならない**。
+
+1. **ブランチ**（`gitBranch`）。サブエージェント（`isSidechain: true`）の行にも入るので、
+   サブエージェントの消費も同じブランチへ寄る。
+2. **（リポジトリ識別子, issue 番号）の組**。issue 番号は `gh issue view/comment/edit/close/develop`
+   に渡された番号をツール呼び出しから拾う。issue 番号はリポジトリ内でしか一意でないので、
+   番号だけを鍵にはしない。
 
 出せる合計は 2 つある。1 つ目は **issue の合計** =「その issue を閉じた PR のブランチの分」+「issue に帰属した
 区間のうち、どの PR のブランチ上にも無い分」。両方に帰属する行は区間の側から除くので二重に数えない。
@@ -35,11 +47,11 @@ Claude Code が既に書いている会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.
   issue #10 自身: $1.00
   #10 open $7.00（自身 $1.00） — epic
     #11 closed $4.00 — child a
-    #12 open $2.00 — child b（単独 $3.00、PR #300 は #11 に計上）
+    #12 open $2.00 — child b
 ```
 
 - 1 行目の合計は「子 issue の合計」にエピック自身の額（エピックの番号を触った区間の分）を足した値。
-  「子 issue の合計」はエピックの直下の子の行の額の和と一致する
+  「子 issue の合計」はエピックの直下の子の行の額の和と、小数 6 桁に丸めた値で一致する（表示の 2 桁どうしでは 1 セントずれうる）
 - 内訳の額は、行を 1 つの issue に割り当てた額（子を持つ issue はその下の issue の分も含み、`（自身 …）` が
   その issue だけの分）。割り当てた額の和が合計と一致する
 - 複数の issue を閉じた PR（同じヘッドブランチの PR を含む）の分は、番号がいちばん小さい issue に全額が入る。
@@ -58,14 +70,11 @@ Claude Code が既に書いている会話ログ（`${CLAUDE_CONFIG_DIR:-$HOME/.
 - `/cost <子の番号>` の 1 行目は今までどおりその issue を触った区間だけの額（帰属: `区間`）なので、内訳のその子の額
   （閉じた PR の分を含む）と一致しない。その issue を閉じた PR があれば、2 行目に閉じた PR の分を合わせた合計と内訳が出る
   （閉じた PR の問い合わせで GraphQL を 1 回使う。読めなかったときはその旨の 1 行が出て、合計の行は出ない）
-- エピックのコメントに hook が積む行は今までどおり、エピックの番号を触った区間だけの累計（帰属: `区間`）で、
-  子 issue の分を含まない。`/cost <エピックの番号>` の 1 行目（帰属: `子 issue 込み`）とは一致しない
-
-1. **ブランチ**（`gitBranch`）。サブエージェント（`isSidechain: true`）の行にも入るので、
-   サブエージェントの消費も同じブランチへ寄る。
-2. **（リポジトリ識別子, issue 番号）の組**。issue 番号は `gh issue view/comment/edit/close/develop`
-   に渡された番号をツール呼び出しから拾う。issue 番号はリポジトリ内でしか一意でないので、
-   番号だけを鍵にはしない。
+- エピックのコメントに hook が積む行は、子 issue を読めた回は子 issue の分を含む累計（帰属: `子 issue 込み`）で、
+  どの応答よりも後の時刻では `/cost <エピックの番号>` の 1 行目と同じ値になる。子孫の問い合わせに失敗した回や、
+  数える子が無い回（別のリポジトリの子だけを持つときなど）は、子 issue の分を含まない区間だけの累計
+  （帰属: `区間`）を積む。`cost_ledger.py issue <エピックの番号>` の 1 行目は、子 issue の分を含まない
+  区間だけの額（帰属: `区間`）
 
 issue への帰属は、投稿（`gh pr comment` / `gh issue comment` / `gh pr create` / `gh pr ready`）から
 投稿までを 1 区間として、区間ごとに直近に触った issue へ寄せる。区間は `sessionId` ごとに切る。
@@ -99,12 +108,20 @@ sonnet 95%・haiku 35% になる。残りは確定値の無い応答と、会話
 `claude-haiku-4-5` の行に当たり、`claude-fable-5-1` は `claude-fable-5` ではなく `claude-fable-5-1`
 に当たる（表の並び順に依存しない）。
 
+プロンプト長で単価が変わるモデル（今は `claude-haiku-5-5`）は、モデル行に `long_prompt`（閾値 `threshold` と
+閾値超の単価 5 種）を持つ。1 応答のプロンプト長（入力 + キャッシュ書込 5 分・1 時間 + キャッシュ読出）が
+閾値を**超える**と、その応答の出力を含む全トークンが閾値超の単価になる（ちょうど閾値は通常の単価）。
+同じ応答の後続行から作る補足の事実（出力の差分）は、応答のプロンプト長を `prompt_tokens` に持ち、同じ区分で
+計算される。この欄ができる前に台帳へ書かれた補足の事実は持たないため、超過した応答の出力の差分が通常の単価で
+出る。台帳の既存の行は書き換えないので `ledger-sync --rescan` でも直らず、台帳を消して作り直すと消えた
+会話ログの分を失うので勧めない（影響は `claude-haiku-5-5` の超過応答の出力に限る）。
+
 円換算は固定レート。実行のたびに外部から取りにいかないので、同じログなら何度実行しても同じ円が出る。
 実勢に合わせたいときは環境変数 **`COST_LEDGER_USD_JPY`** で上書きする（名前は `pricing.json` の
 `usd_jpy_rate_env` にも書いてある）。出力には必ず用いたレートが添えられる。
 
 ```bash
-COST_LEDGER_USD_JPY=155 python3 scripts/cost_ledger.py branch oratta/issue-cost
+COST_LEDGER_USD_JPY=155 python3 scripts/cost_ledger.py branch example/issue-cost
 ```
 
 料金表のどの鍵にも前方一致しないモデルは**未知モデル**として、名前と行数が出力に出る。黙って 0 円に
@@ -235,7 +252,7 @@ endpoint の `{owner}/{repo}` は、前置きの `GH_REPO`、無ければコマ�
 
 ```sh
 mkdir -p "$HOME/.config/cost-ledger"
-printf '%s\n' 'oratta/claude-harness' >> "$HOME/.config/cost-ledger/write-repos"
+printf '%s\n' '<owner>/<repo>' >> "$HOME/.config/cost-ledger/write-repos"
 chmod 600 "$HOME/.config/cost-ledger/write-repos"
 ```
 

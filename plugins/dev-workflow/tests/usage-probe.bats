@@ -127,7 +127,7 @@ JSON
 # ---------- session-tripwires.sh: 残量モード自動導出 ----------
 
 # additionalContext を取り出すヘルパ（run の $output から）
-ctx() { python3 -c "import json,sys;print(json.loads(sys.argv[1])['additionalContext'])" "$1"; }
+ctx() { python3 -c "import json,sys;print(json.loads(sys.argv[1])['hookSpecificOutput']['additionalContext'])" "$1"; }
 
 @test "session: derives abundant when usage under weekly pace" {
   write_snapshot 30 "$RESETS_EPOCH"   # pct=30 <= 週経過≈71 → abundant

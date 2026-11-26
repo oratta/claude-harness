@@ -9,7 +9,7 @@
 
 Claude Code が実行時に読むのは `~/.claude/plugins/cache/<marketplace>/<plugin>/<版>/` で、marketplace dir はそのコピー元にすぎない。版は `plugin.json`（または `marketplace.json` のエントリ）の `version` で決まり、`version` が無ければ marketplace dir の HEAD の commit SHA が版になる。版が同じ間は cache は更新されないので、`version` を書くとその値を変えない限り push しても利用者に届かない。marketplace dir を feature ブランチにしていると、Claude Code の自動更新や `scripts/sync.sh` の `git pull --ff-only` がそのブランチ上で走り、cache にもマージ前の内容が入る。
 
-`~/.claude/rules/*.md` は marketplace dir 配下のファイルを指す symlink（`scripts/sync.sh` が張る）。ルールを直すときも symlink の実体ではなく開発用 clone 側の `rules/*.md` を編集し、マージしてから **marketplace dir 側の** `scripts/sync.sh`（`~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh`）で追随させる。
+`~/.claude/rules/claude-harness/` 配下の `*.md`（別の Harness を重ねた場合は `~/.claude/rules/claude-harness/<名前>/` の下も）は marketplace dir 配下のファイルを指す symlink（`scripts/sync.sh` が張る）。別の Harness を重ねるには、`~/.claude/harness-overlays` にその marketplace のディレクトリ名を 1 行書く（書いていない marketplace は張られない。書いた行を消せば、次の sync.sh の実行で張った symlink も消える。詳細は `rules/README.md` の「導入・更新」）。ルールを直すときも symlink の実体ではなく開発用 clone 側の `rules/*.md` を編集し、マージしてから **marketplace dir 側の** `scripts/sync.sh`（`~/.claude/plugins/marketplaces/oratta-claude-harness/scripts/sync.sh`）で追随させる。
 
 開発用 clone や worktree の `scripts/sync.sh` は実行しない。sync.sh は自分自身の位置からリポジトリを決めるので、symlink が既にある PC では「harness 外を指す symlink」として rc=1 で失敗し、まだ無い PC ではマージ前の feature ブランチの rules が全セッションのグローバルルールとして張られる。
 
@@ -24,7 +24,7 @@ Claude Code が実行時に読むのは `~/.claude/plugins/cache/<marketplace>/<
 echo "${CLAUDE_HARNESS_DEV_DIR:?未設定}"
 ```
 
-未設定なら **主に置き場所を聞く**。デフォルトパスを勝手に決めない。`find ~ -name claude-harness` のような探索で当てにいくのも禁止（marketplace dir や過去の残骸を拾う）。
+未設定なら **主に置き場所を聞く**。デフォルトパスを勝手に決めない。`find ~ -name claude-harness` のような探索で当てにいくのも禁止（marketplace dir や過去の残骸を拾う）。変数の意味と入れ方は README の「開発用 clone の場所（`CLAUDE_HARNESS_DEV_DIR`）」の節にある。
 
 解決できたら、そこから worktree を切って直す。作業中のプロジェクトのセッションから直接 harness を編集しにいかず、worktree を作ってそこで別セッションを立てるか、その worktree を作業ディレクトリに指定したサブエージェントに任せる。
 

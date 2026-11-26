@@ -42,6 +42,12 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
    | 2 | `auto-merge.yml` の `REQUIRED_CHECKS`（`# >>> required-checks` マーカーの間） | 展開先リポの ci.yml のジョブ `name:` と**完全一致**させる（既定: `shellcheck` / `bats suites`）。ズレると永久にマージされない（fail-closed）。一致はテストが CI で機械検証する |
    | 3 | `AUTOMERGE_PAT` | Fine-grained PAT（Contents: RW / Pull requests: RW、対象リポのみ）を発行して リポの Actions secrets に登録する。手順の詳細: `docs/auto-merge.md`。**登録するまで 1 件もマージされない**（dry_run で判定ログだけ確認できる） |
 
+   **任意の差し替え**（既定のままでも動く）: `auto-merge.yml` の `MERGE_CONDITION`（`# >>> merge-condition-paths` マーカーの間）。
+   マージ条件そのもののパスで、ここに触れる PR は親の判断の印（`parent-merge-approved`）があっても `human-merge` が外れない。
+   既定は `^\.github/workflows/` だけ。合格ラベルを発行するゲートの定義など、リポ固有のマージ条件があれば足す。
+   `SACRED` の部分集合にすること。**足したら `test-auto-merge-workflow.sh` の `MERGE_CONDITION` の must-match リストにも代表パスを足す**。
+   条件の全体は `docs/auto-merge.md` の「親の判断で human-merge を外す」。
+
 3. **テストを CI に組み込む**（ci.yml に 1 ステップ追加）:
 
    ```yaml
@@ -49,7 +55,7 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
      run: scripts/test-auto-merge-workflow.sh
    ```
 
-4. **ラベルを用意する**（`human-merge` は workflow が自動作成するので不要）:
+4. **ラベルを用意する**（`human-merge` と `parent-merge-approved` は workflow が自動作成するので不要）:
 
    ```sh
    R=<owner>/<repo>
@@ -119,8 +125,8 @@ scripts/test-auto-merge-workflow.sh  # 安全不変条件の攻撃再現テス�
 
 ## 配備済みリポ一覧（伝播先の正本）
 
-どのリポに配備済みか・テンプレ改修時にどこへ伝播するかの正本は
-**プラグインの `../../docs/auto-merge-deployments.md`**。テンプレ改修を入れたら必ずそこを見て、
-載っている全リポへ展開する。新規展開したらそこに 1 行足す。
-（このテンプレ配下はリポ非依存の記述に限る — 具体的なリポ名は上記の正本にのみ書く。
+どのリポに配備済みか・テンプレ改修時にどこへ伝播するかの記録は、このリポジトリには置かない。
+テンプレ改修を入れたら、個人版が入っていればその展開の記録を、入っていなければ利用者自身の
+配備先の記録を確認し、載っている全リポへ展開する。新規展開したらその記録に 1 行足す。
+（このテンプレ配下はリポ非依存の記述に限る — 具体的なリポ名は展開の記録にのみ書く。
 `tests/automerge-templates.bats` の portability テストが強制している）

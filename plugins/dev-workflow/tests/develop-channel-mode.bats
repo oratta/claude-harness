@@ -1,0 +1,246 @@
+#!/usr/bin/env bats
+#
+# develop の 3 つ目の実行モード channel（issue #1126）
+#
+#   skills/develop/SKILL.md                     実行モードの節・引き継ぎ・再開・エピックの回し方・G の起動指示
+#   skills/develop/references/channel.md        channel の聞き方・読み替えの規則・リスク許容・主への発言（#1221 で移設）
+#   commands/develop.md                         モードの決め方・引数の分岐 ②⑤ と issueify フォールバックの聞き方
+#   skills/pr-review-gate/stages/hold.md        手順 6-3 の依頼文を実行モードで分ける
+#
+# 文面の確かめ。節ごとに切り出してから grep し、他の節の既存の文で偽合格しないようにする。
+#
+# spec: dev-workflow-develop, dev-workflow-pr-review-gate
+
+load lib/develop-docs
+load lib/gate-docs
+
+setup() {
+  # 正規表現の [^。] などは UTF-8 ロケールが前提（#662）
+  export LC_ALL=C.UTF-8
+  PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
+  # Paragraph wording is checked across the epic references; reading boundaries have their own tests.
+  EPIC="$BATS_TEST_TMPDIR/epic-all.md"
+  cat "${PLUGIN_DIR}/skills/develop/references/epic.md" > "$EPIC"
+  for doc in loop stop delegation merge-wait multirepo subagent keepalive; do
+    if [ -f "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" ]; then cat "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" >> "$EPIC"; fi
+  done
+  EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
+  # 「保留で止まるときの引き継ぎ」節は SKILL.md から references/ へ移した（#1220）
+  HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
+  # channel だけで使う 3 小節（聞き方・リスク許容・主への発言）は SKILL.md から references/ へ移した（#1221）
+  CHANNEL="${PLUGIN_DIR}/skills/develop/references/channel.md"
+  CMD="${PLUGIN_DIR}/commands/develop.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  gate_test_docs
+}
+
+# 「## <見出し>」から次の「## 」までを切り出す
+# 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
+section() {
+  if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
+  awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
+# 「### <見出し>」から次の「## 」か「### 」までを切り出す
+subsection() {
+  if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
+  awk -v h="### $1" 'index($0, h)==1{f=1; print; next} /^##+ /{f=0} f' "${2:-$SKILL}"; }
+# 1 ループの (4) を切り出す（列 0 の "(4) " から次の列 0 の工程ラベルか ``` まで）
+step4() { awk '/^\(4\)[[:space:]]/{f=1; print; next} f && (/^\([0-9]+\)[[:space:]]/ || /^```/){f=0} f' "$SKILL"; }
+# hold.md 手順 6 の 3 番目の項目
+hold_6_3() { awk '/^### 6\. 保留処理/{f=1; next} /^### /{f=0} f && /^3\. /{print}' "$HOLD"; }
+
+refute() {
+  local body="$1"; shift
+  if printf '%s\n' "$body" | grep -q "$@"; then
+    echo "一致してはならないパターンに一致した: $*" >&2
+    return 1
+  fi
+}
+
+# --- 実行モードの表と決め方 ---
+
+@test "mode table: channel row runs (0)-(4) and asks in the channel without AskUserQuestion" {
+  local s; s="$(develop_procedures)"
+  local row; row="$(printf '%s\n' "$s" | grep -F '| **channel**')"
+  [ -n "$row" ]
+  printf '%s\n' "$row" | grep -qF '(0)〜(4)'
+  printf '%s\n' "$row" | grep -qF 'チャンネルで聞く（AskUserQuestion は使わない）'
+}
+
+@test "mode decision: script inputs, result table, failure and retained instructions" {
+  local s word; s="$(subsection 'モードの決め方')"
+  [ -n "$s" ]
+  for word in 'scripts/develop-mode.sh' '--unmanned（develop の引数にあるとき）' '--channel-request（依頼本文が <channel source= で始まるとき）' '新規開始時に 1 回' '実行モード: interactive（既定）' '実行モード: channel（印）' '実行モード: channel（チャンネルの依頼）' '実行モード: unmanned（引数）' 'exit 0' 'exit 0 以外、または上のどの行にも当たらない出力' 'stderr' '推測で進めない' '実行モード: <モード>（<理由>）' '途中でモードを変えない' '引き継ぎの `実行モード` の値を使' '決め直さず' 'references/channel.md'; do
+    printf '%s\n' "$s" | grep -qF -- "$word"
+  done
+  printf '%s\n' "$s" | grep -qF '| 出力／終了 | 本体の扱い |'
+  printf '%s\n' "$s" | grep -qF '開始コメントに'
+  refute "$s" '^1\. '
+}
+
+@test "start comment: Role profile section lists the mode line and the channel reply check line" {
+  local s; s="$(codex_procedures)"
+  printf '%s\n' "$s" | grep -qF '`実行モード:`'
+  printf '%s\n' "$s" | grep -qF '`チャンネルの返事の確認:`'
+}
+
+# --- 聞き方と読み替え ---
+
+@test "channel asking: reply tool to the chat_id, end the turn, URL of the recorded question" {
+  local s; s="$(section 'channel の聞き方' "$CHANNEL")"
+  [ -n "$s" ]
+  printf '%s\n' "$s" | grep -qF 'chat_id'
+  printf '%s\n' "$s" | grep -qF 'ターンを終える'
+  printf '%s\n' "$s" | grep -qF 'needs-approval'
+  printf '%s\n' "$s" | grep -qF 'フル URL'
+  printf '%s\n' "$s" | grep -F '記録に残す問い' | grep -qF '仕様レビューの条件の問い'
+  printf '%s\n' "$s" | grep -qF 'channel ではこの聞き方に読む'
+}
+
+@test "reading rule: every file mentioning AskUserQuestion is listed by its plugin-relative path" {
+  local s; s="$(section 'channel の聞き方' "$CHANNEL")"
+  local files f rel n=0
+  files="$(cd "$PLUGIN_DIR" && grep -rl --exclude-dir=tests --exclude-dir=changes 'AskUserQuestion' . | sed 's|^\./||' | sort)"
+  [ -n "$files" ]
+  while IFS= read -r rel; do
+    [ "$rel" = "skills/develop/SKILL.md" ] && continue
+    [ "$rel" = "skills/develop/references/channel.md" ] && continue
+    # 手順として読まれない hook の登録と本体（#1153）。hooks/ ごとは除かない
+    [ "$rel" = "hooks/hooks.json" ] && continue
+    [ "$rel" = "scripts/unattended-ask-guard.sh" ] && continue
+    n=$((n + 1))
+    if ! printf '%s\n' "$s" | grep -qF "\`$rel\`"; then
+      echo "読み替えの列挙に無い: $rel" >&2
+      return 1
+    fi
+  done <<< "$files"
+  [ "$n" -ge 8 ]
+}
+
+@test "AskUserQuestion lines in SKILL.md are interactive-only or in the Orca child section" {
+  local line
+  # 読み替えの規則があること（#1221 で references/channel.md へ移した）
+  grep -qF 'channel ではこの聞き方に読む' "$CHANNEL"
+  # 各行が interactive の文脈か、channel を明示して除いているか、Orca 経路の子の節の行であること
+  local child; child="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
+  while IFS= read -r line; do
+    if printf '%s\n' "$line" | grep -qE 'interactive は|\*\*interactive\*\*|AskUserQuestion (は使わない|を呼ばない|を呼ばず|を使わず)'; then continue; fi
+    if printf '%s\n' "$child" | grep -qF -- "$line"; then continue; fi
+    echo "interactive の文脈と読めない行: $line" >&2
+    return 1
+  done < <(grep -F 'AskUserQuestion' "$SKILL")
+}
+
+@test "AskUserQuestion lines in commands/develop.md (except allowed-tools) are interactive-only or say it is not called" {
+  local line
+  while IFS= read -r line; do
+    if printf '%s\n' "$line" | grep -qE 'interactive は|\*\*interactive\*\*|AskUserQuestion (は使わない|を呼ばない|を呼ばず|を使わず)'; then continue; fi
+    echo "interactive の文脈と読めない行: $line" >&2
+    return 1
+  done < <(grep -F 'AskUserQuestion' "$CMD" | grep -v '^allowed-tools:')
+}
+
+# --- リスク許容と主への発言 ---
+
+@test "channel risk acceptance: check OWNER_REPLY_CHANNEL_SENDERS without printing, PR comment when not possible" {
+  local s; s="$(section 'channel のリスク許容' "$CHANNEL")"
+  [ -n "$s" ]
+  printf '%s\n' "$s" | grep -qF 'チャンネルの返事の確認: 可'
+  printf '%s\n' "$s" | grep -qF 'チャンネルの返事の確認: 不可（OWNER_REPLY_CHANNEL_SENDERS が無い）'
+  printf '%s\n' "$s" | grep -qF '値を出さず'
+  printf '%s\n' "$s" | grep -qF '末尾の PR にコメントで `許容する`'
+}
+
+@test "channel statements: all go to the channel, follow the canonical first-line rule, no screen or tab" {
+  local s; s="$(section 'channel の主への発言' "$CHANNEL")"
+  [ -n "$s" ]
+  printf '%s\n' "$s" | grep -qF '主へのすべての発言'
+  printf '%s\n' "$s" | grep -qF '端末に出すだけで済ませない'
+  printf '%s\n' "$s" | grep -qF '`主がすること: なし`'
+  printf '%s\n' "$s" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
+  printf '%s\n' "$s" | grep -qF '1 行目を題名（質問にしない）にし、2 行目のアクションの行'
+  printf '%s\n' "$s" | grep -qF 'このチャンネルで何を返すか'
+  printf '%s\n' "$s" | grep -qF 'アクションの行に画面・タブ・入力欄'
+  run grep -nE '最後の答え方|1 行目と最後の行|答え方の行' <<<"$s"; [ "$status" -eq 1 ]
+  printf '%s\n' "$s" | grep -F '末尾の PR に何を書くか' | grep -qF 'フル URL'
+  ! printf '%s\n' "$s" | grep -qF 'PR #<N>' || return 1
+  printf '%s\n' "$s" | grep -qF '画面・タブ・入力欄'
+  ! printf '%s\n' "$s" | grep -qF '`主がすること: このチャンネルで' || return 1
+}
+
+@test "G start instruction: channel writes the mode line and the channel reply check line" {
+  step4 | grep -qF '`チャンネルの返事の確認:`'
+  step4 | grep -qF '`実行モード: channel`'
+}
+
+@test "mode passed to W and R1: channel passes interactive, the branch stays interactive" {
+  local s; s="$(develop_procedures)"
+  printf '%s\n' "$s" | grep -qF 'W・R1 の起動指示の実行モードには interactive と書く'
+  grep -qF 'channel の本体は interactive と渡す' "${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md"
+}
+
+# --- 保留・再開 ---
+
+@test "handover: mode values include channel and the channel guidance has no new session" {
+  local s; s="$(section '保留で止まるときの引き継ぎ' "$HANDOVER")"
+  printf '%s\n' "$s" | grep -qF '| 実行モード | interactive / channel / unmanned |'
+  printf '%s\n' "$s" | grep -qF 'このチャンネルで記録先の番号を添えて返事'
+  printf '%s\n' "$s" | grep -qF '番号の無い返事'
+  printf '%s\n' "$s" | grep -qF '0 件か 2 件以上なら、記録先の番号を添えて返すようチャンネルで聞き直す'
+  # interactive の案内は残る
+  printf '%s\n' "$s" | grep -qF '返事は新しいセッションで `/develop <記録先>` と一緒に渡す'
+}
+
+@test "resume: channel reply launches develop and passes the log line's text and timestamp" {
+  local s; s="$(subsection '新しいセッションでの再開' "$HANDOVER")"
+  printf '%s\n' "$s" | grep -qF 'develop を記録先 `<番号>` で起動'
+  printf '%s\n' "$s" | grep -qF '`<channel source=` で始まる'
+  printf '%s\n' "$s" | grep -qF '開きタグと閉じタグを外した中身'
+  printf '%s\n' "$s" | grep -qF 'チャンネルの返事'
+}
+
+# --- エピック ---
+
+@test "epic: channel does not call route and does not start another session" {
+  local s; s="$(cat "$EPIC")"
+  printf '%s\n' "$s" | grep -qF '`回し方: サブエージェント（channel モード）`'
+  printf '%s\n' "$s" | grep -qF '別の Claude Code セッション'
+  printf '%s\n' "$s" | grep -qF 'channel も `route` を呼ばず'
+}
+
+@test "epic: channel resuming an epic whose latest route note is Orca reports in the channel and stops" {
+  local s; s="$(cat "$EPIC")"
+  printf '%s\n' "$s" | grep -qF 'channel で再開したエピックの最新の `回し方:` が Orca なら'
+  printf '%s\n' "$s" | grep -qF 'または tmux なら'
+  printf '%s\n' "$s" | grep -qF 'channel は別セッション方式を引き継がない'
+}
+
+@test "epic: excluding epic children names channel next to unmanned (route is not called)" {
+  local line; line="$(grep -F '**エピックである子を外す**' "$EPIC")"
+  [ -n "$line" ]
+  printf '%s\n' "$line" | grep -qF '`route` を呼ばない unmanned と channel と'
+  printf '%s\n' "$line" | grep -qF '（unmanned と channel を除く）'
+}
+
+# --- commands/develop.md ---
+
+@test "command: mode follows SKILL.md, channel asks branches 2 and 5 and issueify approval in the channel" {
+  grep -qF 'SKILL.md「実行モード」の決め方' "$CMD"
+  local m
+  for m in '**② 数字のみだが issue が存在しない**' '**⑤ 引数なし**' '**承認ゲート（両経路共通）**'; do
+    grep -F -- "$m" "$CMD" | grep -qF 'channel ではチャンネルに送ってターンを終え'
+  done
+}
+
+# --- hold.md ---
+
+@test "hold.md 6-3: interactive keeps the new-session guidance, channel guides a channel reply" {
+  local s; s="$(hold_6_3)"
+  [ -n "$s" ]
+  printf '%s\n' "$s" | grep -qF '/develop <記録先>'
+  printf '%s\n' "$s" | grep -qF 'このチャンネルで記録先の番号を添えて返事'
+  printf '%s\n' "$s" | grep -qF '`チャンネルの返事の確認:`'
+  printf '%s\n' "$s" | grep -qF '末尾の PR にコメントで `許容する`'
+  refute "$s" -F '前任 W'
+}

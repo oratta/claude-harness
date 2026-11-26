@@ -1,0 +1,14 @@
+## 1. SKILL.md
+
+- [x] 1.1 Orca 経路の導入段落のあとに、親の報告の 1 行目の規定（`主がすること:` の書式、対象の報告の一覧、子の完了報告との書き分け）を 1 段落で足す。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:425-427（「回し方」の Orca 経路の導入段落と手順 1 の間）
+- [x] 1.2 手順 8 に（追記には `主がすること:` の語をそのまま入れる）、親経由のリスク許容の依頼は 1 行目に親のタブと「直後に別の発言を挟まない」を書くことと、`--locate` で引けなかったときの子のタブの連絡・`reply` の `failed` の報告も 1 行目に主がすることを書くことを足す。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:434（手順 8 の「それ以外は主に上げて本文で報告する」の文）
+- [x] 1.3 手順 2・3・4・5・6 の発言（待ちに入る通知・子の処理後の発言・ユーザーへの報告）に 1.1 の参照を足す。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:428-432
+
+## 2. テスト
+
+- [x] 2.1 `run_section` の Orca 経路に `主がすること:` の規定があり、手順 2 の行に参照があり、手順 8 の行に `主がすること:`・親のタブ・「別の発言を挟まない」・子のタブの連絡があることを検査する bats を足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:2286-2296（子の完了報告のテストの直後）
+- [x] 2.2 `bats plugins/dev-workflow/tests/epic-dispatch.bats tests/injection-budget.bats` が通ることを確かめる
+
+## 3. 記録
+
+- [x] 3.1 変更の記録を plugins/dev-workflow/changes/1089.md に書く（plugins/dev-workflow/changes/1036.md を例にする）

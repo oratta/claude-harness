@@ -127,5 +127,5 @@ dev-workflow の SessionStart hook は、環境変数 `CLAUDE_CODE_EXPERIMENTAL_
 
 #### Scenario: hook に登録されている
 - **WHEN** `hooks/hooks.json` の SessionStart を読む
-- **THEN** `team-mode-warning.sh` を呼ぶ command が `startup|clear|compact` の matcher で登録されている
+- **THEN** `team-mode-warning.sh` を呼ぶ command が `startup|resume|clear|compact` の matcher で登録されている
 

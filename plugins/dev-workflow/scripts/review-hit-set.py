@@ -3,10 +3,14 @@
 
 With --head, also run the row-3 second stage of pr-review-gate (residual HEAD hits
 vs not-applicable rows, the rewritten not-applicable rows table, mixed groups).
+
+A table with a 全ヒット要約: line stands for every hit of a word with more than
+SUMMARY_MIN_HITS hits: it is compared by count and digest instead of row by row.
 """
 
 import argparse
 from collections import Counter
+import locale
 from pathlib import Path
 import re
 import shlex
@@ -25,6 +29,10 @@ SAFE_FLAGS = {"-F", "--fixed-strings", "-E", "--extended-regexp", "-G",
               "--basic-regexp", "-P", "--perl-regexp", "-i", "--ignore-case",
               "-w", "--word-regexp", "-I", "--text", "--and", "--or", "--not",
               "(", ")"}
+SUMMARY_PREFIX = "全ヒット要約:"
+SUMMARY_MIN_HITS = 10
+SUMMARY_RE = re.compile(r"([0-9]+) 行 ([0-9a-fA-F]+)")
+MISMATCH_RE = re.compile(r"食い違い: \S.*")
 
 
 class ContractError(ValueError):
@@ -146,7 +154,8 @@ def parse_table(lines):
 def parse_rewritten(lines, rows):
     """Parse the rewritten not-applicable rows table into ({(path, line): new body}, violations).
 
-    Structural errors (missing header) still raise immediately. The three per-row content
+    Structural errors (missing header, non-numeric path/line, bad body fence or escape) still
+    raise immediately and discard any violations accumulated so far. The three per-row content
     checks (duplicate key, wrong target, unchanged body) accumulate into `violations` instead
     so the rest of the table keeps being checked; a violating row is not added to `rewritten`.
     """
@@ -161,7 +170,10 @@ def parse_rewritten(lines, rows):
     raw = table_rows(lines, REWRITTEN_HEADER, start + 1)
     if raw is None:
         raise ContractError("rewritten-rows table header is required under its heading")
-    by_key = {(path, number): (body, handling) for path, number, body, handling in rows}
+    # Keep every row per key: a duplicated key must not resolve by row order (#466).
+    targets = {}
+    for path, number, body, handling in rows:
+        targets.setdefault((path, number), []).append((body, handling))
     rewritten = {}
     violations = []
     seen = set()
@@ -172,11 +184,11 @@ def parse_rewritten(lines, rows):
             violations.append(f"rewritten row is duplicated: {key[0]}:{key[1]}")
             continue
         seen.add(key)
-        if key not in by_key or not NOT_APPLICABLE_RE.fullmatch(by_key[key][1]):
+        if len(targets.get(key, [])) != 1 or not NOT_APPLICABLE_RE.fullmatch(targets[key][0][1]):
             violations.append(
                 f"rewritten row must point at one not-applicable row: {key[0]}:{key[1]}")
             continue
-        if new_body == by_key[key][0]:
+        if new_body == targets[key][0][0]:
             violations.append(f"rewritten row body is unchanged: {key[0]}:{key[1]}")
             continue
         rewritten[key] = new_body
@@ -294,6 +306,73 @@ def actual_hits(repo, command):
     return hits
 
 
+def grep_output(repo, command):
+    """Return the bytes `git grep` wrote to stdout, undecoded."""
+    result = subprocess.run(command, cwd=repo, capture_output=True)
+    if result.returncode not in (0, 1):
+        raise RuntimeError(result.stderr.decode(errors="replace").strip() or "git grep failed")
+    return result.stdout
+
+
+def hash_object(repo, output):
+    result = subprocess.run(["git", "hash-object", "--stdin"], cwd=repo, input=output,
+                            capture_output=True)
+    if result.returncode:
+        raise RuntimeError(result.stderr.decode(errors="replace").strip()
+                           or "git hash-object failed")
+    return result.stdout.decode().strip()
+
+
+def summary_lines(output):
+    """Return the hit lines a four-column row is looked up in, without parsing them.
+
+    Nothing is split on colons, so a path with a colon or a Binary file line (no row can
+    spell it) cannot stop the check. Decoded with the encoding text=True uses, so a row
+    compares as it does in a full table; a trailing \\r cannot be copied into a row.
+    """
+    encoding = locale.getpreferredencoding(False)
+    return {raw.decode(encoding, "surrogateescape").rstrip("\r") for raw in output.split(b"\n")}
+
+
+def check_summary(repo, lines, command, sha, head):
+    """Compare a 全ヒット要約: table with the rerun search; return the report lines."""
+    if head is not None:
+        raise ContractError("全ヒット要約 cannot be used with --head")
+    match = SUMMARY_RE.fullmatch(field(lines, SUMMARY_PREFIX))
+    if match is None:
+        raise ContractError("全ヒット要約 must be: <decimal count> 行 <hex digest>")
+    count, digest = int(match[1]), match[2]
+    piped = [index for index, line in enumerate(lines) if line.lstrip().startswith("|")]
+    rows = []
+    if piped:
+        first = tuple(decode_cell(cell) for cell in split_markdown_row(lines[piped[0]]))
+        if first != HEADER or piped != list(range(piped[0], piped[0] + len(piped))):
+            raise ContractError("rows under 全ヒット要約 must stay in one four-column table")
+        rows = parse_table(lines)
+    for path, number, _body, handling in rows:
+        if not MISMATCH_RE.fullmatch(handling):
+            raise ContractError(
+                f"rows under 全ヒット要約 must be 食い違い: <finding ID>: {path}:{number}")
+
+    root = repository_root(repo)
+    output = grep_output(root, command)
+    actual_count = output.count(b"\n")
+    if actual_count <= SUMMARY_MIN_HITS:
+        raise ContractError(
+            f"全ヒット要約 requires more than {SUMMARY_MIN_HITS} hits, actual {actual_count}")
+    report = []
+    if count != actual_count:
+        report.append(f"summary: hit count differs: table {count}, actual {actual_count}")
+    if digest != hash_object(root, output):
+        report.append("summary: digest differs")
+    if rows:
+        hits = summary_lines(output)
+        expected = {(path, number, body) for path, number, body, _handling in rows}
+        report += [f"extra: {path}:{number}" for path, number, body in sorted(expected)
+                   if f"{sha}:{path}:{number}:{body}" not in hits]
+    return report
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("table", type=Path)
@@ -302,12 +381,19 @@ def main():
     args = parser.parse_args()
     lines = args.table.read_text().splitlines()
     sha = field(lines, "修正前 SHA:")
+    if sha.startswith("`") and sha.endswith("`"):
+        sha = sha[1:-1]
     if not SHA_RE.fullmatch(sha):
         raise ContractError("修正前 SHA must be a full 40-digit SHA")
     if args.head is not None and not SHA_RE.fullmatch(args.head):
         raise ContractError("--head must be a full 40-digit SHA")
     search = field(lines, "検索コマンド:")
     command = parse_command(search, sha)
+    if any(line.startswith(SUMMARY_PREFIX) for line in lines):
+        report = check_summary(args.repo, lines, command, sha, args.head)
+        for line in report:
+            print(line)
+        return int(bool(report))
     rows = parse_table(lines)
     rewritten = {}
     violations = []

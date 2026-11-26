@@ -59,10 +59,15 @@ esac
 command -v python3 >/dev/null 2>&1 || exit 0
 command -v gh >/dev/null 2>&1 || exit 0
 # gate_report.py と cost_ledger.py は CLAUDE_PLUGIN_ROOT ではなくこのスクリプトの隣から引く。
-scripts_dir="$(cd "$(dirname "$0")" && pwd)" || exit 0
+# dirname は使わない（PATH に無いと cd "" が成功してカレントディレクトリを引く。#854）。
+scripts_dir="${0%/*}"
+[ "$scripts_dir" != "$0" ] || exit 0
+scripts_dir="$(cd "$scripts_dir" 2>/dev/null && pwd)" || exit 0
 [ -f "$scripts_dir/gate_report.py" ] || exit 0
 [ -f "$scripts_dir/write_allow.py" ] || exit 0
 
 # payload は stdin から読ませる。環境変数や引数に載せると長い出力で ARG_MAX を超えて hook が落ちる。
-printf '%s' "$payload" 2>/dev/null | python3 "$scripts_dir/gate_report.py" >/dev/null 2>&1
+# -E -s で起動し、PYTHON* の環境変数（PYTHONPATH など）とユーザー site を検索パスに使わない。-I は付けない:
+# -I はスクリプトのディレクトリも検索パスから外すので、隣の cost_ledger.py・write_allow.py を import できなくなる（#847）。
+printf '%s' "$payload" 2>/dev/null | python3 -E -s "$scripts_dir/gate_report.py" >/dev/null 2>&1
 exit 0

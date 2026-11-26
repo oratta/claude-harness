@@ -13,14 +13,15 @@
   「プラグインが前回注入時から更新されたとき（CLAUDE_PLUGIN_ROOT が変わったとき）」だけ同じ本文を再注入する。
   CLAUDE_PLUGIN_ROOT が同じ間は毎プロンプト無出力で、文脈を食わない。
 - unmanned（loop-dev-agent）で使う場合: 各リポに配備済みの憲法ファイル（docs/agent-loop.md。
-  flatmate が保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
+  それを配るリポジトリが保守する正本で、harness 側にテンプレートや再生成手順は無い）が同じ条件を
   組み込んでいる。手動コピーは不要。
 - develop スキルの W（サブエージェント）は hook 注入を受けないため、W の指示書
   （skills/develop/references/roles/worker/common.md「昇格トリップワイヤー」）が同じ条件を return の契機として持つ。
 - このテンプレートは「いつ手を止めるか」だけを定義する。「どう実行するか」は発火先
   （develop の本体、Workflow 実行の型 references/workflow-execution.md、/opsx:explore 等）が持つ。
   ここに実行手順を書き足さないこと。
-- 閾値（ファイル5個・2回など）は初期値であり、運用しながら調整してよい。
+- 規模の量と容量は粒度計算の正本を参照する。
+- 閾値（失敗ループ・仕様の発明の「2 回」など）は初期値であり運用調整前提で、運用しながら調整してよい。
 -->
 
 ## 昇格トリップワイヤー
@@ -30,12 +31,11 @@
 乗り換え・昇格の際、ここまでの成果（編集済みファイル・通ったテスト・判明した事実）は
 破棄せず引き継ぐ。作業をやり直さない。
 
-1. 【規模超過 → 分割へ】
-   編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた
-   → develop スキルの W として起動されている場合は本体に return し、本体が change / 子 issue
-      （develop のエピック化）に分割する。それ以外（本体自身が読んでいる場合）は develop の
-      エピック化、またはネイティブ Workflow 実行（型は plugins/dev-workflow/references/workflow-execution.md。
-      スクリプトは workflow-authoring スキルを読んで書く）に切り替える（成果は引き継ぐ）
+1. 【規模超過 → 再計画へ】
+   増えたファイル・作業項目と量を反映して再計算し、容量超過／配置不能、または量が不明なら止まる。
+   ファイル数・増加回数だけでは分けず、上限を広げない。
+   正本: plugins/dev-workflow/skills/develop/references/epic-granularity.md。
+   W は更新入力・出力・成果を本体に return。本体は再計画する。他の作業役も正本へ戻る。
 
 2. 【失敗ループ → 決める役 / 実行役の分離ラダー】
    同じテストが2連続で落ちた、または同じ箇所を2回書き直した
@@ -44,24 +44,34 @@
       （両方同時に上げない）。決める役は数ターンで終わるので先に上げ、実行役を上げるのは
       実行側が原因と分かったときだけ。
 
-   | 段階 | 決める役 | 実行役 |
-   |---|---|---|
-   | 初回 | 仕様化判断と R1 レビューが担う（既存の流れ） | `sonnet` |
-   | 1 回目の失敗 | `dev-workflow:decider` を `model: opus` で spawn（本体が opus 以上ならその場で）し、失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | `sonnet` で再試行 |
-   | 2 回目の失敗・指示どおりやって結果が違う | `dev-workflow:decider`（`model: opus`） | `opus` |
-   | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた | `dev-workflow:decider`（`model: fable`。本体が fable ならその場で） | `sonnet` または `opus` |
-   | fable が決めて opus が実行しても落ちる | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
+   表の格（最安・中位・上位・最上位）は `codex-develop.py request` の、上限を適用する前の要求の格で、
+   Claude と Codex のどちらの profile でも同じ。モデル名は `references/model-tier-map.json` で引いた値で、
+   括弧内は Claude での値の例。実際に起こすモデルは、その段の `--failure` の値を渡して
+   `request` が返した `model`（残量モードと構成の上限を適用済み）を使い、表から計算し直さない
+   （例: `SHARED_BUDGET_MODE=depleted` では決める役も中位の model が返る）。
+   develop の外で本体自身が読んでいて `request` を通らないときは、括弧内の Claude の値で起こす。
 
-   決める役はどの段階でも `subagent_type` を `dev-workflow:decider` に固定し、`model` だけを
-   切り替える（`general-purpose` に読み替えない）。**実行役の上限は `opus` で、実行役を Fable で
-   spawn しない**（強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`。`model: fable` の
-   実行役 spawn は PreToolUse で拒否される）。
+   | 段階 | `--failure` | 決める役の要求の格（phase `decider`） | 実行役の要求の格（W の phase） |
+   |---|---|---|---|
+   | 初回 | なし | 仕様化判断と R1 レビューが担う（既存の流れ） | 既定の格（中位。Claude では `sonnet`） |
+   | 1 回目の失敗 | `first` | 上位（Claude では `opus`）。失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | 格を変えずに再試行 |
+   | 2 回目の失敗・指示どおりやって結果が違う（実行側） | `executor` | 上位 | 上位（上限。Claude では `opus`） |
+   | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた（判断側） | `judgment` | 最上位（Claude では `fable`） | 格を変えない |
+   | 昇格のあとの失敗（どちらの経路でも） | — | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
+
+   決める役は、`request` が返した投げ先が claude ならどの段階でも `subagent_type` を
+   `dev-workflow:decider` に固定し（`general-purpose` に読み替えない）、codex なら
+   `references/codex-develop.md` の Codex role の手順で起こす。**実行役の格の上限は上位で、実行役を最上位で
+   起こさない**（Claude の強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`。`model: fable` の
+   実行役 spawn は PreToolUse で拒否される）。本体は昇格の手段として profile を作り直したり、
+   `request` が返した model と違う model を独自に指定したりしない（Codex の手順は
+   `references/codex-develop.md`「本体が行う操作」）。
    `SHARED_BUDGET_MODE=throttled`（全モデル共通の週次枠が週の経過ペースより速く減っている）では
-   昇格上限を Opus、`depleted`（同枠 90% 超）では昇格しない。
+   昇格上限を上位、`depleted`（同枠 90% 超）では昇格しない。
    `FABLE_BUDGET_MODE=reserve` の自動実行（unmanned / cron / loop）と `exhausted`（Fable 週次枠を
    実質使い切った。明示宣言またはセッション記録と usage snapshot の実効値からの自動導出）では、決める役も
-   `dev-workflow:decider` のまま `model: opus` 止まりとする（種別は変えない）。
-   Opus が決めて Opus が実行しても2連続失敗が続く場合は issue に needs-approval を付けて
+   `dev-workflow:decider` のまま上位止まりとする（種別は変えない。どちらも `request` が適用する）。
+   昇格のあとの失敗（判断側・実行側のどちらの経路でも）が続く場合は issue に needs-approval を付けて
    経緯をコメントし、そのサイクルを終了する
 
 3. 【仕様の発明検知 → plan/質問へ】
@@ -80,7 +90,8 @@
    上限を超えていた（exit 2）。あわせて、サブエージェントの**起動の途中**でも hook
    （`${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh`）が本人を測り、上限超で締めを通知し、
    さらに越えると編集系ツールを拒否する（本人が途中で工程を締めて return する経路）
-   → **閾値・環境変数・2 経路・通知や強制停止に当たったときの扱いは `${CLAUDE_PLUGIN_ROOT}/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」 が正本。
+   → **閾値・環境変数・2 経路・本体の手渡しの扱いは `${CLAUDE_PLUGIN_ROOT}/skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」、
+      通知や強制停止に当たったときの W と G の扱いと return の 1 行目の宣言は `${CLAUDE_PLUGIN_ROOT}/skills/develop/references/return-declaration.md` が正本。
       条件・書式・手順はこのテンプレートには書かない。正本を読むまで手渡さない**
       （モデルは変えない。再開のたびに全履歴を読み直すため、畳まずに続けると 1 本で
       30 万トークン超のリクエストを毎ターン投げることになる。2026-09 監査の実測）

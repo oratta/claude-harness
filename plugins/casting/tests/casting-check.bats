@@ -282,6 +282,43 @@ PRECEDENTS
   [[ "$output" == *"論点・各人格の主張・裁定・根拠・判例リンク"* ]] || return 1
 }
 
+# 上の2件は、検査の前処理 stripped_copy が出力を必ず改行で終わらせるため、read ループの
+# `|| [ -n "$line" ]` を外しても pass する（#306）。ガードそのものを固定するため、
+# stripped_copy を通さない（= 末尾改行の無い）入力を各ループへ直接食わせる。
+
+# 関数定義だけを casting-check.sh から取り出す（スクリプト全体は実行しない）
+extract_fn() {
+  sed -n "/^$1() {/,/^}/p" "$SCRIPT"
+}
+
+# strip_html_comments のループ（HTML コメント・フェンス除去）は、末尾改行の無い入力の
+# 最終行を落とさない。落とすと最終行の「- 経路:」等が作業コピーから消える。
+@test "strip_html_comments: the last line of an input without a trailing newline is kept" {
+  local fns="${BATS_TEST_TMPDIR}/fns.sh" in="${BATS_TEST_TMPDIR}/in.md" out="${BATS_TEST_TMPDIR}/out.md"
+  { extract_fn comment_tail_open; extract_fn strip_html_comments; } > "$fns"
+  [ -s "$fns" ]
+  printf -- 'first\n<!-- c -->\n- 経路: 相談の上自走した' > "$in"
+  run bash -c 'source "$1"; strip_html_comments "$2" "$3"' _ "$fns" "$in" "$out"
+  [ "$status" -eq 0 ]
+  [ "$(cat "$out")" = "$(printf 'first\n- 経路: 相談の上自走した')" ]
+}
+
+# 判例ブロック分割ループ（スクリプト本体の while）は、stripped_copy の出力が改行で
+# 終わらなくなっても最終行を落とさない。stripped_copy だけを「末尾改行を削る」版に
+# 差し替えたスクリプトの複製で、経路が最終行の台帳を検査する。
+@test "consultation block loop: a route line as the last line is kept even if stripped_copy stops adding a trailing newline" {
+  local dir="${BATS_TEST_TMPDIR}/no-eol-loop" mutant="${BATS_TEST_TMPDIR}/casting-check-mutant.sh"
+  mkdir -p "${dir}/.claude/casting"
+  sed 's|^  strip_html_comments "\$file" "\$out" \|\| true$|&; printf "%s" "$(cat "$out")" > "$out"|' "$SCRIPT" > "$mutant"
+  # 差し替えが実際に当たったことを確かめる（当たらないとこのテストは何も固定しない）
+  ! cmp -s "$SCRIPT" "$mutant" || return 1
+  printf -- '---\ncatalog_version: 1\n---\n\n# 判例台帳\n\n### 2026-08-27 末尾改行なしで経路が最終行\n\n- 観点: 技術設計・品質\n- 帰結: 自走した\n- 還元: なし\n- 経路: 相談の上自走した' \
+    > "${dir}/.claude/casting/precedents.md"
+  run bash "$mutant" --catalog "$CATALOG" "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"consultation-missing-element"* ]] || return 1
+}
+
 # --- 回帰: macOS の sort/uniq がロケール照合で異なる日本語観点列を同一視する（LC_ALL=C 強制） ---
 
 @test "distinct-not-issue fixture: two different multi-perspective strings are not merged into a repeated-not-issue" {

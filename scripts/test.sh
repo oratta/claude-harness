@@ -15,6 +15,21 @@
 #       無言で減らさず "skipped (excluded): N" として明示する。
 #       ※ 現時点で除外が必要なスイートは無い（全スイートが Linux で動く）。
 #
+#   TEST_SHARD=2/4 scripts/test.sh
+#       全体を N 個の組に分けたうちの k 番目だけを実行する（k/N。issue #990）。
+#       用途は CI で bats を複数のジョブに分けて同時に走らせること。未設定か空なら
+#       分けずに全件を実行する（手元の使い方は変わらない）。
+#       組の割り当て（issue #1028）: スイートごとの (@test の件数 + 1) を重みにして、重い順
+#       （同数は `git ls-files` の一覧の順）に、その時点でいちばん軽い組（同点は番号の
+#       小さい組）へ順に配る。組ごとのテスト件数がそろうので、所要時間もそろいやすい。
+#       組の割り当てはフィルタと TEST_EXCLUDE を当てる前の一覧で決めるので、
+#       あるスイートがどの組に入るかはフィルタや除外の指定で変わらない
+#       （フィルタに一致するスイートが別の組にしか無ければ、対象が空で失敗する）。
+#       受け付けるのは「0 で始まらない数字 / 0 で始まらない数字」で k <= N の形だけ。
+#       それ以外（先頭ゼロ・空白を含む値も）は読み替えず、何も実行せずに失敗する。
+#       既定に倒して全件を走らせると、CI の設定を書き間違えたときに各ジョブが
+#       全件を実行して「遅いだけで通る」状態になり、気づけないため。
+#
 # 設計:
 #   - 発見はハードコードせず `git ls-files '*.bats'`。新規スイートを自動で拾う。
 #   - 実行前に走らせるスイート名を stdout に出す（何を回したかを黙らせない）。
@@ -46,13 +61,75 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 TEST_EXCLUDE="${TEST_EXCLUDE:-}"
 
+# TEST_SHARD=k/N の検証。値の出どころは ci.yml の env（${{ matrix.shard }}/N の展開）と
+# 手元のシェルだけなので、受け付ける形を 1 つに絞り、それ以外は読み替えずに落とす
+# （先頭ゼロを通すと算術展開が 8 進数として読む）。9 桁までにするのは [ -gt ] と
+# 算術展開が確実に扱える範囲に収めるため。
+TEST_SHARD="${TEST_SHARD:-}"
+SHARD_K=""
+SHARD_N=""
+if [ -n "$TEST_SHARD" ]; then
+  shard_ok=1
+  case "$TEST_SHARD" in
+    */*/*) shard_ok=0 ;;
+    */*) SHARD_K=${TEST_SHARD%/*}; SHARD_N=${TEST_SHARD#*/} ;;
+    *) shard_ok=0 ;;
+  esac
+  for shard_part in "$SHARD_K" "$SHARD_N"; do
+    case "$shard_part" in
+      ""|0*|*[!0-9]*) shard_ok=0 ;;
+    esac
+    [ "${#shard_part}" -le 9 ] || shard_ok=0
+  done
+  if [ "$shard_ok" -eq 1 ] && [ "$SHARD_K" -gt "$SHARD_N" ]; then
+    shard_ok=0
+  fi
+  if [ "$shard_ok" -ne 1 ]; then
+    echo "TEST_SHARD は k/N（k と N は 1 以上の整数で k <= N。先頭ゼロ・空白は不可）で指定してください: '$TEST_SHARD'" >&2
+    exit 1
+  fi
+fi
+
 # 対象を動的に列挙。_longruns/ のアーカイブスイートは除外する。
 # 代入コンテキストなので単語分割は起きない（改行区切りで受ける）。
 ALL_SUITES=$(git -C "$ROOT" ls-files -- '*.bats' ':(exclude)_longruns/')
 
+# TEST_SHARD: 組の割り当て（issue #1028）。スイートごとの (@test の件数 + 1) を重みにして、
+# 重い順（同数は一覧の順）に、その時点でいちばん軽い組（同点は番号の小さい組）へ順に配る。
+# 入力は追跡下の一覧とファイルの中身だけで決まるので、どの組のジョブでも同じ割り当てになる。
+# フィルタと除外より先に、一覧全体に対して決める。SHARD_MEMBERS は組 K に入るパスを改行で並べたもの。
+SHARD_MEMBERS=""
+if [ -n "$SHARD_N" ]; then
+  SHARD_MEMBERS=$(
+    idx=0
+    for f in $ALL_SUITES; do
+      idx=$((idx + 1))
+      weight=$(grep -c '^@test' "$ROOT/$f" 2>/dev/null) || weight=0
+      printf '%s\t%s\t%s\n' "$weight" "$idx" "$f"
+    done | sort -t "$(printf '\t')" -k1,1nr -k2,2n | awk -F '\t' -v n="$SHARD_N" -v k="$SHARD_K" '
+      {
+        best = 1
+        for (s = 2; s <= n; s++) if (load[s] + 0 < load[best] + 0) best = s
+        load[best] += $1 + 1
+        if (best == k) print $3
+      }'
+  )
+fi
+
 SUITES=""
 SKIPPED=0
 for f in $ALL_SUITES; do
+  if [ -n "$SHARD_N" ]; then
+    case "
+$SHARD_MEMBERS
+" in
+      *"
+$f
+"*) ;;
+      *) continue ;;
+    esac
+  fi
+
   # 引数（フィルタ）があれば、パス部分一致するものだけに絞る（OR 判定）。
   if [ "$#" -gt 0 ]; then
     match=0
@@ -85,7 +162,9 @@ done
 # 対象が空 = フィルタ指定ミス、または全件が除外された。非0で知らせる。
 if [ -z "$SUITES" ]; then
   if [ "$#" -gt 0 ]; then
-    echo "no test suites matched filter: $*" >&2
+    echo "no test suites matched filter: $*${SHARD_N:+ (shard $SHARD_K/$SHARD_N)}" >&2
+  elif [ -n "$SHARD_N" ]; then
+    echo "no test suites in shard $SHARD_K/$SHARD_N under $ROOT" >&2
   else
     echo "no test suites found under $ROOT" >&2
   fi
@@ -97,6 +176,8 @@ for f in $SUITES; do
   echo "  $f"
 done
 echo "  (skipped by TEST_EXCLUDE: $SKIPPED)"
+# どの組を実行しているか。対象スイートの一覧（上の行まで）には混ぜない。
+[ -z "$SHARD_N" ] || echo "  (shard $SHARD_K/$SHARD_N)"
 echo "----------------------------------------"
 
 # ─────────────────────────────────────────────────────────────
@@ -195,7 +276,8 @@ residual_pids() { # <pgid>
 # residual_pids を「pid ppid 経過時間 コマンド」で表示する。
 print_residuals() { # <pgid>
   for p in $(residual_pids "$1"); do
-    ps -o pid=,ppid=,etime=,command= -p "$p" 2>/dev/null | cut -c1-160
+    # 長い TMPDIR 配下でも原因の実行ファイル名・引数が欠けないよう、行幅で切り詰めない（#1724）。
+    ps -ww -o pid=,ppid=,etime=,command= -p "$p" 2>/dev/null
   done
 }
 

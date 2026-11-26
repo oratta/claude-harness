@@ -3,16 +3,32 @@
 #
 # ubuntu ランナーを使う理由:
 #   プラグインの実行環境は macOS だが、macOS ランナーは分課金が 10 倍で、
-#   PR ごとに回すゲートとしては無料枠を圧迫する。bats スイートは全 990 件（2026-09-03 時点）が
-#   Linux でそのまま動く（BSD date / stat -f 等の macOS 固有コマンドへの依存は
-#   grep で 0 件）ため、ubuntu で全件を回す。
+#   PR ごとに回すゲートとしては無料枠を圧迫する。bats スイートは全 134 スイート・
+#   約 3,100 件（2026-10-12 時点）が Linux でそのまま動く（BSD date / stat -f 等の
+#   macOS 固有コマンドへの依存は grep で 0 件）ため、ubuntu で全件を回す。
 #
 #   将来 macOS 固有スイートが増えたら scripts/test.sh の TEST_EXCLUDE に
 #   パス片を並べて明示スキップする（下の env を有効化する）。除外は
 #   test.sh が "skipped by TEST_EXCLUDE: N" として出力するので無言では減らない。
 #
-# 前提パッケージ:
-#   shellcheck / jq / node / python3 は ubuntu-latest にプリインストール済み。
+# ジョブの構成（issue #990）:
+#   lint（チェック名 shellcheck）   scripts/lint.sh と auto-merge workflow の不変条件の検査
+#   test（matrix で 4 つに分ける）  bats の全スイートを 4 組に分け、1 組ずつ別のジョブで回す
+#                                   （scripts/test.sh の TEST_SHARD=k/N）。1 本で回すと
+#                                   10 分前後かかるので、同時に走らせて PR の待ちを縮める
+#   test-result（チェック名 bats suites）
+#                                   分けたジョブを needs で待ち、全部が success のときだけ成功する
+#   auto-merge.yml の必須チェック（REQUIRED_CHECKS）は shellcheck と bats suites の 2 つのまま。
+#   分けたジョブは必須チェックに入れず、bats suites のジョブが結果をまとめて報告する。
+#   分割数を変えるときは、test ジョブの matrix の shard: と TEST_SHARD: の分母の 2 か所を
+#   同じ数に直す（そろっていることは tests/ci-bats-shards.bats が確かめる）。
+#   ジョブを足すときは、必須チェックに入れるか、必須チェックのジョブの needs: に直接入れる
+#   （scripts/test-auto-merge-workflow.sh が確かめる。docs/auto-merge.md 参照）。
+#
+# ランナーと前提パッケージ:
+#   lint（shellcheck）と bats suites のジョブは ubuntu-latest、bats を回す test ジョブは
+#   ubuntu-24.04 に固定する（bats の版の固定を保つため。理由は test ジョブのコメント）。
+#   shellcheck / jq / node / python3 はどちらのイメージにもプリインストール済み。
 #   bats のみ apt で導入する。
 #
 # version の不在の検査（S130・S131）について:
@@ -63,28 +79,80 @@ jobs:
       # ubuntu-latest には shellcheck がプリインストールされている
       - name: shellcheck (scripts/lint.sh)
         run: scripts/lint.sh
+      # auto-merge workflow の安全不変条件（聖域判定・必須チェックと ci.yml のジョブの対応・
+      # fail-closed）。bats ではなく素の sh なので test.sh の自動発見に乗らず、ここで明示実行する。
+      # bats のジョブは matrix で分かれていて、そこに置くと組の数だけ走るので、このジョブに置く
+      # （落ちたときは必須チェック shellcheck が失敗になる。ステップ名で見分ける）。
+      - name: auto-merge workflow invariants
+        run: scripts/test-auto-merge-workflow.sh
 
   test:
-    name: bats suites
-    runs-on: ubuntu-latest
+    # bats suites とは別の名前にする（bats suites は下の test-result ジョブが名乗る必須チェック名）
+    name: bats shard ${{ matrix.shard }}/4
+    # ubuntu-latest にしない。下の bats=<版> はこのランナーの apt にある版で、ランナーの版と
+    # bats の版は組で固定する（理由は install bats の手順のコメント。issue #1659）
+    runs-on: ubuntu-24.04
+    strategy:
+      # 1 つの組が落ちても残りの組を最後まで走らせる（1 回の CI で落ちるテストを全部見る）
+      fail-fast: false
+      matrix:
+        # 組の番号は 1 行のリストで書く。数を変えるときは下の TEST_SHARD の分母も同じ数に直す
+        shard: [1, 2, 3, 4]
     # macOS 固有スイートが出てきたらここに空白区切りのパス片を並べる
     # env:
     #   TEST_EXCLUDE: some-macos-only-suite
+    # （TEST_EXCLUDE を有効にするときは、下の env: に TEST_EXCLUDE の行を足す）
+    env:
+      # 全スイートを 4 組に分けた k 番目だけを回す。分母は式を経由せず数字で直接書く
+      TEST_SHARD: ${{ matrix.shard }}/4
     steps:
       # actions/checkout は GitHub 公式 action なので SHA 固定の対象外（方針は上記コメント参照）
       - uses: actions/checkout@v4
-      # バージョンを固定する。無指定だと ubuntu-latest のイメージ更新で bats が
+      # バージョンを固定する。無指定だとランナーのイメージ更新で bats が
       # 黙って上がり、テストの落ち方が変わったときに「自分の変更か bats か」を
-      # 切り分けられなくなる。ubuntu-24.04 の universe が提供する版に固定。
-      # 上げるときはこのピンを明示的に書き換える（ランナーの ubuntu が上がって
-      # この版が消えた場合は install が非0で落ちるので、無言の追随は起きない）。
+      # 切り分けられなくなる。1.10.0-1 は ubuntu-24.04 の universe が提供する版。
+      # 2026-11-17 に ubuntu-latest が ubuntu-26.04（bats は 1.13.0-1）に上がって
+      # この版が apt から消え、全ブランチでこの手順が落ちた（issue #1659）。それ以降、
+      # ジョブの runs-on も ubuntu-24.04 に固定し、ランナーと bats の版を組で固定している。
+      # 上げるときは runs-on・bats=・このステップ名の 3 か所を一緒に書き換える
+      # （そろっていることは tests/ci-bats-shards.bats が確かめる）。GitHub が
+      # ubuntu-24.04 のランナーを外したらこのジョブは走らずに落ちるので、そのときに選び直す。
       - name: install bats (1.10.0-1)
         run: |
           sudo apt-get update -qq
           sudo apt-get install -y --no-install-recommends bats=1.10.0-1
       - name: run bats suites (scripts/test.sh)
         run: scripts/test.sh
-      # auto-merge workflow の安全不変条件（聖域判定・必須チェック名の一致・fail-closed）。
-      # bats ではなく素の sh なので test.sh の自動発見に乗らず、ここで明示実行する。
-      - name: auto-merge workflow invariants
-        run: scripts/test-auto-merge-workflow.sh
+
+  # 分けたジョブの結果をまとめて、必須チェック名 bats suites で報告する。
+  # checkout はしない（結果の判定だけを行う）。
+  test-result:
+    name: bats suites
+    runs-on: ubuntu-latest
+    needs: [test]
+    # always() を付けないと、分けたジョブが落ちたときにこのジョブは「失敗」ではなく
+    # 「飛ばされた」になる。always() は、連続 push で取り消された run でもこのジョブを走らせ、
+    # 古い SHA に bats suites の failure を付ける。取り消しも失敗として報告する意図した挙動なので、
+    # !cancelled() に置き換えない（auto-merge.yml は PR の今の HEAD のチェックだけを見るので、
+    # 古い SHA の failure は新しい run の判定に影響しない）。
+    if: always()
+    steps:
+      # always() を付けたジョブは needs のジョブが落ちても実行されるので、止めるのはこの判定だけ
+      # になる。ジョブ ID を 1 つずつ書かず、needs.*.result で needs の全要素を見る
+      # （ID を書く形だと、あとから needs: に足したジョブが落ちても成功になる）。
+      # success 以外（failure / cancelled / skipped）が 1 つでもあれば失敗にする。
+      - name: all shards succeeded
+        env:
+          NEEDS_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          echo "needs の result: ${NEEDS_RESULTS:-(空)}"
+          if [ -z "$NEEDS_RESULTS" ]; then
+            echo "::error::needs の result を 1 つも読めない"
+            exit 1
+          fi
+          for r in $NEEDS_RESULTS; do
+            if [ "$r" != "success" ]; then
+              echo "::error::分けた bats のジョブに success 以外の結果がある: $NEEDS_RESULTS"
+              exit 1
+            fi
+          done

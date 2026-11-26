@@ -2,50 +2,76 @@
 
 ## Purpose
 TBD - created by archiving change dev-workflow-execution-strategy. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: 昇格トリップワイヤー3本の定義
 dev-workflow プラグインは、作業役（develop スキルの W、または hook 注入を読む本体自身）が手を止める条件を定義する常駐ルールテンプレートを配布しなければならない（SHALL）。テンプレートは以下のトリップワイヤーを、行為ベースの数えられる条件として定義する:
 
-1. **規模超過 → 分割**: 編集対象ファイルが5個を超えた、または着手前の見積もりから作業項目が2回増えた。W として起動されている場合は本体に return し、本体が change / 子 issue（develop スキルのエピック化）に分割する。それ以外（本体自身が読んでいる場合）は develop のエピック化、またはネイティブ Workflow 実行（型は `plugins/dev-workflow/references/workflow-execution.md`。スクリプトは `workflow-authoring` スキルを読んで書く）に切り替える
-2. **失敗ループ → 決める役 / 実行役の分離ラダー**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した。実行役を1段ずつ上げるのではなく、失敗の原因が「決めた内容が間違っていた（判断側）」か「決めたとおりに実行できなかった（実行側）」かで、上げる相手を**一方だけ**決める（両方同時に上げない）。決める役は数ターンで終わるので先に上げ、実行役を上げるのは実行側が原因と分かったときだけとする（SHALL）。ラダーは次のとおり:
+1. **規模超過 → 再計算して容量超過なら return**: 編集ファイルや作業項目が増えたら粒度計算の入力を更新し、文脈または累計の計画用上限超過／配置不能なら手を止める（SHALL）。編集ファイル 5 個超や作業項目の増加 2 回を、それだけで停止・分割する理由にしてはならない（MUST NOT）。W は本体に return し、本体は `references/epic-granularity.md` に従って再計画する。W 以外も同じ参照先に従う。結果が容量内なら作業を続け、組み方を変える場合は理由を記録する（SHALL）。計算に必要な量が欠けている場合は容量内とみなさず、量を補うまで手を止める（SHALL）。
+2. **失敗ループ → 決める役 / 実行役の分離ラダー**: 同じテストが2連続で落ちた、または同じ箇所を2回書き直した。実行役を1段ずつ上げるのではなく、失敗の原因が「決めた内容が間違っていた（判断側）」か「決めたとおりに実行できなかった（実行側）」かで、上げる相手を**一方だけ**決める（両方同時に上げない）。決める役は数ターンで終わるので先に上げ、実行役を上げるのは実行側が原因と分かったときだけとする（SHALL）。ラダーは格（最安・中位・上位・最上位。語の正本は `model-tier-resolution`）と、`codex-develop.py request` に渡す `--failure` の値で書かなければならない（MUST）。モデル名は `plugins/dev-workflow/references/model-tier-map.json` で引いた値とし、Claude での値は括弧書きの例に留めなければならない（MUST。Claude・Codex の片方の名前だけで段を書いてはならない）。表の格は `request` の要求の格（`requested_tier`。残量モードと構成の上限を適用する前の値）であり、テンプレートはそのことを表の直前か直後に明記しなければならない（MUST）。ラダーは次のとおり:
 
-   | 段階 | 決める役 | 実行役 |
-   |---|---|---|
-   | 初回 | 仕様化判断と R1 レビューが担う（既存の流れ） | `sonnet` |
-   | 1 回目の失敗 | `dev-workflow:decider` を `model: opus` で spawn（本体が opus 以上ならその場で）し、失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | `sonnet` で再試行 |
-   | 2 回目の失敗・指示どおりやって結果が違う | `dev-workflow:decider`（`model: opus`） | `opus` |
-   | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた | `dev-workflow:decider`（`model: fable`。本体が fable ならその場で） | `sonnet` または `opus` |
-   | fable が決めて opus が実行しても落ちる | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
+   | 段階 | `--failure` | 決める役の要求の格（phase `decider`） | 実行役の要求の格（W の phase） |
+   |---|---|---|---|
+   | 初回 | なし | 仕様化判断と R1 レビューが担う（既存の流れ） | 既定の格（中位。Claude では `sonnet`） |
+   | 1 回目の失敗 | `first` | 上位（Claude では `opus`）。失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする | 格を変えずに再試行 |
+   | 2 回目の失敗・指示どおりやって結果が違う（実行側） | `executor` | 上位 | 上位（上限。Claude では `opus`） |
+   | 2 回目の失敗・指示を解釈できなかった / 指示自体が外れていた（判断側） | `judgment` | 最上位（Claude では `fable`） | 格を変えない |
+   | 昇格のあとの失敗（どちらの経路でも） | — | 人間へ（interactive は AskUserQuestion、unmanned は `needs-approval`） | — |
 
-   決める役を spawn するときは、どの段階でも `subagent_type` を `dev-workflow:decider` に固定し `model` だけを切り替えなければならない（MUST。`general-purpose` に読み替えない）。実行役の上限は `opus` であり、実行役を Fable で spawn してはならない（MUST NOT。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`）。`FABLE_BUDGET_MODE=reserve` の自動実行、および `exhausted`（全経路）では決める役も `model: opus` 止まりとする（種別は `dev-workflow:decider` のまま）。共有枠モード `SHARED_BUDGET_MODE` の下限が先に効く（`depleted` は昇格なし、`throttled` は Opus 上限）
+   各段の決める役と実行役のモデルは、その段の `--failure` の値を渡した `request` が返した `model` を使い、表から計算し直してはならない（MUST NOT。残量モードと構成の上限は `request` が適用済み）。決める役を起こすときは、どの段階でも `subagent_type` を `dev-workflow:decider` に固定しなければならない（MUST。`general-purpose` に読み替えない）。実行役の格の上限は上位であり、実行役を最上位で起こしてはならない（MUST NOT。Claude の強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`）。`FABLE_BUDGET_MODE=reserve` の自動実行、および `exhausted`（全経路）では決める役も上位止まりとする（種別は `dev-workflow:decider` のまま）。共有枠モード `SHARED_BUDGET_MODE` の下限が先に効く（`depleted` は昇格なし、`throttled` は上位が上限）。上限を適用したあとの格とモデルは `request` の返り値で決まり、表の格と違ってよい（例: `SHARED_BUDGET_MODE=depleted` では決める役も中位の model が返る）
 3. **仕様の発明検知 → 壁打ち/質問**: ユーザーの指示に書かれていない仕様上の決定を自分で埋めた回数が2回に達した。局所的なら AskUserQuestion、構造に及ぶなら `/opsx:explore` で壁打ちに戻す
 4. **rate-limit 実エラー → reactive 降格**: Fable 実行が rate-limit / weekly-limit の実エラーを返したら、その場で Opus に降格して作業を継続し、usage snapshot を更新する
 
 閾値は初期値であり運用調整前提であることをテンプレートに明記しなければならない（SHALL）。「あと少しで終わるから」を乗り換えない理由にしないことを明記する。
 
+**守備範囲（失敗ループの原因の分類）**: ①入力の出どころは、W の return にある「指示のどこまでやって、どこで何が起きたか」と失敗したテストの出力、および決める役が出した指示の文面だけである。②拾いたい誤りは、決める役と実行役を両方同時に上げること、原因が判断側なのに実行役を上げること（同じ指示のまま強いモデルで繰り返して消費だけが増える）、実行役を最上位にすること、段に合わない `--failure` の値を `request` に渡すことである。③通してよい入力の例: 原因が判断側にも実行側にも見える return で、本体が理由を書いてどちらか一方を選んで進めることは許す（外れていれば次の失敗で人間へ上がる段に進む）。1 回目の失敗では分類せず `first` を渡すことも許す。④本体の分類がいつも正しいことや、W の return の書き漏れをすべて見つけることは、この要件の完了条件にしない（再開か fresh thread かの判定の守備範囲は `manual-codex-develop` の要件「委譲は前景実行の 3 手順で行う」に従う）。
+
+**守備範囲（規模超過の再計算と停止判定）**: 入力の出どころは、作業役が増えたファイル・作業項目とその量を反映した JSON、および粒度計算器の exit code と容量・配置結果である。拾う誤りは、必要な量が欠けたまま容量内とみなすこと、再計算の容量超過／配置不能を無視して続けること、ファイル数や増加回数だけで止めること、上限を自動で広げることである。たとえば形式が正しいが申告 tokens が実物より小さい入力で、再計算が容量内を返した場合は作業を続けてよい。この判定自体は申告量を実物と再照合せず、実行中の既存の実測トリップワイヤーは維持する。増分の申告漏れや見積もりのずれをすべて検知し、停止判定をすり抜ける穴を塞ぎ切ることは、この規模超過の要件の完了条件にしない。
+
 #### Scenario: 規模超過での乗り換え
-- **WHEN** 作業中に編集対象ファイルが6個目に達する
-- **THEN** その場で手を止め、W なら本体に return して分割を委ね、本体自身なら develop のエピック化またはネイティブ Workflow 実行（`references/workflow-execution.md`）に切り替える
+- **WHEN** 作業中の増分を入力に反映した結果、文脈または累計の計画用上限を超える、または配置不能になる
+- **THEN** 手を止め、W は更新入力・出力・成果を本体に return し、本体は再計画する。W 以外も粒度計算の参照先へ戻り、上限を自動で広げない
+
+#### Scenario: 六ファイル目だけでは止めない
+- **WHEN** 編集対象が 6 ファイルになったが、増分を反映した計算が文脈・累計とも容量内になる
+- **THEN** ファイル数だけを理由に分割せず、作業を続ける
+
+#### Scenario: 作業項目の増加回数だけでは止めない
+- **WHEN** 作業項目が着手前の見積もりから 2 回増え、増分の量を反映した計算は容量内である
+- **THEN** 増加回数だけを理由に強制分割せず、更新した入力と結果で作業を続ける
+
+#### Scenario: 再計算の量が不足している
+- **WHEN** 新たに触るファイルの量が不明で、更新後の容量を計算できない
+- **THEN** 容量内と推測せず量を補うまで止まり、W なら不足を本体に return する
 
 #### Scenario: 1 回目の失敗では誰も上げない
 - **WHEN** 同じテストが2連続で落ちて 1 回目の失敗として扱う
-- **THEN** 実行役は `sonnet` のまま再試行し、`subagent_type: dev-workflow:decider` を `model: opus` で立てた決める役が失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする
+- **THEN** 実行役は格を変えずに再試行し、`--failure first` を渡した `request` が返した（上限適用後の）model で `subagent_type: dev-workflow:decider` の決める役を立て、失敗の出力を読んで直す箇所・方法・確認するテストを具体的な指示にする
 
 #### Scenario: 実行側が原因なら実行役だけ上げる
 - **WHEN** 2 回目の失敗で、実行役が指示どおりやったのに結果が違うと分類される
-- **THEN** 実行役を `opus` に上げ、決める役は `opus` のままで Fable には上げない
+- **THEN** 実行役は `--failure executor` を渡した `request` が返した（上限適用後の）model で起こし、決める役も `--failure executor` の返り値を使う。残量モードと構成の上限が無いとき、実行役の格は上位、決める役の格は上位で、最上位にはならない
 
 #### Scenario: 判断側が原因なら決める役だけ上げる
 - **WHEN** 2 回目の失敗で、実行役が指示を解釈できなかった、または指示自体が外れていたと分類される
-- **THEN** 決める役を `dev-workflow:decider`（`fable`）に上げ、実行役は `sonnet` または `opus` のままとする
+- **THEN** `--failure judgment` を渡した `request` が返した（上限適用後の）model で決める役（`dev-workflow:decider`）を立て、実行役の格は変えない。残量モードと構成の上限が無いとき、決める役の格は最上位である
 
 #### Scenario: 実行役は Fable にならない
 - **WHEN** 昇格ラダーのどの段階かにかかわらず実行役のモデルを決める
-- **THEN** 上限は `opus` で、`model: fable` の実行役 spawn は `agent-model-guard.sh` に拒否される
+- **THEN** 格の上限は上位で、Claude では `model: fable` の実行役 spawn が `agent-model-guard.sh` に拒否される
+
+#### Scenario: ラダーがどちらの提供元でも同じ文で読める
+- **WHEN** `templates/escalation-tripwires.md` の失敗ループの表を読む
+- **THEN** 各段に `--failure` の値と要求の格が書かれ、表の格が上限適用前の要求の格であることが明記され、モデル名は `references/model-tier-map.json` を引くよう書かれており、Claude のモデル名は括弧書きの例としてだけ現れる
 
 #### Scenario: exhausted では昇格が Opus 上限
 - **WHEN** `FABLE_BUDGET_MODE=exhausted` のセッションで失敗ループのトリップワイヤーを踏む
-- **THEN** interactive / unmanned を問わず昇格は Opus までに留まり、決める役は `dev-workflow:decider` のまま `model: opus` で立てられる（種別は変えない）
+- **THEN** interactive / unmanned を問わず `request` は上位までの model を返し、決める役は `dev-workflow:decider` のままその model で立てられる（種別は変えない）
+
+#### Scenario: depleted では決める役も中位の model になる
+- **WHEN** `SHARED_BUDGET_MODE=depleted` のセッションで、2 回目の失敗が判断側と分類される
+- **THEN** 本体は `request --phase decider --failure judgment` が返した中位の model で `dev-workflow:decider` を立て、表の要求の格（最上位）から model を計算し直さない
 
 #### Scenario: 仕様の発明での停止
 - **WHEN** ユーザーの指示に無い仕様決定（例:「DB は SQLite でいいだろう」）を自分で埋めた回数が2回に達する
@@ -85,11 +111,11 @@ dev-workflow プラグインは、作業役（develop スキルの W、または
 - **THEN** ここまでの編集内容と判明した事実を引き継ぎ情報として渡し、作業をやり直さない
 
 ### Requirement: SessionStart hook がトリップワイヤーを常駐注入する
-dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart イベント（matcher: `startup|clear|compact`）で注入スクリプトを起動しなければならない（SHALL）。コマンドパスは `${CLAUDE_PLUGIN_ROOT}` を使用する。スクリプトは `templates/escalation-tripwires.md` の「## 昇格トリップワイヤー」節を抽出し、`{"additionalContext": "<節の本文>"}` の JSON を stdout に出力する（single source of truth: 本文の複製を hook 側に持たない）。`TRIPWIRES_SCOPE` が未設定のとき、テンプレートが見つからない・節が抽出できない場合は無出力・exit 0 で終了しなければならない（MUST NOT block session start）。`TRIPWIRES_SCOPE=subagent-budget` のときの出力は要件「SubagentStart hook が dev-workflow の役に運用情報を注入する」が定める。
+dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart イベント（matcher: `startup|clear|compact`）で注入スクリプトを起動しなければならない（SHALL）。コマンドパスは `${CLAUDE_PLUGIN_ROOT}` を使用する。スクリプトは `templates/escalation-tripwires.md` の「## 昇格トリップワイヤー」節を抽出し、`{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "<節の本文>"}}` の JSON を stdout に出力する（single source of truth: 本文の複製を hook 側に持たない）。`additionalContext` をトップレベルに置いてはならない（MUST NOT。Claude Code はトップレベルの `additionalContext` を SessionStart の文脈に足さない）。`TRIPWIRES_SCOPE` が未設定のとき、テンプレートが見つからない・節が抽出できない場合は無出力・exit 0 で終了しなければならない（MUST NOT block session start）。`TRIPWIRES_SCOPE=subagent-budget` のときの出力は要件「SubagentStart hook が dev-workflow の役に運用情報を注入する」が定める。
 
 #### Scenario: 注入 JSON が節を含む
 - **WHEN** `CLAUDE_PLUGIN_ROOT` をプラグインルートに設定してスクリプトを実行する
-- **THEN** stdout は valid JSON で、`additionalContext` に「昇格トリップワイヤー」「規模超過」「失敗ループ」「仕様の発明」を含む
+- **THEN** stdout は valid JSON で、`hookSpecificOutput.hookEventName` が `SessionStart`、`hookSpecificOutput.additionalContext` に「昇格トリップワイヤー」「規模超過」「失敗ループ」「仕様の発明」を含み、トップレベルに `additionalContext` を持たない
 
 #### Scenario: テンプレート欠損時は fail-soft
 - **WHEN** `TRIPWIRES_SCOPE` 未設定で、`CLAUDE_PLUGIN_ROOT` をテンプレートの無いディレクトリに設定してスクリプトを実行する
@@ -100,7 +126,7 @@ dev-workflow プラグインは `hooks/hooks.json` を配布し、SessionStart �
 - **THEN** SessionStart エントリが存在し、matcher が `startup|clear|compact`、command が `${CLAUDE_PLUGIN_ROOT}` 経由でスクリプトを指している
 
 ### Requirement: usage-probe と snapshot 契約
-dev-workflow プラグインは `plugins/dev-workflow/scripts/usage-probe.sh` を配布しなければならない（SHALL）。probe は使用量の補助の情報源であり（主な情報源は `usage-session-records` capability のセッション記録）、アカウントレジストリ（`usage-account-registry` capability）のスロットのうち下記の実行条件を満たすものだけについて、スロットごとに導出した Keychain サービス名で認証情報を取得して OAuth usage API（`/api/oauth/usage`）をフェッチし、`~/.claude/.usage-snapshot`（`USAGE_SNAPSHOT` で上書き可）に JSON を書く。
+dev-workflow プラグインは `plugins/dev-workflow/scripts/usage-probe.sh` を配布しなければならない（SHALL）。probe は使用量の補助の情報源であり（主な情報源は `usage-session-records` capability のセッション記録）、アカウントレジストリ（`usage-account-registry` capability）のスロットのうち下記の実行条件を満たすものだけについて、スロットごとに導出した Keychain サービス名で認証情報を取得して OAuth usage API（既定の取得先は `https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1`。`USAGE_PROBE_ENDPOINT` で上書き可）をフェッチし、`~/.claude/.usage-snapshot`（`USAGE_SNAPSHOT` で上書き可）に JSON を書く。
 
 snapshot は **schema 2** であり、次の構造でなければならない（SHALL）。snapshot は生産者（dev-workflow）と消費者（statusline）が別のタイミングで更新されうる層間契約であるため、**キー名を以下に固定する**:
 
@@ -129,7 +155,10 @@ snapshot は **schema 2** であり、次の構造でなければならない（
       "weekly_resets_at": "2026-09-06T00:00:00Z",
       "weekly_resets_epoch": 1757116800,
       "fable_weekly_pct": 94,
-      "fable_active": true
+      "fable_active": true,
+      "reset_grants": [
+        {"resets_left": 1, "ends_at": "2026-11-02T03:00:00.123Z", "paused": false}
+      ]
     }
   }
 }
@@ -137,7 +166,8 @@ snapshot は **schema 2** であり、次の構造でなければならない（
 
 - `schema`: `2`
 - `active`: 現在アクティブなスロットの id。判定規則は `usage-account-registry` capability の「active スロットの判定規則」に従う
-- `accounts`: スロット id をキーとするオブジェクト。各スロットの値フィールドのキー名は上記に固定する（`label` / `securestorage` / `fetched_at` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `fable_weekly_pct` / `fable_active`）。値が得られないフィールドは `null` とする
+- `accounts`: スロット id をキーとするオブジェクト。各スロットの値フィールドのキー名は上記に固定する（`label` / `securestorage` / `fetched_at` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `fable_weekly_pct` / `fable_active`）。値が得られないフィールドは `null` とする。ただし任意の欄 `reset_grants` はこの限りでなく、得られないときは `null` にせずキーごと出さない
+- `reset_grants`（任意）: そのスロットのリセット権。応答の `cedar_ember.grants` の各束から `resets_left`・`ends_at`・`paused` の 3 つだけを、値を変えずに写した配列でなければならない（SHALL）。`ends_at` は epoch に直さず、ISO 8601 の文字列か `null` のまま渡す。束は選り分けない（`paused` が true の束や `resets_left` が 0 の束も写す。数え方は読み手が持つ）。元の束に無い欄は省いても `null` にしてもよい。`cedar_ember` が無い・`null`、`eligible` が true でない、`grants` が配列でない、のいずれかのときは欄を出さない（SHALL）。`grants` が元から空の配列なら `[]` を出す。`grants` が空でないのに、すべての要素が束（オブジェクト）でなく写せる束が 1 つも無いときは、確定した 0 回と区別するため欄を出さない（一部だけ不正なときは、写せる束だけを出す）。層間契約であり、読み手はダッシュボード（genetta-inc/flatmate#1654）と statusline
 - スロットの `fetched_at`: **そのスロットの値を実際に取得できた時刻**（epoch 秒）。fail-open で前回値を引き継いだスロットは、前回の `fetched_at` をそのまま保たなければならない（SHALL）。probe の実行時刻を書いてはならない（MUST NOT）
 - トップレベルの `fetched_at` / `fable_weekly_pct` / `fable_active` / `weekly_all_pct` / `weekly_resets_at` / `weekly_resets_epoch` / `five_hour_pct` / `five_hour_resets_at` / `five_hour_resets_epoch`: **active スロットの同名フィールドをミラーしたもの**でなければならない（SHALL）。既存の読み手（statusline の Fable 表示と 6 時間鮮度ゲート、および外部の読み手）を無改修で動かすための後方互換であり、独立に計算してはならない（MUST NOT）。特にトップレベル `fetched_at` は probe の実行時刻ではなく active スロットの取得時刻である（statusline の鮮度ゲートがこの値を読むため、実行時刻を書くと古い数字が新鮮な顔で表示される）
 
@@ -146,6 +176,9 @@ snapshot は **schema 2** であり、次の構造でなければならない（
 - 次のどちらかに当たる: そのスロットのセッション記録が無い、または記録の `observed_at` が `USAGE_PROBE_STALE` 秒（既定 10800）より古い／snapshot の同スロットの `fetched_at` が `USAGE_PROBE_STALE` 秒より古い（同スロットや `fetched_at` が無い場合を含む）。後者を含めるのは、Fable 週次がセッション記録に入らず probe からしか得られないため（会話中のアカウントでも Fable の値と statusline の 6 時間鮮度ゲートが止まらないようにする）
 - 試行状態ファイル（`USAGE_PROBE_STATE`、既定 `~/.claude/.usage-probe-state`）にあるそのスロットの前回の試行時刻から `USAGE_PROBE_INTERVAL` 秒（既定 10800）以上経っている
 - そのスロットが 429 による待ち時間の中にいない
+- そのスロットがオフ（`accounts.json` の `enabled: false`）でない。オフのスロットはセッション記録や snapshot がどれだけ古くてもフェッチせず、前回値を保つ（正本は `usage-account-registry` capability の要件「オフのスロットは使用量を取得しない」）
+
+**手動の取り直し（`--refresh`）**: probe は引数 `--refresh` を受け付けなければならない（SHALL）。`--refresh` を付けて実行したときは、上の実行条件のうち 1 つ目（セッション記録と snapshot の鮮度）と 2 つ目（前回の試行から `USAGE_PROBE_INTERVAL` 秒）を判定に使ってはならず（MUST NOT）、3 つ目（429 による待ち時間の中にいない）と 4 つ目（オフでない）は引数なしのときと同じく満たすことを求めなければならない（SHALL）。429 の待ち時間の長さは `--refresh` の有無で変えてはならない（MUST NOT）（下の段落の式で、同じ `USAGE_PROBE_INTERVAL` を基準に測る）。待ち時間の中にいるスロットはフェッチせず、試行状態ファイルのそのスロットの試行時刻と連続 429 回数を変えてはならない（MUST NOT）。連続 429 回数が 1 以上でも、待ち時間が明けているスロットは待ち時間の中にいないものとして扱う。`--refresh` はその 1 回の実行にだけ効き、試行状態ファイルにも snapshot にも残さない。ロック・試行の記録・スロット単位 fail-open・snapshot の組み立ては引数なしのときと同じである。手で取り直す呼び出し元（ダッシュボードの取り直しボタンなど）のための指定であり、`USAGE_PROBE_INTERVAL=0` で間隔を外すと 429 の待ちも 0 になって待ち中のアカウントを叩いてしまうため、待ちを残したまま鮮度と間隔だけを外す手段として置く。
 
 probe はフェッチを試みたスロットごとに、結果（200・429・その他の失敗）にかかわらず試行時刻を試行状態ファイルに記録しなければならない（SHALL）。HTTP 429 を受けたスロットは連続 429 回数を 1 増やし、前回の試行から `USAGE_PROBE_INTERVAL × 2^(回数-1)` 秒（上限 86400 秒）経つまで次の試行をしてはならない（MUST NOT）。200 を受けたら連続 429 回数を 0 に戻す。試行状態ファイルは一時ファイルからの置き換えで書き、読めない・壊れているときは全スロットを未試行として扱う。
 
@@ -155,7 +188,11 @@ probe はフェッチを試みたスロットごとに、結果（200・429・�
 
 **API のエラーレスポンスは失敗として扱わなければならない**（SHALL）。HTTP 401 / 429 / 5xx でも API は正しい JSON のオブジェクト（`{"type":"error", ...}`）を返すため、JSON として読めたことを成功の判定に使ってはならない（MUST NOT）。使用量の数字（`five_hour` / `seven_day` / モデル別 weekly）が 1 つも取れなかったレスポンスは失敗とし、そのスロットの前回値を全 `null` で上書きしてはならない（MUST NOT）。非 active アカウントは OAuth アクセストークンの期限切れでこの経路に入るのが常態であり、ここを塞がなければスロット単位 fail-open が機能しない。非 active アカウントは OAuth アクセストークンの期限切れでフェッチが落ちるのが常態であるため、1 スロットの失敗が snapshot 全体の更新を止めてはならない（MUST NOT）。今回も取れず前回値も無いスロットは、全フィールドが `null` の欠測スロットとして `accounts` に載せる。
 
-どのスロットからも新しい値が得られなかった場合、または snapshot の組み立て・書き込みが失敗した場合は、exit 0 で終了し snapshot を書いてはならない（MUST NOT）（既存 snapshot を破壊しない）。probe はいかなる失敗でも非 0 で終了してはならない（MUST NOT）。
+**`reset_grants` の寿命**は次のとおりでなければならない（SHALL）。取得に成功しパースできたスロットは、その応答から作り直す（条件を満たさなければ欄を出さない）。フェッチを試みて失敗したスロット（通信・認証・パースの失敗、API のエラーレスポンスを含む）は欄を出さず、前回の値を写し直さない（MUST NOT）。フェッチを試みなかったスロット（実行条件を満たさない・オフ）は、他の値フィールドと同じく前回の `reset_grants` を `fetched_at` と一緒に保つ。
+
+**全スロットの取得が失敗したときの例外**: 新しい値が 1 つも得られず snapshot を書かない既存の規則（下記）のままでは、試みて失敗したスロットの前回の `reset_grants` が残ってしまう。そこで、新しい値が 1 つも得られなかった場合でも、既存 snapshot が読めて、フェッチを試みて失敗したスロットに `reset_grants` があるときに限り、probe はその欄だけを除いた snapshot を書かなければならない（SHALL）。使用率・`fetched_at`・`label` などの他のフィールド、トップレベルのミラー、フェッチを試みなかったスロットの欄は 1 バイトも変えない（MUST NOT）。除く欄が 1 つも無い、または既存 snapshot が無い・読めないときは、従来どおり何も書かない。
+
+どのスロットからも新しい値が得られなかった場合は、上の `reset_grants` の例外に当たるときを除き、exit 0 で終了し snapshot を書いてはならない（MUST NOT）。snapshot の組み立て・書き込みが失敗した場合も、exit 0 で終了し snapshot を書いてはならない（MUST NOT）（既存 snapshot を破壊しない）。probe はいかなる失敗でも非 0 で終了してはならない（MUST NOT）。
 
 probe は `refresh_token` を用いたアクセストークンの更新を行ってはならない（MUST NOT）。Claude Code 本体のリフレッシュと競合してトークンを無効化する危険があるため意図的に非対応とし、その理由をコードコメントに残さなければならない（SHALL）。
 
@@ -200,6 +237,29 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 - **WHEN** 連続 429 回数が 3 のスロットが 200 を受ける
 - **THEN** 試行状態ファイルのそのスロットの連続 429 回数は 0 になる
 
+#### Scenario: --refresh は待ち中でないスロットを間隔内でも取り直す
+- **WHEN** 2 スロットとも snapshot の `fetched_at` とセッション記録の `observed_at` が 10 分前、試行状態ファイルの試行時刻が 1 時間前、連続 429 回数が 0 の状態で、既定の間隔のまま `--refresh` を付けて probe を実行する
+- **THEN** 両スロットをフェッチし、snapshot の各スロットの `fetched_at` は実行時刻になる
+- **AND** 試行状態ファイルの両スロットの試行時刻は実行時刻になる
+
+#### Scenario: --refresh でも 429 の待ち中のスロットは取りに行かない
+- **WHEN** 既存 snapshot に両スロットの前回値（`fetched_at` 込み）があり、スロット a は連続 429 回数が 2 で前回の試行が `USAGE_PROBE_INTERVAL` の 1.5 倍前（待ち時間は間隔の 2 倍なので待ち中）、スロット b は連続 429 回数が 0 で前回の試行が 1 時間前の状態で、`--refresh` を付けて probe を実行する
+- **THEN** スロット a はフェッチされず、snapshot のスロット a の値は前回値（`fetched_at` 込み）のまま残る
+- **AND** 試行状態ファイルのスロット a の試行時刻と連続 429 回数（2）は変わらない
+- **AND** スロット b はフェッチされ、snapshot のスロット b の `fetched_at` は実行時刻になる
+
+#### Scenario: --refresh でも待ちが明けたスロットは取り直す
+- **WHEN** 連続 429 回数が 2 で前回の試行が `USAGE_PROBE_INTERVAL` の 2 倍より前のスロットの snapshot の `fetched_at` が 10 分前の状態で、`--refresh` を付けて probe を実行し 200 を受ける
+- **THEN** そのスロットをフェッチし、試行状態ファイルの連続 429 回数は 0 になる
+
+#### Scenario: --refresh でもオフのスロットは取りに行かない
+- **WHEN** スロット b が `enabled: false` の状態で `--refresh` を付けて probe を実行する
+- **THEN** スロット b はフェッチせず、試行状態ファイルにも記録しない
+
+#### Scenario: 引数なしの振る舞いは変わらない
+- **WHEN** `--refresh` を付けないときは、試行状態ファイルに全スロットの試行時刻が 1 時間前と記録された状態で、引数なしで probe を実行する
+- **THEN** どのスロットもフェッチせず、snapshot を書かずに exit 0 で終わる
+
 #### Scenario: ロックが取れなければ何もしない
 - **WHEN** 60 秒前に作られたロックがある状態で probe を実行する
 - **THEN** API を叩かず snapshot も試行状態ファイルも変えずに exit 0 で終わる
@@ -221,15 +281,75 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 - **THEN** そのスロットは前回値と前回の `fetched_at` を保ち、全 `null` で上書きされない
 
 #### Scenario: 全スロット失敗時は fail-open
-- **WHEN** 全スロットで認証取得または API 取得が失敗する
+- **WHEN** 全スロットで認証取得または API 取得が失敗し、既存 snapshot に削除対象の `reset_grants`（試みて失敗したスロットの欄）が無い
 - **THEN** exit code 0 で終了し、新しい snapshot を書かない（既存 snapshot があればそのまま残す）
 
 #### Scenario: スロットが 1 つのときは現行と同じ形に落ちる
 - **WHEN** レジストリが存在しない状態で有効な usage API レスポンスを与えて probe を実行する
 - **THEN** `accounts` は既定スロット 1 つだけを持ち、トップレベルの従来キー（`fetched_at` を含む）は変更前と同じ値になる（既存の読み手が無改修で動く）
 
+#### Scenario: reset_grants を束の値を変えずに写す
+- **WHEN** 応答の `cedar_ember` が `eligible: true` で、`grants` に `paused` が true の束と `resets_left` が 0 の束と `ends_at` が null の束を含み、各束に他の欄（`id` / `type` など）もある状態で probe を実行する
+- **THEN** snapshot の該当スロットの `reset_grants` は同じ順序の配列で、各要素は `resets_left` / `ends_at` / `paused` だけを持ち、値は応答と同じ（`ends_at` は ISO 8601 の文字列か null のまま）
+
+#### Scenario: eligible でないときは reset_grants を出さない
+- **WHEN** 応答の `cedar_ember` が無い、`null`、`eligible: false`、`grants` が配列でない、のいずれかである
+- **THEN** そのスロットに `reset_grants` のキーは無く、他の値フィールドは通常どおり書かれる
+
+#### Scenario: 空の grants は空配列
+- **WHEN** 応答の `cedar_ember` が `eligible: true` で `grants` が `[]` である
+- **THEN** そのスロットの `reset_grants` は `[]` である
+
+#### Scenario: 取得に失敗したスロットは前回の reset_grants を写し直さない
+- **WHEN** 既存 snapshot のスロットに `reset_grants` があり、そのスロットのフェッチを試みて失敗する（429 またはエラーボディ）
+- **THEN** そのスロットの他の値フィールドは前回値を保つが、`reset_grants` のキーは無い
+
+#### Scenario: 全スロットが失敗しても失敗したスロットの reset_grants だけを除く
+- **WHEN** 既存 snapshot の 2 スロットがどちらも `reset_grants` と使用率を持ち、両方のフェッチが失敗する（429 またはエラーボディ）
+- **THEN** snapshot は書き直され、両スロットの `reset_grants` のキーが無く、使用率・`fetched_at`・トップレベルのミラーは前回のまま変わらない
+
+#### Scenario: 一部失敗と未試行が混ざる
+- **WHEN** 3 スロットのうち A が成功、B が失敗、C は間隔内で未試行で、既存 snapshot の B と C に `reset_grants` がある
+- **THEN** A は応答から作り直され、B の `reset_grants` は無く、C の `reset_grants` は前回のまま残る
+
+#### Scenario: 全件失敗で除く欄が無ければ何も書かない
+- **WHEN** 全スロットのフェッチが失敗し、既存 snapshot のどのスロットにも `reset_grants` が無い
+- **THEN** snapshot は書き換えられない（ファイルの内容が変わらない）
+
+#### Scenario: 全要素が不正な grants は欄を出さない
+- **WHEN** 応答の `cedar_ember` が `eligible: true` で `grants` が `[null, 3]` である
+- **THEN** そのスロットに `reset_grants` のキーは無い（元から空の `[]` とは区別される）
+
+#### Scenario: 一部だけ不正な grants は写せる束だけを出す
+- **WHEN** `grants` が `[null, {"resets_left": 1, "ends_at": null, "paused": false}]` である
+- **THEN** `reset_grants` は後者の 1 要素だけの配列である
+
+#### Scenario: cedar_ember だけで使用率が無い応答は失敗として扱う
+- **WHEN** 応答が `cedar_ember` だけを持ち `five_hour` / `seven_day` / モデル別 weekly のどれも無い
+- **THEN** そのスロットは失敗扱いで、使用率は前回値のまま、`reset_grants` のキーは無い
+
+#### Scenario: 使用率が一部だけ欠ける応答は従来どおり欠けた分が null になる
+- **WHEN** 応答に `seven_day` だけがあり `five_hour` が無く、`cedar_ember` が有効である
+- **THEN** 従来（`cedar_ember` なしの応答）と同じ規則で `five_hour_pct` は `null`、`weekly_all_pct` は値が入り、`reset_grants` も書かれる
+
+#### Scenario: 試みなかったスロットは前回の reset_grants を保つ
+- **WHEN** 2 スロットのうち片方だけが実行条件を満たしてフェッチされ、もう片方の既存 snapshot に `reset_grants` がある
+- **THEN** フェッチされなかったスロットの `reset_grants` は前回のまま残る
+
+#### Scenario: 既定の取得先にクエリが付く
+- **WHEN** `USAGE_PROBE_ENDPOINT` を設定せずに probe のスクリプトを調べる
+- **THEN** 既定の取得先は `https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1` である
+
+**`reset_grants` の守備範囲**（この要件の `reset_grants` の抽出と寿命に限る）
+- 入力の出どころ: 本物の Anthropic usage API の応答（認証済みの自分のアカウント）と、テスト用の応答ファイルだけ。外部の第三者が入力を作る経路は無い
+- 拾う誤り: 型の崩れ（`cedar_ember` が dict でない、`grants` が配列でない、要素がオブジェクトでない）と、欄の条件を満たさない形。これらは欄を出さない（要素の一部だけが不正なら写せる束だけを出す）
+- 意図的に通す入力: 未知のキー（捨てる）、`resets_left` / `ends_at` / `paused` の欠落や null や意味の合わない値（そのまま写す。値の意味の検証と数え方は読み手が持つ）、`paused` が true の束と `resets_left` が 0 の束（選り分けない）
+- 未知の穴を塞ぎ切ることをこの要件の完了条件にしない。非公開の呼び方で予告なく形が変わりうるので、想定外の形は「欄を出さない」に倒し、使用率の取得を止めない
+
 ### Requirement: SessionStart で残量モードを自動導出注入
-`scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、active スロットの実効値（`usage-session-records` capability の「記録と snapshot から実効値を求める」。active スロットは `usage-account-registry` の active スロットの判定規則で起動環境から求める）から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。snapshot のトップレベルのミラーを導出に使ってはならない（MUST NOT）。導出の式と優先順位（明示 env > データ無し > 90% 超 > 週経過との比較）は変えない。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。
+`scripts/session-tripwires.sh` は SessionStart 時に usage-probe を best-effort 実行し、active スロットの実効値（`usage-session-records` capability の「記録と snapshot から実効値を求める」。active スロットは `usage-account-registry` の active スロットの判定規則で起動環境から求める）から導出した残量モードと Fable 残量% を additionalContext に含めなければならない（SHALL）。snapshot のトップレベルのミラーを導出に使ってはならない（MUST NOT）。導出の式と優先順位（明示 env > データ無し > 90% 超 > 週経過との比較）は変えず、式は `scripts/usage_view.py` の 1 か所にだけ置く（SHALL）。`session-tripwires.sh` は閾値の比較も明示 env の優先も自分で行わず、モード・出どころ（明示 env / 既定（usage データなし）/ 自動導出）・表示する値を `usage_view.py` から得なければならない（MUST）。`usage_view.py` は `CLAUDE_PLUGIN_ROOT` ではなく `session-tripwires.sh` 自身のディレクトリから読み込む。各モードの効果の文は `skills/develop/references/decision-criteria.md` の残量モードと共有枠モードの優先順位の表と `model-tier-resolution` の要件「残量モードを格に適用する」に一致させる（SHALL）。導出モードのブロックはトリップワイヤー節と併せて注入する。明示 env `FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` があるときはそれを優先し、導出値ではなく明示値を提示する（未知の値もその値のまま提示し、効果の文は安全側の扱いを示す）。例外として、`usage_view.py` を読み込めないとき（ファイルが無い・壊れている）は明示 env も読まず、`conserve` / `ok` を出どころ `既定（usage_view.py を読めない）` として提示し、hook を止めない（SHALL）。明示 env の優先の判定も式の一部で、`session-tripwires.sh` に写しを残さないためである。probe やパースが失敗しても、トリップワイヤー注入自体は従来どおり行われなければならない（SHALL）(probe 失敗が hook 全体を壊さない)。
+
+**守備範囲（残量モードの導出）**: ①入力の出どころは、明示 env（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE`）と、`usage_view.py` が求める active スロットの実効値（`usage-session-records` の規則でセッション記録と snapshot から求めた値）だけである。snapshot やセッション記録を直接読む経路を足さない。②拾いたい誤りは、式が 2 か所にあって注入されるモードと `codex-develop.py request` が格に当てるモードがずれること、別スロットや snapshot のトップレベルのミラーの値でモードを決めること、欠測を 0% と読んで `abundant` / `ok` に倒すことである。③通してよい入力: 未知の明示値（提示はその値のまま、正規化後のモードは `conserve` / `throttled`）、空白だけの明示値（未設定と同じ）、Fable の欠測（明示 env が無く、active スロットの実効値の `fable_weekly_pct` が求まらなければ `conserve`。値があっても週経過が求まらなければ `abundant` にしない）、共有枠の欠測（明示 env が無く、セッション記録と snapshot の双方から週次の実効値が求まらなければ `ok`）、`usage_view.py` を読み込めない場合（明示 env も読まず `conserve` / `ok`）。値の妥当性（数値か・0..100 か・リセットを跨いだか）の検査は `usage-session-records` の規則に任せ、ここで重ねない。④この導出で入力の穴が見つかるたびに塞ぎ切ることを、この要件の完了条件にしない。
 
 `scripts/agent-model-guard.sh` の fork 拒否判定で使う共有枠モードも、active スロットの実効値から同じ式で導出しなければならない（SHALL）。
 
@@ -252,6 +372,26 @@ probe は `refresh_token` を用いたアクセストークンの更新を行っ
 #### Scenario: 古い snapshot の Fable 値はリセット時刻で読む
 - **WHEN** 2 日前に取得した snapshot の active スロットが Fable 95%・リセット時刻が現在より前である状態で SessionStart スクリプトを実行する
 - **THEN** Fable を 0% として導出し、`exhausted` にならない
+
+#### Scenario: 導出を usage_view.py から得る
+- **WHEN** モードを固定値で返す偽の `usage_view.py` を置いた scripts ディレクトリから `session-tripwires.sh` を実行する
+- **THEN** additionalContext の残量モードと共有枠モードは偽物が返した値になる
+
+#### Scenario: depleted の効果の文は最安を上げない
+- **WHEN** `SHARED_BUDGET_MODE=depleted` で `session-tripwires.sh` を実行する
+- **THEN** `depleted` の効果の文は、最安の役（explore と summarize）はそのままで、それ以外の役は中位（sonnet）が上限・昇格なしと読め、「全役割 sonnet 固定」の語を含まない
+
+#### Scenario: throttled の効果の文は最安を上げない
+- **WHEN** `SHARED_BUDGET_MODE=throttled` で `session-tripwires.sh` を実行する
+- **THEN** `throttled` の効果の文は、上げていない役の既定を中位に落とし上限を上位とし、最安の役はそのままと読める
+
+#### Scenario: 未知の明示値は提示とモードが分かれる
+- **WHEN** `FABLE_BUDGET_MODE=foo`、`SHARED_BUDGET_MODE=bar` で `session-tripwires.sh` を実行する
+- **THEN** additionalContext は `foo`（明示 env）と `bar`（明示 env）を提示し、効果の文はそれぞれ conserve 相当・throttled 相当で扱う旨を示す。同じ env の `budget_modes` は `conserve` と `throttled` を返す
+
+#### Scenario: usage_view.py を読み込めなければ明示 env も読まずに既定を出す
+- **WHEN** `usage_view.py` の無い（または import で例外を出す）scripts ディレクトリから、`FABLE_BUDGET_MODE=exhausted`、`SHARED_BUDGET_MODE=depleted` を設定して `session-tripwires.sh` を実行する
+- **THEN** exit code 0 で、additionalContext は `conserve` と `ok` を出どころ `既定（usage_view.py を読めない）` として提示し、昇格トリップワイヤー節は従来どおり注入される
 
 #### Scenario: fork の共有枠判定もセッション記録を使う
 - **WHEN** snapshot が無く、active スロットの鍵のセッション記録に週次 95% がある状態で、`SHARED_BUDGET_MODE` 未設定のまま `subagent_type: fork` の Agent 呼び出しを agent-model-guard に渡す
@@ -290,9 +430,9 @@ dev-workflow プラグインは `hooks/hooks.json` に SubagentStart のエン�
 - worker と gate-runner: Fable 残量モードと共有枠モード（現在値・出どころ・効果）、途中計測の閾値の現在値
 - reviewer: 途中計測の閾値の現在値だけ（Fable 残量モードと共有枠モードを含めてはならない（MUST NOT））
 
-残量モードの導出は `scripts/session-tripwires.sh` と同じ式・同じ優先順位で行い、式を別の場所に複製してはならない（MUST NOT）。`session-tripwires.sh` は環境変数 `TRIPWIRES_SCOPE=subagent-budget` のとき残量モードのブロックだけを本文のテキストで出し、その範囲では usage-probe を実行しない（SHALL）。`subagent-budget` のときの出力範囲は、`## Fable 残量モード（自動導出）` の見出しから共有枠モードの効果の行までで、親向けの「W を SendMessage で再開する前に `subagent-context.sh` で測る」行・メモリ索引の検知行・昇格トリップワイヤー節を含めてはならない（MUST NOT）。この範囲はテンプレートが無くても出す（SHALL）。`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外の値のときの `session-tripwires.sh` の出力は従来と変えない（SHALL）。
+残量モードの導出は `scripts/session-tripwires.sh` を通して `scripts/usage_view.py` の 1 か所の式で行い、式を別の場所に複製してはならない（MUST NOT）。導出の守備範囲は要件「SessionStart で残量モードを自動導出注入」の段落に従う。`session-tripwires.sh` は環境変数 `TRIPWIRES_SCOPE=subagent-budget` のとき残量モードのブロックだけを本文のテキストで出し、その範囲では usage-probe を実行しない（SHALL）。`subagent-budget` のときの出力範囲は、`## Fable 残量モード（自動導出）` の見出しから共有枠モードの効果の行までで、親向けの「W を SendMessage で再開する前に `subagent-context.sh` で測る」行・メモリ索引の検知行・昇格トリップワイヤー節を含めてはならない（MUST NOT）。この範囲はテンプレートが無くても出す（SHALL）。`TRIPWIRES_SCOPE` が未設定、または `subagent-budget` 以外の値のときの `session-tripwires.sh` の出力の JSON の形は要件「SessionStart hook がトリップワイヤーを常駐注入する」に従い（`hookSpecificOutput.hookEventName` が `SessionStart`、本文は `hookSpecificOutput.additionalContext`）、本文の中身は従来と変えない（SHALL）。`subagent-budget` のときの本文テキストの出力も変えない（SHALL）。
 
-途中計測の行は、hook 実行時の `DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` の実効値（未設定なら `scripts/context-tripwire.sh` と同じ既定値）と、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除されているかを示し、扱いの規則は `skills/develop/references/decision-criteria.md`「コンテキスト上限（サブエージェントの手渡し）」を読むよう案内する（SHALL）。規則の言い換えを本文に書いてはならない（MUST NOT）。
+途中計測の行は、hook 実行時の `DEV_WORKFLOW_CONTEXT_CAP` / `DEV_WORKFLOW_CONTEXT_HARD_CAP` の実効値（未設定なら `scripts/context-tripwire.sh` と同じ既定値）と、`DEV_WORKFLOW_CONTEXT_TRIPWIRE=off` で全解除されているかを示し、扱いの規則は `skills/develop/references/return-declaration.md` を読むよう案内する（SHALL）。規則の言い換えを本文に書いてはならない（MUST NOT）。
 
 照合の守備範囲は、matcher が効かない・手で実行された・別の設定から流用された経路で対象外の役に返さないことまでとする。Agent Teams の teammate 化で `agent_type` が変わる経路、将来の命名変更、SubagentStart hook がそもそも発火しない経路は守らない。実機で `agent_type` が違う形で届くと判明したら照合と matcher をその形に合わせ、それ以外の穴を塞ぎ切ることは完了条件にしない。
 
@@ -300,7 +440,7 @@ python3 が無い・入力が JSON でない・`agent_type` が無い・残量�
 
 #### Scenario: worker の入力に運用情報を返す
 - **WHEN** `{"hook_event_name":"SubagentStart","agent_type":"dev-workflow:worker"}` を stdin に渡してスクリプトを実行する
-- **THEN** stdout は valid JSON で、`hookSpecificOutput.hookEventName` が `SubagentStart`、`hookSpecificOutput.additionalContext` に `FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`・途中計測の閾値の値・`decision-criteria.md` への案内が含まれる
+- **THEN** stdout は valid JSON で、`hookSpecificOutput.hookEventName` が `SubagentStart`、`hookSpecificOutput.additionalContext` に `FABLE_BUDGET_MODE`・`SHARED_BUDGET_MODE`・途中計測の閾値の値・`return-declaration.md` への案内が含まれる
 
 #### Scenario: Explore の入力には何も返さない
 - **WHEN** `{"hook_event_name":"SubagentStart","agent_type":"Explore"}` を stdin に渡してスクリプトを実行する
@@ -331,8 +471,8 @@ python3 が無い・入力が JSON でない・`agent_type` が無い・残量�
 - **THEN** stdout は `## Fable 残量モード` で始まる本文テキストで、`subagent-context.sh` を含まず、usage-probe の実行痕（probe の状態ファイル・snapshot の書き込み）が残らない
 
 #### Scenario: SessionStart の出力は変わらない
-- **WHEN** `TRIPWIRES_SCOPE` を設定せずに `session-tripwires.sh` を実行する
-- **THEN** 出力は従来どおり `additionalContext` に昇格トリップワイヤー節と残量モードのブロックを含む JSON である
+- **WHEN** `TRIPWIRES_SCOPE` を設定せずに、または `subagent-budget` 以外の値（例: `something-else`）にして `session-tripwires.sh` を実行する
+- **THEN** 出力は JSON で、`hookSpecificOutput.hookEventName` が `SessionStart`、`hookSpecificOutput.additionalContext` に昇格トリップワイヤー節と残量モードのブロックを含み、トップレベルに `additionalContext` を持たない
 
 #### Scenario: hooks.json の SubagentStart エントリ
 - **WHEN** `plugins/dev-workflow/hooks/hooks.json` をパースする

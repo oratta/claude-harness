@@ -6,8 +6,9 @@
 #                         TRIPWIRES_SCOPE=subagent-budget の出力）＋途中計測の閾値の現在値
 #   reviewer:             途中計測の閾値の現在値だけ（モデルを選ばないので残量モードは渡さない）
 #
-# 残量モードの導出式は session-tripwires.sh の 1 か所だけに置き、ここに複製しない。
-# 途中計測の扱いの規則は decision-criteria.md「コンテキスト上限（サブエージェントの手渡し）」が
+# 残量モードの導出式は usage_view.py の 1 か所だけにあり（session-tripwires.sh はその結果を出す）、
+# ここに複製しない。
+# 途中計測を受けたときの W と G の扱いと return の 1 行目の書式は return-declaration.md が
 # 正本なので、ここでは hook 実行時の値と案内だけを出し、規則を言い換えない。
 #
 # agent_type は matcher に加えてここでも照合する（matcher が効かない・手で実行された・別の設定から
@@ -23,7 +24,7 @@ ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 payload="$(cat)" || exit 0
 
 # 役を判定する（payload は環境変数や引数に載せず stdin で渡す）
-role="$(printf '%s' "$payload" | python3 -c '
+role="$(printf '%s' "$payload" | python3 -I -c '
 import json, re, sys
 try:
     d = json.load(sys.stdin)
@@ -38,11 +39,12 @@ if isinstance(t, str):
 [ -n "$role" ] || exit 0
 
 budget=""
-if [ "$role" != "reviewer" ] && [ -x "${ROOT}/scripts/session-tripwires.sh" ]; then
+# CLAUDE_PLUGIN_ROOT が空のときは探さない（"${ROOT}/scripts/…" がファイルシステムのルート直下の /scripts/… になる。#847）
+if [ "$role" != "reviewer" ] && [ -n "$ROOT" ] && [ -x "${ROOT}/scripts/session-tripwires.sh" ]; then
   budget="$(TRIPWIRES_SCOPE=subagent-budget "${ROOT}/scripts/session-tripwires.sh" 2>/dev/null)" || budget=""
 fi
 
-BUDGET="$budget" python3 <<'PY' 2>/dev/null || exit 0
+BUDGET="$budget" python3 -I <<'PY' 2>/dev/null || exit 0
 import json, os
 
 def eff(name, default):
@@ -71,8 +73,7 @@ else:
 # サブエージェントは ${CLAUDE_PLUGIN_ROOT} を展開できないので、解決済みのパスで案内する
 root = os.environ.get("CLAUDE_PLUGIN_ROOT") or "${CLAUDE_PLUGIN_ROOT}"
 lines.append("- 通知や強制停止に当たったときの扱いと return の 1 行目の書式の正本は "
-             f"`{root}/skills/develop/references/decision-criteria.md`"
-             "「コンテキスト上限（サブエージェントの手渡し）」")
+             f"`{root}/skills/develop/references/return-declaration.md`")
 
 parts = []
 budget = (os.environ.get("BUDGET") or "").strip()

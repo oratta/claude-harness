@@ -12,6 +12,12 @@
 #   4. 聖域パスに一切触れていない（パスベース判定。機械判定に委ねない）
 #   5. リポ変数 AUTOMERGE_PAUSED が未設定（＝緊急停止されていない）
 #
+#   例外: 聖域に触れて human-merge が付いた PR でも、親の判断の印（parent-merge-approved
+#   ラベルと「親のマージ判断: 可」「親が見た HEAD: <今の HEAD>」の行を持つ OWNER・MEMBER・
+#   COLLABORATOR のコメント）があり、ほかの見送りラベルが無く、マージ条件そのもののパス
+#   （MERGE_CONDITION）に触れていなければ、human-merge を見送りの理由に数えない。
+#   1〜3 と 5 はそのまま効く（下の parent-merge-judgment）。
+#
 # 設計上の要点（変更前に必ず読むこと）:
 #
 # - **聖域はこのファイル自身を含む**。判定ルールをエージェントが書き換えて main に
@@ -106,10 +112,10 @@ concurrency:
 jobs:
   merge-eligible:
     name: merge eligible PRs
-    # labeled 即応は「合格ラベルが付いた」ときだけ走らせる（他ラベルの付与では回さない。
+    # labeled 即応は「合格ラベル」か「親の判断の印」が付いたときだけ走らせる（他ラベルの付与では回さない。
     # 式コンテキスト内の比較でありシェルへは渡らない。仮にすり抜けても本体スクリプトは
     # ラベル・CI・聖域を全部検証し直すので、この if は節約であって防御線ではない）
-    if: github.event_name != 'pull_request_target' || github.event.label.name == 'agent-review:passed'
+    if: github.event_name != 'pull_request_target' || github.event.label.name == 'agent-review:passed' || github.event.label.name == 'parent-merge-approved'
     runs-on: ubuntu-latest
     steps:
       - name: Merge eligible PRs
@@ -162,6 +168,15 @@ jobs:
           SACRED='^\.github/workflows/|^\.claude/|(^|/)CLAUDE\.md$|^docs/agent-loop[^/]*(\.md$|/)'
           # <<< sacred-paths
 
+          # ── マージ条件そのもののパス（SACRED の部分集合）──
+          # ここに一致するパスに触れた PR は、親の判断の印があっても human-merge を外さない（主がマージする）。
+          # 【展開時に任意で差し替え】既定の ^\.github/workflows/ のままでも動く。リポ固有のマージ条件
+          # （合格ラベルを発行するゲートの定義など）があれば足す。足したら
+          # scripts/test-auto-merge-workflow.sh の MERGE_CONDITION の must-match リストにも代表パスを足すこと。
+          # >>> merge-condition-paths
+          MERGE_CONDITION='^\.github/workflows/'
+          # <<< merge-condition-paths
+
           # ── ci.yml の必須チェック（ジョブ名と完全一致させること）──
           # 【展開時に差し替え】展開先リポの ci.yml のジョブ name: と完全一致させる。
           # ズレは scripts/test-auto-merge-workflow.sh が CI で検知する。
@@ -184,6 +199,54 @@ jobs:
           gh label create "human-merge" --repo "$REPO" \
             --description "聖域パス（憲法・ワークフロー等）に触れるため auto-merge 対象外。人間がマージする" \
             --color D93F0B >/dev/null 2>&1 || true
+
+          # 親の判断の印で外す human-merge のラベルも無ければ作る（印を付ける側が作り忘れても止まらない）
+          gh label create "parent-merge-approved" --repo "$REPO" \
+            --description "親が合理性と危険の低さを見てマージしてよいと判断した印。聖域接触だけで付いた human-merge を外す（docs/auto-merge.md）" \
+            --color 0E8A16 >/dev/null 2>&1 || true
+
+          # ── 親の判断の印（聖域接触だけで付いた human-merge を見送りの理由から外す入口）──
+          # 引数: $1=PR 番号 $2=判定時の HEAD SHA $3=ラベル（改行区切り） $4=変更ファイル（rename 元を含む。改行区切り）
+          # 結果: PARENT_OK（true/false）と PARENT_COMMENT_URL。次の 4 つをすべて満たすときだけ true:
+          #   1. parent-merge-approved ラベルがあり、OWNER・MEMBER・COLLABORATOR のコメントで 1 行目が
+          #      ちょうど「親のマージ判断: 可」、ある行がちょうど「親が見た HEAD: <判定時の HEAD>」のものがある
+          #   2. human-merge が付いていて、ほかの見送りラベルが 1 つも無い
+          #   3. 変更ファイルのどれかが SACRED に一致する（手で付けた留保は外さない）
+          #   4. 変更ファイルのどれも MERGE_CONDITION に一致しない
+          # 取得の失敗・HEAD の形式違反はすべて false（マージしない側に倒す）。キーを「対象 HEAD:」に
+          # しないのは、合格の HEAD 束縛（grep -F）を親のコメントが満たさないようにするため。
+          # >>> parent-merge-judgment
+          parent_merge_judgment() {
+            PARENT_OK=false
+            PARENT_COMMENT_URL=""
+            local pj_n="$1" pj_head="$2" pj_labels="$3" pj_files="$4" pj_l pj_json pj_url
+            printf '%s\n' "$pj_head" | grep -qxE '[0-9a-f]{40}' || return 0
+            printf '%s\n' "$pj_labels" | grep -qx 'parent-merge-approved' || return 0
+            printf '%s\n' "$pj_labels" | grep -qx 'human-merge' || return 0
+            for pj_l in $BLOCKING_LABELS; do
+              [ "$pj_l" = "human-merge" ] && continue
+              if printf '%s\n' "$pj_labels" | grep -qx "$pj_l"; then
+                return 0
+              fi
+            done
+            printf '%s\n' "$pj_files" | grep -qE "$SACRED" || return 0
+            if printf '%s\n' "$pj_files" | grep -qE "$MERGE_CONDITION"; then
+              return 0
+            fi
+            pj_json=$(gh api "repos/$REPO/issues/$pj_n/comments?per_page=100" --paginate --slurp 2>/dev/null) || { echo "親の判断の印: コメントの取得に失敗（印は無いものとして扱う）"; return 0; }
+            pj_url=$(printf '%s' "$pj_json" | jq -r --arg head "$pj_head" '
+              (add // [])
+              | map(select(
+                  (.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")
+                  and ((.body // "") | gsub("\r"; "") | split("\n")
+                       | (.[0] == "親のマージ判断: 可") and any(.[]; . == ("親が見た HEAD: " + $head))))
+                )
+              | last | .html_url // empty' 2>/dev/null) || { echo "親の判断の印: コメントの jq の評価に失敗（印は無いものとして扱う）"; return 0; }
+            [ -n "$pj_url" ] || return 0
+            PARENT_COMMENT_URL="$pj_url"
+            PARENT_OK=true
+          }
+          # <<< parent-merge-judgment
 
           if [ -n "$ONLY_PR" ]; then
             # 手入力は数値のみ許可（シェル/URL への持ち込み前に形式を固定する）
@@ -257,10 +320,30 @@ jobs:
             fi
             # <<< passed-head-binding
 
+            # 変更ファイル（rename 元を含む）は見送りラベルの判定より前に取る。親の判断の印の
+            # 判定（聖域接触とマージ条件のパス）と、下の聖域判定の両方がこの一覧を使う。
+            # **rename / delete 迂回の封鎖**: filename（変更後）だけを見ると、聖域ファイルを
+            # 非聖域パスへ rename する PR が素通りする（新パスは聖域に一致しないため）。
+            # previous_filename（rename 元）も列挙して新旧**両方**のパスに聖域判定を当てる。
+            # delete は filename が消えたパスのまま残るので filename 側で捕まる。
+            # >>> sacred-paths-jq
+            FILES_JQ='.[] | .filename, (.previous_filename // empty)'
+            # <<< sacred-paths-jq
+            DIFF_FILES=$(gh api "repos/$REPO/pulls/$N/files?per_page=100" --paginate --jq "$FILES_JQ")
+
+            parent_merge_judgment "$N" "$HEAD_SHA" "$LABELS" "$DIFF_FILES"
+            PARENT_USED=false
+            if [ "$PARENT_OK" = "true" ]; then
+              echo "親の判断の印あり（${PARENT_COMMENT_URL}）: 聖域接触で付いた human-merge を見送りの理由から外す"
+            fi
+
             BLOCKED=""
             while IFS= read -r L; do
               L=$(printf '%s' "$L" | sed 's/^ *//')
               [ -n "$L" ] || continue
+              if [ "$L" = "human-merge" ] && [ "$PARENT_OK" = "true" ]; then
+                continue
+              fi
               if printf '%s\n' "$LABELS" | grep -qx "$L"; then
                 BLOCKED="$L"
                 break
@@ -273,26 +356,25 @@ jobs:
               continue
             fi
 
-            # ── 聖域判定（ラベルより先に「触れたか」を見る。停止変数と無関係に必ず通る経路）──
-            # **rename / delete 迂回の封鎖**: filename（変更後）だけを見ると、聖域ファイルを
-            # 非聖域パスへ rename する PR が素通りする（新パスは聖域に一致しないため）。
-            # previous_filename（rename 元）も列挙して新旧**両方**のパスに聖域判定を当てる。
-            # delete は filename が消えたパスのまま残るので filename 側で捕まる。
-            # >>> sacred-paths-jq
-            FILES_JQ='.[] | .filename, (.previous_filename // empty)'
-            # <<< sacred-paths-jq
-            DIFF_FILES=$(gh api "repos/$REPO/pulls/$N/files?per_page=100" --paginate --jq "$FILES_JQ")
+            # ── 聖域判定（停止変数と無関係に必ず通る経路。変更ファイルは上で取った一覧）──
             TOUCHED_SACRED=$(printf '%s\n' "$DIFF_FILES" | grep -E "$SACRED" || true)
             if [ -n "$TOUCHED_SACRED" ]; then
               SACRED_LIST=$(printf '%s' "$TOUCHED_SACRED" | tr '\n' ' ')
-              if [ "$DRY_RUN" = "true" ]; then
-                echo "[dry-run] 聖域接触のため human-merge 対象: $SACRED_LIST"
+              if [ "$PARENT_OK" = "true" ]; then
+                # 親の判断の印で進む（マージ条件そのもののパスには触れていないことを確かめ済み）。
+                # CI green・マージ直前の取り直し・SHA ピンはこのあと同じに効く
+                PARENT_USED=true
+                echo "聖域接触（${SACRED_LIST}）だが親の判断の印があるため次の判定へ進む（印: ${PARENT_COMMENT_URL}）"
+              else
+                if [ "$DRY_RUN" = "true" ]; then
+                  echo "[dry-run] 聖域接触のため human-merge 対象: $SACRED_LIST"
+                  continue
+                fi
+                gh api "repos/$REPO/issues/$N/labels" -f "labels[]=human-merge" >/dev/null
+                gh pr comment "$N" --repo "$REPO" --body "🔒 **auto-merge 対象外（聖域パス接触）**: 憲法・判定ルール側のファイルに変更が含まれるため、人間のマージ判断が必要です（\`human-merge\` を付与）。対象: ${SACRED_LIST}（条件の一覧: docs/auto-merge.md）"
+                echo "聖域接触: human-merge を付与してスキップ（${SACRED_LIST}）"
                 continue
               fi
-              gh api "repos/$REPO/issues/$N/labels" -f "labels[]=human-merge" >/dev/null
-              gh pr comment "$N" --repo "$REPO" --body "🔒 **auto-merge 対象外（聖域パス接触）**: 憲法・判定ルール側のファイルに変更が含まれるため、人間のマージ判断が必要です（\`human-merge\` を付与）。対象: ${SACRED_LIST}（条件の一覧: docs/auto-merge.md）"
-              echo "聖域接触: human-merge を付与してスキップ（${SACRED_LIST}）"
-              continue
             fi
 
             # ── CI green 判定 ──
@@ -321,7 +403,11 @@ jobs:
             fi
 
             if [ "$DRY_RUN" = "true" ]; then
-              echo "[dry-run] PR #$N は全条件を満たしています（agent-review:passed / CI green / 聖域非接触）。実マージはしません"
+              if [ "$PARENT_USED" = "true" ]; then
+                echo "[dry-run] PR #$N は全条件を満たしています（agent-review:passed / CI green / 聖域接触だが親の判断の印あり）。実マージはしません"
+              else
+                echo "[dry-run] PR #$N は全条件を満たしています（agent-review:passed / CI green / 聖域非接触）。実マージはしません"
+              fi
               continue
             fi
 
@@ -367,10 +453,20 @@ jobs:
               echo "マージ直前に agent-review:passed が消えていた: スキップ"
               continue
             fi
+            # 親の判断の印も取り直したラベルとコメントで判定し直す。印のラベルが外された・
+            # ほかの見送りラベルが足された・human-merge が手で外された、のどれでも止まる
+            parent_merge_judgment "$N" "$HEAD_SHA" "$LABELS_NOW" "$DIFF_FILES"
+            if [ "$PARENT_USED" = "true" ] && [ "$PARENT_OK" != "true" ]; then
+              echo "マージ直前に親の判断の印の条件が崩れていた（聖域接触の PR）: スキップ"
+              continue
+            fi
             RECHECK_BLOCKED=""
             while IFS= read -r L; do
               L=$(printf '%s' "$L" | sed 's/^ *//')
               [ -n "$L" ] || continue
+              if [ "$L" = "human-merge" ] && [ "$PARENT_OK" = "true" ]; then
+                continue
+              fi
               if printf '%s\n' "$LABELS_NOW" | grep -qx "$L"; then
                 RECHECK_BLOCKED="$L"
                 break
@@ -399,7 +495,11 @@ jobs:
             MERGE_ERR=$(GH_TOKEN="$MERGE_TOKEN" gh api -X PUT "repos/$REPO/pulls/$N/merge" \
                  -f sha="$HEAD_SHA" -f merge_method=squash 2>&1 >/dev/null) || MERGE_OK=false
             if [ "$MERGE_OK" = "true" ]; then
-              gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: \`agent-review:passed\`（対象 HEAD 照合済み） / 必須チェック green / 聖域パス非接触（rename 元パス含む） / \`AUTOMERGE_PAUSED\` 未設定。検証してマージした SHA: \`${HEAD_SHA}\`。判定ログ: ${RUN_URL}（条件と巻き戻し手順: docs/auto-merge.md）"
+              if [ "$PARENT_USED" = "true" ]; then
+                gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged（親の判断）** — 根拠: \`agent-review:passed\`（対象 HEAD 照合済み） / 必須チェック green / 聖域パスに触れるが、親の判断の印により \`human-merge\` を外した（マージ条件そのもののパスには非接触。印: ${PARENT_COMMENT_URL}） / \`AUTOMERGE_PAUSED\` 未設定。検証してマージした SHA: \`${HEAD_SHA}\`。判定ログ: ${RUN_URL}（条件と巻き戻し手順: docs/auto-merge.md）"
+              else
+                gh pr comment "$N" --repo "$REPO" --body "🤖 **auto-merged** — 根拠: \`agent-review:passed\`（対象 HEAD 照合済み） / 必須チェック green / 聖域パス非接触（rename 元パス含む） / \`AUTOMERGE_PAUSED\` 未設定。検証してマージした SHA: \`${HEAD_SHA}\`。判定ログ: ${RUN_URL}（条件と巻き戻し手順: docs/auto-merge.md）"
+              fi
               echo "マージ完了（sha=${HEAD_SHA}）"
             else
               # gh が出した理由文はログにそのまま残す。変更前は stderr が素通しでログに出ており、

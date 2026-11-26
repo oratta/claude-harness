@@ -48,6 +48,7 @@ ${CLAUDE_PLUGIN_ROOT}/templates/workflows/
 # プラグインの一般的な配置場所を探索
 INFRA_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; INFRA_NG=1; fi
 for dir in \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/infra/templates/workflows \
   ~/.claude/plugins/marketplaces/*/plugins/infra/templates/workflows \
   ~/.claude/plugins/installed/*/infra/templates/workflows; do
   [ -d "$dir" ] && echo "$dir" && break

@@ -21,7 +21,7 @@ Claudeの会話で実行する:
 
 `--executor codex` は後方互換の別名として上の形式に追加できる。profile の Claude entry は `account=current`、model は `haiku|sonnet|opus|fable` のみとし、`fable` は `decider` role だけに指定できる。
 
-profile/旧 account/model を省略すると、各工程の開始時に Codex は週次使用量の実効値、Claude はセッション記録と snapshot の実効値（どちらも、リセット前の値は取得からの経過時間によらず下限として使い、リセットを過ぎた窓は 0% で読む）から `週経過率 - 使用率` を比較する。両方に余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。
+profile/旧 account/model を省略すると、各工程の開始時に Codex は週次使用量の実効値、Claude はセッション記録と snapshot の実効値（どちらも、リセット前の値は取得からの経過時間によらず下限として使い、リセットを過ぎた窓は 0% で読む）から `週経過率 - 使用率` を比較する。この値は自分で数えず、headroom（`scripts/headroom.py`）の行の `margin` を使う（取得時刻が 60 秒を超えて未来の値は欠測）。Codex の余裕が基準（環境変数 `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT`、既定 10 ポイント。`~/.claude/settings.json` の `env` で変える）以上なら Claude の余裕を問わず全役割が Codex の `codex-standard`、Codex が 0 以上・基準未満で Claude にも余裕があれば Claude が書き Codex が検査する `claude-write-codex-review`、Codex だけに余裕があれば `codex-standard`、それ以外は Claude 既定構成になる。基準が数でない・負・100 を超えるときは既定に倒さず exit 2 で止まる。工程途中では切り替えず、次工程で再評価する。標準出力の selection evidence（構成、reason、margin、fetched_at、代表 Codex account）は開始コメントと dispatch 記録へ残す。明示指定時はこの読込を行わない。`accounts.json` のトップレベルに `"codex": {"enabled": false}` を書いて Codex をオフにしている間は、自動選択は Codex の使用量を読まずに Claude 既定構成（`claude-default`、reason `codex-off`）を返し、Codex に投げる明示指定（Codex の role を含む `--profile` と旧形式の `--account`/`--model`）は依頼ファイルを作らず exit 2 で拒否する（黙って Claude に差し替えない）。
 
 Claudeが既存developの進め方でworktree/記録先を準備し、仕様化判断から進める。仕様不要なら理由を記録して実装へ、必要なら仕様と独立仕様レビューを経て実装/テスト・PR・レビュー/ゲートへ進む。profile で実行先を選んでもこの判断と工程は変わらない。差戻しも該当 role の実行先へ委譲する。burnを有効化する必要はない。
 
@@ -30,23 +30,25 @@ Claudeが既存developの進め方でworktree/記録先を準備し、仕様化�
 本体は委譲のたびに次の3手順を回す。transport の永続状態は作らず、継続状態は記録先と worktree に置く。
 
 1. **指示をファイルに書く。** 担当工程に限定した指示（依頼・完了条件・記録先URL・対象artifact・固定HEAD）をUTF-8ファイルに書く。秘密情報は入れない。
-2. **前景コマンドを背景実行で起動する。** `request` で役割別のexecutor/account/model/effortとCODEX_HOMEを解決した依頼ファイルを作り、そのファイルを渡して `run` をBashツールの背景実行で起こす。
+2. **前景コマンドを背景実行で起動する。** `request` に事前分類・設計判断・失敗・自動実行かどうかを渡し、役割別のexecutor/account/model/effortとCODEX_HOMEを解決した依頼ファイルを作り、そのファイルを渡して `run` をBashツールの背景実行で起こす。
 3. **完了通知で結果を読む。** 標準出力の1行JSONを読む。成功はexit 0、失敗はexit 2。
 
 ```sh
 python3 <plugin>/scripts/codex-develop.py request --phase spec --input /absolute/request.txt \
   --cwd /absolute/target-worktree --profile hybrid-standard [--profile-file /absolute/profiles.json] \
-  --account-home current=/absolute/path/to/codex-profile --out /absolute/private/request.json
+  --account-home current=/absolute/path/to/codex-profile \
+  [--pre-class sacred|merge|contract|billing]... [--design-judgment] \
+  [--failure first|executor|judgment] [--unmanned] --out /absolute/private/request.json
 python3 <plugin>/scripts/codex-worker.py run --request /absolute/private/request.json
 ```
 
-`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。model は系統名（worker が呼ぶ直前に model/list の最新版へ解決する）か完全なモデル ID のどちらでも書ける。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・選択した role/account/CODEX_HOME・要求された model・effort と selection evidence を返す（model は系統名ならその値のまま返り、完全 ID への解決は worker が呼ぶ直前に行う）。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
+`--profile NAME` の代わりに旧形式の `--account NAME --model MODEL` も渡せる（明示形式どうしはどちらか一方だけ。併用・旧形式の片方欠落は拒否する）。model は系統名（worker が呼ぶ直前に model/list の最新版へ解決する）か完全なモデル ID のどちらでも書ける。どちらも無い場合は自動選択になる。旧形式は role 別の effort を持たない。`request.txt` は担当工程の指示。`--phase` は役割指示を選ぶラベルで、本体は `references/codex-develop.md` の表から選ぶ。`--pre-class`（繰り返し可。順に聖域パス・マージ権限・層間契約・課金/法務）・`--design-judgment`・`--failure`・`--unmanned` は格の入力で、当たるものだけ渡す。旧形式では受けて無視する。`request` は標準出力の1行JSONに書き出した依頼ファイルのパス・request_id・選択した role/account/CODEX_HOME・effort・selection evidence に加えて、`requested_tier`・`tier`・`tier_reason`・`tier_cap`・`executed_tier`・`requested_model`・`model`・`budget_modes` を返す（model は系統名ならその値のまま返り、完全 ID への解決は worker が呼ぶ直前に行う。旧形式は `requested_model` と `model` が指定された値で、ほかの格の欄は null）。Claude role は返った `model` で Agent を起動し、再開の前は同じ phase と入力で `request` を呼び直して `tier` だけを見る。依頼ファイルには指示文と実行先が入るため私有ディレクトリに置く。
 
-`run` の結果JSONは `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind`。実効model/effortやIDが未観測ならnullであり、成功値を推測しない。完了は実行terminalであって品質承認ではなく、`completed` でも `error_kind` が非空なら実行成功として扱わない。review verdictと投稿を確認するのはClaude側。コマンド失敗はそこで停止し、別providerへfallbackしない。
+`run` の結果JSONは `text` / `status` / `usage` / `execution` / `thread_id` / `turn_id` / `error_kind` / `started_at` / `ended_at`（実行の開始と終了の時刻。UTC の ISO8601・秒まで・末尾 `Z` で、失敗した実行でもnullにならない）。実効model/effortやIDが未観測ならnullであり、成功値を推測しない。完了は実行terminalであって品質承認ではなく、`completed` でも `error_kind` が非空なら実行成功として扱わない。review verdictと投稿を確認するのはClaude側。コマンド失敗はそこで停止し、別providerへfallbackしない。
 
 `run` は呼び出し元のプロセス連鎖が切れれば自分も終わり、SIGTERM / SIGINT でも止まる。途中で切れた委譲を後から照会・復旧する手段は無い。同じ工程をやり直すときは、記録先と worktree を確認して3手順を最初から繰り返す。同時実行の枠管理も作業ディレクトリの排他も行わない。同じworktreeへ2本同時に投げないのは本体の責任である。
 
-外部profileはversion 1の`profiles.<name>.roles`に全canonical roleを持ち、各entryでexecutor/account/model/effortを指定する。profileと旧`--account/--model`は併用不可。profileが指すaccount名が `--account-home` / `--account-home-file` の対応表に無ければ、依頼ファイルを作らずに拒否し、既定や別のCODEX_HOMEへ倒さない。workerは静的検証と`model/list`広告値による開始前検証を行う。
+外部profileは形式版2の`profiles.<name>.roles`に全canonical roleを持ち、各entryでexecutor/account/effortと任意の`tier_cap`を指定する。entryに`model`は書けず、形式版1は拒否する（書き換え方と例は`references/codex-develop-explicit.md`）。profileと旧`--account/--model`は併用不可。profileが指すaccount名が `--account-home` / `--account-home-file` の対応表に無ければ、依頼ファイルを作らずに拒否し、既定や別のCODEX_HOMEへ倒さない。workerは静的検証と`model/list`広告値による開始前検証を行う。
 
 初版は全工程fresh thread。read-only reviewerは投稿を本体に返す。実モデルによる一件完走は統合検証の証拠を参照し、fake testsだけで実運用検証済みとは扱わない。
 

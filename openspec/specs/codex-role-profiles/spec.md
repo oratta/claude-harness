@@ -2,32 +2,42 @@
 
 ## Purpose
 TBD - created by archiving change codex-develop-role-profiles. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: 名前付き設定セットを共通入口で選ぶ
-システムは `/develop --profile NAME [--profile-file PATH]` と対応する develop CLI の role resolver を提供しなければならない（MUST）。組み込み名は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review` とし、各 entry は executor/account/model/effort を持つ。形式版1の JSON は design の厳密な形式を満たし、全 canonical role を網羅しなければならない（MUST）。各 role の executor は `codex` または `claude` とし、同じ profile 内で混在できなければならない（MUST）。profile と旧 account/model の併用を拒否しなければならない（MUST）。組み込み profile の Codex entry の model は、モデル ID ではなく系統名（`astra` / `sol` / `luna`）で書かなければならない（MUST）。
+システムは `/develop --profile NAME [--profile-file PATH]` と対応する develop CLI の role resolver を提供しなければならない（MUST）。組み込み名は `codex-standard`、`codex-economy`、`hybrid-standard`、`claude-write-codex-review`、`claude-default` とし、各 entry は executor/account/effort と任意の `tier_cap` を持ち、model を持ってはならない（MUST NOT）。形式版 2 の JSON は design の厳密な形式を満たし、全 canonical role を網羅しなければならない（MUST）。形式版 1 の profile は組み込み・外部とも拒否しなければならない（MUST）。各 role の executor は `codex` または `claude` とし、同じ profile 内で混在できなければならない（MUST）。profile と旧 account/model の併用を拒否しなければならない（MUST）。resolver の model は `model-tier-resolution` の格と対応表から決めなければならない（MUST）。
 
 #### Scenario: 二つの Codex 組み込みセットを解決する
-- **WHEN** `codex-standard` または `codex-economy` を解決する
+- **WHEN** `FABLE_BUDGET_MODE=conserve`、`SHARED_BUDGET_MODE=ok` で `codex-standard` または `codex-economy` を入力なしで解決する
 - **THEN** spec-write は順に sol/high または luna/medium、spec-review/impl-review/review は sol/high、decider は astra/high、implement は sol/medium または luna/medium、explore/summarize は luna/low に解決する。model の値は系統名そのもの（`sol` / `luna` / `astra`）で、全 entry は executor=codex、account=current となる
 
 #### Scenario: 既存の混在セットを役割ごとに解決する
-- **WHEN** `hybrid-standard` で書く役、独立レビュー役、decider、補助役を順に解決する
-- **THEN** 各 role は既存 profile に記録された executor/account/model/effort をそのまま返し、Codex が書き Claude が検査する向きを維持する。Codex role の model は系統名で返る
+- **WHEN** `FABLE_BUDGET_MODE=conserve`、`SHARED_BUDGET_MODE=ok` で `hybrid-standard` の書く役、独立レビュー役、decider、補助役を順に入力なしで解決する
+- **THEN** 順に codex/sol、claude/opus、claude/fable、codex/luna に解決し、Codex が書き Claude が検査する向きを維持する。Codex role の model は系統名で返る
 
 #### Scenario: Claude が書き Codex が検査する組み込みセットを解決する
-- **WHEN** `claude-write-codex-review` を解決する
+- **WHEN** `FABLE_BUDGET_MODE=conserve`、`SHARED_BUDGET_MODE=ok` で `claude-write-codex-review` を入力なしで解決する
 - **THEN** spec-write/implement は claude/current/sonnet/medium、explore/summarize は claude/current/haiku/low、spec-review/impl-review/review は codex/current/sol/high、decider は codex/current/astra/high となる
 
+#### Scenario: claude-default を組み込みセットとして解決する
+- **WHEN** `--profile claude-default` を account-home なしで入力なしのまま解決する
+- **THEN** 全 role が executor=claude、account=current で、model は自動選択の Claude 既定構成と同じ値になる
+
+#### Scenario: 節約の構成は格の上限で表す
+- **WHEN** 組み込み profile の `tier_cap` を読む
+- **THEN** `codex-economy` の spec-write と implement だけが `tier_cap: 最安` を持つ
+
 #### Scenario: 組み込み profile にモデル ID が書かれていない
-- **WHEN** `git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/codex-role-profiles.json` を実行する
-- **THEN** 0 件である
+- **WHEN** 組み込み profile の全 entry を走査し、`git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/codex-role-profiles.json` を実行する
+- **THEN** どの entry にも `model` キーが無く、grep は 0 件である
 
 #### Scenario: 役割ごとに登録 Codex account を選ぶ
-- **WHEN** version=1 の外部 profile-file の Codex 役割に異なる登録 account を指定して解決する
+- **WHEN** version=2 の外部 profile-file の Codex 役割に異なる登録 account を指定して解決する
 - **THEN** 各 entry の account を保存し、外部ファイルを組み込みと merge せず、各 Codex 委譲は当該 entry の account だけを使う
 
 #### Scenario: 曖昧または不完全な指定を拒否する
-- **WHEN** profile と account/model のいずれかを併用する、profile-file のみ指定する、未知版/名前/キー/役割・重複キー・欠落役割・空値・未登録 Codex account・`codex`/`claude` 以外の executor がある
+- **WHEN** profile と account/model のいずれかを併用する、profile-file のみ指定する、未知版/version 1/名前/キー/役割・重複キー・欠落役割・空値・`model` キー・未定義の `tier_cap`・未登録 Codex account・`codex`/`claude` 以外の executor がある
 - **THEN** resolver は失敗し、実行可能な request/run/job を作らず、既定値や別 account に置換しない
 
 ### Requirement: 解決済み設定と版を init で固定する
@@ -83,65 +93,112 @@ profile dispatch は pending_execution の role/executor/account/model/effort �
 - **THEN** worker の開始前拒否/両RPC、develop の工程不変/pending固定/旧retry/継続v1-v2を fixture で検証し、Python 回帰はリポジトリ直下の `tests/python-suites.bats` 経由でファイル名を絞らずに全件検出される
 
 ### Requirement: executor ごとの role 設定を検証する
-Version 1 profile の検証は executor を discriminator として行わなければならない（MUST）。`codex` entry は登録済み account を要求し、model/effort を非空文字列として保持する。`claude` entry は account=`current` と model=`haiku|sonnet|opus|fable` を要求し、`fable` は role=`decider` にだけ許可しなければならない（MUST）。Claude entry の effort は必須の非空文字列として解決結果に保持するが Agent 呼び出しへ渡してはならない（MUST NOT）。
+形式版 2 の profile の検証は executor を discriminator として行わなければならない（MUST）。`codex` entry は登録済み account と非空の effort を要求する。`claude` entry は account=`current` と非空の effort を要求しなければならない（MUST）。どちらの entry も model を持ってはならず（MUST NOT）、`tier_cap` は持つなら 4 格のどれかでなければならない（MUST）。Claude entry の effort は必須の非空文字列として解決結果に保持するが Agent 呼び出しへ渡してはならない（MUST NOT）。
+
+**守備範囲（profile の検証）**: ①入力の出どころは、組み込みの JSON と利用者の `--profile-file` である。②拾いたい誤りは、`model` キーの残存（形式版 1 の書き換え漏れ）・未定義の `tier_cap`・空値である。③通してよい入力は、`tier_cap` の無い entry と claude entry の `tier_cap` である。account の実在は Codex だけ検査する。④この検査は入力の穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 有効な Claude role を解決する
-- **WHEN** account=current、model=opus、非空 effort の Claude review role を解決する
-- **THEN** executor/account/model/effort を欠落なく返し、Codex model への変換を行わない
+- **WHEN** account=current、非空 effort の Claude review role を解決する
+- **THEN** executor/account/effort と格から引いた model を欠落なく返す
 
 #### Scenario: 残量モードは resolver の要求 tuple を変更しない
-- **WHEN** model=fable の Claude decider role を、`FABLE_BUDGET_MODE=exhausted` または `SHARED_BUDGET_MODE=depleted` の環境で解決する
-- **THEN** resolver は model=fable を含む profile の executor/account/model/effort をそのまま返し、Agent 起動時の上限適用を resolver 内で先取りしない
+- **WHEN** Claude decider role を、`FABLE_BUDGET_MODE=exhausted` または `SHARED_BUDGET_MODE=depleted` の環境で解決する
+- **THEN** 結果の `requested_model` は `fable` のままで、`model` にだけ上限が適用される。結果の `execution_config` の entry と `execution_config_hash` は残量モードで変わらない
 
 #### Scenario: 未対応の Claude account を拒否する
 - **WHEN** Claude role の account が current 以外である
 - **THEN** 別 Claude account の実行は未対応だと分かるエラーで profile 全体を拒否し、欄そのものを欠落扱いにしない
 
 #### Scenario: Claude model と Fable role 制約を検証する
-- **WHEN** Claude tier 以外の model、または decider 以外の role に model=fable を指定する
-- **THEN** profile 全体を拒否し、Agent も Codex worker も起動しない
+- **WHEN** executor を問わず entry が `model` キーを持つ
+- **THEN** profile 全体を拒否し、Agent も Codex worker も起動しない。最上位の格になる role は decider だけなので、`fable` が decider 以外に渡る経路は無い
 
 #### Scenario: 未知 executor を拒否する
 - **WHEN** executor が codex と claude のどちらでもない
 - **THEN** profile 全体を拒否し、別 executor や既定 executor に置換しない
 
 ### Requirement: 明示指定が無い工程では provider の週次余裕から構成を選ぶ
-develop role resolver は、profile と旧 account/model のどちらも明示されない各 canonical phase の開始時に、Claude 起動 account と登録 Codex accounts の週次余裕を評価しなければならない（MUST）。Claude 起動 account は `usage-account-registry` capability の「active スロットの判定規則」で起動環境から解決し、そのスロットの実効値（`usage-session-records` capability の「記録と snapshot から実効値を求める」。セッション記録と schema 2 snapshot の対応する `accounts` entry から求める）を読まなければならない（MUST）。余裕は reset までの週経過率から週次使用率を引いた未丸め値とし、0 以上を余裕あり、負値または欠測を詰まりとして design の選択表を適用しなければならない（MUST）。工程途中の role を切り替えてはならず、次工程で再評価しなければならない（MUST）。
+develop role resolver は、profile と旧 account/model のどちらも明示されない各 canonical phase の開始時に、Claude 起動 account と登録 Codex accounts の週次余裕を評価しなければならない（MUST）。Claude 起動 account は `usage-account-registry` capability の「active スロットの判定規則」で起動環境から解決しなければならない（MUST）。余裕（margin）は `dev-workflow-headroom` capability の行の `margin`（週の経過率 − 週次の使用率の未丸め値）を使わなければならない（MUST）: Claude は `headroom.claude_rows(now, snapshot_path)` の起動 account の行、Codex は `read_codex_usages` が認証の主体を照合した各 account の cache を `headroom.codex_row(account, cache, now)` に渡した行で、行の `status` が `ok` のときだけその `margin` を使い、それ以外は欠測とする。起動 account がオフ（`enabled: false`）のスロットなら行は `off` で、Claude の margin は欠測になる。resolver は経過率と使用率から margin を数え直してはならない（MUST NOT）。工程途中の role を切り替えてはならず、次工程で再評価しなければならない（MUST）。
+
+構成は、最良 Codex margin（代表 Codex account の margin）と Claude margin から次の表で選ばなければならない（MUST）。表は上の行から順に当て、最初に当たった行を使う。「基準」は環境変数 `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT` の値（未設定・空白だけなら既定 10）で、比較はどれも「以上」（基準ちょうど・0 ちょうどは以上の側）とする。欠測は 0 未満と同じ側に置く。
+
+| Codex margin | Claude margin | 構成 | 理由コード |
+|---|---|---|---|
+| Codex オフ（`dev-workflow-develop` の要件「Codex がオフのとき自動選択は Claude だけの構成を返し、明示指定は拒否する」） | 問わない | 全役割 Claude 既定構成（`claude-default`） | `codex-off` |
+| 基準以上 | 問わない | `codex-standard` | `codex-headroom-meets-threshold` |
+| 0 以上・基準未満 | 0 以上 | `claude-write-codex-review` | `both-providers-have-headroom` |
+| 0 以上・基準未満 | 0 未満か欠測 | `codex-standard` | `only-codex-has-headroom` |
+| 0 未満か欠測 | 0 以上 | 全役割 Claude 既定構成 | `only-claude-has-headroom` |
+| 0 未満か欠測 | 0 未満か欠測 | 全役割 Claude 既定構成 | `no-provider-has-headroom` |
+
+`codex-standard` を選んだときは、全 Codex role を代表 Codex account に束縛しなければならない（MUST）。
+
+headroom の設定（`HEADROOM_7D_CAP_PCT`・`HEADROOM_NORMAL_RATE_PCT_PER_DAY`）が不正で行を数えられないとき、または基準の設定 `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT` が不正（数として読めない・有限でない・0 未満・100 超）なときは、自動選択を欠測や既定値で進めてはならず（MUST NOT）、`{"status": "blocked", "error": <設定の名前を含む文>}` を出して終了コード 2 で止まらなければならない（MUST）。基準の設定は自動選択のときだけ読み、明示 profile と旧形式では読んではならない（MUST NOT）。
+
+**守備範囲（設定の不正で止める判定）**: ①入力の出どころは、develop を起動した利用者の環境変数 `HEADROOM_7D_CAP_PCT`・`HEADROOM_NORMAL_RATE_PCT_PER_DAY`・`DEVELOP_ALL_CODEX_MIN_MARGIN_PCT` だけである。headroom の 2 つの値の検査は headroom（`dev-workflow-headroom` の要件「設定は headroom の中で 1 か所から解決する」）が行い、resolver はその例外を `blocked` に写す。基準の値の検査は resolver が同じ範囲（0〜100）で行う。Claude の実効値と Codex の cache を欠測にする判定は要件「snapshot の鮮度と週次窓を fail-safe に検証する」の守備範囲に従う。②拾いたい誤りは、数でない・範囲の外の設定値が「余りが無い」や既定の基準に見えて、構成選択が利用者の意図と違う側へ黙って倒れることである。③通してよい入力は、未設定・空文字（既定値で数える）、0 と 100 ちょうど、小数の値である。基準 0 は「Codex が 0 以上なら常に全役割 Codex」の設定として通す。範囲内の値が利用者の意図と違っても検知しない。④この検査は入力の穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 各工程の自動選択は dev-workflow 同梱の `usage-probe.sh` を有限 timeout で best-effort 実行してから Claude の実効値を読み取らなければならない（MUST）。probe と reader は同じ `USAGE_SNAPSHOT` を使う。probe がフェッチしなかった・失敗した・timeout した場合も、既存の記録と snapshot から求めた実効値で評価しなければならない（MUST）。
 
-#### Scenario: 両 provider に余裕がある
-- **WHEN** Claude margin が +20、最良 Codex margin が +10 で profile を明示せず工程を開始する
-- **THEN** `claude-write-codex-review` を選び、書く役と補助役は Claude、レビュー役は Codex の系統名 sol、decider は astra に解決する
+#### Scenario: Codex の余裕が基準以上なら Claude に余裕があっても全役割 Codex
+- **WHEN** 基準が既定（10）で、Claude margin が +6.9、最良 Codex margin が +65.3 で profile を明示せず工程を開始する
+- **THEN** `codex-standard` を選び、理由コードは `codex-headroom-meets-threshold`（`both-providers-have-headroom` ではない）で、全 Codex role を代表 account に束縛する
 
-#### Scenario: Codex が詰まっている
-- **WHEN** Claude margin が 0 以上で、最良 Codex margin が負値または欠測である
-- **THEN** coordinator の全役割 Claude 既定構成を選ぶ
+#### Scenario: Codex の余裕が基準以上なら Claude が詰まっていても同じ理由
+- **WHEN** 基準が既定で、Claude margin が -5、最良 Codex margin が +65.3 である
+- **THEN** `codex-standard` を選び、理由コードは `codex-headroom-meets-threshold`
+
+#### Scenario: 両 provider に余裕がある
+- **WHEN** 基準が既定で、Claude margin が +6.9、最良 Codex margin が +5 で profile を明示せず工程を開始する
+- **THEN** `claude-write-codex-review` を選び、理由コードは `both-providers-have-headroom`。書く役と補助役は Claude、レビュー役は Codex の系統名 sol、decider は astra に解決する
 
 #### Scenario: Claude だけが詰まっている
-- **WHEN** Claude margin が -5 で最良 Codex margin が +30 である
-- **THEN** `codex-standard` を選び、全 Codex role を代表 account に束縛する
+- **WHEN** 基準が既定で、Claude margin が -5、最良 Codex margin が +5 である
+- **THEN** `codex-standard` を選び、理由コードは `only-codex-has-headroom`。全 Codex role を代表 account に束縛する
+
+#### Scenario: Codex が詰まっている
+- **WHEN** Claude margin が +6.9 で、最良 Codex margin が -1 または欠測である
+- **THEN** coordinator の全役割 Claude 既定構成を選び、理由コードは `only-claude-has-headroom`
 
 #### Scenario: 両 provider が詰まっている
 - **WHEN** Claude と最良 Codex の margin がともに -5、または双方が欠測である
-- **THEN** 既に coordinator が動作している全役割 Claude 既定構成を選ぶ
+- **THEN** 既に coordinator が動作している全役割 Claude 既定構成を選び、理由コードは `no-provider-has-headroom`
+
+#### Scenario: 基準を設定で変える
+- **WHEN** `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT` が `30` で、Claude margin が +6.9、最良 Codex margin が +20 である
+- **THEN** `claude-write-codex-review` を選び、理由コードは `both-providers-have-headroom`
+
+#### Scenario: 基準ちょうどは基準以上の側
+- **WHEN** 基準が既定で、Claude margin が +6.9、最良 Codex margin がちょうど 10 である
+- **THEN** `codex-standard` を選び、理由コードは `codex-headroom-meets-threshold`
+
+#### Scenario: 基準の設定が不正なら止まる
+- **WHEN** `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT` が `abc`、`-1`、`101`、`nan` のいずれかで profile を明示せず工程を開始する
+- **THEN** 構成を選ばず、`status: blocked` と `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT` を含むエラーを出して終了コード 2 で終わる。既定の 10 で選んだ結果を返さない
 
 #### Scenario: 明示 profile は自動選択を迂回する
-- **WHEN** `--profile NAME` を明示して工程を開始する
-- **THEN** Claude/Codex の snapshot を読み取らず、指定 profile の検証済み role tuple を返す
+- **WHEN** `--profile NAME` を明示して工程を開始する（`DEVELOP_ALL_CODEX_MIN_MARGIN_PCT` が不正な値でも同じ）
+- **THEN** 構成の選択には Claude/Codex の snapshot と基準の設定を使わず、usage probe も実行せず、指定 profile の検証済み role 設定を返す。残量モードの導出には `model-tier-resolution` のとおり Claude の実効値を読む
 
 #### Scenario: 起動 account と snapshot.active が食い違う
 - **WHEN** 起動時の `CLAUDE_SECURESTORAGE_CONFIG_DIR` から導出したサービス名がスロット A に一致し、schema 2 snapshot の `active` とトップレベルのミラーがスロット B を指す
-- **THEN** `usage-account-registry` の優先順位に従ってスロット A の実効値から Claude margin を求め、スロット B のトップレベル値へフォールバックしない
+- **THEN** `usage-account-registry` の優先順位に従ってスロット A の headroom の行から Claude margin を取り、スロット B のトップレベル値へフォールバックしない
 
 #### Scenario: 使用量 API が 429 を返し続けてもセッション記録で評価する
 - **WHEN** profile を明示せず canonical phase を開始し、probe が 429 で snapshot を更新できず、起動 account の鍵のセッション記録が 1 時間前の週次 20%（リセット時刻は現在より後）である
-- **THEN** Claude margin をその記録から求め、欠測として扱わない。証跡の `fetched_at` には記録の `observed_at` を載せる
+- **THEN** Claude margin をその記録から数えた headroom の行から取り、欠測として扱わない。証跡の `fetched_at` には記録の `observed_at` を載せる
+
+#### Scenario: margin は headroom の行から取る
+- **WHEN** `headroom.claude_rows` と `headroom.codex_row` が、週の経過率と使用率からは出ない margin（Claude 12.345・Codex 6.789）を持つ `status: ok` の行を返すようにして、基準が既定のまま自動選択する
+- **THEN** 証跡の Claude margin が 12.345、Codex margin が 6.789 になり、`claude-write-codex-review` を選ぶ
+
+#### Scenario: headroom の設定が不正なら止まる
+- **WHEN** `HEADROOM_7D_CAP_PCT` が `abc` で profile を明示せず工程を開始する
+- **THEN** 構成を選ばず、`status: blocked` と `HEADROOM_7D_CAP_PCT` を含むエラーを出して終了コード 2 で終わる
 
 ### Requirement: snapshot の鮮度と週次窓を fail-safe に検証する
-Codex の自動選択は、取得からの経過時間で値を捨ててはならない（MUST NOT）。`fetched_at` が整数で現在以前、週次使用率が有限の 0..100、reset が整数の snapshot について、Claude 側と同じ実効値の規則で読まなければならない（MUST）。リセット時刻を過ぎた窓は使用率 0%・リセット時刻は 1 週間単位で現在より先へ送った値とし、過ぎていなければ取得した使用率を下限としてそのまま使う。リセット時刻が現在から 7 日より先でも欠測にせず、週経過率が負になって余裕が負になるだけとする。Codex は `minutes=10080` の有効な window だけを週次比較に使い、5 時間窓や reset credit を代用してはならない（MUST NOT）。不正な値、未来時刻、週次窓が無い snapshot は欠測として扱わなければならない（MUST）。Claude 側は取得からの経過時間で判定せず、`usage-session-records` の実効値の規則（リセット時刻を過ぎた窓は 0%、過ぎていなければ下限）に従わなければならない（MUST）。Claude の実効値の週次使用率が有限の 0..100 でない、または週次のリセット時刻が求まらないときは欠測として扱わなければならない（MUST）。
+Codex の自動選択は、取得からの経過時間で値を捨ててはならない（MUST NOT）。`fetched_at` が整数、週次使用率が有限の 0..100、reset が整数の snapshot について、Claude 側と同じ実効値の規則で読まなければならない（MUST）。リセット時刻を過ぎた窓は使用率 0%・リセット時刻は 1 週間単位で現在より先へ送った値とし、過ぎていなければ取得した使用率を下限としてそのまま使う。リセット時刻が現在から 7 日より先でも欠測にせず、週経過率が負になって余裕が負になるだけとする。Codex は `minutes=10080` の有効な window だけを週次比較に使い、5 時間窓や reset credit を代用してはならない（MUST NOT）。不正な値、週次窓が無い snapshot は欠測として扱わなければならない（MUST）。取得時刻の未来の扱いは Claude・Codex とも `dev-workflow-headroom` の 60 秒の規則に従わなければならない（MUST）: 今より 60 秒以内の未来は時計のずれとしてそのまま使い、60 秒を超えて未来なら欠測とする（headroom の行の `status` が `stale`）。Claude 側は取得からの経過時間で判定せず、`usage-session-records` の実効値の規則（リセット時刻を過ぎた窓は 0%、過ぎていなければ下限）に従わなければならない（MUST）。Claude の実効値の週次使用率が有限の 0..100 でない、または週次のリセット時刻が求まらないときは欠測として扱わなければならない（MUST）。これらの判定は headroom の行の `status` が担い、resolver で独自の検査を足してはならない（MUST NOT）。
 
-**守備範囲**: 入力は、dev-workflow 同梱の resolver が各 CODEX_HOME の quota 取得結果から作る account ごとの cache（取得成功時の値、または取得失敗時に保持された前回値）だけである。拾いたい誤りは、cache の破損・手書きによる型や範囲の誤り（`fetched_at` やリセット時刻が整数でない、使用率が有限の 0..100 でない、週次窓が無い）と、時計のずれによる未来の取得時刻であり、これらは欠測にして余っている provider として選ばない。通してよい入力は、取得から数分〜数日たった値でリセット時刻がまだ先のもの（下限として使う）、リセット時刻を過ぎた値（0% で読む）、リセット時刻が現在から 7 日より先の値（余裕が負になるだけ）である。取得時刻が古いことは誤りとして扱わない。cache の値が実際の使用量より低い（取得後に使われた分を反映していない）ことは下限として許容し、検知しない。この検査は入力の穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+**守備範囲（Claude の実効値と Codex の cache から margin を欠測にする判定）**: ①入力の出どころは 2 つである。Codex は、dev-workflow 同梱の resolver が各 CODEX_HOME の quota 取得結果から作る account ごとの cache（取得成功時の値、または取得失敗時に保持された前回値。`read_codex_usages` が認証の主体の食い違う cache を `None` にしたもの）。Claude は、`build_view` が `snapshot_path` の `.usage-snapshot` とステータスラインのセッション記録から作る起動 account の週次の実効値（`headroom.claude_rows` 経由）。どちらも、値を欠測にするかの判定は headroom の行の `status`（`dev-workflow-headroom` の要件「余りの計算を headroom.py の 1 か所に置く」の公開関数の守備範囲）が担い、resolver が担うのは `status` が `ok` でない行を欠測に写すことだけである。headroom の設定の不正は要件「明示指定が無い工程では provider の週次余裕から構成を選ぶ」の守備範囲で扱う。②拾いたい誤りは、Codex の cache の破損・手書きによる型や範囲の誤り（`fetched_at` やリセット時刻が整数でない、使用率が有限の 0..100 でない、週次窓が無い）、Claude の実効値の週次使用率が有限の 0..100 でない・週次のリセット時刻が求まらないこと、時計のずれを超える未来の取得時刻（Codex は `fetched_at`、Claude は週次の実効値の `observed_at` が今より 60 秒超）であり、これらは欠測にして余っている provider として選ばない。③通してよい入力は、取得から数分〜数日たった値でリセット時刻がまだ先のもの（下限として使う）、リセット時刻を過ぎた値（0% で読む）、リセット時刻が現在から 7 日より先の値（余裕が負になるだけ）、60 秒以内の未来の取得時刻である。取得時刻が古いことは誤りとして扱わない。値が実際の使用量より低い（取得後に使われた分を反映していない）ことは下限として許容し、検知しない。④この検査は入力の穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 #### Scenario: Codex の古い値はリセット前なら下限として使う
 - **WHEN** Codex の週次 snapshot が 301 秒以上前（例: 1 日前）に取得され、リセット時刻が現在より後である
@@ -155,9 +212,13 @@ Codex の自動選択は、取得からの経過時間で値を捨ててはな�
 - **WHEN** Codex の週次 snapshot のリセット時刻が現在から 7 日より先である
 - **THEN** 欠測にせず、週経過率が負になる margin を求める。余裕が負なので Codex は選ばれない
 
-#### Scenario: 未来の取得時刻は欠測にする
-- **WHEN** Codex snapshot の `fetched_at` が現在より後である
-- **THEN** 欠測として扱う
+#### Scenario: 60 秒を超えて未来の取得時刻は欠測にする
+- **WHEN** Codex snapshot の `fetched_at` が現在より 61 秒後である
+- **THEN** 欠測として扱う。現在より 60 秒後の `fetched_at` は欠測にせず margin を求める
+
+#### Scenario: Claude の週次の実効値の取得時刻が 60 秒を超えて未来なら欠測にする
+- **WHEN** 起動 account の週次の実効値の `observed_at` が現在より 61 秒後である
+- **THEN** Claude margin を欠測とする。60 秒後なら欠測にせず margin を求める
 
 #### Scenario: Claude の古い値はリセット前なら使う
 - **WHEN** Claude の起動 account の値が 1 日前に取得され、週次のリセット時刻が現在より後である
@@ -168,9 +229,11 @@ Codex の自動選択は、取得からの経過時間で値を捨ててはな�
 - **THEN** Codex provider を欠測とし、その使用率を週次 margin に使わない
 
 ### Requirement: 複数 Codex account を分離して観測し代表 account を固定する
-resolver は dev-workflow に同梱された実装だけで、登録された各 CODEX_HOME の quota snapshot を account ごとの分離 cache へ並行取得し、認証情報、CODEX_HOME path、生 RPC 応答を保存してはならない（MUST NOT）。statusline plugin、設定ディレクトリへコピーされた helper、またはそれらの版を実行時依存にしてはならない（MUST NOT）。取得成功時だけ window と `fetched_at` を更新し、取得失敗時は前回値を保持して実効値の規則で読んだ値を候補にしなければならない（MUST。前回値の古さでは除外しない）。7 日窓を持つ account のうち margin 最大を代表とし、同点は account-home 宣言順で先の account を選ばなければならない（MUST）。一 account の失敗を他 account の欠測に波及させてはならない（MUST NOT）。選択後は当該工程の自動 profile に含まれる全 Codex role を代表 account に束縛し、execution config hash で固定しなければならない（MUST）。
+resolver は dev-workflow に同梱された実装だけで、登録された各 CODEX_HOME の quota snapshot を account ごとの分離 cache へ並行取得し、認証情報、CODEX_HOME path、生 RPC 応答を保存してはならない（MUST NOT）。statusline plugin、設定ディレクトリへコピーされた helper、またはそれらの版を実行時依存にしてはならない（MUST NOT）。取得成功時だけ window・`fetched_at`・リセット権（`resets`）を更新し、取得失敗時は前回値（`resets` を含む）を保持して実効値の規則で読んだ値を候補にしなければならない（MUST。前回値の古さでは除外しない）。7 日窓を持つ account のうち margin 最大を代表とし、同点は account-home 宣言順で先の account を選ばなければならない（MUST）。一 account の失敗を他 account の欠測に波及させてはならない（MUST NOT）。選択後は当該工程の自動 profile に含まれる全 Codex role を代表 account に束縛し、execution config hash で固定しなければならない（MUST）。
 
-**守備範囲**: この要件が候補に通す・落とす入力は、利用者が渡す account-home 対応表（または既定の `CODEX_HOME`）と、resolver が account ごとに保つ cache の値だけである。拾いたい誤りは、存在しない・相対パスの CODEX_HOME、認証の主体が cache と食い違う前回値、週次窓の無い値であり、これらはその account だけを欠測にする。通してよい入力は、実在する絶対ディレクトリの有効な対応表、取得失敗後に残った古い前回値（リセット時刻がまだ先、または過ぎていて 0% として読めるもの）である。account の候補判定はこの範囲で足り、穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+cache は `version` 2 とし、`account/rateLimits/read` の応答の `rateLimitResetCredits` が `availableCount`（0 以上の整数）と `credits`（配列）の形を持つときだけ、`resets: {"available_count": <availableCount>, "expires_at": [<status が available の各 credit の expiresAt。整数でないもの（null・文字列など）は null として持つ>]}` を保存しなければならない（MUST）。形が合わない・欄が無いときは `resets` を書いてはならない（MUST NOT。リセット権が分からないことを 0 枚と区別する）。credit の id や応答の他の欄を保存してはならない（MUST NOT）。cache の `version` が 1 でも 2 でも、margin の読み方は変えてはならない（MUST NOT）。headroom（`dev-workflow-headroom` capability）が読む Codex のリセット権の取得元はこの cache だけである（statusline は自分の cache を持つ）。
+
+**守備範囲**: この要件が候補に通す・落とす入力は、利用者が渡す account-home 対応表（または既定の `CODEX_HOME`）と、resolver が account ごとに保つ cache の値だけである。拾いたい誤りは、存在しない・相対パスの CODEX_HOME、認証の主体が cache と食い違う前回値、週次窓の無い値であり、これらはその account だけを欠測にする。通してよい入力は、実在する絶対ディレクトリの有効な対応表、取得失敗後に残った古い前回値（リセット時刻がまだ先、または過ぎていて 0% として読めるもの）である。リセット権の正規化では、`rateLimitResetCredits` の欄が無い・`availableCount` が 0 以上の整数でない・`credits` が配列でない応答から守り（`resets` を書かず、分からないことを 0 枚と区別する）、status が available 以外の credit・未知の欄・`expiresAt` が null の credit は検査せず通す（available 以外は数えず、`expiresAt` が整数でない available の credit は失効 null として持つ）。account の候補判定はこの範囲で足り、穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 profile・旧 account/model・account-home 対応表がいずれも未指定の自動選択では、resolver は `CODEX_HOME`、未設定なら `~/.codex` が既存の絶対ディレクトリの場合だけ、それを `current` account の対応として評価しなければならない（MUST）。候補が無ければ Codex は欠測のままにしなければならない（MUST）。明示 profile・旧形式、または明示対応表では、この既定対応を補完に使ってはならない（MUST NOT）。
 
@@ -210,6 +273,14 @@ profile・旧 account/model・account-home 対応表がいずれも未指定の�
 - **WHEN** 二つの eligible Codex account の未丸め margin が等しい
 - **THEN** account-home 宣言順で先の account を代表にする
 
+#### Scenario: リセット権を cache に足す
+- **WHEN** `account/rateLimits/read` の応答の `rateLimitResetCredits` が `availableCount: 2` と、status が available の credit 2 つ（`expiresAt` が整数）、status が used の credit 1 つを持つ
+- **THEN** cache は `version: 2` で、`resets.available_count` が 2、`resets.expires_at` が available の 2 つの失効時刻になり、credit の id は保存しない
+
+#### Scenario: リセット権の欄が無い応答
+- **WHEN** 応答に `rateLimitResetCredits` が無いか、`availableCount` が 0 以上の整数でないか、`credits` が配列でない
+- **THEN** cache に `resets` を書かず、window と `fetched_at` は今までどおり更新する
+
 ### Requirement: 自動選択の根拠を秘密なしで記録する
 自動選択結果は選択した構成、理由コード、Claude と最良 Codex の未丸め margin の表示値、各 fetched_at、代表 Codex account を返さなければならない（MUST）。初回工程の結果を記録先の最初の develop 開始コメントへ残し、後続工程も dispatch 記録へ同じ evidence を残さなければならない（MUST）。欠測は `missing` と明示し、0 に置換してはならない（MUST NOT）。認証情報、CODEX_HOME path、生 snapshot を記録してはならない（MUST NOT）。
 
@@ -221,12 +292,12 @@ profile・旧 account/model・account-home 対応表がいずれも未指定の�
 - **WHEN** repository の `scripts/test.sh` を実行する
 - **THEN** 自動選択、明示指定、profile 検証、Codex snapshot 分離を含む回帰が exit 0 になる
 
-### Requirement: Codex entry の model は系統名か完全なモデル ID で書ける
-Codex entry の model は、系統名（英小文字だけからなる値。例: `astra` / `sol` / `luna`）と完全なモデル ID（それ以外の値。例: `gpt-6-sol`）のどちらでもよく、resolver は値を変換せずにそのまま request の model に写さなければならない（MUST）。外部 profile-file と旧形式 `--model` は、版を固定したい利用者のために完全なモデル ID を従来どおり受け付けなければならない（MUST）。resolver の Codex entry の model に対する静的検証は従来どおり非空文字列であることだけとし、値の形やモデルの実在は検証しない（実在しない値は worker が解決時に止める）。系統名から実際のモデル ID への解決は resolver で行ってはならず（MUST NOT）、Codex worker が委譲の直前に行う（`codex-worker` capability）。develop 本体は Codex 委譲の結果を記録先に書くとき、要求した model の値と worker が返した解決後のモデル ID の両方を書かなければならない（MUST）。
+### Requirement: Codex の model は系統名か完全なモデル ID で受け付ける
+対応表の Codex の値は系統名（英小文字だけからなる値。例: `astra` / `sol` / `luna`）で書かなければならない（MUST）。旧形式 `--model` は、版を固定したい利用者のために系統名と完全なモデル ID（それ以外の値。例: `gpt-6-sol`）のどちらも従来どおり受け付けなければならない（MUST）。resolver は値を変換せずにそのまま request の model に写し、旧形式の model に対する静的検証は非空文字列であることだけとする（実在しない値は worker が解決時に止める）。系統名から実際のモデル ID への解決は resolver で行ってはならず（MUST NOT）、Codex worker が委譲の直前に行う（`codex-worker` capability）。develop 本体は Codex 委譲の結果を記録先に書くとき、要求した model の値と worker が返した解決後のモデル ID の両方を書かなければならない（MUST）。
 
 #### Scenario: 外部 profile-file に系統名と完全 ID を混ぜる
-- **WHEN** version=1 の外部 profile-file で、ある Codex role の model を `sol`、別の Codex role の model を `gpt-5.6-sol` として request を作る
-- **THEN** 両方とも検証を通り、各 request の model はそれぞれ `sol` と `gpt-5.6-sol` のまま書かれる
+- **WHEN** version=2 の外部 profile-file で、ある Codex role に `model: sol`、別の Codex role に `model: gpt-5.6-sol` を書いて request を作る
+- **THEN** `model` キーを理由に profile 全体を拒否する。対応表の値は `git grep -nE 'gpt-[0-9]' plugins/dev-workflow/references/model-tier-map.json` が 0 件で、モデル ID を書かない
 
 #### Scenario: 旧形式で系統名と完全 ID を指定する
 - **WHEN** 旧形式 `--account NAME --model sol`、または `--account NAME --model gpt-6-astra` で request を作る
@@ -235,4 +306,3 @@ Codex entry の model は、系統名（英小文字だけからなる値。例:
 #### Scenario: 解決後の ID を記録先に残す
 - **WHEN** model=sol の Codex role を委譲し、worker の結果 JSON の `execution.model_resolution` が requested=sol、resolved=gpt-6-sol を返す
 - **THEN** develop 本体の記録先コメントには要求値 `sol` と解決後の ID `gpt-6-sol` の両方が書かれ、どの ID で走ったかが後から追える
-

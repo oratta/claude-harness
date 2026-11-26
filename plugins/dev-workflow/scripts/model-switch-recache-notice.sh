@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# PreModelSwitch hook: モデル切替の直前に、会話を切替先のモデルで読み直すトークン数と、
+# PreModelSwitch hook: モデルを切り替えるときに、会話を切替先のモデルで読み直すトークン数と、
 # キャッシュ書き込みの推定費用を systemMessage で知らせる（issue #714）。
 #
 # 返すのは {"systemMessage": "..."} だけ。decision・hookSpecificOutput（permissionDecision）・
@@ -14,13 +14,19 @@
 # 仕様: openspec の dev-workflow-model-switch-recache-notice
 set -uo pipefail
 
+# ファイルサイズ上限（ulimit -f）が小さい環境では、ヒアドキュメントの一時ファイルへの書き込みで SIGXFSZ が飛び、
+# シェルごと signal 終了（exit 153）になる。無視して書き込みの失敗（エラー）に落とし、下の空チェックで exit 0 にする。
+trap '' XFSZ
+
 command -v python3 >/dev/null 2>&1 || exit 0
 
-# Python 本体は fd 3 のヒアドキュメントで渡し、payload は stdin のまま読ませる
-# （環境変数や引数に載せない）。
-# -I（隔離モード）で起動し、PYTHONPATH などの PYTHON* の環境変数・ユーザー site・スクリプトの
-# ディレクトリを検索パスに使わない（hook を起動した環境に置かれた json.py などを読み込まない）。
-python3 -I /dev/fd/3 3<<'PY' 2>/dev/null || true
+# Python 本体はヒアドキュメントで変数に読み、-c の引数で渡す。payload は stdin のまま読ませる
+# （payload を環境変数や引数に載せると、長い入力で ARG_MAX を超えて hook が落ちる。本体は固定長で数十 KB）。
+# 本体を fd 3 のヒアドキュメントに付けて /dev/fd/3 として python3 に読ませる形は使わない: Python 3.9（macOS 標準の
+# /usr/bin/python3 など）は複数行の本体を実行せず rc=0・無出力で終わり、hook が何もしないまま通す（#869）。
+# -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
+PY_SRC=""
+{ IFS= read -r -d '' PY_SRC <<'PY' || true
 import json, math, sys
 
 
@@ -93,4 +99,12 @@ try:
 except Exception:
     pass
 PY
+} 2>/dev/null
+if [ -z "$PY_SRC" ]; then
+  # 本体を読めなかった（ヒアドキュメントの一時ファイルを作れない等）。空の本体を python3 に渡すと
+  # rc=0・無出力で終わるだけなので渡さない。この hook はどの環境でも exit 0 で終え、stderr に何も書かない
+  # （spec dev-workflow-model-switch-recache-notice）。読み込みの失敗も上の 2>/dev/null で黙らせている。
+  exit 0
+fi
+python3 -I -c "$PY_SRC" 2>/dev/null || true
 exit 0

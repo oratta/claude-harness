@@ -8,9 +8,25 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 
 メモリ（`~/.claude/projects/<project>/memory/`）は書く規約（1 件 1 事実・repo が記録していることは保存しない・間違いは削除）があるのに、見直す手順が無かった。索引 MEMORY.md は毎セッション注入されるが repo の外にあるので注入予算のテストでは測れず、終わった事実や repo と重複する項目が残ったまま増え続ける。古い記憶は容量より、判断を誤らせる方向で効く。
 
-このスキルは見直しの手順。検知は `scripts/memory-tripwire.sh`（SessionStart で閾値を超えたときだけ `[memory]` の 1 行を出す）が担い、このスキルはその通知を受けて、または主に頼まれて動く。
+このスキルは見直しの手順。検知は `scripts/memory-tripwire.sh`（SessionStart で、閾値を超えたときと、frontmatter の `patches:` の issue が閉じたメモリがあるときだけ `[memory]` の 1 行を出す）が担い、このスキルはその通知を受けて、または主に頼まれて動く。
 
 **スクリプトにしない。** 判断の中身が「この記憶は終わった事実か」「repo が既に持っているか」なので、モデルが読んで分類する。適用も一覧どおりに手で行う（`rules/one-off-no-script.md`）。
+
+## `patches:` の書き方（正本）
+
+プラグインの動きへの指摘をメモリにその場しのぎで書くときは（`rules/plugin-editing.md`）、同じターンでその部品を持つリポジトリに直し先の issue を立て、メモリの frontmatter にその URL を書く。直し先が直ったあともメモリが残って新しい規則を上書きし続けるのを、issue の状態で見つけるため（#1654）。
+
+    ---
+    name: ...
+    description: ...
+    metadata:
+      type: feedback
+      patches: https://github.com/<owner>/<repo>/issues/<番号>
+    ---
+
+- 置き場所: frontmatter の `metadata:` の下（上の例）か、トップレベルの `patches:`。本文の中の `patches:` は読まれない
+- 値: 直し先の GitHub の issue の URL 1 本（`https://github.com/<owner>/<repo>/issues/<番号>`）。引用符で囲まない。PR の URL・番号だけ・複数の URL は読まれない
+- 検知: `memory-tripwire.sh` がセッションの開始時に、URL ごとの状態を裏のプロセスで `gh issue view` に確かめて控えに書き、閉じていればその次のセッションの `[memory]` の 1 行に「ファイル名 ← URL」で出す（閉じ方は分けない。閉じたあと 2 回目のセッションになることがある）。開始の処理は控えだけを読み、照会を待たない。当日に閉じたと控えた URL は確かめ直さない。控えはメモリディレクトリの外の `${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.memory-patches-cache.tsv`（`DEV_WORKFLOW_MEMORY_PATCHES_CACHE` で変えられる）。裏の確認は `DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT` 秒（既定 3。0 で確かめない）で打ち切る。`gh` が無い・認証切れ・オフラインのときは何も出さない
 
 ## 手順
 
@@ -26,10 +42,12 @@ allowed-tools: Read, Write, Edit, Bash, Grep, Glob
 
 | 分類 | 当てはまるとき |
 |---|---|
-| 削除 | 終わった事実（参照先の issue / PR が閉じた、対象のプラグインが解散した）・repo（CLAUDE.md / rules / docs / スキル本文）が既に持っている・検証して誤りだった |
+| 削除 | 終わった事実（参照先の issue / PR が閉じた、対象のプラグインが解散した）・frontmatter の `patches:` の issue が完了（`COMPLETED`）で閉じた・repo（CLAUDE.md / rules / docs / スキル本文）が既に持っている・検証して誤りだった |
 | 統合 | 同じ主題が複数件に分かれている |
 | 短縮 | 1,500 バイト超で、事実 1 つに絞れる。経緯の長い説明や、閉じた子 issue の進捗を落とす |
 | 維持 | 上のどれにも当たらない（repo に無い環境固有の事実・有効な指摘） |
+
+`patches:` を持つメモリは、`gh issue view <URL> --json state,stateReason` で閉じ方を確かめてから分類する。完了（`COMPLETED`）で閉じたものは、直し先が直ったので削除にする。完了以外（`NOT_PLANNED`・`DUPLICATE` など）で閉じたものは削除に決め打ちせず、メモリが補っていたプラグインの動きが直ったかを確かめる。直っていれば削除、直っていなければ維持にして、`patches:` を新しい直し先の issue の URL に書き換えるか（重複なら重複先）、直し先が無ければ `patches:` の行を消す（短縮と同じく一覧に書く）。開いている issue のものは `patches:` を理由に削除しない。
 
 「終わった事実か」「repo が持っているか」は推測で決めない。`gh issue view` / `gh pr view` で state を、`grep` で repo 側の記述を確かめてから分類する。ファイル名と中身の食い違い（`not-installed` という名前で「install 済み」と書いてある等）や、旧形式の frontmatter（`type:` の直書き）も見つけたら短縮の対象にする。
 
@@ -73,13 +91,13 @@ DEV_WORKFLOW_MEMORY_DIR="$M" <dev-workflow のディレクトリ>/scripts/memory
 |---|---|---|
 | 削除 | feedback_decide-dont-delegate-judgment | `rules/communication-style.md` の「推奨まで出す」が同じ内容 |
 | 削除 | feedback_fable-judges-delegate-work | `rules/subagent-model-selection.md` の「最上位は判断に温存」が同じ内容 |
-| 削除 | project_agent-loop-deploy-map | テンプレ廃止済みで、正本は flatmate 側 |
+| 削除 | project_agent-loop-deploy-map | テンプレ廃止済みで、正本は配布元のリポジトリ側 |
 | 削除 | project_agent-runtime-3layers | 配布層とする loops プラグインが解散済みで、中身が矛盾 |
 | 削除 | project_capability-registry-not-installed | install 済みで名前が逆。版数も現行と乖離 |
 | 削除 | project_casting-injection-design | 正本の場所は `rules/perspective-casting.md` にあり、着手順の issue は解決済み |
 | 削除 | project_cost-effective-harness-issue26 | issue と PR がすべて完了 |
 | 削除 | project_dev-workflow-develop-skill | repo の現状がそのまま示す。follow-up も完了 |
-| 削除 | project_harness-dev-clone-location | `CLAUDE_HARNESS_DEV_DIR` が設定済みで、CLAUDE.md がその方式を明記 |
+| 削除 | project_harness-dev-clone-location | 開発用 clone の場所は環境変数で解決する方式が決まり、CLAUDE.md がその方式を明記 |
 | 削除 | 旧プラグイン 3 本の解散記録（project_ で始まる 1 件） | 解散は repo の現状が示し、残件は GitHub にある |
 | 削除 | project_one-off-no-script-rule | 対象の PR はマージ済み。予算残量はテストで測れる |
 | 削除 | project_pr-review-gate-promoted | repo の現状が示す。版数も現行と乖離 |
@@ -91,4 +109,4 @@ DEV_WORKFLOW_MEMORY_DIR="$M" <dev-workflow のディレクトリ>/scripts/memory
 | 短縮 | feedback_wt-setup_autonomous | 中身は維持し、旧形式の frontmatter だけ直す |
 | 維持 | 残り 8 件 | repo に無い環境固有の事実（シェルの noclobber、codex の node など）か、有効な指摘 |
 
-削除した 3 件は flatmate 側の事実を含んでいたが、このメモリディレクトリは harness プロジェクト専用で flatmate のセッションからは読まれないので、消しても失うものは無いと判断した。
+削除した 3 件は別リポジトリ側の事実を含んでいたが、このメモリディレクトリは harness プロジェクト専用で別リポジトリのセッションからは読まれないので、消しても失うものは無いと判断した。

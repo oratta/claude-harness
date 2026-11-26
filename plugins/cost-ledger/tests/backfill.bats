@@ -141,6 +141,14 @@ if not m:
 repo, rest = m.groups()
 
 def emit(text):
+    if rest == "issues":  # 一覧の要素に repository_url が無ければ、問い合わせたリポジトリを入れる
+        try:
+            arr = json.loads(text)
+            for it in arr:
+                it.setdefault("repository_url", "https://api.github.com/repos/" + repo)
+            text = json.dumps(arr)
+        except ValueError:
+            pass
     if jqf is None:
         sys.stdout.write(text + "\n")
     else:
@@ -424,7 +432,7 @@ PY
   no_gh_call
 }
 
-@test "backfill: prints nothing when dirname is not on PATH" {  # PATH に gh と python3 しか無く dirname が見つからなくても、stdout と stderr は空で終了コード 0
+@test "backfill: prints nothing when dirname is not on PATH" {  # PATH に gh と python3 しか無く dirname が見つからなくても（スクリプトの場所は ${0%/*} から求めるので先へ進み、python3 が失敗しても）、stdout と stderr は空で終了コード 0
   one_pr_candidate
   real_bash="$(command -v bash)"
   mkdir -p "$WORK/onlybin"
@@ -435,8 +443,6 @@ PY
   run env PATH="$WORK/onlybin" "$real_bash" "$SCRIPT" < "$WORK/payload.json"
   [ "$status" -eq 0 ]
   [ -z "$output" ]
-  no_gh_call
-  no_python
 }
 
 @test "backfill: with COST_LEDGER_HOOK_FOREGROUND=1 the comment is written before the hook ends" {  # その場で実行すると、hook が終わった時点でコメントの作成が済んでいる
@@ -764,6 +770,16 @@ PY
   cmp "$STATE" "$WORK/state.before"
 }
 
+@test "backfill: an item whose repository_url names another repository fails the whole list" {  # 一覧の要素の repository_url が origin と別名（転送先）なら、候補があっても一覧の 1 回以外の gh を呼ばず、何も積まず控えも変えない
+  one_pr_candidate
+  cp "$STATE" "$WORK/state.before"
+  export FAKE_LIST='[{"number":300,"state":"closed","updated_at":"2026-09-02T00:00:00Z","closed_at":"2026-09-02T00:00:00Z","repository_url":"https://api.github.com/repos/acme/renamed","pull_request":{"merged_at":"2026-09-02T00:00:00Z"}},{"number":12,"state":"closed","updated_at":"2026-09-02T00:00:00Z","closed_at":"2026-09-02T00:00:00Z","repository_url":"https://api.github.com/repos/acme/renamed"}]'
+  rm -f "$FIX"/list.*.json
+  run_backfill
+  [ "$(gh_calls)" -eq 1 ]
+  cmp "$STATE" "$WORK/state.before"
+}
+
 @test "backfill: an item with a broken shape fails the whole list" {  # number が整数でない・updated_at が時刻として読めない要素があれば、何も積まず控えも変えない
   one_pr_candidate
   cp "$STATE" "$WORK/state.before"
@@ -1017,6 +1033,44 @@ PY
   ! grep -qE "repos/acme/cwd-repo/issues/12( |\$)" "$GH_LOG" || return 1   # 対象の確認の問い合わせを足さない
 }
 
+@test "backfill: a failed closing-PR query does not stack an existing issue close row again" {  # 既存行 issue クローズ（クローズの 5 秒後）があり、閉じた PR の問い合わせが失敗する（nodes: [null]）とき、書き込みは 0 回（#982）
+  log_issue_12
+  set_seen "$SEEN0"
+  set_list "issue,12,$M"
+  seed_comment 12 "issue クローズ" $((M_EPOCH + 5))
+  FAKE_CLOSING_PRS='[null]'; export FAKE_CLOSING_PRS
+  log_timeline_args
+  run_backfill
+  [ -s "$GH_LOG.graphql" ]
+  grep -qE -- "^args=timeline --issue 12 --trigger issue クローズ\+PR 照会失敗 --at $M_EPOCH\.000 --repo $CWD --target-repo acme/cwd-repo --backfill\$" "$COST_LOG"
+  no_write
+}
+
+@test "backfill: a failed closing-PR query does not stack an existing close row marked PR query failed again" {  # 既存行 issue クローズ+PR 照会失敗 があり、また閉じた PR の問い合わせが失敗するとき、書き込みは 0 回（#982）
+  log_issue_12
+  set_seen "$SEEN0"
+  set_list "issue,12,$M"
+  seed_comment 12 "issue クローズ+PR 照会失敗" $((M_EPOCH + 5))
+  FAKE_CLOSING_PRS='[null]'; export FAKE_CLOSING_PRS
+  log_timeline_args
+  run_backfill
+  [ -s "$GH_LOG.graphql" ]
+  grep -qE -- "^args=timeline --issue 12 --trigger issue クローズ\+PR 照会失敗 " "$COST_LOG"
+  no_write
+}
+
+@test "backfill: a failed child query does not stack an existing close row marked child query failed again" {  # 子を持つ issue で子孫の問い合わせが失敗し、既存行 issue クローズ+子 issue 照会失敗 があるとき、書き込みは 0 回（#982）
+  log_issue_12
+  set_seen "$SEEN0"
+  FAKE_LIST="$("$REAL_PYTHON" -c 'import json, sys; d = json.loads(sys.argv[1]); d[0]["sub_issues_summary"] = {"total": 1}; print(json.dumps(d))' "$(list_json "issue,12,$M")")"; export FAKE_LIST
+  seed_comment 12 "issue クローズ+子 issue 照会失敗" $((M_EPOCH + 5))
+  log_timeline_args
+  run_backfill
+  [ -s "$GH_LOG.graphql" ]   # stub の応答に subIssues が無いので子孫の問い合わせは失敗する
+  grep -qE -- "^args=timeline --issue 12 --trigger issue クローズ\+子 issue 照会失敗 " "$COST_LOG"
+  no_write
+}
+
 @test "backfill: a pull request from a fork is not stacked" {  # ヘッドのリポジトリがベースと違う PR では、既存コメントの取得も書き込みもしない
   one_pr_candidate
   export FAKE_HEAD_REPO=someone/cwd-repo
@@ -1191,6 +1245,35 @@ MERGE=(--pr 300 --branch feat/a --trigger マージ)
   cmp "$IN" "$OUT"
 }
 
+@test "timeline --backfill: an existing issue close row is not stacked again by a trigger carrying a failure mark" {  # 既存行 issue クローズ（T+5 秒）に、照会失敗印つきの trigger（後追いが渡す形）を渡しても本文はそのまま（#982）
+  add_a r1 00:40:00 1000000
+  one_row_body "issue クローズ" $((T + 5)) > "$IN"
+  tl --issue 12 --trigger "issue クローズ+PR 照会失敗" --at "$T" --backfill --repo "$CWD" < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
+@test "timeline --backfill: an existing close row marked PR query failed is not stacked again by a marked trigger" {  # 既存行 issue クローズ+PR 照会失敗 に、同じ印つきの trigger を渡しても本文はそのまま（#982）
+  add_a r1 00:40:00 1000000
+  one_row_body "issue クローズ+PR 照会失敗" $((T + 5)) > "$IN"
+  tl --issue 12 --trigger "issue クローズ+PR 照会失敗" --at "$T" --backfill --repo "$CWD" < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
+@test "timeline --backfill: an existing close row marked child query failed is not stacked again by a marked trigger" {  # 既存行 issue クローズ+子 issue 照会失敗 に、印つきの trigger を渡しても本文はそのまま（#982）
+  add_a r1 00:40:00 1000000
+  one_row_body "issue クローズ+子 issue 照会失敗" $((T + 5)) > "$IN"
+  tl --issue 12 --trigger "issue クローズ+子 issue 照会失敗" --at "$T" --backfill --repo "$CWD" < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
+@test "timeline --backfill: an existing merge row is not stacked again by a trigger carrying a failure mark" {  # 既存行 マージ（T+5 秒）に、印つきの trigger を渡しても本文はそのまま（#982）
+  add_a r1 00:40:00 1000000
+  add_a r2 00:55:00 1000000
+  one_row_body マージ $((T + 5)) > "$IN"
+  tl --pr 300 --branch feat/a --trigger "マージ+PR 照会失敗" --at "$T" --backfill < "$IN" > "$OUT"
+  cmp "$IN" "$OUT"
+}
+
 @test "timeline --backfill: without a row of the same trigger the row is added" {  # PR コメント（T−600 秒・$1.00）だけの本文に、T 以前の累計 $3.00 で積むと 2 行目が マージ・$3.00 (+2.00)
   add_a r1 00:30:00 1000000
   add_a r2 00:40:00 1000000
@@ -1299,4 +1382,20 @@ MERGE=(--pr 300 --branch feat/a --trigger マージ)
   tl --issue 12 --repo "$CWD" --trigger "issue クローズ" --at "$T" --backfill < "$IN" > "$OUT"
   [ "$(nrows "$OUT")" -eq 2 ]
   rows "$OUT" | grep -qF '| issue クローズ |'
+}
+
+@test "backfill: does not read scripts from the current directory when dirname is not on PATH" {  # dirname が PATH に無くても、カレントディレクトリの backfill.py と write_allow.py は読まれない（#854）
+  one_pr_candidate
+  real_bash="$(command -v bash)"
+  mkdir -p "$WORK/onlybin" "$WORK/cwd854"
+  cp "$WORK/bin/gh" "$WORK/onlybin/gh"
+  ln -s "$REAL_PYTHON" "$WORK/onlybin/python3"
+  for f in backfill.py write_allow.py; do
+    printf 'import pathlib\npathlib.Path(%s).write_text("x")\n' "'$WORK/marker854'" > "$WORK/cwd854/$f"
+  done
+  session_json startup > "$WORK/payload.json"
+  cd "$WORK/cwd854"
+  run env PATH="$WORK/onlybin" "$real_bash" "$SCRIPT" < "$WORK/payload.json"
+  [ "$status" -eq 0 ]
+  [ ! -e "$WORK/marker854" ]
 }

@@ -3,9 +3,13 @@
 
 The rules are specified in openspec/specs/usage-session-records ("記録と snapshot から実効値を
 求める"). Every dev-workflow reader (select-account.sh, session-tripwires.sh,
-agent-model-guard.sh, codex-develop.py) uses this one implementation.
+agent-model-guard.sh, codex-develop.py) uses this one implementation. budget_mode_details()
+turns those values into the budget modes and is the only place of that formula;
+session-tripwires.sh shows its result, agent-model-guard.sh decides fork with its shared mode
+and budget_modes() gives codex-develop.py the modes.
 
   usage_view.py --json [--now EPOCH]   print {"now", "active", "accounts"} as one JSON line
+  usage_view.py --codex-enabled        print "on" or "off" (registry "codex"."enabled"), exit 0
 
 Inputs: CLAUDE_ACCOUNTS_FILE (default ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/accounts.json),
 USAGE_SESSIONS_DIR (default ${CLAUDE_CONFIG_DIR:-$HOME/.claude}/.usage-sessions),
@@ -24,6 +28,8 @@ ID_RE = re.compile(r"[A-Za-z0-9-]{1,32}\Z")
 CTRL_RE = re.compile(r"[\x00-\x1f\x7f]")
 WEEK_SECONDS = 7 * 24 * 60 * 60
 SAME_WINDOW_SECONDS = 3600
+FABLE_MODES = ("abundant", "conserve", "reserve", "exhausted")
+SHARED_MODES = ("ok", "throttled", "depleted")
 
 
 def config_dir():
@@ -54,8 +60,13 @@ def session_key(securestorage):
     return hashlib.sha256(value).hexdigest()[:8]
 
 
-def read_registry(path):
-    """Same resolution as select-account.sh: [(id, securestorage)], default slot on failure."""
+def read_slots(path):
+    """Registry slots as [(id, securestorage, enabled)], default slot on failure.
+
+    A slot is off only when its "enabled" is the JSON false (usage-account-registry
+    "スロットを enabled でオフにできる"). Off slots stay in the list: declared order, the cap
+    of 8, id uniqueness and the active slot are all counted over every slot.
+    """
     slots = []
     try:
         with open(path, encoding="utf-8") as handle:
@@ -80,10 +91,15 @@ def read_registry(path):
                 if not isinstance(secure, str) or CTRL_RE.search(label) or CTRL_RE.search(secure):
                     continue
                 seen.add(slot_id)
-                slots.append((slot_id, secure))
+                slots.append((slot_id, secure, entry.get("enabled") is not False))
     except Exception:
         pass
-    return slots or [("default", "")]
+    return slots or [("default", "", True)]
+
+
+def read_registry(path):
+    """Same slots as read_slots without the on/off mark: [(id, securestorage)]."""
+    return [(slot_id, secure) for slot_id, secure, _ in read_slots(path)]
 
 
 def _read_json(path):
@@ -93,6 +109,17 @@ def _read_json(path):
         return document if isinstance(document, dict) else None
     except Exception:
         return None
+
+
+def read_codex_enabled(path):
+    """False only when the registry's top-level "codex"."enabled" is the JSON false.
+
+    usage-account-registry "Codex を codex.enabled でオフにできる": a missing or broken
+    registry, a missing key and every other value read as on, so a slip of the pen never
+    stops Codex silently.
+    """
+    codex = (_read_json(path) or {}).get("codex")
+    return not (isinstance(codex, dict) and codex.get("enabled") is False)
 
 
 def read_snapshot(path):
@@ -221,6 +248,64 @@ def active_slot(slots, snapshot, active_secure):
     return ids[0]
 
 
+def elapsed_pct(resets_epoch, now):
+    """How far (0..100) into the week ending at resets_epoch now is, or None without a reset."""
+    if not resets_epoch:
+        return None
+    return max(0.0, min(100.0, (WEEK_SECONDS - (int(resets_epoch) - now)) / WEEK_SECONDS * 100.0))
+
+
+SOURCE_EXPLICIT = "明示 env"
+SOURCE_NO_DATA = "既定（usage データなし）"
+SOURCE_DERIVED = "自動導出"
+
+
+def _detail(mode, shown, source):
+    return {"mode": mode, "shown": shown, "source": source}
+
+
+def budget_mode_details(slot, now, environ=None):
+    """FABLE_BUDGET_MODE and SHARED_BUDGET_MODE of one slot's effective values, with their source.
+
+    The only place of the formula (openspec dev-workflow-escalation-tripwires "SessionStart で残量
+    モードを自動導出注入"): explicit env first, then no data, then the weekly thresholds. Each
+    mode is {"mode", "shown", "source"}: "mode" is normalized (unknown explicit values read as
+    the safe side, conserve / throttled), "shown" is the explicit value as written.
+    """
+    environ = os.environ if environ is None else environ
+    slot = slot if isinstance(slot, dict) else {}
+    pct, all_pct = slot.get("fable_weekly_pct"), slot.get("weekly_all_pct")
+    fable = (environ.get("FABLE_BUDGET_MODE") or "").strip()
+    if fable:
+        fable = _detail(fable if fable in FABLE_MODES else "conserve", fable, SOURCE_EXPLICIT)
+    elif pct is None:
+        fable = _detail("conserve", "conserve", SOURCE_NO_DATA)
+    elif pct > 90:
+        fable = _detail("exhausted", "exhausted", SOURCE_DERIVED)
+    else:
+        elapsed = elapsed_pct(slot.get("fable_resets_epoch"), now)
+        mode = "abundant" if elapsed is not None and pct <= elapsed else "conserve"
+        fable = _detail(mode, mode, SOURCE_DERIVED)
+    shared = (environ.get("SHARED_BUDGET_MODE") or "").strip()
+    if shared:
+        shared = _detail(shared if shared in SHARED_MODES else "throttled", shared, SOURCE_EXPLICIT)
+    elif all_pct is None:
+        shared = _detail("ok", "ok", SOURCE_NO_DATA)
+    elif all_pct > 90:
+        shared = _detail("depleted", "depleted", SOURCE_DERIVED)
+    else:
+        elapsed = elapsed_pct(slot.get("weekly_resets_epoch"), now)
+        mode = "throttled" if elapsed is not None and all_pct > elapsed else "ok"
+        shared = _detail(mode, mode, SOURCE_DERIVED)
+    return {"fable": fable, "shared": shared}
+
+
+def budget_modes(slot, now, environ=None):
+    """The normalized modes of budget_mode_details: {"fable", "shared"} (codex-develop.py)."""
+    details = budget_mode_details(slot, now, environ)
+    return {"fable": details["fable"]["mode"], "shared": details["shared"]["mode"]}
+
+
 def build_view(accounts_file=None, sessions_dir=None, snapshot_path=None, now=None,
                active_secure=None):
     paths = default_paths()
@@ -242,6 +327,9 @@ def build_view(accounts_file=None, sessions_dir=None, snapshot_path=None, now=No
 
 
 def main(argv):
+    if argv == ["--codex-enabled"]:
+        print("on" if read_codex_enabled(default_paths()["accounts_file"]) else "off")
+        return 0
     now = None
     if "--now" in argv:
         index = argv.index("--now")

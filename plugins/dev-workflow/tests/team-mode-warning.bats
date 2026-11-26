@@ -72,11 +72,11 @@ assert d["systemMessage"]==d["hookSpecificOutput"]["additionalContext"]
   [[ "$output" == *'"additionalContext"'* ]] || return 1
 }
 
-@test "hooks.json registers it under SessionStart with startup-clear-compact matcher" {
+@test "hooks.json registers it under SessionStart with startup-resume-clear-compact matcher" {
   run python3 -c '
 import json,sys
 h=json.load(open(sys.argv[1]))["hooks"]["SessionStart"]
-ok=[e for e in h if e.get("matcher")=="startup|clear|compact"
+ok=[e for e in h if e.get("matcher")=="startup|resume|clear|compact"
     and any("team-mode-warning.sh" in x["command"] for x in e["hooks"])]
 sys.exit(0 if ok else 1)
 ' "$HOOKS"

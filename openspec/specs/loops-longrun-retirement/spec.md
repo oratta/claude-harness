@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change loops-longrun-retirement. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: 解散する 3 プラグインのディレクトリは git 追跡の削除として取り除く
 `plugins/loops/`・`plugins/longrun/`・`plugins/lr/` はリポジトリから削除されていなければならない（MUST）。削除は git 履歴に残る tracked removal であり（`git log --diff-filter=D` で追える）、untracked や ignore による見えない状態にしてはならない（MUST NOT）。
 
@@ -34,7 +36,7 @@ TBD - created by archiving change loops-longrun-retirement. Update Purpose after
 
 #### Scenario: 旧 reference パスの参照が残っていない
 - **WHEN** `grep -rn "loops/references/\|longrun/references/" plugins rules docs README.md .github` を実行し、例外 (a) の CHANGELOG（新旧パス対応表が旧パスを必然的に含む）と例外 (e) の bats ファイル自身を除く
-- **THEN** ヒットは 0 件である（自己検証・PR 本文の型・モデルティアの参照、`.github/PULL_REQUEST_TEMPLATE.md` の書式の正本、`roles/worker.md` の PR 本文の型は、すべて `plugins/dev-workflow/references/` を指す）
+- **THEN** ヒットは 0 件である（自己検証・PR 本文の型・モデルティアの参照、`.github/PULL_REQUEST_TEMPLATE.md` の書式の正本、`roles/worker/finish.md` の PR 本文の型は、すべて `plugins/dev-workflow/references/` を指す）
 
 ### Requirement: 解散した capability の spec を正本の置き場から消す
 `openspec/specs/` 配下の `loops-*`・`longrun-*`・`workflow-exec`・`workflow-tool-reference`・`workflow-run-control`・`legacy-command-removal`・`loop-dev-agent-tripwires` の各ディレクトリは存在してはならない（MUST NOT）。これらは解散プラグインの振る舞いだけを規定していた spec であり、存在しない機能の仕様を「現行仕様の正本」に残さない。過去の一回性作業を記録した spec（`marketplace-final-sync`・`retirement-handoff-docs`・`llm-log-relocation`・`repo-root-cleanup`・`plugin-retirement-cleanup`）は歴史記述として残す。
@@ -68,4 +70,3 @@ harness は loop-dev-agent の憲法テンプレートを配布せず、各リ�
 #### Scenario: ルート README に解散の記録がある
 - **WHEN** ルート `README.md` を読む
 - **THEN** loops / longrun / lr のインストール手順・コマンド表は無く、「解散済み」の短い記録と `plugins/dev-workflow/CHANGELOG.md` への誘導だけがある
-

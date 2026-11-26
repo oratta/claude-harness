@@ -47,7 +47,7 @@ Step C  完了レポート
 - `wt-clean ~/wt/foo` → `foo` だけを対象に診断・処理
 - `wt-clean feat-x` → `feat-x` をチェックアウト中の worktree を逆引きして対象に
 - `wt-clean ~/wt/foo feat-y` → 2 件を対象に
-- `wt-clean --unattended --repo ~/repos/flatmate` → cron 用。別リポの worktree を無人で掃除し、判断が要る分は報告だけする
+- `wt-clean --unattended --repo ~/repos/example-app` → cron 用。別リポの worktree を無人で掃除し、判断が要る分は報告だけする
 
 ## 前提条件
 
@@ -66,6 +66,7 @@ zsh で実際に事故になった書き方（そのままコピーしないこ�
 | `for x in $pids`（複数行の変数を単語分割で回す） | zsh は既定で単語分割しないため全行が 1 要素に潰れる | `while IFS= read -r x; do … done <<< "$pids"` |
 | ループ本体で `local x` を毎周回宣言する | 2 周目以降の再宣言が `x=前回の値` を**標準出力に印字する**（bash は無言）。レポートにゴミ行が混ざる | 宣言は関数先頭にまとめる |
 | 配列の添字を 0 始まりで直接参照する | zsh の配列は 1 始まり | 添字を直に書かず `"${arr[@]}"` で回す |
+| `mktemp` で作った既存ファイルへ `>` / `2>` で書く（例: `$(cmd 2>"$TMP")`） | `noclobber` が有効だと「file exists」で拒否され、**コマンド置換の中身が実行されない**。結果が空になり「検出なし」と区別がつかない（issue #626） | `>\|` / `2>\|` を使う（bash・zsh とも noclobber を無視して上書きする） |
 
 新しいコード片を足すときは、`bats plugins/worktree/tests/` に **bash と zsh の両方で実行して結果が一致することを確かめるテスト**を添えること（既存例: `classify_dirty: behaves identically under bash and zsh`）。
 
@@ -333,8 +334,8 @@ resolve_token() {
 ```
 ❌ 'foo' に一致する worktree がありません。
 現存 worktree:
-  /Users/oratta/wt/bar  (fix-y, 3週間前)
-  /Users/oratta/wt/baz  (wip-z, 今日)
+  /Users/example/wt/bar  (fix-y, 3週間前)
+  /Users/example/wt/baz  (wip-z, 今日)
 絶対パスまたは正確なブランチ名で再指定してください。
 ```
 
@@ -365,9 +366,9 @@ done
 
 ```
 Worktree 一覧（全件を対象に処理します）:
-  /Users/oratta/wt/foo  (feat-x, 2日前)
-  /Users/oratta/wt/bar  (fix-y, 3週間前)
-  /Users/oratta/wt/baz  (wip-z, 今日)
+  /Users/example/wt/foo  (feat-x, 2日前)
+  /Users/example/wt/bar  (fix-y, 3週間前)
+  /Users/example/wt/baz  (wip-z, 今日)
 ```
 
 リストアップした全 worktree（メインリポ自身を除く）を `TARGETS` に格納し、そのまま Step B へ進む。worktree が 0 件なら「対象の worktree がありません」と表示して終了する。
@@ -423,7 +424,7 @@ LLM=$(ls "$WT/LLM/" 2>/dev/null)
 #    居残り（孤児）と判定して稼働シグナルから外したプロセスは stderr のノートに残るので、
 #    Pass 1 の表示・Pass 2 の提示・Step C のレポートで根拠として使う（黙って捨てない）
 ORPHAN_NOTE_TMP=$(mktemp)
-ACTIVE_PROCS=$(detect_active_procs_under "$WT" 2>"$ORPHAN_NOTE_TMP")   # 例: "48213(claude), 48310(node)"
+ACTIVE_PROCS=$(detect_active_procs_under "$WT" 2>|"$ORPHAN_NOTE_TMP")   # 例（`>|` は noclobber でも上書きする）: "48213(claude), 48310(node)"
 STALE_ORPHANS=$(grep '居残りプロセス' "$ORPHAN_NOTE_TMP" 2>/dev/null || true)
 rm -f "$ORPHAN_NOTE_TMP"
 [ -n "$STALE_ORPHANS" ] && echo "  $STALE_ORPHANS"
@@ -1196,9 +1197,9 @@ wt-clean 完了:
 
 ```
   再利用化: feat-x
-    ディレクトリ: /Users/oratta/repo/.worktrees/feat-x
+    ディレクトリ: /Users/example/repo/.worktrees/feat-x
     現在ブランチ: main（元 feat-x は削除済み）
-    次の作業: cd /Users/oratta/repo/.worktrees/feat-x && git checkout -b <new-branch>
+    次の作業: cd /Users/example/repo/.worktrees/feat-x && git checkout -b <new-branch>
 注意:
   - package.json / Gemfile 等が更新されていれば、再作業前に依存を再インストールしてください
   - 必ず git checkout -b <new-branch> で新ブランチを切ってから作業を開始してください
@@ -1248,7 +1249,7 @@ Pass 2 送りになった対象を、**番号・パス・ブランチ名・分�
 
 ```
 wt-clean 完了（無人モード）:
-  対象リポジトリ: /Users/oratta/repos/flatmate
+  対象リポジトリ: /Users/example/repos/example-app
   Remote 同期: ✅ pulled 3 commits (origin/main → main)
   対象: 14 worktrees（全件・確認なし）
   自動処理（確認なし）: 7 件
@@ -1256,16 +1257,16 @@ wt-clean 完了（無人モード）:
   残存worktrees: 7
 
 判断が必要な残件（無人モードのため未処理・4 件）:
-  [1] /Users/oratta/wt/wip-z   ブランチ: wip-z    分類: 🔴 未マージ
+  [1] /Users/example/wt/wip-z   ブランチ: wip-z    分類: 🔴 未マージ
       理由: 未マージコミット 3 件（squash 検証も未マージと判定）
-  [2] /Users/oratta/wt/fix-q   ブランチ: fix-q    分類: 🟡 dirty
+  [2] /Users/example/wt/fix-q   ブランチ: fix-q    分類: 🟡 dirty
       理由: src/foo.ts ほか 2 ファイルに未コミット変更（lockfile 以外を含む）
-  [3] /Users/oratta/wt/idea-x  ブランチ: idea-x   分類: 🟡 稼働シグナル
+  [3] /Users/example/wt/idea-x  ブランチ: idea-x   分類: 🟡 稼働シグナル
       理由: 稼働中プロセス 48213(claude) / セッションログ 2026-08-07 14:32
-  [4] /Users/oratta/wt/det-h   (detached HEAD)    分類: 🔴 未マージ
+  [4] /Users/example/wt/det-h   (detached HEAD)    分類: 🔴 未マージ
       理由: detached HEAD のためマージ判定不能
 
-→ 対話モードで処理するには: wt-clean --repo /Users/oratta/repos/flatmate
+→ 対話モードで処理するには: wt-clean --repo /Users/example/repos/example-app
 ```
 
 ### cron への載せ方（参考）

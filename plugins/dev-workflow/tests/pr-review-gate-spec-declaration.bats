@@ -5,6 +5,8 @@
 # spec-touch-check の参照、auto-merge 範囲外の明記を 段のファイル（declarations.md・stages/prepare.md・stages/pass.md）の記述として検証する。
 # spec: dev-workflow-pr-review-gate
 
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -18,6 +20,7 @@ setup() {
   SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
+  gate_test_docs
 }
 
 head_sec() { awk '/^## 前提と理由/{f=1} /^## 手順/{f=0} f' "$DECLARATIONS"; }
@@ -211,8 +214,9 @@ run_step_cmds() {  # $1 = step 関数名, $2 = PR 本文
 
 # --- 配布 ---
 
-@test "manifest: description mentions the spec declaration" {
-  jq -r '.description' "$MANIFEST" | grep -q '仕様宣言'
+@test "pr-review-gate skill: the pass conditions name the spec declaration" {
+  # plugin.json の description は /plugin メニュー用に 1 文へ短縮したので、スキル本文の通過条件で確かめる
+  grep -q '②仕様宣言' "${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
 }
 
 @test "skill frontmatter: version above 1.3.0" {

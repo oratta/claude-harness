@@ -7,6 +7,8 @@
 # reference は実行コードではないため、規定の記述が存在することを grep で検証する。
 # テスト名は ASCII のみ。
 
+load lib/develop-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
@@ -22,9 +24,6 @@ setup() {
   RULE="${REPO_ROOT}/rules/subagent-model-selection.md"
   CONSUMERS=(
     "plugins/infra/skills/infra-setup/SKILL.md"
-    "plugins/weekly-report/skills/weekly-report/SKILL.md"
-    "plugins/daily-report/skills/daily-report/SKILL.md"
-    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md"
     "plugins/worktree/skills/wt-setup/SKILL.md"
     "plugins/worktree/skills/wt-clean/SKILL.md"
     "plugins/worktree/references/wt-clean-verification.md"
@@ -66,22 +65,21 @@ setup() {
   ! grep -q 'plugins/longrun/' "$SELFV" || return 1
 }
 
-@test "self-verification audit list has the seven live skills and no retired ones" {
+@test "self-verification audit list has the four live skills and no retired or moved ones" {
   grep -q '対象スキル一覧' "$SELFV"
   for p in \
     "plugins/worktree/skills/wt-setup/SKILL.md" \
     "plugins/worktree/skills/wt-clean/SKILL.md" \
-    "plugins/daily-report/skills/daily-report/SKILL.md" \
-    "plugins/weekly-report/skills/weekly-report/SKILL.md" \
     "plugins/infra/skills/infra-setup/SKILL.md" \
-    "plugins/experience-to-skill/skills/experience-to-skill/SKILL.md" \
     "plugins/dev-workflow/skills/push-guard-setup/SKILL.md"; do
     grep -qF "$p" "$SELFV" || { echo "missing ${p}"; return 1; }
   done
   ! grep -q 'longrun-plan\|loops-design\|loops-goalify\|longrun-feedback\|longrun-mvp' "$SELFV" || return 1
+  # daily-report・weekly-report は #1129 で個人版のリポジトリに移した
+  ! grep -q 'plugins/daily-report/\|plugins/weekly-report/' "$SELFV" || return 1
 }
 
-@test "all eight consumers reference the new self-verification path and none the old" {
+@test "all seven consumers reference the new self-verification path and none the old" {
   for rel in "${CONSUMERS[@]}"; do
     f="${REPO_ROOT}/${rel}"
     grep -qF 'plugins/dev-workflow/references/self-verification.md' "$f" || { echo "${rel} lacks new path"; return 1; }
@@ -163,7 +161,9 @@ setup() {
 
 @test "tripwires and develop SKILL.md route large work to workflow-execution instead of /lr:e" {
   grep -q 'workflow-execution.md' "$TRIPWIRES"
-  grep -q 'workflow-execution.md' "$SKILL"
+  local docs
+  docs="$(develop_docs)"
+  grep -qF 'workflow-execution.md' <<< "$docs"
   ! grep -qF '/lr:' "$TRIPWIRES" || return 1
   ! grep -qF '/lr:' "$SKILL" || return 1
   ! grep -q 'longrun' "$SKILL" || return 1

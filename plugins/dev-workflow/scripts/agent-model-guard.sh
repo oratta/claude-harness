@@ -8,14 +8,19 @@
 #
 # 判定:
 #   - tool_name が Agent 以外 → 何もしない（exit 0・無出力）
+#   - 実行役の種別（dev-workflow:worker → spec-write・implement、dev-workflow:gate-runner → implement）で
+#     model あり → guard の場所から ../references/model-tier-map.json を読み、claude の列で model を格に戻し、
+#     role_caps の上限（役が複数なら低いほう）を超えたら拒否（#615。照合と文面の前半は scripts/tier_caps.py で
+#     codex-develop.py と共有）。格に戻せない名前は通す。表が読めない・壊れていれば飛ばして次の Fable 判定へ
 #   - model が Fable（エイリアス fable / 完全 ID claude-fable-*）→ subagent_type が決める役
 #     （dev-workflow:decider）のときだけ許可。それ以外は拒否（実行役の上限は opus）
 #   - worker / gate-runner / reviewer は DECIDER_TYPES に入れず、定義の model（worker / gate-runner は sonnet、reviewer は opus）を使う
 #   - model あり → 許可
 #   - subagent_type が定義に model を持つエージェント（plugin:agent 形式や casting-* 等）→ 許可
 #     （Agent ツールは定義側の model を使うため、パラメータ省略が親継承にならない）
-#   - subagent_type が fork → SHARED_BUDGET_MODE（明示 env、無ければ active スロットの実効値から導出）が ok のときだけ許可。
-#     throttled / depleted では拒否（fork は常に親＝Fable で動く）
+#   - subagent_type が fork → 共有枠モード（usage_view.py の budget_mode_details から得る。明示 env、無ければ
+#     active スロットの実効値から導出）が ok のときだけ許可。throttled / depleted では拒否（fork は常に親＝Fable で動く）。
+#     usage_view.py を読み込めなければ明示 env も読まず許可（fail-open）
 #   - それ以外（general-purpose / Explore / Plan / 未指定）で model 無し → 拒否
 #   - DEV_WORKFLOW_MODEL_GUARD=off で全許可（緊急の逃げ道。恒久設定にしない）
 #
@@ -28,12 +33,14 @@ command -v python3 >/dev/null 2>&1 || exit 0   # fail-open（判定できなけ�
 
 SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
 
-# Python 本体は fd 3 のヒアドキュメントで渡し、stdin（hook の payload）はそのまま Python に読ませる。
-# payload を環境変数や引数に載せると、長い prompt で ARG_MAX を超えて hook が非 0 で落ち、
-# Claude Code は非 0/非 2 の hook エラーを「続行」と扱うため、判定が素通りになる。
 # 実効値（セッション記録と snapshot を突き合わせた値）は usage_view.py の 1 か所の実装から得る。
-SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
-  python3 /dev/fd/3 3<<'PY'
+# Python 本体はヒアドキュメントで変数に読み、-c の引数で渡す。payload は stdin のまま読ませる
+# （payload を環境変数や引数に載せると、長い入力で ARG_MAX を超えて hook が落ちる。本体は固定長で数十 KB）。
+# 本体を fd 3 のヒアドキュメントに付けて /dev/fd/3 として python3 に読ませる形は使わない: Python 3.9（macOS 標準の
+# /usr/bin/python3 など）は複数行の本体を実行せず rc=0・無出力で終わり、hook が何もしないまま通す（#869）。
+# -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
+PY_SRC=""
+IFS= read -r -d '' PY_SRC <<'PY' || true
 import json, os, sys, time
 
 try:
@@ -57,32 +64,51 @@ def deny(reason):
 
 # fork は model パラメータを無視して常に親モデルで動くので、model の有無より先に判定する
 if stype == "fork":
-    shared = (os.environ.get("SHARED_BUDGET_MODE") or "").strip()
-    if not shared:
-        shared = "ok"
-        try:
-            now_env = os.environ.get("USAGE_PROBE_NOW")
-            now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
-            sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
-            import usage_view
+    # 共有枠モードの式（明示 env の優先・データ無し・90 超・週経過との比較）は usage_view.py の 1 か所にだけ置く
+    # （#1625）。明示 env があれば出どころが「明示 env」になるので、実効値（build_view）を読まずにその結果で判定する。
+    # usage_view.py を読み込めない・呼び出しが例外を出すときは明示 env も読まず ok（fail-open。session-tripwires.sh と同じ）。
+    mode, shown = "ok", "ok"
+    try:
+        now_env = os.environ.get("USAGE_PROBE_NOW")
+        now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
+        sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+        import usage_view
+        shared = usage_view.budget_mode_details({}, now)["shared"]
+        if shared["source"] != usage_view.SOURCE_EXPLICIT:
             view = usage_view.build_view(snapshot_path=os.environ["SNAPSHOT"], now=now)
-            slot = view["accounts"].get(view["active"]) or {}
-            all_pct = float(slot.get("weekly_all_pct"))
-            if all_pct > 90:
-                shared = "depleted"            # 週経過に関わらず 90% 超は depleted
-            else:
-                resets = int(slot.get("weekly_resets_epoch"))
-                WEEK = 7 * 86400
-                elapsed = max(0.0, min(100.0, (WEEK - (resets - now)) / WEEK * 100.0))
-                if all_pct > elapsed:
-                    shared = "throttled"
-        except Exception:
-            if shared == "ok":
-                pass  # 読めなければ ok（fail-open）
-    if shared == "ok":
+            shared = usage_view.budget_mode_details(view["accounts"].get(view["active"]) or {}, now)["shared"]
+        mode, shown = shared["mode"], shared["shown"]
+    except Exception:
+        mode, shown = "ok", "ok"
+    if mode == "ok":
         sys.exit(0)
-    deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く（model パラメータは無視される）。共有枠モードが {shared} のあいだは fork を使わず、"
+    deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く（model パラメータは無視される）。共有枠モードが {shown} のあいだは fork を使わず、"
          "model を明示した general-purpose（sonnet / opus）で spawn する。規範: rules/subagent-model-selection.md")
+
+# 実行役の種別は対応表の上限を超える格で起こせない（#615）。種別と役の対応は env で足せる形にしない
+# （DECIDER_TYPES と同じ理由）。表の置き場所は guard 自身の場所から決め、env で差し替えない。
+TYPE_ROLES = {"dev-workflow:worker": ("spec-write", "implement"),
+              "dev-workflow:gate-runner": ("implement",)}
+if model and stype in TYPE_ROLES:
+    try:
+        sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+        import tier_caps
+        table = tier_caps.read_table(os.path.join(os.path.dirname(os.environ["USAGE_VIEW_DIR"]),
+                                                  "references", "model-tier-map.json"))
+    except Exception:
+        table = None  # 表を読めなければ上限の判定を飛ばし、下の Fable 判定に任せる
+    if table is not None:
+        roles = TYPE_ROLES[stype]
+        caps = [table["role_caps"].get(r) for r in roles]
+        caps = [c for c in caps if c in tier_caps.TIERS]
+        if caps:
+            cap = min(caps, key=tier_caps.TIERS.index)
+            tier = tier_caps.model_tier(table["executors"]["claude"], model)
+            if tier_caps.exceeds(tier, cap):
+                deny(tier_caps.refusal("/".join(roles), tier, cap, note=f"subagent_type: {stype}")
+                     + f"model: {model} は使えない。実行役は model: sonnet / opus を使い、"
+                     "決めさせたいなら subagent_type: dev-workflow:decider に替えて再実行。"
+                     "規範: rules/subagent-model-selection.md")
 
 # Fable は決める役の種別でだけ spawn できる（実行役の上限は opus）。
 # エイリアス fable の完全一致と、完全 ID claude-fable-* の前方一致で見る（世代交代で穴が開かないように）。
@@ -107,3 +133,11 @@ if stype in NEEDS_EXPLICIT:
          "規範: rules/subagent-model-selection.md")
 sys.exit(0)
 PY
+if [ -z "$PY_SRC" ]; then
+  # 本体を読めなかった（ヒアドキュメントの一時ファイルを作れない等）。空の本体を python3 に渡すと
+  # rc=0・無出力で終わって黙って通すので、渡さずに stderr で知らせる。
+  echo "agent-model-guard: 判定の本体を読めなかったため、判定していない" >&2
+  exit 1
+fi
+SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
+  python3 -I -c "$PY_SRC"

@@ -53,7 +53,7 @@ TBD - created by archiving change dev-workflow-model-switch-recache-notice. Upda
 
 `systemMessage` は、入力の `context_tokens` が 0 より大きい有限の数値のとき、その値を整数に丸めて 3 桁区切りにした文字列を含まなければならない (MUST)。入力の `estimated_cache_write_usd` が 0 以上の有限の数値のとき、`$` に続けて小数 2 桁で表した金額を含まなければならない (MUST)。ただし 0 より大きく 0.01 未満のときは `$0.01 未満` と表す (MUST)。真偽値は数値とみなしてはならない (MUST NOT)。Requirement「伝えることが無い切替では何も出さない」の条件に当たらない入力で、どちらか一方しか条件を満たさないときは、満たした方だけを含む通知を返さなければならない (MUST)。出さない条件はこの要件より先に効く（たとえば `context_tokens` が `0` なら、推定費用が条件を満たしていても何も出さない）。
 
-`pricing` が `catalog` のときは「定価」、`configured` のときは「組織の設定単価」、`default` のときは「既定の単価」を含む注記を金額に添えなければならない (MUST)。それ以外の値・キー無しのときは注記を付けてはならない (MUST NOT)。`from_model` と `to_model` がどちらも空でない文字列のときは、制御文字を除いた両方の値を含めなければならない (MUST)。`prompt_cache_warm` が `true` のときは、切替前のモデルのキャッシュが切り替えると使えなくなることを述べる文を含めなければならず (MUST)。この文は、切替の前後どちらに表示されても正しい言い方にし、「今のモデル」「まだ有効」のように表示の時点に依存する表現を含んではならない (MUST NOT)、`true` でないときはその文を含めてはならない (MUST NOT)。
+`pricing` が `catalog` のときは「定価」、`configured` のときは「組織の設定単価」、`default` のときは「既定の単価」を含む注記を金額に添えなければならない (MUST)。それ以外の値・キー無しのときは注記を付けてはならない (MUST NOT)。`from_model` と `to_model` がどちらも空でない文字列のときは、制御文字を除いた両方の値を含めなければならない (MUST)。`prompt_cache_warm` が `true` のときは、切替前のモデルのキャッシュが切り替えると使えなくなることを述べる文を含めなければならない (MUST)。この文は、切替の前後どちらに表示されても正しい言い方にし、「今のモデル」「まだ有効」のように表示の時点に依存する表現を含んではならない (MUST NOT)。`true` でないときはその文を含めてはならない (MUST NOT)。
 
 #### Scenario: トークン数と推定費用の両方が出る
 
@@ -121,7 +121,7 @@ TBD - created by archiving change dev-workflow-model-switch-recache-notice. Upda
 
 ### Requirement: どの失敗でも切替を止めない
 
-`model-switch-recache-notice.sh` は、どの入力・どの環境でも終了コード 0 で終えなければならず (MUST)、標準エラーに何も書いてはならない (MUST NOT)。stdin が空・JSON として読めない・トップレベルがオブジェクトでない・`python3` が PATH に無い、のどの場合も標準出力に何も書いてはならない (MUST NOT)。スクリプトはネットワークアクセスとファイルの読み書きをしてはならず (MUST NOT)、入力の `transcript_path` が指すファイルを開いてはならない (MUST NOT)。入力は環境変数や引数に載せず stdin のまま渡さなければならない (MUST)。
+`model-switch-recache-notice.sh` は、どの入力・どの環境でも終了コード 0 で終えなければならず (MUST)、標準エラーに何も書いてはならない (MUST NOT)。stdin が空・JSON として読めない・トップレベルがオブジェクトでない・`python3` が PATH に無い、のどの場合も標準出力に何も書いてはならない (MUST NOT)。スクリプトはネットワークアクセスとファイルの読み書きをしてはならず (MUST NOT)、入力の `transcript_path` が指すファイルを開いてはならない (MUST NOT)。入力は環境変数や引数に載せず stdin のまま渡さなければならない (MUST)。スクリプトは `python3` を隔離モード（`-I`）で起動し、環境変数 `PYTHONPATH` や作業ディレクトリにある同名のモジュール（`json.py` など）を読み込んではならない (MUST NOT)。
 
 #### Scenario: 壊れた入力では無出力で exit 0
 
@@ -143,3 +143,7 @@ TBD - created by archiving change dev-workflow-model-switch-recache-notice. Upda
 - **WHEN** `plugins/dev-workflow/scripts/model-switch-recache-notice.sh` から、空白を除いた先頭が `#` の行（コメント行）を除き、残りを `curl`・`wget`・`urllib`・`http`・`socket`・`open(` で検索する
 - **THEN** 1 件も見つからない
 
+#### Scenario: PYTHONPATH 上の json.py を読み込まない
+
+- **WHEN** `PYTHONPATH` が指すディレクトリに、読み込まれると印のファイルを作る `json.py` を置き、基準の入力を渡す
+- **THEN** 印のファイルは作られず、標準出力は `PYTHONPATH` を設定しないときと完全に一致する

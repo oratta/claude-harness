@@ -180,6 +180,66 @@ mk_cost_input() {
 
 # ---- install.sh ----
 
+# --- Codex オフ（accounts.json の codex.enabled が false。#978） ---
+
+# Codex 行を出す設定にし、codex の起動を記録するスタブを置く（auth.json は置かない。置く場合は codex_with_login）
+codex_off_env() {
+  export STATUSLINE_CODEX=1 CODEX_HOME="$WORK/codex-home"
+  export STATUSLINE_CODEX_BIN="$WORK/codex-stub"
+  mkdir -p "$CODEX_HOME"
+  printf '#!/bin/sh\necho called >> "%s"\n' "$WORK/codex-calls" > "$STATUSLINE_CODEX_BIN"
+  chmod 700 "$STATUSLINE_CODEX_BIN"
+}
+
+# auth.json を identity() が None で止まらない形（tokens あり）で置く。オフ判定が無ければ
+# 取得処理が実際に走りうる条件になる。ただし取得は main() が切り離した背景の子プロセスで走り、
+# 描画の終了後に完了するので、検査の前に --refresh を同期で走らせる（下のテスト）
+codex_with_login() {
+  echo '{"tokens":{"account_id":"test"}}' > "$CODEX_HOME/auth.json"
+}
+
+@test "codex off: no Codex row and no off text are shown, and nothing is fetched" {
+  codex_off_env
+  codex_with_login
+  echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":false}}' > "$WORK/accounts.json"
+  mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
+  ! strip_ansi < "$WORK/out.txt" | tail -n +2 | grep -qE 'Codex|off' || return 1
+  # 背景の取得との競合を避けるため、同期で取得を走らせてから見る。オフ判定が無ければここで
+  # キャッシュが作られて落ちる（スタブは echo の前に打ち切られるので codex-calls は当てにしない）
+  python3 "${PLUGIN_DIR}/scripts/statusline-codex.py" --refresh
+  [ ! -e "$WORK/codex-calls" ]
+  [ ! -e "$WORK/.statusline-codex" ]
+}
+
+@test "codex off: STATUSLINE_CODEX=0 hides the row even when Codex is off" {
+  codex_off_env
+  export STATUSLINE_CODEX=0
+  echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":false}}' > "$WORK/accounts.json"
+  mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/out.txt"
+  ! grep -q 'Codex' "$WORK/out.txt" || return 1
+}
+
+@test "codex off: only the JSON false shows off (a string false keeps the old output)" {
+  codex_off_env
+  # 2 回描いて cmp するので `date +%s` を NOW に固定する（実時計が秒の切れ目をまたぐと
+  # 残り時間の分の桁がずれて落ちる。statusline-rate-snapshot.bats と同じ方式）
+  export NOW
+  date() {
+    if [ "$1" = "+%s" ]; then
+      printf '%s\n' "$NOW"
+    else
+      command date "$@"
+    fi
+  }
+  export -f date
+  echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}]}' > "$WORK/accounts.json"
+  mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/absent.txt"
+  echo '{"schema":1,"accounts":[{"id":"a","label":"A","securestorage":null}],"codex":{"enabled":"false"}}' > "$WORK/accounts.json"
+  mk_input 3 25 14000 172800 | bash "$SL" > "$WORK/string.txt"
+  ! grep -q 'Codex' "$WORK/absent.txt" || return 1
+  cmp "$WORK/absent.txt" "$WORK/string.txt"
+}
+
 @test "install: --dry-run writes nothing" {  # dry-run は何も書き込まない
   echo '{}' > "$WORK/settings.json"
   run bash "$INSTALL" --dry-run
