@@ -43,4 +43,4 @@
 
 ## 7. 記録
 
-- [ ] 7.1 変更の記録を書く（PR 番号が決まってから。元の issue 5 本の条件と証拠のテスト名を並べる）。触る範囲: plugins/dev-workflow/changes/<PR番号>.md（新規）
+- [x] 7.1 変更の記録を書く（PR 番号が決まってから。元の issue 5 本の条件と証拠のテスト名を並べる）。触る範囲: plugins/dev-workflow/changes/<PR番号>.md（新規）
