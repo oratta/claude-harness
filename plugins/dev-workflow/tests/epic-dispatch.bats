@@ -9015,7 +9015,8 @@ reset_keepalive_poll() {
   echo 1 > "$STUB_CFG/send_exit_term-11"
   on_poll 11 2 status=done
   gh_seq 11 open
-  run dispatch wait --watch-stopped --watch-done 11 --interval 1 --timeout 100 11
+  # stopped-seen の子も完了推定の対象なので、推定より先に声かけが走るよう閾値を上げて推定を外す
+  EPIC_DISPATCH_DONE_IDLE_SEC=99999999 run dispatch wait --watch-stopped --watch-done 11 --interval 1 --timeout 100 11
   [ "$status" -eq 0 ]; [ "$output" = 'done 11' ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
   grep -qF 'keepalive 11: failed send' "$BATS_TEST_TMPDIR/stderr"

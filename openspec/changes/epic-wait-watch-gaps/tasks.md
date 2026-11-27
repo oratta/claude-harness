@@ -39,7 +39,7 @@
 - [x] 6.4 `wait --resolve`: 判断のスタブが `判断: 親が動く` を出すと、子の端末に送られず、エピックに通した行が無く、子 issue に `親の判断: 親の操作が要る` と `送るはずだった返事:` の行のコメントが投稿され、`stopped 11` が出るテストを足す（投稿の失敗で `repost_hint` が出るものも）。`判断: 通す` で返事に「親が」を含む止まり（`返事: 親が見張りを続けるので、そのまま待つ`）が今までどおり送られるテストも足す。`parent-pass-criteria.md` と `epic-stop.md` の文面の検査を足す（`epic-stop.md` は、`親の操作が要る` の件が `dismiss` の文より前に現れることと、「pending-owner の復元」の扱いも確かめる）。既存の通すテストは変えずに通ることを確かめる。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:4841-4900（wait --resolve の節の先頭。足すのは 4892 の主に上げるテストの後ろ）
 - [x] 6.5 stop-judge: スタブが `判断: 親が動く` を出すと 4 行が出て exit 0 になること（止まりの JSON の有無の両方）を足す。触る範囲: plugins/dev-workflow/tests/stop-judge.bats:94-113（足すのは 104 のテストの後ろ）
 - [x] 6.6 owner-away: `turn_state.session_id` と違うセッションの最新ログに `recorded_at` より新しい `last_input_at`（主の入力の時刻）があると `owner-away` が出ず `owner_away_told` が書かれないテストと、同じセッション・ログが読めないときは今までどおり出るテストを足す。トランスクリプトの作り方は同じファイルの推定のテストにならう。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:9734-9837（owner-away の節）
-- [ ] 6.7 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/stop-judge.bats plugins/dev-workflow/tests/epic-stop-from-log-scenario.bats plugins/dev-workflow/tests/develop-skill.bats`（`develop-skill.bats` は `epic-stop.md` の `dismiss` の文・`reply-after-idle.md` の前置きの文をそのままの文字列で検査している）と `bats tests/injection-budget.bats` を通す。触る範囲: なし（実行だけ）
+- [x] 6.7 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/stop-judge.bats plugins/dev-workflow/tests/epic-stop-from-log-scenario.bats plugins/dev-workflow/tests/develop-skill.bats`（`develop-skill.bats` は `epic-stop.md` の `dismiss` の文・`reply-after-idle.md` の前置きの文をそのままの文字列で検査している）と `bats tests/injection-budget.bats` を通す。触る範囲: なし（実行だけ）
 
 ## 7. 記録
 
