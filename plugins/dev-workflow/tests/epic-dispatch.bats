@@ -4972,6 +4972,34 @@ EOF
   starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した"
 }
 
+@test "docs: the pass criteria define a parent action and emit the parent-acts decision after the escalation check" {
+  f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  l="$(grep -F '**親の操作を含む推奨**' "$f")"
+  printf '%s\n' "$l" | grep -qF 'この子に返事を送ること（`wait` が決める起動し直しを含む）以外で親がすること'
+  printf '%s\n' "$l" | grep -qF '`判断: 通す` ではなく `判断: 親が動く` を出す'
+  printf '%s\n' "$l" | grep -qF '親の操作を含んでも `判断: 主に上げる` が先に効く'
+  printf '%s\n' "$l" | grep -qF '`理由:` に親がする操作を、`返事:` に操作のあとに子に送る返事を書く'
+  grep -F '止まった子の起動し直し' "$f" | grep -qF '親の操作に当たらず `判断: 通す` とする'
+  grep -F '1 行目は' "$f" | grep -qF '`判断: 問いではない`・`判断: 親が動く` のどれか'
+}
+
+@test "docs: step 8 reads the parent-action paragraph before the dismiss sentence and the pending-owner restore does the action" {
+  f="$PLUGIN_DIR/skills/develop/references/epic-stop.md"
+  l8="$(grep -E '^8\. ' "$f")"
+  before="${l8%%今回の停止の記録が無く、最後の発言に*}"
+  [ "$before" != "$l8" ]
+  printf '%s\n' "$before" | grep -qF '`親の判断: 親の操作が要る` の件は、次の `dismiss` の文より先に'
+  p="$(grep -F '**親の操作が要る子**（手順 8 の続き）' "$f")"
+  printf '%s\n' "$p" | grep -qF '`PR トークン上限（`・`PR のマージ待ち（` で始まる止まりはそれぞれの手順'
+  printf '%s\n' "$p" | grep -qF '`dismiss` の判定・**主の委任**・`parent-pass-criteria.md` への照らし直しより先に'
+  printf '%s\n' "$p" | grep -qF '`送るはずだった返事:`'
+  printf '%s\n' "$p" | grep -qF 'reply --as parent'
+  printf '%s\n' "$p" | grep -qF '操作をせずに返事だけを送らない'
+  r="$(awk '/^## pending-owner の復元/{f=1;next} /^## /{f=0} f' "$f")"
+  printf '%s\n' "$r" | grep -qF '最新の `親の判断:` が `親の判断: 親の操作が要る` の子は、手順 8 の **親の操作が要る子** と同じく操作をしてから返事を送り、照らし直さず出し直さない'
+  ! printf '%s\n' "$l8" | grep -qF '完了の推定が止まり、'
+}
+
 @test "wait --resolve: a failing judge is posted as could-not-decide with an unknown record" {
   resolve_ready
   echo 1 > "$STUB_CFG/judge_exit"
@@ -5381,11 +5409,16 @@ notified_in_place() {
   l3="$(printf '%s\n' "$r" | grep -E '^3\. ')"
   l4="$(printf '%s\n' "$r" | grep -E '^4\. ')"
   printf '%s\n' "$l2" | grep -F 'EPIC_DISPATCH_DONE_IDLE_SEC' | grep -F '1800' | grep -qF '推定'
-  printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '止まった印'
+  printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '親がまだ受けていない止まり（`stopped`）の子'
+  printf '%s\n' "$l2" | grep -qF '親が受けた止まり（`stopped-seen`）の子は推定の対象に入る'
+  ! printf '%s\n' "$l2" | grep -qF '止まった印の子'
   printf '%s\n' "$l2" | grep -F '閉じてから' | grep -qF 'サブエージェント'
   printf '%s\n' "$l3" | grep -F '推定の `done`' | grep -qF '`reap`'
   printf '%s\n' "$l3" | grep -F '`closed` と `done` の両方' | grep -qF '4 を処理してから'
-  printf '%s\n' "$l4" | grep -F '`skipped <N> not-stopped`' | grep -qF '推定'
+  printf '%s\n' "$l4" | grep -qF '止まった印の有無によらず、完了の印の無い子に送る'
+  printf '%s\n' "$l4" | grep -F '促しの届かなかった子' | grep -F -- '--watch-done' | grep -qF '推定'
+  ! printf '%s\n' "$l4" | grep -qF 'not-stopped'
+  ! printf '%s\n' "$l4" | grep -qF '止まった印の無い子'
   printf '%s\n' "$l4" | grep -qF 'ステータスを変えるよう頼まない'
 }
 
@@ -10530,6 +10563,10 @@ assert_reply_auto() {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -F -- '--as parent' "$f" | grep -F -- '--as owner' | grep -F -- '--relaunch' | grep -qF '自動判定'
   grep -F 'notify-closed' "$f" | grep -qF '本体が'
+  grep -F 'notify-closed' "$f" | grep -qF '`--relaunch` が効くのは止まっている子だけ'
+  grep -F '主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない。' "$f" | grep -qF '`notify-closed` の完了の促しだけは、止まっていない子にも送る。その子には `--relaunch` を付けても端末を閉じず、起動し直さない'
+  grep -qF '完了の印の無い completed の子への `scripts/epic-dispatch.sh notify-closed`' "$f"
+  ! grep -qF '停止中の completed の子' "$f"
   grep -F '明示' "$f" | grep -qF -- '--relaunch'
 }
 
@@ -10537,7 +10574,9 @@ assert_reply_auto() {
   f="$PLUGIN_DIR/skills/develop/references/epic-loop.md"
   grep -F '親だけ' "$f" | grep -qF '全対象には足りない'
   grep -F '終えて' "$f" | grep -F 'reply' | grep -qF '省く'
-  grep -F 'waiting' "$f" | grep -F 'stopped-seen' | grep -qF '完了推定の対象外'
+  grep -F 'waiting と stopped（親がまだ受けていない止まり）は完了推定の対象外' "$f" | grep -qF 'stopped-seen（親が受けた止まり）は完了推定の対象に入る'
+  ! grep -qF 'stopped / stopped-seen は完了推定の対象外' "$f"
+  grep -F 'notify-closed' "$f" | grep -qF '止まった印の有無によらず'
   grep -F 'not-done' "$f" | grep -qF 'reap'
   grep -F 'notify-closed' "$f" | grep -qF 'mark done'
 }
