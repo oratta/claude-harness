@@ -265,11 +265,19 @@ develop の `references/epic-multirepo.md` の読み替え表・補足は、エ�
 
 ## ADDED Requirements
 
-### Requirement: 未回答の停止の記録が残る止まりは問いではないとして落とさない
+### Requirement: 未回答の停止の記録を stop-judge.sh と epic-stop.md が同じ定義で持つ
 
-`未回答の停止の記録` とは、子 issue の 1 行目が `子の停止: 主の返事待ち` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` の最新のもの（作成時刻が最後の入力より前でもよい）が存在し、かつ子のリポジトリの open の PR のうち本文に `Closes #<子の番号>`・`Fixes #<子の番号>`・`Refs #<子の番号>`（大文字小文字不問）のどれかを持つものの 1 つ以上にラベル `needs-approval` が付いていることをいう。`stop-judge.sh` は、モデルが `判断: 問いではない` を出したときに限り（それ以外の判断では PR を調べない）、未回答の停止の記録があるかを確かめ、あれば stdout に何も出さず exit 1 で終わらなければならない（MUST。要件「epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける」の形の崩れの扱いと同じ。`wait` は子 issue に `親の判断: 判断できなかった` を投稿して `stopped` に残し、記録の `stop` は `stopped-seen` のまま `resumed` に書き換えない）。PR の一覧を `gh` が返せない・読めないときも同じく exit 1 で終わる（MUST。確かめられないまま問いではないとして通さない）。親は `references/epic-stop.md` の手順 8 で、未回答の停止の記録がある止まりを `dismiss` してはならない（MUST NOT）。確かめ方は `references/epic-stop.md` に、`stop-judge.sh` と同じ定義で書く（MUST）。
+`未回答の停止の記録` とは、子 issue の 1 行目が `子の停止: 主の返事待ち` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` の最新のもの（作成時刻は最後の入力より前でもよい）があり、かつ子のリポジトリの open の PR のうち本文に `Closes`・`Fixes`・`Refs` の `#<子の番号>`（大文字小文字不問）を持つものの 1 つ以上にラベル `needs-approval` が付いていることをいう。`references/epic-stop.md` は `stop-judge.sh` と同じ定義でこれを書き、親は手順 8 でこの止まりを `dismiss` してはならない（MUST NOT）。
 
-この要件の守備範囲で入力として扱うのは、子 issue のコメントと、子のリポジトリの PR の本文・ラベルである。拾いたい誤りは、親や起動時の指示が最後の入力のターンで子が説明だけを返したとき、それより前の未回答のリスク許容の記録が最後の入力より古いために見えず、止まりが `resumed` に書き換わって、親からの `reply --as owner` が `skipped not-stopped` で拒まれることである。次は通してよく、この要件では止めない: 記録があっても PR に `needs-approval` が付いていなければ（主が答えて外された）問いではないとして通すこと／PR の本文に `Closes` などの参照が無く PR を結び付けられない子の止まりが問いではないとして通ること／コメントの投稿者が権限の無いユーザーで記録に数えられないこと。PR と記録の結び付け方の揺れを見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
+#### Scenario: 手順 8 が未回答の記録の止まりを dismiss しないと書いている
+- **WHEN** `references/epic-stop.md` の手順 8 の `dismiss` の文を読む
+- **THEN** 未回答の停止の記録の定義（`stop-judge.sh` と同じ）と、その止まりを `dismiss` しないことが書かれている
+
+### Requirement: stop-judge.sh は未回答の停止の記録が残る止まりを問いではないとして通さない
+
+`stop-judge.sh` は、モデルが `判断: 問いではない` を出したときに限り（それ以外の判断では PR を調べない）、未回答の停止の記録があるかを確かめ、あれば stdout に何も出さず exit 1 で終わらなければならない（MUST）。`wait` は形の崩れとして子 issue に `親の判断: 判断できなかった` を投稿して `stopped` に残し、記録の `stop` を `resumed` に書き換えない。PR の一覧を `gh` が返せないときも同じく exit 1 で終わる（MUST）。
+
+この要件の守備範囲は、子 issue のコメントと子のリポジトリの PR の本文・ラベルである。拾いたい誤りは、最後の入力のターンで子が説明だけを返したとき、古い未回答の記録が見えず止まりが `resumed` に書き換わることである。`needs-approval` が外れていること・PR に参照が無く結び付けられないこと・権限の無いユーザーのコメントは通してよい。結び付け方の揺れを塞ぎ切ることは完了条件としない。
 
 #### Scenario: 古い未回答の記録と needs-approval があれば問いではないは形の崩れになる
 - **WHEN** 子 11 の `子の停止: 主の返事待ち` の記録が止まりの JSON の最後の入力より前に作られ、子の open の PR の本文が `Closes #11` でラベルに `needs-approval` が付いている状態で、モデルのスタブが `判断: 問いではない` を出す
@@ -287,13 +295,9 @@ develop の `references/epic-multirepo.md` の読み替え表・補足は、エ�
 - **WHEN** 上の最初の場面のあとで、親が `reply --as owner 400 11 <主の答え>` を実行する
 - **THEN** 結果は `skipped 11 not-stopped` でなく送信され、記録の `stop` が `stopped-seen` から変わっていない
 
-#### Scenario: 手順 8 が未回答の記録の止まりを dismiss しないと書いている
-- **WHEN** `references/epic-stop.md` の手順 8 の `dismiss` の文を読む
-- **THEN** 未回答の停止の記録の定義（`stop-judge.sh` と同じ）と、その止まりを `dismiss` しないことが書かれている
-
 ### Requirement: owner-away で起こされた親は同じ出力のほかの行を処理し終えてから wait を掛け直す
 
-`references/epic-stop.md` の `owner-away` の節は、主に知らせたあとの `wait` の掛け直しを、「同じ出力のほかの行（`closed`・`done`・`stopped`・`unrecorded`）を `references/epic-loop.md` の手順どおりに処理し終えてから手順 2 に戻って `wait` を掛け直す。`owner-away` の行だけの出力のときは同じ引数で掛け直す」と書かなければならない（MUST）。同じ出力に `closed <N>` や `stopped <N>` が並ぶのに先に掛け直すと、閉じた子を位置引数に残したまま待ちに戻り、閉じた子の処理と止まった子の処理が抜けるためである。
+`references/epic-stop.md` の `owner-away` の節は、主に知らせたあとの `wait` の掛け直しを、「同じ出力のほかの行を `references/epic-loop.md` の手順どおりに処理し終えてから手順 2 に戻って掛け直す。`owner-away` の行だけなら同じ引数で掛け直す」と書かなければならない（MUST）。同じ出力に `closed <N>` や `stopped <N>` が並ぶのに先に掛け直すと、閉じた子を位置引数に残したまま待ちに戻り、閉じた子の処理と止まった子の処理が抜けるためである。
 
 この要件の守備範囲で入力として扱うのは、`references/epic-stop.md` の文面である。拾いたい誤りは、`owner-away` と ほかの語が同じ出力に並んだときの処理の取りこぼしである。次は通してよく、この要件では止めない: `owner-away` だけの出力で同じ引数のまま掛け直すこと。文面の言い回しの揺れを見つけるたびに塞ぎ切ることは、この要件の完了条件としない。
 
