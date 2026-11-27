@@ -6,6 +6,7 @@
 # 固定するのは stopped の検知、判断のコマンドに渡る止まりの JSON、子 issue のコメントの中身まで。判断の中身は対象外。
 # 実行: scripts/test.sh epic-stop-from-log-scenario
 # EPIC_STOP_SCENARIO_SCRIPT で対象のスクリプトを差し替えられる（スクリプトの写しを壊して落ちることを確かめるため）。
+# 差し替え用の写しは scripts/ の中に置く（epic-dispatch.sh は同じディレクトリの epic-state.sh などを相対で読むため）。
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -15,7 +16,7 @@ setup() {
   export EPIC_STATE_ROOT="$BATS_TEST_TMPDIR/state"
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
   export EPIC_DISPATCH_JUDGE="$STUB_BIN/judge"
-  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
+  unset EPIC_DISPATCH_PARENT_EPIC EPIC_DISPATCH_STOP_TEXT_MAX EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
   mkdir -p "$STUB_BIN" "$STUB_CFG"
 
   CHILD_WT="$BATS_TEST_TMPDIR/work/issue-11"
@@ -47,12 +48,16 @@ printf "判断: 主に上げる\n理由: 主の判断が要る\n返事:\n記録:
     branch: "oratta/issue-11", base: "main", session: "", launch_failed: "", status: "running", stop: "",
     created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z"}' > "$RECORD"
 
-  # 会話ログ: 子が 10 分前に問いを書いてターンを終え、そのあと何も無い
-  local ts dir
+  # 会話ログ: 起動時の入力（親が最初に送った行）のあと、子が 10 分前に問いを書いてターンを終え、そのあと何も無い
+  local ts ts0 dir
   ts="$(jq -rn '(now - 600) | floor | todate')"
+  ts0="$(jq -rn '(now - 660) | floor | todate')"
+  # 起動時の入力行の時刻（判断に渡る last_input_at と比べる）
+  STARTUP_TS="$ts0"
   dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$CHILD_WT" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$dir"
   {
+    jq -cn --arg ts "$ts0" '{type: "user", entrypoint: "cli", uuid: "00000000-0000-4000-8000-000000000000", timestamp: $ts, message: {role: "user", content: "/develop #11"}}'
     jq -cn --arg ts "$ts" --arg u "$SAID_UUID" --arg x "$SECRET どちらにしますか" \
       '{type: "assistant", entrypoint: "cli", uuid: $u, timestamp: $ts, message: {role: "assistant", content: [{type: "text", text: $x}]}}'
     jq -cn --arg ts "$ts" '{type: "system", subtype: "turn_duration", entrypoint: "cli", timestamp: $ts}'
@@ -99,6 +104,9 @@ record_turn() {
   [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = "$SAID_UUID" ]
   jq -r .text "$STUB_CFG/judge_json" | grep -qF "$SECRET"
   [ "$(jq -r .marked "$STUB_CFG/judge_json")" = false ]
+  # 起動時の入力行が最後の入力として渡り、止まりの発言より前なので input_after は false
+  [ "$(jq -r .last_input_at "$STUB_CFG/judge_json")" = "$STARTUP_TS" ]
+  [ "$(jq -r .input_after "$STUB_CFG/judge_json")" = false ]
 }
 
 @test "stop scenario: an escalation posts the uuid and never the statement" {
@@ -108,7 +116,12 @@ record_turn() {
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
   [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: $SAID_UUID" ]
   [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
+  # 本文はどの公開のコメントにも載らない（子 issue だけでなくエピックへのコメントも）
   ! grep -qF "$SECRET" "$STUB_CFG/comment_11" || return 1
+  local f
+  for f in "$STUB_CFG"/comment_*; do
+    ! grep -qF "$SECRET" "$f" || return 1
+  done
 }
 
 @test "stop recovery: a missing uuid is filled without receiving or judging the turn again" {
