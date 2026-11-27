@@ -1223,8 +1223,8 @@ refute() {
 # 照合の対象は references/epic.md・references/epic-child-stop.md の文だけで、openspec の spec の文言は照合しない。
 # 「委任が有効か」の 6 条件と「委任が効く止まり」の 4 条件は epic-delegation.md にだけ置き、epic-child-stop.md と pr-review-gate の pass.md は判定前にそれを読む（pass.md の読込指示は pr-review-gate-skill.bats が検査する）。
 
-DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1 行目が `主の委任: リスク許容` なら 1〜4 行目が、`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
-DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
+DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1 行目が `主の委任: リスク許容` なら 1〜4 行目が問いの形かきっかけの形のどちらかの定型の文ちょうど（きっかけの形なら 5 行目が `きっかけ: ` で始まり、そのあとの値が空白をまとめて空でなく `なし` でない）、`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
+DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時より後（委任の確認の timestamp との前後は見ない。委任の確認より前に止まった子にも効く） ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 DELEG_RECOMMEND='`推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 
 deleg_para() { cat "$SKILL_DIR/references/epic-stop.md" "$SKILL_DIR/references/epic-delegation.md"; }
@@ -1315,7 +1315,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   grep -qF '末尾が `[主の委任: セッション <ID> / uuid <uuid> / 記録 <URL>]` の返事' <<<"$item"
   grep -qF '上の `--relayed` に掛けず' <<<"$item"
   grep -qF '添え書きの無い返事としても扱わず' <<<"$item"
-  grep -qF 'owner-reply-check.sh --delegated <ID> <uuid> <委任の記録の作成日時> <URL> <最新の停止の記録の作成日時>' <<<"$item"
+  grep -qF 'owner-reply-check.sh --delegated <ID> <uuid> <委任の記録の作成日時> <URL> <停止の記録の引数>' <<<"$item"
   grep -qF '「親経由で受領（委任）」が正本' <<<"$item"
   grep -qF '添え書き（`[主の発言: …]` も `[主の委任: …]` も）が無い' <<<"$item"
 }
@@ -1328,9 +1328,116 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   grep -qF '止まった件が記録を残す止まり（リスク許容・聖域の変更の承認・破壊的な git 操作の承認の返事待ち）のときだけ受け、上の `--relayed` に掛けず' <<<"$item"
   grep -qF '止まった件が記録を残す止まりでない（マージ待ち・実機操作などで止まった）、または止まりに委任が効かないときは G を起こさず' <<<"$item"
   grep -qF '確かめられなかった理由（`REASON=` の値か満たさなかった条件）' <<<"$item"
-  grep -qF '③親と子が同じ PC で動き、委任の確認のあとに親が起動し直したものは通してよい' <<<"$item"
+  grep -qF '③親と子が同じ PC で動き、委任の確認のあとに親が起動し直したもの、主が会話で任せる旨を述べたきっかけの発言そのものを確認にしたリスク許容の委任、委任の確認より前に止まったリスク許容の止まりは通してよい' <<<"$item"
   # [主の発言: …] の経路の文は変えない
   grep -qF 'owner-reply-check.sh --relayed <ID> <uuid> <作成日時> <URL>' <<<"$item"
+}
+
+# --- Requirement: 親は主の委任を…受ける（きっかけの形）／委任の確認の場所／委任が効く止まり③／確認の直後に送る／子の照合の選び方（#1609） ---
+
+@test "delegation trigger (#1609): the trigger-form record has the fixed lines 1-4 and the trigger line runs to the end" {
+  p="$(cat "$SKILL_DIR/references/epic-delegation.md")"
+  grep -qxF '  期間: きっかけの発言から、このエピックに `主の委任:` で始まる次のコメントが付くか、エピックが閉じるまで' <<<"$p"
+  grep -qxF '  きっかけ: <主が任せる旨を述べた発言の全文>' <<<"$p"
+  # 1〜3 行目は問いの形と同じ文。2 つの形の 1 行目と範囲の行が、どちらも定型の文として 2 回ずつ現れる
+  [ "$(grep -cxF '  主の委任: リスク許容' <<<"$p")" -eq 2 ]
+  [ "$(grep -cxF '  範囲: このエピックの子が pr-review-gate で求めるリスク許容のうち、子の停止の記録の推奨が「許容する」のもの。聖域の変更・破壊的な操作・マージの承認・不許容は含まない' <<<"$p")" -eq 2 ]
+  grep -qF '記録の形（問いの形かきっかけの形か）は 4 行目の `期間:` の文で見分ける' <<<"$p"
+  grep -qF '本文の終わりまでをその値とする（あとに行を足さない。`なし` は書かない）' <<<"$p"
+}
+
+@test "delegation trigger (#1609): the parent takes a trigger without asking and falls back to the question form when late" {
+  p="$(deleg_para | grep -F -- '- **委任の受け方**')"
+  grep -qF '**きっかけの形**（`主の委任: リスク許容` だけ）' <<<"$p"
+  grep -qF 'そのターンのうちに（主の次の発言より前に）' <<<"$p"
+  grep -qF '記録を投稿し、問わない' <<<"$p"
+  grep -qF 'きっかけの発言そのものを委任の確認とし' <<<"$p"
+  grep -qF '主に `任せる` と打たせない' <<<"$p"
+  grep -qF '主の次の発言より前に記録を投稿できなかったとき、または「委任の確認の場所」の `--delegated-trigger` が通らなかったときは、きっかけの形を使わず、問いの形で受け直す' <<<"$p"
+  # 論点なしの止まりは今どおり問いの形
+  grep -qF '**問いの形**（`主の委任: 論点なしの止まり` と、きっかけの形で受けられなかった `主の委任: リスク許容`）' <<<"$p"
+}
+
+@test "delegation trigger (#1609): the three conditions for the trigger form, and what happens to the other messages" {
+  p="$(deleg_para | grep -F -- '- **委任の受け方**')"
+  grep -qF '①発言の全文だけから、子の止まり（リスク許容）を親に任せる旨が読める' <<<"$p"
+  grep -qF '②任せる対象が、親が報告した 1 件の止まりや親の問いの件に限られない（「この件は任せる」「それでいい」のように、直前の親の発言を読まないと対象が決まらない発言は当たらない。親が 1 件の止まりを報告した直後の発言でも、全文だけから①が読めれば当たる）' <<<"$p"
+  grep -qF '③任せる範囲から子・止まりを除いたり、期限や条件を付けたりしていない' <<<"$p"
+  grep -qF '全文が子の止まり全般を任せる旨とも読める発言（「#2058 以外の子の許容は任せる」「今日の分だけ子の許容は任せる」など）だけを問いの形で受け、ほかは元の問い・報告への答えとして扱う' <<<"$p"
+}
+
+@test "delegation trigger (#1609): asking about an excluded or time-limited message says the confirmation also covers the excluded child and the time after" {
+  p="$(deleg_para | grep -F -- '- **委任の受け方**')"
+  grep -qF '除外・期限・条件の付いた発言で問うときは、問いの本文に、定型の範囲と期間には主の付けた除外・期限・条件が入らず、確認すると除いた子や期限のあとにも効くことを書く' <<<"$p"
+}
+
+@test "delegation trigger (#1609): the after-the-fact report names the children sent in the same turn with their stop record URLs" {
+  p="$(deleg_para | grep -F -- '- **委任の受け方**')"
+  grep -qF '同じターンで委任を当てて送った子（子の番号と停止の記録の URL。無ければ無い旨）' <<<"$p"
+  grep -qF '取り消すときは取り消す旨を述べればよいこと' <<<"$p"
+  grep -qF '主がすることは無い報告の型（1 行目 `主がすること: なし`）' <<<"$p"
+}
+
+@test "delegation trigger (#1609): the parent runs --delegated-trigger with the trigger value read back from the posted record before leaving the location line" {
+  p="$(deleg_para | grep -F -- '- **委任の確認の場所**')"
+  grep -qF 'owner-reply-check.sh --delegated-trigger "$CLAUDE_CODE_SESSION_ID" <uuid> <委任の記録の作成日時> <きっかけ: の値>' <<<"$p"
+  grep -qF '4 番目の引数は、投稿した記録を `gh api repos/{owner}/{repo}/issues/comments/<comment_id> --jq .body` で読み直した `きっかけ:` の値' <<<"$p"
+  grep -qF '会話の発言から写し直さない' <<<"$p"
+  grep -qF 'exit 0 でなければその記録を使わず、次の行を残さず、問いの形で受け直す' <<<"$p"
+  # 照合は確認の場所の行を投稿するより前
+  before="${p%%通ったら、エピックに*}"
+  grep -qF -- '--delegated-trigger' <<<"$before"
+}
+
+@test "delegation trigger (#1609): condition 3 of the risk stop no longer compares with the confirmation time, but sanctuary and merge stops still do" {
+  r="$(deleg_para | grep -F -- '- **委任が効く止まり**')"
+  grep -qF '③停止の記録の作成日時が、そのコメントの作成日時より後（委任の確認の timestamp との前後は見ない。委任の確認より前に止まった子にも効く）' <<<"$r"
+  run grep -F 'そのコメントの作成日時と委任の確認の timestamp の両方より後' <<<"$r"; [ "$status" -eq 1 ]
+  grep -qF '`主に聞く理由:` が論点なしと書き、停止の記録の作成日時が委任の確認の timestamp より後' <<<"$r"
+  grep -qF '最後の発言の時刻が委任の確認の timestamp より後' <<<"$r"
+  grep -qF '委任の確認より前の聖域の変更・破壊的な git 操作の止まりとマージ待ち' <<<"$r"
+}
+
+@test "delegation trigger (#1609): right after the location line, the parent sends to children already waiting, chosen by pending-owner and the current stop record" {
+  p="$(deleg_para | grep -F -- '- **委任で送る**')"
+  grep -qF '**確認の直後に送る**: `委任の確認の場所:` の行を投稿した同じターンで' <<<"$p"
+  grep -qF '`scripts/epic-dispatch.sh pending-owner <子>...` が `pending <N>` を返す子' <<<"$p"
+  grep -qF '作成時刻が `child-log --last <N>` の `.last_input_at` より後の最新のもの' <<<"$p"
+  grep -qF 'それがリスク許容の止まりで委任が効けば同じ返事を送り、`委任で送った:` の行を残す' <<<"$p"
+  grep -qF '今回の停止の記録が無い子と、`pending <N>` が返らない子（主が子のタブで話し始めた子など）には送らない' <<<"$p"
+}
+
+@test "delegation trigger (#1609): a whole-epic trigger right after a single stop report is taken in the trigger form and sent to that child in the same turn" {
+  # 1 件の止まりの報告の直後の発言でも、全文だけから①が読めればきっかけの形で受け（②の但し書き）、
+  # 確認の直後に送る段落でその子（pending-owner が返す子）に委任が効けば同じターンに送る
+  p="$(deleg_para)"
+  grep -F -- '- **委任の受け方**' <<<"$p" | grep -qF '親が 1 件の止まりを報告した直後の発言でも、全文だけから①が読めれば当たる'
+  grep -F -- '- **委任の受け方**' <<<"$p" | grep -qF '「委任で送る」の同じターンに送る子に送ってから'
+  grep -F -- '- **委任で送る**' <<<"$p" | grep -qF '委任の確認より前に止まった子にも効く'
+}
+
+@test "delegation trigger (#1609): the parent scope lists the trigger-form errors and lets earlier risk stops pass" {
+  p="$(deleg_para | grep -F -- '- **守備範囲**')"
+  grep -qF 'きっかけの形では、きっかけの全文が主の発言と違う・記録より前に主が次の発言をしていた・直前の親の発言を読まないと対象が決まらない発言' <<<"$p"
+  grep -qF '確認より前の聖域の変更と破壊的な git 操作の止まり' <<<"$p"
+  grep -qF '主が会話で任せる旨を述べたきっかけの発言そのものを確認にしたリスク許容の委任と、委任の確認より前に止まったリスク許容の止まりへの送信は通してよい' <<<"$p"
+}
+
+@test "delegation trigger (#1609): the child picks the check by the record form and passes - for a risk stop" {
+  item="$(child_reply_item)"
+  grep -qF '委任の記録の 4 行目の `期間:` の文で形を見分けて照合を選ぶ' <<<"$item"
+  grep -qF '停止の記録の引数はリスク許容の止まりでは `-`' <<<"$item"
+  grep -qF '聖域の変更・破壊的な git 操作の止まりでは `<最新の停止の記録の作成日時>`' <<<"$item"
+  grep -qF 'きっかけの形の記録は、リスク許容の止まりのときだけ `bash <plugin>/scripts/owner-reply-check.sh --delegated-trigger <ID> <uuid> <委任の記録の作成日時> <記録の きっかけ: の値>` を回す' <<<"$item"
+  grep -qF '`REASON=not-after`・`REASON=not-same` などで 1、または 2' <<<"$item"
+}
+
+@test "delegation trigger (#1609): the child refuses a trigger that excludes this child or sets a different limit" {
+  item="$(child_reply_item)"
+  grep -qF 'きっかけの形では、`MATCH:` の全文だけから子の止まりを親に任せる意思が読め、この子・この止まりを除く条件も定型と違う期限も付けていないことも確かめ、満たさなければ受けない' <<<"$item"
+  grep -qF '②拾いたい誤りは、確認でない発言・別のエピックの記録・取り消し済みや編集済みの記録・範囲外の止まりでの委任・この子を除く条件や違う期限の付いたきっかけの発言を主の許容として G に渡すこと' <<<"$item"
+  # 判断の正本（親・子・G が同じ文で読む）は epic-delegation.md
+  grep -qF '直前の親の発言を読まないと対象が決まらない発言（「任せる」「この件は任せる」「それでいい」など）でなく、この子・この止まりを除く条件も定型と違う期限や条件も付けていないときだけ確認として読む' "$SKILL_DIR/references/epic-delegation.md"
 }
 
 @test "skill: step 7 of the Orca route re-presents children waiting for the owner before launch" {
