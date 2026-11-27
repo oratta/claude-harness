@@ -217,8 +217,14 @@ put_pane() { printf '%s\t%s\t%s\n' "$1" "${3-$WT}" "$2" >> "$STUB_CFG/panes"; }
 
 # 入力欄に送った文が残っている画面（<最後の行の前に足す行>）
 screen_with_input() {
-  printf '%s\n' '❯ /develop #5 の指示' '  ⏸ plan mode on (shift+tab to cycle)' > "$STUB_CFG/screen"
+  printf '%s\n' '────────' '❯ /develop #5 の指示' '────────' '  ⏸ plan mode on (shift+tab to cycle)' > "$STUB_CFG/screen"
   [ -z "${1-}" ] || printf '%s\n' "$1" >> "$STUB_CFG/screen"
+}
+
+# 実機（Claude Code 2.1.332・既定のモード）で、入力欄に文が残ったときの画面: 最下部に入力待ちの印（? for shortcuts・
+# shift+tab to cycle）が出ない。tests の証拠は #1829 のコメントの capture-pane の抜粋
+screen_default_mode_with_input() {
+  printf '%s\n' '────────' '❯ /develop #5 の指示' '────────' '  .../issue-5 Opus oratta/issue-5' '  ⏸ manual mode on' > "$STUB_CFG/screen"
 }
 
 @test "start: only Enter is resent every 4 seconds while the prompt stays in the input line" {
@@ -228,6 +234,50 @@ screen_with_input() {
   [ "$output" = 'failed send %5' ]
   [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 3 ]
   [ "$(calls 'tmux send-keys -t %5 -l -- .*develop')" -eq 1 ]
+}
+
+@test "start: Enter is resent on a default-mode screen with no ready mark when the prompt stays in the input line" {
+  # 起動の入力待ちの確認（最初の screen）では印があり、文を打ったあとの画面（screen2）では印が消える
+  printf '%s\n' '────────' '❯' '────────' '  ⏸ manual mode on' > "$STUB_CFG/screen"
+  printf '%s\n' '────────' '❯ /develop #5 の指示' '────────' '  .../issue-5 Opus oratta/issue-5' > "$STUB_CFG/screen2"
+  echo 3 > "$STUB_CFG/switch_at"
+  EPIC_DISPATCH_SUBMIT_WAIT=5 run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$status" -eq 1 ]
+  [ "$output" = 'failed send %5' ]
+  [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 3 ]
+  [ "$(calls 'tmux send-keys -t %5 -l -- .*develop')" -eq 1 ]
+}
+
+@test "start: a manual-mode footer alone counts as the input prompt" {
+  screen_default_mode_with_input
+  EPIC_DISPATCH_SUBMIT_WAIT=5 run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$output" = 'failed send %5' ]
+  [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 3 ]
+}
+
+@test "start: the prompt text only in the history above the input frame is not resent" {
+  printf '%s\n' '● /develop #5 の指示 を受け取りました' '────────' '❯' '────────' '  ⏸ manual mode on' > "$STUB_CFG/screen"
+  EPIC_DISPATCH_SUBMIT_WAIT=5 run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$output" = 'failed send %5' ]
+  [ "$(calls 'tmux send-keys -t %5 C-m')" -eq 2 ]
+}
+
+@test "start: failed send says the pane and the worktree remain and the prompt may sit in the input line" {
+  screen_default_mode_with_input
+  run tm start "$WT" 'cld' '/develop #5 の指示' 5
+  [ "$output" = 'failed send %5' ]
+  grep -qF 'the pane and the worktree are still there' "$BATS_TEST_TMPDIR/stderr"
+  c="$(err_line 'tmux capture-pane -p -t %5')"; r="$(err_line 'resend:')"
+  [ "$c" -lt "$r" ]
+}
+
+@test "deliver: failed send prints bare failed send and says the pane and the worktree remain" {
+  put_pane %8 node
+  screen_default_mode_with_input
+  run tm deliver "$WT" 0 '/develop #5 の指示' 'cld' '/develop #5'
+  [ "$status" -eq 1 ]
+  [ "$output" = 'failed send' ]
+  grep -qF 'the pane and the worktree are still there' "$BATS_TEST_TMPDIR/stderr"
 }
 
 @test "start: no Enter is resent when the screen shows a permission or trust dialog" {

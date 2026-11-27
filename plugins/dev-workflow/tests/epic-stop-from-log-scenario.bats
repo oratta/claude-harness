@@ -6,6 +6,7 @@
 # 固定するのは stopped の検知、判断のコマンドに渡る止まりの JSON、子 issue のコメントの中身まで。判断の中身は対象外。
 # 実行: scripts/test.sh epic-stop-from-log-scenario
 # EPIC_STOP_SCENARIO_SCRIPT で対象のスクリプトを差し替えられる（スクリプトの写しを壊して落ちることを確かめるため）。
+# 差し替え用の写しは scripts/ の中に置く（epic-dispatch.sh は同じディレクトリの epic-state.sh などを相対で読むため）。
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
@@ -15,7 +16,7 @@ setup() {
   export EPIC_STATE_ROOT="$BATS_TEST_TMPDIR/state"
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
   export EPIC_DISPATCH_JUDGE="$STUB_BIN/judge"
-  unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
+  unset EPIC_DISPATCH_PARENT_EPIC EPIC_DISPATCH_STOP_TEXT_MAX EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
   mkdir -p "$STUB_BIN" "$STUB_CFG"
 
   CHILD_WT="$BATS_TEST_TMPDIR/work/issue-11"
@@ -108,7 +109,12 @@ record_turn() {
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
   [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: $SAID_UUID" ]
   [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
+  # 本文はどの公開のコメントにも載らない（子 issue だけでなくエピックへのコメントも）
   ! grep -qF "$SECRET" "$STUB_CFG/comment_11" || return 1
+  local f
+  for f in "$STUB_CFG"/comment_*; do
+    ! grep -qF "$SECRET" "$f" || return 1
+  done
 }
 
 @test "stop recovery: a missing uuid is filled without receiving or judging the turn again" {
