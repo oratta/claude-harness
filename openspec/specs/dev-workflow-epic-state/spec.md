@@ -1346,6 +1346,14 @@ Stop は payload のセッションと指定ログの最終発言が現在の入
 - **WHEN** `owner-away 11` を返した直後の記録を読む
 - **THEN** `stop`・`stop_uuid` は変わらず、`owner_away_told` は今回のターンの `generation` と `session_id` を持つ。送信・`orca terminal close`・`--relaunch` は呼ばれていない
 
+#### Scenario: 閾値を過ぎたあとに resolve を付けても知らせるだけで何も呼ばない
+- **WHEN** 子 11 の記録が `owner-away` の閾値を過ぎた状態で `wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11` を実行する
+- **THEN** stdout は `owner-away 11`、exit 0 で、判断・子への送信・`orca terminal close`・`orca terminal create` は 0 回で、`owner_away_told` は今回のターンになる
+
+#### Scenario: 記録に書けなければ知らせず、書けるまで owner_away_told は空のまま
+- **WHEN** 閾値を過ぎた子 11 の記録の排他（`<記録>.lock` のディレクトリ）が取れない状態で `EPIC_STATE_LOCK_TIMEOUT=0` の `wait --interval 0 --timeout 0 --watch-stopped 11` を実行する
+- **THEN** stdout は `timeout 11` で `owner-away` は出ず、`owner_away_told` は空（null）のままである
+
 ### Requirement: owner-away の守備範囲を限る
 
 上の 2 つの要件（主が打った返事待ちの知らせ・owner-away の一度きりの記録）は、入力として扱うものを、子の記録の `turn_input` / `turn_state` / `owner_away_told` / `worktree`、その `worktree` の会話ログの `session` と `last_input_at`、`EPIC_DISPATCH_OWNER_AWAY_SEC` の値に限らなければならない（MUST）。拾いたい誤りは、主が話している最中の子への送信と端末の終了、同じ問いの繰り返しの知らせ、主が答えたあとの知らせ、子を新しいセッションで再開したあとに古いセッションの返事待ちを知らせることである。次は通してよく、止めない: 親や起動時の入力のターン（既存の停止の経路で扱う）・状態記録の無い古い子（知らせない）・別の経路で解決済みの問いへの余分な 1 回の知らせ・会話ログを読めない子の古いセッションの返事待ちの知らせ・新しいセッションに主の入力がまだ無い子の古い返事待ちの知らせ・子のワークツリーで主が別の Claude Code を開いて入力したあと、古いセッションの問いが未回答のまま残っていても知らせが出ないこと（新しいセッションの入力を古い問いの終わりとみなす）。穴が見つかるたびに塞ぎ切ることは完了条件にしない。
