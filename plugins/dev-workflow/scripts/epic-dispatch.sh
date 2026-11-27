@@ -109,7 +109,7 @@
 #   --watch-stopped（値なし）を付け、位置引数の子が 1 件以上あるときは、閉じていない位置引数の子のうち
 #   記録の stop が stopped のものを排他つきで stopped-seen に書き換え（そのあと Orca の印へ写す）、書けたら
 #   「止まった子」とする（書けなければ失敗したポーリングに数える）。出力は `closed <N>...`・
-#   `done <N>...`・`stopped <N>...` を該当するものだけこの順に（1〜3 行）出して exit 0。
+#   `done <N>...`・`stopped <N>...`・`owner-away <N>...` を該当するものだけこの順に（1〜4 行）出して exit 0。
 #   主が子のタブで打った入力から始まった主の返事待ち（turn_input.sender が owner・有効な turn_state の値が主の返事待ち）は
 #   止まりに数えない。turn_state.recorded_at から EPIC_DISPATCH_OWNER_AWAY_SEC（非負整数・既定 3600 秒）以上たち、
 #   主の新しい入力が無ければ、排他つきで記録の owner_away_told に今回のターンを書いてから `owner-away <N>...` を
@@ -131,7 +131,7 @@
 #   形の崩れは `親の判断: 判断できなかった`、通すで送信の失敗は `親の判断: 通すが送れなかった` を、2 行目
 #   `止まりの発言: <uuid か 不明>`、3 行目 `停止の記録: <URL か なし か 不明>` 付きで投稿して
 #   `stopped` に残す（投稿に失敗したら stderr に投稿し直しのコマンド）。出力は closed / done / stopped /
-#   unrecorded の順の 1〜4 行。--resolve が無ければ判断を呼ばず、unrecorded も出さない。
+#   unrecorded / owner-away の順の 1〜5 行。--resolve が無ければ判断を呼ばず、unrecorded も出さない。
 #   --resolve の値が無い・数字でない、または返事の送り方の環境変数が誤っていれば使い方を出して exit 1
 #   長い待ち: --watch-stopped で間隔と上限が 0 より大きいとき、失敗の無いポーリングで位置引数の子の全員が
 #   主に伝え済みの止まり（記録の stop が stopped-seen・status が done でない・stop_uuid が空でなく、文字列の
@@ -2455,6 +2455,7 @@ cmd_pending_owner() {
   for n in "$@"; do
     child_record "$PARENT_TOP" "$n" || continue
     [ "$(es_get "$ES_HIT" stop)" = stopped-seen ] || continue
+    [ "$(es_get "$ES_HIT" status)" != "done" ] || continue
     su="$(es_get "$ES_HIT" stop_uuid)"
     if [ -z "$su" ]; then
       echo "pending $n"

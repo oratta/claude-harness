@@ -2382,7 +2382,7 @@ develop の `references/epic-loop.md` の「通常進行の手順」は、端末
 4. 判断のコマンドが非 0 で終わった・出力が 1〜4 行目の形で読めない、または判断が `判断: 通す` で送れなかった（`failed`）なら、子 issue に 1 行目 `親の判断: 判断できなかった`（送れなかったときは `親の判断: 通すが送れなかった`。判断は通すで送信だけが失敗したことを事実どおりに書く）、2 行目 `止まりの発言: <止まりの uuid か 不明>`、3 行目 `停止の記録: <URL か なし>`（判断の出力から読めたときだけ。読めなければ `停止の記録: 不明`）、4 行目以降に何が失敗したかと（あれば）送るはずだった返事を書いたコメントを投稿し、その子を `stopped` に含める。判断の出力そのものはコメントに貼らない（MUST NOT。判断の入力には gitignore 済みの `.claude/casting/local.md` も入り、出力に引用されうるため。見たいときのために stderr にだけ出す）
 5. 判断が `判断: 問いではない` なら、記録の `stop` を `resumed` に戻し（`stop_uuid` は残す）、stderr に `問いではない <child> <理由>` を出し、子にも issue にも何も送らず、その子を出力に含めずに待ちを続ける（MUST）
 
-`--resolve` が働く `wait` の出力は、`closed <N>...`・`done <N>...`・`stopped <N>...`・`unrecorded <N>...` を該当するものだけこの順に（1〜4 行）出して exit 0 とする（MUST）。`unrecorded` は「返事は子に届いたが、エピックへの 1 行を残せなかった」子で、親を起こして記録させるために出す。この出力の規定は、`--resolve` が働く場合に限り、既存の要件「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」と「エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する」が定める `closed`・`done`・`stopped` の 1〜3 行の規定に優先する。`--resolve` が働かない `wait` は、`unrecorded` を出さず、従来どおり 1〜3 行を出さなければならない（MUST）。ポーリングで `stopped` にも `unrecorded` にも含める子が 1 件も無く、閉じた子も完了の印の子もいなければ、`wait` は待ちを続けなければならない（MUST）。
+`--resolve` が働く `wait` の出力は、`closed <N>...`・`done <N>...`・`stopped <N>...`・`unrecorded <N>...`・`owner-away <N>...` を該当するものだけこの順に（1〜5 行）出して exit 0 とする（MUST。`owner-away` は要件「主が打った返事待ちは時間がたったら親が主に知らせる」の行で、`unrecorded` の次に出る）。`unrecorded` は「返事は子に届いたが、エピックへの 1 行を残せなかった」子で、親を起こして記録させるために出す。この出力の規定は、`--resolve` が働く場合に限り、既存の要件「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」と「エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する」が定める `closed`・`done`・`stopped` の 1〜3 行の規定に優先する。`--resolve` が働かない `wait` は、`unrecorded` を出さず、`closed`・`done`・`stopped`・`owner-away` を該当するものだけこの順に（1〜4 行）出さなければならない（MUST）。この 1〜4 行は、要件「epic-dispatch.sh は子が止まった印を付け、wait が止まった子を返す」が定める `closed`・`done`・`stopped` の 1〜3 行の規定にも優先する。ポーリングで `stopped` にも `unrecorded` にも `owner-away` にも含める子が 1 件も無く、閉じた子も完了の印の子もいなければ、`wait` は待ちを続けなければならない（MUST）。`owner-away` の子が 1 件でもあれば、ほかの語の行が無くても `wait` は待ちを終えて出力し exit 0 で終わる（MUST）。
 
 子 issue への `親の判断:` のコメントの投稿に失敗しても、その子は `stopped` に含める（MUST）。stderr に投稿し直すコマンドを出す（SHALL）。親は子 issue の `親の判断:` のうち、2 行目の `止まりの発言:` が今の止まりの uuid と一致するもの（uuid が空の止まりは、3 行目の `停止の記録:` が最新の `子の停止: 主の返事待ち` のコメントの URL と一致するもの）だけを今回の判断として読む（要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」）ので、投稿に失敗して前回の判断が残っていても、親はそれを今回の判断と取り違えず、判断が無いものとして扱う（要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」の手順 8 で親が照らす）。
 
@@ -2390,7 +2390,7 @@ develop の `references/epic-loop.md` の「通常進行の手順」は、端末
 
 - 入力: エピックの本文と子 issue の本文（どちらも、その issue の投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のときだけ）、子 issue の `親エピックからの注意書き:` で始まるコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のもの、子 issue の 1 行目が `子の停止: 主の返事待ち` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` の最新のものの本文と URL（止まりの JSON があるときは、`created_at` が最後の入力の時刻より後のものに限る。今回の止まりより古いリスク許容の記録を読まないため）、止まりの JSON（最後の子の発言の全文（末尾を残す。上限は要件「child-log --last は親に最後の発言の全文を出す」の `EPIC_DISPATCH_STOP_TEXT_MAX`）・未回答の質問ツールの問い・背景のタスクの有無・最後の入力の時刻・印の有無）、エピックのコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` で `親の判断: 子 #<child> ` で始まるもの、`plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md` の本文、リポジトリの `.claude/casting/project.md`・`.claude/casting/local.md`（あるものだけ）
 - 呼び方: 既定は `claude -p --model <モデル> --tools "" --no-session-persistence`。モデルは `EPIC_DISPATCH_JUDGE_MODEL`（既定 `sonnet`）、コマンド全体は `EPIC_DISPATCH_JUDGE_CMD` で変えられる。ツールを渡してはならない（MUST NOT）
-- 出力: 1〜3 行目はモデルの出力の 1 行目 `判断: 通す`・`判断: 主に上げる`・`判断: 問いではない` のどれか、2 行目 `理由: <1 行>`、3 行目 `返事: <1 行>`。4 行目は `stop-judge.sh` 自身が付ける `記録: <今回の停止の記録のコメントの URL か なし>`。モデルの出力が 1〜3 行目の形で読めなければ、stdout に何も出さず exit 1 で終わる（MUST）。`判断: 問いではない` は、止まりの JSON が無い・今回の停止の記録がある・未回答の質問ツールの問いがある・止まった印が付いている、のどれかのときは形の崩れとして扱う（MUST。子が止まると宣言した件を判断のモデルが黙って流さないため）
+- 出力: 1〜3 行目はモデルの出力の 1 行目 `判断: 通す`・`判断: 主に上げる`・`判断: 問いではない` のどれか、2 行目 `理由: <1 行>`、3 行目 `返事: <1 行>`。4 行目は `stop-judge.sh` 自身が付ける `記録: <今回の停止の記録のコメントの URL か なし>`。モデルの出力が 1〜3 行目の形で読めなければ、stdout に何も出さず exit 1 で終わる（MUST）。`判断: 問いではない` は、止まりの JSON が無い・今回の停止の記録がある・未回答の質問ツールの問いがある・止まった印が付いている・今回の止まりより前の未回答の停止の記録がある（要件「stop-judge.sh は未回答の停止の記録が残る止まりを問いではないとして通さない」）、のどれかのときは形の崩れとして扱う（MUST。子が止まると宣言した件を判断のモデルが黙って流さないため）
 - 止まりの JSON が無く停止の記録のコメントも見つからない・`gh` が失敗した・エピックか子 issue の投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のどれでもないか読めないときは、モデルを呼ばずに exit 1 で終わる（MUST）。exit 1 は `wait` の側で判断の失敗になり、子は主に上がる（issue は誰でも立てられるので、ほかの投稿者の本文で判断を誘導されないようにする）
 - `orca` の語を含んではならない（MUST NOT。既存要件「develop の手順書に orca のコマンドを書かず、orca を呼ぶスクリプトは 1 本にする」）
 
@@ -2449,6 +2449,10 @@ develop の `references/epic-loop.md` の「通常進行の手順」は、端末
 #### Scenario: 最後の入力より古い記録は判断に渡さない
 - **WHEN** 子 11 の最新の停止の記録の `created_at` が、止まりの JSON の最後の入力の時刻より前で、`stop-judge.sh 400 11 <JSON>` をモデルのスタブで実行する
 - **THEN** スタブが受け取った入力にその記録の本文が無く、最後の子の発言の全文があり、4 行目は `記録: なし` である
+
+#### Scenario: owner-away は resolve の有無によらず待ちを終える
+- **WHEN** 子 11 が閾値を過ぎた `owner-away` の状態で、`wait --watch-stopped 11` を `--resolve 400` 付きと無しでそれぞれ実行する
+- **THEN** どちらも stdout は `owner-away 11`、exit 0 で、判断のスタブ・子への送信・`orca terminal close`・`orca terminal create` は呼ばれない
 
 #### Scenario: JSON も記録も無ければ判断しない
 - **WHEN** 止まりの JSON を渡さず、子 11 に停止の記録が無い状態で `stop-judge.sh 400 11` を実行する
@@ -2622,10 +2626,10 @@ PR のマージの可否はこの基準で通してはならない（MUST NOT。
 develop の `references/epic-stop.md`「停止の処理」手順８の Orca 経路の手順は、次を規定しなければならない（MUST）。この要件は、要件「エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する」の親の側のうち、`stopped` で起こされたら記録を読んでユーザーに報告する規定と、止まった子への返事の仕方を #1034 で決めるとする規定に優先する。
 
 - 動いている子を待つ `wait` には、`--watch-stopped` に加えて `--resolve <エピック番号>` を付ける（MUST）。通すと判断された止まりは `wait` の中で返事が送られ、親は起こされない
-- `wait` の出力が `closed`・`done`・`stopped`・`unrecorded` の 1〜4 行であることを書く（MUST）。この 1〜4 行は `--resolve` を付けたときだけで、要件「エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する」の `closed`・`done`・`stopped` の 1〜3 行とする規定に優先する。`--resolve` を付けない `wait` の出力は従来どおり 1〜3 行であることも書く（MUST）
+- `wait` の出力が `closed`・`done`・`stopped`・`unrecorded`・`owner-away` の 1〜5 行であることを書く（MUST）。この 1〜5 行は `--resolve` を付けたときだけで、要件「エピックの子の止まりの手順と、親が stopped を受けて報告する手順を規定する」の `closed`・`done`・`stopped` の 1〜3 行とする規定に優先する。`--resolve` を付けない `wait` の出力は `closed`・`done`・`stopped`・`owner-away` の 1〜4 行であることも書く（MUST）
 - `unrecorded <N>...` で起こされたら、子には返事が届いているので主に上げず、`wait` が stderr に出した投稿し直しのコマンドでエピックに `親の判断: 子 #N 通した` の 1 行を残す（MUST）。stderr を読めなければ、`親の判断: 子 #N 通した — 理由は記録できなかった 発言 <止まりの uuid か 不明>`（今回の停止の記録があれば末尾に URL を足す）を投稿する（MUST）
 - `stopped <N>...` は `wait` が子の状態の記録（`turn_input` / `turn_state`）だけで決めた止まりであることを書く（MUST）。止まりに入るのは、送り手が親（頭が `親エピック #`）か起動時の指示のターンで、状態が `主の返事待ち` の子だけである（依存待ちの作業報告は要件「親は依存待ちの子を動いている子から外し既存操作で再起動する」の手順が先に扱う）。主が子のタブで打った入力から始まったターンは止まりに数えられないので、親は返事を送らず、端末を閉じず、起動し直さない（MUST。会話ログや経過時間から止まりを探してはならない（MUST NOT））。状態の記録が無いまま終わったターンは止まりとして扱わず、`--resolve` の判断にも回さない。`child-log --last` で最後の発言を読むのは、すでに決まった止まりの説明を組み立てるためである
-- `stopped <N>...` で起こされたら、止まった子ごとに `epic-dispatch.sh child-log --last <N>` で最後の発言の全文と止まりの uuid を読み、子 issue の最新の `子の停止: 主の返事待ち` のコメントのうち最後の入力より後のもの（今回の停止の記録）と、2 行目の `止まりの発言:` がその uuid と一致する最新の `親の判断:` のコメントを読む（MUST。uuid が空の止まりは 3 行目の `停止の記録:` と今回の停止の記録の URL で照合する）。一致する `親の判断:` が無ければ、判断が無いものとして扱う（MUST。前回の止まりへの判断を今回の判断と取り違えないため）。最後の入力より前の記録を今回の止まりの根拠にしてはならない（MUST NOT）。今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`epic-dispatch.sh dismiss <N>`（要件「親は問いでない止まりを dismiss で再開に戻す」）を呼んでから 2 に戻る（MUST。`--resolve` の判断が失敗した止まりや、判断のモデルが迷って主に上げるとした止まりもここを通る。戻さないと記録が `stopped-seen` のまま残り、完了の推定が止まり、声かけと出し直しが続くため）。`dismiss` の出力が `skipped` か `failed` でも主に上げない（MUST）
+- `stopped <N>...` で起こされたら、止まった子ごとに `epic-dispatch.sh child-log --last <N>` で最後の発言の全文と止まりの uuid を読み、子 issue の最新の `子の停止: 主の返事待ち` のコメントのうち最後の入力より後のもの（今回の停止の記録）と、2 行目の `止まりの発言:` がその uuid と一致する最新の `親の判断:` のコメントを読む（MUST。uuid が空の止まりは 3 行目の `停止の記録:` と今回の停止の記録の URL で照合する）。一致する `親の判断:` が無ければ、判断が無いものとして扱う（MUST。前回の止まりへの判断を今回の判断と取り違えないため）。最後の入力より前の記録を今回の止まりの根拠にしてはならない（MUST NOT）。今回の停止の記録が無く、未回答の停止の記録（要件「stop-judge.sh は未回答の停止の記録が残る止まりを問いではないとして通さない」）も無く、`child-log --last` の `.questions` が空で `unreadable` でもなく、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`epic-dispatch.sh dismiss <N>`（要件「親は問いでない止まりを dismiss で再開に戻す」）を呼んでから 2 に戻る（MUST。`--resolve` の判断が失敗した止まりや、判断のモデルが迷って主に上げるとした止まりもここを通る。戻さないと記録が `stopped-seen` のまま残り、完了の推定が止まり、声かけと出し直しが続くため）。`dismiss` の出力が `skipped` か `failed` でも主に上げない（MUST）
   - `親の判断: 通すが送れなかった` の件（以前の形の `親の判断: 判断できなかった` で、送るはずだった返事があり、送信だけが失敗した件も同じ）は（今回の止まった理由が `PR トークン上限（` で始まる止まりは送り直さず、下の **PR トークン上限の子** で照らし直す）、主に上げずに `epic-dispatch.sh reply --as parent` で送り直してよい（MAY）。送れたらエピックに `親の判断: 子 #N 通した` の 1 行を残す（MUST）
   - 今回の止まった理由が `PR トークン上限（` で始まる止まりは、下の照らし直しを行わず、要件「親は PR トークン上限の止まりを権限に照らして続けさせる」の手順で親の権限に照らす（MUST。権限の内でなければ、下の主に上げる手順で上げる。主の答えの扱いは要件「権限の内でない止まりは主に上げ、主が権限を広げたら照らし直す」に従い、下の「主の答えを受けたら…`reply --as owner`」の規定より優先する）
   - 今回の止まった理由が `PR のマージ待ち（` で始まる止まりは、下の照らし直しを行わず、要件「Orca 経路の親はマージ待ちの子の PR を基準で判断し、通せるものに判断の印を付ける」（Orca 経路の **マージ待ちの子** の段落）の手順に進む（MUST。マージは決まりで主の承認が要るので、照らし直しでは通らない）
@@ -2642,7 +2646,7 @@ develop の手順書（`skills/develop` 配下）に `orca` のサブコマン�
 
 #### Scenario: 親の手順に resolve と主に上げる説明の順が書かれている
 - **WHEN** `references/epic-stop.md` の Orca 経路の手順を読む
-- **THEN** `wait` に `--watch-stopped` と `--resolve <エピック番号>` を付けること、`--resolve` を付けたときの出力が `unrecorded` を含む 1〜4 行で、付けないときは従来どおり 1〜3 行であること、`unrecorded` で起こされたらエピックに 1 行を残して主に上げないこと、`stopped` で起こされたら `child-log --last` で最後の発言と止まりの uuid を読み、`子の停止:` と、`止まりの発言:` がその uuid と一致する `親の判断:`（uuid が空の止まりは `停止の記録:` が今回の停止の記録の URL と一致するもの）を読むこと、主に上げる説明を `~/.claude/output-styles/readable.md` の節 3 の型で書き（旧い 5 段の順を写していない）、エピックの目的と他の子との関係と記録の URL を含めること、実機操作はどの子の・どの画面で・何をするかを書くこと、主に上げる説明を本文で書き質問ツールで聞かないこと、主の答えを書き換えずに末尾に発言の場所の添え書きを付けて `reply --as owner` で届け、そのまま送るか起動し直すかは `reply` の自動判定に任せ、親が表で分類しないこと、`parent-pass-criteria.md` を指すことが書かれている
+- **THEN** `wait` に `--watch-stopped` と `--resolve <エピック番号>` を付けること、`--resolve` を付けたときの出力が `closed`・`done`・`stopped`・`unrecorded`・`owner-away` の 1〜5 行で、付けないときは `unrecorded` を除く 1〜4 行であること、`unrecorded` で起こされたらエピックに 1 行を残して主に上げないこと、`stopped` で起こされたら `child-log --last` で最後の発言と止まりの uuid を読み、`子の停止:` と、`止まりの発言:` がその uuid と一致する `親の判断:`（uuid が空の止まりは `停止の記録:` が今回の停止の記録の URL と一致するもの）を読むこと、主に上げる説明を `~/.claude/output-styles/readable.md` の節 3 の型で書き（旧い 5 段の順を写していない）、エピックの目的と他の子との関係と記録の URL を含めること、実機操作はどの子の・どの画面で・何をするかを書くこと、主に上げる説明を本文で書き質問ツールで聞かないこと、主の答えを書き換えずに末尾に発言の場所の添え書きを付けて `reply --as owner` で届け、そのまま送るか起動し直すかは `reply` の自動判定に任せ、親が表で分類しないこと、`parent-pass-criteria.md` を指すことが書かれている
 
 #### Scenario: 手順 8 が記録の項目を正本の段に置き直す
 - **WHEN** `references/epic-stop.md` の Orca 経路の手順 8 を読む
@@ -2654,7 +2658,7 @@ develop の手順書（`skills/develop` 配下）に `orca` のサブコマン�
 
 #### Scenario: 問いでない止まりは dismiss してから待ちに戻る
 - **WHEN** `references/epic-stop.md` の Orca 経路の手順 8 を読む
-- **THEN** 今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、最後の発言が主への問いでない止まりは、主に上げず `epic-dispatch.sh dismiss <N>` を呼んでから 2 に戻ること、`dismiss` の出力が `skipped` か `failed` でも主に上げないことが書かれている
+- **THEN** 今回の停止の記録が無く、未回答の停止の記録も無く、`.questions` が空で `unreadable` でもなく、最後の発言に `止まった理由:` の行も無く、最後の発言が主への問いでない止まりは、主に上げず `epic-dispatch.sh dismiss <N>` を呼んでから 2 に戻ること、`dismiss` の出力が `skipped` か `failed` でも主に上げないことが書かれている。`.questions` が残る止まり・`unreadable` の止まり・未回答の停止の記録がある止まりは `dismiss` の対象でなく、そのまま主に上げる手順に進むと書かれている
 
 #### Scenario: PR トークン上限の止まりは基準に照らし直さず権限に照らす
 - **WHEN** `references/epic-stop.md` の Orca 経路の手順 8 を読む
@@ -2983,7 +2987,7 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 - **AND** `notify-closed` は、依存が解けた子を `launch` するより前に書かれている
 
 ### Requirement: 起動し直した親は主の返事待ちの子を主に出し直す
-`epic-dispatch.sh` は読み取り専用のサブコマンド `pending-owner <子>...` を持たなければならない（MUST）。各子について、子の記録の `stop` が `stopped-seen` なら、`pending <N>`（記録に `stop_uuid` があれば `pending <N> <uuid>`）を 1 行ずつ出して exit 0 で終わる。`stop_uuid` のある子は、会話ログの最後の子の発言か最後の入力がその発言より後なら出さない（MUST。読み取り専用のままで、記録の `stop` は書き換えない。会話ログを読めなければ今どおり出す）。`orca worktree list` も `orca worktree set` も呼んではならない（MUST NOT）。`references/epic-loop.md` の Orca 経路の手順 7（`回し方: Orca` を引き継いだ再開）は、`launch` の前に、`launch` に渡したことのある開いた子で `pending-owner` を呼び、`pending` の子ごとに、その止まりの uuid に一致する最新の `親の判断:`（手順 8 と同じ照合）が「通した」以外のものを、手順 8 と同じ報告で本文に出し直してから待ちに入ると書かなければならない（MUST。今回の停止の記録が無く最後の発言が主への問いでない子は、手順 8 と同じく `dismiss` で戻して出し直さない）。再開済みかどうかは記録の `stop`（子が `mark resumed` で書く `resumed`）と子の会話ログの動きで決め、子 issue のコメントの新旧では決めない（MUST。停止後に親が投稿する `親の判断:` で除外されないため）。エピックのコメントの `親の判断: 子 #N 通した`（手順 8 と同じ author_association の条件）で、その行の `発言 <uuid>` が記録の `stop_uuid` と一致するもの（`stop_uuid` が空の止まりは、行の停止の記録の URL が子の最新の `子の停止: 主の返事待ち` の URL と一致するもの）がある子は、通して送った解決済みの件なので再報告から外す（MUST。通した直後に子が `mark resumed` を付ける前に親が起動し直されても再報告しない）。`親の判断: 通すが送れなかった` の件は手順 8 と同じく送り直す。`references/reply-after-idle.md` の「親への適用」の復元元の表は、主の返事待ちの子の行（復元元は子の記録の `stop` の `stopped-seen` と、子 issue の `子の停止: 主の返事待ち` および対応する `親の判断:`）を持たなければならない（MUST）。`tests/develop-skill.bats` は手順 7 と表の行を、`tests/epic-dispatch.bats` は `pending-owner` を確かめなければならない（MUST）。
+`epic-dispatch.sh` は読み取り専用のサブコマンド `pending-owner <子>...` を持たなければならない（MUST）。各子について、子の記録の `stop` が `stopped-seen` で `status` が `done` でないなら、`pending <N>`（記録に `stop_uuid` があれば `pending <N> <uuid>`）を 1 行ずつ出して exit 0 で終わる。`stop_uuid` のある子は、会話ログの最後の子の発言か最後の入力がその発言より後なら出さない（MUST。`status` が `done` の子は `stop` が `stopped-seen` のままでも出さない。閉じた子の止まりを主に出し直さないため。読み取り専用のままで、記録の `stop` は書き換えない。会話ログを読めなければ今どおり出す）。`orca worktree list` も `orca worktree set` も呼んではならない（MUST NOT）。`references/epic-loop.md` の Orca 経路の手順 7（`回し方: Orca` を引き継いだ再開）は、`launch` の前に、`launch` に渡したことのある開いた子で `pending-owner` を呼び、`pending` の子ごとに、その止まりの uuid に一致する最新の `親の判断:`（手順 8 と同じ照合）が「通した」以外のものを、手順 8 と同じ報告で本文に出し直してから待ちに入ると書かなければならない（MUST。手順 8 の `dismiss` の条件（今回の停止の記録・未回答の停止の記録・`.questions`・`unreadable`・`止まった理由:` の行が無く、最後の発言が主への問いでない）に当たる子は、手順 8 と同じく `dismiss` で戻して出し直さない）。再開済みかどうかは記録の `stop`（子が `mark resumed` で書く `resumed`）と子の会話ログの動きで決め、子 issue のコメントの新旧では決めない（MUST。停止後に親が投稿する `親の判断:` で除外されないため）。エピックのコメントの `親の判断: 子 #N 通した`（手順 8 と同じ author_association の条件）で、その行の `発言 <uuid>` が記録の `stop_uuid` と一致するもの（`stop_uuid` が空の止まりは、行の停止の記録の URL が子の最新の `子の停止: 主の返事待ち` の URL と一致するもの）がある子は、通して送った解決済みの件なので再報告から外す（MUST。通した直後に子が `mark resumed` を付ける前に親が起動し直されても再報告しない）。`親の判断: 通すが送れなかった` の件は手順 8 と同じく送り直す。`references/reply-after-idle.md` の「親への適用」の復元元の表は、主の返事待ちの子の行（復元元は子の記録の `stop` の `stopped-seen` と、子 issue の `子の停止: 主の返事待ち` および対応する `親の判断:`）を持たなければならない（MUST）。`tests/develop-skill.bats` は手順 7 と表の行を、`tests/epic-dispatch.bats` は `pending-owner` を確かめなければならない（MUST）。
 
 この要件の入力は、子の記録の `stop` と `stop_uuid`、子の会話ログ、`gh` が返す子 issue のコメント（投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` のもの）である。拾いたい誤りは、起動し直した親が記録の `stop` が `stopped-seen` の子を動いている子として 6 時間待ち、主に何も出さないことと、すでに再開した子や親が通した件を主に出し直すことの 2 つである。次は通してよく、この要件では止めない: 子が `mark resumed` を付け忘れ、`stopped-seen` が残ったまま動いていること（主に出し直された主が子のタブで答えれば済む。次の `mark stopped` で上書きされる）／読めない記録の子が `pending` に出ないこと／子 issue の `子の停止:` コメントの投稿者が権限の無いユーザーで、照合に使えず「判断が無い」として主に出されること。印の付け方の揺れを見つけるたびに検査を足して塞ぎ切ることは、この要件の完了条件としない。
 
@@ -2998,6 +3002,10 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 #### Scenario: pending-owner は受けた印のままの子だけを返す
 - **WHEN** 子 11 の記録の `stop` が `stopped-seen`、子 12 が `resumed`、子 13 が `stopped` の状態で `epic-dispatch.sh pending-owner 11 12 13` を実行する
 - **THEN** stdout は `pending 11` だけで、`orca worktree list` も `orca worktree set` も呼ばれない
+
+#### Scenario: pending-owner は閉じた子を出さない
+- **WHEN** 子 11 の記録の `stop` が `stopped-seen`・`stop_uuid` が `d1` で `status` が `done`、子 12 が同じ形で `status` が `running` の状態で `epic-dispatch.sh pending-owner 11 12` を実行する
+- **THEN** stdout は `pending 12 d1` だけで、記録は書き換わらない
 
 #### Scenario: pending-owner は会話ログが進んだ子を出さない
 - **WHEN** 子 11 の記録の `stop` が `stopped-seen`、`stop_uuid` が `d1` で、会話ログに `d1` のあとの子の発言がある。子 12 は同じ状態で `d2` が最後の発言である
@@ -3550,7 +3558,7 @@ develop の `references/epic-multirepo.md` の読み替え表・補足は、エ�
 | 手順 8 とマージ待ちの子の、子 issue の `子の停止: 主の返事待ち` と `親の判断:` のコメントの読み先（`author_association` を含む） | 別のリポジトリの子は子のリポジトリ（`repos/<子の owner>/<子の repo>/issues/<N>/comments`）から読む |
 | 手順 3 (b) の起点ブランチ | その子の記録の `base`（別のリポジトリの子は子のリポジトリの既定ブランチか `--base` の値）。親のリポジトリの `main` ではない |
 | `後で別に起動するエピック:` の行で子を外す照合（手順 2・`closed` の確認） | 別のリポジトリの子は `<owner>/<repo>#N` の形の行で照合する（同じリポジトリの子は `#N`） |
-| 子を `route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log` に渡す | 別のリポジトリの子は `<owner>/<repo>#N` の形で渡す（同じリポジトリの子は番号だけ） |
+| 子を `route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`dismiss`・`adopt`・`child-log` に渡す | 別のリポジトリの子は `<owner>/<repo>#N` の形で渡す（同じリポジトリの子は番号だけ） |
 | `references/epic.md`「nested と注意書き」の注意書き `親エピックからの注意書き: #<エピック番号>`、`references/epic-loop.md`「通常進行の手順」手順１の「起点は `origin/main`」 | 別のリポジトリの子は注意書きが `親エピックからの注意書き: <エピックの owner>/<repo>#<E>`（子のリポジトリの issue に残る）。起点は `--base` / `EPIC_DISPATCH_BASE`、無ければ子のリポジトリの既定ブランチ |
 | `stop-judge.sh <epic> <child>` の `<child>` は番号 | 番号か `<owner>/<repo>#<N>`。後者は子の本文・コメントを `repos/<o>/<r>/issues/<N>` から読み、エピックのコメントの過去の判断を `親の判断: 子 <o>/<r>#<N> ` で始まる行から探す。同じリポジトリの子は今までどおり。入力文の見出しも同じ呼び方にする |
 
@@ -3574,7 +3582,7 @@ develop の `references/epic-multirepo.md` の読み替え表・補足は、エ�
 
 #### Scenario: 各サブコマンドへの渡し方が書いてある
 - **WHEN** `references/epic-multirepo.md` の読み替え表・補足を読む
-- **THEN** 別のリポジトリの子を `route`・`launch`・`wait`・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log` に `<owner>/<repo>#N` で渡すと書いてある
+- **THEN** 別のリポジトリの子を `route`・`launch`・`wait`・`reap`・`pending-owner`・`notify-closed`・`reply`・`dismiss`・`adopt`・`child-log` に `<owner>/<repo>#N` で渡すと書いてある
 
 #### Scenario: サブエージェント方式では別のリポジトリの子を起こさない
 - **WHEN** `references/epic-subagent.md` の「サブエージェント方式」を読む
@@ -5209,11 +5217,11 @@ unmanned で仕様の発明が 2 回に達した、または change の割り方
 
 - 動いている子を待つ `wait` には `--watch-stopped` を付ける（MUST）
 - `stopped <N>...` で起こされたら、止まった子ごとに`child-log --last` の最後の発言と、あれば子 issue の今回の停止の記録（1 行目が `子の停止: 主の返事待ち` のコメントのうち最後の入力より後のもの）を読み、子の番号・止まった理由・推奨（記録があればコメントの URL）をユーザーに報告し、残りの動いている子（止まった子を含む）で再び `wait` する（MUST）。止まった子を動いている子から外してはならない（MUST NOT）。止まった子への返事の仕方は #1034 で決める
-- `wait` の出力の説明を、`closed`・`done`・`stopped` の 1〜3 行とする（MUST）
+- `wait` の出力の説明を、`closed`・`done`・`stopped` の 1〜3 行とする（MUST。`owner-away` を含む形は要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」が優先する）
 
 #### Scenario: 親が stopped を受けたときの手順が書かれている
 - **WHEN** `references/epic-stop.md` の Orca 経路の手順を読む
-- **THEN** `wait` に `--watch-stopped` を付けること、出力が `closed`・`done`・`stopped` の 1〜3 行であること、`stopped` で起こされたら最後の発言と、あれば今回の停止の記録を読んでユーザーに報告し、止まった子を外さずに再び `wait` することが書かれている
+- **THEN** `wait` に `--watch-stopped` を付けること、出力が `closed`・`done`・`stopped` の 1〜3 行（`owner-away` を含む形は 1〜4 行）であること、`stopped` で起こされたら最後の発言と、あれば今回の停止の記録を読んでユーザーに報告し、止まった子を外さずに再び `wait` することが書かれている
 
 ### Requirement: エピックの子の止まりの手順は親に止まりを気づかせる義務を持たない
 子の側の規定:
@@ -6548,3 +6556,51 @@ develop の `references/epic-stop.md` の「pending-owner の復元」は、最�
 - **THEN** 2 回のプロンプトの境界行は異なる
 
 この要件の守備範囲: 拾いたい誤りは、子の発言の中の見出しを模した行を、判断のモデルが本物の節（配役表・過去の判断など）と取り違えること。囲みは、モデルが基準の読み方の 1 行に従う前提で効き、機械では強制できない。囲まないもの: 子の停止の記録（`子の停止: 主の返事待ち` のコメント本文。投稿者が OWNER・MEMBER・COLLABORATOR のものに限り、別の入力経路で絞る）と、エピック・子 issue の本文。親の返事は元から「主の承認ではない」と付くので、取り違えの影響は限られる。
+
+### Requirement: 未回答の停止の記録を stop-judge.sh と epic-stop.md が同じ定義で持つ
+
+`未回答の停止の記録` とは、子 issue の 1 行目が `子の停止: 主の返事待ち` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` の最新のもの（作成時刻は最後の入力より前でもよい）があり、かつ子のリポジトリの open の PR のうち本文に `Closes`・`Fixes`・`Refs` の `#<子の番号>`（大文字小文字不問）を持つものの 1 つ以上にラベル `needs-approval` が付いていることをいう。`references/epic-stop.md` は `stop-judge.sh` と同じ定義でこれを書き、親は手順 8 でこの止まりを `dismiss` してはならない（MUST NOT）。
+
+#### Scenario: 手順 8 が未回答の記録の止まりを dismiss しないと書いている
+- **WHEN** `references/epic-stop.md` の手順 8 の `dismiss` の文を読む
+- **THEN** 未回答の停止の記録の定義（`stop-judge.sh` と同じ）と、その止まりを `dismiss` しないことが書かれている
+
+### Requirement: stop-judge.sh は未回答の停止の記録が残る止まりを問いではないとして通さない
+
+`stop-judge.sh` は `判断: 問いではない` を出す前に、未回答の停止の記録があるかを確かめ、あれば stdout に何も出さず exit 1 で終わらなければならない（MUST）。確かめるのは、モデルが出した `問いではない` と、完了見出しでモデルを呼ばずに返す自動判定の両方である。`gh` が PR を返せないときも同じ（MUST）。`wait` は形の崩れとして `stopped` に残し、`resumed` に書き換えない。
+
+この要件の守備範囲は、子 issue のコメントと子のリポジトリの PR の本文・ラベルである。拾いたい誤りは、最後の入力のターンで子が説明だけを返したとき、古い未回答の記録が見えず止まりが `resumed` に書き換わることである。`needs-approval` が外れた止まり・PR に参照が無く結び付けられない止まりは通してよく、結び付け方の揺れを塞ぎ切ることは完了条件としない。
+
+#### Scenario: 古い未回答の記録と needs-approval があれば問いではないは形の崩れになる
+- **WHEN** 子 11 の `子の停止: 主の返事待ち` の記録が止まりの JSON の最後の入力より前に作られ、子の open の PR の本文が `Closes #11` でラベルに `needs-approval` が付いている状態で、モデルのスタブが `判断: 問いではない` を出す
+- **THEN** `stop-judge.sh` は stdout に何も出さず exit 1 で終わり、`wait` は子 issue に `親の判断: 判断できなかった` を投稿して `stopped 11` を出し、記録の `stop` は `stopped-seen` のままである
+
+#### Scenario: needs-approval が外れていれば問いではないを通す
+- **WHEN** 同じ状態で PR のラベルに `needs-approval` が無く、モデルのスタブが `判断: 問いではない` を出す
+- **THEN** `stop-judge.sh` は 1 行目 `判断: 問いではない`・4 行目 `記録: なし` を出して exit 0 で終わる
+
+#### Scenario: PR の一覧を読めなければ問いではないを通さない
+- **WHEN** 同じ状態で `gh pr list` が失敗し、モデルのスタブが `判断: 問いではない` を出す
+- **THEN** `stop-judge.sh` は stdout に何も出さず exit 1 で終わる
+
+#### Scenario: 完了見出しの自動判定でも未回答の記録があれば形の崩れになる
+- **WHEN** 止まりの JSON の本文の 1 行目が `主がすること: なし` で、同じ状態（未回答の記録と `needs-approval` 付きの PR）に実際の `stop-judge.sh` を使う
+- **THEN** モデルは呼ばれず、`stop-judge.sh` は stdout に何も出さず exit 1 で終わる
+
+#### Scenario: wait は実際の stop-judge とモデルのスタブで止まりを保つ
+- **WHEN** 実際の `stop-judge.sh` とモデルのスタブ（`判断: 問いではない`）を使い、同じ状態で `wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11` を実行する
+- **THEN** `stopped 11` が出て、記録の `stop` は `stopped-seen` のままで、そのあとの `reply --as owner 400 11 <答え>` が `skipped 11 not-stopped` にならない
+
+#### Scenario: 未回答の記録の止まりは親の返事を届けられる
+- **WHEN** 上の最初の場面のあとで、親が `reply --as owner 400 11 <主の答え>` を実行する
+- **THEN** 結果は `skipped 11 not-stopped` でなく送信され、記録の `stop` が `stopped-seen` から変わっていない
+
+### Requirement: owner-away で起こされた親は同じ出力のほかの行を処理し終えてから wait を掛け直す
+
+`references/epic-stop.md` の `owner-away` の節は、主に知らせたあとの `wait` の掛け直しを、「同じ出力のほかの行を `references/epic-loop.md` の手順どおりに処理し終えてから手順 2 に戻って掛け直す。`owner-away` の行だけなら同じ引数で掛け直す」と書かなければならない（MUST）。同じ出力に `closed <N>` や `stopped <N>` が並ぶのに先に掛け直すと、閉じた子を位置引数に残したまま待ちに戻り、閉じた子の処理と止まった子の処理が抜けるためである。
+
+この要件の守備範囲で入力として扱うのは、`references/epic-stop.md` の文面である。拾いたい誤りは、`owner-away` と ほかの語が同じ出力に並んだときの処理の取りこぼしである。次は通してよく、この要件では止めない: `owner-away` だけの出力で同じ引数のまま掛け直すこと。文面の言い回しの揺れを見つけるたびに塞ぎ切ることは、この要件の完了条件としない。
+
+#### Scenario: 掛け直しの文がほかの行を処理したあとの形になっている
+- **WHEN** `references/epic-stop.md` の `owner-away` の節を読む
+- **THEN** 同じ出力のほかの行を `references/epic-loop.md` の手順どおりに処理し終えてから手順 2 に戻って `wait` を掛け直すこと、`owner-away` だけなら同じ引数で掛け直すことが書かれ、「知らせたら同じ引数で `wait` を掛け直す」とだけ書いた文は無い

@@ -5039,7 +5039,7 @@ EOF
 @test "docs: step 8 reads the parent-action paragraph before the dismiss sentence and the pending-owner restore does the action" {
   f="$PLUGIN_DIR/skills/develop/references/epic-stop.md"
   l8="$(grep -E '^8\. ' "$f")"
-  before="${l8%%今回の停止の記録が無く、最後の発言に*}"
+  before="${l8%%今回の停止の記録が無く、未回答の停止の記録も無く*}"
   [ "$before" != "$l8" ]
   printf '%s\n' "$before" | grep -qF '`親の判断: 親の操作が要る` の件は、次の `dismiss` の文より先に'
   p="$(grep -F '**親の操作が要る子**（手順 8 の続き）' "$f")"
@@ -5810,6 +5810,18 @@ resolve_relaunch_count() {
   run dispatch pending-owner 11 12 13 14
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "$(printf 'pending 12 d2\npending 13 d3')" ]
+  [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
+}
+
+@test "pending-owner: a done child is not pending even when its stop is still stopped-seen (#1828)" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop=stopped-seen status=done
+  put_record 12 stop=stopped-seen
+  before="$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)"
+  run dispatch pending-owner 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "pending 12" ]
   [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
 }
 
@@ -7882,6 +7894,39 @@ log_resolve_ready() {
   [ "$(jq -r .text "$STUB_CFG/judge_json")" = '言い直した本文' ]
 }
 
+# 未回答の停止の記録（最後の入力より前）と needs-approval 付きの PR がある子 11（#1828）
+unanswered_ready() {
+  log_resolve_ready
+  printf '0\n' > "$STUB_CFG/ghcount_11"
+  export EPIC_DISPATCH_JUDGE="$PLUGIN_DIR/scripts/stop-judge.sh"
+  jq -cn --arg t "$(ago 900)" '[{body: "子の停止: 主の返事待ち\n止まった理由: リスク許容の確認", author_association: "OWNER",
+    html_url: "https://github.com/o/r/issues/11#issuecomment-9", created_at: $t}]' > "$STUB_CFG/comments_11"
+  jq -cn '[{number: 9, body: "実装\n\nCloses #11", labels: [{name: "needs-approval"}]}]' > "$STUB_CFG/pr_out"
+  put_chat 11 s1 "$(chat_line user "$(ago 600)" '親からの指示')" \
+    "$(said d1 "$(ago 300)" "$1")" "$(turn_end "$(ago 300)")"
+}
+
+@test "wait --resolve log: a not-a-question over an unanswered stop record stays stopped-seen and the owner reply still reaches the child (#1828)" {
+  for kind in model heading; do
+    unanswered_ready 'リスク許容の背景を説明します'
+    if [ "$kind" = model ]; then
+      export EPIC_DISPATCH_JUDGE_CMD='printf "%s\n" "判断: 問いではない" "理由: 説明だけ" "返事: "'
+    else
+      unanswered_ready $'主がすること: なし\n作業を終えた。'
+      export EPIC_DISPATCH_JUDGE_CMD='echo model-called >> "$STUB_LOG"; exit 1'
+    fi
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = "stopped 11" ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+    [ "$(calls '^model-called')" -eq 0 ]
+    head -1 "$STUB_CFG/comment_11" | grep -qF '親の判断: 判断できなかった'
+    run dispatch reply --as owner 400 11 'A で進めて'
+    [ "$output" = "sent 11" ] || { echo "output=$output"; false; }
+    rm -f "$STUB_CFG/comment_11"
+  done
+}
+
 @test "wait --resolve log: completion headings use the real judge to dismiss without a model or reply" {
   for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
     log_resolve_ready
@@ -8132,7 +8177,7 @@ log_resolve_ready() {
   grep -qF '`launch` に渡した子ごとに会話ログの末尾を' "$e"
   grep -qF '`未起動（<理由>）`' "$e"
   grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
-  grep -qF '`adopt`・`child-log` に渡す' "$e"
+  grep -qF '`dismiss`・`adopt`・`child-log` に渡す' "$e"
   ! grep -qF '答えが要る子の issue（または停止の記録）の URL' "$e" || return 1
 }
 
@@ -10194,6 +10239,37 @@ no_touch() {
   done
 }
 
+@test "wait owner-away: past the threshold, --resolve only reports and calls nothing (#1828)" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11
+  put_transcript 90 150001
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  gh_seq 11 open
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'owner-away 11' ]
+  no_touch
+  [ "$(calls '^gh issue comment')" -eq 0 ]
+  [ "$(rec_get 11 owner_away_told.generation)" = 1 ]
+  [ "$(rec_get 11 owner_away_told.session_id)" = s1 ]
+}
+
+@test "wait owner-away: a leftover lock means no report and owner_away_told stays empty (#1828)" {
+  make_stub orca
+  put_record 11
+  put_transcript 90 150001
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  mkdir "$(rec_of 1122 11).lock"
+  gh_seq 11 open
+  EPIC_STATE_LOCK_TIMEOUT=0 EPIC_DISPATCH_OWNER_AWAY_SEC=3600 run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 owner_away_told)" = null ] || [ -z "$(rec_get 11 owner_away_told)" ]
+  no_touch
+}
+
 @test "wait owner-away: a parent question still goes through the stopped path" {
   make_stub orca
   put_record 11
@@ -10221,6 +10297,8 @@ no_touch() {
 @test "wait owner-away: documented in the usage, the header and the references" {
   grep -q 'owner-away <N>' "$SCRIPT"
   grep -q 'EPIC_DISPATCH_OWNER_AWAY_SEC' "$SCRIPT"
+  grep -qF '`stopped <N>...`・`owner-away <N>...` を該当するものだけこの順に（1〜4 行）' "$SCRIPT"
+  grep -qF 'unrecorded / owner-away の順の 1〜5 行' "$SCRIPT"
   grep -q 'owner-away' "${PLUGIN_DIR}/skills/develop/references/epic-stop.md"
   grep -q 'owner-away' "${PLUGIN_DIR}/skills/develop/references/epic.md"
 }
