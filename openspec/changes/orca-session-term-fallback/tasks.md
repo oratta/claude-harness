@@ -19,4 +19,4 @@
 
 ## 3. 確かめる
 
-- [ ] 3.1 `scripts/test.sh plugins/dev-workflow/tests/epic-dispatch.bats` が exit 0
+- [x] 3.1 `scripts/test.sh plugins/dev-workflow/tests/epic-dispatch.bats` が exit 0
