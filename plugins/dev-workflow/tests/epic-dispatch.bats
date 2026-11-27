@@ -4002,8 +4002,8 @@ orca_cmd_scripts() {
   # #1653: 聖域の変更・破壊的な git 操作の承認待ちも記録を残す止まりに入った
   printf '%s\n' "$l" | grep -qF 'それ以外の止まり（マージ待ち・実機操作など）では記録を残さない'
   printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
-  # 親に気づかせる手順は子に無い。親の wait が会話ログから気づく
-  printf '%s\n' "$r" | grep -F '`wait`' | grep -qF '子の会話ログ'
+  # 親に気づかせる手順は子に無い。親の wait が Stop の保存した状態の記録から気づく
+  printf '%s\n' "$r" | grep -F '`wait`' | grep -qF '状態の記録'
   # 記録を残さない止まりも発言の中で中身を書く
   printf '%s\n' "$r" | grep -F '記録を残さない' | grep -qF '質問・推奨・根拠'
 }
@@ -7957,6 +7957,49 @@ unanswered_ready() {
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
   [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: d1" ]
+}
+
+@test "wait --resolve log: a plain work report (dependency_wait missing or false) whose stop-reason value starts with nashi is not stopped and never reaches the judge (#1714)" {
+  local dw reason f
+  for dw in missing false; do
+    for reason in '止まった理由: なし（前提の issue を背景で見張っている）' '止まった理由: なし'; do
+      make_stub orca
+      make_judge
+      set_current 400
+      gh_seq 11 open open
+      put_record 11
+      put_turn 11 parent 作業報告
+      f="$(rec_of 1122 11)"
+      [ "$dw" = missing ] || { jq '.turn_state.dependency_wait=false' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; }
+      set_terms 11 term-a-11
+      put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '途中経過を保存した。\n%s\n状態: 作業報告 — 見張り中' "$reason")")" "$(turn_end "$(ago 300)")"
+      : > "$STUB_LOG"
+      run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+      [ "$status" -eq 2 ] || { echo "dw=$dw status=$status output=$output"; false; }
+      ! printf '%s\n' "$output" | grep -q '^stopped' || return 1
+      [ "$(rec_get 11 stop)" != stopped-seen ]
+      [ "$(calls '^judge')" -eq 0 ]
+    done
+  done
+}
+
+@test "wait --resolve log: a dependency-wait work report (dependency_wait true) is the one work report that still counts as stopped (#1714 boundary)" {
+  local f
+  make_stub orca
+  make_judge
+  set_current 400
+  gh_seq 11 open open
+  put_record 11
+  put_turn 11 parent 作業報告
+  f="$(rec_of 1122 11)"
+  jq '.turn_state.dependency_wait=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  set_terms 11 term-a-11
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '登録した。\n止まった理由: 依存待ち: https://github.com/o/r/issues/5\n状態: 作業報告 — 待つ')")" "$(turn_end "$(ago 300)")"
+  : > "$STUB_LOG"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(calls '^judge')" -eq 0 ]
 }
 
 # --- dismiss ---

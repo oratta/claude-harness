@@ -7,7 +7,7 @@
 #   （<child> は番号か、エピックと別のリポジトリの子の <owner>/<repo>#<N>。JSON は wait が会話ログから作り、
 #    会話ログを読めなかった止まりは JSON なしで呼ばれる）
 #
-# 入力として集めるのは次だけ（親や子の会話は渡さない）:
+# 入力として集めるのは次だけ（親の会話は渡さない。子の会話ログからは、止まりの JSON の最後の発言・未回答の問い・最後の入力の時刻・背景のタスクの有無・止まった印の有無だけを渡す）:
 #   エピックの本文、子 issue の本文（どちらも issue の author_association が OWNER / MEMBER / COLLABORATOR の
 #   ときだけ。それ以外は exit 1 でモデルを呼ばない）、子 issue の `親エピックからの注意書き:` で始まるコメントのうち
 #   author_association が OWNER / MEMBER / COLLABORATOR のもの、子 issue の 1 行目が

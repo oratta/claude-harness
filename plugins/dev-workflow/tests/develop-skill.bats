@@ -1356,7 +1356,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   p="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
   printf '%s\n' "$p" | grep -qF 'scripts/epic-dispatch.sh child-log --last <N>'
   printf '%s\n' "$p" | grep -qF "jq -Rr 'fromjson? | .text'"
-  printf '%s\n' "$p" | grep -qF '作成時刻が `.last_input_at` より後のもの（今回の停止の記録'
+  printf '%s\n' "$p" | grep -qF '作成時刻が `.last_input_at` 以降のもの（今回の停止の記録'
   printf '%s\n' "$p" | grep -qF '2 行目の `止まりの発言:` がその uuid と一致する最新の `親の判断:`'
   printf '%s\n' "$p" | grep -qF 'uuid が空の止まりは 3 行目の `停止の記録:` と今回の停止の記録の URL で照合する'
   printf '%s\n' "$p" | grep -qF '最後の入力より前の記録を今回の止まりの根拠にしない'

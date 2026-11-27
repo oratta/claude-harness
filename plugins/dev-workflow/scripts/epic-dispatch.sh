@@ -79,7 +79,8 @@
 #   同じ記録の判定をし、子なら origin も fetch も set も create も呼ばずに exit 1
 #   （どちらの理由も `child epics are not expanded here` を含む）
 # wait: 子ごとに `gh api repos/{owner}/{repo}/issues/<N> --jq .state` を見るポーリングを繰り返し、
-#   stdout にちょうど 1 行を出して終わる。
+#   stdout に 1 行を出して終わる（--watch-done・--watch-stopped を付けたときは、下のとおり該当する行だけ複数行になる。
+#   止まりの検知は子の状態の記録で決める。会話ログは、判断に渡す JSON を作る・新しいセッションで再開した子の見分け・完了の推定にだけ読む）。
 #   `closed <N>...`（閉じていた子）exit 0 / `timeout <N>...`（閉じていない子）exit 2 /
 #   `error gh <N>...`（失敗したポーリングが 3 回続いた。3 回目で失敗した子）exit 1
 #   失敗したポーリング = 1 件以上の子が失敗（gh が非 0、または出力が open / closed 以外）し、
