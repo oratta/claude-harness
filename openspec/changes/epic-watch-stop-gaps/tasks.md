@@ -7,15 +7,15 @@
 
 ## 2. epic-dispatch.sh
 
-- [ ] 2.1 ヘッダーの出力行数を直し（112 行の `--resolve` なし: 1〜3 → 1〜4 行、134 行の `--resolve` あり: 1〜4 → 1〜5 行。どちらも `owner-away` が増えた分）、`cmd_pending_owner` に `status != done` を足す。`--help`（348-375 付近）と HELP_WORDS のテストへの影響を確かめ、pending-owner の新テストと owner-away の閾値後 `--resolve`・排他取得失敗のテストを足して通す。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:112、plugins/dev-workflow/scripts/epic-dispatch.sh:134、plugins/dev-workflow/scripts/epic-dispatch.sh:2454（cmd_pending_owner）、plugins/dev-workflow/tests/epic-dispatch.bats:5707、plugins/dev-workflow/tests/epic-dispatch.bats:9940-10061
+- [x] 2.1 ヘッダーの出力行数を直し（112 行の `--resolve` なし: 1〜3 → 1〜4 行、134 行の `--resolve` あり: 1〜4 → 1〜5 行。どちらも `owner-away` が増えた分）、`cmd_pending_owner` に `status != done` を足す。`--help`（348-375 付近）と HELP_WORDS のテストへの影響を確かめ、pending-owner の新テストと owner-away の閾値後 `--resolve`・排他取得失敗のテストを足して通す。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:112、plugins/dev-workflow/scripts/epic-dispatch.sh:134、plugins/dev-workflow/scripts/epic-dispatch.sh:2454（cmd_pending_owner）、plugins/dev-workflow/tests/epic-dispatch.bats:5707、plugins/dev-workflow/tests/epic-dispatch.bats:9940-10061
 
 ## 3. stop-judge.sh
 
-- [ ] 3.1 `問いではない` を出す前に未回答の停止の記録を確かめて exit 1 にする。確かめは、モデルの出力の経路（222-228 付近）と、完了見出しでモデルを呼ばず `問いではない` を返す早期 return（131-137 付近）の両方に入れる（`gh pr list` 失敗も exit 1）。`stop-judge.bats` に 4 本（モデル経路で該当・needs-approval 無しで通す・gh 失敗・完了見出しの早期 return で該当しモデルが呼ばれない）を足して通す。触る範囲: plugins/dev-workflow/scripts/stop-judge.sh:131-137、plugins/dev-workflow/scripts/stop-judge.sh:222-228、plugins/dev-workflow/tests/stop-judge.bats:520-550
+- [x] 3.1 `問いではない` を出す前に未回答の停止の記録を確かめて exit 1 にする。確かめは、モデルの出力の経路（222-228 付近）と、完了見出しでモデルを呼ばず `問いではない` を返す早期 return（131-137 付近）の両方に入れる（`gh pr list` 失敗も exit 1）。`stop-judge.bats` に 4 本（モデル経路で該当・needs-approval 無しで通す・gh 失敗・完了見出しの早期 return で該当しモデルが呼ばれない）を足して通す。触る範囲: plugins/dev-workflow/scripts/stop-judge.sh:131-137、plugins/dev-workflow/scripts/stop-judge.sh:222-228、plugins/dev-workflow/tests/stop-judge.bats:520-550
 
 ## 4. wait 経由の回帰テスト
 
-- [ ] 4.1 `epic-dispatch.bats` に、実際の `stop-judge.sh`（`EPIC_DISPATCH_JUDGE` に指定）とモデルのスタブを使い、未回答の記録と `needs-approval` 付き PR のある子で `wait --resolve` 後に `stop=stopped-seen` が保たれ、`reply --as owner` が `skipped not-stopped` にならないことを確かめるテストを足して通す（形は同ファイル 7782 付近の実 judge のテストと stop-judge.bats:434 付近を参考にする）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:7782（実 judge のテストの隣）
+- [x] 4.1 `epic-dispatch.bats` に、実際の `stop-judge.sh`（`EPIC_DISPATCH_JUDGE` に指定）とモデルのスタブを使い、未回答の記録と `needs-approval` 付き PR のある子で `wait --resolve` 後に `stop=stopped-seen` が保たれ、`reply --as owner` が `skipped not-stopped` にならないことを確かめるテストを足して通す（形は同ファイル 7782 付近の実 judge のテストと stop-judge.bats:434 付近を参考にする）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:7782（実 judge のテストの隣）
 
 ## 5. 全体
 

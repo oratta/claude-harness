@@ -24,7 +24,9 @@
 # exit 1（stdout は空）: 引数の誤り、gh の失敗、エピックか子の issue の投稿者が上の 3 種でない、
 #   渡された JSON が読めない、JSON も停止の記録も無い（ここまではモデルを呼ばない）、
 #   モデルのコマンドが非 0、モデルの出力が 1〜3 行目の形で読めない、
-#   JSON が無い・今回の停止の記録がある・未回答の問いがある・止まった印があるのに `判断: 問いではない` を出した。
+#   JSON が無い・今回の停止の記録がある・未回答の問いがある・止まった印があるのに `判断: 問いではない` を出した、
+#   未回答の停止の記録（最新の `子の停止:` と、本文に Closes/Fixes/Refs #<子> を持ち needs-approval が付いた open の PR）が
+#   残る止まりを `問いではない` として通そうとした（完了見出しの自動判定も同じ）・その PR の一覧を `gh` が返せない。
 #
 # 正本は openspec の dev-workflow-develop spec「epic-dispatch.sh の wait は止まった子を判断し、
 # 通すものには返事を送って待ちを続ける」。
@@ -126,6 +128,39 @@ $statement
 =====子の発言ここまで $bound====="
 fi
 
+# 未回答の停止の記録（#1828）: 子 issue の最新の `子の停止: 主の返事待ち`（信頼する投稿者のもの。最後の入力より前でもよい）が
+# あり、かつ子のリポジトリの open の PR のうち本文に Closes / Fixes / Refs #<子の番号>（大文字小文字不問）を持つものの
+# 1 つ以上に needs-approval が付いている。最後の入力のターンで子が説明だけを返しても、この止まりを問いではないとして
+# 通さないための確かめ。戻り値: 0 = ある、1 = ない、2 = PR の一覧を読めなかった（確かめられない）
+unanswered_stop_record() {
+  local latest prs
+  latest="$(printf '%s' "$child_comments" | jq -c \
+    '[.[] | '"$trusted"' | select((.body // "") | split("\n")[0] | rtrimstr("\r") == "子の停止: 主の返事待ち")] | last // empty')"
+  [ -n "$latest" ] || return 1
+  if [ "$child_repo" = "{owner}/{repo}" ]; then
+    prs="$(gh pr list --state open --limit 200 --json number,body,labels)" || return 2
+  else
+    prs="$(gh pr list -R "$child_repo" --state open --limit 200 --json number,body,labels)" || return 2
+  fi
+  printf '%s' "$prs" | jq -e --arg n "$child_num" \
+    'any(.[]; ((.labels // []) | any(.name == "needs-approval"))
+      and ((.body // "") | test("(closes|fixes|refs)[[:space:]]+#" + $n + "([^0-9]|$)"; "i")))' >/dev/null 2>&1
+  case "$?" in
+    0) return 0 ;;
+    1) return 1 ;;
+    *) return 2 ;;
+  esac
+}
+# 問いではないとして通す前の確かめ。未回答の停止の記録があるか、確かめられなければ exit 1（形の崩れ）
+refuse_if_unanswered() {
+  local rc=0
+  unanswered_stop_record || rc=$?
+  case "$rc" in
+    0) echo "an unanswered stop record remains (needs-approval); not passing it as not-a-question" >&2; exit 1 ;;
+    2) echo "could not check the PRs for an unanswered stop record" >&2; exit 1 ;;
+  esac
+}
+
 # 定型の完了報告に返事を送ると同じ報告を繰り返す。停止の証拠や問いが無いときだけ、
 # モデルを呼ばず既存の「問いではない」経路へ流す（本文の指示は実行しない）。
 if [ -n "$stop_json" ] && [ -z "$stop_url" ] && [ "$asked" = false ] && [ "$marked" = false ] \
@@ -133,6 +168,7 @@ if [ -n "$stop_json" ] && [ -z "$stop_url" ] && [ "$asked" = false ] && [ "$mark
   && jq -e '(.text // "") | split("\n") | map(rtrimstr("\r")) as $l |
     ($l[0] == "主がこのセッションで次にすること: なし" or $l[0] == "主がすること: なし")
     and (((($l | map(select(test("\\S"))) | last) // "") | startswith("状態: 主の返事待ち")) | not)' "$stop_json" >/dev/null; then
+  refuse_if_unanswered
   printf '%s\n' '判断: 問いではない' '理由: 完了の報告' '返事: ' '記録: なし'
   exit 0
 fi
@@ -224,7 +260,8 @@ case "$l1" in
     # 定型の止まりは記録を残さず `止まった理由:` の行で渡すので、その行があれば同じに扱う
     [ -n "$stop_json" ] && [ -z "$stop_url" ] && [ "$asked" = false ] && [ "$marked" = false ] \
       && [ "$reason_line" = false ] \
-      || bad "line 1: $l1 is only for a stop with no record, no question, no mark and no stop-reason line" ;;
+      || bad "line 1: $l1 is only for a stop with no record, no question, no mark and no stop-reason line"
+    refuse_if_unanswered ;;
   *) bad "line 1: $l1" ;;
 esac
 case "$l2" in
