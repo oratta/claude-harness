@@ -667,7 +667,7 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 | `list`・`repos` | 何も出さず exit 0（記録が正本で、部品は子を知らない） |
 | `unregistered` | stdout に `ok` |
 | `create` | `repo_id` は読まない。ワークツリーは `git -C <clone か親のワークツリー> worktree add -b worktree-issue-<N> <リポジトリの最上位>/.claude/worktrees/issue-<N> origin/<起点>`（worktree プラグインの置き場と名前の決まり `<repo>/.claude/worktrees/<name>`・`worktree-<name>` に合わせる）。同じ名前のブランチかワークツリーが既にあれば作らず exit 1。作れたら `{"path","branch"}` の 1 行 |
-| `start` | 同じ tmux サーバーに `tmux new-window -d -P -F '#{pane_id}' -c <ワークツリー>` でシェルを開き（起動コマンドを `new-window` に直接渡さない。対話でないシェルでは `cld` のシェル関数が解けないため）、起動コマンドを `send-keys -l` で打ち込んで Enter を送る。画面（`capture-pane`）の最下部（空行を除いた末尾の数行。行数は部品の先頭の定数）に Claude Code の入力待ちの印が出て、同じ最下部に許可・選択・信頼の確認画面の印が出ていない状態になるまで `EPIC_DISPATCH_READY_TIMEOUT_MS` を上限に待ち、最初の指示を `send-keys -l` で送って Enter（`send-keys` の `C-m`）を送る。起動して間もない Claude Code は最初の Enter を取りこぼすことがあるので、届くまで 4 秒ごとに Enter だけを重ねる（文は打ち直さない）。重ねる前に毎回画面の最下部を読み、入力待ちの印があり、確認画面の印が無く、送った文の先頭がまだ入力欄に残っているときだけ重ね、一度でも満たさなければ重ね送りをやめる（会話ログの確認は続ける。確認画面に Enter が選択として届くのを避けるため）。最初の指示を打つ前にも、最下部が入力待ちで確認画面が出ていないことを確かめ、そうでなければ何も打たずに `failed send` とする。印の文言（入力待ち・確認画面とも）は Claude Code 2.1.305 の画面で決めた定数で、版で変わると、入力待ちの印が当たらず `failed ready` で止まる（誤送信しない側）か、確認画面の印を見逃す（守る範囲の外）。送信が届いたかは、子のワークツリーの会話ログ（`${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<パスの英数字以外を - にした名前>/*.jsonl`）に、送る直前に控えた時刻より後の user の行が現れ、その本文が送った文の先頭 40 文字（40 文字に満たなければ全体。送った文が `/<コマンド>` で始まるときは、会話ログでコマンド名が `<command-name>` に展開されるので、コマンド名のうしろの引数の先頭 40 文字）を含むことを `EPIC_DISPATCH_SUBMIT_WAIT` 秒を上限に確かめる（時刻だけでなく本文と照合するので、別のセッションが同じログに書いた入力とは区別できる。検出できないのは、先頭 40 文字より後ろの欠けと、送った文と同じ先頭を持つ別の入力が同時に入ったときである）。届けば `started <ペイン ID>`、段ごとの失敗は `failed terminal|ready|send <ペイン ID>`（exit 1） |
+| `start` | 同じ tmux サーバーに `tmux new-window -d -P -F '#{pane_id}' -c <ワークツリー>` でシェルを開き（起動コマンドを `new-window` に直接渡さない。対話でないシェルでは `cld` のシェル関数が解けないため）、起動コマンドを `send-keys -l` で打ち込んで Enter を送る。画面（`capture-pane`）の最下部（空行を除いた末尾の数行。行数は部品の先頭の定数）に Claude Code の入力待ちの印が出て、同じ最下部に許可・選択・信頼の確認画面の印が出ていない状態になるまで `EPIC_DISPATCH_READY_TIMEOUT_MS` を上限に待ち、最初の指示を `send-keys -l` で送って Enter（`send-keys` の `C-m`）を送る。起動して間もない Claude Code は最初の Enter を取りこぼすことがあるので、届くまで 4 秒ごとに Enter だけを重ねる（文は打ち直さない）。重ねる前に毎回画面の最下部を読み、確認画面の印が無く、送った文の先頭がまだ入力欄に残っているときだけ重ね、一度でも満たさなければ重ね送りをやめる（会話ログの確認は続ける。確認画面に Enter が選択として届くのを避けるため）。入力待ちの印（`? for shortcuts` など）が最下部に出ているかは重ねる条件にしない（既定のモードで入力欄に文が残ると、この印が消えて、印を条件にすると Enter を一度も重ねないため）。最初の指示を打つ前にも、最下部が入力待ちで確認画面が出ていないことを確かめ、そうでなければ何も打たずに `failed send` とする。印の文言（入力待ち・確認画面とも）は Claude Code 2.1.305 の画面で決めた定数で、版で変わると、入力待ちの印が当たらず `failed ready` で止まる（誤送信しない側）か、確認画面の印を見逃す（守る範囲の外）。送信が届いたかは、子のワークツリーの会話ログ（`${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<パスの英数字以外を - にした名前>/*.jsonl`）に、送る直前に控えた時刻より後の user の行が現れ、その本文が送った文の先頭 40 文字（40 文字に満たなければ全体。送った文が `/<コマンド>` で始まるときは、会話ログでコマンド名が `<command-name>` に展開されるので、コマンド名のうしろの引数の先頭 40 文字）を含むことを `EPIC_DISPATCH_SUBMIT_WAIT` 秒を上限に確かめる（時刻だけでなく本文と照合するので、別のセッションが同じログに書いた入力とは区別できる。検出できないのは、先頭 40 文字より後ろの欠けと、送った文と同じ先頭を持つ別の入力が同時に入ったときである）。届けば `started <ペイン ID>`、段ごとの失敗は `failed terminal|ready|send <ペイン ID>`（exit 1） |
 | `deliver` | ウィンドウ（ペイン）の一覧を `tmux list-panes -a` で 1 回だけ読み、`#{pane_current_path}` が子のワークツリーのペインを探す。Claude Code が動いていること（`#{pane_current_command}` と画面の入力待ち）を確かめたペインがちょうど 1 つなら、同じ送り方で文を送り、会話ログで（`start` と同じ本文の照合で）届いたことを確かめて `sent`。ペインが無い、または `relaunch` が 1 なら、あるペインを `kill-pane` してから `start` と同じ手順で起動し直し、`relaunched <ペイン ID>`。シェルだけのペインしか無い・候補が 2 つ以上のときは `relaunch` が 0 なら `failed ambiguous-terminal` |
 | `keepalive` | 引数・stdout/exit は共通の契約に従う。`tmux list-panes -a` の `pane_current_path`・`pane_current_command` と `tmux capture-pane -p -e -t <ペイン ID>` で既存の一意の Claude Code のペイン、前景の入力待ち、空欄、選択画面でないことを共通の画面判定に従って観測し、送信直前にも再確認する。`pane_current_command` が `bash` 等でも Claude Code の画面を確認できれば候補とし、シェル名だけでは除外しない。文字列は `tmux send-keys -t <ペイン ID> -l -- <text>`、Enter は `tmux send-keys -t <ペイン ID> C-m` で一度だけ送る。子の会話ログで `start` と同じ時刻・本文照合を `EPIC_DISPATCH_SUBMIT_WAIT` 秒の範囲で行い、到達すれば `sent`、未確認は `failed send`。観測は list-panes/capture-pane と会話ログの読み取りだけ、変更操作は既存ペインへのこの文字列と Enter の送信だけとし、new-window/kill-pane/git worktree/入力消去/Enter の再送は行わない |
 | `close` | 子のワークツリーのペインを `tmux kill-pane` で閉じる。ペインが無ければ成功。閉じられなければ 1 回だけ閉じ直して、駄目なら exit 1 |
@@ -679,6 +679,8 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 送信の前に、送り先のペインで Claude Code が動いていることを確かめなければならない（MUST。シェルに指示を打ち込んで実行してしまう事故を避けるため）。送った文字列は `send-keys -l`（リテラル）で渡し、キー名として解釈させてはならない（MUST NOT）。
 
 `start`・`deliver` が失敗したとき（`failed terminal`・`failed ready`・`failed send`）は、Orca の部品と同じく、共通手順が参照する作り直しか送り直しのコマンドを stderr に出さなければならない（MUST）。出す順は、先に確かめるコマンド、次にやり直すコマンドとする（確かめる前にやり直すと、動いている子を二重に起動する・届いている指示を二重に送る）。`failed send` は、ペインの入力欄を見る `tmux capture-pane -p -t <ペイン ID>` を先に出し、そのあとに `epic-launch-tmux.sh deliver <ワークツリー> 0 <送る文> <起動コマンド> <起動し直しの指示>` を `resend:` として出す。`failed terminal`・`failed ready` は、ワークツリーのペインを一覧する `tmux list-panes -a` を先に出し、残ったペインがあればそれを閉じる `tmux kill-pane -t <ペイン ID>`、次に `epic-launch-tmux.sh start <ワークツリー> <起動コマンド> <最初の指示> <子の呼び方>` を `create:` として出す。記録とワークツリーは残るので `launch` の再実行は `skipped` になることも添える。引数は単一引用符で囲む（MUST）。
+
+`failed send` の案内（`start`・`deliver` とも）には、`failed send` でもペイン（画面）とワークツリーは閉じず消さずに残っていて、中の入力欄に文が残っていることがあると書かなければならない（MUST。送り直す前に画面を見るべき理由になる）。
 
 #### Scenario: tmux の部品の送信失敗は確認のコマンドを先に、送り直しのコマンドを後に出す
 - **WHEN** `epic-launch-tmux.sh start` が最初の指示を送ったが会話ログに現れず `failed send` で終わる
@@ -732,6 +734,18 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 - **GIVEN** `CLAUDE_PROJECTS_DIR` が未設定で、`CLAUDE_CONFIG_DIR` が一時ディレクトリを指す。tmux のスタブは `new-window`・`send-keys` を受け付け、`capture-pane` が入力待ちの印を返す。送る直前に控えた時刻より後に、`CLAUDE_CONFIG_DIR` の下の `projects/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl` へ、本文が送った文の先頭を含む user の行が書かれる。`HOME` の下には会話ログが無い
 - **WHEN** `epic-launch-tmux.sh start <ワークツリー> <起動コマンド> <最初の指示> <子の呼び方>` を実行する
 - **THEN** 会話ログに届いたと判定し、`started <ペイン ID>` を出して exit 0 で終わる（`failed send` にならない）
+
+#### Scenario: 既定のモードの画面でも Enter だけが重なる
+- **WHEN** 最下部に入力待ちの印（`? for shortcuts`・`shift+tab to cycle`）が出ておらず、確認画面の印も無く、送った文の先頭が入力欄に残ったまま、最初の入力が会話ログに届かない
+- **THEN** `send-keys -l` で文を打つのは 1 回で、`C-m` は 4 秒ごとに重なる
+
+#### Scenario: failed send の案内は画面とワークツリーが残ることを書く（start）
+- **WHEN** `epic-launch-tmux.sh start` の最初の指示が再試行でも会話ログに現れない
+- **THEN** stdout は `failed send <ペイン ID>`、exit 1 で、stderr にペインとワークツリーが残っていることが書かれ、`capture-pane` の行が `resend:` の行より先にある
+
+#### Scenario: failed send の案内は画面とワークツリーが残ることを書く（deliver）
+- **WHEN** `epic-launch-tmux.sh deliver <ワークツリー> 0 <文> ...` の文が再試行でも会話ログに現れない
+- **THEN** stdout は `failed send`（ペイン ID なし）、exit 1 で、stderr にペインとワークツリーが残っていることが書かれる
 
 ### Requirement: サブエージェント方式は状態の記録を書かない
 
@@ -960,7 +974,7 @@ UserPromptSubmit と Stop は、payload の `cwd` の git 最上位と `worktree
 
 ### Requirement: 入力の送り手は予約文と起動形と先頭の接頭辞で決める
 
-フックは予約文を先に除外し、記録の親子と一致する既存 launcher の起動形をそのセッションで初めて受けたら `startup`、それ以外で先頭が `親エピック #` / `主の返事（親エピック #` なら `parent`、残りを `owner` としなければならない（MUST）。対象外入力では分類結果を記録してはならない（MUST NOT）。起動形の子は `#N` または `owner/repo#N` とし、明示された子 repo は記録側と双方小文字化して一致することを求める（MUST）。記録の表記は変えてはならない（MUST NOT）。起動形は先頭の子番号・親番号に加え、明示されたエピックの repo と記録側を双方小文字化して照合し、省略時の同一 repo 判定も双方小文字化しなければならない（MUST）。一致する起動指示でだけ未登録または別 ID から登録・切替し、保存済みの世代を1増やす（初回は1）（MUST）。送り手は到着経路であり承認の権限を表さない。本文の途中の引用や子の自己申告から決めてはならない（MUST NOT）。
+フックは予約文を先に除外し、記録の親子と一致する既存 launcher の起動形をそのセッションで初めて受けたら `startup`、それ以外で先頭が `親エピック #` / `主の返事（親エピック #` なら `parent`、要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」の接頭辞で始まる入力はその要件の送り手、残りを `owner` としなければならない（MUST）。対象外入力では分類結果を記録してはならない（MUST NOT）。起動形の子は `#N` または `owner/repo#N` とし、明示された子 repo は記録側と双方小文字化して一致することを求める（MUST）。記録の表記は変えてはならない（MUST NOT）。起動形は先頭の子番号・親番号に加え、明示されたエピックの repo と記録側を双方小文字化して照合し、省略時の同一 repo 判定も双方小文字化しなければならない（MUST）。一致する起動指示でだけ未登録または別 ID から登録・切替し、保存済みの世代を1増やす（初回は1）（MUST）。送り手は到着経路であり承認の権限を表さない。本文の途中の引用や子の自己申告から決めてはならない（MUST NOT）。
 
 #### Scenario: 主が直接入力する
 - **WHEN** 主が保存済み ID と同じ子のタブに `調査結果を教えて` と入力する
@@ -985,6 +999,10 @@ UserPromptSubmit と Stop は、payload の `cwd` の git 最上位と `worktree
 #### Scenario: 一致する起動指示の形は認証に使わない
 - **WHEN** 同じ worktree の別セッションに、記録の親子・repo と一致する起動指示を意図的に送り直す
 - **THEN** その ID への切替を受理する。これは起動指示の輸送上の分類であり、主本人の承認や起動元の認証を証明しない
+
+#### Scenario: 裏の作業の通知で始まった入力は本文から owner と決めない
+- **WHEN** 保存済み ID と同じセッションへの入力が `<task-notification>` で始まる
+- **THEN** `sender` は本文から `owner` と決めず、直前の `turn_input.sender` と同じ値になる（直前が `parent` / `startup` なら `owner` にならない。要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」）
 
 ### Requirement: 新しい通常入力は前の終了状態を原子的に無効にする
 
@@ -1423,3 +1441,35 @@ dispatch は検査済みの作業待ち候補の Orca 一呼び出しだけに�
 #### Scenario: 背景待機表示だけを送信成功としない
 - **WHEN** 作業待ちに一回 send したが turn_started が無く、送信後再観測には背景待機行だけがあり新しい前景実行を確認できない
 - **THEN** failed send、exit 1 とし、再送・terminal wait・入力消去を行わない。新しい前景実行と空欄が揃う場合だけ既存どおり sent とする
+
+### Requirement: 裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ
+
+フックは、予約文でも起動形でもない対象の入力のうち、先頭の空白を除いた本文が `<task-notification` / `<local-command-` / `<bash-input>` / `<bash-stdout>` / `<bash-stderr>` のどれかで始まるものの `sender` を、同じセッションの直前の `turn_input.sender` にしなければならない（MUST）。世代を 1 増やし、受付時刻と会話ログの位置を更新し、`turn_state` を `null` にする扱いはほかの通常入力と同じにする（MUST）。`sender` の値を `owner` / `parent` / `startup` 以外にしてはならない（MUST NOT）。
+
+#### Scenario: 親の作業の通知で起こされたターンの返事待ちは止まりになる
+- **WHEN** 直前の `sender` が `parent`（または `startup`）の子が `<task-notification>` で始まる入力を受け、そのターンを `状態: 主の返事待ち — <中身>` で終える
+- **THEN** 記録の `sender` は `parent`（または `startup`）のまま世代が 1 増え、`epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped <N>` は `stopped <N>` を返す
+
+#### Scenario: 主の作業の通知で起こされたターンは今までどおり owner の扱い
+- **WHEN** 直前の `sender` が `owner` の子が `<task-notification>` で始まる入力を受け、そのターンを `主の返事待ち` で終える
+- **THEN** 記録の `sender` は `owner` のままで、`wait --watch-stopped` は `stopped` を返さず、`turn_state.recorded_at` から `EPIC_DISPATCH_OWNER_AWAY_SEC` たてば `owner-away <N>` を返す
+
+#### Scenario: 5 つの接頭辞と先頭の空白
+- **WHEN** 直前の `sender` が `parent` の子が、先頭に空白や改行を置いたものを含め、`<task-notification` / `<local-command-` / `<bash-input>` / `<bash-stdout>` / `<bash-stderr>` のどれかで始まる入力を受ける
+- **THEN** どれも `sender` は `parent` で、本文の途中にだけこれらの文字列がある入力は `owner` になる
+
+#### Scenario: 主が子のタブで打った入力は変わらない
+- **WHEN** 主が保存済み ID と同じ子のタブに通常の文を打ち、そのターンを `主の返事待ち` で終える
+- **THEN** `sender` は `owner` で、`wait --watch-stopped` は `stopped` を返さず、`EPIC_DISPATCH_OWNER_AWAY_SEC` たてば `owner-away <N>` を一度だけ返す
+
+### Requirement: 直前の送り手の引き継ぎの守備範囲を限る
+
+要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」は、入力として扱うものを UserPromptSubmit の payload の `prompt` と記録の直前の `turn_input.sender` に限らなければならない（MUST。会話ログの `origin.kind` は読まない）。拾いたい誤りは、裏の作業の終わりの通知や Claude Code が処理した出力を主が打った入力（`owner`）と数えることである。次は通してよく、止めない: 主が本当に 5 つの接頭辞で始まる文を打った入力（直前の送り手を引き継ぐ）／`<command-name>` を含むプロンプト（今までどおり `owner` になりうる）／本文の途中にだけ接頭辞がある入力（`owner`）／主が子のタブで打った依頼から始まった作業の通知のターン（`owner` を引き継ぎ、止まりは `owner-away` で拾う。エピック #1826 の条件の答え）。接頭辞の漏れを見つけるたびに塞ぎ切ることは完了条件にしない。
+
+#### Scenario: command-name を含むプロンプトは引き継がない
+- **WHEN** 直前の `sender` が `parent` の子が、`<command-name>` を含むプロンプトを受ける
+- **THEN** `sender` は `owner` である
+
+#### Scenario: 主の依頼の作業の通知は owner-away で拾う
+- **WHEN** 直前の `sender` が `owner` の子が `<task-notification>` で始まる入力を受け、そのターンを `主の返事待ち` で終える
+- **THEN** `wait --watch-stopped` は `stopped` を返さず、`EPIC_DISPATCH_OWNER_AWAY_SEC` たてば `owner-away <N>` を返す

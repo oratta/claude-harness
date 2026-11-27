@@ -4997,7 +4997,7 @@ EOF
   printf '%s\n' "$p" | grep -qF '操作をせずに返事だけを送らない'
   r="$(awk '/^## pending-owner の復元/{f=1;next} /^## /{f=0} f' "$f")"
   printf '%s\n' "$r" | grep -qF '最新の `親の判断:` が `親の判断: 親の操作が要る` の子は、手順 8 の **親の操作が要る子** と同じく操作をしてから返事を送り、照らし直さず出し直さない'
-  ! printf '%s\n' "$l8" | grep -qF '完了の推定が止まり、'
+  ! printf '%s\n' "$l8" | grep -qF '完了の推定が止まり、' || return 1
 }
 
 @test "wait --resolve: a failing judge is posted as could-not-decide with an unknown record" {
@@ -5411,14 +5411,14 @@ notified_in_place() {
   printf '%s\n' "$l2" | grep -F 'EPIC_DISPATCH_DONE_IDLE_SEC' | grep -F '1800' | grep -qF '推定'
   printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '親がまだ受けていない止まり（`stopped`）の子'
   printf '%s\n' "$l2" | grep -qF '親が受けた止まり（`stopped-seen`）の子は推定の対象に入る'
-  ! printf '%s\n' "$l2" | grep -qF '止まった印の子'
+  ! printf '%s\n' "$l2" | grep -qF '止まった印の子' || return 1
   printf '%s\n' "$l2" | grep -F '閉じてから' | grep -qF 'サブエージェント'
   printf '%s\n' "$l3" | grep -F '推定の `done`' | grep -qF '`reap`'
   printf '%s\n' "$l3" | grep -F '`closed` と `done` の両方' | grep -qF '4 を処理してから'
   printf '%s\n' "$l4" | grep -qF '止まった印の有無によらず、完了の印の無い子に送る'
   printf '%s\n' "$l4" | grep -F '促しの届かなかった子' | grep -F -- '--watch-done' | grep -qF '推定'
-  ! printf '%s\n' "$l4" | grep -qF 'not-stopped'
-  ! printf '%s\n' "$l4" | grep -qF '止まった印の無い子'
+  ! printf '%s\n' "$l4" | grep -qF 'not-stopped' || return 1
+  ! printf '%s\n' "$l4" | grep -qF '止まった印の無い子' || return 1
   printf '%s\n' "$l4" | grep -qF 'ステータスを変えるよう頼まない'
 }
 
@@ -7575,7 +7575,13 @@ stop_uuid: bb'
   put_record 11 stop=stopped-seen
   run dispatch pending-owner 11
   [ "$status" -eq 0 ]
-  [[ "$output" == *"pending 11"* ]] || return 1
+  [ "$output" = 'pending 11' ]
+  # wait も同じ記録を読める（読めない記録なら unreadable になる）。受け取り済みの止まりは再び報告されず、記録はそのまま
+  gh_seq 11 open
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
 }
 
 @test "records: a stop_uuid or stop_at that is not a string makes the record unreadable" {
@@ -7626,7 +7632,8 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
   put_chat 11 s1 "$(bg_start t1 "$(ago 2)")" "$(said d1 "$(ago 1)")"
   wait_stop
   [ "$output" = 'stopped 11' ]; [ "$(rec_get 11 stop_uuid)" = d1 ]
-  [ "$(rec_get 11 stop_at)" != null ]
+  # stop_at は時刻の形（null や空や任意の文字列では通さない）
+  [[ "$(rec_get 11 stop_at)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]] || return 1
 }
 
 @test "wait state: re-marking or changing log uuid cannot receive the same turn twice" {
@@ -7730,6 +7737,15 @@ log_resolve_ready() {
   [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 d1" ]
 }
 
+@test "wait --resolve log: a pass with a record URL from the judge names both the uuid and the URL" {
+  log_resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい "$STOP_URL"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 d1 $STOP_URL" ]
+}
+
 @test "wait --resolve log: a statement that is not a question goes back to resumed, wakes nobody and sends nothing" {
   log_resolve_ready
   printf '判断: 問いではない\n理由: 完了の報告\n返事:\n記録: なし\n' > "$STUB_CFG/judge_out"
@@ -7746,6 +7762,23 @@ log_resolve_ready() {
   [ ! -e "$STUB_CFG/comment_11" ]
 }
 
+@test "wait --resolve log: a restated question after the parent's reply reaches the judge as d2" {
+  log_resolve_ready
+  judge_says judge_out 主に上げる 主の判断が要る '' なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d1 ]
+  # 親が返事を送ったあと、子が同じ問いを言い直す（新しい発言 d2）。判断には d2 が渡る
+  rm -f "$STUB_CFG/judge_json"
+  put_turn 11 parent 主の返事待ち 2
+  put_chat 11 s1 "$(said d1 "$(ago 300)" 'ここに秘密の本文')" "$(turn_end "$(ago 299)")" "$(said d2 "$(ago 5)" '言い直した本文')" "$(turn_end "$(ago 4)")"
+  gh_seq 11 open closed; printf '0\n' > "$STUB_CFG/ghcount_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d2 ]
+  [ "$(jq -r .text "$STUB_CFG/judge_json")" = '言い直した本文' ]
+}
+
 @test "wait --resolve log: completion headings use the real judge to dismiss without a model or reply" {
   for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
     log_resolve_ready
@@ -7758,7 +7791,7 @@ log_resolve_ready() {
     [ "$output" = "closed 11" ]
     [ "$(rec_get 11 stop)" = resumed ]
     [ "$(rec_get 11 stop_uuid)" = d1 ]
-    [ -n "$(rec_get 11 stop_at)" ]
+    rec_get 11 stop_at | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
     [ "$(calls '^model-called')" -eq 0 ]
     [ "$(calls '^orca terminal send')" -eq 0 ]
     [ "$(calls '^gh issue comment')" -eq 0 ]
@@ -10567,7 +10600,7 @@ assert_reply_auto() {
   grep -F 'notify-closed' "$f" | grep -qF '`--relaunch` が効くのは止まっている子だけ'
   grep -F '主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない。' "$f" | grep -qF '`notify-closed` の完了の促しだけは、止まっていない子にも送る。その子には `--relaunch` を付けても端末を閉じず、起動し直さない'
   grep -qF '完了の印の無い completed の子への `scripts/epic-dispatch.sh notify-closed`' "$f"
-  ! grep -qF '停止中の completed の子' "$f"
+  ! grep -qF '停止中の completed の子' "$f" || return 1
   grep -F '明示' "$f" | grep -qF -- '--relaunch'
 }
 
@@ -10576,7 +10609,7 @@ assert_reply_auto() {
   grep -F '親だけ' "$f" | grep -qF '全対象には足りない'
   grep -F '終えて' "$f" | grep -F 'reply' | grep -qF '省く'
   grep -F 'waiting と stopped（親がまだ受けていない止まり）は完了推定の対象外' "$f" | grep -qF 'stopped-seen（親が受けた止まり）は完了推定の対象に入る'
-  ! grep -qF 'stopped / stopped-seen は完了推定の対象外' "$f"
+  ! grep -qF 'stopped / stopped-seen は完了推定の対象外' "$f" || return 1
   grep -F 'notify-closed' "$f" | grep -qF '止まった印の有無によらず'
   grep -F 'not-done' "$f" | grep -qF 'reap'
   grep -F 'notify-closed' "$f" | grep -qF 'mark done'
