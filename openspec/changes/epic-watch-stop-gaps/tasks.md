@@ -19,4 +19,4 @@
 
 ## 5. 全体
 
-- [ ] 5.1 dev-workflow の bats 一式と `openspec validate epic-watch-stop-gaps --type change --strict` が通ることを確かめる。触る範囲: plugins/dev-workflow/tests（実行のみ）
+- [x] 5.1 dev-workflow の bats 一式と `openspec validate epic-watch-stop-gaps --type change --strict` が通ることを確かめる。触る範囲: plugins/dev-workflow/tests（実行のみ）
