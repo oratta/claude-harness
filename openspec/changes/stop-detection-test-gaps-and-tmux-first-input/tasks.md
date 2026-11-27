@@ -1,7 +1,7 @@
 ## 1. 止まり検知のテストの欠け（元 #1542）
 
 - [ ] 1.1 `develop-skill.bats` の順序検査の切り出しパターン `親が自分で記録を …` を、直前行の新しい文面（`親が自分で今回の停止の記録（無ければ最後の発言）を …`）に直し、パターンを壊すと落ちることを確かめる。触る範囲: plugins/dev-workflow/tests/develop-skill.bats:1236-1242
-- [ ] 1.2 #1542 の残りの行（P8-F1・F4〜F9・P9-F2・F4〜F7）を、今の main で 1 行ずつ「まだ欠けているか」確かめ、欠けているものだけテストを足す。無い行（P8-F3: `EPIC_DISPATCH_STOP_BG_IDLE_SEC` は scripts に無い）は証拠を書いて済みにする。触る範囲: plugins/dev-workflow/tests/child-log-read.bats:1-400、plugins/dev-workflow/tests/epic-dispatch.bats:7591-7660、plugins/dev-workflow/tests/epic-stop-from-log-scenario.bats:1-200
+- [ ] 1.2 #1542 の残りの行（P8-F1・F4〜F9・P9-F2・F4〜F7）を、今の main で 1 行ずつ「まだ欠けているか」確かめ、欠けているものだけテストを足す。無い行（P8-F3: `EPIC_DISPATCH_STOP_BG_IDLE_SEC` は scripts・tests・skills に無い）の「済み」の証拠（コマンドかテスト名）は、PR 本文の「元の issue の確認」に書く（元の issue 番号は書かず、P の記号と行の中身で書く）。触る範囲: plugins/dev-workflow/tests/child-log-read.bats:1-400、plugins/dev-workflow/tests/epic-dispatch.bats:7591-7660、plugins/dev-workflow/tests/epic-stop-from-log-scenario.bats:1-200
 - [ ] 1.3 足した各テストで、対応する行を削除・反転すると落ちることを 1 件ずつ確かめる（確かめた方法を PR に書く）
 
 ## 2. stop-judge の発言の囲み（元 #1544）
@@ -12,9 +12,11 @@
 
 ## 3. tmux の最初の入力（元 #1824）
 
-- [ ] 3.1 `resend_hint` の案内に、ペイン（画面）と worktree が残っていて閉じていないことを足す。触る範囲: plugins/dev-workflow/scripts/epic-launch-tmux.sh:281-290
-- [ ] 3.2 `start` と `deliver` の `failed send` のテストで案内の文を確かめ、既存の Enter だけを再試行するテスト（`start: only Enter is resent every 4 seconds…`）が文を 1 回しか打たないことを引き続き確かめる。触る範囲: plugins/dev-workflow/tests/epic-launch-tmux.bats:224-232、plugins/dev-workflow/tests/epic-launch-tmux.bats:469-515
-- [ ] 3.3 起動直後の実画面（tmux）で、最初の入力が手で Enter を送らずに確定することを確かめる（確認は W の記録に残す）
+- [ ] 3.1 原因の確認（直す前）: 実機の既定のモードで Claude Code を起動し、入力欄に文が残った状態の `tmux capture-pane -p` を取り、最下部に `? for shortcuts` が出るか・送った文の先頭（`head20`）が画面に出るか・`/develop` の補完候補が `DIALOG_PATTERN` に当たるかを調べる。結果（画面の抜粋）を #1829 にコメントする。仮説（印が消えて 4 秒目の `pane_ready` が失敗し、Enter を 1 回も重ねない）と違えば、原因に合わせて 3.2 の条件を design と spec に直してから進む。触る範囲: plugins/dev-workflow/scripts/epic-launch-tmux.sh:131-158（`send_and_confirm`）
+- [ ] 3.2 重ね送りの条件から入力待ちの印を外す（確認画面の印が無く、文の先頭が入力欄に残るときだけ重ねる）。触る範囲: plugins/dev-workflow/scripts/epic-launch-tmux.sh:131-158、定数 `READY_PATTERN`・`DIALOG_PATTERN`（ファイル先頭）
+- [ ] 3.3 `resend_hint` の案内に、ペイン（画面）とワークツリーが残っていて入力欄に文が残りうることを足す。触る範囲: plugins/dev-workflow/scripts/epic-launch-tmux.sh:281-290
+- [ ] 3.4 テスト: 既定のモードの画面（印なし・文が入力欄に残る）で `C-m` が重なり文は 1 回だけ打たれること、`start` は `failed send <ペイン ID>`・`deliver` は `failed send` で案内に残ることが書かれること。既存のスタブ画面（plan mode の行）は既定のモードの画面に差し替えるか両方を持つ。触る範囲: plugins/dev-workflow/tests/epic-launch-tmux.bats:224-260、469-515
+- [ ] 3.5 直したあとに実機で、最初の入力が手で Enter を送らずに確定することを確かめる（確認は #1829 にコメントする）
 
 ## 4. 仕上げ
 

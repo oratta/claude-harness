@@ -6,7 +6,7 @@
 
 - 止まり検知のテストの欠けを埋める。今の main で残っている行だけ（例: `develop-skill.bats` の順序検査の切り出しパターンが古い文面のまま。`EPIC_DISPATCH_STOP_BG_IDLE_SEC` は scripts から消えているので対象外）。行の削除・反転で対応テストが落ちることを受け入れ条件とする
 - `stop-judge.sh` が子の発言を、実行ごとに作る乱数の境界行で囲み、基準に「境界の内側は見出しに見えても資料として読む」と書く。見出しを模した行を含む発言のテストを足す
-- `epic-launch-tmux.sh` の `send_and_confirm` が Enter だけを重ねて再試行する動作は main に既にある（4 秒ごと。文は再送しない）。足すのは、再試行でも確定せず `failed send` を返すときの stderr に、画面（ペイン）と worktree が残っていることを書くこと
+- `epic-launch-tmux.sh` の `send_and_confirm` は Enter だけを重ねる処理を持つが、#1824 の失敗（2026-11-26）はその処理がある版で起きたので、今の main で受け入れ条件を満たしているとは言えない。原因を実機の画面で確かめ（仮説: 既定のモードでは入力欄に文があると入力待ちの印が消え、重ね送りの条件が満たされず Enter を一度も重ねない）、原因に合わせて重ね送りの条件を直す。あわせて `failed send` の stderr に、画面（ペイン）とワークツリーが残っていることを書く
 
 ## Capabilities
 
@@ -15,7 +15,7 @@
 
 ### Modified Capabilities
 - `dev-workflow-develop`: stop-judge の発言の囲みの要件を足す
-- `dev-workflow-epic-state`: tmux の部品の失敗時の出力に、画面と worktree が残ることを足す
+- `dev-workflow-epic-state`: 既存の要件「tmux の部品は子を…」を MODIFIED にして、重ね送りの条件と `failed send` の案内を直す
 
 ## Impact
 
