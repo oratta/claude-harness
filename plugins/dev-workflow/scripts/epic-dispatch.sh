@@ -96,13 +96,13 @@
 #   この順に（1 行か 2 行）出して exit 0。読めない記録はそのポーリングを失敗したポーリングに数え、
 #   3 回続いて gh の失敗が無ければ `error workspaces`。位置引数 0 件も可（timeout は `timeout` だけ）。
 #   --watch-done の子で status が done でないものは、ポーリングごとに完了を推定する（LLM なし）。条件は、
-#   status が running・stop が stopped / stopped-seen でない・記録の worktree のトランスクリプト（下の
+#   status が running・stop が stopped（親がまだ受けていない止まり）でない（stopped-seen は対象）・記録の worktree のトランスクリプト（下の
 #   wait --resolve と同じ置き場の *.jsonl）が 1 本以上あり、全ファイルを通して timestamp を持つ行（種類を問わない）の
 #   最大値が EPIC_DISPATCH_DONE_IDLE_SEC（秒・既定 1800）以上前・子 issue（位置引数の子と同じ呼び先）が closed で
 #   state_reason が completed・その closed_at から EPIC_DISPATCH_DONE_IDLE_SEC 以上たった、の 6 つすべて。
 #   サブエージェントのトランスクリプト（<置き場>/<セッション>/subagents/*.jsonl）の行も最後の活動に数える。
 #   gh（state・state_reason・closed_at を 1 回で読む）はほかの 4 つを満たした子にだけ 1 回呼び、その失敗は推定せず
-#   失敗したポーリングにも数えない。満たせば排他の中で running と止まった印でないことを確かめ直して status を
+#   失敗したポーリングにも数えない。満たせば排他の中で running と stopped でないことを確かめ直して status を
 #   done にし、done_inferred_at（UTC の時刻）と done_inferred_last_activity（最後の活動の timestamp）を足して
 #   Orca の印へ写し、stderr に `inferred done <N>: ...` を出して、子が付けた done と同じ `done <N>...` の行に入れる。
 #   排他が取れない・書けないときは失敗したポーリングに数える。
@@ -115,6 +115,8 @@
 #   主の新しい入力が無ければ、排他つきで記録の owner_away_told に今回のターンを書いてから `owner-away <N>...` を
 #   unrecorded の次の行に出して exit 0（同じターンでは二度出さない）。子には何も送らず、端末を閉じず、起動し直さず、
 #   stop・stop_uuid も変えず、--resolve・声かけ・長い待ちにも渡さない（#1745。references/epic-stop.md）。
+#   ただし子の最新の本体の会話ログが turn_state.session_id と違うセッションで、その last_input_at が
+#   turn_state.recorded_at より新しい（新しいセッションで再開した）子は知らせず、owner_away_told も書かない（#1815）。
 #   --watch-done も --watch-stopped（子 1 件以上）も無ければ記録を読まない。
 #   --resolve <epic>（--watch-stopped と位置引数の子が 1 件以上あるときだけ働く）を付けると、止まった子ごとに
 #   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child> <止まりの
@@ -123,7 +125,9 @@
 #   `親の判断: 子 #<N> 通した — <理由> 発言 <uuid か 不明>`（記録の URL があれば末尾に足す）を投稿して
 #   出力から外す（投稿に失敗したら `unrecorded` に入れ、stderr に投稿し直しのコマンド）。
 #   `判断: 問いではない` は記録の stop を resumed に戻し、stderr に `問いではない <N> <理由>` を出して出力から外す
-#   （子にも issue にも何も送らない）。`判断: 主に上げる` は子 issue に `親の判断: 主に上げる`、判断の失敗・
+#   （子にも issue にも何も送らない）。`判断: 親が動く`（通してよいが推奨が親の操作を含む）は子に送らず、
+#   子 issue に `親の判断: 親の操作が要る`・止まりの発言・停止の記録・理由・`送るはずだった返事: <返事か なし>` を
+#   投稿して `stopped` に残す（親が epic-stop.md 手順 8 で操作をしてから返事を送る）。`判断: 主に上げる` は子 issue に `親の判断: 主に上げる`、判断の失敗・
 #   形の崩れは `親の判断: 判断できなかった`、通すで送信の失敗は `親の判断: 通すが送れなかった` を、2 行目
 #   `止まりの発言: <uuid か 不明>`、3 行目 `停止の記録: <URL か なし か 不明>` 付きで投稿して
 #   `stopped` に残す（投稿に失敗したら stderr に投稿し直しのコマンド）。出力は closed / done / stopped /
@@ -157,12 +161,13 @@
 #   なければ `skipped <child> not-completed`（gh の失敗は `failed <child> issue`）。今のワークツリーを parent_worktree に
 #   持つ <child> の記録が 0 件なら `skipped <child> no-worktree`、2 件以上は `failed <child> ambiguous-worktree`、
 #   読めない記録は `failed <child> state-unreadable`。記録の status が done なら
-#   `skipped <child> already-done`、stop が stopped / stopped-seen でなければ `skipped <child> not-stopped`。
-#   条件を満たせば reply --as parent と同じ処理（--relaunch も同じ）で「記録先の issue #<child> は completed で
+#   `skipped <child> already-done`。止まった印の有無によらず（stop が空・stopped・stopped-seen・resumed、
+#   status が running・waiting のどれでも）、完了の印の無い子に送る。reply --as parent と同じ処理で「記録先の issue #<child> は completed で
 #   閉じた。完了報告を書き、mark done で終える（停止の記録: <URL>）」を送り（URL は OWNER / MEMBER / COLLABORATOR の
 #   最新の `子の停止: 主の返事待ち` のコメント、無ければ子 issue の URL）、送れたらエピックに
 #   `親の判断: 子 #<child> 通した — 記録先が completed で閉じたので、完了報告と mark done を促した <URL>`（記録に stop_uuid があれば URL の前に `発言 <uuid> ` を足す）を投稿して
-#   `notified <child>`（投稿に失敗したら `unrecorded <child>` と stderr に投稿し直しのコマンド）。skipped / notified /
+#   `notified <child>`（投稿に失敗したら `unrecorded <child>` と stderr に投稿し直しのコマンド）。--relaunch は送る直前の
+#   止まりの確かめで止まっていると決まった子にだけ効き、止まっていない子は端末を閉じず今の端末に送る。skipped / notified /
 #   unrecorded は exit 0、送信の失敗は `failed <child> <段>` で exit 1。skipped のときはどこにも投稿しない
 # mark: stopped / resumed は更新前の版の子のために受け続けるだけで、子の義務ではない（止まりは wait が会話ログで検知する）。
 #   今のワークツリーを worktree に持つ自分の記録の number（<owner>/<repo>#<N> なら repo も）が <issue> の
@@ -317,7 +322,8 @@ notify-closed [--relaunch] <epic> <child>
   記録先が completed で閉じた子に、完了報告と mark done を促す。1 行。exit 0、failed なら 1。
   notified <N>        子に送り、エピックに「親の判断」の 1 行を残した
   unrecorded <N>      子には届いたが、エピックへの 1 行を残せなかった（stderr に投稿し直しのコマンド）
-  skipped <N> <理由>  何も送らない（not-closed・not-completed・no-worktree・already-done・not-stopped）
+  skipped <N> <理由>  何も送らない（not-closed・not-completed・no-worktree・already-done）。止まった印の有無によらず、
+                      完了の印の無い子に送る（--relaunch は止まっている子にだけ効く）
   failed <N> <段>     送れなかった（stderr に送り直しか作り直しのコマンド）
 
 wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
@@ -1013,10 +1019,15 @@ cmd_launch() {
 # 子の端末に、送り手を付けた返事を届ける（<relaunch 0|1> <parent|owner> <epic> <child> <text>）。
 # 子のワークツリーは、親のワークツリー（PARENT_TOP）の記録の worktree から読む。need_parent と agent_setup を
 # 済ませてから呼ぶ。stdout に `sent <child>` / `relaunched <child>` / `failed <child> <理由>` の
-# 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する
+# 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する。
+# 6 つ目は wait --resolve が渡す受領した組（stop_turn）。7 つ目の closed_notify が 1（notify-closed だけが渡す）のときは、
+# 送る直前の止まりの確かめ（stop の値・stop_turn・会話ログの進み）で止まっていないと決まっても skipped にせず、
+# relaunch を 0 にして送り続ける（完了の促しは止まった印の有無によらず要る）。止まっていない子はターンの途中か
+# 主が子のタブで会話中でありうるので、--relaunch を当てて端末を閉じ起動し直すと作業と会話を失わせる。
+# relaunch が 0 なら deliver は端末があれば子のセッションの端末に送るだけで閉じない（0 個なら作る）
 deliver_reply() {
   local relaunch="$1" as="$2" epic="$3" n="$4" text="$5"
-  local msg rec path res prompt json erefs=" " xrepo_epic="" expected="${6-}"
+  local msg rec path res prompt json erefs=" " xrepo_epic="" expected="${6-}" closed_notify="${7-}"
   child_record "$PARENT_TOP" "$n"
   case $? in
     0) ;;
@@ -1029,16 +1040,19 @@ deliver_reply() {
   [ -n "$path" ] || { echo "failed $n no-worktree"; return 1; }
   # 送る直前に、子がまだ止まっているかを確かめる（主が子のタブで答えて再開済みなら、重ねて送らない）。
   # 止まっていなければ送らず `skipped <child> not-stopped` を出して 2 を返す
+  # closed_notify が 1 なら、止まっていない子は skipped にせず relaunch を 0 にして送る
   case "$(es_get "$rec" stop)" in
     stopped|stopped-seen) ;;
-    *) echo "skipped $n not-stopped"; return 2 ;;
+    *) if [ "$closed_notify" = 1 ]; then relaunch=0; else echo "skipped $n not-stopped"; return 2; fi ;;
   esac
   # 親の判断として送るときは、受領した組（stop_turn）が今も有効な停止かを状態記録で確かめる（ログは読まない）。
   # stop_turn の無い旧記録と --as owner は今までどおり。
   if [ -z "$expected" ] && [ "$as" = parent ]; then
     expected="$(es_read "$rec" 2>/dev/null | jq -ce '.stop_turn | select(type == "object")' 2>/dev/null)" || expected=""
     if [ -n "$expected" ]; then
-      wait_received "$rec" "$expected" >/dev/null || { echo "skipped $n not-stopped"; return 2; }
+      if ! wait_received "$rec" "$expected" >/dev/null; then
+        if [ "$closed_notify" = 1 ]; then relaunch=0; else echo "skipped $n not-stopped"; return 2; fi
+      fi
     fi
   fi
   # 記録がまだ stopped-seen でも、子が mark resumed を呼ばず会話ログだけで先へ進んでいる（止まりの発言より新しい発言か
@@ -1048,7 +1062,7 @@ deliver_reply() {
     && ! received_dependency_stop "$rec"; then
     json="$(record_log_json "$rec")" || json=""
     if [ -n "$json" ] && log_moved "$json" "$(es_get "$rec" stop_uuid)"; then
-      echo "skipped $n not-stopped"; return 2
+      if [ "$closed_notify" = 1 ]; then relaunch=0; else echo "skipped $n not-stopped"; return 2; fi
     fi
   fi
   # 返事は記録の launcher の部品で届ける。その部品が使えない子だけ launcher-unavailable
@@ -1073,8 +1087,8 @@ deliver_reply() {
   fi
   # 部品がセッションの一覧を 1 回だけ読み、子のセッションへ送るか、閉じて起動し直すかを決める
   # （出力は sent / relaunched <session> / failed <理由> の 1 行）
-  if [ -n "$expected" ]; then
-    wait_received "$rec" "$expected" >/dev/null || { echo "skipped $n not-stopped"; return 2; }
+  if [ -n "$expected" ] && ! wait_received "$rec" "$expected" >/dev/null; then
+    if [ "$closed_notify" = 1 ]; then relaunch=0; else echo "skipped $n not-stopped"; return 2; fi
   fi
   res="$(launcher deliver "$path" "$relaunch" "$msg" "$agent_cmd" "$prompt")"
   case "$res" in
@@ -1121,8 +1135,8 @@ cmd_reply() {
   case $? in 0|2) exit 0 ;; *) exit 1 ;; esac
 }
 
-# 止まった印のまま completed で閉じた子に、完了報告と mark done を促す返事を送り、エピックに 1 行残す。
-# stdout に notified / unrecorded / skipped <理由> / failed <段> の 1 行
+# 完了の印の無いまま completed で閉じた子に（止まった印の有無によらず）、完了報告と mark done を促す返事を送り、
+# エピックに 1 行残す。止まっていない子に --relaunch を当てないのは deliver_reply（closed_notify）が決める。stdout に notified / unrecorded / skipped <理由> / failed <段> の 1 行
 cmd_notify_closed() {
   local relaunch=0
   while [ "$#" -gt 0 ]; do
@@ -1162,10 +1176,6 @@ cmd_notify_closed() {
     *) echo "skipped $n no-worktree"; exit 0 ;;
   esac
   [ "$(es_get "$rec" status)" = "done" ] && { echo "skipped $n already-done"; exit 0; }
-  case "$(es_get "$rec" stop)" in
-    stopped|stopped-seen) ;;
-    *) echo "skipped $n not-stopped"; exit 0 ;;
-  esac
   launcher_usable "$(es_get "$rec" launcher)" || exit 1
   # 停止の記録は、信頼できる投稿者の最新の `子の停止: 主の返事待ち` のコメント（無ければ子 issue の URL）
   local url
@@ -1176,10 +1186,9 @@ cmd_notify_closed() {
   [ -n "$url" ] || url="$issue_url"
   local text res line
   text="記録先の issue $(child_label "$n") は completed で閉じた。完了報告を書き、mark done で終える（停止の記録: ${url}）"
-  res="$(deliver_reply "$relaunch" parent "$epic" "$n" "$text")"
+  res="$(deliver_reply "$relaunch" parent "$epic" "$n" "$text" "" 1)"
   case "$res" in
     "sent $n"|"relaunched $n") ;;
-    "skipped $n not-stopped") echo "$res"; exit 0 ;;
     *) echo "$res"; exit 1 ;;
   esac
   # エピックへの記録は送れたあとに残す（送る前に残すと、送れなかったときに送っていない判断が残る）
@@ -1399,16 +1408,16 @@ PY
 }
 
 # wait --watch-done: 完了の印の無い子 1 件の完了を推定する（<子の引数> <記録のパス>）。
-# 記録が running・止まった印でない・トランスクリプトの最後の活動が EPIC_DISPATCH_DONE_IDLE_SEC 秒以上前・
+# 記録が running・親がまだ受けていない止まり（stopped）でない・トランスクリプトの最後の活動が EPIC_DISPATCH_DONE_IDLE_SEC 秒以上前・
 # 子 issue が completed で閉じた・閉じてから EPIC_DISPATCH_DONE_IDLE_SEC 秒以上たった、のすべてなら、
-# 排他の中で確かめ直して done と推定の項目を書く。
+# 排他の中で確かめ直して done と推定の項目を書く。親が受けた止まり（stopped-seen）の子も推定し、stop・stop_uuid は変えない。
 # gh はローカルの条件を満たした子にだけ呼ぶ。gh の失敗と確かめ直しの外れは推定しない（失敗に数えない）。
 # 戻り値 0 = 推定して書いた / 1 = 推定しない / 3 = 書けなかった（失敗したポーリングに数える）。
 # gh と es_modify の stderr は呼び出し側（cmd_wait）の $errf に足す
 infer_done() {
   local n="$1" f="$2" w facts last ts st state reason age
   [ "$(es_get "$f" status)" = running ] || return 1
-  case "$(es_get "$f" stop)" in stopped|stopped-seen) return 1 ;; esac
+  [ "$(es_get "$f" stop)" = stopped ] && return 1
   w="$(es_get "$f" worktree)"
   [ -n "$w" ] || return 1
   facts="$(last_activity "$(transcript_dir "$w")")" || return 1
@@ -1425,7 +1434,7 @@ EOF_ST
   [ "$state $reason" = "closed completed" ] || return 1
   is_num "$age" || return 1
   [ "$age" -ge "${EPIC_DISPATCH_DONE_IDLE_SEC-1800}" ] || return 1
-  es_modify "$f" 'if .status == "running" and .stop != "stopped" and .stop != "stopped-seen"
+  es_modify "$f" 'if .status == "running" and .stop != "stopped"
     then .status = "done" | .done_inferred_at = $now | .done_inferred_last_activity = $ts else empty end' \
     --arg ts "$ts" >/dev/null 2>>"$errf"
   case $? in
@@ -1441,7 +1450,8 @@ EOF_ST
 # wait --resolve: 止まった子 1 件を判断のコマンドに渡し、結果どおりに送るか子 issue に残す
 # （<epic> <child>）。need_parent と agent_setup を済ませてから呼ぶ。
 # 戻り値 0 = 通して返事を送り、エピックに 1 行残した（出力から外す）/ 2 = 通して送ったが
-# エピックに残せなかった（unrecorded）/ 1 = 主に上げる・判断できなかった（stopped に残す）。
+# エピックに残せなかった（unrecorded）/ 1 = 主に上げる・親が動く・判断できなかった（stopped に残す。親が動くは
+# 子 issue に `親の判断: 親の操作が要る` と送るはずだった返事を残し、子には送らない）。
 # 「問いではない」は記録を resumed に戻して 0（親を起こさず、子にも issue にも何も送らない）
 resolve_stopped() {
   local epic="$1" n="$2"
@@ -1490,6 +1500,12 @@ resolve_stopped() {
     body="$(printf '親の判断: 主に上げる\n止まりの発言: %s\n停止の記録: %s\n%s' "${su:-不明}" "$url" "$reason")"
     gh issue comment "$(child_ref "$n")" --body "$body" >&2 || repost_hint "$(child_ref "$n")" "$body"
     return 1
+  elif [ "$l1" = "判断: 親が動く" ]; then
+    # 通してよいが推奨が親の操作を含む。wait は操作をしないので子に送らず、親を stopped で起こす
+    body="$(printf '親の判断: 親の操作が要る\n止まりの発言: %s\n停止の記録: %s\n%s\n送るはずだった返事: %s' \
+      "${su:-不明}" "$url" "$reason" "${reply:-なし}")"
+    gh issue comment "$(child_ref "$n")" --body "$body" >&2 || repost_hint "$(child_ref "$n")" "$body"
+    return 1
   elif [ "$l1" = "判断: 問いではない" ]; then
     rc=3
     [ -z "$rec" ] || { stop_to_resumed "$rec" "$turn"; rc=$?; }
@@ -1499,7 +1515,7 @@ resolve_stopped() {
     esac
     why="判断は問いではないだが、記録を再開に戻せなかった"
   elif [ "$l1" != "判断: 通す" ]; then
-    why="判断の出力の 1 行目が「判断: 通す」「判断: 主に上げる」「判断: 問いではない」のどれでもない"
+    why="判断の出力の 1 行目が「判断: 通す」「判断: 主に上げる」「判断: 問いではない」「判断: 親が動く」のどれでもない"
   elif [ -z "$reply" ]; then
     why="判断は通すだが、返事の行が空"
   else
@@ -2046,13 +2062,25 @@ detect_stopped() {
 
 # 主が子のタブで打った入力から始まった主の返事待ちが EPIC_DISPATCH_OWNER_AWAY_SEC 以上続いたかを見て、
 # 一度だけ owner_away_told に今回のターンを書く（<子の引数> <記録>）。0 = 今回知らせる、1 = 知らせない、3 = 記録を書けなかった。
-# 子に何も送らず、stop・stop_uuid も変えない。書く直前に入力が更新されていたら書かない
+# 子に何も送らず、stop・stop_uuid も変えない。書く直前に入力が更新されていたら書かない。
+# 記録の条件を満たした子だけ会話ログを読み、最新の本体のログの session が空でなく turn_state.session_id と違い、
+# その last_input_at（小数秒は落とす）が turn_state.recorded_at より新しければ、新しいセッションで再開した子として
+# 知らせず owner_away_told も書かない（1。書くと古いセッションに戻ったときに知らせが出なくなる）。
+# ログを読めない・値が空なら今までどおり知らせる
 detect_owner_away() {
-  local f="$2" snapshot rc=0 nowsec sec="${EPIC_DISPATCH_OWNER_AWAY_SEC-3600}"
+  local f="$2" snapshot rc=0 nowsec sec="${EPIC_DISPATCH_OWNER_AWAY_SEC-3600}" json
   nowsec="$(date +%s)"
   snapshot="$(es_read "$f" | jq -ce --argjson now "$nowsec" --argjson sec "$sec" "$WAIT_TURN_DEFS"'
     select(owner_away($now; $sec)) | {turn_input,turn_state}')" || return 1
   [ -n "$snapshot" ] || return 1
+  json="$(record_log_json "$f")" || json=""
+  if [ -n "$json" ] && printf '%s' "$json" | jq -e --argjson snap "$snapshot" '
+      def secs: sub("\\.[0-9]+"; "") | fromdateiso8601;
+      (.session // "") as $s | (.last_input_at // "") as $li | ($snap.turn_state.recorded_at // "") as $ra
+      | $s != "" and $s != ($snap.turn_state.session_id // "") and $li != "" and $ra != ""
+        and (($li | secs) > ($ra | secs))' >/dev/null 2>&1; then
+    return 1
+  fi
   es_modify "$f" "$WAIT_TURN_DEFS"'
     if owner_away($nowsec; $sec) and .turn_input == $snapshot.turn_input and .turn_state == $snapshot.turn_state
     then .owner_away_told = turn_key else empty end' \
