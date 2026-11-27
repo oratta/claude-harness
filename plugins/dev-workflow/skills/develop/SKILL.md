@@ -91,7 +91,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 - **入口 0 の例外**: 軽い通し方だけ本体が Draft PR を作る。整理 → 判定 → Draft PR → 判断の記録（`references/light-path.md`）
 - Draft PR を記録先にするときの PR 本文の決まり（受け入れ条件は PR 本文に書く・PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を書かない。エピックの子は `Closes #子` を書く）は、`references/roles/worker/spec.md`「記録先の用意」が正本
 - 仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）
-- **仕様宣言は記録先ではなく常に PR コメントに置く**（記録先が issue でも issue には書かない）。pr-review-gate 手順 5 が PR のコメントでリスク宣言・仕様宣言・動作確認の 3 見出しを照合し、`対象 HEAD:` 規約が PR の HEAD に紐づくため。書式の正本は pr-review-gate スキル手順 3-b
+- **仕様宣言は記録先ではなく常に PR コメントに置く**（記録先が issue でも issue には書かない）。pr-review-gate 手順 5 が PR のコメントでリスク宣言・仕様宣言・動作確認・ドキュメント文字列の整合確認の 4 見出しを照合し、`対象 HEAD:` 規約が PR の HEAD に紐づくため。書式の正本は pr-review-gate スキル手順 3-b
 
 **issue を切るのは追跡・キュー・議論が要るときだけ**: エピック（複数 PR にまたがる。`references/epic.md`）／無人キュー（loop-dev-agent が拾う対象にしたい）／判断を残す議論（決定の経緯を issue スレッドに残したい）。この 3 つに当たらなければ Draft PR で足りる。issue を切る経路は `commands/develop.md` の issueify フォールバック。
 

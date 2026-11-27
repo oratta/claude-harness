@@ -2646,3 +2646,69 @@ no_point_section() { awk '/^#### 6-0\. 論点なしの宣言の確認/{f=1;print
     echo "$receive" | grep -qF -- "$token" || return 1
   done
 }
+
+# --- Requirement: 実装とドキュメント文字列の整合確認を合格の必須条件にする（issue #166） ---
+# 実ファイルを読む（gate_test_docs の連結コピーではなく、置き場所ごとに確かめる）
+
+doc_section() {  # SKILL.md の追加節
+  awk '/^## ドキュメント文字列の整合確認（合格の必須条件）$/{f=1;next} /^## /{f=0} f' "$SKILL"
+}
+doc_check() {  # stages/pass.md の 4-2
+  awk '/^#### 4-2\. /{f=1} /^### 5\. /{f=0} f' "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+}
+
+@test "doc-consistency (#166): SKILL.md states the required condition and a git grep example" {
+  s="$(doc_section)"
+  has_all "$s" 'agent-review:passed' '必須条件' '③動作確認の証拠' \
+    'JSDoc' 'usage' 'README' 'エラーメッセージ' \
+    "git grep -n -- '<変えたシンボル名>'" 'stages/pass.md' '4-2'
+}
+
+@test "doc-consistency (#166): step 4 is split and 4-2 names the four kinds of doc strings" {
+  pass="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  grep -qx '#### 4-1. 振る舞いの確認' "$pass"
+  grep -qx '#### 4-2. ドキュメント文字列の整合確認' "$pass"
+  s="$(doc_check)"
+  has_all "$s" '必須条件' 'light / full' 'JSDoc' 'docstring' 'usage' 'README' 'エラーメッセージ' \
+    'archive 済みの change' 'CHANGELOG' '前からある食い違い'
+}
+
+@test "doc-consistency (#166): 4-2 gives concrete searches and forbids blanks" {
+  s="$(doc_check)"
+  [ "$(grep -c '^git grep -n ' <<<"$s")" -ge 3 ]
+  has_all "$s" '関数名' 'フラグ' '既定値' '0 件（説明文なし）' '空欄' '指定したパス' '変えていないと判断した理由'
+}
+
+@test "doc-consistency (#166): 4-2 leaves a HEAD-bound comment and fails mismatches back to W" {
+  s="$(doc_check)"
+  has_all "$s" '## ドキュメント文字列の整合確認' '対象 HEAD: <$HEAD_SHA 40桁フル>' \
+    'follow-up issue や別の PR に回さない' '`agent-review:failed`' '`次の段: 前提確認と重さ判定`' \
+    '段 A だけ（昇格なし）' '取り直し: 説明の整合（周に数えない）' 'G はコードを直さない'
+  g="$(awk '/^## G として動くとき/{f=1;next} /^## /{f=0} f' "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md")"
+  grep -qx '取り直し: 説明の整合（周に数えない）' <<<"$g"
+}
+
+@test "doc-consistency (#166): step 5 requires all four headings" {
+  s="$(awk '/^### 5\. /{f=1} /^## (G として動くとき|出口)/{f=0} f' "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md")"
+  has_all "$s" 'リスク宣言・仕様宣言・動作確認・ドキュメント文字列の整合確認の 4 見出しがすべて' '合格処理をしない'
+  ! grep -qF '3 見出し' <<<"$s" || return 1
+}
+
+@test "doc-consistency (#166): stage A takes doc mismatches and they never become issues" {
+  has_all "$(grep -E '^\| A \|' "$TRIAGE")" 'この PR が変えた振る舞いの説明の食い違いか'
+  a="$(nonblocking_para '段 A（')"
+  has_all "$a" '説明の食い違い' '手順 4-2' 'diff の外でも' '段 B 以降に回さず'
+  conv="$(grep -F '**止めない指摘（引用できない指摘を含む）は' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-convergence.md")"
+  has_all "$conv" '説明の食い違い' '手順 4-2'
+  has_all "$(nonblocking_para '振り分けの記録')" '「説明の食い違い」'
+  has_all "$(grep -F '仕分け（指摘を受け取ったすべての周の return で必須' "$TRIAGE")" '「説明の食い違い」'
+}
+
+@test "doc-consistency (#166): the retake line adds no round and light does not exempt 4-2" {
+  for f in skills/develop/references/roles/gate-runner.md skills/pr-review-gate/stages/prepare.md skills/pr-review-gate/stages/triage-convergence.md; do
+    grep -F '取り直し: 説明の整合（周に数えない）' "${PLUGIN_DIR}/$f" | grep -qE '足さない|引き継ぐ' \
+      || { echo "no round rule: $f"; return 1; }
+  done
+  grep -F 'light で変わるのはレビュー実行者だけ' "${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md" \
+    | grep -qF '手順4-2のドキュメント文字列の整合確認'
+}
