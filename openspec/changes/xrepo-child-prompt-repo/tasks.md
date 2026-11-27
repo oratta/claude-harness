@@ -21,5 +21,5 @@
 
 ## 4. 確かめる
 
-- [ ] 4.1 `scripts/test.sh plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/owner-reply-check.bats plugins/dev-workflow/tests/epic-child-state.bats` が exit 0
+- [x] 4.1 `scripts/test.sh plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/owner-reply-check.bats plugins/dev-workflow/tests/epic-child-state.bats` が exit 0
 - [x] 4.2 `git diff --name-only origin/main...HEAD` に `plugins/dev-workflow/scripts/epic-child-state.sh` が無い（聖域パスに触っていない）
