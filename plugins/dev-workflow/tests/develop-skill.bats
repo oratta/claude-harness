@@ -1436,7 +1436,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "delegation trigger (#1609): the child refuses a trigger that excludes this child or sets a different limit" {
   item="$(child_reply_item)"
-  grep -qF 'きっかけの形では、`MATCH:` の全文だけから子の止まりを親に任せる意思が読め、この子・この止まりを除く条件も定型と違う期限も付けていないことも確かめ、満たさなければ受けない' <<<"$item"
+  grep -qF 'きっかけの形では、`MATCH:` の全文だけから子の止まりを親に任せる意思が読め、この子・この止まりを除く条件も定型と違う期限や条件も付けていないことも確かめ、満たさなければ受けない' <<<"$item"
   grep -qF '②拾いたい誤りは、確認でない発言・別のエピックの記録・取り消し済みや編集済みの記録・範囲外の止まりでの委任・この子を除く条件や違う期限の付いたきっかけの発言を主の許容として G に渡すこと' <<<"$item"
   # 判断の正本（親・子・G が同じ文で読む）は epic-delegation.md
   grep -qF '直前の親の発言を読まないと対象が決まらない発言（「任せる」「この件は任せる」「それでいい」など）でなく、この子・この止まりを除く条件も定型と違う期限や条件も付けていないときだけ確認として読む' "$SKILL_DIR/references/epic-delegation.md"

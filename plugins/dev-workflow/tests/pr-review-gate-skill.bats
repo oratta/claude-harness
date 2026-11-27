@@ -2246,7 +2246,7 @@ deleg_reads_canonical() {
   echo "$cond3" | grep -qF '元の委任の記録の 4 行目で形を見分け'
   echo "$cond3" | grep -qF '問いの形は停止の記録の引数 `-` の `owner-reply-check.sh --delegated`、きっかけの形は `owner-reply-check.sh --delegated-trigger`'
   echo "$cond3" | grep -qF -- 'きっかけの形の記録を `--delegated` で確かめ直さない'
-  echo "$cond3" | grep -qF 'この子・この止まりを除く条件も定型と違う期限も付けていないこと'
+  echo "$cond3" | grep -qF 'この子・この止まりを除く条件も定型と違う期限や条件も付けていないこと'
   echo "$cond3" | grep -qF '取り消し'
   echo "$cond3" | grep -qF '`親経由で受領（委任）（親セッション ` で始まる行は委任の形、`親経由で受領（親セッション ` で始まる行は従来の形'
 }
@@ -2274,7 +2274,7 @@ deleg_reads_canonical() {
   body="$(deleg_check_body)"
   line="$(echo "$body" | grep '^4\. ')"
   echo "$line" | grep -qF '`MATCH:` の全文だけから子の止まりを親に任せる意思が読め'
-  echo "$line" | grep -qF 'この子・この止まりを除く条件も定型と違う期限も付けていない'
+  echo "$line" | grep -qF 'この子・この止まりを除く条件も定型と違う期限や条件も付けていない'
   echo "$line" | grep -qF '「#2058 以外は任せる」でこの PR の子が #2058'
   echo "$line" | grep -qF '「今日の分だけ任せる」'
   echo "$line" | grep -qF '「任せる」だけ'
