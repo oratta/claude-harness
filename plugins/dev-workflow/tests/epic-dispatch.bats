@@ -4002,8 +4002,8 @@ orca_cmd_scripts() {
   # #1653: 聖域の変更・破壊的な git 操作の承認待ちも記録を残す止まりに入った
   printf '%s\n' "$l" | grep -qF 'それ以外の止まり（マージ待ち・実機操作など）では記録を残さない'
   printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
-  # 親に気づかせる手順は子に無い。親の wait が会話ログから気づく
-  printf '%s\n' "$r" | grep -F '`wait`' | grep -qF '子の会話ログ'
+  # 親に気づかせる手順は子に無い。親の wait が Stop の保存した状態の記録から気づく
+  printf '%s\n' "$r" | grep -F '`wait`' | grep -qF '状態の記録'
   # 記録を残さない止まりも発言の中で中身を書く
   printf '%s\n' "$r" | grep -F '記録を残さない' | grep -qF '質問・推奨・根拠'
 }

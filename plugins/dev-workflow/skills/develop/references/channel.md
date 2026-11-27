@@ -18,7 +18,6 @@ channel の本体は AskUserQuestion を呼ばない。主に聞くときは、�
 - `skills/develop/references/fix-check.md`
 - `skills/develop/references/roles/spec-reviewer.md`
 - `skills/develop/references/roles/worker/common.md`
-- `skills/develop/references/roles/worker/spec.md`
 - `templates/escalation-tripwires.md`
 - `commands/develop.md`
 - `commands/work-issue.md`

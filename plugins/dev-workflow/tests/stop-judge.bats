@@ -670,3 +670,8 @@ unanswered_ready() {
   run judge 400 11 "$(stop_json)"
   [ "$status" -eq 0 ]; [ "${lines[0]}" = '判断: 問いではない' ]
 }
+
+@test "docs: references compare with the last input as at-or-after like the >= in stop-judge.sh (#1543)" {
+  run grep -rnE '(last_input_at`|最後の入力(の時刻)?)( ?より後)' "$PLUGIN_DIR/skills"
+  [ "$status" -eq 1 ] || { echo "$output"; false; }
+}
