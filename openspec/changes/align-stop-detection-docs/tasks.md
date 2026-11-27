@@ -13,7 +13,8 @@
 
 ## 4. #1714 を bats で固定する
 
-- [ ] 4.1 `作業報告` の状態行と `止まった理由: なし…` の発言を持つ子が、`wait --resolve --watch-stopped` で `stopped` を返さず judge を呼ばないテストを通す（仕様づくりの段で追加し、今の main で通ることを確認済み）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:7859-7877
+- [ ] 4.1 通常の作業報告（`dependency_wait` が欠落か false）で `止まった理由: なし…` の発言を持つ子が、`wait --resolve --watch-stopped` で `stopped` を返さず judge を呼ばないテストを通す。あわせて `dependency_wait: true` の作業報告は `stopped` を返し judge を呼ばない境界のテストも置く（どちらも仕様づくりの段で追加し、今の main で通ることを確認済み）。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:7859-7900
+- [ ] 4.2 spec の同じ秒の Scenario に対応する `stop-judge.bats` の既存テスト（`a record in the same second as the last input is this stop's record`）が通ることを確かめる。触る範囲: plugins/dev-workflow/tests/stop-judge.bats:501-508
 
 ## 5. 検証
 
