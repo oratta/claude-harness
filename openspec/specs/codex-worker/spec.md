@@ -4,7 +4,9 @@
 Codex の job を Claude Code のサブエージェントと同じ担い手として走らせるための実行基盤を定める。1 件の依頼につき専用の runtime CODEX_HOME を作り、role（implement / spec-write / review / spec-review / impl-review / decider）ごとに砂場と取得経路を決め、認証帰属の照合を行い、1 回の前景実行の結果を標準出力の 1 行 JSON で返す。永続的な台帳・所有権・受領は持たない。
 
 権限の範囲は「Claude のサブエージェントが自分で完了できる作業を、worker の中の担当者も自分で完了できる」ことを基準に決める。書く役は砂場なし（danger-full-access）で動き、Claude のサブエージェントと同じく親の環境で commit・push・GitHub 操作を自分で完了する。読む役は書き込み許可を持たず、取得経路だけを Claude 側の同じ役に揃える。書く役を砂場なしにした根拠と、揃えられなかった項目は実測の証跡とともに記録する。ここで扱うのは実行と隔離であって品質承認ではなく、job の完了は develop 側の仕様承認・テスト証拠・レビューゲートを代替しない。
+
 ## Requirements
+
 ### Requirement: 一時領域は親の環境をそのまま引き継ぐ
 worker は依頼のために子プロセス用の一時ディレクトリを新規作成してはならない（MUST NOT）。ただし 1 回の前景実行につき 1 つ作る runtime CODEX_HOME（認証情報への link と `config.toml` だけを置く 0700 のディレクトリ）は、この禁止の対象外とする。App Server と子ツールの `TMPDIR` と `TMPPREFIX` は、role によらず worker を起動した親プロセスの値をそのまま引き継がなければならない（MUST）。親に値が無ければ子にも現れてはならず（MUST NOT）、worker が既定値を補ってはならない（MUST NOT）。runtime CODEX_HOME は、親に `TMPDIR` があればその配下に、無ければ実行環境の既定の一時領域に作らなければならない（MUST）。どちらの場合も、その置き場所を理由に子へ渡す `TMPDIR` / `TMPPREFIX` を作ったり書き換えたりしてはならない（MUST NOT）。同時に走る依頼の一時ファイルが同じ親の一時領域に混ざりうることと、依頼が残した一時ファイルの出どころを worker が記録しないことを明示しなければならない（MUST）。この追跡が必要になった場合は Codex 側だけに仕組みを戻してはならず（MUST NOT）、Claude のサブエージェント側にも同じ仕組みを入れて揃えなければならない（MUST）。
 
@@ -274,3 +276,13 @@ worker は request の model が正規表現 `^[a-z]+$` に一致するとき、
 - **WHEN** model=gpt-5.6-sol、または hidden の `gpt-reserve` を要求する
 - **THEN** 系統名の解決を行わず、`model` フィールドの完全一致で 1 件を選び、hidden でも受理する
 
+### Requirement: 前景実行の結果は実行の開始と終了の時刻を持つ
+前景実行の結果の 1 行 JSON は、「前景実行の結果は 1 行の JSON で返す」のキーに加えて、実行の開始の時刻 `started_at` と終了の時刻 `ended_at` を含まなければならない（MUST）。値は UTC の ISO8601 で秒までの `YYYY-MM-DDTHH:MM:SSZ` とする。`started_at` は依頼を読む前に取り、`ended_at` は一時領域を片付けたあと結果を出す直前に取る。どちらも時計から必ず取れる値なので、成功・失敗・ターンが始まらなかった場合を問わず `null` にしてはならない（MUST NOT）。`started_at` は `ended_at` より後であってはならない（MUST NOT）。
+
+#### Scenario: ターンが完走した結果に時刻が入る
+- **WHEN** 前景実行のターンが完了する
+- **THEN** 1 行 JSON の `started_at` と `ended_at` は `^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$` に一致し、`started_at` は `ended_at` 以前で、どちらも呼び出し側が worker を起動した前後の時刻の範囲に入る
+
+#### Scenario: ターン開始前に失敗した結果にも時刻が入る
+- **WHEN** 利用枠の確認やアカウントの照合で失敗し、ターンが始まらない
+- **THEN** 同じ形の 1 行 JSON に `started_at` と `ended_at` が同じ書式で入り、`null` ではない

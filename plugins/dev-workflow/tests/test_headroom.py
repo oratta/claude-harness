@@ -438,6 +438,16 @@ class Best(unittest.TestCase):
         result = h.compute(NOW)
         self.assertEqual(result['best'], {'provider': 'claude', 'account': 'b'})
 
+    def test_all_null_five_hour_decides_best_by_weekly(self):
+        # どのスロットにも 5 時間枠が無い（#1547）。週次の余りで決まり、候補から外されない
+        env = Env(self)
+        env.claude('a', used=60, five=None)
+        env.claude('b', used=20, five=None)
+        result = h.compute(NOW)
+        self.assertEqual(env.row(result, 'claude', 'a')['status'], 'ok')
+        self.assertIsNone(env.row(result, 'claude', 'b')['five_hour_pct'])
+        self.assertEqual(result['best'], {'provider': 'claude', 'account': 'b'})
+
     def test_codex_best_and_claude_best_by_provider(self):
         env = Env(self)
         env.claude('a', used=60)

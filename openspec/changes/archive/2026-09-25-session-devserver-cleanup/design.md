@@ -29,7 +29,7 @@ Claude のセッションが Bash ツールから起動した dev サーバー�
 
 ### 目印は専用の環境変数 `CLAUDE_SESSION_PROC_MARK` にし、値で持ち主の Claude Code プロセスを表す
 
-値は `<claude_pid>.<start_token>`。`start_token` は `LC_ALL=C ps -o lstart= -p <claude_pid>` の出力から英数字以外を除いたもの（例: `Fri Sep 25 10:11:18 2026` → `FriSep251011182026`）。持ち主が生きているかは「その PID が存在し、同じ `start_token` を返すか」で判定する（PID の使い回しで生存と誤認しない）。
+値は `<claude_pid>.<start_token>`。`start_token` は `LC_ALL=C TZ=UTC ps -o lstart= -p <claude_pid>` の出力から英数字以外を除いたもの（例: `Fri Sep 25 10:11:18 2026` → `FriSep251011182026`）。持ち主が生きているかは「その PID が存在し、同じ `start_token` を返すか」で判定する（PID の使い回しで生存と誤認しない）。
 
 - **`LC_ALL=C` を付ける理由**: macOS の `ps -o lstart=` はロケールに従って書式が変わる（実機で `LC_TIME=ja_JP.UTF-8` だと `金  9/25 10:24:52 2026`、`LC_ALL=C` だと `Fri Sep 25 10:24:52 2026`）。目印付けと生存判定が別のロケールで走ると、生きている持ち主を「もういない」と誤判定し、動いているセッションの dev サーバーを止める。`start_token` を計算する 3 か所（目印付け・後始末・掃除）のすべてで `LC_ALL=C` を付け、計算は 1 つの関数にまとめて 3 か所から呼ぶ。あわせて `TZ=UTC` も固定する（`lstart` は `TZ` の現地時刻で出るので、目印付けと生存判定で `TZ` が違うと同じプロセスでも値がずれ、生きている持ち主を「もういない」と誤判定する）
 - **Claude Code が既に入れている `CLAUDE_CODE_SESSION_ID` を使わない理由**: 目印を外すには値を空にして起動する必要があり、同じ変数を他の用途（Claude Code 自身や他ツール）が読むと壊れる。またセッション ID からは持ち主のプロセスが生きているかを判定できず、別に登録簿が要る。`/clear` でセッション ID は変わるがプロセスは続くので、セッション ID 単位だと `/clear` のたびに止めることになる

@@ -2,7 +2,9 @@
 
 ## Purpose
 TBD - created by archiving change promote-pr-review-gate-to-dev-workflow. Update Purpose after archive.
+
 ## Requirements
+
 ### Requirement: auto-merge workflow 一式がテンプレートとして配布される
 
 dev-workflow プラグインは `templates/auto-merge/` に、展開先リポのツリーをそのまま鏡写しにした形（`.github/workflows/auto-merge.yml` / `.github/workflows/revert-pr.yml` / `docs/auto-merge.md` / `scripts/test-auto-merge-workflow.sh`）と展開手順 `README.md` を含む（SHALL）。テンプレートはリポ固有の差し替え箇所を既存マーカー（`# >>> sacred-paths` / `# >>> required-checks` 等）で明示し、README がそれ以外を変更せずに展開できる手順を提供する（SHALL）。
@@ -176,3 +178,49 @@ auto-merge.yml は、親の判断の印があるかをマーカー `# >>> parent
 - **WHEN** CI（`plugins/dev-workflow/tests/automerge-templates.bats` と、展開先・原本の `scripts/test-auto-merge-workflow.sh`）が auto-merge.yml を検査する
 - **THEN** `merge-condition-paths` と `parent-merge-judgment` のマーカー対が両方にあり、`MERGE_CONDITION` の代表パスがすべて `SACRED` に一致し、`rules/`・`CLAUDE.md`・`plugins/*/hooks/` の代表パスが `MERGE_CONDITION` に一致せず、`parent-merge-judgment` の判定をスタブの `gh` で動かして上の各シナリオの真偽どおりになり、ジョブの `if:` が `parent-merge-approved` を受け、`pull_request_target` のイベント種が labeled だけであることが機械的に検証される
 
+### Requirement: claude-harness の展開先は hook が実行するスクリプトを聖域に含める
+
+claude-harness の展開先の `SACRED` は、全 `plugins/*/hooks/hooks.json` の `command` が `${CLAUDE_PLUGIN_ROOT}/` からの相対で指すスクリプトと、許可を判定する hook が判定の本体として直接読み込む `plugins/dev-workflow/scripts/git-guard-scratchpad.py`・`plugins/dev-workflow/scripts/usage_view.py`・`plugins/capability-registry/scripts/secret-guard.py` に、ファイル名ちょうどで一致しなければならない（MUST）。`plugins/*/scripts/` を丸ごと聖域にしてはならない（MUST NOT）。`MERGE_CONDITION` と原本（`plugins/dev-workflow/templates/auto-merge/`）の正規表現は変えない（SHALL）。
+
+**守備範囲**: 入力は判定時に REST で取る PR の変更ファイルの一覧（変更後のパスと rename 元のパス）だけである。拾いたい誤りは、hook の本体と選んだ補助 3 本の変更が聖域判定を素通りすることである。次は通す: hook が実行しない `plugins/dev-workflow/scripts/git-guard-permit.sh`（親が許可を書くスクリプト）だけの変更／補助がさらに読み込むファイルだけの変更。穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+
+#### Scenario: hook の本体だけを変えた PR は human-merge で止まる
+
+- **WHEN** 変更ファイルが `plugins/dev-workflow/scripts/git-destructive-guard.sh` だけの PR を claude-harness の展開先の auto-merge.yml が判定する
+- **THEN** `SACRED` に一致し、`human-merge` が付いて見送られる。`MERGE_CONDITION` には一致しないので、親の判断の印があれば `human-merge` を外せる
+
+#### Scenario: 補助ファイルと他のプラグインの hook も聖域に一致する
+
+- **WHEN** `plugins/dev-workflow/scripts/git-guard-scratchpad.py`・`plugins/capability-registry/scripts/secret-guard.py`・`plugins/worktree/scripts/wt-create-hook.sh` を `SACRED` に当てる
+- **THEN** どれも一致する
+
+#### Scenario: hook の経路に無いスクリプトは聖域に一致しない
+
+- **WHEN** `plugins/dev-workflow/scripts/ci-watch.sh`・`plugins/dev-workflow/scripts/epic-dispatch.sh` を `SACRED` に当てる
+- **THEN** どちらも一致せず、これらだけを変えた PR は従来どおり自動マージの対象になる
+
+#### Scenario: 運用ガイドに範囲と残る限界が書かれている
+
+- **WHEN** 展開先の `docs/auto-merge.md` の聖域パスの表を読む
+- **THEN** hook が実行するスクリプトと補助ファイル 3 本の行があり、補助ファイルは 1 段だけで手で選ぶこと、補助がさらに読み込むものと、hook が実行しない許可を書くスクリプトは聖域に入らないことが書かれている
+
+### Requirement: claude-harness の展開先のテストは hooks.json が指すスクリプトがすべて聖域に一致するかを検査する
+
+claude-harness の展開先の `scripts/test-auto-merge-workflow.sh` は、全 `plugins/*/hooks/hooks.json` の `command` を集め、`${CLAUDE_PLUGIN_ROOT}/` からの相対で指すパスを `plugins/<name>/` の下のパスとして `SACRED` に当てなければならない（MUST）。一致しないパスがある、`command` がその形で読めない、または hooks.json や `command` を 1 件も拾えないときは、失敗にしなければならない（MUST）。補助ファイルはこの検査の対象外とする（SHALL）。
+
+**守備範囲**: 入力はリポ内の全 `plugins/*/hooks/hooks.json` の `command` と、auto-merge.yml の `SACRED` だけである。拾いたい誤りは、直接呼ぶスクリプトの `SACRED` への書き漏れ、読めない `command`、入力ゼロによる空振りの 3 つである。次は通す: 新しい補助ファイルだけの追加（検出しない）／hooks.json を経ずに実行されるスクリプト。穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+
+#### Scenario: hooks.json に足した hook を聖域に書き忘れると CI が落ちる
+
+- **WHEN** どれかの `plugins/*/hooks/hooks.json` に、`SACRED` に無いスクリプトを指す `command` を足した状態で、展開先の `scripts/test-auto-merge-workflow.sh` を実行する
+- **THEN** そのスクリプトのパスを挙げて失敗し、終了コードが 0 以外になる
+
+#### Scenario: 読めない command は通さない
+
+- **WHEN** hooks.json の `command` が `${CLAUDE_PLUGIN_ROOT}/` で始まる 1 本のパスとして読めない形で書かれている
+- **THEN** その `command` を挙げて失敗する
+
+#### Scenario: 今の hooks.json はすべて聖域に一致する
+
+- **WHEN** 変更後の claude-harness で `scripts/test-auto-merge-workflow.sh` を実行する
+- **THEN** hooks.json が指す全スクリプトが `SACRED` に一致し、終了コードが 0 になる

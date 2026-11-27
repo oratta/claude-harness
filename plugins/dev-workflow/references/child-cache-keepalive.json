@@ -2,5 +2,11 @@
   "request_template": "キャッシュ維持のための声かけです。主の返事や親の判断ではありません。ツール・調査・作業・印の変更・記録の投稿をせず、現在の会話だけから次の型の一行だけを返し、主の返事を待ち続けてください: {reply_format}。各値は短くし、改行と区切り文字を含めないでください。",
   "reply_prefix": "[child-cache-keepalive]",
   "fields": ["待ち:", "次:"],
-  "separator": " | "
+  "separator": " | ",
+  "background": {
+    "request_template": "作業待ちのキャッシュ維持のための声かけです。主の返事や親の判断、作業の完了通知ではありません。ツール・調査・新しい作業・印の変更・記録の投稿をせず、元の作業とその実行 ID・自己タイマーを保ち、現在の会話だけから次の型の一行だけを返して元の作業待ちを続けてください: {reply_format}。各値は短くし、改行と区切り文字を含めないでください。",
+    "reply_prefix": "[child-background-cache-keepalive]",
+    "fields": ["待ち:", "次:"],
+    "separator": " | "
+  }
 }

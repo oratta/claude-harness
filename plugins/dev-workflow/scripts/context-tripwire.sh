@@ -7,8 +7,9 @@
 #   全解除   DEV_WORKFLOW_CONTEXT_TRIPWIRE=off
 #
 # 理由: 本体が SendMessage で再開する直前にしか測られないので、1 起動の中で膨らむぶんは
-# 誰も止めない（実測で W が 497,552 トークンに達した）。規範の正本は
-# skills/develop/references/decision-criteria.md「コンテキスト上限」。
+# 誰も止めない。規範の正本は、閾値と本体の扱いが
+# skills/develop/references/decision-criteria.md「コンテキスト上限」、通知・強制停止を受けた
+# W と G の扱いが skills/develop/references/return-declaration.md。
 #
 # 計測対象は payload の transcript_path そのものではない。transcript_path は hook が発火した
 # セッション（サブエージェントの中でも親）のトランスクリプトを指すので、その親ディレクトリと
@@ -54,7 +55,9 @@ esac
 # -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
 PY_SRC=""
 IFS= read -r -d '' PY_SRC <<'PY' || true
-import json, os, sys, time
+import importlib.util, json, os, sys, time
+from pathlib import Path
+sys.dont_write_bytecode = True
 
 TAIL = 256 * 1024        # 末尾だけ読む。環境変数化しない（design Decision 5）
 ENTRY_BUDGET = 200       # 探索で走査するディレクトリエントリの上限
@@ -79,20 +82,18 @@ STOP = (
     "return の 1 行目は必ず「工程中断:」にする（拒否された時点で予定していた作業が残っているため）。"
 )
 
+REVALIDATE = (
+    "[dev-workflow 再検証通知] 要求モデルがしきい値の根拠モデルと異なるため、"
+    "案内した手順でしきい値を再検証する必要がある。\n"
+    "{items}\n"
+    "手順: {guide}\n"
+    "この通知だけを理由に今の作業を止めない。自分で再検証も始めない。"
+    "次の return に、再検証が要る旨（要求モデル・根拠モデル・対象指標）を書く。"
+)
+
 
 def emit(obj):
     print(json.dumps(obj, ensure_ascii=False))
-
-
-def env_int(name, default):
-    """正の整数でなければ None（＝ fail-open）。未設定は既定値。"""
-    v = os.environ.get(name)
-    if v is None or v.strip() == "":
-        return default
-    v = v.strip()
-    if not v.isdigit() or int(v) <= 0:
-        return None
-    return int(v)
 
 
 def find_transcript(root, fname):
@@ -154,7 +155,10 @@ def measure(path):
             v = u.get(k)
             return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
 
-        return n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens")
+        model = msg.get("model")
+        if not isinstance(model, str) or not model.strip():
+            model = None
+        return n("input_tokens") + n("cache_creation_input_tokens") + n("cache_read_input_tokens"), model
     return None
 
 
@@ -177,11 +181,6 @@ if os.sep in agent_id or os.sep in session_id or agent_id in (".", "..") or sess
 if event not in ("PostToolUse", "PreToolUse"):
     sys.exit(0)
 
-cap = env_int("DEV_WORKFLOW_CONTEXT_CAP", 150000)
-hard = env_int("DEV_WORKFLOW_CONTEXT_HARD_CAP", 220000)
-if cap is None or hard is None:
-    sys.exit(0)
-
 root = os.path.join(os.path.dirname(transcript_path), session_id, "subagents")
 fname = "agent-%s.jsonl" % agent_id
 target = os.path.join(root, fname)
@@ -190,37 +189,96 @@ if not os.path.isfile(target):
 if not target:
     sys.exit(0)
 
-ctx = measure(target)
-if ctx is None:
+measurement = measure(target)
+if measurement is None:
     sys.exit(0)
 
+ctx, model = measurement
+
+
+def resolver_unavailable(error):
+    print(f"context-tripwire: resolver_unavailable: {type(error).__name__}: {error}", file=sys.stderr)
+    sys.exit(0)
+
+
+# 共通処理との境界。取得・callable 確認・呼出し・必須結果の取り出しと診断の準備を終えてから出力する
+# （捕捉は Exception まで。BaseException や処理全体の握り潰しには広げない）。
+try:
+    plugin = Path(sys.argv[1]).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("token_thresholds", plugin / "scripts/token_thresholds.py")
+    resolver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(resolver)
+    resolve = resolver.resolve_thresholds
+    if not callable(resolve):
+        raise TypeError("resolve_thresholds is not callable")
+except Exception as error:
+    resolver_unavailable(error)
+env = {key: os.environ[key] for key in ("DEV_WORKFLOW_CONTEXT_CAP", "DEV_WORKFLOW_CONTEXT_HARD_CAP")
+       if key in os.environ}
+try:
+    resolved = resolve(model, env)
+except ValueError as error:
+    print(f"context-tripwire: {error}", file=sys.stderr)
+    sys.exit(0)
+except Exception as error:
+    resolver_unavailable(error)
+try:
+    cap = resolved["thresholds"]["context_cap"]["value"]
+    hard = resolved["thresholds"]["context_hard_cap"]["value"]
+    for value in (cap, hard):
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError("threshold value is not an integer")
+    guide = plugin / "skills/develop/references/token-thresholds.md"
+    stderr_lines = []
+    revalidations = []
+    for diagnostic in resolved["diagnostics"]:
+        if diagnostic["code"] == "unknown_model":
+            stderr_lines.append(f"context-tripwire: {diagnostic['message']}")
+        elif diagnostic.get("metric") in ("context_cap", "context_hard_cap"):
+            stderr_lines.append(f"context-tripwire: revalidation_required: {model or '不明'}; "
+                                f"根拠モデル={diagnostic['decided_models']}; 対象={diagnostic['metric']}; 手順={guide}")
+            revalidations.append(f"- 要求モデル={model or '不明'}; 根拠モデル={diagnostic['decided_models']}; "
+                                 f"対象指標={diagnostic['metric']}")
+except Exception as error:
+    resolver_unavailable(error)
+for line in stderr_lines:
+    print(line, file=sys.stderr)
+if cap <= 0 or hard <= 0:
+    print(f"context-tripwire: invalid_hook_threshold: cap={cap}, hard={hard}; 両方に正数が必要", file=sys.stderr)
+    sys.exit(0)
+
+# 本人に届く再検証通知（exit 0 の stderr は Claude に届かないので additionalContext にも入れる）。
+# 診断だけでは締め・拒否を要求しない。
+notice = None
+if revalidations:
+    notice = REVALIDATE.format(items="\n".join(revalidations), guide=guide)
+
 if event == "PostToolUse":
-    if ctx <= cap:
-        sys.exit(0)
-    emit({"hookSpecificOutput": {"hookEventName": "PostToolUse",
-                                 "additionalContext": NOTIFY.format(ctx=ctx, cap=cap)}})
+    if ctx > cap:
+        text = NOTIFY.format(ctx=ctx, cap=cap)
+        if notice:
+            text += "\n\n" + notice
+        emit({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": text}})
+    elif notice:
+        emit({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": notice}})
     sys.exit(0)
 
 # --- PreToolUse（強制停止）---
-if hard <= cap:                 # 閾値の大小が逆なら何もしない
-    sys.exit(0)
-if ctx <= hard:
-    sys.exit(0)
-
 tool = payload.get("tool_name")
-if tool not in ("Edit", "Write", "NotebookEdit", "Bash"):
-    sys.exit(0)                 # 読み取り系はここに来ない（matcher でも絞っている）が念のため
-
-# Bash はコマンド内容によらず全件拒否する（窓を開けない。#269 決定・2 回目）。
-# 検査側のトークン化（このプロセス）と実行するシェル（zsh/bash）のトークン化は
-# 一致を保証できず、受理する経路が1つでもあれば迂回が再発するため、内容は一切見ない。
-cwd = payload.get("cwd")
-cwd = cwd if isinstance(cwd, str) and cwd else "(cwd 不明)"
-reason = STOP.format(ctx=ctx, hard=hard, cwd=cwd)
-
-emit({"hookSpecificOutput": {"hookEventName": "PreToolUse",
-                             "permissionDecision": "deny",
-                             "permissionDecisionReason": reason}})
+if hard > cap and ctx > hard and tool in ("Edit", "Write", "NotebookEdit", "Bash"):
+    # Bash はコマンド内容によらず全件拒否する（窓を開けない。#269 決定・2 回目）。
+    # 検査側のトークン化（このプロセス）と実行するシェル（zsh/bash）のトークン化は
+    # 一致を保証できず、受理する経路が1つでもあれば迂回が再発するため、内容は一切見ない。
+    cwd = payload.get("cwd")
+    cwd = cwd if isinstance(cwd, str) and cwd else "(cwd 不明)"
+    out = {"hookEventName": "PreToolUse",
+           "permissionDecision": "deny",
+           "permissionDecisionReason": STOP.format(ctx=ctx, hard=hard, cwd=cwd)}
+    if notice:
+        out["additionalContext"] = notice
+    emit({"hookSpecificOutput": out})
+elif notice:
+    emit({"hookSpecificOutput": {"hookEventName": "PreToolUse", "additionalContext": notice}})
 sys.exit(0)
 PY
 if [ -z "$PY_SRC" ]; then
@@ -229,4 +287,4 @@ if [ -z "$PY_SRC" ]; then
   echo "context-tripwire: 判定の本体を読めなかったため、判定していない" >&2
   exit 1
 fi
-printf '%s' "$payload" | python3 -I -c "$PY_SRC"
+printf '%s' "$payload" | python3 -I -c "$PY_SRC" "${BASH_SOURCE[0]}"

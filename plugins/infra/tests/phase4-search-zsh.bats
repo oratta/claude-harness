@@ -133,3 +133,39 @@ check_shell() {
     [[ "$output" == "1" || "$output" == *$'\n1' ]] || { echo "block-$i: $output"; return 1; }
   done
 }
+
+@test "infra phase4 zsh: candidates are tried in order: oratta-claude-harness, older marketplaces dir, installed (#1480)" {  # 固定候補が名前順で先の旧 dir より先。無ければ glob、それも無ければ installed
+  local n i mark inst rel sh shells stale fixed instd d
+  shells="bash"; command -v zsh >/dev/null && shells="bash zsh"
+  n="$(extract_blocks)" || { echo "$n"; return 1; }
+  [ "$n" -ge 1 ] || { echo "ブロックを取り出せなかった: $n"; return 1; }
+  for i in $(seq 1 "$n"); do
+    inst="$(sed -n 1p "$BATS_TEST_TMPDIR/block-$i.meta")"
+    mark="$(sed -n 2p "$BATS_TEST_TMPDIR/block-$i.meta")"
+    rel="$(grep -o 'marketplaces/\*/plugins/[^ ;\\"]*' "$BATS_TEST_TMPDIR/block-$i.sh" | head -1)"
+    rel="${rel#marketplaces/\*/}"
+    [ -n "$rel" ] || { echo "block-$i に marketplaces の glob が無い"; return 1; }
+    rm -rf "$HOME_DIR/.claude"
+    stale="$HOME_DIR/.claude/plugins/marketplaces/aaa-stale/$rel"
+    fixed="$HOME_DIR/.claude/plugins/marketplaces/oratta-claude-harness/$rel"
+    instd="$HOME_DIR/.claude/plugins/installed/x/$inst"
+    for d in "$stale" "$fixed" "$instd"; do
+      mkdir -p "$d"
+      if [ -n "$mark" ]; then mkdir -p "$(dirname "$d/$mark")"; : > "$d/$mark"; fi
+    done
+    for sh in $shells; do
+      run_block "$sh" "$i"
+      [[ "$output" == "$fixed"* ]] || { echo "block-$i $sh fixed: $output"; return 1; }
+    done
+    rm -rf "$fixed"
+    for sh in $shells; do
+      run_block "$sh" "$i"
+      [[ "$output" == "$stale"* ]] || { echo "block-$i $sh glob: $output"; return 1; }
+    done
+    rm -rf "$stale"
+    for sh in $shells; do
+      run_block "$sh" "$i"
+      [[ "$output" == "$instd"* ]] || { echo "block-$i $sh installed: $output"; return 1; }
+    done
+  done
+}

@@ -11,7 +11,10 @@
 # git-guard-scratchpad.py の判定（git を実行しない）で確かめられたときだけ。許可は 15 分で切れ、1 回で消える。
 # hook は許可を使う時点でも同じ判定をかけ直す。許可を書いたら、その子の拒否の回数を 0 に戻す。
 #
-# 終了コード: 0 = 許可を書いた／1 = 確かめられなかったので書かない（理由は stderr）／2 = 使い方の誤り
+# 終了コード: 0 = 許可を書いた／1 = 確かめられなかったので書かない（理由は stderr）／2 = 使い方の誤り／
+#   3 = 一時領域の判定に落ち、記録のコマンドが単独のコマンドの形（判定が許す文字だけで、; & 改行を含まない）
+#   でないので書かない（実パスの単独のコマンドに打ち直せば、新しい拒否の記録で判定し直せる。許可を書くかどうかは
+#   1 と変わらない）
 # 子がこのスクリプトを呼ぶと git-destructive-guard.sh が拒否する（許可を書くのは親の役目）。
 set -uo pipefail
 
@@ -37,6 +40,18 @@ def fail(msg):
     sys.exit(1)
 
 
+def single_shaped(command):
+    """単独のコマンドの形か（使う判定が許す文字だけで、; & 改行を含まない）。True / False、取り出せなければ None。
+    文字の集合と git 用か rm 用かの決め方は共通ファイルのものを使い、書き写さない。None は 1 に倒す側。"""
+    try:
+        chars = C["_RM_ALLOWED_CHARS"] if C["is_rm_command"](command) else C["_ALLOWED_CHARS"]
+        if not chars.match(command):
+            return False
+    except Exception:
+        return None
+    return not any(c in command for c in ";&\n")
+
+
 try:
     with open(common_path, encoding="utf-8") as fh:
         src = fh.read()
@@ -54,11 +69,18 @@ if os.path.basename(denied) != "denied" or os.path.basename(base) != C["BASE_NAM
 if not name.endswith(".json") or not C["is_key"](name[:-len(".json")]):
     fail("記録のファイル名が <key>.json の形でない: %s" % name)
 key = name[:-len(".json")]
+# 記録の場所から求めた <base> を hook と同じ確かめにかける。満たさなければ許可も permit-log.jsonl の行も書かず、
+# 回数のファイルも消さない（spec「許可を書くスクリプトは確かめを満たさない <base> に書かない」）
 try:
-    with open(rec_path, encoding="utf-8") as fh:
-        rec = json.load(fh)
+    base_err = C["check_base"](base)
 except Exception as e:
-    fail("記録を読めない（%s）" % e)
+    base_err = "確かめが失敗した（%s）" % e
+if base_err:
+    fail("拒否の記録の置き場所 %s を確かめられない: %s" % (base, base_err))
+try:
+    rec = C["read_json_nofollow"](rec_path)  # symlink の記録は読まない
+except Exception as e:
+    fail("記録を読めない（symlink か、普通のファイルでないか、壊れている: %s）" % e)
 if not isinstance(rec, dict):
     fail("記録の中身がオブジェクトでない")
 vals = {k: rec.get(k) for k in ("session_id", "agent_id", "cwd", "command")}
@@ -74,6 +96,11 @@ if C["key_of"](vals["session_id"], vals["agent_id"], vals["cwd"], vals["command"
 # 自分の TMPDIR で数えると hook が使えない許可を書くので、記録の場所から hook の TMPDIR を求めて渡す
 err, sp, repos = C["check_command"](vals["session_id"], vals["cwd"], vals["command"], temp_dir=os.path.dirname(base))
 if err:
+    if single_shaped(vals["command"]) is False:
+        sys.stderr.write("git-guard-permit: 許可を書かない: 一時領域の判定を満たさない: " + err + "\n")
+        sys.stderr.write("git-guard-permit: 形の理由で断った: 変数・置換・引用符を使わず実パスで書き、&&・;・改行で"
+                         "つながない単独のコマンドに打ち直せば、新しい拒否の記録で判定し直せる\n")
+        sys.exit(3)
     fail("一時領域の判定を満たさない: " + err)
 
 now = int(time.time())

@@ -159,9 +159,133 @@ for path in paths:
     for term in ['起動引数', 'disk', 'live', '初回の実機検証', '機械確認', 'unmanned', '主に聞かず進む']:
         assert term in text, (path, term)
 text = paths[0].read_text().split('## 開始時の設定')[1].split('## アイドル時')[0]
-for term in ['新規 worktree', '既存 local false', '--settings', '起動前', '再起動', '矛盾', '追加確認を求めない', 'unmanned は停止']:
+for term in ['新規 worktree', '既存 local false', '--settings', '起動前', '再起動', '矛盾', '追加確認を求めない']:
     assert term in text, term
 assert '主が `/config` の Idle compaction が off であることを確認する。' not in text
 PY
   [ "$status" -eq 0 ]
+}
+
+@test "startup docs (#1497): unconfirmed live off proceeds without restart; on / exit 1 still stop" {
+  run python3 - "$BATS_TEST_DIRNAME/.." <<'PY'
+from pathlib import Path
+import sys
+plugin = Path(sys.argv[1]).resolve()
+text = (plugin / 'skills/develop/references/reply-after-idle.md').read_text()
+text = text.split('## 開始時の設定')[1].split('## アイドル時')[0]
+# (a) unconfirmed: checked against the sentence that carries 「未確認」, not the whole section
+unconfirmed = next(l for l in text.splitlines() if '「未確認」' in l)
+for term in ['interactive / unmanned とも', '再起動を求めず', '主にも聞かず', '止まらずに進', 'develop 開始コメント',
+             'apply 前の disk の値は on の証拠にしない', '既に同じ記録があれば書き足さない']:
+    assert term in unconfirmed, term
+# (b) on found: record, restart in a new session, per-mode actor, stop if still not off
+on_line = next(l for l in text.splitlines() if l.startswith('- on と判明'))
+for term in ['矛盾する上書き指定は on 判明として扱う', 'issue に記録し', '同じ worktree の新セッションで再起動して入口から機械確認する',
+             'interactive は主に新しいセッションでの再開を案内して終える',
+             'channel / unmanned は本体が新しいセッションを開けないので、記録して開始を止める',
+             'なお off を確認できなければ開始を止めて報告する']:
+    assert term in on_line, term
+# (c) check exit 1 / apply failure stop
+assert '- exit 1 または apply 失敗: 対象パスと原因を記録して開始を止める' in text
+# (d) never report live off beyond what was confirmed
+assert '「live で off」とは報告しない' in text
+# old rules removed
+assert 'または機械確認で off を確かめられなかった場合' not in text
+assert 'unmanned は停止' not in text
+assert '主に聞かず進む' in text and '初回の実機検証' in text
+PY
+  [ "$status" -eq 0 ]
+}
+
+# --- #1471: apply が共有 info/exclude へ設定ファイルの 1 行を足す ---
+
+EXCLUDE_LINE='.claude/settings.local.json'
+exclude_file() { printf '%s/info/exclude' "$(git -C "$WORKTREE" rev-parse --absolute-git-dir)"; }
+exclude_count() { grep -cxF "$EXCLUDE_LINE" "$(exclude_file)" || true; }
+
+@test "apply hides the settings file from porcelain and adds exactly one exclude line, repeated apply adds none (#1471)" {
+  run cli --apply
+  [ "$status" -eq 0 ]
+  [ -z "$(git -C "$WORKTREE" status --porcelain)" ]
+  [ "$(exclude_count)" -eq 1 ]
+  config '{"idleCompaction":true}'
+  run cli --apply
+  [ "$status" -eq 0 ]
+  [ "$(exclude_count)" -eq 1 ]
+  [ -z "$(git -C "$WORKTREE" status --porcelain)" ]
+}
+
+@test "existing exclude without trailing newline keeps its content and gains the line (#1471)" {
+  mkdir -p "$(dirname "$(exclude_file)")"
+  printf 'foo' > "$(exclude_file)"
+  run cli --apply
+  [ "$status" -eq 0 ]
+  [ "$(sed -n 1p "$(exclude_file)")" = foo ]
+  [ "$(exclude_count)" -eq 1 ]
+}
+
+@test "an already tracked settings file stays tracked (#1471)" {
+  config '{"idleCompaction":true}'
+  git -C "$WORKTREE" add .claude/settings.local.json
+  git -C "$WORKTREE" -c user.email=a@b -c user.name=t commit -q -m init
+  run cli --apply
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$WORKTREE" ls-files .claude/settings.local.json)" = "$EXCLUDE_LINE" ]
+}
+
+@test "another uncommitted file still shows as the only porcelain entry (#1471)" {
+  printf x > "$WORKTREE/other.txt"
+  run cli --apply
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$WORKTREE" status --porcelain)" = "?? other.txt" ]
+}
+
+@test "linked worktree writes the shared exclude of the common dir (#1471)" {
+  git -C "$WORKTREE" -c user.email=a@b -c user.name=t commit -q --allow-empty -m init
+  git -C "$WORKTREE" worktree add -q "$FIXTURE/linked"
+  run python3 "$SCRIPT" --apply "$FIXTURE/linked"
+  [ "$status" -eq 0 ]
+  [ -z "$(git -C "$FIXTURE/linked" status --porcelain)" ]
+  [ "$(exclude_count)" -eq 1 ]
+}
+
+@test "check and false-already apply leave exclude untouched (#1471)" {
+  config '{"idleCompaction":false}'
+  for mode in --check --apply; do
+    run cli "$mode"
+    [ "$status" -eq 0 ]
+  done
+  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)" || return 1
+  rm "$SETTINGS"
+  run cli --check
+  [ "$status" -eq 2 ]
+  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)" || return 1
+}
+
+@test "similar but not identical exclude lines do not count, one exact line is added (#1471)" {
+  mkdir -p "$(dirname "$(exclude_file)")"
+  printf '/.claude/settings.local.json\n.claude/*\n' > "$(exclude_file)"
+  run cli --apply
+  [ "$status" -eq 0 ]
+  [ "$(exclude_count)" -eq 1 ]
+}
+
+@test "unwritable exclude fails with exit 1 and creates no settings file (#1471)" {
+  rm -f "$(exclude_file)"
+  mkdir -p "$(exclude_file)"
+  run cli --apply
+  [ "$status" -eq 1 ]
+  [ ! -e "$SETTINGS" ]
+  config '{"idleCompaction":true,"k":1}'
+  cp "$SETTINGS" "$FIXTURE/before"
+  run cli --apply
+  [ "$status" -eq 1 ]
+  cmp "$SETTINGS" "$FIXTURE/before"
+}
+
+@test "rejected input creates no exclude (#1471)" {
+  config '[]'
+  run cli --apply
+  [ "$status" -eq 1 ]
+  ! grep -qxF "$EXCLUDE_LINE" "$(exclude_file)" 2>/dev/null || return 1
 }

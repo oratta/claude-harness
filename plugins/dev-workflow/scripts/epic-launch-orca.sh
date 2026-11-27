@@ -107,26 +107,54 @@ pick_session_term() {
   return 0
 }
 
+# 端末の一覧の JSON から子のセッションの端末を決める（deliver と keepalive が使う。shell_start は一覧だけで決める
+# pick_session_term を使う）。一覧で決まらず端末がちょうど 1 つのときだけ、その画面を 1 回読み、下端に Claude Code の
+# 入力枠（keepalive_screen_reason の resolve_frame と同じ形）があればその端末に決める。端末が 2 つ以上なら読まない。
+# Claude Code は題名をセッション名に書き換え、agentIdentity が null になることがあるため（#1598）。
+# 戻り値 0 = 決まった（stdout にハンドル）/ 1 = 決められない（入力枠が無い・source が screen でない画面を含む）/
+# 2 = 画面の読み取りが失敗した・出力の形を読めない（keepalive は failed observe、deliver は ambiguous-terminal にする）
+pick_session_term_screen() {
+  local h one observed id
+  h="$(pick_session_term "$1")"
+  if [ -n "$h" ]; then printf '%s\n' "$h"; return 0; fi
+  one="$(printf '%s' "$1" | jq -r '.result.terminals | if type == "array" and length == 1 then (.[0].handle // empty | strings) else empty end' 2>/dev/null)"
+  [ -n "$one" ] || return 1
+  observed="$(orca terminal read --terminal "$one" --screen --json)" || return 2
+  id="$(keepalive_screen_reason "$observed" orca identify)" || return 2
+  case "$id" in
+    claude) printf '%s\n' "$one"; return 0 ;;
+    unknown) return 1 ;;
+    *) return 2 ;;
+  esac
+}
 
 # Classify observed foreground input. An unknown display never authorizes a send.
 # A background shell alone does not make the foreground busy.
 keepalive_screen_reason() {
-  SCREEN="$1" python3 - "$2" <<'PYCODE'
+  SCREEN="$1" python3 - "$2" "${3-}" <<'PYCODE'
 import json, os, re, sys
 raw = os.environ["SCREEN"]
 mode = sys.argv[1]
+after_send = sys.argv[2] == "after-send"
+# identify: only report whether the Claude Code input frame is at the bottom
+# (claude / unknown; unreadable when the observation shape is broken).
+identify = sys.argv[2] == "identify"
+bg_allowed = mode == "orca" and not after_send and os.environ.get("EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT") == "1"
 if mode == "orca":
     try:
-        d = json.loads(raw)["result"]
+        d = json.loads(raw)["result"]["terminal"]
         if not isinstance(d, dict) or not isinstance(d.get("tail"), list) or not all(isinstance(x, str) for x in d["tail"]):
             raise ValueError()
-        if d.get("source") != "screen":
-            print("skipped unknown-state"); sys.exit()
-        raw = "\n".join(d["tail"])
         draft = d.get("draft", "")
         if not isinstance(draft, str):
             raise ValueError()
+        if d.get("source") != "screen":
+            print("unknown" if identify else "skipped unknown-state"); sys.exit()
+        raw = "\n".join(d["tail"])
     except (ValueError, KeyError, TypeError):
+        if identify:
+            print("unreadable"); sys.exit()
+        print("failed observe shape: expected result.terminal object, tail string[], optional draft string", file=sys.stderr)
         print("failed observe"); sys.exit()
 else:
     draft = ""
@@ -134,49 +162,106 @@ ansi = r"\x1b\[[0-?]*[ -/]*[@-~]"
 plain = re.sub(ansi, "", raw)
 lines = [s for s in plain.splitlines() if s.strip()]
 screen = "\n".join(lines)
-if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
-    print("skipped dialog")
-elif re.search(r"[^\w\s].*(?:…|\.\.\.).*\([^\n]*\d+(?:s|m).*·", screen) or "esc to interrupt" in screen.lower():
-    print("skipped busy")
-elif draft:
-    print("skipped input-not-empty")
-elif not re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on", screen):
-    print("skipped unknown-state")
-else:
+busy = bool(re.search(r"[^\w\s].*(?:…|\.\.\.).*\([^\n]*\d+(?:s|m).*·", screen) or "esc to interrupt" in screen.lower())
+rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
+def resolve_frame():
     # Resolve the frame before inspecting input. Never choose a later prompt,
     # border or footer from the body: multiple possible openers are ambiguous.
     # Keep the complete observation so long input/busy/dialog evidence survives.
-    rows = [(s, re.sub(ansi, "", s)) for s in raw.splitlines()]
     visible = [i for i, (_, p) in enumerate(rows) if p.strip()]
     footer = r"\s*(?:\? for shortcuts|.*\(shift\+tab to cycle\).*|.*manual mode on.*)\s*"
+    bypass_footer = r"\s*⏵⏵ bypass permissions on(?: \(shift\+tab to cycle\))?(?:\s*·[^\n]+)?\s*"
     border = r"\s*[─━]+\s*"
     openers = [i for i in range(len(rows) - 1)
                if re.fullmatch(border, rows[i][1])
                and re.match(r"^\s*❯(?:\s|$)", rows[i + 1][1])]
+    # The measured agent panel follows the footer: main, then named agent rows.
+    # Strip only this known suffix. Unknown/wrapped panels and stale shell rows
+    # stay visible, so they cannot turn an old Claude frame into ready.
+    footers = [n for n, i in enumerate(visible)
+               if re.fullmatch(bypass_footer, rows[i][1])]
+    if len(footers) == 1:
+        n = footers[0]
+        panel = [rows[i][1] for i in visible[n + 1:]]
+        if (len(panel) >= 2 and re.fullmatch(r"\s*⏺ main\s*", panel[0])
+                and all(re.fullmatch(r"\s*◯ \S+\s{2,}\S.*", p) for p in panel[1:])):
+            visible = visible[:n + 1]
+    # Only the measured bypass footer permits intervening custom statuslines.
+    bypass = bool(visible and re.fullmatch(bypass_footer, rows[visible[-1]][1]))
+    borders = [i for i in visible[:-1] if re.fullmatch(border, rows[i][1])]
+    lower = borders[-1] if bypass and borders else (visible[-2] if len(visible) >= 2 else -1)
     if (len(openers) != 1 or len(visible) < 4
-            or not re.fullmatch(footer, rows[visible[-1]][1])
-            or not re.fullmatch(border, rows[visible[-2]][1])
-            or openers[0] + 1 >= visible[-2]):
-        print("skipped unknown-state")
-    else:
-        region = rows[openers[0] + 1:visible[-2]]
-        candidate = "\n".join(s.replace("❯", "", 1) if i == 0 else s
-                              for i, (s, _) in enumerate(region))
-        # Track SGR dim across line wraps. A reset ends the suggestion; normal
-        # characters after it are human input even when the first line was dim.
-        dim = False
-        nonempty = False
-        for token in re.split("(" + ansi + ")", candidate):
-            if re.fullmatch(ansi, token):
-                if token.endswith("m"):
-                    for code in token[2:-1].split(";"):
-                        if code in ("", "0", "22"):
-                            dim = False
-                        elif code == "2" and token == "\x1b[2m":
-                            dim = True
-            elif token.strip() and not (mode == "tmux" and dim):
-                nonempty = True
-        print("skipped input-not-empty" if nonempty else "ready")
+            or not (bypass or re.fullmatch(footer, rows[visible[-1]][1]))
+            or lower < 0 or not re.fullmatch(border, rows[lower][1])
+            or openers[0] + 1 >= lower):
+        return None
+    return openers[0], lower
+
+# Waiting on agents is busy, but is not proof of a new foreground turn after send.
+# A stale wait line in history is released only by a later known foreground
+# completion line; between that line and the input frame only blanks and the
+# measured recap are allowed. Needs a resolved frame, else no wait is judged.
+wait_re = r"\s*[✻✽✶✢✳✺]\s+Waiting for \d+ background agents?(?: to finish)?\s*"
+done_re = (r"\s*[✻✽✶✢✳✺]\s+(?:Worked|Churned|Brewed|Sautéed|Cogitated|Baked|Cooked|Crunched)"
+           r" for (?:\d+[hms]\s*)+ · done \d{1,2}:\d{2} [AP]M(?: · \d+ shells? still running)?\s*")
+recap_re = r"\s*※ recap: .* \(turn off recaps in /config\)\s*"
+def wait_state(frame):
+    if frame is None:
+        return "none"
+    top = frame[0]
+    waits = [i for i, (_, p) in enumerate(rows) if re.fullmatch(wait_re, p)]
+    if not waits:
+        return "none"
+    last = waits[-1]
+    if last >= top:
+        return "busy"
+    dones = [i for i in range(last + 1, top) if re.fullmatch(done_re, rows[i][1])]
+    if not dones:
+        # #1777: dispatch が検査済みの作業待ちの一呼び出しだけに渡す許可。最後の待機行が入力枠より前にあり、
+        # その間が空行と recap だけのときに限り、待機行による busy を外す（前景・dialog・入力の検査は省かない）
+        if (bg_allowed and all(not rows[i][1].strip() or re.fullmatch(recap_re, rows[i][1])
+                               for i in range(last + 1, top))):
+            return "none"
+        return "busy"
+    if all(not rows[i][1].strip() or re.fullmatch(recap_re, rows[i][1])
+           for i in range(dones[-1] + 1, top)):
+        return "released"
+    return "unknown"
+frame = resolve_frame()
+if identify:
+    print("claude" if frame is not None else "unknown"); sys.exit()
+# History release authorizes only pre-send readiness. After send, delivery
+# requires foreground execution and independently checked frame/draft emptiness.
+wait = "none" if after_send else wait_state(frame)
+footer_seen = re.search(r"\? for shortcuts|\(shift\+tab to cycle\)|manual mode on|⏵⏵ bypass permissions on", screen)
+if re.search(r"Enter to (?:select|confirm)|Esc to cancel|Do you want to ", screen, re.I):
+    print("skipped dialog")
+elif (busy or wait == "busy") and not after_send:
+    print("skipped busy")
+elif draft:
+    print("skipped input-not-empty")
+elif not footer_seen or frame is None or wait == "unknown":
+    print("skipped unknown-state")
+else:
+    region = rows[frame[0] + 1:frame[1]]
+    candidate = "\n".join(s.replace("❯", "", 1) if i == 0 else s
+                          for i, (s, _) in enumerate(region))
+    # Track SGR dim across line wraps. A reset ends the suggestion; normal
+    # characters after it are human input even when the first line was dim.
+    dim = False
+    nonempty = False
+    for token in re.split("(" + ansi + ")", candidate):
+        if re.fullmatch(ansi, token):
+            if token.endswith("m"):
+                for code in token[2:-1].split(";"):
+                    if code in ("", "0", "22"):
+                        dim = False
+                    elif code == "2" and token == "\x1b[2m":
+                        dim = True
+        elif token.strip() and not (mode == "tmux" and dim):
+            nonempty = True
+    print("skipped input-not-empty" if nonempty else
+          ("busy-empty" if after_send and busy else "ready"))
 PYCODE
 }
 
@@ -185,13 +270,14 @@ PYCODE
 # stdout: sent/skipped <reason> (0), failed <reason> (1); arity error: usage (2).
 cmd_keepalive() {
   argc 2 "$#"
-  local terms count handle observed reason sent rc i after
+  local terms count handle observed reason sent rc i after pick=0
   if ! terms="$(orca terminal list --worktree "path:$1" --json)" \
     || ! count="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" and all(.[]; type == "object" and (.handle | type) == "string" and .handle != "") then length else error("terminals") end' 2>/dev/null)"; then
     echo 'failed terminal-list'; return 1
   fi
   [ "$count" -gt 0 ] || { echo 'skipped no-terminal'; return 0; }
-  handle="$(pick_session_term "$terms")"
+  handle="$(pick_session_term_screen "$terms")" || pick=$?
+  [ "$pick" -ne 2 ] || { echo 'failed observe'; return 1; }
   [ -n "$handle" ] || { echo 'skipped ambiguous-terminal'; return 0; }
   for (( i = 0; i < 2; i++ )); do
     observed="$(orca terminal read --terminal "$handle" --screen --json)" || { echo 'failed observe'; return 1; }
@@ -208,10 +294,10 @@ cmd_keepalive() {
   [ "$rc" -eq 0 ] || { echo 'failed send'; return 1; }
   if turn_started "$sent"; then echo sent; return 0; fi
   # Some providers report unsupported while the input reaches Claude. Reobserve
-  # for a new foreground spinner with an empty draft; never resend the input.
+  # for a new foreground spinner and independently prove the entire input frame
+  # and optional draft empty; never resend the input.
   if after="$(orca terminal read --terminal "$handle" --screen --json)" \
-    && [ "$(keepalive_screen_reason "$after" orca)" = 'skipped busy' ] \
-    && printf '%s' "$after" | jq -e '(.result.draft // "") == ""' >/dev/null 2>&1; then
+    && [ "$(keepalive_screen_reason "$after" orca after-send)" = 'busy-empty' ]; then
     echo sent; return 0
   fi
   echo 'failed send'; return 1
@@ -403,9 +489,11 @@ cmd_deliver() {
   # 端末があれば、子のセッションの端末（Claude Code の端末 1 つ）に送る
   # （止まっている子の入力欄に打ち込み、ターンの開始まで確かめる）。Orca は子のワークツリーにシェルの
   # 端末も作るので、端末の数では決めない。決められなければ送らない（シェルの端末だけのときも、
-  # それが子のセッションでないと一覧から言い切れないので起動し直さない。主の判断で relaunch 1 を使う）
+  # それが子のセッションでないと一覧から言い切れないので起動し直さない。主の判断で relaunch 1 を使う）。
+  # 一覧で決まらず端末がちょうど 1 つなら、その画面を 1 回読み、下端に入力枠があればそこに送る
+  # （読めない・入力枠が無いときは決められないのと同じ扱い）
   if [ "$relaunch" = 0 ] && [ "$tcount" -gt 0 ]; then
-    handle="$(pick_session_term "$terms")"
+    handle="$(pick_session_term_screen "$terms")" || handle=""
     if [ -z "$handle" ]; then
       echo "terminals in $path: $tcount, but not exactly one is Claude Code (cannot tell which one runs the child session; use reply --relaunch to start it over)" >&2
       echo "failed ambiguous-terminal"; exit 1

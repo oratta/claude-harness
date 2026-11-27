@@ -1,16 +1,16 @@
 #!/usr/bin/env bats
-# dev-workflow のコマンド文書（ci-watch・develop・memory-refresh）の探索ループが、探索先が無い・glob が当たらないときも zsh / bash で止まらないことの検査（#938）。
+# dev-workflow のコマンド文書（ci-watch・develop・memory-refresh・synced-skills-slim）の探索ループが、探索先が無い・glob が当たらないときも zsh / bash で止まらないことの検査（#938）。
 # 文書から `for dir in` を含む bash ブロックを取り出して実行する（手本: plugins/cost-ledger/tests/cost-command-zsh.bats）。
 # SEARCH_DOCS（改行区切りのパス）で対象の文書を差し替えられる（直す前の版で落ちることの確認用）。
 # zsh が無い環境（CI の ubuntu-latest など）では zsh の検査は skip になる。
 
 setup() {
   REPO_DIR="$(cd "$BATS_TEST_DIRNAME/../../.." && pwd)"
-  DOCS="${SEARCH_DOCS:-plugins/dev-workflow/commands/ci-watch.md\nplugins/dev-workflow/commands/develop.md\nplugins/dev-workflow/commands/memory-refresh.md}"
+  DOCS="${SEARCH_DOCS:-plugins/dev-workflow/commands/ci-watch.md\nplugins/dev-workflow/commands/develop.md\nplugins/dev-workflow/commands/memory-refresh.md\nplugins/dev-workflow/commands/synced-skills-slim.md}"
   HOME_DIR="$BATS_TEST_TMPDIR/home"
   mkdir -p "$HOME_DIR"
   # 既定の対象（SEARCH_DOCS 未設定）のときは、取り出すブロック数を期待値で固定する。差し替えのときは固定しない。
-  if [ -n "${SEARCH_DOCS:-}" ]; then EXPECT_N=; else EXPECT_N=4; fi
+  if [ -n "${SEARCH_DOCS:-}" ]; then EXPECT_N=; else EXPECT_N=5; fi
 }
 
 need_zsh() { command -v zsh >/dev/null || skip "zsh が無い"; }
@@ -157,4 +157,40 @@ check_shell() {
     [ "$z" = "$b" ] || { echo "block-$i: zsh=$z bash=$b"; return 1; }
   done
   [ "$hit" -ge 1 ] || { echo "ルートを受けるブロックが無い"; return 1; }
+}
+
+@test "dw cmds zsh: candidates are tried in order: oratta-claude-harness, older marketplaces dir, installed (#1480)" {  # 固定候補が名前順で先の旧 dir より先。無ければ glob、それも無ければ installed
+  local n i mark inst rel sh shells stale fixed instd d
+  shells="bash"; command -v zsh >/dev/null && shells="bash zsh"
+  n="$(extract_blocks)" || { echo "$n"; return 1; }
+  [ "$n" -ge 1 ] || { echo "ブロックを取り出せなかった: $n"; return 1; }
+  for i in $(seq 1 "$n"); do
+    inst="$(sed -n 1p "$BATS_TEST_TMPDIR/block-$i.meta")"
+    mark="$(sed -n 2p "$BATS_TEST_TMPDIR/block-$i.meta")"
+    rel="$(grep -o 'marketplaces/\*/plugins/[^ ;\\"]*' "$BATS_TEST_TMPDIR/block-$i.sh" | head -1)"
+    rel="${rel#marketplaces/\*/}"
+    [ -n "$rel" ] || { echo "block-$i に marketplaces の glob が無い"; return 1; }
+    rm -rf "$HOME_DIR/.claude"
+    stale="$HOME_DIR/.claude/plugins/marketplaces/aaa-stale/$rel"
+    fixed="$HOME_DIR/.claude/plugins/marketplaces/oratta-claude-harness/$rel"
+    instd="$HOME_DIR/.claude/plugins/installed/x/$inst"
+    for d in "$stale" "$fixed" "$instd"; do
+      mkdir -p "$d"
+      if [ -n "$mark" ]; then mkdir -p "$(dirname "$d/$mark")"; : > "$d/$mark"; fi
+    done
+    for sh in $shells; do
+      run_block "$sh" "$i"
+      [[ "$output" == "$fixed"* ]] || { echo "block-$i $sh fixed: $output"; return 1; }
+    done
+    rm -rf "$fixed"
+    for sh in $shells; do
+      run_block "$sh" "$i"
+      [[ "$output" == "$stale"* ]] || { echo "block-$i $sh glob: $output"; return 1; }
+    done
+    rm -rf "$stale"
+    for sh in $shells; do
+      run_block "$sh" "$i"
+      [[ "$output" == "$instd"* ]] || { echo "block-$i $sh installed: $output"; return 1; }
+    done
+  done
 }

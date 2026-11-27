@@ -7,20 +7,22 @@ develop の SKILL.md「実行モード」の節から移した 3 つの小節。
 channel の本体は AskUserQuestion を呼ばない。主に聞くときは、依頼の届いたチャンネル（依頼の発言の開きタグの `chat_id`）に、チャンネルの返信ツールで質問を送り、そのターンを終える。返事は次のチャンネルのメッセージとして同じセッションに届く。
 
 - 依頼がチャンネルから届いていない（印だけで channel になった）ときは、そのセッションの運用（憲法・CLAUDE.md）が決める主への連絡先に送る。連絡先が分からなければ、記録先に質問をコメントして `needs-approval` を付け、止まる
-- 記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限）は、先に PR か記録先のコメントに書き、チャンネルの質問にはそのコメントのフル URL を添える
+- 記録に残す問い（保留の依頼・2 周キャップ超え・PR トークン上限・仕様レビューの条件の問い）は、先に PR か記録先のコメントに書き、チャンネルの質問にはそのコメントのフル URL を添える
 - 質問の文面は `~/.claude/output-styles/readable.md` の節 3（サブエージェントには `rules/communication-style.md` の 3 番目）の型に従う。100 行を超える中身は記録先のコメントに置いて URL で渡す（チャンネルのメッセージには長さの上限がある）
+- 印 `DEV_WORKFLOW_UNATTENDED` のあるセッションでは、どのスキルからの呼び出しも hook（`scripts/unattended-ask-guard.sh`）が拒否し、理由文でこの聞き方を案内する。拒否されたら打ち直さず、AskUserQuestion を呼ばない。印が無く、チャンネルの依頼だけで channel になったセッションには hook が効かない（hook はプロンプトの本文を見られない）ので、この節の規則だけが歯止めになる
 
-**読み替えの規則**: develop と、develop から読む次の文書に書かれた「interactive は AskUserQuestion で聞く」（候補を提示して選ばせる・承認を得る・判断を仰ぐを含む）は、channel ではこの聞き方に読む。各文書には書き足さない（同じ規則を複数の文書に書くと、直すときに片方が漏れる）。例外は `commands/develop.md` の 5 か所だけ（冒頭の実行モードの段落・引数の分岐 ②⑤・issueify のヒアリング・issueify の承認ゲート）。入口の分岐で主に聞く場面なので、その場に「channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばない」と短く書いてよい。書くのは何をするかだけで、宛先・URL の添え方・文面は書かず、この節の聞き方に従う。対象は `plugins/dev-workflow/` からの相対パスで次の 10 個で、`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で AskUserQuestion に触れるファイルの全部（develop の SKILL.md とこのファイルを除く。漏れは `tests/develop-channel-mode.bats` が見つける）。
+**読み替えの規則**: develop と、develop から読む次の文書に書かれた「interactive は AskUserQuestion で聞く」（候補を提示して選ばせる・承認を得る・判断を仰ぐを含む）は、channel ではこの聞き方に読む。各文書には書き足さない（同じ規則を複数の文書に書くと、直すときに片方が漏れる）。例外は `commands/develop.md` の 5 か所だけ（冒頭の実行モードの段落・引数の分岐 ②⑤・issueify のヒアリング・issueify の承認ゲート）。入口の分岐で主に聞く場面なので、その場に「channel ではチャンネルに送ってターンを終え、AskUserQuestion を呼ばない」と短く書いてよい。書くのは何をするかだけで、宛先・URL の添え方・文面は書かず、この節の聞き方に従う。対象は `plugins/dev-workflow/` からの相対パスで次の 11 個で、`plugins/dev-workflow/` 配下（`tests/` と `changes/` を除く）で AskUserQuestion に触れるファイルの全部（develop の SKILL.md とこのファイルと、手順として読まれない hook の 2 ファイル `hooks/hooks.json` と `scripts/unattended-ask-guard.sh` を除く。漏れは `tests/develop-channel-mode.bats` が見つける）。
 
-- `skills/develop/references/decision-criteria.md`
+- `skills/develop/references/spec-decision.md`
 - `skills/develop/references/epic-child-stop.md`
 - `skills/develop/references/fix-check.md`
 - `skills/develop/references/roles/spec-reviewer.md`
 - `skills/develop/references/roles/worker/common.md`
-- `skills/develop/references/roles/worker/spec.md`
 - `templates/escalation-tripwires.md`
 - `commands/develop.md`
 - `commands/work-issue.md`
+- `scripts/child-log-read.py`
+- `commands/synced-skills-slim.md`
 - `skills/issueify/SKILL.md`
 
 ## channel のリスク許容
@@ -36,9 +38,9 @@ channel の本体は AskUserQuestion を呼ばない。主に聞くときは、�
 
 channel の本体は、主へのすべての発言を「channel の聞き方」と同じ宛先のチャンネルに送る。質問ではない報告（再開で HEAD が動いていた・前任 W の手渡し不可・`epic-dispatch.sh` などのスクリプトの失敗・レビューの周の打ち切り・完了報告・エピックの親の報告）も含め、端末に出すだけで済ませない（住人の画面は誰も見ていないので、端末に出しただけの報告は読まれず、主の指示を待ったまま止まる）。
 
-1 行目と最後の行は `~/.claude/output-styles/readable.md` の節 3 の書き分けに従う（主の操作も判断も要らない報告は 1 行目を `主がすること: なし` にする（主の質問への答えは正本のとおり 1 行目に答えを書く））。判断・確認・操作を求める発言の最後の答え方の行には、channel に固有の次のことを書く。
+1 行目と 2 行目は `~/.claude/output-styles/readable.md` の節 3 の書き分けに従う（主の操作も判断も要らない報告は 1 行目を `主がすること: なし` にする（主の質問への答えは正本のとおり 1 行目に答えを書く））。判断・確認・操作を求める発言は 1 行目を題名（質問にしない）にし、2 行目のアクションの行に、channel に固有の次のことを書く。
 
 - このチャンネルで何を返すか（例: 「#1126 許容する」か「#1126 許容しない」と返す）
 - リスク許容でチャンネルの返事を確かめられないときは、末尾の PR に何を書くか。PR のフル URL を添える
 
-答え方の行に画面・タブ・入力欄（`子のタブで`・`入力欄で ! を付けて` など）を書かない。オーナーが見ているのはチャンネルだけである。
+アクションの行に画面・タブ・入力欄（`子のタブで`・`入力欄で ! を付けて` など）を書かない。オーナーが見ているのはチャンネルだけである。

@@ -1,0 +1,35 @@
+#!/usr/bin/env bash
+# cld-account <slot-id> [claude-args...]: accounts.json の slot id を明示して claude を起動する。
+# 環境変数は bin/cld と同じ（CLD_DEFAULT_ARGS・CLAUDE_HARNESS_SCRIPTS）。
+set -uo pipefail
+
+if [ "$#" -lt 1 ]; then
+  printf 'usage: cld-account <slot-id> [claude-args...]\n' >&2
+  exit 2
+fi
+account_id="$1"
+shift
+
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P -- "$(dirname -- "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+self_dir="$(cd -P -- "$(dirname -- "$src")" && pwd)"
+SCRIPTS="${CLAUDE_HARNESS_SCRIPTS:-$self_dir/../scripts}"
+
+selected="$("$SCRIPTS/select-account.sh" "$account_id")"
+rc=$?
+[ "$rc" -eq 0 ] || exit "$rc"
+
+default_args=()
+if [ -n "${CLD_DEFAULT_ARGS:-}" ]; then
+  IFS=$' \t\n' read -r -d '' -a default_args <<<"$CLD_DEFAULT_ARGS" || true
+fi
+
+if [ -z "$selected" ]; then
+  exec env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude ${default_args[@]+"${default_args[@]}"} "$@"
+else
+  exec env CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude ${default_args[@]+"${default_args[@]}"} "$@"
+fi

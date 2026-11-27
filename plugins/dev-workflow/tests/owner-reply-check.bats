@@ -281,6 +281,20 @@ run_check() { run bash "$SCRIPT" "$@"; }
   [ "$status" -eq 1 ]
 }
 
+@test "owner-reply cross-repo: the launch instruction with the repository on the child number does not match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111180","timestamp":"2026-10-15T06:00:00.000Z","message":{"role":"user","content":"<command-message>dev-workflow:develop</command-message>\n<command-name>/develop</command-name>\n<command-args>genetta-inc/flatmate#892 （エピック #1810 の子。エピックのリポジトリ oratta/claude-harness。親ワークツリー /p から Orca で起動） 許容</command-args>"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
+}
+
+@test "owner-reply cross-repo: the relaunch instruction with the repository on the child number does not match" {
+  add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111181","timestamp":"2026-10-15T08:34:00.000Z","message":{"role":"user","content":"<command-message>dev-workflow:develop</command-message>\n<command-name>/develop</command-name>\n<command-args>genetta-inc/flatmate#892 （エピック #1810 の子。エピックのリポジトリ oratta/claude-harness。返事を受けて起動し直し） 主の返事（親エピック #1810（oratta/claude-harness）経由）: 許容</command-args>"}}'
+  run_check "$SID" "許容"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"MATCHES=0"* ]] || return 1
+}
+
 @test "owner-reply cross-repo: a reply typed with the cross-repo heads does not match" {
   add '{"type":"user","isSidechain":false,"origin":{"kind":"human"},"uuid":"11111111-1111-4111-8111-111111111118","timestamp":"2026-10-15T08:33:00.000Z","message":{"role":"user","content":"主の返事（親エピック #1122（oratta/claude-harness）経由）: 許容"}}'
   run_check "$SID" "許容"

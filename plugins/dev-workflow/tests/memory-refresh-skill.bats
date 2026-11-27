@@ -75,3 +75,19 @@ PY
   run grep -c 'DEV_WORKFLOW_MEMORY_FILE_BYTES' "$SKILL"
   [ "$output" -eq 0 ]
 }
+
+@test "skill: carries the canonical patches: format (#1654)" {
+  s="$(awk '/^## `patches:` の書き方（正本）$/{f=1; next} /^## /{f=0} f' "$SKILL")"
+  [ -n "$s" ]
+  printf '%s\n' "$s" | grep -F '置き場所' | grep -F '`metadata:` の下' | grep -qF 'トップレベル'
+  printf '%s\n' "$s" | grep -F '値:' | grep -qF 'issue の URL 1 本'
+  printf '%s\n' "$s" | grep -F '検知:' | grep -F 'memory-tripwire.sh' | grep -F '裏' | grep -qF '次のセッション'
+  ! printf '%s\n' "$s" | grep -qF '1 日 1 回' || return 1
+  printf '%s\n' "$s" | grep -qF '.memory-patches-cache.tsv'
+  printf '%s\n' "$s" | grep -qF 'DEV_WORKFLOW_MEMORY_PATCHES_TIMEOUT'
+}
+
+@test "skill: deletes memories whose patches: issue closed as completed and checks other closes first (#1654)" {
+  grep -E '^\| 削除 \|' "$SKILL" | grep -F '`patches:`' | grep -qF '`COMPLETED`'
+  grep -F '`NOT_PLANNED`' "$SKILL" | grep -F '削除に決め打ちせず' | grep -F '直ったか' | grep -qF '書き換える'
+}

@@ -29,11 +29,15 @@
 #   7. 本文が <bash-stdout> / <bash-stderr> / <local-command-stdout> / <local-command-stderr> で始まらない
 #   8. isCompactSummary が true でない（会話の圧縮後にモデルが書いた要約の行。本文の書き出しでは判定しない）
 #   9. 本文（先頭の空白を除く）が "主の返事（親エピック #" / "親エピック #" で始まらず、<command-args> の中身
-#      （先頭の空白を除く）が "#<数字> （エピック #<数字> の子。" で始まらない（エピックの親が子の端末に打ち込んだ返事と、
+#      （先頭の空白を除く）が "#<数字> （エピック #<数字> の子。" か、子の "#<数字>" の前に "<owner>/<repo>" を付けた形で
+#      始まらない（エピックの親が子の端末に打ち込んだ返事と、
 #      子を起動する指示）。<command-args> の頭の出どころは scripts/epic-dispatch.sh の次の 2 つの文字列で、
 #      ここはそれに結び付いている（epic-dispatch.sh の文を変えたらこの条件と bats の入力も直す）:
 #        launch（epic-dispatch.sh の cmd_launch の prompt=）:            /develop #$n （エピック #$epic の子。親ワークツリー $parent から ${lname_label} で起動）（${lname_label} は Orca か tmux）
 #        reply --relaunch（epic-dispatch.sh の deliver_reply の prompt=）: /develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg
+#      別のリポジトリの子は、子の番号にリポジトリを付け、エピックのリポジトリの句を足す:
+#        launch:           /develop $crepo#$num （エピック #$epic の子。エピックのリポジトリ ${erepo}。親ワークツリー $parent から ${lname_label} で起動）
+#        reply --relaunch: /develop <repo>#<number> （エピック #$epic の子。エピックのリポジトリ <エピックの repo>。返事を受けて起動し直し） $msg
 #   <command-args>（スラッシュコマンドの引数）と <bash-input>（主が ! で打った入力）は、9 に当たらなければタグごと本文として比べる。
 # 出力:
 #   既定:      一致した発言ごとに "MATCH: <timestamp> <空白をまとめた本文の全文>"、最後に "MATCHES=<件数>"
@@ -47,7 +51,9 @@
 #   --delegated: 出力は --relayed と同じ形。理由は次の順に確かめる: not-found → not-owner（--relayed と同じ）
 #              → not-after（その行の timestamp が委任の記録の作成日時より後でない）→ not-asked（委任の記録の作成日時より後で
 #              その行より前の親の発言の text の本文に委任の記録の URL が無い。URL の境界の判定は --relayed と同じ）
-#              → not-direct（--relayed と同じ）→ not-before（その行の timestamp が停止の記録の作成日時より前でない）
+#              → not-before（その行の timestamp が停止の記録の作成日時より前でない）
+#              not-direct は確かめない（URL を書いた親の発言とその行のあいだに別の主の発言が挟まっても並び順では落とさない。
+#              issue #1653。挟まった発言を確認として拾わないことは、呼び出し側が全文から任せる意思を読んで担う）
 #              GitHub は読まない。委任の意思（MATCH 行の全文）・委任の記録の書式・投稿者・最新か・編集の有無・エピックが開いているか・
 #              子の所属・停止の記録の推奨は呼び出し側（エピックの子と pr-review-gate 手順 5）が確かめる。
 # 終了コード: 0 = 一致（--relayed / --delegated は通った）/ 1 = 一致なし（--relayed / --delegated は REASON の付く落ち）/
@@ -147,7 +153,7 @@ FORWARD_PREFIX = "Another Claude session sent a message"
 OUTPUT_PREFIXES = ("<bash-stdout>", "<bash-stderr>", "<local-command-stdout>", "<local-command-stderr>")
 # 9 つ目の条件（issue #1059）。出どころは冒頭の説明（epic-dispatch.sh の cmd_launch / deliver_reply の prompt=）
 RELAY_PREFIXES = ("主の返事（親エピック #", "親エピック #")
-DISPATCH_ARGS = re.compile(r"<command-args>\s*#\d+\s*（エピック #\d+ の子。")
+DISPATCH_ARGS = re.compile(r"<command-args>\s*(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#\d+\s*（エピック #\d+ の子。")
 # チャンネル経由の行（issue #1125）。開きタグは Claude Code がチャンネルプラグインの通知の meta から組み立てて本文の先頭に置く
 CHANNEL_OPEN = re.compile(r'<channel((?: [A-Za-z_][A-Za-z0-9_]*="[^"\n]*")*)>\n')
 CHANNEL_ATTR = re.compile(r' ([A-Za-z_][A-Za-z0-9_]*)="([^"\n]*)"')
@@ -334,9 +340,10 @@ def pointed_owner_line(records, target_uuid):
     return target, text, said_at
 
 
-def check_asked_directly(records, url, since, said_at):
-    """since より後で said_at より前の親の発言に url があり、URL を書いた最後の親の発言から said_at までに別の主の発言が無いことを確かめる。
-    無ければ not-asked、挟まっていれば not-direct で落とす（--relayed と --delegated で同じ判定）。"""
+def check_asked_directly(records, url, since, said_at, direct=True):
+    """since より後で said_at より前の親の発言に url があることを確かめ、無ければ not-asked で落とす。
+    direct が真（--relayed）なら、URL を書いた最後の親の発言から said_at までに別の主の発言が無いことも確かめ、挟まっていれば
+    not-direct で落とす。--delegated は direct を偽で呼び、挟まった主の発言では落とさない（issue #1653）。"""
     # URL は完全一致で探す。前後が URL を続ける文字のときは別の URL の一部なので数えない
     # （…#issuecomment-123 が …#issuecomment-1234 に部分一致しないように）。文末の . や括弧・句読点は URL を続けない文字として扱う
     url_re = re.compile(r"(?<![A-Za-z0-9_\-.~/:%%?#&=+@])%s(?![A-Za-z0-9_\-~/%%?#&=+@])" % re.escape(url))
@@ -353,6 +360,8 @@ def check_asked_directly(records, url, since, said_at):
             asked_at = when if asked_at is None else max(asked_at, when)
     if asked_at is None:
         fail("not-asked")
+    if not direct:
+        return
     for rec in records:
         when = parse_time(rec.get("timestamp"))
         if when is not None and asked_at < when < said_at and owner_text(rec) is not None:
@@ -376,14 +385,15 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
 
 
 def delegated(target_uuid, deleg_at_text, deleg_url, stop_at_text, paths):
-    """主の委任の確認（issue #1293）。委任の記録を示した親の問いへの直接の答えで、停止の記録より前であることを確かめる。"""
+    """主の委任の確認（issue #1293）。委任の記録を示した親の問いより後の主の発言で、停止の記録より前であることを確かめる。
+    問いと確認のあいだに挟まった主の発言では落とさない（issue #1653）。"""
     deleg_at = read_time_arg(deleg_at_text, "delegation record")
     stop_at = read_time_arg(stop_at_text, "stop record")
     records = [rec for rec in read_records(paths) if isinstance(rec, dict)]
     target, text, said_at = pointed_owner_line(records, target_uuid)
     if not said_at > deleg_at:
         fail("not-after")
-    check_asked_directly(records, deleg_url, deleg_at, said_at)
+    check_asked_directly(records, deleg_url, deleg_at, said_at, direct=False)
     if not said_at < stop_at:
         fail("not-before")
     passed(target, text)

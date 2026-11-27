@@ -1,0 +1,216 @@
+# 粒度計算の履歴再計画（#1802）
+
+これは **GitHub の実データから構成した、読取計画の仮定付き再計画**。当時の実読取量・最大文脈の復元でも、当時の消費・上限遵守の実証でもない。#1799 の会話ログは読まず、再測定しない。進行中のエピックの issue・worktree・依存・PR は変更していない。
+
+## 固定資料と収集方法
+
+- `tests/fixtures/epic-granularity/sources.json`: 元の親本文・権限コメント（投稿者 OWNER）、全24子の本文・状態・結論を含むコメント・閉鎖／相互参照履歴、対応22 PRの本文・base/head/merge SHA・変更ファイル・追加削除行数。#1777 の #1801 だけは未マージの計画対象であり、マージ済みと数えない。複数の対応マージPRがある子は今回の閉鎖参照検索ではなかった。
+- `outputs.json`: 読取予定の固定出力文字列398件。各 read_id の revision・行範囲／diff command・文字数・追加削除数は sources.outputs にある。JSON の文字列を復号した Unicode 文字数を数え、`ceil(chars × 0.65)` を使用する。行数から tokens を推定しない。
+- PR は `gh api repos/oratta/claude-harness/pulls/<PR>` と `.../files?per_page=100` から取得（全件100未満）。子は GraphQL の ClosedEvent / CrossReferencedEvent から、mergedAt があり closingIssuesReferences に子番号がある全PRを抽出。comments / timelineItems の hasNextPage=false を確認した。
+- PR の `base` と `head` から `git merge-base <base> <head>` を求め、`git diff --no-ext-diff --no-renames --no-color --unified=3 <diff_base> <head> -- <path>` の完全出力を固定。各ファイルの追加・削除数は GitHub API の値と一致することを収集時に確認した。API patch は使わず、欠落や打切りを0で代用しない。
+- 各変更hunkのbase側の範囲を前後15行広げ、重なる範囲を併合して周辺読取を固定した。新規ファイルは完全diffが本文を含む。各担当は自分の変更ファイルのdiffと周辺範囲、同じPRの実装（scripts/bin/hooks）の完全diff、固定revisionの共通集約手順を読む。diffヘッダー・コンテキストもFに入る。追加＋削除だけをLに使う。
+
+## 比較条件と作業の分離
+
+起動40,000、reserve10,000は現行referenceの例を共通使用した比較用仮定で、#1799 の実測値ではない。起動分に役割の指示、該当子の本文と結論、PR本文の読取を含める。監査用に保存した全コメント履歴を毎担当が全部読む計画ではない。追加保持0は、生成中の編集・要約・検査の返答・推論の一時保持を子ごとのreserve10,000に含める仮定による。Fで計上した読取出力を追加保持として再加算しない。この余裕で実作業が済むと検証されたわけではなく、増分があれば再入力する。
+
+文脈は固定dispatch revision `49a220d160e65d0189225ec77f34c3948aea6b58` の `scripts/subagent-context.sh:34` の既定実効値150,000（比較環境でoverrideなし）。累計は両親に既存の60,000,000権限があり、そのコメントURL・OWNERを入力に記録した。#1732 の後日の100Mへは広げない。計画用は各0.8倍の120,000 / 48,000,000。W枠は両方 max_parallel=2, occupied=1（空き1、起動許可ではない）。
+
+作業は実装／テスト／仕様・文書のファイル担当へ分け、同じlane・聖域区分のファイルを、担当変更行数800以下かつ予定出力60,000以下を目安に入力項目にまとめた。この二値はfixtureの担当範囲を選ぶ比較上の仮定であり、CLIの分割規則・上限・係数ではない。各担当は自分が編集するファイルだけのLと周辺範囲を持ち、共通の完全実装diffを読取契約として共有する。テスト・文書担当は実装担当に依存する。名目上同じ担当の全読取を分割して通す計画ではなく、独立したファイル担当と完了証拠を前提とした入力である。元issueの依存は親本文の表から各前提の全担当へ写し、受け入れ条件の和集合を元issueの本文・PR本文で保持する。
+
+聖域区分は `.github/workflows/auto-merge.yml` の `SACRED` 準拠で、edit するパスが1つでも当たる項目を sanctuary=true、read だけは false とし、現行定義で判定する（過去時点の定義には戻さない）。sanctuary=true の項目は false の項目と分離する。混ざった項目は分けず丸ごと true とする。#1264 は不要判定と実機確認待ちの記録を保存し、判断担当を承認待ち単独にする。#1777 は未マージ #1801 の内容を含め、リスク／承認ゲートを保守的に承認待ち単独として扱う。これらは待ちが解決したと主張するものではない。#1729 は公開済みの調査結論の再利用、#1264 は下限が不要になった結論・確認手順の再利用として、固定した reply-after-idle.md の1–90行を読む。どちらも会話ログを再集計しない。
+
+#1732 本文の元21子を比較集合として固定する。後追い #1793 はこの21子の外で、親コメントに PR #1796 のマージ記録がある既充足の外部前提として資料に残る。#1777 は #1792 とともにその成果を利用する。実際の再計画時は最新の外部依存も再確認する。着手済みの子は自動集約しない規則を維持し、本比較をそのまま起動指示として使用しない。
+
+## 元issueと計算結果の対応
+
+### #1701: 元3子 → 2子
+
+| 元子 | 対応PR／状態 | 入力項目 → 所属 | 元の依存 |
+|---|---|---|---|
+| [#1649](https://github.com/oratta/claude-harness/issues/1649) | #1704 | 1649-pr1704-01 → G002<br>1649-pr1704-02 → G001 | なし |
+| [#1471](https://github.com/oratta/claude-harness/issues/1471) | #1706 | 1471-pr1706-01 → G001<br>1471-pr1706-02 → G001<br>1471-pr1706-03 → G001 | なし |
+| [#1608](https://github.com/oratta/claude-harness/issues/1608) | #1710 | 1608-pr1710-01 → G001<br>1608-pr1710-02 → G001<br>1608-pr1710-03 → G001 | #1649 |
+
+| 子 | 元子 | 依存 | T | E | S | C | 文脈余裕 | 累計余裕 |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| G001 | #1471, #1608, #1649 | G002 | 11,762,867 | 16,890,900 | 27,025,440 | 87,332 | 32,668 | 20,974,560 |
+| G002 | #1649 | なし | 10,396,456 | 8,423,800 | 13,478,080 | 59,949 | 60,051 | 34,521,920 |
+
+全8項目を一度ずつ配置、unplaced=0。全子が C≤120,000、S≤48,000,000。最小文脈余裕32,668、最小累計余裕20,974,560。G002（1649-pr1704-01、edit が SACRED に当たる）が聖域、G001 は G002 に依存する（#1608 が #1649 に依存する辺。1649-pr1704-02 は G001、1649-pr1704-01 は G002）。
+
+### #1732: 元21子 → 23子
+
+| 元子 | 対応PR／状態 | 入力項目 → 所属 | 元の依存 |
+|---|---|---|---|
+| [#1728](https://github.com/oratta/claude-harness/issues/1728) | #1749 | 1728-pr1749-01 → G007<br>1728-pr1749-02 → G007<br>1728-pr1749-03 → G008 | なし |
+| [#1670](https://github.com/oratta/claude-harness/issues/1670) | #1751 | 1670-pr1751-01 → G004<br>1670-pr1751-02 → G005<br>1670-pr1751-03 → G004<br>1670-pr1751-04 → G004<br>1670-pr1751-05 → G006 | なし |
+| [#1729](https://github.com/oratta/claude-harness/issues/1729) | 調査結論、PRなし | 1729-decision → G009 | なし |
+| [#1388](https://github.com/oratta/claude-harness/issues/1388) | #1746 | 1388-pr1746-01 → G002<br>1388-pr1746-02 → G002<br>1388-pr1746-03 → G002 | なし |
+| [#1744](https://github.com/oratta/claude-harness/issues/1744) | #1769 | 1744-pr1769-01 → G012<br>1744-pr1769-02 → G013<br>1744-pr1769-03 → G014<br>1744-pr1769-04 → G013<br>1744-pr1769-05 → G015 | #1670, #1775 |
+| [#1745](https://github.com/oratta/claude-harness/issues/1745) | #1788 | 1745-pr1788-01 → G003<br>1745-pr1788-02 → G012<br>1745-pr1788-03 → G012 | #1744 |
+| [#1545](https://github.com/oratta/claude-harness/issues/1545) | #1790 | 1545-pr1790-01 → G003<br>1545-pr1790-02 → G003<br>1545-pr1790-03 → G003 | #1728, #1670, #1744, #1745 |
+| [#1264](https://github.com/oratta/claude-harness/issues/1264) | 不要判定・実機確認待ち、PRなし | 1264-decision → G001 | #1388 |
+| [#1742](https://github.com/oratta/claude-harness/issues/1742) | #1768 | 1742-pr1768-01 → G010<br>1742-pr1768-02 → G006<br>1742-pr1768-03 → G006 | #1670 |
+| [#1743](https://github.com/oratta/claude-harness/issues/1743) | #1770 | 1743-pr1770-01 → G011<br>1743-pr1770-02 → G006 | #1670 |
+| [#1752](https://github.com/oratta/claude-harness/issues/1752) | #1778 | 1752-pr1778-01 → G016<br>1752-pr1778-02 → G008<br>1752-pr1778-03 → G008 | #1728 |
+| [#1754](https://github.com/oratta/claude-harness/issues/1754) | #1762 | 1754-pr1762-01 → G011<br>1754-pr1762-02 → G017<br>1754-pr1762-03 → G011 | #1670 |
+| [#1755](https://github.com/oratta/claude-harness/issues/1755) | #1763 | 1755-pr1763-01 → G006<br>1755-pr1763-02 → G006 | #1670 |
+| [#1756](https://github.com/oratta/claude-harness/issues/1756) | #1766 | 1756-pr1766-01 → G009<br>1756-pr1766-02 → G017<br>1756-pr1766-03 → G018 | #1670 |
+| [#1784](https://github.com/oratta/claude-harness/issues/1784) | #1786 | 1784-pr1786-01 → G009 | #1756 |
+| [#1761](https://github.com/oratta/claude-harness/issues/1761) | #1764 | 1761-pr1764-01 → G002<br>1761-pr1764-02 → G002<br>1761-pr1764-03 → G002 | なし |
+| [#1777](https://github.com/oratta/claude-harness/issues/1777) | #1801（未マージ） | 1777-pr1801-01 → G020<br>1777-pr1801-02 → G021<br>1777-pr1801-03 → G022<br>1777-pr1801-04 → G023 | #1743, #1744, #1545, #1752, #1792 |
+| [#1792](https://github.com/oratta/claude-harness/issues/1792) | #1794 | 1792-pr1794-01 → G008<br>1792-pr1794-02 → G004<br>1792-pr1794-03 → G008 | なし |
+| [#1760](https://github.com/oratta/claude-harness/issues/1760) | #1787 | 1760-pr1787-01 → G019<br>1760-pr1787-02 → G012 | #1744 |
+| [#1773](https://github.com/oratta/claude-harness/issues/1773) | #1795 | 1773-pr1795-01 → G010<br>1773-pr1795-02 → G010 | #1742 |
+| [#1775](https://github.com/oratta/claude-harness/issues/1775) | #1780 | 1775-pr1780-01 → G013<br>1775-pr1780-02 → G017<br>1775-pr1780-03 → G011 | #1670 |
+
+| 子 | 元子 | 依存 | T | E | S | C | 文脈余裕 | 累計余裕 |
+|---|---|---|---:|---:|---:|---:|---:|---:|
+| G001 | #1264 | G002 | 10,173,852 | 8,200,000 | 13,120,000 | 55,488 | 64,512 | 34,880,000 |
+| G002 | #1388, #1761 | なし | 11,919,404 | 25,451,250 | 40,722,000 | 90,469 | 29,531 | 7,278,000 |
+| G003 | #1545, #1745 | G004, G005, G006, G007, G008, G012, G013, G014, G015 | 13,363,909 | 15,268,350 | 24,429,360 | 119,417 | 583 | 23,570,640 |
+| G004 | #1670, #1792 | なし | 11,475,693 | 14,093,400 | 22,549,440 | 81,577 | 38,423 | 25,450,560 |
+| G005 | #1670 | G004 | 12,768,801 | 21,516,100 | 34,425,760 | 107,491 | 12,509 | 13,574,240 |
+| G006 | #1670, #1742, #1743, #1755 | G004, G005 | 12,426,986 | 23,474,350 | 37,558,960 | 100,641 | 19,359 | 10,441,040 |
+| G007 | #1728 | なし | 12,472,844 | 17,338,500 | 27,741,600 | 101,560 | 18,440 | 20,258,400 |
+| G008 | #1728, #1752, #1792 | G004, G007 | 13,264,757 | 29,050,700 | 46,481,120 | 117,430 | 2,570 | 1,518,880 |
+| G009 | #1729, #1756, #1784 | G004, G005, G006, G017, G018 | 11,985,571 | 15,417,550 | 24,668,080 | 91,795 | 28,205 | 23,331,920 |
+| G010 | #1742, #1773 | G004, G005, G006 | 13,210,317 | 14,671,550 | 23,474,480 | 116,339 | 3,661 | 24,525,520 |
+| G011 | #1743, #1754, #1775 | G004, G005, G006, G017 | 12,959,968 | 28,994,750 | 46,391,600 | 111,322 | 8,678 | 1,608,400 |
+| G012 | #1744, #1745, #1760 | G004, G005, G006, G011, G013, G014, G015, G017 | 12,894,699 | 21,124,450 | 33,799,120 | 110,014 | 9,986 | 14,200,880 |
+| G013 | #1744, #1775 | G004, G005, G006, G011, G017 | 13,154,928 | 25,283,400 | 40,453,440 | 115,229 | 4,771 | 7,546,560 |
+| G014 | #1744 | G004, G005, G006, G011, G013, G017 | 12,997,543 | 14,037,450 | 22,459,920 | 112,075 | 7,925 | 25,540,080 |
+| G015 | #1744 | G004, G005, G006, G011, G013, G017 | 12,856,925 | 22,933,500 | 36,693,600 | 109,257 | 10,743 | 11,306,400 |
+| G016 | #1752 | G007, G008 | 11,894,703 | 15,193,750 | 24,310,000 | 89,974 | 30,026 | 23,690,000 |
+| G017 | #1754, #1756, #1775 | G004, G005, G006 | 10,862,272 | 10,493,950 | 16,790,320 | 69,284 | 50,716 | 31,209,680 |
+| G018 | #1756 | G004, G005, G006, G017 | 11,905,731 | 14,951,300 | 23,922,080 | 90,195 | 29,805 | 24,077,920 |
+| G019 | #1760 | G012, G013, G014, G015 | 12,074,243 | 10,848,300 | 17,357,280 | 93,572 | 26,428 | 30,642,720 |
+| G020 | #1777 | G003, G004, G006, G008, G011, G012, G013, G014, G015, G016, G022 | 12,878,382 | 23,008,100 | 36,812,960 | 109,687 | 10,313 | 11,187,040 |
+| G021 | #1777 | G003, G004, G006, G008, G011, G012, G013, G014, G015, G016, G022 | 12,040,461 | 11,930,000 | 19,088,000 | 92,895 | 27,105 | 28,912,000 |
+| G022 | #1777 | G003, G004, G006, G008, G011, G012, G013, G014, G015, G016 | 11,012,671 | 12,097,850 | 19,356,560 | 72,298 | 47,702 | 28,643,440 |
+| G023 | #1777 | G003, G004, G006, G008, G011, G012, G013, G014, G015, G016, G022 | 11,566,511 | 19,893,550 | 31,829,680 | 83,397 | 36,603 | 16,170,320 |
+
+全58項目を一度ずつ配置、unplaced=0。全子が C≤120,000、S≤48,000,000。最小文脈余裕583、最小累計余裕1,518,880。
+
+#1701 は全478変更行を、聖域の項目1つを分けた2子にまとめられる。#1732 は元子の全作業を保持し、聖域・承認待ちの分離と大きいPRの実装／テスト／文書の担当分割を反映したため23子となる。減少自体は完了条件ではない。貪欲法・担当範囲の仮定による結果で、最適解や実時間の短縮を実証しない。特に最小文脈余裕583は小さく、追加読取が判明したら再計算が必要である。TとE/Sは異なる計測対象で、#1799 の係数・1.6・政策値0.8だけを使い、外挿の0.9〜4.2倍という不確かさを維持する。
+
+## 受け入れ条件と証拠
+
+| #1802条件 | 証拠 |
+|---|---|
+| 1 入力形式 | reference例、validate、欠落／矛盾／入力順テスト |
+| 2 関係優先の計算 | Planner.merge、直接依存優先／循環防止テスト |
+| 3 文脈と累計 | F/T/E/S/C、境界ちょうど／1超過／巨大全文の部分読取／必要出力超過テスト |
+| 4 三境界 | unittest の repo/sanctuary/approval、履歴全子の境界検査 |
+| 5 W枠 | slotsの0/1/2、依存・共有edit・同値テスト |
+| 6 手順更新 | epic-granularity-workflow、spec-decision-and-review、tripwire-hook、予算Bats |
+| 7 既存issue集約 | referenceの代表子、A/B→CとA→C/Dの手順fixture |
+| 8 過去2件 | 本対応表、固定入力／期待JSON／出力資料、履歴再現テスト |
+
+## 再実行記録
+
+2026-11-24、ネットワーク不要。次の各コマンドは exit 0。履歴一致・全項目保存・依存辺保存・DAG・境界・両余裕・固定文字数とBash換算・PR別追加削除総数をunittestで検査する。
+
+```sh
+python3 -B -m unittest discover -s plugins/dev-workflow/tests -p test_epic_granularity.py -v
+python3 -B plugins/dev-workflow/scripts/epic-granularity.py --input plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1701.json
+python3 -B plugins/dev-workflow/scripts/epic-granularity.py --input plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1732.json
+```
+
+聖域区分の照合（2026-11-24、1回だけ実行。常設のテストにはしない。`SACRED` が広がると無関係な PR で落ちるため）。`.github/workflows/auto-merge.yml` の `SACRED='...'` の正規表現で、両 fixture の `items[].files[]` のうち access=edit の path を検索し、「edit が当たるか」と `sanctuary` の値が食い違う項目を JSON で出し、あれば exit 1 にする `python3 -I` のスクリプトを使った。直す前は7件（#1701 の 1649-pr1704-01、#1732 の 1670-pr1751-04・1754-pr1762-02・1756-pr1766-02・1777-pr1801-03・1792-pr1794-02・1775-pr1780-02。いずれも edit が当たるのに sanctuary=false）で exit 1、直した後は `[]` で exit 0。逆向き（true なのに聖域を edit しない）は 0 件。両 expected は直した fixture から CLI の標準出力で作り直した（両方 exit 0）。
+
+その他の統合検査の結果は実装＋verifyのreturnに記載する。全体 `scripts/test.sh` は CI の `bats shard N/4` / `bats suites` に任せ、ローカルで全体成功とは宣言しない。
+
+## 関連Batsの検索
+
+ブランチ全体の変更ファイル（`git diff --name-only origin/main...HEAD`）について、パスと basename の和集合で検索した。CIの発見規則に合わせ、除外ディレクトリ（`_long*s/`）を除く。最終変更一覧で再検索して追加スイートがないことも確認した。
+
+```sh
+git grep -l -F -e openspec/changes/epic-granularity-planner/.openspec.yaml -e .openspec.yaml -e openspec/changes/epic-granularity-planner/design.md -e design.md -e openspec/changes/epic-granularity-planner/proposal.md -e proposal.md -e openspec/changes/epic-granularity-planner/specs/dev-workflow-develop/spec.md -e spec.md -e openspec/changes/epic-granularity-planner/specs/dev-workflow-escalation-tripwires/spec.md -e spec.md -e openspec/changes/epic-granularity-planner/specs/epic-granularity/spec.md -e spec.md -e openspec/changes/epic-granularity-planner/tasks.md -e tasks.md -e plugins/dev-workflow/changes/1802.md -e 1802.md -e plugins/dev-workflow/docs/epic-granularity-validation.md -e epic-granularity-validation.md -e plugins/dev-workflow/references/epic-granularity-coefficients.json -e epic-granularity-coefficients.json -e plugins/dev-workflow/scripts/epic-granularity.py -e epic-granularity.py -e plugins/dev-workflow/skills/develop/references/epic-granularity.md -e epic-granularity.md -e plugins/dev-workflow/skills/develop/references/epic-loop.md -e epic-loop.md -e plugins/dev-workflow/skills/develop/references/epic.md -e epic.md -e plugins/dev-workflow/skills/develop/references/roles/worker/common.md -e common.md -e plugins/dev-workflow/skills/develop/references/roles/worker/spec.md -e spec.md -e plugins/dev-workflow/skills/develop/references/spec-decision.md -e spec-decision.md -e plugins/dev-workflow/templates/escalation-tripwires.md -e escalation-tripwires.md -e plugins/dev-workflow/tests/develop-skill.bats -e develop-skill.bats -e plugins/dev-workflow/tests/epic-granularity-workflow.bats -e epic-granularity-workflow.bats -e plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1701.expected.json -e epic-1701.expected.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1701.json -e epic-1701.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1732.expected.json -e epic-1732.expected.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1732.json -e epic-1732.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/outputs.json -e outputs.json -e plugins/dev-workflow/tests/fixtures/epic-granularity/sources.json -e sources.json -e plugins/dev-workflow/tests/test_epic_granularity.py -e test_epic_granularity.py -- '*.bats' ':(exclude)_long*s/'
+```
+
+検索結果52ファイルを引数にした実行コマンド:
+
+```sh
+bats \
+  plugins/casting/tests/casting-check.bats \
+  plugins/casting/tests/casting-consultation.bats \
+  plugins/casting/tests/casting-delegation.bats \
+  plugins/casting/tests/casting-init.bats \
+  plugins/casting/tests/casting-injection.bats \
+  plugins/casting/tests/casting-resolve.bats \
+  plugins/casting/tests/casting-set.bats \
+  plugins/casting/tests/casting-structure.bats \
+  plugins/dev-workflow/tests/context-tripwire.bats \
+  plugins/dev-workflow/tests/develop-adapter-review-routing.bats \
+  plugins/dev-workflow/tests/develop-channel-mode.bats \
+  plugins/dev-workflow/tests/develop-idle-compaction.bats \
+  plugins/dev-workflow/tests/develop-roles.bats \
+  plugins/dev-workflow/tests/develop-skill.bats \
+  plugins/dev-workflow/tests/develop-trivial-light-path.bats \
+  plugins/dev-workflow/tests/develop-worker-stages.bats \
+  plugins/dev-workflow/tests/epic-dispatch.bats \
+  plugins/dev-workflow/tests/epic-granularity-workflow.bats \
+  plugins/dev-workflow/tests/forbidden-words-check.bats \
+  plugins/dev-workflow/tests/git-destructive-guard.bats \
+  plugins/dev-workflow/tests/handoff-declaration.bats \
+  plugins/dev-workflow/tests/model-escalation-policy.bats \
+  plugins/dev-workflow/tests/model-switch-recache-notice.bats \
+  plugins/dev-workflow/tests/owner-escalation-narrowing.bats \
+  plugins/dev-workflow/tests/owner-message-number-check.bats \
+  plugins/dev-workflow/tests/parent-merge.bats \
+  plugins/dev-workflow/tests/pr-review-gate-long-comment.bats \
+  plugins/dev-workflow/tests/pr-review-gate-skill.bats \
+  plugins/dev-workflow/tests/pr-state.bats \
+  plugins/dev-workflow/tests/prompt-tripwires-refresh.bats \
+  plugins/dev-workflow/tests/risk-carryover-check.bats \
+  plugins/dev-workflow/tests/role-agent-types.bats \
+  plugins/dev-workflow/tests/shared-references.bats \
+  plugins/dev-workflow/tests/spec-decision-and-review.bats \
+  plugins/dev-workflow/tests/spec-touch-check.bats \
+  plugins/dev-workflow/tests/spec-wording-sync-light-path.bats \
+  plugins/dev-workflow/tests/subagent-start-context.bats \
+  plugins/dev-workflow/tests/subagent-waiting.bats \
+  plugins/dev-workflow/tests/tripwire-hook.bats \
+  plugins/dev-workflow/tests/unclear-reply-rephrase.bats \
+  plugins/infra/tests/infra-fixes.bats \
+  plugins/statusline/tests/statusline-copy-update.bats \
+  tests/agents-md-sync.bats \
+  tests/bats-assertion-guard.bats \
+  tests/ci-bats-shards.bats \
+  tests/develop-epic-scene-budget.bats \
+  tests/develop-worker-question-proxy.bats \
+  tests/develop-worker-stage-budget.bats \
+  tests/hook-python-isolation.bats \
+  tests/openspec-specs-format.bats \
+  tests/owner-question-style.bats \
+  tests/public-private-split.bats
+```
+
+## 統合検査結果
+
+2026-11-24 の実装＋verify。検査の対象ロジック・fixtureは commit `541090be`、その後は本記録とtasksのチェック更新だけ。
+
+| コマンド | exit | 結果 |
+|---|---:|---|
+| `python3 -B -m unittest discover -s plugins/dev-workflow/tests -p test_epic_granularity.py -v` | 0 | 17件。exit 1/2、履歴期待JSON一致、出力量と追加削除行数の再検算を含む |
+| `python3 -B plugins/dev-workflow/scripts/epic-granularity.py --input plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1701.json` | 0 | 2子、期待JSON一致 |
+| 同CLI `--input plugins/dev-workflow/tests/fixtures/epic-granularity/epic-1732.json` | 0 | 23子、期待JSON一致 |
+| `bats plugins/dev-workflow/tests/epic-granularity-workflow.bats` | 0 | 7件 |
+| `bats tests/injection-budget.bats tests/develop-epic-scene-budget.bats tests/develop-worker-stage-budget.bats` | 0 | 109件、予算変更なし |
+| 上記workflowと3予算ファイルを一括指定したBats | 0 | 116件 |
+| `scripts/lint.sh` | 0 | CIの静的検査。shellcheckとplugin validationを含む |
+| `scripts/test-auto-merge-workflow.sh` | 0 | 145件 |
+| `OPENSPEC_TELEMETRY=0 openspec validate epic-granularity-planner --type change --strict` | 0 | changeのstrict検証 |
+| `git diff --check` | 0 | 空白検査 |
+| 前節の関連52ファイルへの `bats` | 1 | 2603件中、旧条件・旧文言アサーション3件だけ失敗。他2600件成功 |
+| `bats plugins/dev-workflow/tests/develop-skill.bats`（3件修正後） | 0 | 178件すべて成功。未解消の失敗0件 |
+
+旧アサーションは「2本以上を条件にする」「証拠の送り先をエピックという語で検査する」「wire 1 がエピック化／Workflow実行へ進む」だった。承認済み仕様に対応し、複数group・親への証拠・量の再計算へ揃えた。動作範囲を追加する修正ではない。
+
+TDDの最初の `-k read_contract` は exit 1（未実装の欠落／矛盾拒否）、実装後は exit 0。固定diff本文の再検算を追加した際にテスト補助変数の衝突で一度exit 1になり、修正後の17件はexit 0。同じテストの2回連続失敗はない。
+
+CIの `shellcheck` ジョブから静的検査2コマンドを収集してローカル実行した。`bats shard N/4` の `scripts/test.sh` 全体と結果集約 `bats suites` はCIに任せる（この工程ではPR未作成、CIの成功は未確認）。依存インストール・結果集約だけのrunはローカル検査に数えない。未導入の検査なし。
+
+画面確認: 不要

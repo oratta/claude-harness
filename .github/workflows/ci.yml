@@ -25,8 +25,10 @@
 #   ジョブを足すときは、必須チェックに入れるか、必須チェックのジョブの needs: に直接入れる
 #   （scripts/test-auto-merge-workflow.sh が確かめる。docs/auto-merge.md 参照）。
 #
-# 前提パッケージ:
-#   shellcheck / jq / node / python3 は ubuntu-latest にプリインストール済み。
+# ランナーと前提パッケージ:
+#   lint（shellcheck）と bats suites のジョブは ubuntu-latest、bats を回す test ジョブは
+#   ubuntu-24.04 に固定する（bats の版の固定を保つため。理由は test ジョブのコメント）。
+#   shellcheck / jq / node / python3 はどちらのイメージにもプリインストール済み。
 #   bats のみ apt で導入する。
 #
 # version の不在の検査（S130・S131）について:
@@ -87,7 +89,9 @@ jobs:
   test:
     # bats suites とは別の名前にする（bats suites は下の test-result ジョブが名乗る必須チェック名）
     name: bats shard ${{ matrix.shard }}/4
-    runs-on: ubuntu-latest
+    # ubuntu-latest にしない。下の bats=<版> はこのランナーの apt にある版で、ランナーの版と
+    # bats の版は組で固定する（理由は install bats の手順のコメント。issue #1659）
+    runs-on: ubuntu-24.04
     strategy:
       # 1 つの組が落ちても残りの組を最後まで走らせる（1 回の CI で落ちるテストを全部見る）
       fail-fast: false
@@ -104,11 +108,15 @@ jobs:
     steps:
       # actions/checkout は GitHub 公式 action なので SHA 固定の対象外（方針は上記コメント参照）
       - uses: actions/checkout@v4
-      # バージョンを固定する。無指定だと ubuntu-latest のイメージ更新で bats が
+      # バージョンを固定する。無指定だとランナーのイメージ更新で bats が
       # 黙って上がり、テストの落ち方が変わったときに「自分の変更か bats か」を
-      # 切り分けられなくなる。ubuntu-24.04 の universe が提供する版に固定。
-      # 上げるときはこのピンを明示的に書き換える（ランナーの ubuntu が上がって
-      # この版が消えた場合は install が非0で落ちるので、無言の追随は起きない）。
+      # 切り分けられなくなる。1.10.0-1 は ubuntu-24.04 の universe が提供する版。
+      # 2026-11-17 に ubuntu-latest が ubuntu-26.04（bats は 1.13.0-1）に上がって
+      # この版が apt から消え、全ブランチでこの手順が落ちた（issue #1659）。それ以降、
+      # ジョブの runs-on も ubuntu-24.04 に固定し、ランナーと bats の版を組で固定している。
+      # 上げるときは runs-on・bats=・このステップ名の 3 か所を一緒に書き換える
+      # （そろっていることは tests/ci-bats-shards.bats が確かめる）。GitHub が
+      # ubuntu-24.04 のランナーを外したらこのジョブは走らずに落ちるので、そのときに選び直す。
       - name: install bats (1.10.0-1)
         run: |
           sudo apt-get update -qq

@@ -75,6 +75,66 @@ render() { printf '%s' "$1" | bash "$SL"; }
   grep -q Opus "$WORK/output"
 }
 
+# --- 5 時間枠が返らない入力（#1547）---
+# 週次だけの観測も書く。5h は null で、0 にしない。
+
+seven_only() { payload 0 "$1" | jq -c 'del(.rate_limits.five_hour)'; }
+
+@test "seven-only: five_hour fields are null, seven_day matches, the keys stay" {
+  render "$(seven_only 11)" > /dev/null
+  [ -f "$SNAP" ]
+  run jq -e --argjson r "$((NOW + 302400))" \
+    'has("five_hour_pct") and has("five_hour_resets_at") and .five_hour_pct == null and .five_hour_resets_at == null
+     and .seven_day_pct == 11 and .seven_day_resets_at == $r' "$SNAP"
+  [ "$status" -eq 0 ]
+}
+
+@test "seven-only: the shared file has the same body as the local one" {
+  export FLATMATE_RATE_SHARE_DIR="$WORK/share"
+  render "$(seven_only 11)" > /dev/null
+  cmp "$SNAP" "$(shared_file "$WORK/share")"
+  [ "$(jq -r .five_hour_pct "$(shared_file "$WORK/share")")" = null ]
+}
+
+@test "seven-only: neither window leaves the snapshot unchanged" {
+  render "$(seven_only 11)" > /dev/null
+  cp "$SNAP" "$WORK/before"
+  render "$(seven_only 11 | jq -c 'del(.rate_limits.seven_day)')" > /dev/null
+  cmp "$SNAP" "$WORK/before"
+  rm -f "$SNAP"
+  render "$(seven_only 11 | jq -c '.rate_limits = {}')" > /dev/null
+  [ ! -e "$SNAP" ]
+}
+
+@test "seven-only: a seven-day value without a session_id writes nothing" {
+  render "$(seven_only 11 | jq -c 'del(.session_id)')" > /dev/null
+  [ ! -e "$SNAP" ]
+}
+
+@test "seven-only: a redraw of the same value keeps observed_at and advances written_at" {
+  render "$(seven_only 11)" > /dev/null
+  [ "$(jq -r .obs_sig "$SNAP")" = "null|null|11|$((NOW + 302400))" ]
+  jq '.observed_at=1 | .ts=1 | .written_at=1' "$SNAP" > "$WORK/old"
+  mv "$WORK/old" "$SNAP"
+  render "$(seven_only 11)" > /dev/null
+  run jq -e '.observed_at == 1 and .ts == 1 and .written_at > 1' "$SNAP"
+  [ "$status" -eq 0 ]
+}
+
+@test "seven-only: five_hour coming back is a new observation" {
+  render "$(seven_only 11)" > /dev/null
+  jq '.observed_at=1 | .ts=1 | .written_at=1' "$SNAP" > "$WORK/old"
+  mv "$WORK/old" "$SNAP"
+  render "$(payload 12.5 11)" > /dev/null
+  run jq -e --argjson now "$NOW" '.observed_at == $now and .ts == $now and .five_hour_pct == 12.5' "$SNAP"
+  [ "$status" -eq 0 ]
+}
+
+@test "obs_sig: the string is unchanged when both windows are present" {
+  render "$(payload 12.5 34.5)" > /dev/null
+  [ "$(jq -r .obs_sig "$SNAP")" = "12.5|$((NOW + 9000))|34.5|$((NOW + 302400))" ]
+}
+
 @test "writer I: config file resolves share; empty override disables it" {
   printf '# comment\n\n  ~/shared  \n' > "$FLATMATE_RATE_SHARE_CONF"
   render "$(payload 24 38)" > /dev/null

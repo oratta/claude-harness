@@ -28,6 +28,10 @@ EOF
 
 issue が記録先のときはこの節は不要（PR は (3) で作る）。
 
+## CI fix から起きた場合の先行確認
+
+軽い通し方の `ci-fail` による fix から起きた新しい W は、次節へ入る前に `skills/develop/references/light-path.md`「CI 見張りの fix からの戻し方」に従い、仕様化判断の再投稿より先に共有手順の関係確認を行う。無関係なら次節の判断記録の一般手順へ進まず、チェック名と根拠を本体へ返す。関係がある／無関係と判断できない場合や `conflict` は、正本どおり次節から通常復帰する。
+
 ## 仕様化判断（opsx / openspec の要否）と記録
 
 まず `openspec --version` で CLI の有無を確認する。opsx コマンドがあっても openspec CLI が無ければ仕様化経路は発生せず、理由に「openspec 不在」と書いてコード直行する。
@@ -35,14 +39,9 @@ issue が記録先のときはこの節は不要（PR は (3) で作る）。
 ```bash
 openspec --version
 ```
-次に、この依頼を**仕様として残すべきか**を判定する（詳細は `skills/develop/references/decision-criteria.md` Step B）:
+次に、この依頼を**仕様として残すべきか**を判定する。判定の基準（仕様化する・しない・迷ったときの倒し方・どの判定でもテスト作成は必須）は `skills/develop/references/spec-decision.md` Step B。
 
-- **仕様化する**（一次基準: 設計判断・トレードオフを含むか）: 複数案からの選択・採用理由など「なぜこう作ったか」を決定履歴に残す価値のある設計判断を含む／外部から観測可能な振る舞いの変更のうち実装方針に選択肢が残るもの／既存 capability の要件や docs に触れる
-- **仕様化しない（コード直行）**: typo・lint・コメント・フォーマットのみ／振る舞い不変の内部リファクタ・ワンライナー fix・依存バージョン上げのみ／**受け入れ条件が記録先に明記された機械的な振る舞い変更**（設計判断なし。記録先とテストが記録として十分）
-- どの判定でも**テスト作成は必須**（テストはドキュメントであると同時に、昇格トリップワイヤーの信号源）
-- 判定に迷ったら: interactive は return で本体に聞いてもらう（本体が AskUserQuestion）。unmanned は**仕様化する側に倒す**
-
-**判定したら、先に進む前に記録先へ記録する**（interactive / unmanned 共通）。後から「不要と判断した」のか「飛ばした」のかを区別し、pr-review-gate が出口で機械照合できるようにするため。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致させる（太字・全角コロン・末尾句点を付けない）。2 行目以降に理由（`skills/develop/references/decision-criteria.md` のどの条件に当たったか）を書く:
+**判定したら、先に進む前に記録先へ記録する**（interactive / unmanned 共通）。後から「不要と判断した」のか「飛ばした」のかを区別し、pr-review-gate が出口で機械照合できるようにするため。コメントの 1 行目は正規表現 `^仕様化判断: (する|しない)$` に完全一致させる（太字・全角コロン・末尾句点を付けない）。2 行目以降に理由（`skills/develop/references/spec-decision.md` のどの条件に当たったか）を書く:
 
 ```bash
 # issue が記録先
@@ -51,7 +50,7 @@ gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由
 gh pr comment <PR番号> --body "$(printf '仕様化判断: しない\n理由: 受け入れ条件が PR 本文に明記された機械的な振る舞い変更（設計判断なし）')"
 ```
 
-**仕様化すると判定したら、続けて文言合わせの通し方を当てるかを判定する**（対象・当てる条件・省くものの正本は `skills/develop/references/decision-criteria.md` Step B「仕様化するが軽く通す（仕様の文言合わせ）」。ここは要約）。対象は、既存の要件の文を実装に合わせて直すだけで、差分が `## MODIFIED Requirements` だけで書け、設計の選択が無く、1 つの capability の spec に収まる変更。当てる条件は、記録先の受け入れ条件に「どの仕様のどの文をどう直すか」（直す要件ごとに spec のパスか capability 名・要件名・直し方）が書けていること。迷ったら当てない（interactive でも主に聞かず、通常の「する」として進める。unmanned も同じ）。当てるときは、同じコメントの 2 行目以降に `通し方: 文言合わせ` の行（この文字列ちょうどの 1 行）と、直す要件ごとの `直す文:` の行を書く（1 行目は変えない。行の書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）:
+**仕様化すると判定したら、続けて文言合わせの通し方を当てるかを判定する**（対象・当てる条件・迷ったときの扱い・省くものは `skills/develop/references/spec-decision.md` Step B「仕様化するが軽く通す（仕様の文言合わせ）」）。当てるときは、同じコメントの 2 行目以降に `通し方: 文言合わせ` の行（この文字列ちょうどの 1 行）と、直す要件ごとの `直す文:` の行を書く（1 行目は変えない。行の書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）:
 
 ```bash
 # 文言合わせの通し方を当てる（issue が記録先）
@@ -64,12 +63,7 @@ gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由
 
 ## 分割判定（単一 change か複数 change か）
 
-仕様化すると判定した場合、規模を判定する（詳細は `skills/develop/references/decision-criteria.md` Step C）。根拠は**記録先の記述**（受け入れ条件・機能単位）だけで、機械的なシグナル（本文の長さやラベル）は使わない:
-
-- **単一 change で足りる**（すべて満たす）: 単一 capability に閉じる／受け入れ条件が概ね数個で 1 PR で完結／独立した設計判断が 1 つ以内
-- **複数 change に割れる**（いずれか成立）: 複数の独立 capability に跨る／受け入れ条件が多く順序依存のあるサブタスクに割れる／1 実装サイクルで完結しない規模
-
-境界の一言定義: **「opsx change が 2 つ以上必要になりそうなら複数 change」**。
+仕様化すると判定した場合、`skills/develop/references/spec-decision.md` Step C と `references/epic-granularity.md` に従い作業を粒度計算に通し、入力・出力を記録する。個数だけで分けず、計画の group と依存順を使う。
 
 複数 change に割れた場合の振る舞いはモードで分かれる:
 
@@ -79,7 +73,7 @@ gh issue comment <issue番号> --body "$(printf '仕様化判断: する\n理由
   gh api -X POST repos/<owner>/<repo>/issues/<後続>/dependencies/blocked_by -F issue_id=<前提の issue id>
   ```
   元 issue に「N 個の change に分割した（#a → #b → #c）」とコメントし、各子 issue に `agent-ready` を付け、「分割した」と return する（本体はこのサイクルを終える）
-- **割り方が判断できないほど曖昧**: interactive は return で本体に聞いてもらう。unmanned は Discord でユーザーに質問し、記録先に `needs-approval` を付けて経緯をコメントし、「needs-approval」と return する
+- **割り方が判断できないほど曖昧**: interactive は return で本体に聞いてもらう。unmanned は子 issue を作らず、質問文・理由と `needs-approval` を return に含め、記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return する。W は Discord（MCP・CLI とも）へ直接送信しない。本体の代理送信手順は SKILL.md「実行モード」を参照
 
 ## 仕様化する場合（(1) の終わり）
 

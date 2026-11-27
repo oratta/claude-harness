@@ -1,14 +1,14 @@
 #!/usr/bin/env bats
 # epic-dispatch.sh（エピックの子の経路判定・起動・待ち受け）の振る舞いを、
-# orca / gh / git / sleep を PATH 上のスタブにして確かめる。あわせて develop の SKILL.md
-# 「エピックの扱い」の回し方と「前提」表に、この経路の記述があることを確かめる。
+# orca / gh / git / sleep を PATH 上のスタブにして確かめる。あわせて develop の
+# references/epic-loop.md の通常進行と epic-subagent.md のサブエージェント方式に、この経路の記述があることを確かめる。
 #
 # スタブは自分の名前と引数（printf '%q'）を共通のログ（${STUB_LOG}）に 1 行ずつ追記する。
 # 返り値は $STUB_CFG の設定ファイルで切り替える:
 #   orca: current_exit / current_json / list_exit / list_json（list_json_<回数> があればその回だけ
 #         それを返す。回数は listcount）/ set_exit / set_comment_exit（--comment 付きの set だけの終了コード。既定は set_exit。
 #         --comment が成功したら current_json と list_json* の同じ path の comment をその値に書き換える）
-#         / close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
+#         / close_mkdir（terminal close が作るディレクトリのパス）/ close_exit / rm_exit / rm_err（rm の stderr）/ create_fail_<N>
 #         / tlist_exit / tlist_json_<N>（terminal list。<N> は --worktree の path の issue-<N>。既定は端末 0 個）
 #           / tlist_after_<N>（term-<N> に terminal send が届いたあとの terminal list。無ければ tlist_json_<N> のまま）
 #         / create_json_<N>（既定は result.worktree.path が /work/issue-<N> の JSON）
@@ -20,10 +20,10 @@
 #   git : toplevel（rev-parse --show-toplevel の出力）/ origin_url・origin_exit（remote get-url origin。
 #         既定は git@github.com:oratta/claude-harness.git・0）/ fetch_exit / status_exit / status_out
 #         （-C <パス> status --porcelain）/ head（-C <パス> rev-parse HEAD。既定 aaa111）/ branch_tip
-#         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（branch -D）
+#         （rev-parse --verify --quiet refs/heads/<b> の出力。無ければ exit 1）/ branchd_exit（update-ref -d）
 #         / wtlist_out・wtlist_out_<回数>・wtlist_exit（worktree list --porcelain。既定は空・0。回数は wtcount）
 #           wtlist_sleep（1 回の worktree list にかかる実時間の秒数）/ wttip_<回数>（その回の呼び出しで branch_tip をこの内容にする）
-#           branch -D が成功すると branch_tip を消す（ブランチが消えたことの表現）
+#           update-ref -d は期待 OID（第 4 引数）が branch_tip と違えば exit 1、同じで成功すると branch_tip を消す。updref_advance があれば比べる前に branch_tip をその内容にする（直前に別プロセスが ref を進めた表現）（ブランチが消えたことの表現）
 #   sysctl: -n hw.memsize は memsize の内容を出して sysctl_exit（既定 0）で終わる。memsize が無ければ exit 1
 #   gh  : issue comment <N> --body <本文> は本文を comment_<N> に追記し（1 件ごとに "---" の行で区切る）、
 #         comment_exit_<N>（無ければ comment_exit）で終わる（既定 0）。成功（exit 0）のときは実物の gh と同じに投稿先の URL を stdout に出す。pr list は pr_out を出して pr_exit で終わる（--search 付きは pr_search_out と pr_search_exit。既定は空・0）。それ以外は gh_<N> に 1 呼び出し 1 行の返り値（open / closed / FAIL / 空行）。最後の行を繰り返す。
@@ -38,11 +38,19 @@ setup() {
   SCRIPT="${PLUGIN_DIR}/scripts/epic-dispatch.sh"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   # エピックの 2 節は SKILL.md から references/ へ移した（#1219）
-  EPIC="${PLUGIN_DIR}/skills/develop/references/epic.md"
+  # Paragraph wording is checked across the epic references; reading boundaries have their own tests.
+  EPIC="$BATS_TEST_TMPDIR/epic-all.md"
+  cat "${PLUGIN_DIR}/skills/develop/references/epic.md" > "$EPIC"
+  for doc in loop stop delegation merge-wait multirepo subagent keepalive; do
+    if [ -f "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" ]; then cat "${PLUGIN_DIR}/skills/develop/references/epic-$doc.md" >> "$EPIC"; fi
+  done
   EPIC_CHILD_STOP="${PLUGIN_DIR}/skills/develop/references/epic-child-stop.md"
   STUB_BIN="${BATS_TEST_TMPDIR}/bin"
   export STUB_CFG="${BATS_TEST_TMPDIR}/cfg"
   export STUB_LOG="${BATS_TEST_TMPDIR}/calls.log"
+  # put_turn の recorded_at は古い固定値なので、owner-away（#1745）に当たらないよう既定の時間を十分長くする。
+  # owner-away を確かめるテストだけが EPIC_DISPATCH_OWNER_AWAY_SEC を上書きする
+  export EPIC_DISPATCH_OWNER_AWAY_SEC=999999999
   mkdir -p "$STUB_BIN" "$STUB_CFG"
   : > "$STUB_LOG"
   printf '%s\n' '{"result":{"worktree":{"repoId":"repo-a","path":"/work/parent"}}}' > "$STUB_CFG/current_json"
@@ -52,8 +60,20 @@ setup() {
   make_stub git
   make_stub sleep
   make_stub sysctl
+  # dispatch を通さずにスクリプトを直接呼んでも、本物の orca のワークツリーや tmux のセッションに届かないよう、
+  # テスト自身の PATH の先頭に「必ず失敗して呼び出しを残す」orca と tmux を置く（#1508）。
+  # dispatch は PATH を "$STUB_BIN:/usr/bin:/bin" に作り直すので、ここの守りは見えず、
+  # 「PATH に orca が無い」テストも今までどおり。orca / tmux が要るテストは make_stub で STUB_BIN に置く
+  GUARD_BIN="${BATS_TEST_TMPDIR}/guard-bin"
+  mkdir -p "$GUARD_BIN"
+  guard_stub orca
+  guard_stub tmux
+  export PATH="$GUARD_BIN:$PATH"
   # 外の環境（並列起動された子のセッション）の値をテストに漏らさない
   unset EPIC_DISPATCH_PARENT_EPIC EPIC_STATE_LOCK_TIMEOUT EPIC_DISPATCH_LAUNCHER TMUX EPIC_DISPATCH_TIMEOUT
+  unset CLD_DEFAULT_ARGS
+  # 起動コマンドの既定の語は bin/cld の絶対パス（単一引用符で包む）
+  CLD_Q="'${PLUGIN_DIR}/bin/cld'"
   # 既存の launch のテストが上限に当たらないよう大きくする（上限のテストだけで上書き・unset する）。
   # 物理メモリは sysctl のスタブ（memsize / sysctl_exit）だけから読ませ、実物の /proc/meminfo を読ませない
   export EPIC_DISPATCH_MAX_PARALLEL=99
@@ -79,7 +99,61 @@ put_record() {
   done
   f="$(rec_of "$(printf '%s' "$j" | jq -r .epic)" "$(printf '%s' "$j" | jq -r .child)")"
   mkdir -p "$(dirname "$f")"
+  # These legacy fixtures describe a stopped child; include its recorded turn explicitly.
+  case "$(printf '%s' "$j" | jq -r .stop)" in
+    stopped|stopped-seen)
+      j="$(printf '%s' "$j" | jq -c '.turn_input={generation:1,session_id:"s1",sender:"parent",
+        received_at:"2026-01-01T00:00:00Z",transcript_path:"/tmp/child.jsonl",transcript_offset:0}
+        | .turn_state={generation:1,session_id:"s1",value:"主の返事待ち",summary:"確認待ち",recorded_at:"2026-01-01T00:00:01Z"}
+        | if .stop == "stopped-seen" then .stop_turn={generation:1,session_id:"s1"} else . end')" ;;
+  esac
   printf '%s\n' "$j" > "$f"
+}
+
+# Explicit turn fixture: the hook's recorded input and terminal state, independent of logs/marks.
+put_turn() {
+  local f; f="$(rec_of 1122 "$1")"
+  jq -c --arg sender "${2:-parent}" --arg value "${3:-主の返事待ち}" --argjson gen "${4:-1}" '
+    .turn_input = {generation:$gen, session_id:"s1", sender:$sender,
+      received_at:"2026-01-01T00:00:00Z", transcript_path:"/tmp/child.jsonl", transcript_offset:0}
+    | .turn_state = {generation:$gen, session_id:"s1", value:$value, summary:"確認待ち",
+      recorded_at:"2026-01-01T00:00:01Z"}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+@test "wait recorded state: parent and startup waiting are detected without a log" {
+  make_stub orca
+  for sender in parent startup; do
+    put_record 11
+    put_turn 11 "$sender"
+    wait_stop
+    [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+  done
+}
+
+@test "wait recorded state: owner and nonwaiting states never become stops even with a mark and question" {
+  make_stub orca
+  for pair in 'owner 主の返事待ち' 'owner 作業報告' 'parent 作業報告' 'parent 完了' 'startup 完了'; do
+    put_record 11 stop=stopped
+    put_turn 11 $pair
+    put_chat 11 s1 "$(asked d1 "$(ago 300)")"
+    wait_stop
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  done
+}
+
+@test "wait recorded state: missing null malformed or mismatched extensions do not use marks or logs" {
+  make_stub orca
+  local mutation f
+  for mutation in 'del(.turn_input,.turn_state)' '.turn_state=null' '.turn_state=[]'     '.turn_input.generation=true' '.turn_state.generation=2' '.turn_state.session_id="other"'     '.turn_input.transcript_offset=-1' '.turn_input.transcript_path="relative"'     '.turn_state.summary=""' '.turn_state.summary="a\nb"' '.turn_state.recorded_at="2026-02-30T00:00:00Z"'; do
+    put_record 11 stop=stopped
+    put_turn 11
+    f="$(rec_of 1122 11)"
+    jq -c "$mutation" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    put_chat 11 s1 "$(asked d1 "$(ago 300)")"
+    wait_stop
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  done
 }
 
 # 記録のパス（<エピック o/r#E> <子 o/r#N>。既定はエピック oratta/claude-harness#1122 の子 <N> を番号だけで渡す形も可）
@@ -100,6 +174,18 @@ on_poll() {
   local f; f="$(rec_of 1122 "$1")"
   printf 'jq -c --arg v %q %q %q > %q.tmp && mv %q.tmp %q\n' "${3#*=}" ".${3%%=*} = \$v" "$f" "$f" "$f" "$f" \
     > "$STUB_CFG/hook_$1_$2"
+}
+
+# 呼ばれたら必ず失敗（exit 99）し、呼び出しを ${STUB_LOG} に残すスタブを $GUARD_BIN に置く
+guard_stub() {
+  local name="$1"
+  {
+    echo '#!/bin/bash'
+    echo "{ printf '%s' '$name'; printf ' %q' \"\$@\"; echo; } >> \"\$STUB_LOG\""
+    echo "echo \"$name: guard stub (unstubbed call)\" >&2"
+    echo 'exit 99'
+  } > "$GUARD_BIN/$name"
+  chmod +x "$GUARD_BIN/$name"
 }
 
 # 共通の前半（ログへの追記）と、名前ごとの返り値の処理を持つスタブを置く
@@ -133,6 +219,7 @@ case "$1 $2" in
   "terminal close")
     cc=$(( $(cat "$STUB_CFG/closecount" 2>/dev/null || echo 0) + 1 ))
     echo "$cc" > "$STUB_CFG/closecount"
+    if [ -e "$STUB_CFG/close_mkdir" ]; then mkdir -p "$(cat "$STUB_CFG/close_mkdir")"; fi
     if [ -e "$STUB_CFG/close_exit_$cc" ]; then exit "$(cat "$STUB_CFG/close_exit_$cc")"; fi
     exit "$(cat "$STUB_CFG/close_exit" 2>/dev/null || echo 0)" ;;
   "terminal list")
@@ -259,7 +346,7 @@ if [ "$1" = "-C" ]; then
       if [ -e "$STUB_CFG/commondir_out" ]; then cat "$STUB_CFG/commondir_out"; else echo /stub/common/.git; fi
       exit "$(cat "$STUB_CFG/commondir_exit" 2>/dev/null || echo 0)" ;;
     "show-ref --verify") exit "$(cat "$STUB_CFG/show_ref_exit" 2>/dev/null || echo 1)" ;;
-    "ls-remote origin"|"cat-file -e"|"worktree list"|"rev-parse --verify"|"branch -D") ;;
+    "ls-remote origin"|"cat-file -e"|"worktree list"|"rev-parse --verify"|"update-ref -d") ;;
     *) exit 0 ;;
   esac
 fi
@@ -284,7 +371,9 @@ case "$1 ${2-}" in
     cc=$(( $(cat "$STUB_CFG/catfile_count" 2>/dev/null || echo 0) + 1 ))
     echo "$cc" > "$STUB_CFG/catfile_count"
     exit "$(cat "$STUB_CFG/catfile_exit_$cc" 2>/dev/null || cat "$STUB_CFG/catfile_exit" 2>/dev/null || echo 0)" ;;
-  "branch -D")
+  "update-ref -d")
+    [ -e "$STUB_CFG/updref_advance" ] && cp "$STUB_CFG/updref_advance" "$STUB_CFG/branch_tip"
+    [ "$(cat "$STUB_CFG/branch_tip" 2>/dev/null)" = "${4-}" ] || exit 1
     rc="$(cat "$STUB_CFG/branchd_exit" 2>/dev/null || echo 0)"
     [ "$rc" -eq 0 ] && rm -f "$STUB_CFG/branch_tip"
     exit "$rc" ;;
@@ -301,6 +390,20 @@ esac
 exit 0' ;;
     gh) body='
 if [ "$1 $2" = "api user" ]; then echo "stub-user"; exit 0; fi
+# Dependency API fixture used by the child registration and parent re-read scenario.
+case "${2-}" in
+  */dependencies/blocked_by)
+    if [ "${3-}" = -X ] && [ "${4-}" = POST ]; then
+      [ "${6-}" = issue_id=22 ] || exit 1
+      cp "$STUB_CFG/dependency_22" "$STUB_CFG/registered_dependency"
+      cat "$STUB_CFG/registered_dependency"
+    else
+      if [ -e "$STUB_CFG/registered_dependency" ]; then
+        jq -s . "$STUB_CFG/registered_dependency"
+      else echo "[]"; fi
+    fi
+    exit 0 ;;
+esac
 case "$1 $2" in
   "api repos/"*/*)
     case "${2#repos/}" in
@@ -336,6 +439,12 @@ if [ "$1 $2" = "pr list" ]; then
   cat "$STUB_CFG/pr_out" 2>/dev/null
   exit "$(cat "$STUB_CFG/pr_exit" 2>/dev/null || echo 0)"
 fi
+# stop-judge の --paginate 付きコメント取得（生 JSON）。
+if [ "$1 $2" = "api --paginate" ] && [ "$#" -eq 3 ]; then
+  issue="${3%/comments}"; issue="${issue##*/}"
+  cat "$STUB_CFG/comments_$issue" 2>/dev/null || echo "[]"
+  exit 0
+fi
 case "${2-}" in
   */comments)
     # Raw paginated JSON is used by keepalive. Existing --jq fixtures below
@@ -344,6 +453,16 @@ case "${2-}" in
       issue="${2%/comments}"; issue="${issue##*/}"
       [ ! -e "$STUB_CFG/comments_exit" ] || exit "$(cat "$STUB_CFG/comments_exit")"
       cat "$STUB_CFG/comments_$issue" 2>/dev/null || echo "[]"
+      exit 0
+    fi ;;
+  */issues/[0-9]*)
+    # wait の判断し直しが版を読む呼び出し（gh api <issue>、--jq なし）。issue_<N> を返し、
+    # issue_fail_<N> があれば失敗する。状態のポーリング（--jq .state）の並びは消費しない
+    if [ "$#" -eq 2 ] && [ "$1" = api ]; then
+      issue="${2##*/}"
+      [ ! -e "$STUB_CFG/issue_fail_$issue" ] || { echo "gh: mock failure for issue read $issue" >&2; exit 1; }
+      cat "$STUB_CFG/issue_$issue" 2>/dev/null \
+        || echo "{\"updated_at\":\"2026-01-01T00:00:00Z\",\"body\":\"\",\"author_association\":\"OWNER\"}"
       exit 0
     fi ;;
 esac
@@ -460,9 +579,11 @@ reap_prless_ready() {
 
 # SKILL.md の「## <見出し>」から次の「## 」まで
 # 第 2 引数で読むファイルを変えられる（既定は SKILL.md）
-section() { awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
-# 「エピックの扱い」の「### 回し方」から次の「### 」まで
-run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{f=1; print; next} /^### /{f=0} f'; }
+section() {
+  if [ "$1" = 'エピックの扱い' ] && [ "${2:-}" = "$EPIC" ]; then cat "$EPIC"; return; fi
+  awk -v h="## $1" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "${2:-$SKILL}"; }
+# epic-loop.md を含む場面別手順の全文集合
+run_section() { cat "$EPIC"; }
 
 # --- route ---
 
@@ -641,7 +762,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "${log[7]}" = "orca terminal list --worktree path:/work/issue-11 --json" ]
   starts_with "${log[8]}" "orca terminal create --worktree path:/work/issue-11 --command "
   case "${log[8]}" in *' --json') ;; *) echo "terminal create must end with --json" >&2; false ;; esac
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   [ "${log[9]}" = "orca terminal wait --terminal term-11 --for tui-idle --timeout-ms 60000 --json" ]
   starts_with "${log[10]}" "orca terminal send --terminal term-11 --text "
   case "${log[10]}" in *' --enter --wait-submit 30 --json') ;; *) echo "send must end with --enter --wait-submit 30 --json" >&2; false ;; esac
@@ -667,7 +788,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "$(calls '^orca terminal close')" -eq 0 ]
   # 起動コマンドを同じ端末に打ち込み、そのあと指示を送る。環境変数の意味は従来の terminal create と同じ
   first_send="$(grep -m1 '^orca terminal send --terminal term-11 ' "$STUB_LOG")"
-  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"cld"*"--settings"*"idleCompaction"*":false"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
+  case "$first_send" in *"EPIC_DISPATCH_PARENT_EPIC=400"*"/bin/cld"*"--settings"*"idleCompaction"*":false"*"--model"*" --enter --json") ;; *) echo "$first_send" >&2; false ;; esac
   case "$first_send" in *CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS*) echo "$first_send" >&2; false ;; esac
   [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 2 ]
   [ "$(calls '^orca terminal wait --terminal term-11 --for tui-idle')" -eq 1 ]
@@ -726,7 +847,7 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   EPIC_DISPATCH_MODEL='opus[1m]' run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus[1m]' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus[1m]' --prompt-suggestions false" ]
 }
 
 @test "launch: EPIC_DISPATCH_CLAUDE_CMD preserves the command prefix" {
@@ -736,6 +857,115 @@ run_section() { section 'エピックの扱い' "$EPIC" | awk '/^### 回し方/{
   [ "$output" = "launched 11" ]
   [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld-account b --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
+
+# --- 起動コマンドの既定（bin/cld の絶対パス）と CLD_DEFAULT_ARGS の受け渡し（#1232） ---
+
+@test "launch: without an executable bin/cld next to scripts the default falls back to cld and says so on stderr" {
+  make_stub orca
+  mkdir -p "$BATS_TEST_TMPDIR/old" && cp -R "$PLUGIN_DIR/scripts" "$BATS_TEST_TMPDIR/old/scripts"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" sh -c "\"$BATS_TEST_TMPDIR/old/scripts/epic-dispatch.sh\" launch 400 11 12 2>\"$BATS_TEST_TMPDIR/stderr\""
+  [ "$status" -eq 0 ]
+  starts_with "$(cat "$STUB_CFG/tcmd_11")" "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings"
+  [ "$(grep -cF 'bin/cld is not executable' "$BATS_TEST_TMPDIR/stderr")" -eq 1 ]
+}
+
+@test "launch: without CLD_DEFAULT_ARGS the permission-prompt warning is printed once, and not with EPIC_DISPATCH_CLAUDE_CMD or a value set" {
+  make_stub orca
+  run dispatch launch 400 11 12
+  [ "$status" -eq 0 ]
+  [ "$(grep -cF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr")" -eq 1 ]
+  EPIC_DISPATCH_CLAUDE_CMD=mycld run dispatch launch 400 11
+  ! grep -qF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr" || return 1
+  CLD_DEFAULT_ARGS='--remote-control' run dispatch launch 400 11
+  ! grep -qF 'CLD_DEFAULT_ARGS is not set' "$BATS_TEST_TMPDIR/stderr" || return 1
+}
+
+@test "launch: the default command is the absolute bin/cld in single quotes, not the cld shell function" {
+  make_stub orca
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ -x "${PLUGIN_DIR}/bin/cld" ]
+  cmd="$(cat "$STUB_CFG/tcmd_11")"
+  starts_with "$cmd" "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings"
+}
+
+@test "launch: CLD_DEFAULT_ARGS of the parent goes right after EPIC_DISPATCH_PARENT_EPIC (Orca)" {
+  make_stub orca
+  CLD_DEFAULT_ARGS='--dangerously-skip-permissions --remote-control' run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "launched 11" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--dangerously-skip-permissions --remote-control' ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+}
+
+@test "launch: without CLD_DEFAULT_ARGS or with an empty one no assignment is added" {
+  make_stub orca
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  case "$(cat "$STUB_CFG/tcmd_11")" in *CLD_DEFAULT_ARGS*) false ;; *) true ;; esac
+  CLD_DEFAULT_ARGS= run dispatch launch 400 12
+  [ "$status" -eq 0 ]
+  case "$(cat "$STUB_CFG/tcmd_12")" in *CLD_DEFAULT_ARGS*) false ;; *) true ;; esac
+}
+
+@test "launch: CLD_DEFAULT_ARGS with a single quote is passed through shq intact" {
+  make_stub orca
+  CLD_DEFAULT_ARGS="--note it's" run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  cmd="$(cat "$STUB_CFG/tcmd_11")"
+  starts_with "$cmd" "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--note it'\\''s' "
+}
+
+@test "launch: an EPIC_DISPATCH_CLAUDE_CMD override still takes the CLD_DEFAULT_ARGS assignment" {
+  make_stub orca
+  CLD_DEFAULT_ARGS='--remote-control' EPIC_DISPATCH_CLAUDE_CMD='cld-account b' run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--remote-control' cld-account b --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+}
+
+@test "reply: the relaunch command carries the parent's CLD_DEFAULT_ARGS too" {
+  reply_ready
+  CLD_DEFAULT_ARGS='--remote-control' run dispatch reply --as parent 400 11 '推奨どおり'
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "relaunched 11" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--remote-control' ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+}
+
+@test "launch: the Orca command runs from a non-login sh with no cld on PATH and the flags reach claude" {
+  make_stub orca
+  CLD_DEFAULT_ARGS='--dangerously-skip-permissions --remote-control' run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  mkdir -p "${BATS_TEST_TMPDIR}/e2e/scripts" "${BATS_TEST_TMPDIR}/e2e/bin"
+  printf '#!/usr/bin/env bash\nexit 0\n' > "${BATS_TEST_TMPDIR}/e2e/scripts/usage-probe.sh"
+  printf '#!/usr/bin/env bash\necho\n' > "${BATS_TEST_TMPDIR}/e2e/scripts/select-account.sh"
+  printf '#!/usr/bin/env bash\nprintf "<%%s>\\n" "$@" > "$E2E_ARGS"\n' > "${BATS_TEST_TMPDIR}/e2e/bin/claude"
+  chmod +x "${BATS_TEST_TMPDIR}/e2e/scripts/"*.sh "${BATS_TEST_TMPDIR}/e2e/bin/claude"
+  # 親の CLD_DEFAULT_ARGS を落とした環境で、起動コマンドの文字列だけを非ログインの sh で実行する
+  run env -u CLD_DEFAULT_ARGS PATH="${BATS_TEST_TMPDIR}/e2e/bin:/usr/bin:/bin" E2E_ARGS="${BATS_TEST_TMPDIR}/e2e/args" \
+    CLAUDE_HARNESS_SCRIPTS="${BATS_TEST_TMPDIR}/e2e/scripts" sh -c "$(cat "$STUB_CFG/tcmd_11")"
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$(tr '\n' ' ' < "${BATS_TEST_TMPDIR}/e2e/args")" = "<--dangerously-skip-permissions> <--remote-control> <--settings> <{\"idleCompaction\":false}> <--model> <opus> <--prompt-suggestions> <false> " ]
+}
+
+@test "tmux launch: CLD_DEFAULT_ARGS of the parent is typed into the child's window" {
+  tmux_env
+  tmux_log_for /stub/common/.claude/worktrees/issue-11
+  CLD_DEFAULT_ARGS='--remote-control' run dispatch launch 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "launched 11" ]
+  typed="$(jq -r 'select(.type == "user") | .message.content' "$(cat "$STUB_CFG/tmux_log_file")" | head -n 1)"
+  [ "$typed" = "EPIC_DISPATCH_PARENT_EPIC=400 CLD_DEFAULT_ARGS='--remote-control' ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+}
+
+@test "tmux launch: without CLD_DEFAULT_ARGS no assignment is typed" {
+  tmux_env
+  tmux_log_for /stub/common/.claude/worktrees/issue-11
+  run dispatch launch 400 11
+  [ "$status" -eq 0 ]
+  run grep -F 'CLD_DEFAULT_ARGS' "$STUB_LOG"
+  [ "$status" -eq 1 ]
+}
+
 
 @test "launch: an empty EPIC_DISPATCH_CLAUDE_CMD creates nothing" {
   make_stub orca
@@ -757,7 +987,7 @@ launch_ignores_idle_compact() {
   EPIC_DISPATCH_IDLE_COMPACT_MIN_TOKENS="$1" run dispatch launch 400 11
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
 }
 
 @test "launch: the child command turns off idle compaction and has no CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS" {
@@ -765,7 +995,7 @@ launch_ignores_idle_compact() {
   run dispatch launch 400 11
   [ "$status" -eq 0 ]
   [ "$output" = "launched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   run grep -F 'CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS' "$STUB_LOG"; [ "$status" -eq 1 ]
 }
 
@@ -791,7 +1021,7 @@ launch_ignores_idle_compact() {
   [ "${#lines[@]}" -eq 2 ]
   [ "$(calls '^orca terminal wait ')" -eq 1 ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
-  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF 'cld --settings'
+  grep -F 'orca terminal create --worktree path:/work/issue-11' "$BATS_TEST_TMPDIR/stderr" | grep -qF "/bin/cld'\\'' --settings"
   grep -F 'orca terminal send' "$BATS_TEST_TMPDIR/stderr" | grep -qF '/develop #11'
   grep -qF -- '--terminal <handle from create>' "$BATS_TEST_TMPDIR/stderr"
 }
@@ -2283,9 +2513,9 @@ infer_ready() {
   [ "$(rec_get 11 done_inferred_last_activity)" = "$(cat "$BATS_TEST_TMPDIR/ts_s2")" ]
 }
 
-@test "wait infer: waiting, stopped and stopped-seen children are not inferred and gh is not called" {
+@test "wait infer: waiting and stopped children are not inferred and gh is not called" {
   local kv
-  for kv in status=waiting stop=stopped stop=stopped-seen; do
+  for kv in status=waiting stop=stopped; do
     infer_ready
     put_record 11 extra=1 "$kv"
     : > "$STUB_LOG"
@@ -2296,6 +2526,18 @@ infer_ready() {
     [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
     [ "$(calls '^gh ')" -eq 0 ] || { echo "$kv"; cat "$STUB_LOG"; false; }
   done
+}
+
+@test "wait infer: a stopped-seen child meeting the conditions is inferred done and keeps stop and stop_uuid" {
+  infer_ready
+  put_record 11 extra=1 stop=stopped-seen stop_uuid=d1
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG" "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+  [ "$(rec_get 11 status)" = done ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  [ "$(rec_get 11 done_inferred_last_activity)" = "$(cat "$BATS_TEST_TMPDIR/ts_s1")" ]
 }
 
 @test "wait infer: an open issue or one closed as not_planned is not inferred" {
@@ -2564,7 +2806,7 @@ infer_ready() {
 
 @test "wait: a child given as owner/repo#N reads that repository's issue and keeps its form" {
   # spec: dev-workflow-epic-state（owner/repo#番号 で渡した子はその形で返る）
-  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 stop=stopped
   gh_seq 1615 closed
   run dispatch wait --interval 0 --timeout 0 genetta-inc/flatmate#1615
   [ "$status" -eq 0 ]
@@ -2763,6 +3005,7 @@ infer_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "marked 11 stopped" ]
   echo /work/parent > "$STUB_CFG/toplevel"
+  put_turn 11 parent 主の返事待ち 2
   run dispatch wait --interval 0 --timeout 60 --watch-stopped 11
   [ "$status" -eq 0 ] || { echo "3rd: status=$status output=$output"; false; }
   [ "$output" = "stopped 11" ]
@@ -2815,8 +3058,37 @@ infer_ready() {
     [ "$output" = "kept 11 $c" ] || { echo "$c: output=$output"; false; }
     [ "$(calls '^orca terminal close')" -eq 0 ]
     [ "$(calls '^orca worktree rm')" -eq 0 ]
-    [ "$(calls '^git branch -D')" -eq 0 ]
+    [ "$(calls '^git update-ref -d')" -eq 0 ]
   done
+}
+
+@test "reap: LLM/ created while the terminals close keeps the worktree (no rm, no branch delete)" {
+  reap_ready
+  p="$BATS_TEST_TMPDIR/work/issue-11"
+  echo "$p/LLM" > "$STUB_CFG/close_mkdir"
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  run dispatch reap 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "kept 11 llm-logs" ]
+  [ "$(calls '^orca terminal close')" -eq 1 ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
+}
+
+@test "reap: LLM/ created by the close that succeeds only on the retry also keeps the worktree" {
+  reap_ready
+  p="$BATS_TEST_TMPDIR/work/issue-11"
+  echo "$p/LLM" > "$STUB_CFG/close_mkdir"
+  echo 1 > "$STUB_CFG/close_exit_1"
+  echo 0 > "$STUB_CFG/close_exit_2"
+  export EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT=0
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  run dispatch reap 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "kept 11 llm-logs" ]
+  [ "$(calls '^orca terminal close')" -eq 2 ]
+  [ "$(calls '^orca worktree rm')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a failing git status and a record without a branch are kept" {
@@ -2922,7 +3194,7 @@ infer_ready() {
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11" ]
-  [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
   [ ! -e "$STUB_CFG/branch_tip" ]
   : > "$STUB_LOG"
   put_record 11 status=done
@@ -2931,7 +3203,7 @@ infer_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
   [ ! -e "$(rec_of 1122 11)" ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: waits until the worktree leaves git worktree list, then deletes the branch" {
@@ -2944,9 +3216,9 @@ infer_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git worktree list --porcelain')" -eq 3 ]
-  [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
   [ "$(first_line '^orca worktree rm')" -lt "$(first_line '^git worktree list')" ]
-  [ "$(first_line '^git worktree list')" -lt "$(first_line '^git branch -D')" ]
+  [ "$(first_line '^git worktree list')" -lt "$(first_line '^git update-ref -d')" ]
   [ ! -e "$STUB_CFG/branch_tip" ]
 }
 
@@ -2959,7 +3231,7 @@ infer_ready() {
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
   [ "$(cat "$STUB_CFG/branch_tip")" = "bbb222" ]
 }
 
@@ -2972,7 +3244,7 @@ infer_ready() {
   run dispatch reap 11
   [ "$output" = "reaped 11 branch-kept" ]
   [ "$(calls '^git worktree list --porcelain')" -eq 1 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a worktree that never leaves git worktree list gives branch-kept after the limit" {
@@ -2984,7 +3256,7 @@ infer_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "reaped 11 branch-kept" ]
   [ "$(calls '^git worktree list --porcelain')" -ge 2 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a failing git worktree list counts as still attached" {
@@ -2994,7 +3266,7 @@ infer_ready() {
   export EPIC_DISPATCH_REAP_DETACH_TIMEOUT=2 EPIC_DISPATCH_REAP_DETACH_INTERVAL=1
   run dispatch reap 11
   [ "$output" = "reaped 11 branch-kept" ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a tip that differs from HEAD is not waited for and not deleted" {
@@ -3004,7 +3276,7 @@ infer_ready() {
   run dispatch reap 11
   [ "$output" = "reaped 11 branch-kept" ]
   [ "$(calls '^git worktree list')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: only other paths in git worktree list (even a prefix match) do not make it wait" {
@@ -3014,10 +3286,31 @@ infer_ready() {
   run dispatch reap 11
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git worktree list --porcelain')" -eq 1 ]
-  [ "$(calls '^git branch -D oratta/issue-11$')" -eq 1 ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
 }
 
-@test "reap: a failing branch -D is reported as branch-kept" {
+@test "reap: a branch checked out by another worktree is kept even when this worktree has left the list" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree /work/other\nHEAD aaa111\nbranch refs/heads/oratta/issue-11\n\n' > "$STUB_CFG/wtlist_out"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
+  [ "$(cat "$STUB_CFG/branch_tip")" = "aaa111" ]
+  grep -qF 'oratta/issue-11 is checked out by another worktree' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "reap: another worktree on a different branch (even a prefix match) does not keep the branch" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  printf 'worktree /work/other\nHEAD aaa111\nbranch refs/heads/oratta/issue-110\n\n' > "$STUB_CFG/wtlist_out"
+  run dispatch reap 11
+  [ "$output" = "reaped 11" ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
+}
+
+@test "reap: a failing update-ref -d is reported as branch-kept" {
   reap_ready
   echo aaa111 > "$STUB_CFG/branch_tip"
   echo 1 > "$STUB_CFG/branchd_exit"
@@ -3026,12 +3319,24 @@ infer_ready() {
   [ "$output" = "reaped 11 branch-kept" ]
 }
 
-@test "reap: no branch left means no git branch -D" {
+@test "reap: a ref advanced between the last check and the delete is kept (expected-OID delete)" {
+  reap_ready
+  echo aaa111 > "$STUB_CFG/branch_tip"
+  echo bbb222 > "$STUB_CFG/updref_advance"
+  run dispatch reap 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "reaped 11 branch-kept" ]
+  [ "$(calls '^git update-ref -d refs/heads/oratta/issue-11 aaa111$')" -eq 1 ]
+  [ "$(cat "$STUB_CFG/branch_tip")" = "bbb222" ]
+  [ "$(calls '^git branch -D')" -eq 0 ]
+}
+
+@test "reap: no branch left means no git update-ref -d" {
   reap_ready
   run dispatch reap 11
   [ "$output" = "reaped 11" ]
   [ "$(calls '^git rev-parse --verify --quiet refs/heads/oratta/issue-11$')" -eq 1 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a merged PR under another branch name matches by HEAD through --search" {
@@ -3094,7 +3399,7 @@ infer_ready() {
   grep -qF "terminal sweep failed" "$BATS_TEST_TMPDIR/stderr"
   [ "$(calls '^orca worktree rm')" -eq 1 ]
   [ "$(calls '^orca .*--force')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: another rm failure stays rm-failed" {
@@ -3118,7 +3423,7 @@ infer_ready() {
   [ "$(calls '^orca terminal close')" -eq 2 ]
   [ "$(calls '^orca terminal list --worktree path:.*issue-11 --json')" -eq 1 ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
   grep -qF 'issue-11' "$BATS_TEST_TMPDIR/stderr"
   grep -qF 'epic-dispatch.sh reap 11' "$BATS_TEST_TMPDIR/stderr"
 }
@@ -3156,7 +3461,7 @@ infer_ready() {
   run dispatch reap 11
   [ "$status" -eq 0 ]
   [ "$output" = "kept 11 rm-failed" ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: several children are judged one by one, duplicates once" {
@@ -3278,7 +3583,7 @@ infer_ready() {
   [ "$output" = "kept 11 git-failed" ]
   [ "$(calls '^orca terminal close')" -eq 0 ]
   [ "$(calls '^orca worktree rm')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: a rewound base keeps a child whose HEAD equals the stale tracking ref" {
@@ -3290,7 +3595,7 @@ infer_ready() {
   [ "$output" = "kept 11 unmerged-commits" ]
   grep -qF -- 'merge-base --is-ancestor aaa111 ddd4440000000000000000000000000000000000' "$STUB_LOG"
   [ "$(calls '^orca worktree rm')" -eq 0 ]
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
 }
 
 @test "reap: an unreadable remote base keeps a PR-less child as base-lookup-failed" {
@@ -3409,8 +3714,9 @@ infer_ready() {
   printf '%s\n' "$r" | grep -F -- '--dangerously-skip-permissions' | grep -qF 'cld'
   printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_CLAUDE_CMD' | grep -qF 'cld'
   printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_CLAUDE_CMD' | grep -qF '合わせて変える'
-  printf '%s\n' "$r" | grep -qF 'EPIC_DISPATCH_MODEL'
-  printf '%s\n' "$r" | grep -F 'EPIC_DISPATCH_MODEL' | grep -qF 'opus'
+  # 起動コマンドの組み立て（モデルの既定など）は手順書でなく --help が持つ
+  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh --help'
+  "$SCRIPT" --help | grep -F 'EPIC_DISPATCH_MODEL' | grep -qF 'opus'
   printf '%s\n' "$r" | grep -qF 'pr-review-gate'
   printf '%s\n' "$r" | grep -F '直接マージしない' | grep -qF 'gh pr merge'
 }
@@ -3510,19 +3816,68 @@ infer_ready() {
   [ -n "$l" ]
   printf '%s\n' "$l" | grep -qF 'ターンを終えるとき'
   printf '%s\n' "$l" | grep -qF '`~/.claude/output-styles/readable.md` の節 3'
-  printf '%s\n' "$l" | grep -qF '答え方の行'
+  printf '%s\n' "$l" | grep -qF '1 行目と 2 行目'
+  printf '%s\n' "$l" | grep -qF '1 行目を題名（依頼の形。質問にしない）'
+  printf '%s\n' "$l" | grep -qF '2 行目を `アクション:` で始まるアクションの行'
   printf '%s\n' "$l" | grep -qF '主がこのセッションで次にすること:'
   ! printf '%s\n' "$l" | grep -qF '<どの画面・入力欄で> <何を打つ・押す>' || return 1
-  for n in 2 3 4 5 6; do
-    printf '%s\n' "$r" | grep "^$n\. " | grep -qF '上の書き分けの規定に従う'
+  # 書き分けは loop の正本で一度規定し、各場面は処理前にそこを読む。
+  grep -qF '## 主への報告' "$PLUGIN_DIR/skills/develop/references/epic-loop.md"
+  local doc
+  for doc in epic-stop epic-merge-wait epic-subagent; do
+    grep -F 'references/epic-loop.md' "$PLUGIN_DIR/skills/develop/references/$doc.md" | grep -qF '主への報告'
   done
   s8="$(printf '%s\n' "$r" | grep '^8\. ')"
-  printf '%s\n' "$s8" | grep -F '答え方の行' | grep -qF '親のタブ'
+  printf '%s\n' "$s8" | grep -F 'アクションの行' | grep -qF '親のタブ'
   printf '%s\n' "$s8" | grep -qF '別の発言を挟まず'
-  printf '%s\n' "$s8" | grep -qF '答え方の行には、子のタブでリスク許容を打つことを書く'
-  printf '%s\n' "$s8" | grep -qF '`failed <N> <段>` なら主に報告する（主の操作が要れば問いの形にし、要らなければ 1 行目を `主がすること: なし` にする）'
+  printf '%s\n' "$s8" | grep -qF 'アクションの行には、子のタブでリスク許容を打つことを書く'
+  printf '%s\n' "$s8" | grep -qF '`failed <N> <段>` なら主に報告する（主の操作が要れば依頼の形（題名とアクションの行）にし、要らなければ 1 行目を `主がすること: なし` にする）'
   printf '%s\n' "$r" | grep -qF '手順 7 と完了条件で待ちを終えるときの報告、**マージ待ちの子** の `reply` の `failed` の報告'
-  printf '%s\n' "$r" | grep '^2\. ' | grep -qF '待ちに入る通知を `主がすること: なし` で始めず、1 行目に問いの質問を、最後の行に答え方を繰り返す'
+  printf '%s\n' "$r" | grep '^2\. ' | grep -qF '待ちに入る通知を `主がすること: なし` で始めず、1 行目に問いの題名を、2 行目にアクションの行を繰り返す'
+  # 旧い書き分けの語が残らない
+  run grep -nE '最後の答え方|1 行目と最後の行|問いの質問|答え方の行' <<<"$r"; [ "$status" -eq 1 ]
+}
+
+@test "1693: parent references name existing canonical sections" {
+  local refs="$PLUGIN_DIR/skills/develop/references" source target section
+  while IFS='|' read -r source target section; do
+    grep -F "$target" "$refs/$source" | grep -qF "$section"
+    grep -qF "$section" "$refs/$target"
+  done <<'REFS'
+epic-loop.md|reply-after-idle.md|親への適用
+epic-loop.md|epic-merge-wait.md|マージ待ちの子
+epic-stop.md|epic-loop.md|主への報告
+epic-stop.md|epic-merge-wait.md|マージ待ちの子
+epic-keepalive-watch.md|reply-after-idle.md|そのまま送るか、起動し直すか（子）
+REFS
+  [ "$(grep -F 'reply-after-idle.md' "$refs/epic-loop.md" | grep -cF '親への適用')" -ge 2 ]
+  ! grep -Eq '60 分|上の \*\*マージ待ちの子\*\*' "$refs/epic-loop.md" || return 1
+  ! grep -Eq '上の書き分けの規定|下の \*\*マージ待ちの子\*\*' "$refs/epic-stop.md" || return 1
+  ! grep -qF '上の通常の再開判定' "$refs/epic-keepalive-watch.md" || return 1
+}
+
+@test "1693: subagent availability and cleanup preserve worker isolation" {
+  local refs="$PLUGIN_DIR/skills/develop/references"
+  grep -qF 'いつでも使える' "$refs/epic-subagent.md"
+  grep -F 'kept' "$refs/epic-subagent.md" | grep -F '本体 worktree' | grep -qF '無い'
+  grep -qF '別のリポジトリの子は W に渡さない' "$refs/epic-subagent.md"
+  grep -qF 'isolation: "worktree"' "$refs/epic-subagent.md"
+  grep -F '**別セッション方式とサブエージェント方式に共通**' "$refs/epic.md"
+  ! grep -qF '両経路に共通' "$refs/epic.md" || return 1
+  grep -F 'follow-up の issue を作る前に読む' "$SKILL" | grep -qF '「別セッション方式とサブエージェント方式に共通」' || return 1
+  ! grep -qF '「両経路に共通」' "$SKILL" || return 1
+}
+
+@test "1693: test comments and current public classification name their destinations" {
+  local refs="$PLUGIN_DIR/skills/develop/references" comments
+  comments="$(grep '^#' "$BATS_TEST_FILENAME" | grep -v '^# spec:')"
+  printf '%s\n' "$comments" | grep -F 'epic-loop.md' | grep -qF '同時に動く子の上限'
+  printf '%s\n' "$comments" | grep -F 'epic-subagent.md' | grep -qF 'サブエージェント方式'
+  ! printf '%s\n' "$comments" | grep -Eq '「回し方」の|epic.md の回し方|「エピックの扱い」の回し方' || return 1
+  grep '^#' "$PLUGIN_DIR/tests/parent-merge.bats" | grep -F 'epic-merge-wait.md' | grep -qF 'マージ待ちの子'
+  grep -qF '**マージ待ちの子**' "$refs/epic-merge-wait.md"
+  grep -F -- '- **差し替え可能な起動部品の 1 つとして Orca を並べた行**:' "$PLUGIN_DIR/../../docs/public-private-split.md" | grep -F 'references/epic-loop.md' | grep -qF '部品ごとの欄'
+  grep -qF '部品ごとの欄' "$refs/epic-loop.md"
 }
 
 @test "skill: Orca route watches for done marks and reaps marked children" {
@@ -3572,10 +3927,10 @@ infer_ready() {
   s3="$(printf '%s\n' "$r" | grep -F '`done <N>...` で起こされたら')"
   [ "$(printf '%s\n' "$s3" | grep -c .)" -eq 1 ]
   printf '%s\n' "$s3" | grep -qF '動いている子か片付け待ちの子があれば 2 に戻る'
-  printf '%s\n' "$s3" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認と報告がまだなら行う'
+  printf '%s\n' "$s3" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認・報告も行う'
   s7="$(printf '%s\n' "$r" | grep -F '再開したら')"
   [ "$(printf '%s\n' "$s7" | grep -c .)" -eq 1 ]
-  printf '%s\n' "$s7" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認と報告がまだなら行う'
+  printf '%s\n' "$s7" | grep -F 'どちらも 0 件なら' | grep -F '`wait` を呼ばず' | grep -qF '完了条件の確認・報告も行う'
 }
 
 # 手順書に書いてよい orca のコマンドは、手順 3 で親が確かめて消すときの 1 件だけ（#1095）。
@@ -3630,26 +3985,42 @@ orca_cmd_scripts() {
   [ "$(orca_cmd_scripts "$d")" = "$d/epic-dispatch.sh" ]
 }
 
-# spec: dev-workflow-develop（エピックの子は止まる前に記録と印を残し、親は stopped を受けて報告する）
+# spec: dev-workflow-develop（エピックの子の止まりの手順は親に止まりを気づかせる義務を持たない／エピックの子は PR のリスク許容の返事を待って止まるときだけ記録を残す）
 
-@test "skill: an epic child records its stop before marking it, in both waiting orders" {
+@test "skill: an epic child records only a risk-acceptance stop and has no mark duty" {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   [ -n "$r" ]
   printf '%s\n' "$r" | grep -F 'route' | grep -qF '`nested`'
   printf '%s\n' "$r" | grep -qF '`子の停止: 主の返事待ち`'
-  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh mark stopped <記録先の issue 番号>'
-  printf '%s\n' "$r" | grep -qF 'scripts/epic-dispatch.sh mark resumed <記録先の issue 番号>'
-  printf '%s\n' "$r" | grep -F '本文で質問してターンを終えるとき' | grep -F '最後のツール呼び出し' | grep -qF '最初のツール呼び出し'
-  printf '%s\n' "$r" | grep -F '質問ツール' | grep -qF '記録 → `mark stopped` → 質問ツール'
-  printf '%s\n' "$r" | grep -F '回答を受けたら' | grep -qF '`mark resumed`'
+  ! grep -qF 'mark stopped' "$EPIC_CHILD_STOP" || return 1
+  ! grep -qF 'mark resumed' "$EPIC_CHILD_STOP" || return 1
+  ! grep -qF 'mark resumed/stopped' "$EPIC_CHILD_STOP" || return 1
+  ! grep -qF '記録と印' "$EPIC_CHILD_STOP" || return 1
+  # 記録を残すのはリスク許容・聖域の変更・破壊的な git 操作の返事待ちだけで、質問より先に投稿する
+  l="$(printf '%s\n' "$r" | grep -F 'pr-review-gate 手順 3 の宣言')"
+  printf '%s\n' "$l" | grep -qF '質問より先に'
+  # #1653: 聖域の変更・破壊的な git 操作の承認待ちも記録を残す止まりに入った
+  printf '%s\n' "$l" | grep -qF 'それ以外の止まり（マージ待ち・実機操作など）では記録を残さない'
   printf '%s\n' "$r" | grep -F '引き継ぎを先に投稿' | grep -qF '引き継ぎのコメントの URL'
-  printf '%s\n' "$r" | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
-  # 記録が無い・別の子の記録（skipped <N> no-workspace / not-linked）も親に伝わらないので、
-  # failed と同じ行で 1 行添える。skipped を「何もしない」側に書かない（#1247）
-  printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -F '`skipped`' | grep -F '`failed`' | grep -qF '親に止まったことが伝わっていない'
-  printf '%s\n' "$r" | grep -F '`skipped <N> no-workspace`' | grep -qF '`skipped <N> not-linked`'
-  printf '%s\n' "$r" | grep -qF '`mark stopped` の出力が `marked` なら何もしない。`skipped` で始まる'
-  ! printf '%s\n' "$r" | grep -F '`mark stopped` の出力が' | grep -qF '`marked` か `skipped` なら何もしない' || return 1
+  # 親に気づかせる手順は子に無い。親の wait が Stop の保存した状態の記録から気づく
+  printf '%s\n' "$r" | grep -F '`wait`' | grep -qF '状態の記録'
+  # 記録を残さない止まりも発言の中で中身を書く
+  printf '%s\n' "$r" | grep -F '記録を残さない' | grep -qF '質問・推奨・根拠'
+}
+
+# spec: dev-workflow-develop（定型の止まりは最後の発言の `止まった理由:` の行で親に渡す）
+
+@test "skill: routine stops hand their reason on the last line of the last statement" {
+  r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
+  printf '%s\n' "$r" | grep -F '定型の止まり' | grep -F '記録を残さず' | grep -qF '最後の発言の末尾'
+  printf '%s\n' "$r" | grep -qF '`止まった理由: PR のマージ待ち（human-merge）: <PR の URL>`'
+  printf '%s\n' "$r" | grep -F '`--until-merged` の `timeout`' | grep -qF '`止まった理由: PR のマージ待ち（human-merge、親の返事のあともマージされない）: <PR の URL>`'
+  printf '%s\n' "$r" | grep -qF '`止まった理由: PR トークン上限（合計 <合計> / 上限 <上限>）: 続けるか、範囲外として閉じるか`'
+  printf '%s\n' "$r" | grep -qF '`止まった理由: CI の止まり（<PR の URL> / <落ちたチェック名> / <HEAD の短い SHA か HEAD 不明>）: <主にしてほしいこと>`'
+  # 記録の形の節に 1 行あり、項目は 7 つのまま
+  l="$(sed -n '/^\*\*記録の形\*\*/,$p' "$EPIC_CHILD_STOP")"
+  printf '%s\n' "$l" | grep -F '定型の止まり' | grep -qF '記録を残さず'
+  printf '%s\n' "$r" | grep -F '7 つの項目' | grep -qF 'どの項目も省かない'
 }
 
 # spec: dev-workflow-develop（エピックの子の停止の記録は、子の会話を読んでいない読み手が 1 通で読める形で書く）
@@ -3706,11 +4077,11 @@ orca_cmd_scripts() {
   printf '%s\n' "$r" | grep -qF 'rules/communication-style.md'
 }
 
-@test "skill: an epic child stopped by the CI watch writes the PR's short HEAD SHA in the resume progress" {
+@test "skill: an epic child stopped by the CI watch writes the PR's short HEAD SHA on the stop-reason line" {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   [ -n "$r" ]
   # CI の見張りで止まったときの書き方の行（escalate と直し方の手順 7 の両方に触れる）
-  l="$(printf '%s\n' "$r" | grep -F '`再開に要る途中経過:`' | grep -F 'HEAD の短い SHA')"
+  l="$(printf '%s\n' "$r" | grep -F '`止まった理由: CI の止まり（' | grep -F 'HEAD の短い SHA')"
   [ -n "$l" ]
   printf '%s\n' "$l" | grep -qF '落ちたチェック名'
   printf '%s\n' "$l" | grep -qF 'PR の URL'
@@ -3718,7 +4089,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -qF '手順 7'
   printf '%s\n' "$l" | grep -qF 'references/ci-watch.md'
   # 親が追加のやり直しを許したあと同じ HEAD で落ちたときの止まり（`none`）も対象に入る
-  printf '%s\n' "$l" | grep -F '`obs.state` が `wait` でない `none`' | grep -qF '前回と同じ状態・同じ HEAD の決着'
+  printf '%s\n' "$l" | grep -F '`obs.state` が `wait` でない `none`' | grep -qF '同じ状態・HEAD で決着済み'
   # 桁数と取り方、取れないときの書き方
   printf '%s\n' "$l" | grep -qF '先頭 7 文字'
   printf '%s\n' "$l" | grep -qF '`obs.head`'
@@ -3736,11 +4107,16 @@ orca_cmd_scripts() {
   [ -n "$p" ]
   run grep -F '同じ項目名のまま' <<<"$p"; [ "$status" -eq 1 ]
   # 記録の項目と正本の段の対応
-  printf '%s\n' "$p" | grep -qF '`止まった理由:` を質問に'
-  printf '%s\n' "$p" | grep -qF '`主に聞く理由:` を主に聞く理由に'
-  printf '%s\n' "$p" | grep -qF '`前提:` をいま困っていることに'
+  printf '%s\n' "$p" | grep -qF '`止まった理由:` を題名（依頼の形に直し、質問にしない）と詳細に'
+  printf '%s\n' "$p" | grep -qF '`主に聞く理由:` を論点（論点ありなら論点、論点なしなら推奨どおりでよい旨と決まりが守るもの）に'
+  printf '%s\n' "$p" | grep -qF '`前提:` を詳細に'
   printf '%s\n' "$p" | grep -qF '`推奨:` と `推奨の根拠:` を推奨と根拠に'
-  printf '%s\n' "$p" | grep -qF '`受け入れるリスク:` を受け入れるリスクに'
+  printf '%s\n' "$p" | grep -qF '`受け入れるリスク:` をリスクにする'
+  printf '%s\n' "$p" | grep -qF 'アクションの行は記録に無いので親が書く'
+  printf '%s\n' "$p" | grep -F '使う項目と長さは正本の使う場所の表に従う' | grep -F '対話のセッション' | grep -qF 'チャットで 1 件ずつ出す依頼'
+  printf '%s\n' "$p" | grep -qF 'ブロックには返事を待って止まっている子を書く'
+  printf '%s\n' "$p" | grep -qF '正本の論点の無い依頼の決まりに従う'
+  run grep -nE 'を質問に|をいま困っていることに|3〜4 行' <<<"$p"; [ "$status" -eq 1 ]
   printf '%s\n' "$p" | grep -qF '項目名を見出しや語としてそのまま主に渡さず'
   printf '%s\n' "$p" | grep -qF '主の言葉に直す'
   printf '%s\n' "$p" | grep -F '複数' | grep -qF '1 通で上げるのは 1 件'
@@ -3748,7 +4124,7 @@ orca_cmd_scripts() {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
   run grep -F '報告する語と同じにしてある' <<<"$r"; [ "$status" -eq 1 ]
   printf '%s\n' "$r" | grep -F '正本の段に置き直して' | grep -qF '手順 8'
-  printf '%s\n' "$r" | grep -F '`止まった理由`' | grep -F '`PR のマージ待ち（`' | grep -qF '名前を変えない'
+  printf '%s\n' "$r" | grep -F '`止まった理由`' | grep -F '今回の止まった理由' | grep -qF '変えない'
   # ファイル全体に「同じ項目名のまま」が残らない
   run grep -n '同じ項目名のまま' "$SKILL"; [ "$status" -eq 1 ]
 }
@@ -3757,16 +4133,16 @@ orca_cmd_scripts() {
   p="$(run_section | grep -E '^8\. ')"
   printf '%s\n' "$p" | grep -F '照らす前に' | grep -F '親の判断: 子 #N 通した' | grep -F '.claude/casting/project.md' | grep -qF '既に一度通していれば覆さずに主に上げる'
   printf '%s\n' "$p" | grep -qF '待ちに入る通知の本文に、まだ上げていない止まった子の番号を 1 行書く'
-  q="$(run_section | grep -E '^7\. ')"
+  q="$(run_section | grep -E '^7\. '; cat "$PLUGIN_DIR/skills/develop/references/epic-stop.md")"
   printf '%s\n' "$q" | grep -qF '手順 8 と同じに扱い（照らして通すか、報告を本文で出し直す）、待ちに入る'
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
-  printf '%s\n' "$r" | grep -qF '破壊的操作や聖域を止めた hook は「決まりで主の承認が要る」に当たる'
+  printf '%s\n' "$r" | grep -qF '破壊的操作や聖域は承認待ちに当たる'
 }
 
 @test "skill: Orca route waits with --watch-stopped and reports stopped children without dropping them" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -F -- '--watch-done' | grep -qF -- '--watch-stopped <動いている子>...'
-  printf '%s\n' "$r" | grep -F '`stopped <N>...`' | grep -qF '1〜3 行'
+  printf '%s\n' "$r" | grep -F '| `wait` |' | grep -qF '`stopped`（手順 8）'
   p="$(printf '%s\n' "$r" | grep -E '^8\. ')"
   printf '%s\n' "$p" | grep -qF '`stopped <N>...` で起こされたら'
   printf '%s\n' "$p" | grep -qF '`子の停止: 主の返事待ち`'
@@ -3782,22 +4158,21 @@ orca_cmd_scripts() {
   r="$(run_section)"
   l2="$(printf '%s\n' "$r" | grep -E '^2\. ')"
   printf '%s\n' "$l2" | grep -qF -- '--resolve <エピック番号> --watch-stopped <動いている子>...'
-  printf '%s\n' "$l2" | grep -F '`unrecorded <N>...`' | grep -qF '1〜4 行'
-  printf '%s\n' "$l2" | grep -F '付けないときは従来どおり' | grep -qF '1〜3 行'
+  printf '%s\n' "$l2" | grep -F '付けないときは' | grep -qF '`unrecorded` は出ない'
   printf '%s\n' "$l2" | grep -F '`unrecorded <N>...` で起こされたら' | grep -F '主に上げず' | grep -qF '投稿し直しのコマンド'
-  printf '%s\n' "$l2" | grep -qF '親の判断: 子 #N 通した — 理由は記録できなかった <最新の子の停止の記録の URL>'
+  printf '%s\n' "$l2" | grep -qF '親の判断: 子 #N 通した — 理由は記録できなかった 発言 <止まりの uuid か 不明>'
   printf '%s\n' "$l2" | grep -qF 'references/parent-pass-criteria.md'
   p="$(printf '%s\n' "$r" | grep -E '^8\. ')"
-  printf '%s\n' "$p" | grep -F '`停止の記録:`' | grep -qF 'URL と一致する最新の `親の判断:`'
+  printf '%s\n' "$p" | grep -F '`止まりの発言:`' | grep -qF 'その uuid と一致する最新の `親の判断:`'
   printf '%s\n' "$p" | grep -qF '一致する `親の判断:` が無ければ、判断が無いものとして扱う'
   run grep -F '判断が無いものとして主に上げる' <<<"$p"; [ "$status" -eq 1 ]
   # 主に上げる前に親が自分で基準に照らし、主に聞く理由の無い止まりは通す
   printf '%s\n' "$p" | grep -F '主に上げる前に' | grep -qF '`references/parent-pass-criteria.md` に照らす'
   printf '%s\n' "$p" | grep -F '主の側にしか答えが無い・決まりで主の承認が要る・主の手でしかできない操作' | grep -qF 'どれにも当たらず'
-  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — <理由> <停止の記録の URL>'
+  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — <理由> 発言 <止まりの uuid か 不明>'
   printf '%s\n' "$p" | grep -F '判断が「主に上げる」' | grep -qF '判断できなかった'
   printf '%s\n' "$p" | grep -F '覆して通す' | grep -qF '3 つの理由のどれにも当たらない根拠を 1 文で'
-  printf '%s\n' "$p" | grep -F '主に聞く理由が成り立つか迷うときは' | grep -qF '主に上げる'
+  printf '%s\n' "$p" | grep -F '主に上げるのは' | grep -F '根拠' | grep -qF '示せなければ通す'
   # マージ待ちの止まりは照らし直さず、マージ待ちの子の手順に進む
   printf '%s\n' "$p" | grep -F '`PR のマージ待ち（` で始まる' | grep -F '照らし直さず' | grep -qF '**マージ待ちの子**'
   printf '%s\n' "$p" | grep -F '送信だけが失敗' | grep -qF 'reply --as parent'
@@ -3818,7 +4193,8 @@ orca_cmd_scripts() {
   l="$(printf '%s\n' "$r" | grep -F '親から届いた返事')"
   printf '%s\n' "$l" | grep -qF '`親エピック #<E> の判断（主の承認ではない）:`'
   printf '%s\n' "$l" | grep -qF '`主の返事（親エピック #<E> 経由）:`'
-  printf '%s\n' "$l" | grep -qF '`mark resumed`'
+  printf '%s\n' "$l" | grep -qF '止まった件への返事として受け取り、続きから進む'
+  ! printf '%s\n' "$l" | grep -qF '`mark resumed`' || return 1
   printf '%s\n' "$l" | grep -qF '完了報告に書く'
   printf '%s\n' "$l" | grep -F '聖域' | grep -F '破壊的な操作' | grep -qF '承認として扱わない'
 }
@@ -3833,7 +4209,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -qF '主の発言: <要旨>'
   printf '%s\n' "$l" | grep -qF '親の判断では広げない'
   printf '%s\n' "$l" | grep -F 'OWNER・MEMBER・COLLABORATOR' | grep -qF '最新の 1 件'
-  q="$(run_section | grep -E '^7\. ')"
+  q="$(run_section | grep -E '^7\. '; cat "$PLUGIN_DIR/skills/develop/references/epic-stop.md")"
   printf '%s\n' "$q" | grep -F '`子の PR トークン権限:`' | grep -qF '既定値で投稿'
 }
 
@@ -3853,20 +4229,20 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -F '照らす前に' | grep -qF '既定値で投稿'
   printf '%s\n' "$p" | grep -F 'OWNER・MEMBER・COLLABORATOR' | grep -qF '最新の 1 件'
   printf '%s\n' "$p" | grep -qF '(a) 合計の見込みが権限以下'
-  printf '%s\n' "$p" | grep -qF '(b) 記録の上限が権限より小さい'
+  printf '%s\n' "$p" | grep -qF '(b) 今回の止まった理由の上限が権限より小さい'
   printf '%s\n' "$p" | grep -F '数字として読めない' | grep -qF '主に上げる'
   printf '%s\n' "$p" | grep -qF '続ける。新しい上限 <権限>（親の権限。<権限のコメントの URL>）'
   printf '%s\n' "$p" | grep -qF 'reply --as parent'
-  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — PR トークン上限を親の権限 <権限> まで上げた（合計の見込み <Y>） <停止の記録の URL>'
+  printf '%s\n' "$p" | grep -qF '親の判断: 子 #N 通した — PR トークン上限を親の権限 <権限> まで上げた（合計の見込み <Y>） 発言 <止まりの uuid> <停止の記録の URL>'
   printf '%s\n' "$p" | grep -qF '権限の値と権限を広げる選び方'
   printf '%s\n' "$p" | grep -F '広げて答えたら' | grep -qF '照らし直し'
   printf '%s\n' "$p" | grep -F '「続ける」とだけ' | grep -qF 'reply --as owner'
-  printf '%s\n' "$p" | grep -F 'サブエージェント方式' | grep -qF 'SKILL.md'
+  printf '%s\n' "$p" | grep -F 'サブエージェント方式' | grep -qF '`references/pr-token-budget.md`「記録先がエピックの子のとき」'
 }
 
 @test "skill: an epic child writes the estimate when stopped at the PR token cap and takes the parent's raise without re-asking" {
   r="$(section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP")"
-  printf '%s\n' "$r" | grep -qF '`PR トークン上限（合計 <合計> / 上限 <上限>）: 続けるか、範囲外として閉じるか`'
+  printf '%s\n' "$r" | grep -qF '`止まった理由: PR トークン上限（合計 <合計> / 上限 <上限>）: 続けるか、範囲外として閉じるか`'
   printf '%s\n' "$r" | grep -qF '`終わるまでの見込み: あと約 <残り>（合計の見込み <見込み>）`'
   printf '%s\n' "$r" | grep -qF '`続けるべきか:'
   printf '%s\n' "$r" | grep -qF '`次に絞る範囲:'
@@ -3874,7 +4250,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$l" | grep -qF '`続ける。新しい上限 <権限>'
   printf '%s\n' "$l" | grep -qF '主が権限のコメント（`子の PR トークン権限:`）で先に承認した範囲の執行'
   printf '%s\n' "$l" | grep -qF '主に聞き直さず'
-  printf '%s\n' "$l" | grep -F '`PR トークン上限:`' | grep -qF 'SKILL.md「PR トークン上限」'
+  printf '%s\n' "$l" | grep -F '`PR トークン上限:`' | grep -qF '`references/pr-token-budget.md`「記録先がエピックの子のとき」の 4 行の上限コメント書式'
 }
 
 # spec: dev-workflow-develop（親が通してよい範囲の基準を 1 つのファイルに置く）
@@ -3914,7 +4290,19 @@ orca_cmd_scripts() {
     [ "$(printf '%s\n' "$row" | awk -F' \\| ' '{print NF}')" -ge 3 ] || { echo "no reason column: $c"; return 1; }
   done
   grep -F '| 実機操作でない |' "$f" | grep -qF '主の手でしかできない操作'
+  # 実機操作はエージェントの手で通せない操作に限る（#1654）。条件の行と通らない例の行を行単位で見る
+  for row in "$(grep -F '| 実機操作でない |' "$f")" "$(grep -F -e '- 実機操作（' "$f")"; do
+    [ -n "$row" ] || { echo "missing row"; return 1; }
+    if printf '%s\n' "$row" | grep -qF 'MFA・OAuth・ログイン'; then echo "old example: $row"; return 1; fi
+    printf '%s\n' "$row" | grep -qF 'CAPTCHA' || { echo "no CAPTCHA: $row"; return 1; }
+    printf '%s\n' "$row" | grep -qF 'ログイン済みのブラウザで押せる操作' || { echo "no logged-in browser: $row"; return 1; }
+  done
+  while IFS= read -r line; do
+    printf '%s\n' "$line" | grep -qF '入らない' || { echo "logged-in browser not excluded: $line"; return 1; }
+  done < <(grep -F 'ログイン済みのブラウザ' "$f")
   grep -F '| 聖域でない |' "$f" | grep -qF '決まりで主の承認が要る'
+  # 外部のアプリやサービスへの権限の付与（OAuth の認可）も聖域の側に入れる（P2-F1）
+  grep -F '| 聖域でない |' "$f" | grep -qF '外部への公開・送信・課金・外部のアプリやサービスへの権限の付与（OAuth の認可を含む）'
   grep -F '| 推奨がある |' "$f" | grep -qF '主の側にしか答えが無い'
   grep -F '| 繰り返していない |' "$f" | grep -qF '歯止め'
   # 試しの issue は外部への公開・送信に当たらない
@@ -3937,7 +4325,7 @@ orca_cmd_scripts() {
   grep -F '`主に聞く理由:`' "$f" | grep -qF '鵜呑みにしない'
   grep -F '`主に聞く理由: なし（…）`' "$f" | grep -qF '通す側で読む'
   grep -F '項目の無い記録' "$f" | grep -qF 'ほかの項目から'
-  grep -F '主に聞く理由が成り立つか迷うときは' "$f" | grep -qF '成り立つ側に倒す'
+  run grep -F '成り立つ側に倒す' "$f"; [ "$status" -eq 1 ]
 }
 
 # spec: dev-workflow-develop（親が通してよい範囲の基準は、CI の見張りのやり直しの上限で止まった子の扱いを決める）
@@ -3979,7 +4367,7 @@ orca_cmd_scripts() {
   printf '%s\n' "$sec" | grep -F '理由' | grep -qF '同じ件かを見分ける'
   # 出力の形の `理由:` 行との対応、値の出どころ、`不明` の扱い
   printf '%s\n' "$sec" | grep -F '通すときの `理由:`' | grep -qF '`<理由>` になる'
-  printf '%s\n' "$sec" | grep -F '子の停止の記録から取って書く' | grep -F '記録に無い値は作らず `不明` と書く' | grep -qF 'HEAD が `不明` の過去の判断とは同じ件かを見分けられないものとして扱う'
+  printf '%s\n' "$sec" | grep -F '子の最後の発言の `止まった理由:` の行（更新前の版の子は停止の記録）から取って書く' | grep -F 'そこに無い値は作らず `不明` と書く' | grep -qF 'HEAD が `不明` の過去の判断とは同じ件かを見分けられないものとして扱う'
   # Scenario 4: 「繰り返していない」との関係と同じ件の定義
   printf '%s\n' "$sec" | grep -F '繰り返していない' | grep -qF '別の歯止め'
   printf '%s\n' "$sec" | grep -F '同じ件' | grep -qF '同じ PR の同じチェック'
@@ -3999,7 +4387,8 @@ orca_cmd_scripts() {
   printf '%s\n' "$sec" | grep -F '節の外のランナーの確認を含む推奨の読み方について' | grep -qF '読み広げない'
   printf '%s\n' "$sec" | grep -F '「ランナーの確認を含む止まりを通すこと」はこの節の対象の止まりに限り' | grep -qF '表の下の「ランナーの状態の確認を含む推奨の読み方」で決める'
   printf '%s\n' "$sec" | grep -F '優先順位について拾いたい誤りは' | grep -qF '上限で止まった子の再実行を通る例で通すこと'
-  printf '%s\n' "$sec" | grep -F '再び止まれば次は主に上がる）と、通してよい止まりを判断のモデルが主に上げることは許す' >/dev/null
+  printf '%s\n' "$sec" | grep -F '再び止まれば次は主に上がる）は許す' >/dev/null
+  run grep -F '通してよい止まりを判断のモデルが主に上げることは許す' <<<"$sec"; [ "$status" -eq 1 ]
   printf '%s\n' "$pr" | grep -F 'job-timeout' | grep -F '手順 7 の止まりも' | grep -qF '主に上げる'
   # 通る例の「CI の再実行」の行の行末に、節が先に効くと添えてある（括弧の中は変えない）
   grep -F -e '- CI の再実行（' "$f" | grep -qE '上限で止まった子は.*先に効く$'
@@ -4038,10 +4427,10 @@ orca_cmd_scripts() {
   printf '%s\n' "$p" | grep -F 'エピック本文の目的・原則・決まった方針' | grep -F '一意に決める' | grep -qF '「主の側の情報が要らない」を満たすと読む'
   printf '%s\n' "$p" | grep -qF 'ほかの 8 条件'
   printf '%s\n' "$p" | grep -F '聖域' | grep -F '破壊的' | grep -F 'リスクの許容' | grep -qF '目的・原則が推奨を決めていても通さない'
-  printf '%s\n' "$p" | grep -F '1 つに決まらない' | grep -qF '迷ったとき'
+  printf '%s\n' "$p" | grep -F '1 つに決まらない' | grep -qF '主に上げるとき'
   # リスクは表の「その子のブランチの中に閉じるもの」と揃え、解釈の揺れは推奨が変わるときに限る（#1254 のゲートの指摘）
   printf '%s\n' "$p" | grep -qF '許容と書かれておらず、その子のブランチの中にも閉じないリスク'
-  printf '%s\n' "$p" | grep -qF '原則の語が 2 通り以上に読め、読み方で推奨が変わる'
+  printf '%s\n' "$p" | grep -qF '語の解釈で推奨が変わる'
   run grep -F '解釈が要る' "$f"; [ "$status" -eq 1 ]
   run grep -F '許容と書かれていないリスク' "$f"; [ "$status" -eq 1 ]
   printf '%s\n' "$p" | grep -F '推し量った意図' | grep -qF '根拠にしない'
@@ -4115,8 +4504,8 @@ orca_cmd_scripts() {
 @test "reply-after-idle: all sessions disable idle and parents relaunch at 60 minutes (#1385)" {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -E '^\| 親 \|' "$f" | grep -qF 'false'
-  grep -E '^\| 親の最後のリクエストから 60 分未満 \|' "$f" | grep -qF 'そのまま続ける'
-  grep -E '^\| 親の最後のリクエストから 60 分以上 \|' "$f" | grep -F '起動し直す' | grep -qF '会話量によらず'
+  grep -E '^\| 親の最後のリクエストから 60 分未満、または時刻不明で長時間経過を確認できない \|' "$f" | grep -qF 'そのまま続ける'
+  grep -E '^\| 親の最後のリクエストから 60 分以上 \|' "$f" | grep -F '起動し直す' | grep -qF 'compact の有無と会話量で例外にしない'
   parent="$(sed -n '/^## 親への適用/,$p' "$f")"
   run printf '%s\n' "$parent"
   [[ "$output" != *'120,000'* ]] || return 1
@@ -4149,7 +4538,8 @@ orca_cmd_scripts() {
 # 子 <N> のワークツリーの端末を置く（引数はハンドル。0 個なら端末なし）。Orca の実際の一覧の形に合わせ、
 # <h> は Claude Code の端末（agentIdentity が claude、タイトルは Claude Code が書き換えたもの）、
 # <h>:shell はシェルの端末（タイトル Terminal 1、agentIdentity なし）、
-# <h>:title は agentIdentity がまだ無くタイトルが ✳ Claude Code の端末
+# <h>:title は agentIdentity がまだ無くタイトルが ✳ Claude Code の端末、
+# <h>:session は agentIdentity が null でタイトルが子の付けたセッション名の端末（#1598 で観測した形）
 set_terms() {
   local n="$1"; shift
   local t="" h e
@@ -4157,6 +4547,7 @@ set_terms() {
     case "$h" in
       *:shell) e="{\"handle\":\"${h%:shell}\",\"title\":\"Terminal 1\",\"connected\":true}" ;;
       *:title) e="{\"handle\":\"${h%:title}\",\"title\":\"✳ Claude Code\",\"connected\":true}" ;;
+      *:session) e="{\"handle\":\"${h%:session}\",\"title\":\"flatmate #2217 burn モード開発\",\"connected\":true,\"agentIdentity\":null}" ;;
       *) e="{\"handle\":\"$h\",\"title\":\"◑ 子の作業\",\"connected\":true,\"agentIdentity\":\"claude\"}" ;;
     esac
     t="$t${t:+,}$e"
@@ -4168,7 +4559,7 @@ set_terms() {
 reply_ready() {
   make_stub orca
   set_current 400
-  put_record 11 status=waiting
+  put_record 11 status=waiting stop=stopped
   set_terms 11 "$@"
 }
 
@@ -4185,6 +4576,46 @@ reply_ready() {
   [ "$(calls '^orca terminal close')" -eq 0 ]
 }
 
+@test "reply: a stopped-seen child still gets the answer" {
+  reply_ready term-a-11
+  put_record 11 status=waiting stop=stopped-seen
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sent 11" ]
+}
+
+@test "reply: a resumed child gets nothing and reports not-stopped" {
+  reply_ready term-a-11
+  put_record 11 status=waiting stop=resumed
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 not-stopped" ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "reply: a stopped-seen child whose log moved past the stop gets nothing and reports not-stopped" {
+  reply_ready term-a-11
+  old="$(jq -rn '(now - 900) | floor | todate')"
+  newer="$(jq -rn '(now - 300) | floor | todate')"
+  put_record 11 status=waiting stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d1"}')" "$(chat_line user "$newer" 'こちらで' '{"uuid":"i1"}')"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 not-stopped" ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+}
+
+@test "reply: a stopped-seen child whose log stays at the stop still gets the answer" {
+  reply_ready term-a-11
+  old="$(jq -rn '(now - 900) | floor | todate')"
+  put_record 11 status=waiting stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d1"}')"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ]
+  [ "$output" = "sent 11" ]
+}
+
 @test "reply: the parent's decision is headed as not the owner's approval" {
   reply_ready term-a-11
   run dispatch reply --as parent 400 11 '推奨どおり'
@@ -4198,7 +4629,7 @@ reply_ready() {
   run dispatch reply --as parent 400 11 '推奨どおり'
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "relaunched 11" ]
-  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 cld --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
+  [ "$(cat "$STUB_CFG/tcmd_11")" = "EPIC_DISPATCH_PARENT_EPIC=400 ${CLD_Q} --settings '{\"idleCompaction\":false}' --model 'opus' --prompt-suggestions false" ]
   s="$(cat "$STUB_CFG/sent_term-11")"
   starts_with "$s" "/develop #11 "
   case "$s" in *"親エピック #400 の判断（主の承認ではない）: 推奨どおり") ;; *) echo "sent: $s"; false ;; esac
@@ -4272,6 +4703,57 @@ reply_ready() {
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 ambiguous-terminal" ]
   grep -qF -- '--relaunch' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+}
+
+# Claude Code の入力枠が下端にある画面（<h>:session の端末の画面の読み取り）
+SESSION_FRAME='────────────────
+❯
+────────────────
+? for shortcuts'
+
+@test "reply: one unidentified terminal with the Claude Code input frame at the bottom gets the answer (#1598)" {
+  reply_ready term-s-11:session
+  orca_screen "$SESSION_FRAME"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "sent 11" ]
+  [ "$(cat "$STUB_CFG/sent_term-s-11")" = "主の返事（親エピック #400 経由）: A" ]
+  [ "$(calls '^orca terminal read --terminal term-s-11 --screen --json$')" -eq 1 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+}
+
+@test "reply: one unidentified terminal with a shell prompt or an unreadable screen sends nothing (#1598)" {
+  for kind in no-frame shell-below read-fail broken; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/sent_* "$STUB_CFG"/read_exit "$STUB_CFG"/readcount
+    reply_ready term-s-11:session
+    case "$kind" in
+      no-frame) orca_screen 'user@host work %' ;;
+      shell-below) orca_screen "$SESSION_FRAME
+user@host work %" ;;
+      read-fail) orca_screen "$SESSION_FRAME"; echo 1 > "$STUB_CFG/read_exit" ;;
+      broken) echo broken > "$STUB_CFG/screen" ;;
+    esac
+    run dispatch reply --as owner 400 11 'A'
+    [ "$status" -eq 1 ] || { echo "kind=$kind status=$status output=$output"; false; }
+    [ "$output" = "failed 11 ambiguous-terminal" ] || { echo "kind=$kind output=$output"; false; }
+    [ "$(calls '^orca terminal read')" -eq 1 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+  done
+}
+
+@test "reply: two unidentified terminals are not read and send nothing (#1598)" {
+  reply_ready term-s-11:session term-sh-11:shell
+  orca_screen "$SESSION_FRAME"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 ambiguous-terminal" ]
+  [ "$(calls '^orca terminal read')" -eq 0 ]
   [ "$(calls '^orca terminal send')" -eq 0 ]
   [ "$(calls '^orca terminal create')" -eq 0 ]
   [ "$(calls '^orca terminal close')" -eq 0 ]
@@ -4396,6 +4878,8 @@ make_judge() {
   cat > "$STUB_BIN/judge" <<'EOF'
 #!/bin/bash
 { printf '%s' judge; printf ' %q' "$@"; echo; } >> "$STUB_LOG"
+[ -z "${3-}" ] || cp "$3" "$STUB_CFG/judge_json"
+[ ! -e "$STUB_CFG/judge_hook" ] || bash "$STUB_CFG/judge_hook"
 if [ -e "$STUB_CFG/judge_out_$2" ]; then cat "$STUB_CFG/judge_out_$2"; else cat "$STUB_CFG/judge_out" 2>/dev/null; fi
 exit "$(cat "$STUB_CFG/judge_exit" 2>/dev/null || echo 0)"
 EOF
@@ -4427,9 +4911,25 @@ resolve_ready() {
   [ "$output" = "closed 11" ]
   [ "$(calls '^judge 400 11$')" -eq 1 ]
   [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
   [ "$(first_line '^orca terminal send')" -lt "$(first_line '^gh issue comment 400')" ]
   [ ! -e "$STUB_CFG/comment_11" ]
+}
+
+@test "wait --resolve: a child resumed just before the send gets nothing and no decision is recorded" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  # 判断の最中に主が子のタブで答えた状況: 判断のスタブが子の記録を resumed に書き換えてから出力する
+  local f; f="$(rec_of 1122 11)"
+  cat > "$STUB_BIN/judge" <<EOF
+#!/bin/bash
+jq -c '.stop = "resumed"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+cat "$STUB_CFG/judge_out"
+EOF
+  chmod +x "$STUB_BIN/judge"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ ! -e "$STUB_CFG/sent_term-a-11" ]
+  [ ! -e "$STUB_CFG/comment_400" ]
 }
 
 @test "wait --resolve: a pass through a relaunch is recorded too" {
@@ -4440,7 +4940,7 @@ resolve_ready() {
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "closed 11" ]
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 不明 $STOP_URL" ]
 }
 
 @test "wait --resolve: a sent pass that cannot be posted on the epic wakes the parent with unrecorded" {
@@ -4461,7 +4961,8 @@ resolve_ready() {
   [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: 不明" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
   grep -qF '主の好みが要る' "$STUB_CFG/comment_11"
   [ "$(calls '^orca terminal')" -eq 0 ]
   [ ! -e "$STUB_CFG/comment_400" ]
@@ -4477,6 +4978,81 @@ resolve_ready() {
   grep -qF 'gh issue comment 11' "$BATS_TEST_TMPDIR/stderr"
 }
 
+@test "wait --resolve: a parent action is not sent, not recorded as passed, and posted on the child with the reply" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が #12 を起動する' '#12 を起動した。マージを待って再開する'
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 親の操作が要る" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: 不明" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 4p "$STUB_CFG/comment_11")" = "親が #12 を起動する" ]
+  [ "$(sed -n 5p "$STUB_CFG/comment_11")" = "送るはずだった返事: #12 を起動した。マージを待って再開する" ]
+  [ "$(calls '^orca terminal')" -eq 0 ]
+  [ ! -e "$STUB_CFG/sent_term-a-11" ]
+  [ ! -e "$STUB_CFG/comment_400" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait --resolve: a parent action with an empty reply posts none as the reply" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が依存を張り替える' ''
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 5p "$STUB_CFG/comment_11")" = "送るはずだった返事: なし" ]
+}
+
+@test "wait --resolve: a failing post of a parent action prints the repost command and still wakes the parent" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が #12 を起動する' '再開する'
+  echo 1 > "$STUB_CFG/comment_exit_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  grep -F 'gh issue comment 11' "$BATS_TEST_TMPDIR/stderr" | grep -qF '親の判断: 親の操作が要る'
+  [ ! -e "$STUB_CFG/comment_400" ]
+}
+
+@test "wait --resolve: a pass whose reply mentions the parent is still sent" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 '親が見張りを続けるので、そのまま待つ'
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 親が見張りを続けるので、そのまま待つ" ]
+  starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した"
+}
+
+@test "docs: the pass criteria define a parent action and emit the parent-acts decision after the escalation check" {
+  f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  l="$(grep -F '**親の操作を含む推奨**' "$f")"
+  printf '%s\n' "$l" | grep -qF 'この子に返事を送ること（`wait` が決める起動し直しを含む）以外で親がすること'
+  printf '%s\n' "$l" | grep -qF '`判断: 通す` ではなく `判断: 親が動く` を出す'
+  printf '%s\n' "$l" | grep -qF '親の操作を含んでも `判断: 主に上げる` が先に効く'
+  printf '%s\n' "$l" | grep -qF '`理由:` に親がする操作を、`返事:` に操作のあとに子に送る返事を書く'
+  grep -F '止まった子の起動し直し' "$f" | grep -qF '親の操作に当たらず `判断: 通す` とする'
+  grep -F '1 行目は' "$f" | grep -qF '`判断: 問いではない`・`判断: 親が動く` のどれか'
+}
+
+@test "docs: step 8 reads the parent-action paragraph before the dismiss sentence and the pending-owner restore does the action" {
+  f="$PLUGIN_DIR/skills/develop/references/epic-stop.md"
+  l8="$(grep -E '^8\. ' "$f")"
+  before="${l8%%今回の停止の記録が無く、未回答の停止の記録も無く*}"
+  [ "$before" != "$l8" ]
+  printf '%s\n' "$before" | grep -qF '`親の判断: 親の操作が要る` の件は、次の `dismiss` の文より先に'
+  p="$(grep -F '**親の操作が要る子**（手順 8 の続き）' "$f")"
+  printf '%s\n' "$p" | grep -qF '`PR トークン上限（`・`PR のマージ待ち（` で始まる止まりはそれぞれの手順'
+  printf '%s\n' "$p" | grep -qF '`dismiss` の判定・**主の委任**・`parent-pass-criteria.md` への照らし直しより先に'
+  printf '%s\n' "$p" | grep -qF '`送るはずだった返事:`'
+  printf '%s\n' "$p" | grep -qF 'reply --as parent'
+  printf '%s\n' "$p" | grep -qF '操作をせずに返事だけを送らない'
+  r="$(awk '/^## pending-owner の復元/{f=1;next} /^## /{f=0} f' "$f")"
+  printf '%s\n' "$r" | grep -qF '最新の `親の判断:` が `親の判断: 親の操作が要る` の子は、手順 8 の **親の操作が要る子** と同じく操作をしてから返事を送り、照らし直さず出し直さない'
+  ! printf '%s\n' "$l8" | grep -qF '完了の推定が止まり、' || return 1
+}
+
 @test "wait --resolve: a failing judge is posted as could-not-decide with an unknown record" {
   resolve_ready
   echo 1 > "$STUB_CFG/judge_exit"
@@ -4484,7 +5060,7 @@ resolve_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: 不明" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: 不明" ]
   [ "$(calls '^orca terminal')" -eq 0 ]
 }
 
@@ -4495,7 +5071,7 @@ resolve_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
   [ "$(calls '^orca terminal')" -eq 0 ]
   resolve_ready
   rm -f "$STUB_CFG/comment_11" "$STUB_CFG/ghcount_11"
@@ -4544,7 +5120,7 @@ resolve_ready() {
   [ "$status" -eq 0 ]
   [ "$output" = "stopped 11" ]
   [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 通すが送れなかった" ]
-  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
   grep -qF '推奨どおり進めてよい' "$STUB_CFG/comment_11"
   grep -qF 'failed 11 send' "$STUB_CFG/comment_11"
   [ ! -e "$STUB_CFG/comment_400" ]
@@ -4648,6 +5224,30 @@ nothing_sent() {
   done
 }
 
+@test "notify-closed: one unidentified terminal with the input frame gets the reply after the merge (#1598)" {
+  for mark in stopped-seen stopped; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount "$STUB_CFG"/readcount
+    closed_ready "$mark"
+    set_terms 11 term-s-11:session
+    orca_screen "$SESSION_FRAME"
+    run dispatch notify-closed 400 11
+    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+    [ "$output" = "notified 11" ]
+    case "$output" in *ambiguous-terminal*) false ;; esac
+    [ "$(cat "$STUB_CFG/sent_term-s-11")" = "${CLOSED_MSG_HEAD}（停止の記録: ${CLOSED_STOP_URL}）" ]
+    [ "$(calls '^orca terminal read --terminal term-s-11 --screen --json$')" -eq 1 ]
+  done
+}
+
+@test "notify-closed: a stop with a uuid puts it in the epic's line before the URL" {
+  closed_ready
+  put_record 11 status=waiting stop=stopped-seen stop_uuid=a-1
+  run dispatch notify-closed 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "notified 11" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した 発言 a-1 $CLOSED_STOP_URL" ]
+}
+
 @test "notify-closed: the stop record is read only from trusted authors' stop comments" {
   closed_ready
   run dispatch notify-closed 400 11
@@ -4687,14 +5287,80 @@ nothing_sent() {
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
 }
 
-@test "notify-closed: a child that is not stopped gets nothing" {
+# 子 11 の記録の stop_turn を今のターンと合わない組にする（受領した組が古い）
+stale_stop_turn() {
+  local f; f="$(rec_of 1122 11)"
+  jq -c '.stop_turn={generation:9,session_id:"s9"}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# 子 11 の会話ログを、止まりの発言 d1 より後に主の入力がある形にする（会話ログが進んだ）
+moved_log() {
+  local f; f="$(rec_of 1122 11)"
+  jq -c '.stop_uuid="d1"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(chat_line assistant "$(jq -rn '(now - 900) | floor | todate')" 'どちらに' '{"uuid":"d1"}')" \
+    "$(chat_line user "$(jq -rn '(now - 300) | floor | todate')" 'こちらで' '{"uuid":"i1"}')"
+}
+
+# 子 11 に促しが今の端末にだけ送られ、エピックに通した行が 1 行残っている
+notified_in_place() {
+  [ "$output" = "notified 11" ] || return 1
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "${CLOSED_MSG_HEAD}（停止の記録: ${CLOSED_STOP_URL}）" ] || return 1
+  starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した — 記録先が completed で閉じたので" || return 1
+  [ "$(calls '^orca terminal close')" -eq 0 ] || return 1
+  [ "$(calls '^orca terminal create')" -eq 0 ] || return 1
+  [ "$(calls '^orca terminal send')" -eq 1 ]
+}
+
+@test "notify-closed: a child without the stopped mark still gets the reply whether running or waiting" {
   for mark in "" resumed; do
-    : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
-    closed_ready "$mark"
+    for st in running waiting; do
+      : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+      closed_ready "$mark" "$st"
+      run dispatch notify-closed 400 11
+      [ "$status" -eq 0 ] || { echo "mark=$mark st=$st status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+      notified_in_place || { echo "mark=$mark st=$st output=$output"; cat "$STUB_LOG"; false; }
+      [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $CLOSED_STOP_URL" ]
+    done
+  done
+}
+
+@test "notify-closed: a stale received turn or a moved log does not stop the reply" {
+  for kind in turn log; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    closed_ready stopped-seen
+    case "$kind" in turn) stale_stop_turn ;; log) moved_log ;; esac
     run dispatch notify-closed 400 11
-    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; false; }
-    [ "$output" = "skipped 11 not-stopped" ]
-    nothing_sent
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    notified_in_place || { echo "kind=$kind output=$output"; cat "$STUB_LOG"; false; }
+  done
+}
+
+@test "notify-closed: --relaunch does not close or recreate the terminal of a child that is not stopped" {
+  for kind in empty resumed turn log; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    case "$kind" in
+      empty) closed_ready "" running ;;
+      resumed) closed_ready resumed ;;
+      turn) closed_ready stopped-seen; stale_stop_turn ;;
+      log) closed_ready stopped-seen; moved_log ;;
+    esac
+    run dispatch notify-closed --relaunch 400 11
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    notified_in_place || { echo "kind=$kind output=$output"; cat "$STUB_LOG"; false; }
+  done
+}
+
+@test "notify-closed: --relaunch closes and recreates the terminal of a stopped child" {
+  for mark in stopped stopped-seen; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    closed_ready "$mark"
+    run dispatch notify-closed --relaunch 400 11
+    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = "notified 11" ]
+    [ "$(calls '^orca terminal close')" -eq 1 ]
+    [ "$(first_line '^orca terminal close')" -lt "$(first_line '^orca terminal create')" ]
+    starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
+    [ "$(calls '^gh issue comment 400')" -eq 1 ]
   done
 }
 
@@ -4811,11 +5477,16 @@ nothing_sent() {
   l3="$(printf '%s\n' "$r" | grep -E '^3\. ')"
   l4="$(printf '%s\n' "$r" | grep -E '^4\. ')"
   printf '%s\n' "$l2" | grep -F 'EPIC_DISPATCH_DONE_IDLE_SEC' | grep -F '1800' | grep -qF '推定'
-  printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '止まった印'
+  printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '親がまだ受けていない止まり（`stopped`）の子'
+  printf '%s\n' "$l2" | grep -qF '親が受けた止まり（`stopped-seen`）の子は推定の対象に入る'
+  ! printf '%s\n' "$l2" | grep -qF '止まった印の子' || return 1
   printf '%s\n' "$l2" | grep -F '閉じてから' | grep -qF 'サブエージェント'
   printf '%s\n' "$l3" | grep -F '推定の `done`' | grep -qF '`reap`'
   printf '%s\n' "$l3" | grep -F '`closed` と `done` の両方' | grep -qF '4 を処理してから'
-  printf '%s\n' "$l4" | grep -F '`skipped <N> not-stopped`' | grep -qF '推定'
+  printf '%s\n' "$l4" | grep -qF '止まった印の有無によらず、完了の印の無い子に送る'
+  printf '%s\n' "$l4" | grep -F '促しの届かなかった子' | grep -F -- '--watch-done' | grep -qF '推定'
+  ! printf '%s\n' "$l4" | grep -qF 'not-stopped' || return 1
+  ! printf '%s\n' "$l4" | grep -qF '止まった印の無い子' || return 1
   printf '%s\n' "$l4" | grep -qF 'ステータスを変えるよう頼まない'
 }
 
@@ -4852,27 +5523,26 @@ nothing_sent() {
   [ "$n" -gt 0 ]
   [ "$l" -gt 0 ]
   [ "$n" -lt "$l" ]
-  printf '%s\n' "$l4" | grep -qF '`launch` が `failed` を返しても'
+  printf '%s\n' "$l4" | grep -qF '`launch` の `failed` 後の送り漏れを防ぐ'
 }
 
-# --- 同時に動く子の上限（SKILL.md） ---
+# --- 同時に動く子の上限（epic-loop.md） ---
 # spec: dev-workflow-develop（epic-dispatch.sh は同時に枠を使う子の上限を環境変数か物理メモリから決める /
 # 親は枠が空いたら後回しの子を起動し、サブエージェント方式でも同じ上限を当てる）
 
-# 「回し方」の「**同時に動く子の上限**」の段落
+# epic-loop.md の「同時に動く子の上限」の段落
 limit_para() { run_section | grep -E '^\*\*同時に動く子の上限\*\*'; }
-# 「回し方」の「**サブエージェント方式**」の段落
-subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*'; }
+# epic-subagent.md の「サブエージェント方式」の段落
+subagent_para() { cat "$PLUGIN_DIR/skills/develop/references/epic-subagent.md"; }
+worker_slots() { cat "$PLUGIN_DIR/skills/develop/references/epic-worker-slots.md"; }
 
-@test "skill: the limit paragraph names the variable, the default formula and the measured RSS" {
+@test "skill: the limit paragraph names the variable, default formula and invalid values" {
   p="$(limit_para)"
   [ -n "$p" ]
   printf '%s\n' "$p" | grep -qF '`EPIC_DISPATCH_MAX_PARALLEL`'
   printf '%s\n' "$p" | grep -qF '物理メモリの GiB を 4 で割って切り捨てた値（最小 1。メモリ量を読めなければ 2）'
   printf '%s\n' "$p" | grep -qF '`scripts/epic-dispatch.sh max-parallel`'
-  printf '%s\n' "$p" | grep -qF '146〜404 MB'
-  printf '%s\n' "$p" | grep -qF '最大 564 MB'
-  printf '%s\n' "$p" | grep -qF '1.5 GiB は実測ではない'
+  printf '%s\n' "$p" | grep -qF '1 以上の整数。空・0・数字以外なら `launch` は使い方を出して exit 1'
 }
 
 @test "skill: the limit paragraph does not count done, closed and stopped children, and resumed children can go over on Orca" {
@@ -4888,7 +5558,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
   l1="$(printf '%s\n' "$r" | grep -E '^1\. ')"
   l2="$(printf '%s\n' "$r" | grep -E '^2\. ')"
   printf '%s\n' "$l1" | grep -qF '`deferred <N>`'
-  printf '%s\n' "$l1" | grep -qF '`EPIC_DISPATCH_MAX_PARALLEL`'
+  printf '%s\n' "$l1" | grep -qF '**同時に動く子の上限**'
   printf '%s\n' "$l2" | grep -qF '後回しの子は動いている子にも片付け待ちの子にも入れない'
   printf '%s\n' "$l2" | grep -qF '`wait` の位置引数にも `--watch-done` にも渡さない'
 }
@@ -4896,9 +5566,9 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 @test "skill: Orca route steps 3, 4 and 8 launch the deferred children again" {
   r="$(run_section)"
   for k in 3 8; do
-    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子が残っていれば、2 に戻る前に依存の解けた開いた子'
+    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -Eq '後回しの子が残っていれば、(`references/epic-loop.md` の手順 )?2 に戻る前に依存の解けた開いた子'
   done
-  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子もここに含まれる'
+  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子も同じ `--note` で渡す'
 }
 
 @test "skill: Orca route reports to the owner when only deferred children are left" {
@@ -4912,7 +5582,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: the subagent route caps the total of W across children with max-parallel" {
-  p="$(subagent_para)"
+  p="$(worker_slots)"
   printf '%s\n' "$p" | grep -qF '`scripts/epic-dispatch.sh max-parallel` を 1 回呼んでその値を上限にし'
   printf '%s\n' "$p" | grep -qF 'エピックの全部の子をまたいで、枠を使っている W の総数をその上限までに抑える'
   printf '%s\n' "$p" | grep -qF '担う change のループが終わる（PR がマージされる・記録先が閉じる）か、主の返事待ちで保留に入るまで 1 枠を使う'
@@ -4921,7 +5591,7 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: the subagent route does not resume a W back from hold until a slot frees" {
-  p="$(subagent_para)"
+  p="$(worker_slots)"
   printf '%s\n' "$p" | grep -qF '0 なら起こさず再開もせずに待ちに回す'
   printf '%s\n' "$p" | grep -qF '空き枠が 0 なので A は待ちに回し'
   printf '%s\n' "$p" | grep -qF '本体が `needs-approval` を付けて主の返事を待つ場面（W の停止・G の保留のどちらも）'
@@ -4929,22 +5599,28 @@ subagent_para() { run_section | grep -E '^\*\*サブエージェント方式\*\*
 }
 
 @test "skill: each W per change inside one child uses its own slot" {
-  printf '%s\n' "$(subagent_para)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
-  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic.md` の「回し方」のサブエージェント方式の枠に従う）' "$SKILL"
+  printf '%s\n' "$(worker_slots)" | grep -qF 'change ごとに W を並列に起こすときは、その W ごとに 1 枠を使う'
+  grep -qF '並列可能なら W を並列に起こす（エピックの子のときは `references/epic-worker-slots.md` の枠に従う）' "$SKILL"
 }
 
 # --- wait --resolve: 通す返事を起動し直すかを表で決める ---
 # spec: dev-workflow-develop（wait --resolve は通す返事を送る前に起動し直すかを表で決める）
 
-# 子 11 のトランスクリプトを置く（<何分前の最後のリクエスト> <会話量> [compact 1] [ファイル名]）
+MAIN_UUID=aaaaaaaa-1111-4111-8111-111111111111
+
+# 子 11 のトランスクリプトを置く（<何分前の最後のリクエスト> <会話量> [compact 1] [ファイル名] [固定 timestamp]）
 put_transcript() {
-  local ago="$1" ctx="$2" compact="${3-0}" name="${4-s1}"
+  local ago="$1" ctx="$2" compact="${3-0}" name="${4-s1}" fixed_ts="${5-}"
   local p="$BATS_TEST_TMPDIR/work/issue-11" dir ts
   dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$p" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$dir"
-  ts="$(python3 -c "import datetime,sys;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  ts="$fixed_ts"
+  if [ -z "$ts" ]; then
+    ts="$(python3 -c "import datetime,sys;print((datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=$ago)).strftime('%Y-%m-%dT%H:%M:%S.000Z'))")"
+  fi
   {
-    printf '{"type":"assistant","timestamp":"%s","message":{"usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$ts" "$ctx"
+    printf '{"type":"assistant","entrypoint":"cli","uuid":"%s","timestamp":"%s","message":{"content":"q","usage":{"input_tokens":%s,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}\n' "$MAIN_UUID" "$ts" "$ctx"
+    printf '{"type":"system","subtype":"turn_duration","timestamp":"%s"}\n' "$ts"
     [ "$compact" = 1 ] && printf '{"type":"system","subtype":"compact_boundary","timestamp":"%s"}\n' "$ts"
   } > "$dir/$name.jsonl"
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
@@ -4958,6 +5634,8 @@ resolve_pass() {
   printf '%s\n' '/work/parent' > "$STUB_CFG/toplevel"
   : > "$STUB_LOG"
   resolve_ready
+  # 起動し直しの判定は本体の会話ログを記録の stop_uuid（put_transcript のログの uuid）で決める
+  put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
   judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
   # 子の判断の既定の subagent-context.sh は plugin のものを使う
 }
@@ -4970,7 +5648,7 @@ resolve_pass() {
   [ "$(calls '^orca terminal create')" -eq 1 ]
   [ "$(calls '^orca terminal send')" -ge 1 ]
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 $MAIN_UUID $STOP_URL" ]
 }
 
 @test "wait --resolve relaunch: under 60 minutes sends as is" {
@@ -5000,19 +5678,72 @@ resolve_pass() {
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
 }
 
-@test "wait --resolve relaunch: no transcript or two transcripts sends as is" {
+# 子 11 の置き場に別の会話ログを足す（<ファイル名> <entrypoint> <何分前> <uuid>）
+put_other_log() {
+  local name="$1" entry="$2" ago="$3" uid="$4"
+  local dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  mkdir -p "$dir"
+  python3 - "$dir/$name.jsonl" "$entry" "$ago" "$uid" <<'PYCODE'
+import datetime, json, sys
+p, entry, ago, uid = sys.argv[1:]
+t = (datetime.datetime.now(datetime.timezone.utc) - datetime.timedelta(minutes=int(ago))).strftime('%Y-%m-%dT%H:%M:%S.000Z')
+row = dict(type='assistant', entrypoint=entry, uuid=uid, timestamp=t,
+           message=dict(content='q', usage=dict(input_tokens=160000, cache_creation_input_tokens=0, cache_read_input_tokens=0)))
+open(p, 'w').write(json.dumps(row) + '\n')
+PYCODE
+}
+
+resolve_relaunch_count() {
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "$output"; cat "$BATS_TEST_TMPDIR/stderr"; return 1; }
+  calls '^orca terminal create'
+}
+
+@test "wait --resolve relaunch: no transcript sends as is" {
   resolve_pass
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
-  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
-  [ "$status" -eq 0 ]
-  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(resolve_relaunch_count)" -eq 0 ]
   [ -e "$STUB_CFG/sent_term-a-11" ]
+}
+
+@test "wait --resolve relaunch: transcripts tied on the last activity send as is" {
   resolve_pass
   put_transcript 90 160000 0 s1
-  put_transcript 90 160000 0 s2
-  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  cp "$CLAUDE_PROJECTS_DIR"/*/s1.jsonl "$(dirname "$(ls "$CLAUDE_PROJECTS_DIR"/*/s1.jsonl)")/s2.jsonl"
+  [ "$(resolve_relaunch_count)" -eq 0 ]
+  [ -e "$STUB_CFG/sent_term-a-11" ]
+}
+
+@test "wait --resolve relaunch: only a past cli session without the stop_uuid sends as is" {
+  resolve_pass
+  put_other_log past cli 90 bbbbbbbb-1111-4111-8111-111111111111
+  [ "$(resolve_relaunch_count)" -eq 0 ]
+  [ -e "$STUB_CFG/sent_term-a-11" ]
+}
+
+@test "wait --resolve relaunch: an empty stop_uuid decides no main transcript (one past cli log included)" {
+  put_transcript 90 160000
+  dir="$(dirname "$(ls "$CLAUDE_PROJECTS_DIR"/*/s1.jsonl)")"
+  run python3 "${SCRIPT%/*}/child-log-read.py" --main-log "$dir" ""
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run python3 "${SCRIPT%/*}/child-log-read.py" --main-log "$dir" "$MAIN_UUID"
   [ "$status" -eq 0 ]
-  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$output" = "$dir/s1.jsonl" ]
+}
+
+@test "wait --resolve relaunch: an sdk-py log beside the main log still relaunches" {
+  resolve_pass
+  put_transcript 90 160000
+  put_other_log sdk sdk-py 1 cccccccc-1111-4111-8111-111111111111
+  [ "$(resolve_relaunch_count)" -eq 1 ]
+}
+
+@test "wait --resolve relaunch: an older cli session beside the main log still relaunches" {
+  resolve_pass
+  put_transcript 90 160000
+  put_other_log past cli 600 dddddddd-1111-4111-8111-111111111111
+  [ "$(resolve_relaunch_count)" -eq 1 ]
 }
 
 @test "wait --resolve relaunch: the idle threshold can be overridden and a bad value is refused" {
@@ -5063,6 +5794,37 @@ resolve_pass() {
   [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
 }
 
+@test "pending-owner: a child whose log moved past the stop is not pending, and the others print the uuid" {
+  make_stub orca
+  set_current 400
+  old="$(jq -rn '(now - 900) | floor | todate')"
+  newer="$(jq -rn '(now - 300) | floor | todate')"
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d1"}')" "$(chat_line assistant "$newer" '進めます' '{"uuid":"d1b"}')"
+  put_record 12 stop=stopped-seen stop_uuid=d2
+  put_chat 12 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d2"}')"
+  put_record 13 stop=stopped-seen stop_uuid=d3
+  put_record 14 stop=stopped-seen stop_uuid=d4
+  put_chat 14 s1 "$(chat_line assistant "$old" 'どちらに' '{"uuid":"d4"}')" "$(chat_line user "$newer" 'こちらで' '{"uuid":"i4"}')"
+  before="$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)"
+  run dispatch pending-owner 11 12 13 14
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "$(printf 'pending 12 d2\npending 13 d3')" ]
+  [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
+}
+
+@test "pending-owner: a done child is not pending even when its stop is still stopped-seen (#1828)" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop=stopped-seen status=done
+  put_record 12 stop=stopped-seen
+  before="$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)"
+  run dispatch pending-owner 11 12
+  [ "$status" -eq 0 ]
+  [ "$output" = "pending 12" ]
+  [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
+}
+
 @test "pending-owner: an Orca stopped-seen mark alone is not pending" {
   make_stub orca
   set_current 400
@@ -5087,7 +5849,7 @@ resolve_pass() {
 @test "skill: Orca route steps 3 and 4 relaunch the deferred children with the same --note" {
   r="$(run_section)"
   printf '%s\n' "$r" | grep -E '^3\. ' | grep -qF '依存の解けた開いた子を、最初に渡したときと同じ `--note` を付けて `launch` に渡し直す'
-  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子には最初に渡したときと同じ `--note` を付ける'
+  printf '%s\n' "$r" | grep -E '^4\. ' | grep -qF '後回しの子も同じ `--note` で渡す'
 }
 
 @test "skill: Orca route step 4 relaunches the deferred children after a close other than completed too" {
@@ -5097,7 +5859,7 @@ resolve_pass() {
 @test "skill: Orca route steps 3, 4 and 7 report when only deferred children are left" {
   r="$(run_section)"
   for k in 3 4 7; do
-    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子だけが残るときは 2 の報告'
+    printf '%s\n' "$r" | grep -E "^$k\\. " | grep -qF '後回しの子だけなら 2 の報告'
   done
 }
 
@@ -5110,7 +5872,7 @@ resolve_pass() {
 }
 
 @test "skill: the subagent route stops on a bad max-parallel setting" {
-  printf '%s\n' "$(subagent_para)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる。手順 6 と同じ）'
+  printf '%s\n' "$(worker_slots)" | grep -qF '（exit 1 なら stderr を添えて設定の誤りとして報告して止まる）'
 }
 
 # --- adopt ---
@@ -5314,7 +6076,7 @@ resolve_pass() {
 }
 
 # --- skill: 状態の記録（adopt・clear・Orca の印は写し） ---
-# spec: dev-workflow-develop（epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ）
+# spec: dev-workflow-develop（「epic.md の回し方は再開時に adopt を呼び、待ちを終えるときに clear を呼ぶ」。現行の所在は epic-loop.md）
 
 @test "skill: step 7 calls adopt before reap, pending-owner and launch, and separates ambiguous from an empty exit 1" {
   p="$(run_section | grep -E '^7\. `回し方: Orca`')"
@@ -5347,7 +6109,7 @@ resolve_pass() {
   p="$(run_section | grep -E '^\*\*子の状態の正本\*\*')"
   printf '%s\n' "$p" | grep -qF 'Orca のボードの列とコメント欄は、記録を書いたあとに写したもの'
   printf '%s\n' "$p" | grep -qF 'Orca の画面で印を手で変えても、親の見張り'
-  section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP" | grep -F -- '- **印**' | grep -qF 'Orca の画面には写しが出る'
+  ! section 'エピックの子が主の返事を待って止まるとき' "$EPIC_CHILD_STOP" | grep -qF -- '- **印**' || return 1
 }
 
 @test "skill: step 3 no longer names not-child and keeps state-unreadable without checking" {
@@ -5470,7 +6232,7 @@ xnothing_made() {
 
 @test "launch: an already launched child in another repository is skipped without looking for a clone" {
   make_stub orca
-  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 stop=stopped
   run dispatch launch 1122 genetta-inc/flatmate#1615
   [ "$status" -eq 0 ]
   [ "$output" = "skipped genetta-inc/flatmate#1615" ]
@@ -5612,7 +6374,7 @@ xnothing_made() {
   EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch --note 範囲を守る 1122 genetta-inc/flatmate#1615
   [ "$output" = "launched genetta-inc/flatmate#1615" ]
   case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。"*) ;; *) false ;; esac
+  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop genetta-inc/flatmate#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。親ワークツリー "*) ;; *) cat "$STUB_CFG/sent_term-1615"; false ;; esac
   grep -qF -- "gh issue comment 1615 -R genetta-inc/flatmate --body" "$STUB_LOG"
   case "$(cat "$STUB_CFG/comment_1615")" in "親エピックからの注意書き: oratta/claude-harness#1122"*) ;; *) false ;; esac
 }
@@ -5631,7 +6393,7 @@ xnothing_made() {
   run dispatch launch --note 範囲を守る 1122 11
   [ "$output" = "launched 11" ]
   case "$(cat "$STUB_CFG/tcmd_11")" in "EPIC_DISPATCH_PARENT_EPIC=1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-11")" in "/develop #11 （エピック #1122 の子。親ワークツリー"*) ;; *) false ;; esac
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "/develop #11 （エピック #1122 の子。親ワークツリー /work/parent から Orca で起動） 範囲を守る" ] || { cat "$STUB_CFG/sent_term-11"; false; }
   grep -qF -- "gh issue comment 11 --body" "$STUB_LOG"
   case "$(cat "$STUB_CFG/comment_11")" in "親エピックからの注意書き: #1122"*) ;; *) false ;; esac
 }
@@ -5668,7 +6430,7 @@ xnothing_made() {
 @test "reply: a child in another repository gets the epic repository in the header" {
   make_stub orca
   set_current 1122
-  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 stop=stopped
   set_terms 1615 term-x-1615
   run dispatch reply --as parent 1122 genetta-inc/flatmate#1615 続けてよい
   [ "$output" = "sent genetta-inc/flatmate#1615" ]
@@ -5680,11 +6442,20 @@ xnothing_made() {
 @test "reply --relaunch: a child in another repository is started with the epic repository" {
   make_stub orca
   set_current 1122
-  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615
+  put_record 1615 repo=genetta-inc/flatmate child=genetta-inc/flatmate#1615 stop=stopped
   run dispatch reply --relaunch --as parent 1122 genetta-inc/flatmate#1615 続けてよい
   [ "$output" = "relaunched genetta-inc/flatmate#1615" ]
   case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。"*) ;; *) false ;; esac
+  [ "$(cat "$STUB_CFG/sent_term-1615")" = "/develop genetta-inc/flatmate#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。返事を受けて起動し直し） 親エピック #1122（oratta/claude-harness）の判断（主の承認ではない）: 続けてよい" ] || { cat "$STUB_CFG/sent_term-1615"; false; }
+}
+
+@test "reply --relaunch: a same-repository child keeps the old instruction" {
+  make_stub orca
+  set_current 1122
+  put_record 11 stop=stopped
+  run dispatch reply --relaunch --as parent 1122 11 続けてよい
+  [ "$output" = "relaunched 11" ] || { echo "output=$output"; false; }
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "/develop #11 （エピック #1122 の子。返事を受けて起動し直し） 親エピック #1122 の判断（主の承認ではない）: 続けてよい" ] || { cat "$STUB_CFG/sent_term-11"; false; }
 }
 
 @test "reply: a same-repository child keeps the old header" {
@@ -5717,8 +6488,8 @@ xreap_ready() {
   grep -qF -- 'gh pr list -R genetta-inc/flatmate --head oratta/issue-1615 --state merged --json headRefOid' "$STUB_LOG"
   p="$BATS_TEST_TMPDIR/work/issue-1615"
   grep -qF -- "git -C $p rev-parse --path-format=absolute --git-common-dir" "$STUB_LOG"
-  grep -qF -- 'git -C /clone/flat/.git branch -D oratta/issue-1615' "$STUB_LOG"
-  [ "$(calls '^git branch -D')" -eq 0 ]
+  grep -qF -- 'git -C /clone/flat/.git update-ref -d refs/heads/oratta/issue-1615 aaa111' "$STUB_LOG"
+  [ "$(calls '^git update-ref -d')" -eq 0 ]
   rm_line="$(first_line "^orca worktree rm --worktree path:$p\$")"
   cd_line="$(first_line 'rev-parse --path-format=absolute --git-common-dir')"
   [ -n "$rm_line" ] && [ -n "$cd_line" ] && [ "$cd_line" -lt "$rm_line" ]
@@ -5901,6 +6672,32 @@ part() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic-launch-or
   [ "$(calls '^orca terminal list')" -eq 1 ]
   [ "$(grep -oE '^orca terminal (close|create|wait|send)' "$STUB_LOG" | tr '\n' ' ')" \
     = "orca terminal close orca terminal create orca terminal wait orca terminal send " ]
+}
+
+@test "launcher orca: deliver reads the screen once only for one unidentified terminal (#1598)" {
+  make_stub orca
+  echo '{"ok":true,"result":{"terminals":[{"handle":"s-5","title":"flatmate #2217 burn モード開発","agentIdentity":null}]}}' > "$STUB_CFG/tlist_json_5"
+  orca_screen "$SESSION_FRAME"
+  run part deliver /work/issue-5 0 返事 cld 指示
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "sent" ]
+  [ "$(calls '^orca terminal list')" -eq 1 ]
+  [ "$(calls '^orca terminal read --terminal s-5 --screen --json$')" -eq 1 ]
+  [ "$(calls '^orca terminal read')" -eq 1 ]
+  [ "$(grep -oE '^orca terminal (list|read|send|close|create|wait)' "$STUB_LOG" | tr '\n' ' ')" \
+    = "orca terminal list orca terminal read orca terminal send " ]
+  [ "$(cat "$STUB_CFG/sent_s-5")" = 返事 ]
+  : > "$STUB_LOG"
+  echo '{"ok":true,"result":{"terminals":[{"handle":"c-5","title":"x","agentIdentity":"claude"}]}}' > "$STUB_CFG/tlist_json_5"
+  run part deliver /work/issue-5 0 返事 cld 指示
+  [ "$status" -eq 0 ]; [ "$output" = "sent" ]
+  [ "$(calls '^orca terminal read')" -eq 0 ]
+  : > "$STUB_LOG"
+  echo '{"ok":true,"result":{"terminals":[{"handle":"s-5","title":"a"},{"handle":"t-5","title":"b"}]}}' > "$STUB_CFG/tlist_json_5"
+  run part deliver /work/issue-5 0 返事 cld 指示
+  [ "$status" -eq 1 ]; [ "$output" = "failed ambiguous-terminal" ]
+  [ "$(calls '^orca terminal read')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
 }
 
 @test "launcher orca: mirror does nothing without orca" {
@@ -6243,7 +7040,7 @@ tmux_pane() {
 
 @test "tmux reply: a tmux record sends through tmux and never calls orca, even with an Orca-pinned environment" {
   tmux_env
-  put_record 11 status=waiting launcher=tmux
+  put_record 11 status=waiting launcher=tmux stop=stopped
   w="$BATS_TEST_TMPDIR/work/issue-11"
   tmux_log_for "$w"
   tmux_pane 11 %7 node
@@ -6265,7 +7062,7 @@ tmux_pane() {
 
 @test "tmux reply: a tmux record works when the Orca part is unusable" {
   tmux_env
-  put_record 11 status=waiting launcher=tmux
+  put_record 11 status=waiting launcher=tmux stop=stopped
   tmux_log_for "$BATS_TEST_TMPDIR/work/issue-11"
   tmux_pane 11 %7 node
   EPIC_DISPATCH_LAUNCHER=orca run dispatch reply --as owner 400 11 'B'
@@ -6374,7 +7171,7 @@ assert_resolve_delivery() {
   else
     [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
   fi
-  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 $STOP_URL" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 $MAIN_UUID $STOP_URL" ]
 }
 
 @test "wait --resolve relaunch: short idle size boundary and context exit 0 or 2" {
@@ -6455,9 +7252,10 @@ JSON
   for ctx in 150000 0; do
     resolve_pass
     : > "$STUB_LOG"
-    put_transcript 5 "$ctx"
+    # 本体のログは有効な時刻の行で決まり、使用量の行だけが時刻不明
+    put_transcript 5 0
     file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
-    printf '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":%s}}}\n' "$ctx" > "$file"
+    printf '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":%s}}}\n' "$ctx" >> "$file"
     expected=0
     [ "$ctx" -lt 150000 ] || expected=1
     assert_resolve_delivery "$expected"
@@ -6490,7 +7288,7 @@ keepalive_reply() {
   put_record 11
   local copy="$BATS_TEST_TMPDIR/plugin"
   mkdir -p "$copy/scripts" "$copy/references"
-  cp "$PLUGIN_DIR/scripts/epic-dispatch.sh" "$PLUGIN_DIR/scripts/epic-state.sh" "$copy/scripts/"
+  cp "$PLUGIN_DIR/scripts/epic-dispatch.sh" "$PLUGIN_DIR/scripts/epic-state.sh" "$PLUGIN_DIR/scripts/child-log-read.py" "$copy/scripts/"
   jq '.request_template = "Test request: {reply_format}" | .reply_prefix = "[test.v2]" | .separator = " / " | .fields = ["次:", "待ち:", "追加:"]' \
     "$PLUGIN_DIR/references/child-cache-keepalive.json" > "$copy/references/child-cache-keepalive.json"
   SCRIPT="$copy/scripts/epic-dispatch.sh"
@@ -6585,10 +7383,11 @@ keepalive_reply() {
 @test "keepalive definition: child reads the shared definition before stopping and handles reserved input before resuming" {
   grep -qF 'references/child-cache-keepalive.json' "$EPIC_CHILD_STOP"
   grep -qF '停止前に' "$EPIC_CHILD_STOP"
-  grep -qF '通常の主の返事や親の判断より先に' "$EPIC_CHILD_STOP"
-  grep -qF '受信ターンではツールを呼ばない' "$EPIC_CHILD_STOP"
-  grep -qF 'mark resumed/stopped' "$EPIC_CHILD_STOP"
-  grep -qF '#1374' "$EPIC_CHILD_STOP"
+  grep -qF 'references/epic-keepalive.md' "$EPIC_CHILD_STOP"
+  grep -qF '通常の主の返事や親の判断より先に' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '受信ターンではツールを呼ばない' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '調査・作業・停止コメントの投稿は行わず' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
+  grep -qF '#1374' "$PLUGIN_DIR/skills/develop/references/epic-keepalive.md"
 }
 
 # --- child-log ---
@@ -6610,8 +7409,8 @@ chat_line() {
   local t="$1" ts="$2" text="$3" extra="${4-}"
   [ -n "$extra" ] || extra='{}'
   jq -cn --arg t "$t" --arg ts "$ts" --arg x "$text" --argjson e "$extra" \
-    'if $t == "user" then {type: "user", timestamp: $ts, message: {role: "user", content: $x}} + $e
-     else {type: "assistant", timestamp: $ts, message: {role: "assistant", content: [{type: "text", text: $x}]}} + $e end'
+    'if $t == "user" then {type: "user", entrypoint: "cli", timestamp: $ts, message: {role: "user", content: $x}} + $e
+     else {type: "assistant", entrypoint: "cli", timestamp: $ts, message: {role: "assistant", content: [{type: "text", text: $x}]}} + $e end'
 }
 
 @test "child-log: prints the last owner and child messages with JST times, and a tool result is not an owner message" {
@@ -6628,6 +7427,64 @@ chat_line() {
   [ "$output" = "$(printf '11\t2026-10-26 15:00\tログインはやめて聞き取りに移って\t2026-10-26 15:01\t了解しました。聞き取りに移ります')" ]
   [ "$(calls '^orca ')" -eq 0 ]
   [ "$(cd "$EPIC_STATE_ROOT" && find . | sort && cat ./*/*.json)" = "$before" ]
+}
+
+@test "child-log: the child time is the time of the text, not of the AskUserQuestion that follows it" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z 'はじめて')" \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z '聞きます')" \
+    '{"type":"assistant","entrypoint":"cli","uuid":"a1","timestamp":"2026-10-26T06:30:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"tu1","name":"AskUserQuestion","input":{"questions":[{"question":"A にしますか"}]}}]}}'
+  run dispatch child-log 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf '11\t2026-10-26 15:00\tはじめて\t2026-10-26 15:01\t聞きます')" ]
+}
+
+# mktemp -d を失敗させ、rm は呼ばれた引数を記録する。ルート直下 1 階層のパス（/* の展開）を受けたら本物の rm は呼ばない
+mktemp_fail_stubs() { # <何回目の mktemp -d から失敗するか>
+  cat > "$STUB_BIN/mktemp" <<'STUB'
+#!/bin/bash
+case " $* " in
+  *" -d "*)
+    n=$(( $(cat "$BATS_TEST_TMPDIR/mktemp_d.count" 2>/dev/null || echo 0) + 1 ))
+    echo "$n" > "$BATS_TEST_TMPDIR/mktemp_d.count"
+    [ "$n" -lt "$MKTEMP_FAIL_FROM" ] || exit 1 ;;
+esac
+exec /usr/bin/mktemp "$@"
+STUB
+  cat > "$STUB_BIN/rm" <<'STUB'
+#!/bin/bash
+printf '%s\n' "$*" >> "$BATS_TEST_TMPDIR/rm.log"
+for a in "$@"; do
+  case "$a" in -*) ;; *) if printf '%s' "$a" | grep -qE '^/[^/]+$'; then exit 0; fi ;; esac
+done
+exec /bin/rm "$@"
+STUB
+  chmod +x "$STUB_BIN/mktemp" "$STUB_BIN/rm"
+  export MKTEMP_FAIL_FROM="$1"
+  : > "$BATS_TEST_TMPDIR/rm.log"
+  rm -f "$BATS_TEST_TMPDIR/mktemp_d.count"
+}
+
+@test "wait: when the first mktemp -d fails it stops with a message and runs no rm at all" {
+  keepalive_wait_setup
+  mktemp_fail_stubs 1
+  run dispatch wait --watch-stopped --interval 0 --timeout 0 11
+  [ "$status" -eq 1 ] || return 1
+  grep -qF 'could not create a temporary directory' "$BATS_TEST_TMPDIR/stderr" || return 1
+  [ ! -s "$BATS_TEST_TMPDIR/rm.log" ] || return 1
+}
+
+@test "wait --resolve: when the mktemp -d for the rejudge directory fails it stops and never removes a glob of the root" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  mktemp_fail_stubs 2
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 1 ] || return 1
+  grep -qF 'could not create a temporary directory' "$BATS_TEST_TMPDIR/stderr" || return 1
+  ! grep -qE '(^| )/[^/ ]+( |$)' "$BATS_TEST_TMPDIR/rm.log" || return 1
 }
 
 @test "child-log: a parent judgment reply is not an owner message but a relayed owner reply is" {
@@ -6671,7 +7528,7 @@ chat_line() {
   run dispatch child-log 11
   [ "$status" -eq 0 ]
   txt="$(printf '%s\n' "$output" | cut -f3)"
-  [ "$(printf '%s' "$txt" | wc -m | tr -d ' ')" -eq 80 ]
+  [ "$(printf '%s' "$txt" | python3 -c 'import sys; print(len(sys.stdin.buffer.read().decode("utf-8")))')" -eq 80 ]
   [ "$(printf '%s\n' "$output" | wc -l | tr -d ' ')" -eq 1 ]
   case "$txt" in 1行目\ *) ;; *) false ;; esac
 }
@@ -6755,6 +7612,579 @@ chat_line() {
   [ "$output" = "unreadable 11" ]
 }
 
+@test "child-log --last: prints a 500-character statement in full with its uuid and the record's stop_uuid" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  long="$(printf 'あ%.0s' $(seq 1 500))"
+  put_chat 11 s1 \
+    "$(chat_line user 2026-10-26T06:00:00.000Z '進めて')" \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z "$long" '{"uuid":"a-1"}')"
+  run dispatch child-log --last 11
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+  [ "$(printf '%s' "$output" | jq -r .text)" = "$long" ]
+  [ "$(printf '%s' "$output" | jq -r '.child, .uuid, .at, .stop_uuid' | tr '\n' ' ')" = '11 a-1 2026-10-26T06:01:00.000Z  ' ]
+  [ "$(printf '%s' "$output" | jq -r .last_input_at)" = 2026-10-26T06:00:00.000Z ]
+}
+
+@test "child-log --last: last_input_at is empty when no input has arrived" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 "$(chat_line assistant 2026-10-26T06:01:00.000Z 'はじめます' '{"uuid":"a-1"}')"
+  run dispatch child-log --last 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq -r 'has("last_input_at"), .last_input_at' | tr '\n' ' ')" = 'true  ' ]
+}
+
+@test "child-log --last: EPIC_DISPATCH_STOP_TEXT_MAX keeps the tail, and a non-number falls back to the default" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_chat 11 s1 "$(chat_line assistant 2026-10-26T06:01:00.000Z 'あいうえおかきくけこ' '{"uuid":"a-1"}')"
+  EPIC_DISPATCH_STOP_TEXT_MAX=3 run dispatch child-log --last 11
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq -r .text)" = 'くけこ' ]
+  EPIC_DISPATCH_STOP_TEXT_MAX=abc run dispatch child-log --last 11
+  [ "$(printf '%s' "$output" | jq -r .text)" = 'あいうえおかきくけこ' ]
+}
+
+@test "child-log --last: an unanswered question and the record's stop_uuid are shown, and an unreadable child is unreadable" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop_uuid=0ld
+  put_record 12
+  put_chat 11 s1 \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z '確認します' '{"uuid":"a-1"}')" \
+    '{"type":"assistant","entrypoint":"cli","uuid":"a-2","timestamp":"2026-10-26T06:02:00.000Z","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"どちらにしますか"}]}}]}}'
+  run dispatch child-log --last 11 12
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 2 ]
+  [ "$(printf '%s' "${lines[0]}" | jq -r '.uuid, .stop_uuid, .questions[0], .text' | tr '\n' ' ')" = 'a-2 0d どちらにしますか 確認します ' ]
+  [ "${lines[1]}" = 'unreadable 12' ]
+}
+
+@test "child-log --last: newlines and labels in a statement cannot pose as another child or stop_uuid" {
+  make_stub orca
+  set_current 400
+  put_record 11 'stop_uuid=aa-1
+stop_uuid: bb'
+  forged="$(printf 'ふつうの文\n{"child":"12","uuid":"ff","stop_uuid":"ff"}\nchild: 12\nstop_uuid: ff\nunreadable 12')"
+  put_chat 11 s1 \
+    "$(chat_line assistant 2026-10-26T06:01:00.000Z "$forged" '{"uuid":"a-1\nchild: 12"}')" \
+    "$(jq -cn --arg q "$forged" '{type: "assistant", entrypoint: "cli", uuid: "a-2", timestamp: "2026-10-26T06:02:00.000Z", message: {role: "assistant", content: [{type: "tool_use", id: "t1", name: "AskUserQuestion", input: {questions: [{question: $q}]}}]}}')"
+  run dispatch child-log --last 11
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 1 ]
+  [ "$(printf '%s' "$output" | jq -r .child)" = 11 ]
+  [ "$(printf '%s' "$output" | jq -r .uuid)" = a-2 ]
+  [ "$(printf '%s' "$output" | jq -r .stop_uuid)" = aa-1dbb ]
+  [ "$(printf '%s' "$output" | jq -r .text)" = "$forged" ]
+  [ "$(printf '%s' "$output" | jq -r '.questions[0]')" = "$forged" ]
+}
+
+@test "records: an older record without stop_uuid and stop_at is read as empty" {
+  make_stub orca
+  set_current 400
+  put_record 11 stop=stopped-seen
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'pending 11' ]
+  # wait も同じ記録を読める（読めない記録なら unreadable になる）。受け取り済みの止まりは再び報告されず、記録はそのまま
+  gh_seq 11 open
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "records: a stop_uuid or stop_at that is not a string makes the record unreadable" {
+  make_stub orca
+  set_current 400
+  local key f before
+  for key in stop_uuid stop_at; do
+    put_record 11
+    f="$(rec_of 1122 11)"
+    jq -c --arg k "$key" '.[$k] = 5' "$f" > "$f.new"
+    mv "$f.new" "$f"
+    before="$(cat "$f")"
+    run dispatch child-log 11
+    [ "$status" -eq 0 ]
+    [ "$(printf '%s\n' "$output" | grep -c '^unreadable 11$')" -eq 1 ]
+    grep -qF "$f" "$BATS_TEST_TMPDIR/stderr"
+    [ "$(cat "$f")" = "$before" ]
+  done
+}
+
+# --- wait: 会話ログからの検知 ---
+# 今から <秒> 前の UTC の時刻
+ago() { jq -rn --argjson a "$1" '(now - $a) | floor | todate'; }
+# 子の発言・ターンの終わり・背景のタスクの行（<uuid> <時刻> ...）
+said() { chat_line assistant "$2" "${3:-どちらにしますか}" "{\"uuid\":\"$1\"}"; }
+turn_end() { printf '{"type":"system","subtype":"turn_duration","entrypoint":"cli","timestamp":"%s"}' "$1"; }
+bg_start() { printf '{"type":"user","entrypoint":"cli","uuid":"b-%s","timestamp":"%s","toolUseResult":{"backgroundTaskId":"%s"},"message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"x","content":"ok"}]}}' "$1" "$2" "$1"; }
+bg_note() { printf '{"type":"user","entrypoint":"cli","uuid":"n-%s","timestamp":"%s","origin":{"kind":"task-notification"},"message":{"role":"user","content":"<task-notification><task-id>%s</task-id></task-notification>"}}' "$1" "$2" "$1"; }
+asked() { printf '{"type":"assistant","entrypoint":"cli","uuid":"%s","timestamp":"%s","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"AskUserQuestion","input":{"questions":[{"question":"どちらですか"}]}}]}}' "$1" "$2"; }
+wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch-stopped 11; }
+
+@test "wait state: logs and marks alone never detect a stop" {
+  make_stub orca
+  for stop in '' stopped stopped-seen resumed; do
+    put_record 11 "stop=$stop"
+    local f; f="$(rec_of 1122 11)"
+    jq 'del(.turn_input,.turn_state)' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    put_chat 11 s1 "$(asked d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+    wait_stop
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  done
+}
+
+@test "wait state: logs supply uuid and text but not idle turn or background eligibility" {
+  make_stub orca
+  put_record 11
+  put_turn 11
+  put_chat 11 s1 "$(bg_start t1 "$(ago 2)")" "$(said d1 "$(ago 1)")"
+  wait_stop
+  [ "$output" = 'stopped 11' ]; [ "$(rec_get 11 stop_uuid)" = d1 ]
+  # stop_at は時刻の形（null や空や任意の文字列では通さない）
+  [[ "$(rec_get 11 stop_at)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]] || return 1
+}
+
+@test "wait state: re-marking or changing log uuid cannot receive the same turn twice" {
+  make_stub orca
+  put_record 11
+  put_turn 11
+  wait_stop
+  [ "$output" = 'stopped 11' ]
+  local before f; before="$(rec_get 11 stop_at)"; f="$(rec_of 1122 11)"
+  jq '.stop="stopped"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(asked d2 "$(ago 1)")"
+  wait_stop
+  [ "$status" -eq 2 ]; [ "$(rec_get 11 stop_at)" = "$before" ]
+  put_turn 11 parent 主の返事待ち 2
+  wait_stop
+  [ "$output" = 'stopped 11' ]; [ "$(rec_get 11 stop_uuid)" = d2 ]
+}
+
+@test "wait state: malformed uuid is never propagated" {
+  make_stub orca
+  set_current 400
+  put_record 11
+  put_turn 11
+  put_chat 11 s1 "$(said 'a-1;pending-12' "$(ago 300)")" "$(turn_end "$(ago 300)")"
+  wait_stop
+  [ "$output" = 'stopped 11' ]; [ -z "$(rec_get 11 stop_uuid)" ]
+  run dispatch pending-owner 11
+  [ "$output" = 'pending 11' ]
+}
+
+@test "wait state: a new owner input with null state resumes without logs or uuid" {
+  make_stub orca
+  put_record 11 stop=stopped-seen
+  put_turn 11 owner 作業報告 2
+  local f; f="$(rec_of 1122 11)"
+  jq '.turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  wait_stop
+  [ "$status" -eq 2 ]; [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
+}
+
+@test "wait state: a legacy stopped-seen is resumed by a later parent input and its new question is received (P4-F1)" {
+  make_stub orca
+  # Legacy record written before stop_turn existed: built without the fixture's stop_turn completion.
+  put_record 11
+  put_turn 11 parent 主の返事待ち 2
+  local f; f="$(rec_of 1122 11)"
+  jq '.stop="stopped-seen" | .stop_uuid="old" | .stop_at="2026-01-01T00:00:02Z" | del(.stop_turn)
+    | .turn_input.received_at="2026-01-01T00:00:05Z" | .turn_state.recorded_at="2026-01-01T00:00:06Z"' \
+    "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  [ "$(jq -c '.stop_turn' "$f")" = null ]
+  wait_stop
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(jq -c '.stop_turn' "$f")" = '{"generation":2,"session_id":"s1"}' ]
+}
+
+@test "wait state: log movement alone does not resume a received turn" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_chat 11 s1 "$(said d2 "$(ago 1)")" "$(chat_line user "$(ago 1)" '続けて')"
+  wait_stop
+  [ "$status" -eq 2 ]; [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+}
+
+# 記録も印も無い子 11 が会話ログで止まっていて端末が 1 つある環境（2 回目のポーリングで子 11 が閉じる）
+log_resolve_ready() {
+  make_stub orca
+  make_judge
+  set_current 400
+  gh_seq 11 open closed
+  put_record 11
+  put_turn 11
+  set_terms 11 term-a-11
+  put_chat 11 s1 "$(said d1 "$(ago 300)" 'ここに秘密の本文')" "$(turn_end "$(ago 300)")"
+}
+
+@test "wait --resolve log: the judge gets the stop JSON, and an escalation posts the uuid without the statement" {
+  log_resolve_ready
+  judge_says judge_out 主に上げる 主の判断が要る '' なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(jq -r .text "$STUB_CFG/judge_json")" = 'ここに秘密の本文' ]
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d1 ]
+  [ "$(jq -r .marked "$STUB_CFG/judge_json")" = false ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: d1" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: なし" ]
+  [ "$(sed -n 4p "$STUB_CFG/comment_11")" = "主の判断が要る" ]
+  ! grep -qF '秘密の本文' "$STUB_CFG/comment_11" || return 1
+}
+
+@test "wait --resolve log: a pass names the uuid, and adds the URL only when there is a record" {
+  log_resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 d1" ]
+}
+
+@test "wait --resolve log: a pass with a record URL from the judge names both the uuid and the URL" {
+  log_resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい "$STOP_URL"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 d1 $STOP_URL" ]
+}
+
+@test "wait --resolve log: a statement that is not a question goes back to resumed, wakes nobody and sends nothing" {
+  log_resolve_ready
+  printf '判断: 問いではない\n理由: 完了の報告\n返事:\n記録: なし\n' > "$STUB_CFG/judge_out"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  grep -qF '問いではない 11 完了の報告' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^judge 400 11 ')" -eq 1 ]
+  [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ ! -e "$STUB_CFG/comment_400" ]
+  [ ! -e "$STUB_CFG/comment_11" ]
+}
+
+@test "wait --resolve log: a restated question after the parent's reply reaches the judge as d2" {
+  log_resolve_ready
+  judge_says judge_out 主に上げる 主の判断が要る '' なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d1 ]
+  # 親が返事を送ったあと、子が同じ問いを言い直す（新しい発言 d2）。判断には d2 が渡る
+  rm -f "$STUB_CFG/judge_json"
+  put_turn 11 parent 主の返事待ち 2
+  put_chat 11 s1 "$(said d1 "$(ago 300)" 'ここに秘密の本文')" "$(turn_end "$(ago 299)")" "$(said d2 "$(ago 5)" '言い直した本文')" "$(turn_end "$(ago 4)")"
+  gh_seq 11 open closed; printf '0\n' > "$STUB_CFG/ghcount_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d2 ]
+  [ "$(jq -r .text "$STUB_CFG/judge_json")" = '言い直した本文' ]
+}
+
+# 未回答の停止の記録（最後の入力より前）と needs-approval 付きの PR がある子 11（#1828）
+unanswered_ready() {
+  log_resolve_ready
+  printf '0\n' > "$STUB_CFG/ghcount_11"
+  export EPIC_DISPATCH_JUDGE="$PLUGIN_DIR/scripts/stop-judge.sh"
+  jq -cn --arg t "$(ago 900)" '[{body: "子の停止: 主の返事待ち\n止まった理由: リスク許容の確認", author_association: "OWNER",
+    html_url: "https://github.com/o/r/issues/11#issuecomment-9", created_at: $t}]' > "$STUB_CFG/comments_11"
+  jq -cn '[{number: 9, body: "実装\n\nCloses #11", labels: [{name: "needs-approval"}]}]' > "$STUB_CFG/pr_out"
+  put_chat 11 s1 "$(chat_line user "$(ago 600)" '親からの指示')" \
+    "$(said d1 "$(ago 300)" "$1")" "$(turn_end "$(ago 300)")"
+}
+
+@test "wait --resolve log: a not-a-question over an unanswered stop record stays stopped-seen and the owner reply still reaches the child (#1828)" {
+  for kind in model heading; do
+    unanswered_ready 'リスク許容の背景を説明します'
+    if [ "$kind" = model ]; then
+      export EPIC_DISPATCH_JUDGE_CMD='printf "%s\n" "判断: 問いではない" "理由: 説明だけ" "返事: "'
+    else
+      unanswered_ready $'主がすること: なし\n作業を終えた。'
+      export EPIC_DISPATCH_JUDGE_CMD='echo model-called >> "$STUB_LOG"; exit 1'
+    fi
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = "stopped 11" ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+    [ "$(calls '^model-called')" -eq 0 ]
+    head -1 "$STUB_CFG/comment_11" | grep -qF '親の判断: 判断できなかった'
+    run dispatch reply --as owner 400 11 'A で進めて'
+    [ "$output" = "sent 11" ] || { echo "output=$output"; false; }
+    rm -f "$STUB_CFG/comment_11"
+  done
+}
+
+@test "wait --resolve log: completion headings use the real judge to dismiss without a model or reply" {
+  for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
+    log_resolve_ready
+    printf '0\n' > "$STUB_CFG/ghcount_11"
+    export EPIC_DISPATCH_JUDGE="$PLUGIN_DIR/scripts/stop-judge.sh"
+    export EPIC_DISPATCH_JUDGE_CMD='echo model-called >> "$STUB_LOG"; exit 1'
+    put_chat 11 s1 "$(said d1 "$(ago 300)" "$heading"$'\n作業を終えた。issue は開いたまま待つ。')" "$(turn_end "$(ago 300)")"
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = "closed 11" ]
+    [ "$(rec_get 11 stop)" = resumed ]
+    [ "$(rec_get 11 stop_uuid)" = d1 ]
+    rec_get 11 stop_at | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
+    [ "$(calls '^model-called')" -eq 0 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^gh issue comment')" -eq 0 ]
+    [ ! -e "$STUB_CFG/comment_400" ]
+    [ ! -e "$STUB_CFG/comment_11" ]
+  done
+}
+
+@test "wait --resolve log: a not-a-question that cannot be written back still wakes the parent" {
+  log_resolve_ready
+  printf '判断: 問いではない\n理由: 完了の報告\n返事:\n記録: なし\n' > "$STUB_CFG/judge_out"
+  printf 'mkdir %q\n' "$(rec_of 1122 11).lock" > "$STUB_CFG/judge_hook"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 判断できなかった" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: d1" ]
+}
+
+@test "wait --resolve log: a plain work report (dependency_wait missing or false) whose stop-reason value starts with nashi is not stopped and never reaches the judge (#1714)" {
+  local dw reason f
+  for dw in missing false; do
+    for reason in '止まった理由: なし（前提の issue を背景で見張っている）' '止まった理由: なし'; do
+      make_stub orca
+      make_judge
+      set_current 400
+      gh_seq 11 open open
+      put_record 11
+      put_turn 11 parent 作業報告
+      f="$(rec_of 1122 11)"
+      [ "$dw" = missing ] || { jq '.turn_state.dependency_wait=false' "$f" > "$f.tmp" && mv "$f.tmp" "$f"; }
+      set_terms 11 term-a-11
+      put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '途中経過を保存した。\n%s\n状態: 作業報告 — 見張り中' "$reason")")" "$(turn_end "$(ago 300)")"
+      : > "$STUB_LOG"
+      run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+      [ "$status" -eq 2 ] || { echo "dw=$dw status=$status output=$output"; false; }
+      ! printf '%s\n' "$output" | grep -q '^stopped' || return 1
+      [ "$(rec_get 11 stop)" != stopped-seen ]
+      [ "$(calls '^judge')" -eq 0 ]
+    done
+  done
+}
+
+@test "wait --resolve log: a dependency-wait work report (dependency_wait true) is the one work report that still counts as stopped (#1714 boundary)" {
+  local f
+  make_stub orca
+  make_judge
+  set_current 400
+  gh_seq 11 open open
+  put_record 11
+  put_turn 11 parent 作業報告
+  f="$(rec_of 1122 11)"
+  jq '.turn_state.dependency_wait=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  set_terms 11 term-a-11
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '登録した。\n止まった理由: 依存待ち: https://github.com/o/r/issues/5\n状態: 作業報告 — 待つ')")" "$(turn_end "$(ago 300)")"
+  : > "$STUB_LOG"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(calls '^judge')" -eq 0 ]
+}
+
+# --- dismiss ---
+# spec: dev-workflow-develop（親は問いでない止まりを dismiss で再開に戻す）
+
+@test "dismiss: a received stop goes back to resumed, keeps the uuid and time, and sends nothing" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1 stop_at=2026-10-26T00:00:00Z
+  run dispatch dismiss 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "dismissed 11" ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  [ "$(rec_get 11 stop_at)" = 2026-10-26T00:00:00Z ]
+  [ "$(calls "--comment epic-resumed\$")" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^gh issue comment')" -eq 0 ]
+}
+
+@test "dismiss: a stop that was not received or has no uuid, and a child with no record, are skipped" {
+  make_stub orca
+  put_record 11 stop=stopped
+  put_record 12 stop=stopped-seen stop_uuid=
+  before="$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")"
+  run dispatch dismiss 11 12 13
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(printf 'skipped 11 not-stopped\nskipped 12 not-stopped\nskipped 13 not-stopped')" ]
+  [ "$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")" = "$before" ]
+}
+
+@test "dismiss: an unreadable record fails and is left as it is, and the other children still run" {
+  make_stub orca
+  put_record 11 stop=paused
+  put_record 12 stop=stopped-seen stop_uuid=d2
+  before="$(cat "$(rec_of 1122 11)")"
+  run dispatch dismiss 11 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "$(printf 'failed 11 state-unreadable\ndismissed 12')" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
+}
+
+@test "dismiss: two records for one child are ambiguous, and a locked record fails" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_record 11 epic=oratta/claude-harness#1123 stop=stopped-seen stop_uuid=d1
+  run dispatch dismiss 11
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 ambiguous-worktree" ]
+  put_record 12 stop=stopped-seen stop_uuid=d2
+  mkdir "$(rec_of 1122 12).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch dismiss 12
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 12" ]
+  [ "$(rec_get 12 stop)" = stopped-seen ]
+}
+
+@test "dismiss: a bad child number prints usage, and no children is an error" {
+  make_stub orca
+  run dispatch dismiss x
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  run dispatch dismiss
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
+@test "dismiss: the same statement is not judged again and is not pending" {
+  log_resolve_ready
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  run dispatch dismiss 11
+  [ "$output" = "dismissed 11" ]
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "dismiss: the child is back in the done inference" {
+  infer_ready
+  put_record 11 extra=1 stop=stopped-seen stop_uuid=d1
+  run dispatch dismiss 11
+  [ "$output" = "dismissed 11" ]
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+  [ "$(rec_get 11 status)" = done ]
+}
+
+# --- told ---
+# spec: dev-workflow-develop（親は主に上げた止まりを told で記録に書く / told は書けない子を理由つきで返す）
+
+@test "told: a received stop with the same uuid gets told_uuid and told_at, and nothing else changes" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1 stop_at=2026-10-26T00:00:00Z
+  run dispatch told 11 d1
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "told 11" ]
+  [ "$(rec_get 11 told_uuid)" = d1 ]
+  [[ "$(rec_get 11 told_at)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$ ]] || false
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  [ "$(rec_get 11 stop_at)" = 2026-10-26T00:00:00Z ]
+  [ "$(calls '^orca ')" -eq 0 ]
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "told: a different or empty stop uuid is skipped as uuid-mismatch and the record is unchanged" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d2
+  put_record 12 stop=stopped-seen stop_uuid=
+  before="$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")"
+  run dispatch told 11 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 uuid-mismatch" ]
+  run dispatch told 12 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 12 uuid-mismatch" ]
+  [ "$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")" = "$before" ]
+}
+
+@test "told: a resumed stop, a done child and a child with no record are skipped as not-stopped" {
+  make_stub orca
+  put_record 11 stop=resumed stop_uuid=d1
+  put_record 12 stop=stopped-seen stop_uuid=d1 status=done
+  before="$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")"
+  run dispatch told 11 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 11 not-stopped" ]
+  run dispatch told 12 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 12 not-stopped" ]
+  run dispatch told 13 d1
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped 13 not-stopped" ]
+  [ "$(cat "$(rec_of 1122 11)" "$(rec_of 1122 12)")" = "$before" ]
+}
+
+@test "told: an unreadable record fails, two records are ambiguous, and a locked record fails" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  printf '{\n' > "$(rec_of 1122 11)"
+  run dispatch told 11 d1
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 state-unreadable" ]
+  [ "$(cat "$(rec_of 1122 11)")" = "{" ]
+  put_record 12 stop=stopped-seen stop_uuid=d2
+  put_record 12 epic=oratta/claude-harness#1123 stop=stopped-seen stop_uuid=d2
+  run dispatch told 12 d2
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 12 ambiguous-worktree" ]
+  put_record 13 stop=stopped-seen stop_uuid=d3
+  mkdir "$(rec_of 1122 13).lock"
+  EPIC_STATE_LOCK_TIMEOUT=0 run dispatch told 13 d3
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 13" ]
+  [ "$(rec_get 13 told_uuid)" = null ]
+}
+
+@test "told: a wrong number of arguments, a bad child and an empty uuid print usage" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  for args in "11" "11 d1 d2" "x d1"; do
+    # shellcheck disable=SC2086
+    run dispatch told $args
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+  done
+  run dispatch told 11 ""
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -q 'epic-dispatch.sh told <child> <uuid>' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(rec_get 11 told_uuid)" = null ]
+}
+
+@test "told: no jq is an error with empty stdout" {
+  make_stub orca
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  run dispatch_nojq told 11 d1
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
 @test "child-log: no children or no jq is an error with empty stdout" {
   make_stub orca
   set_current 400
@@ -6769,35 +8199,38 @@ chat_line() {
 # spec: dev-workflow-develop（エピックの親は主への報告の最後に、全部の子と親自身の状態表を付ける）
 
 @test "epic.md: the status table is specified with its columns, placement, channel rule and the conversation-log check" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   grep -qF 'issue 番号・内容・ステータス・確認内容・推奨・答え方' "$e"
   grep -qF '報告の区切りより下に置く' "$e"
-  grep -qF '区切りより上の本文の最後の行は上の書き分けの規定のとおり答え方のまま' "$e"
+  grep -qF '1 行目と 2 行目を `~/.claude/output-styles/readable.md` の節 3 の書き分けに従わせる' "$e"
+  grep -qF '複数の依頼があるときも区切りより上で上げるのは今回いちばん先に答えてほしい 1 件だけ' "$e"
+  grep -qF '依頼が無い報告に `アクション:` の行は書かない' "$e"
+  ! grep -qF '区切りより上の本文の最後の行' "$e" || return 1
   grep -qF '前回の報告から片付いたもの' "$e"
   grep -qF '会話ログの末尾を `scripts/epic-dispatch.sh child-log' "$e"
   grep -qF '会話ログを優先する' "$e"
   grep -qF '`確かめられなかった`' "$e"
   grep -qF 'チャンネル以外の画面やタブは書かない' "$e"
-  grep -qF '上の**状態表**を付ける' "$e"
+  grep -qF '親が主に出す報告すべての最後に付ける' "$e"
   ! grep -qF 'MUST NOT 置き換え' "$e" || return 1
 }
 
 @test "epic.md: not-yet-launched children are not passed to child-log, URLs below the table are limited, and child-log takes owner/repo#N" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   grep -qF '`launch` に渡した子ごとに会話ログの末尾を' "$e"
   grep -qF '`未起動（<理由>）`' "$e"
   grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
-  grep -qF '`adopt`・`child-log` に渡す' "$e"
+  grep -qF '`dismiss`・`adopt`・`child-log` に渡す' "$e"
   ! grep -qF '答えが要る子の issue（または停止の記録）の URL' "$e" || return 1
 }
 
 
 @test "epic.md: old-parent table and child-log exception is narrow and includes record failure (#1385)" {
-  e="$BATS_TEST_DIRNAME/../skills/develop/references/epic.md"
+  e="$EPIC"
   table="$(grep -F '**状態表**（' "$e")"
   logs="$(grep '^表を書く前に、' "$e")"
   for body in "$table" "$logs"; do
-    for word in '60 分以上' '旧親' '記録失敗時の停止報告を含む' '状態表と `child-log` 確認を省略' '通常の報告' '60 分未満'; do
+    for word in 'reply-after-idle.md' '旧親' '記録失敗時の停止報告を含む' '状態表と `child-log` 確認を省略' '通常の報告' '短時間'; do
       printf '%s\n' "$body" | grep -qF "$word" || return 1
     done
   done
@@ -6812,9 +8245,9 @@ from pathlib import Path
 import sys
 plugin = Path(sys.argv[1]).resolve()
 repo = plugin.parent.parent
-text = (plugin / 'skills/develop/references/epic.md').read_text()
-p7 = text.split('\n7. ')[1].split('\n8. ')[0]
-p8 = text.split('\n8. ')[1].split('\n\n')[0]
+refs = plugin / 'skills/develop/references'
+p7, = (line for line in (refs / 'epic-loop.md').read_text().splitlines() if line.startswith('7. '))
+p8, = (line for line in (refs / 'epic-stop.md').read_text().splitlines() if line.startswith('8. '))
 for term in ['保存した元セッション ID・uuid', '最新の停止記録 URL', '真正性と対象']:
     assert term in p7, term
 for term in ['--locate "<保存した元セッション ID>"', '保存した uuid', '全文', 'timestamp',
@@ -6840,12 +8273,609 @@ keepalive_orca_setup() {
 ────────────────
 ? for shortcuts'
 }
-orca_screen() { jq -cn --arg s "$1" --arg d "${2-}" '{result:{source:"screen",tail:($s|split("\n")),draft:$d}}' > "$STUB_CFG/screen"; }
+orca_screen() { jq -cn --arg s "$1" --arg d "${2-}" '{result:{terminal:{source:"screen",tail:($s|split("\n")),draft:$d}}}' > "$STUB_CFG/screen"; }
+
+
+# Captured with Orca 1.4.263, 2026-11-21:
+# orca terminal read --terminal <handle> --screen --json
+# IDs, conversation and custom statusline text anonymized; JSON types and frame retained.
+orca_measured_screen() {
+  cat > "$STUB_CFG/screen" <<'JSON'
+{
+  "id": "read-fixture",
+  "ok": true,
+  "result": {
+    "terminal": {
+      "handle": "term-fixture",
+      "status": "running",
+      "tail": [
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "[conversation omitted]",
+        "──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "❯",
+        "──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────",
+        "[custom statusline]",
+        "[custom statusline]",
+        "[custom statusline]",
+        "[custom statusline]",
+        "  ⏵⏵ bypass permissions on · 1 shell · ← 3 agents · ↓ to manage"
+      ],
+      "truncated": false,
+      "limited": false,
+      "oldestCursor": "0",
+      "nextCursor": "2",
+      "latestCursor": "2",
+      "returnedLineCount": 31,
+      "tailRows": [
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 188
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 2
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 1
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        },
+        {
+          "wrapped": false,
+          "trailingSpaces": 0
+        }
+      ],
+      "source": "screen"
+    }
+  },
+  "_meta": {
+    "runtimeId": "runtime-fixture"
+  }
+}
+JSON
+}
+
+@test "keepalive orca: measured bypass frame supports statuslines and preserves all input" {
+  keepalive_orca_setup
+  for kind in ready same-line multiline blank-line dim busy dialog stale multiple; do
+    orca_measured_screen
+    python3 - "$STUB_CFG/screen" "$kind" <<'PYCODE'
+import json, sys
+p, kind = sys.argv[1:]
+d = json.load(open(p)); rows = d["result"]["terminal"]["tail"]
+i = rows.index("❯")
+if kind == "same-line": rows[i] = "❯ human"
+if kind == "multiline": rows[i:i+1] = ["❯ one", " two"]
+if kind == "blank-line": rows[i:i+1] = ["❯", "", " human"]
+if kind == "dim": rows[i] = "❯ \x1b[2msuggestion\x1b[0m"
+if kind == "busy": rows.insert(0, "✽ Working… (1s · thinking)")
+if kind == "dialog": rows.insert(0, "Enter to confirm")
+if kind == "stale": rows.append("user@host %")
+if kind == "multiple": rows[:0] = rows[i-1:i+2]
+json.dump(d, open(p, "w"))
+PYCODE
+    echo 0 > "$STUB_CFG/readcount"
+    : > "$STUB_LOG"
+    case "$kind" in
+      ready) expected=sent ;;
+      busy|dialog) expected="skipped $kind" ;;
+      stale|multiple) expected='skipped unknown-state' ;;
+      *) expected='skipped input-not-empty' ;;
+    esac
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$kind: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$expected" ]
+    if [ "$kind" != ready ]; then [ "$(calls '^orca terminal send ')" -eq 0 ]; fi
+  done
+}
+
+# Orca 1.4.263 observation (2026-11-21), `orca terminal read --terminal <handle> --screen --json`:
+# anonymized waiting line, footer and agent list; frame/statuslines from read above.
+orca_measured_agent_screen() {
+  orca_measured_screen
+  python3 - "$STUB_CFG/screen" "${1-waiting}" <<'PYCODE'
+import json, sys
+p, kind = sys.argv[1:]
+d = json.load(open(p)); t = d["result"]["terminal"]; rows = t["tail"]
+rows[-1] = "  ⏵⏵ bypass permissions on (shift+tab to cycle) · ← 3 agents · ↓ to manage"
+rows += ["  ⏺ main", "  ◯ child-1  Waiting for parent reply     10s · ↓ 45.7k tokens"]
+if kind == "waiting": rows.insert(0, "✻ Waiting for 1 background agent to finish")
+if kind == "plural": rows.insert(0, "✻ Waiting for 2 background agents to finish")
+if kind == "same-line": rows[rows.index("❯")] = "❯ human"
+if kind == "multiline":
+    i = rows.index("❯"); rows[i:i+1] = ["❯", "", " human"]
+if kind == "draft": t["draft"] = "human"
+if kind == "unknown": rows.append("  unknown agent list layout")
+if kind == "shell": rows.append("user@host %")
+if kind == "missing-main": rows.remove("  ⏺ main")
+if kind == "multiple":
+    i = rows.index("❯"); rows[:0] = rows[i-1:i+2]
+t["returnedLineCount"] = len(rows)
+t["tailRows"] = [{"wrapped": False, "trailingSpaces": 0} for _ in rows]
+json.dump(d, open(p, "w"))
+PYCODE
+}
+
+@test "keepalive orca: measured background agent wait is busy without spinner or interrupt" {
+  keepalive_orca_setup
+  for kind in waiting plural; do
+    orca_measured_agent_screen "$kind"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$kind: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = 'skipped busy' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+}
+
+# Anonymized from 11 real Orca 1.4.263 screens (2026-11-21): 4 stopped children whose history
+# keeps an old wait line, and 7 children that were still waiting. Args: history lines, separated by "|".
+orca_history_screen() {
+  local hist="$1" frame
+  frame='──────────────
+❯
+──────────────
+  .../workspaces/example/task Opus oratta/task
+  Context 80%  │  Cache 95%
+  ⏵⏵ bypass permissions on (shift+tab to cycle) · 1 shell'
+  orca_screen "$(printf '%s\n%s' "${hist//|/$'\n'}" "$frame")"
+}
+W='✻ Waiting for 1 background agent to finish'
+D='✻ Worked for 21m 1s · done 8:51 AM · 1 shell still running'
+R='※ recap: summary of the work. (turn off recaps in /config)'
+
+@test "keepalive orca: stale wait lines are released only by a later known completion line" {
+  keepalive_orca_setup
+  local cases=(
+    "ready|conv|$W|conv|$D"
+    "ready|$W|conv|✻ Churned for 40s · done 8:47 AM"
+    "ready|$W|✻ Brewed for 1h 2m 3s · done 12:05 PM · 2 shells still running"
+    "ready|$W|✻ Sautéed for 45s · done 8:43 AM|$R"
+    "ready|$W|$D||$R|"
+    "ready|✻ Cogitated for 3s · done 8:00 AM|✻ Baked for 3s · done 8:01 AM|✻ Cooked for 3s · done 8:02 AM|✻ Crunched for 3s · done 8:03 AM"
+    "skipped busy|conv|$W"
+    "skipped busy|$W|✻ Waiting for 5 background agents to finish"
+    "skipped busy|✻ Churned for 1m · done 8:00 AM|conv|✻ Waiting for 5 background agents to finish"
+    "skipped busy|$W|⏺ Background command finished"
+    "skipped busy|$W||"
+    "skipped busy|$W|✻ Thinking about it"
+    "skipped busy|$W|conv with done 8:51 AM text"
+    "skipped busy|$W|✻ Pondered for 3s · done 8:51 AM"
+    "skipped busy|$W|✻ Worked for 3s · done 8:51 AM extra"
+    "skipped busy|$D|$W"
+    "skipped busy|$W|$D|$W"
+    "skipped unknown-state|$W|$D|⏺ Background command finished"
+    "skipped unknown-state|$W|$D|$R|⏺ unknown notice"
+  )
+  local c reason hist
+  for c in "${cases[@]}"; do
+    reason="${c%%|*}"; hist="${c#*|}"
+    orca_history_screen "$hist"
+    sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+    run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+    echo "$hist: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$reason" ]
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]
+    if [ "$reason" = ready ]; then
+      [ "$output" = sent ]; [ "$(calls '^orca terminal send ')" -eq 1 ]
+    else
+      [ "$output" = "$reason" ]; [ "$(calls '^orca terminal send ')" -eq 0 ]
+    fi
+  done
+}
+
+@test "keepalive orca: a wait line inside or after the frame is busy even with an earlier completion" {
+  keepalive_orca_setup
+  sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+  orca_screen "$D
+──────────────
+❯
+$W
+──────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)
+  ⏵⏵ bypass permissions on"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" != ready ]
+  orca_screen "$D
+──────────────
+❯
+──────────────
+$W
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" != ready ]
+}
+
+@test "keepalive orca: stale wait with no frame or several frames never reaches ready" {
+  keepalive_orca_setup
+  sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+  orca_screen "$W
+$D
+? for shortcuts"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" = 'skipped unknown-state' ]
+  orca_screen "$W
+$D
+──────────────
+❯
+──────────────
+──────────────
+❯
+──────────────
+? for shortcuts"
+  run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+  [ "$output" = 'skipped unknown-state' ]
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$output" = 'skipped unknown-state' ]; [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+# Synthetic delivery regressions based on the history fixture; not real send/cache evidence.
+@test "keepalive orca: completed wait history and echo permit only new foreground execution after send" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  local marker
+  for marker in '✽ Working… (1s · thinking)' 'esc to interrupt'; do
+    orca_history_screen "$W|$D|❯ reserved|$marker"
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+    orca_history_screen "$W|$D"
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$marker: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = sent ]
+    [ "$(calls '^orca terminal read .*--screen.*--json')" -eq 3 ]
+    [ "$(calls '^orca terminal send .*--text reserved --enter ')" -eq 1 ]
+    [ "$(calls '^orca ')" -eq 5 ] # list + two pre-reads + send + post-read only
+  done
+}
+
+@test "keepalive orca: completed wait echo and unknown footer never authorize a pre-send" {
+  keepalive_orca_setup
+  local kind
+  for kind in echo unknown-footer; do
+    orca_history_screen "$W|$D|❯ reserved"
+    if [ "$kind" = unknown-footer ]; then
+      orca_screen '──────────────
+❯
+──────────────
+unknown footer'
+    fi
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+}
+
+@test "keepalive orca: completed wait echo cannot bypass any other delivery condition" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  local kind
+  for kind in echo background normal multiline dim draft no-frame multiple unknown-footer dialog source malformed; do
+    orca_history_screen "$W|$D|❯ reserved|esc to interrupt"
+    python3 - "$STUB_CFG/screen" "$kind" <<'PYCODE'
+import json, sys
+p, kind = sys.argv[1:]
+d = json.load(open(p)); t = d["result"]["terminal"]; rows = t["tail"]
+if kind == "echo": rows.remove("esc to interrupt")
+if kind == "background": rows[rows.index("esc to interrupt")] = "✻ Waiting for 2 background agents to finish"
+if kind == "normal": rows[rows.index("❯")] = "❯ human"
+if kind == "multiline": rows[rows.index("❯")] = "❯\n\n human\n continued"
+if kind == "dim": rows[rows.index("❯")] = "❯ \x1b[2msuggestion\x1b[0m"
+if kind == "draft": t["draft"] = "human"
+if kind == "no-frame": rows[:] = rows[:4]
+if kind == "multiple": rows += ["──────────────", "❯", "──────────────", "? for shortcuts"]
+if kind == "unknown-footer": rows[-1] = "unknown footer"
+if kind == "dialog": rows.insert(0, "Enter to confirm")
+if kind == "source": t["source"] = "stream"
+if kind == "malformed": t["tail"] = [False]
+json.dump(d, open(p, "w"))
+PYCODE
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+    orca_history_screen "$W|$D"
+    echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$kind: $output" >&3
+    [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+    [ "$(calls '^orca terminal send .*--text reserved --enter ')" -eq 1 ]
+    [ "$(calls '^orca terminal read .*--screen.*--json')" -eq 3 ]
+    [ "$(calls '^orca ')" -eq 5 ]
+    if [ "$kind" = malformed ]; then
+      grep -q 'failed observe shape' "$BATS_TEST_TMPDIR/stderr"
+    fi
+  done
+}
+
+@test "keepalive orca: after send a wait line alone is failed send, never resent" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  orca_history_screen "$W"
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+  keepalive_orca_setup
+  echo 0 > "$STUB_CFG/readcount"; : > "$STUB_LOG"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+@test "keepalive orca: measured agent list preserves idle frame and rejects input or unknown suffix" {
+  keepalive_orca_setup
+  for kind in ready same-line multiline draft unknown shell missing-main multiple; do
+    orca_measured_agent_screen "$kind"
+    echo 0 > "$STUB_CFG/readcount"
+    : > "$STUB_LOG"
+    # Verify the classifier's ready result as well as the real keepalive path.
+    sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+    case "$kind" in
+      ready) reason=ready; expected=sent ;;
+      same-line|multiline|draft) reason='skipped input-not-empty'; expected="$reason" ;;
+      *) reason='skipped unknown-state'; expected="$reason" ;;
+    esac
+    run bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca' _ "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen"
+    echo "$kind: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$reason" ]
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]; [ "$output" = "$expected" ]
+    if [ "$kind" = ready ]; then
+      [ "$(calls '^orca terminal send ')" -eq 1 ]
+    else
+      [ "$(calls '^orca terminal send ')" -eq 0 ]
+    fi
+  done
+}
+
+@test "keepalive orca: agent panel reobservation still requires foreground execution and empty input" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  for kind in waiting ready busy input; do
+    orca_measured_agent_screen "$kind"
+    if [ "$kind" = busy ] || [ "$kind" = input ]; then
+      jq '.result.terminal.tail |= (["esc to interrupt"] + .)' "$STUB_CFG/screen" > "$STUB_CFG/modified"
+      mv "$STUB_CFG/modified" "$STUB_CFG/screen"
+    fi
+    if [ "$kind" = input ]; then
+      jq '.result.terminal.tail |= map(if . == "❯" then "❯ human" else . end)' "$STUB_CFG/screen" > "$STUB_CFG/modified"
+      mv "$STUB_CFG/modified" "$STUB_CFG/screen"
+    fi
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+    keepalive_orca_setup
+    echo 0 > "$STUB_CFG/readcount"
+    : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    echo "$kind: $output" >&3
+    if [ "$kind" = busy ]; then
+      [ "$status" -eq 0 ]; [ "$output" = sent ]
+    else
+      [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+    fi
+    [ "$(calls '^orca terminal send ')" -eq 1 ]
+    [ "$(calls '^orca terminal read ')" -eq 3 ]
+  done
+}
+
+@test "keepalive orca: malformed read shapes diagnose fields without echoing observation" {
+  keepalive_orca_setup
+  for raw in broken null '[]' '{}' '{"result":null}' '{"result":{"terminal":[]}}' '{"result":{"terminal":{"tail":null}}}' '{"result":{"terminal":{"tail":[false]}}}' '{"result":{"terminal":{"tail":[],"draft":false}}}'; do
+    printf '%s' "$raw" > "$STUB_CFG/screen"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 1 ]; [ "$output" = 'failed observe' ]
+    grep -q 'failed observe shape.*result.terminal' "$BATS_TEST_TMPDIR/stderr"
+  done
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: absent stream and unavailable sources never authorize sending" {
+  keepalive_orca_setup
+  for source in absent stream screen-unavailable; do
+    orca_screen 'ignored'
+    jq --arg s "$source" '.result.terminal |= (if $s == "absent" then del(.source) else .source=$s end)' "$STUB_CFG/screen" > "$STUB_CFG/screen.tmp"
+    mv "$STUB_CFG/screen.tmp" "$STUB_CFG/screen"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ]; [ "$output" = 'skipped unknown-state' ]
+  done
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: nested turn_started succeeds but accepted queued and failed send do not" {
+  keepalive_orca_setup
+  echo '{"result":{"receipt":{"stages":["input_accepted","turn_started"]}}}' > "$STUB_CFG/send_json_term-11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]
+  for receipt in '{"result":{"stages":["input_accepted"]}}' '{"result":{"stages":["queued"]}}'; do
+    echo "$receipt" > "$STUB_CFG/send_json_term-11"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  done
+  echo '{"result":{"stages":["turn_started"]}}' > "$STUB_CFG/send_json_term-11"
+  echo 1 > "$STUB_CFG/send_exit_term-11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+  [ "$(calls '^orca terminal send ')" -eq 4 ]
+}
+
+@test "keepalive orca: reobservation requires busy and independently proven empty input" {
+  keepalive_orca_setup
+  echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
+  for kind in empty input draft no-frame dialog malformed; do
+    orca_screen '✽ Working… (1s · thinking)
+────────────────
+❯
+────────────────
+? for shortcuts'
+    case "$kind" in
+      input) orca_screen 'esc to interrupt
+────────────────
+❯
+ human
+────────────────
+? for shortcuts' ;;
+      draft) orca_screen 'esc to interrupt
+────────────────
+❯
+────────────────
+? for shortcuts' human ;;
+      no-frame) orca_screen 'esc to interrupt' ;;
+      dialog) orca_screen 'esc to interrupt
+Enter to confirm' ;;
+      malformed) echo broken > "$STUB_CFG/screen" ;;
+    esac
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+    keepalive_orca_setup
+    echo 0 > "$STUB_CFG/readcount"
+    : > "$STUB_LOG"
+    run orca_keepalive keepalive /work/issue-11 reserved
+    if [ "$kind" = empty ]; then
+      [ "$status" -eq 0 ]; [ "$output" = sent ]
+    else
+      [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
+    fi
+    if [ "$kind" = malformed ]; then
+      grep -q 'failed observe shape' "$BATS_TEST_TMPDIR/stderr"
+    fi
+    [ "$(calls '^orca terminal send ')" -eq 1 ]
+    [ "$(calls '^orca terminal read ')" -eq 3 ]
+    [ "$(calls '^orca .*create\|^orca .*close\|^orca terminal wait')" -eq 0 ]
+  done
+}
 
 @test "keepalive orca: sends once to idle empty screen and verifies unsupported provider by reobservation" {
   keepalive_orca_setup
   echo '{"result":{"provider":"unsupported"}}' > "$STUB_CFG/send_json_term-11"
-  jq -cn --arg s '✽ Working… (1s · thinking)' '{result:{source:"screen",tail:[$s,"❯"]}}' > "$STUB_CFG/screen_3"
+  orca_screen '✽ Working… (1s · thinking)
+────────────────
+❯
+────────────────
+? for shortcuts'
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+  keepalive_orca_setup
   run orca_keepalive keepalive /work/issue-11 reserved
   [ "$status" -eq 0 ]; [ "$output" = sent ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
@@ -6935,6 +8965,67 @@ user@host work %'
   [ "$status" -eq 2 ]; [ -z "$output" ]
 }
 
+@test "keepalive orca: one unidentified terminal is chosen by its input frame and still observed twice (#1598)" {
+  keepalive_orca_setup
+  echo '{"result":{"terminals":[{"handle":"term-11","title":"flatmate #2217 burn モード開発","agentIdentity":null}]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = 'sent' ]
+  [ "$(calls '^orca terminal read --terminal term-11 --screen --json$')" -eq 3 ]
+  [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 1 ]
+  # the second pre-send observation is not skipped: input typed there stops the send
+  : > "$STUB_LOG"; rm -f "$STUB_CFG/readcount"
+  orca_screen "$SESSION_FRAME" human
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+  orca_screen "$SESSION_FRAME"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  [ "$(calls '^orca terminal read')" -eq 3 ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: one unidentified terminal without the input frame skips, and a failed read is failed observe (#1598)" {
+  for kind in no-frame shell-below source; do
+    keepalive_orca_setup
+    : > "$STUB_LOG"; rm -f "$STUB_CFG/readcount" "$STUB_CFG/read_exit"
+    echo '{"result":{"terminals":[{"handle":"term-11","title":"flatmate #2217 burn モード開発","agentIdentity":null}]}}' > "$STUB_CFG/tlist_json_11"
+    case "$kind" in
+      no-frame) orca_screen 'user@host work %' ;;
+      shell-below) orca_screen "$SESSION_FRAME
+user@host work %" ;;
+      source) orca_screen "$SESSION_FRAME"
+        jq '.result.terminal.source = "buffer"' "$STUB_CFG/screen" > "$STUB_CFG/screen.tmp"
+        mv "$STUB_CFG/screen.tmp" "$STUB_CFG/screen" ;;
+    esac
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; false; }
+    [ "$output" = 'skipped ambiguous-terminal' ] || { echo "kind=$kind output=$output"; false; }
+    [ "$(calls '^orca terminal read')" -eq 1 ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+  for kind in read-fail broken; do
+    keepalive_orca_setup
+    : > "$STUB_LOG"; rm -f "$STUB_CFG/readcount" "$STUB_CFG/read_exit"
+    echo '{"result":{"terminals":[{"handle":"term-11","title":"flatmate #2217 burn モード開発","agentIdentity":null}]}}' > "$STUB_CFG/tlist_json_11"
+    case "$kind" in
+      read-fail) echo 1 > "$STUB_CFG/read_exit" ;;
+      broken) echo broken > "$STUB_CFG/screen" ;;
+    esac
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 1 ] || { echo "kind=$kind status=$status output=$output"; false; }
+    [ "$output" = 'failed observe' ] || { echo "kind=$kind output=$output"; false; }
+    [ "$(calls '^orca terminal read')" -eq 1 ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+  # two unidentified terminals are not read
+  keepalive_orca_setup
+  : > "$STUB_LOG"
+  echo '{"result":{"terminals":[{"handle":"a","title":"x"},{"handle":"b","title":"y"}]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped ambiguous-terminal' ]
+  [ "$(calls '^orca terminal read')" -eq 0 ]
+}
+
 @test "keepalive orca: unconfirmed send fails without retry; background shell does not block" {
   keepalive_orca_setup
   orca_screen '· 1 shell still running
@@ -6946,6 +9037,28 @@ user@host work %'
   run orca_keepalive keepalive /work/issue-11 reserved
   [ "$status" -eq 1 ]; [ "$output" = 'failed send' ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+@test "keepalive verification: parent procedure separates real send cache evidence and unobserved footers" {
+  run python3 - "$PLUGIN_DIR/skills/develop/references/epic-keepalive-watch.md" <<'PYCODE'
+from pathlib import Path
+import sys
+text = Path(sys.argv[1]).read_text()
+for term in ["skipped busy", "正しい非送信", "15万トークン未満", "前景が入力待ち",
+             "通常の声かけ条件", "候補が無ければ", "実機確認は未完了", "#1728", "#1732",
+             "fixture", "代替しない",
+             "10件", "すべてbypass", "非bypass", "未確認・未対応", "認識範囲を広げない",
+             "plugins/dev-workflow/changes/1752.md"]:
+    assert term in text, term
+record = (Path(sys.argv[1]).parents[3] / "changes/1752.md").read_text()
+for term in ["識別子", "会話量", "入力待ちの根拠", "send 結果", "予約文への返事",
+             "cache_read_input_tokens", "会話量の比較", "生ログ", "repo に置かず",
+             "LLM_LOG_DIR", "未設定なら確認",
+             "Orca 1.4.269", "2026-11-23", "10件", "非bypass候補0件", "truncated=false",
+             "orca terminal list --limit 100 --json", "orca terminal read --terminal <handle> --screen --json"]:
+    assert term in record, term
+PYCODE
+  [ "$status" -eq 0 ]
 }
 
 @test "keepalive launch: orca start and deliver relaunch disable prompt suggestions" {
@@ -6963,7 +9076,7 @@ user@host work %'
 keepalive_wait_setup() {
   keepalive_orca_setup
   set_current 400
-  put_record 11 stop=stopped-seen session=term-11
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
   export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
   export KEEPALIVE_TEST_NOW=2000000000
   cat > "$STUB_BIN/date" <<'DATE'
@@ -6988,14 +9101,14 @@ keepalive_chat() {
   local age="$1" tokens="${2-100}" ttl="${3-1h}"
   local dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$dir"
-  python3 - "$dir/s.jsonl" "$KEEPALIVE_TEST_NOW" "$age" "$tokens" "$ttl" <<'PYCODE'
+  python3 - "$dir/s.jsonl" "$KEEPALIVE_TEST_NOW" "$age" "$tokens" "$ttl" "$MAIN_UUID" <<'PYCODE'
 import datetime, json, sys
-p, now, age, tokens, ttl = sys.argv[1:]
+p, now, age, tokens, ttl, uid = sys.argv[1:]
 now, age, tokens = int(now), int(age), int(tokens)
 def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
 rows = [dict(type='user', timestamp=stamp(now-100000), message=dict(content='依頼')),
         dict(type='assistant', timestamp=stamp(now-99999), message=dict(content='元の質問？')),
-        dict(type='assistant', entrypoint='cli', timestamp=stamp(now-4000), message=dict(usage=dict(input_tokens=10,cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens':100}))),
+        dict(type='assistant', entrypoint='cli', uuid=uid, timestamp=stamp(now-4000), message=dict(usage=dict(input_tokens=10,cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens':100}))),
         dict(type='assistant', entrypoint='cli', timestamp=stamp(now-age), message=dict(usage=dict(input_tokens=0,cache_read_input_tokens=tokens)))]
 with open(p, 'w') as f:
     for row in rows: f.write(json.dumps(row, ensure_ascii=False)+'\n')
@@ -7007,7 +9120,7 @@ reset_keepalive_poll() {
   : > "$STUB_LOG"
 }
 
-@test "keepalive wait: request 2999/3000/3599/3600 and stop 86399/86400 boundaries" {
+@test "keepalive wait: request 2999/3000/3599/3600 and stop 43199/43200 boundaries" {
   keepalive_wait_setup
   for age in 2999 3000 3599 3600 7200 -1; do
     reset_keepalive_poll
@@ -7017,15 +9130,29 @@ reset_keepalive_poll() {
     expected=0; if [ "$age" -eq 3000 ] || [ "$age" -eq 3599 ]; then expected=1; fi
     [ "$(calls '^orca terminal send ')" -eq "$expected" ]
   done
-  for age in 86399 86400 -1; do
+  for age in 43199 43200 -1; do
     reset_keepalive_poll
     keepalive_chat 3000
     stop_fixture "$age"
     run dispatch wait --watch-stopped --interval 1 --timeout 100 11
     [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
-    expected=0; [ "$age" -ne 86399 ] || expected=1
+    expected=0; [ "$age" -ne 43199 ] || expected=1
     [ "$(calls '^orca terminal send ')" -eq "$expected" ]
   done
+}
+
+@test "keepalive wait: EPIC_DISPATCH_OWNER_WAIT_SEC sets the stop limit (86400: 43200 is sent, 86400 is expired)" {
+  keepalive_wait_setup
+  for age in 43200 86400; do
+    reset_keepalive_poll
+    keepalive_chat 3000
+    stop_fixture "$age"
+    EPIC_DISPATCH_OWNER_WAIT_SEC=86400 run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    expected=0; [ "$age" -ne 43200 ] || expected=1
+    [ "$(calls '^orca terminal send ')" -eq "$expected" ] || { echo "age=$age"; false; }
+  done
+  keepalive_note_is "skipped expired"
 }
 
 @test "keepalive wait: cache hits extend request age independently of cache write TTL" {
@@ -7080,7 +9207,7 @@ reset_keepalive_poll() {
       missing-stop) echo '[]' > "$STUB_CFG/comments_11" ;;
       untrusted) jq '.[0].author_association="NONE"' "$STUB_CFG/comments_11" > "$STUB_CFG/new"; mv "$STUB_CFG/new" "$STUB_CFG/comments_11" ;;
       passed) echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — https://example/stop"}]' > "$STUB_CFG/comments_1122" ;;
-      expired) stop_fixture 86400 ;;
+      expired) stop_fixture 43200 ;;
       missing-worktree) put_record 11 stop=stopped-seen session=term-11 worktree=/no-such-child ;;
     esac
     run dispatch wait --watch-stopped --interval 1 --timeout 100 11
@@ -7089,16 +9216,49 @@ reset_keepalive_poll() {
   done
 }
 
+@test "keepalive wait: a stop with a uuid needs no stop record, runs the owner wait (43200 s) from stop_at and matches passes by uuid" {
+  keepalive_wait_setup
+  echo '[]' > "$STUB_CFG/comments_11"
+  send_count() {
+    reset_keepalive_poll
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+    [ "$(calls '^orca terminal send ')" -eq "$1" ]
+  }
+  at() { jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - $1))" '$t | todate'; }
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 43199)"
+  send_count 1
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 43200)"
+  send_count 0
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
+  send_count 0
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(at 3600)"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 bbbbbbbb-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
+  send_count 1
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
+  send_count 0
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111 https://example/stop"}]' > "$STUB_CFG/comments_1122"
+  send_count 0
+  echo '[{"author_association":"NONE","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
+  send_count 1
+}
+
 @test "keepalive wait: one-shot, cleanup and event polls never send" {
   keepalive_wait_setup
   for args in '--watch-stopped --interval 0 --timeout 0 11' '--watch-stopped --interval 0 --timeout 100 11' '--interval 1 --timeout 100 11' '--watch-done 11 --interval 0 --timeout 0'; do
     reset_keepalive_poll
     run dispatch wait $args
-    [ "$status" -eq 0 ] || [ "$status" -eq 2 ]
+    case "$args" in
+      *--timeout\ 0*|*--watch-done*) [ "$status" -eq 2 ] ;;
+      *) [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ] ;;
+    esac
     [ "$(calls '^orca terminal send ')" -eq 0 ]
   done
   reset_keepalive_poll
   put_record 11 stop=stopped session=term-11
+  # 会話ログを読める印の子はターンの終わりで返す
+  local log
+  for log in "$BATS_TEST_TMPDIR"/projects/*/*.jsonl; do turn_end "$(ago 1)" >> "$log"; printf '\n' >> "$log"; done
   run dispatch wait --watch-stopped --interval 1 --timeout 100 11
   [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
   [ "$(calls '^orca terminal send ')" -eq 0 ]
@@ -7119,11 +9279,12 @@ reset_keepalive_poll() {
         "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
         "$(chat_line assistant 2033-05-18T03:33:20Z "$response" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl"
     } > "$STUB_CFG/hook_send_term-11"
-    before="$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")"
+    before="$(jq -c 'del(.keepalive, .updated_at)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")"
     run dispatch wait --watch-stopped --interval 1 --timeout 4 11
     [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
     [ "$(calls '^orca terminal send ')" -eq 1 ]
-    [ "$(cat "$(rec_of 1122 11)" "$STUB_CFG/comments_11")" = "$before" ]
+    # 声かけの結果（keepalive）と更新時刻だけが記録で変わり、止まりの印などは変わらない
+    [ "$(jq -c 'del(.keepalive, .updated_at)' "$(rec_of 1122 11)"; cat "$STUB_CFG/comments_11")" = "$before" ]
     run dispatch child-log 11
     [ "$status" -eq 0 ]
     if [ "$response" = "$(keepalive_reply)" ]; then
@@ -7139,10 +9300,211 @@ reset_keepalive_poll() {
   echo 1 > "$STUB_CFG/send_exit_term-11"
   on_poll 11 2 status=done
   gh_seq 11 open
-  run dispatch wait --watch-stopped --watch-done 11 --interval 1 --timeout 100 11
+  # stopped-seen の子も完了推定の対象なので、推定より先に声かけが走るよう閾値を上げて推定を外す
+  EPIC_DISPATCH_DONE_IDLE_SEC=99999999 run dispatch wait --watch-stopped --watch-done 11 --interval 1 --timeout 100 11
   [ "$status" -eq 0 ]; [ "$output" = 'done 11' ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
   grep -qF 'keepalive 11: failed send' "$BATS_TEST_TMPDIR/stderr"
+}
+
+# --- 声かけの本体ログ選択と結果の記録（keepalive-main-transcript-and-reason） ---
+keepalive_dir() { printf '%s/%s' "$CLAUDE_PROJECTS_DIR" "$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"; }
+
+# keepalive_extra_log <ファイル名> <entrypoint> <最後の行の何秒前> <uuid> [<キャッシュの枠> [<キャッシュ書き込みの何秒前>]]
+keepalive_extra_log() {
+  mkdir -p "$(keepalive_dir)"
+  python3 - "$(keepalive_dir)/$1.jsonl" "$KEEPALIVE_TEST_NOW" "$2" "$3" "$4" "${5-}" "${6-4000}" <<'PYCODE'
+import datetime, json, sys
+p, now, entry, age, uid, ttl, wage = sys.argv[1:]
+now, age, wage = int(now), int(age), int(wage)
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+rows = []
+if ttl:
+    rows.append(dict(type='assistant', entrypoint=entry, uuid=uid, timestamp=stamp(now-wage),
+        message=dict(content='x', usage=dict(input_tokens=10, cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens': 100}))))
+rows.append(dict(type='assistant', entrypoint=entry, uuid=uid, timestamp=stamp(now-age), message=dict(content='x', usage=dict(input_tokens=0, cache_read_input_tokens=5))))
+with open(p, 'w') as f:
+    for row in rows: f.write(json.dumps(row)+'\n')
+PYCODE
+}
+
+keepalive_note_is() {
+  [ "$(jq -r .keepalive "$(rec_of 1122 11)" | cut -d' ' -f2-)" = "$1" ]
+}
+
+keepalive_wait_run() {
+  reset_keepalive_poll
+  gh_seq 11 open closed
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+}
+
+@test "keepalive wait: an sdk-py log and an older cli session beside the main log still send, and the record says sent" {
+  keepalive_wait_setup
+  keepalive_extra_log sdk sdk-py 10 cccccccc-1111-4111-8111-111111111111
+  keepalive_extra_log past cli 90000 dddddddd-1111-4111-8111-111111111111 1h 90100
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  keepalive_note_is sent
+  [[ "$(jq -r .keepalive "$(rec_of 1122 11)")" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z\ sent$ ]] || return 1
+}
+
+@test "keepalive wait: no main log (past cli only, sdk-py only, none) sends nothing and records no-transcript" {
+  keepalive_wait_setup
+  rm -f "$(keepalive_dir)"/*.jsonl
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
+  keepalive_extra_log sdk sdk-py 3000 cccccccc-1111-4111-8111-111111111111 1h
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+  # 過去の cli だけが残り、記録の stop_uuid がそのログに無い
+  rm -f "$(keepalive_dir)"/*.jsonl
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
+  # uuid の無い行だけのログ（wait が止まりの後の進みと読まない形）
+  keepalive_extra_log past cli 3000 "" 1h
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+}
+
+@test "keepalive wait: an empty stop_uuid sends nothing even when one cli log is the only candidate" {
+  keepalive_wait_setup
+  put_record 11 stop=stopped-seen session=term-11
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+}
+
+@test "keepalive wait: cli logs tied on the last activity are not decided" {
+  keepalive_wait_setup
+  keepalive_extra_log twin cli 3000 "$MAIN_UUID" 1h
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-transcript"
+}
+
+@test "keepalive wait: only the selected log's cache write counts (an older log with a 1h write does not)" {
+  keepalive_wait_setup
+  keepalive_chat 3000 100 5m
+  keepalive_extra_log past cli 3500 dddddddd-1111-4111-8111-111111111111 1h 3500
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped cache-unknown"
+}
+
+@test "keepalive wait: a cache write later than now is cache-future" {
+  keepalive_wait_setup
+  python3 - "$(keepalive_dir)/s.jsonl" "$KEEPALIVE_TEST_NOW" "$MAIN_UUID" <<'PYCODE'
+import datetime, json, sys
+p, now, uid = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+rows = [dict(type='assistant', entrypoint='cli', uuid=uid, timestamp=stamp(now+500),
+             message=dict(content='x', usage=dict(input_tokens=10, cache_creation_input_tokens=100, cache_creation={'ephemeral_1h_input_tokens': 100})))]
+open(p, 'w').write(''.join(json.dumps(r)+'\n' for r in rows))
+PYCODE
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped cache-future"
+}
+
+# 質問のあとに足す主の側の行（時刻は質問のあと・今より前）。声かけの判定が主の返事に数えるかを見る
+keepalive_append_user() { # <本文> [追加の JSON 項目]
+  local dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  chat_line user "$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 3900))" '$t | todate')" "$1" "${2-}" >> "$dir/s.jsonl"
+}
+
+@test "keepalive wait: background task notifications and local command lines are not the owner's reply, a real line is" {
+  keepalive_wait_setup
+  local mode
+  for mode in notification-origin notification-text bang local-command-output command-name-mcp real; do
+    keepalive_chat 3000
+    case "$mode" in
+      notification-origin) keepalive_append_user '<task-notification><task-id>b1</task-id></task-notification>' '{"origin":{"kind":"task-notification"}}' ;;
+      notification-text) keepalive_append_user '<task-notification><task-id>b2</task-id></task-notification>' ;;
+      bang) keepalive_append_user '<bash-input>git status</bash-input>'; keepalive_append_user '<bash-stdout>clean</bash-stdout><bash-stderr></bash-stderr>' ;;
+      local-command-output) keepalive_append_user '<local-command-stdout>done</local-command-stdout>' ;;
+      command-name-mcp)
+        keepalive_append_user '<command-name>/mcp</command-name>
+<command-message>mcp</command-message>
+<command-args></command-args>'
+        keepalive_append_user '<local-command-stdout>MCP dialog dismissed</local-command-stdout>' ;;
+      real) keepalive_append_user 'こちらで進めて' ;;
+    esac
+    keepalive_wait_run
+    if [ "$mode" = real ]; then
+      [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped answered"
+    else
+      [ "$(calls '^orca terminal send ')" -eq 1 ] || { echo "mode=$mode"; return 1; }
+    fi
+  done
+}
+
+@test "keepalive wait: a slash command sent to the model (no local output after it) still counts as the owner's reply" {
+  keepalive_wait_setup
+  keepalive_append_user '<command-name>/dev-workflow:develop</command-name>
+<command-args>11</command-args>'
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped answered"
+}
+
+@test "keepalive wait: the record carries why nothing was sent (dialog, expired, answered, not-stopped, no-session)" {
+  keepalive_wait_setup
+  orca_screen '────────────────
+Do you want to proceed?
+❯ 1. Yes
+  2. No'
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped dialog"
+  orca_screen '────────────────
+❯
+────────────────
+? for shortcuts'
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 43200))" '$t | todate')"
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped expired"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "stop_at=$(jq -rn --argjson t "$((KEEPALIVE_TEST_NOW - 3600))" '$t | todate')"
+  echo '[{"author_association":"OWNER","body":"親の判断: 子 #11 通した — 範囲の内側 発言 aaaaaaaa-1111-4111-8111-111111111111"}]' > "$STUB_CFG/comments_1122"
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped answered"
+  echo '[]' > "$STUB_CFG/comments_1122"
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID
+  put_record 11 stop=stopped-seen session= stop_uuid=$MAIN_UUID
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped no-session"
+  # 止まっていない子には 1 回だけ not-stopped が書かれる
+  put_record 11 session=term-11
+  keepalive_wait_run
+  [ "$(calls '^orca terminal send ')" -eq 0 ]; keepalive_note_is "skipped not-stopped"
+}
+
+@test "keepalive wait: the same result is not written again, a different one is" {
+  keepalive_wait_setup
+  rm -f "$(keepalive_dir)"/*.jsonl
+  local old='2020-01-01T00:00:00Z skipped no-transcript'
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "keepalive=$old"
+  keepalive_wait_run
+  [ "$(jq -r .keepalive "$(rec_of 1122 11)")" = "$old" ]
+  [ "$(jq -r .updated_at "$(rec_of 1122 11)")" = "2026-01-01T00:00:00Z" ]
+  # 同じ結果の書き直しは、1 回の wait の複数のポーリングでも起きない
+  gh_seq 11 open open open closed
+  reset_keepalive_poll
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(jq -r .keepalive "$(rec_of 1122 11)")" = "$old" ]
+  # 結果が変われば書く
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID "keepalive=2020-01-01T00:00:00Z skipped dialog"
+  keepalive_wait_run
+  [ "$(jq -r .keepalive "$(rec_of 1122 11)")" != "2020-01-01T00:00:00Z skipped dialog" ]
+  keepalive_note_is "skipped no-transcript"
+}
+
+@test "keepalive wait: a record that cannot be written changes neither stdout nor the exit code" {
+  keepalive_wait_setup
+  rm -f "$(keepalive_dir)"/*.jsonl
+  # 記録の置き場を書き込み不可にして、キャッシュの判定の結果を書けなくする
+  local f; f="$(rec_of 1122 11)"
+  chmod 0555 "$(dirname "$f")"
+  reset_keepalive_poll
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  chmod 0755 "$(dirname "$f")"
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
 }
 
 @test "wait limit timestamp regression: offset and invalid time cannot override newest 5m; naive time is UTC" {
@@ -7226,9 +9588,9 @@ if mode == "orca":
     add("draft", "nonempty-suggestion", box("❯ \x1b[2msuggestion\x1b[0m"), "skipped input-not-empty", draft="suggestion")
     add("draft", "empty-vs-input-tail", box("❯ human"), "skipped input-not-empty", draft="")
     for d in (None, False, [], {}): add("draft", repr(d), ready, "failed observe", draft=d)
-    for malformed in ({}, {"result": []}, {"result": {"source":"screen", "tail":[False]}}, {"result": {"source":"screen"}}):
+    for malformed in ({}, {"result": []}, {"result": {"terminal":{"source":"screen", "tail":[False]}}}, {"result": {"terminal":{"source":"screen"}}}):
         add("draft", repr(malformed), ready, "failed observe", observation=malformed)
-    add("draft", "not-screen", ready, "skipped unknown-state", observation={"result":{"source":"log", "tail":[]}})
+    add("draft", "not-screen", ready, "skipped unknown-state", observation={"result":{"terminal":{"source":"log", "tail":[]}}})
 for c in cases: print(json.dumps(c, ensure_ascii=False))
 PYCODE
   while IFS= read -r row; do
@@ -7236,8 +9598,8 @@ PYCODE
     expected="$(printf '%s' "$row" | jq -r '.expected')"
     : > "$STUB_LOG"
     echo 0 > "$STUB_CFG/readcount"
-    printf '%s' "$row" | jq -c 'if has("observation") then .observation else {result:({source:"screen",tail:(.screen|split("\n"))} + (if .omit_draft then {} else {draft:(if has("draft") then .draft else "" end)} end))} end' > "$STUB_CFG/screen"
-    printf '%s' "$row" | jq -c '{result:{source:"screen",tail:((.after // .screen)|split("\n")),draft:""}}' > "$STUB_CFG/screen_2"
+    printf '%s' "$row" | jq -c 'if has("observation") then .observation else {result:{terminal:({source:"screen",tail:(.screen|split("\n"))} + (if .omit_draft then {} else {draft:(if has("draft") then .draft else "" end)} end))}} end' > "$STUB_CFG/screen"
+    printf '%s' "$row" | jq -c '{result:{terminal:{source:"screen",tail:((.after // .screen)|split("\n")),draft:""}}}' > "$STUB_CFG/screen_2"
     run orca_keepalive keepalive /work/issue-11 reserved
     echo "$name: actual=$output expected=$expected" >&3
     [ "$output" = "$expected" ]
@@ -7284,4 +9646,1759 @@ PYCODE
   keepalive_orca_setup
   keepalive_matrix_orca draft
 
+}
+
+# --- wait の長い待ち（主に伝え済みの止まり） ---
+# spec: dev-workflow-develop（wait は主に伝え済みの止まりだけが残るあいだ上限で起きずに待つ / 長い待ちは止まりの変化で
+# 既存の行で返る / 長い待ちは上限を過ぎたら expired の行で返る / 声かけは wait を終了させず親の起床を増やさない）
+
+# sleep を実時間で眠らせる（SECONDS で測る上限と長い待ちの上限を進めるため）
+real_sleep() {
+  printf '%s\n' '#!/bin/bash' '{ printf sleep; printf " %q" "$@"; echo; } >> "$STUB_LOG"' '/bin/sleep "$1"' > "$STUB_BIN/sleep"
+  chmod +x "$STUB_BIN/sleep"
+}
+
+# 子 <N> が止まりの発言 d1 で主に伝え済み（told_uuid=d1）、issue は open のまま、会話ログは d1 から進まない環境
+told_ready() {
+  local n
+  make_stub orca
+  real_sleep
+  for n in "$@"; do
+    put_record "$n" stop=stopped-seen stop_uuid=d1 told_uuid=d1 stop_at=2026-01-01T00:00:00Z
+    put_chat "$n" s1 "$(said d1 "$(ago 300)")" "$(turn_end "$(ago 300)")"
+    gh_seq "$n" open
+  done
+}
+
+# 子 <N> の会話ログに行を足すフックを gh の <回数> 回目の呼び出しに置く（<N> <回数> <行>...）
+chat_on_poll() {
+  local n="$1" c="$2" dir
+  shift 2
+  dir="$BATS_TEST_TMPDIR/projects/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-$n" | sed 's/[^A-Za-z0-9]/-/g')"
+  printf 'printf "%%s\\n" %s >> %q\n' "$(printf '%q ' "$@")" "$dir/s1.jsonl" > "$STUB_CFG/hook_${n}_$c"
+}
+
+turn_on_poll() {
+  local n="$1" c="$2" sender="$3" gen="$4" f
+  f="$(rec_of 1122 "$n")"
+  printf 'jq %q %q > %q.tmp && mv %q.tmp %q\n' \
+    ".turn_input.generation=$gen | .turn_input.sender=\"$sender\" | .turn_state=$(if [ "$sender" = owner ]; then echo null; else printf '{generation:%s,session_id:"s1",value:"主の返事待ち",summary:"新しい問い",recorded_at:"2026-01-01T00:00:02Z"}' "$gen"; fi)" \
+    "$f" "$f" "$f" "$f" >> "$STUB_CFG/hook_${n}_$c"
+}
+
+@test "wait owner-wait: only told stops do not time out at the limit and end with expired" {
+  told_ready 11
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^gh api ')" -ge 4 ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait owner-wait: a child that is not told keeps the usual timeout" {
+  told_ready 11
+  put_record 12
+  gh_seq 12 open
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11 12
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11 12" ]
+}
+
+@test "wait owner-wait: a told uuid that differs from the stop, or is not a string, keeps the usual timeout" {
+  told_ready 11
+  put_record 11 stop=stopped-seen stop_uuid=d1 told_uuid=d0
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11" ]
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  f="$(rec_of 1122 11)"; jq -c '.told_uuid = 1' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11" ]
+  ! grep -q 'unreadable' "$BATS_TEST_TMPDIR/stderr" || return 1
+}
+
+@test "wait owner-wait: the one-shot check before stopping does not enter the long wait" {
+  told_ready 11
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = "timeout 11" ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ] || { cat "$BATS_TEST_TMPDIR/stderr"; false; }
+}
+
+@test "wait owner-wait: a closed issue during the long wait ends with closed" {
+  told_ready 11
+  gh_seq 11 open open open open closed
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+}
+
+@test "wait owner-wait: a new question during the long wait ends with stopped" {
+  told_ready 11
+  chat_on_poll 11 4 "$(asked d2 "$(ago 1)")"
+  turn_on_poll 11 4 parent 2
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(rec_get 11 stop_uuid)" = d2 ]
+}
+
+@test "wait owner-wait: an owner reply after the usual limit ends with timeout" {
+  told_ready 11
+  turn_on_poll 11 4 owner 2
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "timeout 11" ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(calls '^gh api ')" -eq 4 ]
+}
+
+@test "wait owner-wait: a bad EPIC_DISPATCH_OWNER_WAIT_SEC prints usage before calling gh" {
+  told_ready 11
+  for v in abc -1 ''; do
+    EPIC_DISPATCH_OWNER_WAIT_SEC="$v" run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+    [ "$status" -eq 1 ]
+    [ -z "$output" ]
+    grep -q 'EPIC_DISPATCH_OWNER_WAIT_SEC must be a non-negative integer' "$BATS_TEST_TMPDIR/stderr"
+  done
+  [ "$(calls '^gh ')" -eq 0 ]
+}
+
+@test "wait owner-wait: one failed fetch after the usual limit keeps the long wait and ends with expired" {
+  told_ready 11
+  gh_seq 11 open open open open FAIL open
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+}
+
+@test "wait owner-wait: failed fetches in a row end with error, not timeout or expired" {
+  told_ready 11
+  gh_seq 11 open open open FAIL FAIL FAIL open
+  EPIC_DISPATCH_OWNER_WAIT_SEC=60 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+  [ "$status" -eq 1 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "error gh 11" ]
+}
+
+@test "keepalive wait: a told child that answers the keepalive is not woken at the limit and ends with expired" {
+  keepalive_wait_setup
+  real_sleep
+  gh_seq 11 open
+  put_record 11 stop=stopped-seen session=term-11 stop_uuid=$MAIN_UUID told_uuid=$MAIN_UUID
+  reset_keepalive_poll
+  keepalive_chat 3000
+  # 声かけの期限も EPIC_DISPATCH_OWNER_WAIT_SEC（下の 5 秒）なので、止まりは 1 秒前にする
+  stop_fixture 1
+  dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  printf 'printf "%%s\\n" %q %q >> %q\n' \
+    "$(chat_line user 2033-05-18T03:33:20Z "$(render_keepalive)")" \
+    "$(chat_line assistant 2033-05-18T03:33:20Z "$(keepalive_reply)" | jq -c '.entrypoint="cli" | .message.usage={input_tokens:1,cache_read_input_tokens:99}')" "$dir/s.jsonl" \
+    > "$STUB_CFG/hook_send_term-11"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=5 run dispatch wait --watch-stopped --interval 1 --timeout 2 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = 'expired 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+# --- wait の長い待ちのあいだの判断し直し（--resolve） ---
+# spec: dev-workflow-develop（長い待ちのあいだに判断の材料が変わったら 1 回だけ判断し直す）
+
+# issue <N> の応答を置く（<N> <updated_at> [<本文>]）
+put_issue() {
+  jq -cn --arg u "$2" --arg b "${3-}" '{updated_at: $u, body: $b, author_association: "OWNER"}' > "$STUB_CFG/issue_$1"
+}
+# コメント 1 件の JSON（<id> <updated_at> <本文> [<author_association>]）
+cmt() { jq -cn --argjson id "$1" --arg u "$2" --arg b "$3" --arg a "${4-OWNER}" '{id: $id, updated_at: $u, body: $b, author_association: $a}'; }
+# gh の状態のポーリングの <回数> 回目に、issue <N> の応答とコメントを置き換えるフックを足す（<N> <回数> <updated_at> <本文> <コメントの JSON 配列>）
+change_on_poll() {
+  local n="$1" c="$2"
+  printf 'jq -cn --arg u %q --arg b %q %q > %q\nprintf %%s %q > %q\n' "$3" "$4" \
+    '{updated_at: $u, body: $b, author_association: "OWNER"}' "$STUB_CFG/issue_$n" "$5" "$STUB_CFG/comments_$n" \
+    >> "$STUB_CFG/hook_${n}_$c"
+}
+
+# 子 <N>... が伝え済みの止まりで、親 400 が --resolve で待つ環境
+rejudge_ready() {
+  told_ready "$@"
+  make_judge
+  set_current 400
+  for n in "$@"; do set_terms "$n" "term-a-$n"; done
+}
+
+@test "wait owner-wait --resolve: an owner comment on the child is judged once and a pass is sent and recorded" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'A でお願いします')]"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=5 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(calls '^judge 400 11')" -eq 1 ] || { cat "$STUB_LOG"; false; }
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 推奨どおり進めてよい" ]
+  starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した — 範囲の内側 発言 d1"
+  # 判断には記録の会話ログから作った止まりの JSON を渡す
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d1 ]
+  [ "$(jq -r .marked "$STUB_CFG/judge_json")" = false ]
+}
+
+@test "wait owner-wait --resolve: nothing changed means no judge" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge ')" -eq 0 ]
+}
+
+@test "wait owner-wait --resolve: an owner comment on the epic judges every child once" {
+  rejudge_ready 11 12
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  printf 'jq -cn %q > %q\nprintf %%s %q > %q\n' '{updated_at: "2026-02-01T00:00:00Z", body: "", author_association: "OWNER"}' \
+    "$STUB_CFG/issue_400" "[$(cmt 9 2026-02-01T00:00:00Z '方針を変える')]" "$STUB_CFG/comments_400" > "$STUB_CFG/hook_11_2"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=5 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11 12
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11 12" ]
+  [ "$(calls '^judge 400 11')" -eq 1 ]
+  [ "$(calls '^judge 400 12')" -eq 1 ]
+}
+
+@test "wait owner-wait --resolve: an escalation is posted on the child, wakes no one, and its own post is not judged again" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'B は？')]"
+  # 親自身の投稿（1 行目が「親の判断: 」）で updated_at だけが進む
+  change_on_poll 11 3 2026-02-02T00:00:00Z '' \
+    "[$(cmt 7 2026-02-01T00:00:00Z 'B は？'),$(cmt 8 2026-02-02T00:00:00Z "$(printf '親の判断: 主に上げる\n止まりの発言: d1')")]"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge 400 11')" -eq 1 ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 主に上げる" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait owner-wait --resolve: an owner edit during the judgement is judged once more, then no more" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'B は？')]"
+  # 1 回目の判断のあいだに主が本文を書き換える（2 回目の判断では何もしない）
+  printf '[ -e %q ] && exit 0\n: > %q\njq -cn %q > %q\n' "$STUB_CFG/edited" "$STUB_CFG/edited" \
+    '{updated_at: "2026-02-01T00:00:30Z", body: "本文を直した", author_association: "OWNER"}' "$STUB_CFG/issue_11" \
+    > "$STUB_CFG/judge_hook"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge 400 11')" -eq 2 ] || { cat "$STUB_LOG"; false; }
+}
+
+@test "wait owner-wait --resolve: a label-only change that moves updated_at is not judged" {
+  rejudge_ready 11
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[]"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  # updated_at は読む（前段）が、版（コメント）は変わったときだけ読む
+  [ "$(calls '^gh api .*/issues/11/comments')" -eq 2 ]
+}
+
+@test "wait owner-wait --resolve: an owner edit made while the first read failed is judged once when the read recovers" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  # 長い待ちに入るポーリング（1 回目）では子の issue が読めず、基準を控えられない
+  : > "$STUB_CFG/issue_fail_11"
+  # 読めないあいだに主がコメントし、2 回目のポーリングで読めるようになる
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'B は？')]"
+  printf 'rm -f %q\n' "$STUB_CFG/issue_fail_11" >> "$STUB_CFG/hook_11_2"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge 400 11')" -eq 1 ] || { cat "$STUB_LOG"; false; }
+}
+
+@test "wait owner-wait --resolve: when only the comments failed on the first read, an unchanged issue is not judged after recovery" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  # 1 回目のポーリングではコメントだけが読めない（本文と updated_at は読める）。2 回目で読めるようになり、材料は変わらない
+  echo 1 > "$STUB_CFG/comments_exit"
+  printf 'rm -f %q\n' "$STUB_CFG/comments_exit" > "$STUB_CFG/hook_11_2"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=5 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge ')" -eq 0 ]
+}
+
+@test "wait owner-wait --resolve: a failed read of the issue is not an error and is judged when it can be read" {
+  rejudge_ready 11
+  judge_says judge_out 主に上げる 主の好みが要る ''
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'B は？')]"
+  printf ': > %q\n' "$STUB_CFG/issue_fail_11" >> "$STUB_CFG/hook_11_2"
+  printf 'rm -f %q\n' "$STUB_CFG/issue_fail_11" > "$STUB_CFG/hook_11_3"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=6 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "expired 11" ]
+  [ "$(calls '^judge 400 11')" -eq 1 ]
+  [ "$(cat "$STUB_CFG/ghcount_11")" -ge 4 ]
+}
+
+@test "skill: parent subagent route reads shared worker slots" {
+  subagent_para | grep -qF 'references/epic-worker-slots.md'
+}
+
+# --- dependency-wait stop and restart (#1717) ---
+
+@test "dependency wait docs: child registers, saves resumable progress and ends without a mark" {
+  for text in 'dependencies/blocked_by' 'issue_id=' 'GET' '子の停止: 依存待ち' \
+    '依存先:' '待つ理由:' '再開条件:' '再開に要る途中経過:' '再開手順:' \
+    '止まった理由: 依存待ち: <依存先 URL>' '対応 issue が不明' '未保存の途中経過' \
+    '止まった理由: 依存待ちへの移行の失敗: <失敗した操作>' \
+    '待機用の背景タスク' '停止の印を付ける操作は不要'; do
+    grep -qF "$text" "$EPIC_CHILD_STOP" || { echo "missing child instruction: $text"; return 1; }
+  done
+  grep -qF '主の返事待ちの 7 項目とは別' "$EPIC_CHILD_STOP"
+}
+
+@test "dependency wait docs: parent response registers and ends, keeping existing approval limits" {
+  local doc="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  for text in 'blocked_by' '再開手順を記録して終了' 'あとで親から連絡するので待機' '返してはならない' 'main の CI' \
+    '主の承認' 'human-merge' '同じ HEAD で 1 回'; do
+    grep -qF "$text" "$doc" || { echo "missing parent criterion: $text"; return 1; }
+  done
+}
+
+@test "dependency wait docs: loop restores dependencies before owner questions and preserves stops until restart" {
+  local doc="$PLUGIN_DIR/skills/develop/references/epic-loop.md"
+  for text in '依存待ちの照合' 'pending-owner' '主の返事待ちより先' \
+    '動いている子から外す' 'reply --relaunch --as parent' 'relaunched' \
+    'not-stopped' 'not_planned' '未起動の子は' '送信結果' \
+    '依存待ちが残る間は' 'clear' 'notify-closed / reap'; do
+    grep -qF "$text" "$doc" || { echo "missing loop instruction: $text"; return 1; }
+  done
+}
+
+@test "dependency wait: registered and saved child stays stopped through open dependency and relaunches from the same record" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11 stop=resumed
+  put_turn 11
+  set_terms 11 term-a-11
+  gh_seq 11 open
+  gh_seq 22 open closed
+  local dep_url='https://github.com/oratta/claude-harness/issues/22'
+  local progress='branch oratta/issue-11 / commit aaa111 / PR #33 / 残作業: ゲート'
+  local resume='main を取り込んでゲートを取り直す'
+  printf '%s\n' '{"id":22,"number":22,"state":"open","html_url":"https://github.com/oratta/claude-harness/issues/22"}' > "$STUB_CFG/dependency_22"
+  # Child: register, GET-confirm and save the comment before ending the turn.
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by -X POST -F issue_id=22
+  [ "$status" -eq 0 ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq -r '.[0].html_url')" = "$dep_url" ]
+  local record
+  record="$(printf '子の停止: 依存待ち\n依存先: %s\n待つ理由: main の CI 修正\n再開条件: 前提の完了\n再開に要る途中経過: %s\n再開手順: %s' "$dep_url" "$progress" "$resume")"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh issue comment 11 --body "$record"
+  [ "$status" -eq 0 ]
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '依存と再開記録を保存して終了した。\n止まった理由: 依存待ち: %s' "$dep_url")")" "$(turn_end "$(ago 300)")"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ ! -e "$STUB_CFG/comment_400" ]
+  [ "$(cat "$STUB_CFG/comment_11")" = "$(printf '%s\n---' "$record")" ]
+  local stopped_record
+  stopped_record="$(cat "$(rec_of 1122 11)")"
+  # Parent restart: pending is classified from the saved comment, not an owner question.
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'pending 11 d1' ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq '[.[] | select(.state != "closed")] | length')" -eq 1 ]
+  # No child is polled or sent to while the external prerequisite is open.
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 2 ]
+  [ "$output" = 'timeout 22' ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$stopped_record" ]
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 0 ]
+  [ "$output" = 'closed 22' ]
+  # GitHub now reports the dependency completed. The parent re-reads, then uses
+  # the saved resume instruction with the existing restart operation.
+  jq '.state = "closed" | .state_reason = "completed"' "$STUB_CFG/registered_dependency" > "$STUB_CFG/closed_dependency"
+  mv "$STUB_CFG/closed_dependency" "$STUB_CFG/registered_dependency"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s' "$output" | jq '[.[] | select(.state != "closed" or .state_reason != "completed")] | length')" -eq 0 ]
+  [ "$(calls '^gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by')" -eq 4 ]
+  [ "$(cat "$(rec_of 1122 11)")" = "$stopped_record" ]
+  resume="$(sed -n 's/^再開手順: //p' "$STUB_CFG/comment_11")"
+  run dispatch reply --relaunch --as parent 400 11 "依存先 $dep_url が完了。$resume"
+  [ "$status" -eq 0 ]
+  [ "$output" = 'relaunched 11' ]
+  [ "$(rec_get 11 session)" = term-11 ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" '/develop #11 '
+  grep -qF "$resume" "$STUB_CFG/sent_term-11"
+  grep -qF "$dep_url" "$STUB_CFG/sent_term-11"
+  [ "$(calls '^orca terminal send')" -eq 1 ]
+  [ "$(calls '^orca terminal close')" -eq 1 ]
+  [ "$(rec_get 11 worktree)" = "$BATS_TEST_TMPDIR/work/issue-11" ]
+}
+
+@test "dependency wait: a marker above the final line remains an ordinary no-question report" {
+  log_resolve_ready
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '止まった理由: 依存待ち: https://github.com/o/r/issues/22\nその後、依存が解けて完了した。')")" "$(turn_end "$(ago 300)")"
+  judge_says judge_out 問いではない 完了の報告 '' なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'closed 11' ]
+  [ "$(rec_get 11 stop)" = resumed ]
+  [ "$(calls '^judge ')" -eq 1 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+}
+
+# 会話ログの最後の発言が合図の後ろに改行・空白・CR を残して終わっても、依存待ちとして判断に渡さない
+dep_marker_tail_stays_stopped() {
+  log_resolve_ready
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$1")" "$(turn_end "$(ago 300)")"
+  judge_says judge_out 通す 子に返す 'そのまま続けて' なし
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+}
+
+@test "dependency wait: a marker followed by a trailing newline still skips the judge and stays stopped" {
+  dep_marker_tail_stays_stopped $'保存して終了した。\n止まった理由: 依存待ち: https://github.com/o/r/issues/22\n'
+}
+
+@test "dependency wait: a marker followed by trailing space and CRLF still skips the judge and stays stopped" {
+  dep_marker_tail_stays_stopped $'保存して終了した。\n止まった理由: 依存待ち: https://github.com/o/r/issues/22 \r\n'
+}
+
+# --- --help（出力語の意味。spec: dev-workflow-develop「epic-dispatch.sh は --help で出力語の意味を出す」） ---
+
+# stdout の結果行の語頭の固定リスト（理由・番号が続くものは語頭だけ）
+HELP_WORDS="nested orca tmux subagent launched skipped failed deferred sent relaunched notified unrecorded closed done stopped error expired timeout keepalive marked reaped gone kept unreadable pending dismissed told adopted none cleared"
+
+# gh・orca・git を置かない PATH（bash だけ）で --help を呼ぶ
+help_env() {
+  local d="$BATS_TEST_TMPDIR/helpbin"
+  mkdir -p "$d"
+  ln -sf "$(command -v bash)" "$d/bash"
+  EPIC_STATE_ROOT="$BATS_TEST_TMPDIR/help-state-root" PATH="$d" "$SCRIPT" "$@" 2>"$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "--help: prints the usage and output words on stdout, exit 0, no side effects" {
+  run help_env --help
+  [ "$status" -eq 0 ]
+  [ ! -s "$BATS_TEST_TMPDIR/stderr" ]
+  for sub in route launch reply notify-closed wait mark reap pending-owner dismiss told child-log adopt clear max-parallel; do
+    printf '%s\n' "$output" | grep -qE "^$sub( |\$)" || { echo "missing subcommand: $sub"; return 1; }
+  done
+  [ ! -e "$BATS_TEST_TMPDIR/help-state-root" ]
+  [ "$(calls '.')" -eq 0 ]
+}
+
+@test "--help: -h is the same as --help" {
+  run help_env --help
+  want="$output"
+  run help_env -h
+  [ "$status" -eq 0 ]
+  [ "$output" = "$want" ]
+}
+
+@test "--help: every word of the fixed list is explained" {
+  run help_env --help
+  [ "$status" -eq 0 ]
+  for w in $HELP_WORDS; do
+    printf '%s\n' "$output" | grep -qF -- "$w" || { echo "missing word: $w"; return 1; }
+  done
+}
+
+@test "--help: describes exit codes, the child-log columns, max-parallel and the child launch command" {
+  run help_env --help
+  [ "$status" -eq 0 ]
+  printf '%s\n' "$output" | grep -qF 'exit 2'
+  printf '%s\n' "$output" | grep -qF 'タブ区切り'
+  printf '%s\n' "$output" | grep -qF 'EPIC_DISPATCH_MAX_PARALLEL'
+  printf '%s\n' "$output" | grep -qF 'EPIC_DISPATCH_CLAUDE_CMD'
+  printf '%s\n' "$output" | grep -qF 'EPIC_DISPATCH_MODEL'
+}
+
+@test "--help: every result word the script echoes to stdout is in the fixed list" {
+  # echo "<語> $n / $* / $epic の形で、>&2 を伴わない行から語頭を機械抽出する
+  words="$(grep -E 'echo "[a-z-]+ \$(n|\*|epic)' "$SCRIPT" | grep -v '>&2' \
+    | grep -oE 'echo "[a-z-]+ \$' | sed -E 's/^echo "//; s/ \$$//' | sort -u)"
+  [ -n "$words" ]
+  for w in $words; do
+    case " $HELP_WORDS " in
+      *" $w "*) ;;
+      *) echo "not in the fixed list: $w"; return 1 ;;
+    esac
+  done
+}
+
+@test "usage: no argument and an unknown subcommand still print the usage on stderr, exit 1, empty stdout" {
+  run dispatch
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+  run dispatch nosuchcommand
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+  grep -qF 'usage:' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "header comment points at epic-loop.md, not the removed epic.md section" {
+  ! sed -n 1,5p "$SCRIPT" | grep -qF 'epic.md「回し方」' || return 1
+  sed -n 1,5p "$SCRIPT" | grep -qF 'epic-loop.md'
+}
+
+@test "wait intervention: owner turns with large old logs never judge send close or restart" {
+  for value in 主の返事待ち 作業報告; do
+    resolve_pass
+    put_transcript 90 150001
+    put_turn 11 owner "$value"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+  done
+}
+
+# owner-away（#1745）: put_turn の後に recorded_at を <秒> 前にする（<子> <秒>）
+age_turn() {
+  local f; f="$(rec_of 1122 "$1")"
+  jq -c --arg t "$(ago "$2")" '.turn_state.recorded_at = $t' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+away_wait() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch-stopped 11; }
+no_touch() {
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^judge ')" -eq 0 ]
+}
+
+@test "wait owner-away: an owner question older than the default 3600s is reported once and touches nothing" {
+  make_stub orca
+  put_record 11
+  put_transcript 90 150001
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  stop_before="$(rec_get 11 stop)"
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+  [ "$status" -eq 0 ]; [ "$output" = 'owner-away 11' ]
+  no_touch
+  [ "$(rec_get 11 stop)" = "$stop_before" ]
+  [ "$(rec_get 11 owner_away_told.generation)" = 1 ]
+  [ "$(rec_get 11 owner_away_told.session_id)" = s1 ]
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  no_touch
+}
+
+@test "wait owner-away: the default is 3600 seconds" {
+  make_stub orca
+  put_record 11
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3500
+  unset EPIC_DISPATCH_OWNER_AWAY_SEC
+  away_wait
+  [ "$output" = 'timeout 11' ]
+  age_turn 11 3700
+  away_wait
+  [ "$output" = 'owner-away 11' ]
+}
+
+@test "wait owner-away: not reported before the time, and the time is set by EPIC_DISPATCH_OWNER_AWAY_SEC" {
+  make_stub orca
+  put_record 11
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 120
+  EPIC_DISPATCH_OWNER_AWAY_SEC=7200 away_wait
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 owner_away_told)" = null ]
+  EPIC_DISPATCH_OWNER_AWAY_SEC=60 away_wait
+  [ "$status" -eq 0 ]; [ "$output" = 'owner-away 11' ]
+  no_touch
+}
+
+@test "wait owner-away: a new owner input or non-owner or non-question turn is not reported" {
+  make_stub orca
+  local mutation
+  for mutation in '.turn_input.generation=2' '.turn_state=null' '.turn_input.sender="parent" | .turn_state.value="作業報告"' '.turn_state.value="作業報告"' '.turn_state.value="完了"' '.status="done"'; do
+    put_record 11
+    put_turn 11 owner 主の返事待ち
+    age_turn 11 7200
+    f="$(rec_of 1122 11)"
+    jq -c "$mutation" "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+    EPIC_DISPATCH_OWNER_AWAY_SEC=60 away_wait
+    [ "$output" = 'timeout 11' ]
+    no_touch
+  done
+}
+
+@test "wait owner-away: a child resumed in a new session with a newer owner input is not reported and nothing is written" {
+  make_stub orca
+  put_record 11
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  put_chat 11 s2 "$(said d1 "$(ago 3800)" '前のセッションの続き')" "$(chat_line user "$(ago 60 | sed 's/Z$/.500Z/')" '新しいセッションで再開した')"
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 owner_away_told)" = null ]
+  no_touch
+}
+
+@test "wait owner-away: the same session, an older input in another session or an unreadable log is still reported" {
+  make_stub orca
+  local kind
+  for kind in same older none; do
+    put_record 11
+    put_turn 11 owner 主の返事待ち
+    age_turn 11 3700
+    rm -rf "$BATS_TEST_TMPDIR/projects"
+    case "$kind" in
+      same) put_chat 11 s1 "$(said d1 "$(ago 3800)" 'どちらに')" "$(chat_line user "$(ago 60)" '同じセッションの入力')" ;;
+      older) put_chat 11 s2 "$(chat_line user "$(ago 7200)" '古い入力')" "$(said d1 "$(ago 7100)" 'どちらに')" ;;
+      none) export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects" ;;
+    esac
+    EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = 'owner-away 11' ]
+    [ "$(rec_get 11 owner_away_told.session_id)" = s1 ]
+    no_touch
+  done
+}
+
+@test "wait owner-away: past the threshold, --resolve only reports and calls nothing (#1828)" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11
+  put_transcript 90 150001
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  gh_seq 11 open
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'owner-away 11' ]
+  no_touch
+  [ "$(calls '^gh issue comment')" -eq 0 ]
+  [ "$(rec_get 11 owner_away_told.generation)" = 1 ]
+  [ "$(rec_get 11 owner_away_told.session_id)" = s1 ]
+}
+
+@test "wait owner-away: a leftover lock means no report and owner_away_told stays empty (#1828)" {
+  make_stub orca
+  put_record 11
+  put_transcript 90 150001
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  mkdir "$(rec_of 1122 11).lock"
+  gh_seq 11 open
+  EPIC_STATE_LOCK_TIMEOUT=0 EPIC_DISPATCH_OWNER_AWAY_SEC=3600 run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 owner_away_told)" = null ] || [ -z "$(rec_get 11 owner_away_told)" ]
+  no_touch
+}
+
+@test "wait owner-away: a parent question still goes through the stopped path" {
+  make_stub orca
+  put_record 11
+  put_turn 11 parent 主の返事待ち
+  age_turn 11 7200
+  EPIC_DISPATCH_OWNER_AWAY_SEC=60 away_wait
+  [ "$output" = 'stopped 11' ]
+}
+
+@test "wait owner-away: a record without turn state is not reported" {
+  make_stub orca
+  put_record 11
+  EPIC_DISPATCH_OWNER_AWAY_SEC=0 away_wait
+  [ "$output" = 'timeout 11' ]
+}
+
+@test "wait owner-away: an invalid EPIC_DISPATCH_OWNER_AWAY_SEC is a usage error" {
+  make_stub orca
+  put_record 11
+  EPIC_DISPATCH_OWNER_AWAY_SEC=abc away_wait
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  grep -qF 'EPIC_DISPATCH_OWNER_AWAY_SEC' "$BATS_TEST_TMPDIR/stderr"
+}
+
+@test "wait owner-away: documented in the usage, the header and the references" {
+  grep -q 'owner-away <N>' "$SCRIPT"
+  grep -q 'EPIC_DISPATCH_OWNER_AWAY_SEC' "$SCRIPT"
+  grep -qF '`stopped <N>...`・`owner-away <N>...` を該当するものだけこの順に（1〜4 行）' "$SCRIPT"
+  grep -qF 'unrecorded / owner-away の順の 1〜5 行' "$SCRIPT"
+  grep -q 'owner-away' "${PLUGIN_DIR}/skills/develop/references/epic-stop.md"
+  grep -q 'owner-away' "${PLUGIN_DIR}/skills/develop/references/epic.md"
+}
+
+@test "wait intervention: an owner input or invalid state during judgement discards a pass" {
+  local mutation f
+  for mutation in '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' '.turn_state=null' '.turn_input.session_id="new" | .turn_state.session_id="new"'; do
+    resolve_pass
+    put_transcript 90 150001
+    f="$(rec_of 1122 11)"
+    printf 'jq %q %q > %q.tmp && mv %q.tmp %q\n' "$mutation" "$f" "$f" "$f" "$f" > "$STUB_CFG/judge_hook"
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$output" = 'closed 11' ]
+    [ "$(calls '^judge ')" -eq 1 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    [ ! -e "$STUB_CFG/comment_400" ]
+  done
+}
+
+@test "wait intervention: keepalive cannot bypass owner or invalid state" {
+  keepalive_wait_setup
+  for value in 主の返事待ち 作業報告; do
+    reset_keepalive_poll
+    put_turn 11 owner "$value"
+    run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+  done
+}
+
+@test "wait intervention: material changes cannot rejudge owner or invalid turns" {
+  rejudge_ready 11
+  put_turn 11 owner 主の返事待ち
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  change_on_poll 11 2 2026-02-01T00:00:00Z changed '[]'
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "wait owner-wait: log-only question or owner input stays received until expired" {
+  local row
+  for row in "$(asked d2 "$(ago 1)")" "$(chat_line user "$(ago 1)" 'A でお願いします')"; do
+    told_ready 11
+    printf 0 > "$STUB_CFG/ghcount_11"
+    chat_on_poll 11 2 "$row"
+    EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped 11
+    [ "$status" -eq 0 ]; [ "$output" = 'expired 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]; [ "$(rec_get 11 stop_uuid)" = d1 ]
+  done
+}
+
+@test "wait intervention: every nonpass result leaves large old terminals untouched" {
+  local verdict
+  for verdict in escalation no-question failure malformed empty; do
+    resolve_pass
+    put_transcript 90 150001
+    case "$verdict" in
+      escalation) judge_says judge_out 主に上げる 要確認 '' ;;
+      no-question) judge_says judge_out 問いではない 報告 '' ;;
+      failure) echo 1 > "$STUB_CFG/judge_exit" ;;
+      malformed) echo broken > "$STUB_CFG/judge_out" ;;
+      empty) judge_says judge_out 通す 範囲内 '' ;;
+    esac
+    run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ]
+    [ "$(calls '^judge ')" -eq 1 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    [ ! -e "$STUB_CFG/comment_400" ]
+  done
+}
+
+@test "wait state: a new input at receipt lock cannot accept the stale stop" {
+  make_stub orca
+  put_record 11
+  put_turn 11
+  local f; f="$(rec_of 1122 11)"
+  cat > "$STUB_BIN/mkdir" <<EOF_STUB
+#!/bin/bash
+if [ "\$1" = "$f.lock" ]; then
+  jq '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+fi
+/bin/mkdir "\$@"
+EOF_STUB
+  chmod +x "$STUB_BIN/mkdir"
+  wait_stop
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop)" = '' ]; [ "$(rec_get 11 stop_turn)" = null ]
+  [ "$(calls '^orca worktree set')" -eq 0 ]
+}
+
+@test "keepalive recovery: filling an empty received uuid enables told and keepalive" {
+  keepalive_wait_setup
+  local f dir
+  f="$(rec_of 1122 11)"
+  jq '.stop_uuid=""' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$BATS_TEST_TMPDIR/work/issue-11" | sed 's/[^A-Za-z0-9]/-/g')"
+  jq -c 'if .uuid != null then .message.content="元の質問？" else . end' "$dir/s.jsonl" > "$dir/s1.jsonl"
+  rm -f "$dir/s.jsonl"
+  gh_seq 11 open
+  run dispatch wait --watch-stopped --interval 0 --timeout 0 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop_uuid)" = "$MAIN_UUID" ]
+  run dispatch told 11 "$MAIN_UUID"
+  [ "$status" -eq 0 ]; [ "$output" = 'told 11' ]
+  gh_seq 11 open closed
+  reset_keepalive_poll
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send ')" -eq 1 ]
+}
+
+# P3-F1 recovery (#1744): a parent-started work report saved with dependency_wait:true
+# is received from the state record alone and restarted with reply --as parent.
+@test "dependency wait: real child report wakes the parent and restarts after the dependency closes (P3-F1)" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11
+  set_terms 11 term-a-11
+  local wt="$BATS_TEST_TMPDIR/work/issue-11" log="$BATS_TEST_TMPDIR/child.jsonl"
+  local dep_url='https://github.com/oratta/claude-harness/issues/22' text payload
+  git init -q "$wt"
+  wt="$(cd "$wt" && pwd -P)"
+  local f; f="$(rec_of 1122 11)"
+  jq --arg w "$wt" '.worktree=$w' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  # #1766: the hook records only registered sessions, so the child's startup input registers s1 first.
+  payload="$(jq -cn --arg w "$wt" --arg l "$log" '{hook_event_name:"UserPromptSubmit",cwd:$w,
+    session_id:"s1",transcript_path:$l,prompt:"/develop #11 （エピック #1122 の子。親ワークツリー /parent から Orca で起動）"}')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ "$(rec_get 11 turn_input.sender)" = startup ]
+  payload="$(printf '%s' "$payload" | jq -c '.prompt="親エピック #400 の判断: 続ける"')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ "$(rec_get 11 turn_input.sender)" = parent ]
+  printf '%s\n' '{"id":22,"number":22,"state":"open"}' > "$STUB_CFG/dependency_22"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by -X POST -F issue_id=22
+  [ "$status" -eq 0 ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]; [ "$(printf '%s' "$output" | jq '.[0].id')" -eq 22 ]
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh issue comment 11 --body "$(printf '子の停止: 依存待ち\n依存先: %s\n待つ理由: 前提の修正\n再開条件: 前提の完了\n再開に要る途中経過: commit aaa111\n再開手順: ゲートを取り直す' "$dep_url")"
+  [ "$status" -eq 0 ]
+  text="$(printf '登録と途中経過を保存した。\n止まった理由: 依存待ち: %s\n状態: 作業報告 — 前提の完了後に再開する' "$dep_url")"
+  jq -cn --arg text "$text" '{type:"assistant",sessionId:"s1",message:{role:"assistant",content:$text}}' > "$log"
+  payload="$(printf '%s' "$payload" | jq -c --arg text "$text" '.hook_event_name="Stop" | .last_assistant_message=$text')"
+  run bash -c 'printf "%s" "$1" | "$2"' _ "$payload" "$PLUGIN_DIR/scripts/epic-child-state.sh"
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  [ "$(rec_get 11 turn_state.value)" = 作業報告 ]
+  [ "$(jq -c '.turn_state.dependency_wait' "$f")" = true ]
+  gh_seq 11 open
+  gh_seq 22 open closed
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(jq -c '.stop_turn' "$f")" = '{"generation":2,"session_id":"s1"}' ]
+  # The same generation is never received twice.
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]
+  case "$output" in 'pending 11'|'pending 11 '*) ;; *) echo "$output"; false ;; esac
+  # The prerequisite closes through the existing wait closing notification.
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 22' ]
+  run dispatch wait --interval 0 --timeout 0 22
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 22' ]
+  jq '.state="closed" | .state_reason="completed"' "$STUB_CFG/registered_dependency" > "$STUB_CFG/closed_dependency"
+  mv "$STUB_CFG/closed_dependency" "$STUB_CFG/registered_dependency"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by
+  [ "$status" -eq 0 ]; [ "$(printf '%s' "$output" | jq -r '.[0].state_reason')" = completed ]
+  run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
+  [ "$status" -eq 0 ]; [ "$output" = 'relaunched 11' ]
+  starts_with "$(cat "$STUB_CFG/sent_term-11")" '/develop #11 '
+  grep -qF '依存が解けたので再開する' "$STUB_CFG/sent_term-11"
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 1 ]
+}
+
+# #1744: set turn_state.dependency_wait on child <N> to a JSON value, or delete it with "absent".
+set_dep() {
+  local f; f="$(rec_of 1122 "$1")"
+  if [ "$2" = absent ]; then
+    jq 'del(.turn_state.dependency_wait)' "$f" > "$f.tmp"
+  else
+    jq --argjson v "$2" '.turn_state.dependency_wait = $v' "$f" > "$f.tmp"
+  fi
+  mv "$f.tmp" "$f"
+}
+
+@test "dependency wait state: only boolean true on a parent work report is a stop; others never judge" {
+  make_stub orca
+  make_judge
+  set_current 400
+  local v
+  for v in absent false '"true"' 1 null '[]' '{}'; do
+    put_record 11
+    put_turn 11 parent 作業報告
+    set_dep 11 "$v"
+    gh_seq 11 open
+    : > "$STUB_LOG"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 2 ] || { echo "v=$v $output"; false; }
+    [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal')" -eq 0 ]
+  done
+}
+
+@test "dependency wait state: owner questions pass with absent or false and are excluded by non-boolean" {
+  make_stub orca
+  make_judge
+  set_current 400
+  local v
+  for v in absent false; do
+    put_record 11
+    put_turn 11 parent 主の返事待ち
+    set_dep 11 "$v"
+    wait_stop
+    [ "$status" -eq 0 ] || { echo "v=$v $output"; false; }
+    [ "$output" = 'stopped 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+  done
+  for v in '"true"' 1 null '[]' '{}'; do
+    put_record 11
+    put_turn 11 parent 主の返事待ち
+    set_dep 11 "$v"
+    gh_seq 11 open
+    : > "$STUB_LOG"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 2 ] || { echo "v=$v $output"; false; }
+    [ "$output" = 'timeout 11' ]
+    [ "$(rec_get 11 turn_state.value)" = 主の返事待ち ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal')" -eq 0 ]
+  done
+}
+
+@test "dependency wait state: a dependency stop is received without a log and never judged" {
+  make_stub orca
+  make_judge
+  set_current 400
+  local sender
+  for sender in parent startup; do
+    put_record 11
+    put_turn 11 "$sender" 作業報告
+    set_dep 11 true
+    gh_seq 11 open
+    : > "$STUB_LOG"
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+    [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal')" -eq 0 ]
+    run dispatch pending-owner 11
+    [ "$status" -eq 0 ]; [ "$output" = 'pending 11' ]
+  done
+}
+
+@test "dependency wait state: pending-owner keeps a received dependency stop even when the log moved" {
+  make_stub orca
+  set_current 400
+  set_terms 11 term-a-11
+  put_record 11 stop=stopped-seen stop_uuid=d1
+  put_turn 11 parent 作業報告
+  set_dep 11 true
+  local f; f="$(rec_of 1122 11)"
+  jq '.stop_turn={generation:1,session_id:"s1"}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(said d1 "$(ago 300)" 'a')" "$(said d2 "$(ago 200)" 'b')" "$(turn_end "$(ago 200)")"
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ "$output" = 'pending 11 d1' ]
+  # reply --as parent does not drop the valid dependency stop because of the moved log either.
+  run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
+  [ "$status" -eq 0 ]; [ "$output" = 'relaunched 11' ]
+  jq '.stop="stopped-seen"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  # A changed generation is not restored from the old stop.
+  jq '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "dependency wait state: owner turns with dependency_wait true and large old logs never intervene" {
+  local value
+  for value in 主の返事待ち 作業報告; do
+    resolve_pass
+    put_transcript 90 150001
+    put_turn 11 owner "$value"
+    set_dep 11 true
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+    [ "$output" = 'timeout 11' ]
+    [ "$(calls '^judge ')" -eq 0 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+  done
+}
+
+@test "dependency wait state: an owner input after receipt makes reply --as parent skip without a log" {
+  make_stub orca
+  set_current 400
+  set_terms 11 term-a-11
+  put_record 11
+  put_turn 11 parent 作業報告
+  set_dep 11 true
+  wait_stop
+  [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+  local f; f="$(rec_of 1122 11)"
+  jq '.turn_input.generation=2 | .turn_input.sender="owner" | .turn_state=null' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  : > "$STUB_LOG"
+  run dispatch reply --relaunch --as parent 400 11 '依存が解けたので再開する'
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped 11 not-stopped' ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  # The next wait records the resume; the old stop is not restored as a dependency stop.
+  wait_stop
+  [ "$(rec_get 11 stop)" = resumed ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+}
+
+@test "dependency wait state: keepalive does not poke a dependency stop" {
+  keepalive_wait_setup
+  local f; f="$(rec_of 1122 11)"
+  jq '.turn_state.value="作業報告" | .turn_state.dependency_wait=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  reset_keepalive_poll
+  keepalive_chat 3000
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  case "$(jq -r '.keepalive' "$f")" in *' skipped not-stopped') ;; *) jq -r .keepalive "$f"; false ;; esac
+}
+
+@test "dependency wait state: material changes do not rejudge a dependency stop" {
+  rejudge_ready 11
+  local f; f="$(rec_of 1122 11)"
+  jq '.turn_state.value="作業報告" | .turn_state.dependency_wait=true' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  judge_says judge_out 通す 範囲の内側 推奨どおり
+  change_on_poll 11 2 2026-02-01T00:00:00Z '' "[$(cmt 7 2026-02-01T00:00:00Z 'A でお願いします')]"
+  EPIC_DISPATCH_OWNER_WAIT_SEC=4 run dispatch wait --interval 1 --timeout 2 --watch-stopped --resolve 400 11
+  [ "$(calls '^judge ')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+}
+
+@test "dependency wait state: an old parent work report without the field is not supplemented from log or comments" {
+  make_stub orca
+  make_judge
+  set_current 400
+  put_record 11
+  put_turn 11 parent 作業報告
+  local dep_url='https://github.com/oratta/claude-harness/issues/22'
+  printf '%s\n' '{"id":22,"number":22,"state":"open"}' > "$STUB_CFG/dependency_22"
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh api repos/oratta/claude-harness/issues/11/dependencies/blocked_by -X POST -F issue_id=22
+  run env PATH="$STUB_BIN:/usr/bin:/bin" gh issue comment 11 --body "$(printf '子の停止: 依存待ち\n依存先: %s' "$dep_url")"
+  put_chat 11 s1 "$(said d1 "$(ago 300)" "$(printf '止まった理由: 依存待ち: %s\n状態: 作業報告 — 待つ' "$dep_url")")" "$(turn_end "$(ago 300)")"
+  gh_seq 11 open
+  : > "$STUB_LOG"
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
+  [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+  run dispatch pending-owner 11
+  [ "$status" -eq 0 ]; [ -z "$output" ]
+  [ "$(calls '^judge ')" -eq 0 ]; [ "$(calls '^orca terminal')" -eq 0 ]
+}
+
+# #1742: direct replies share wait --resolve's size/time decision.
+reply_auto_ready() {
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  reply_ready term-a-11
+  put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
+  : > "$STUB_LOG"
+}
+
+assert_reply_auto() {
+  local as="$1" expected="$2" sent header
+  run dispatch reply --as "$as" 400 11 '回答'
+  [ "$status" -eq 0 ] || { echo "$output"; cat "$BATS_TEST_TMPDIR/stderr"; return 1; }
+  if [ "$expected" = 1 ]; then
+    [ "$output" = 'relaunched 11' ]
+    [ "$(calls '^orca terminal close')" -eq 1 ]
+    [ "$(calls '^orca terminal create')" -eq 1 ]
+    [ "$(first_line '^orca terminal close')" -lt "$(first_line '^orca terminal create')" ]
+    sent="$(cat "$STUB_CFG/sent_term-11")"
+    starts_with "$sent" '/develop #11 '
+  else
+    [ "$output" = 'sent 11' ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    sent="$(cat "$STUB_CFG/sent_term-a-11")"
+  fi
+  case "$as" in
+    parent) header='親エピック #400 の判断（主の承認ではない）: 回答' ;;
+    owner) header='主の返事（親エピック #400 経由）: 回答' ;;
+  esac
+  [[ "$sent" == *"$header" ]] || return 1
+}
+
+@test "reply auto: both senders use size boundaries with context exit 0 and 2" {
+  for as in parent owner; do
+    for ctx in 149999 150000 150001; do
+      for cap in 1 999999; do
+        reply_auto_ready
+        put_transcript 5 "$ctx"
+        expected=0
+        [ "$ctx" -lt 150000 ] || expected=1
+        DEV_WORKFLOW_CONTEXT_CAP="$cap" assert_reply_auto "$as" "$expected"
+      done
+    done
+  done
+}
+
+@test "reply auto: both senders use the 3600-second boundary regardless of compact" {
+  for as in parent owner; do
+    for compact in 0 1; do
+      reply_auto_ready
+      put_transcript 60 100000 "$compact"
+      assert_reply_auto "$as" 1
+    done
+  done
+}
+
+@test "reply auto: missing ambiguous and partly unmeasurable logs use independent conditions" {
+  # Control only the fixture clock: the two generation calls cross a second boundary.
+  local fixture_now='' shared_ts file
+  python3() {
+    if [ -n "$fixture_now" ] && [ "$1" = -c ] && [[ "$2" == *'datetime.datetime.now(datetime.timezone.utc)'* ]]; then
+      local code="$2"
+      code="${code//datetime.datetime.now(datetime.timezone.utc)/datetime.datetime.fromisoformat('$fixture_now')}"
+      command python3 -c "$code"
+    else
+      command python3 "$@"
+    fi
+  }
+  for as in parent owner; do
+    reply_auto_ready
+    [ "$CLAUDE_PROJECTS_DIR" = "$BATS_TEST_TMPDIR/projects" ]
+    assert_reply_auto "$as" 0
+    fixture_now='2026-01-01T00:00:00+00:00'
+    shared_ts='2025-12-31T23:55:00.000Z'
+    put_transcript 5 160000 0 s1 "$shared_ts"
+    fixture_now='2026-01-01T00:00:01+00:00'
+    put_transcript 5 160000 0 s2 "$shared_ts"
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+    [ "$(jq -r 'select(.subtype == "turn_duration") | .timestamp' "$file")" = "$shared_ts" ]
+    [ "$(jq -r 'select(.subtype == "turn_duration") | .timestamp' "${file%/*}/s2.jsonl")" = "$shared_ts" ]
+    assert_reply_auto "$as" 0
+    fixture_now=''
+    reply_auto_ready
+    put_record 11 status=waiting stop=stopped stop_uuid=$MAIN_UUID
+    # stop_uuid selects the main log even with an unrelated second log.
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s2.jsonl)"
+    printf '%s\n' '{"type":"assistant","entrypoint":"cli","uuid":"other"}' > "$file"
+    assert_reply_auto "$as" 1
+    reply_auto_ready
+    put_transcript 60 0
+    assert_reply_auto "$as" 1
+    reply_auto_ready
+    # Keep the main log selectable while only its latest usage row has no valid time.
+    put_transcript 5 0
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+    printf '%s\n' '{"type":"assistant","timestamp":"invalid","message":{"usage":{"input_tokens":150000}}}' >> "$file"
+    assert_reply_auto "$as" 1
+    reply_auto_ready
+    put_transcript 5 0
+    assert_reply_auto "$as" 0
+    # Remove fixture logs before checking the next sender's missing-log case.
+    rm -f "$file" "${file%/*}/s2.jsonl"
+  done
+}
+
+@test "reply auto: threshold overrides and zero apply to both senders" {
+  for as in parent owner; do
+    reply_auto_ready
+    put_transcript 5 150000
+    EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=200000 assert_reply_auto "$as" 0
+    reply_auto_ready
+    put_transcript 5 100000
+    assert_reply_auto "$as" 0
+    reply_auto_ready
+    EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=0 assert_reply_auto "$as" 1
+    reply_auto_ready
+    put_transcript 60 100000
+    EPIC_DISPATCH_RELAUNCH_IDLE_SEC=7200 assert_reply_auto "$as" 0
+    reply_auto_ready
+    put_transcript 5 100000
+    EPIC_DISPATCH_RELAUNCH_IDLE_SEC=0 assert_reply_auto "$as" 1
+    reply_auto_ready
+    EPIC_DISPATCH_RELAUNCH_MIN_TOKENS=1 assert_reply_auto "$as" 0
+  done
+}
+
+@test "reply auto: invalid thresholds fail before terminal operations but explicit relaunch bypasses them" {
+  for as in parent owner; do
+    for name in EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS EPIC_DISPATCH_RELAUNCH_IDLE_SEC; do
+      for val in '' -1 150k; do
+        reply_auto_ready
+        run env "$name=$val" "$SCRIPT" reply --as "$as" 400 11 '回答'
+        [ "$status" -eq 1 ]
+        [[ "$output" == *"$name"* ]] || return 1
+        [[ "$output" == *'usage:'* ]] || return 1
+        [ "$(calls '^orca terminal')" -eq 0 ]
+      done
+    done
+    reply_auto_ready
+    put_transcript 5 100000
+    EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS=bad EPIC_DISPATCH_RELAUNCH_IDLE_SEC='' \
+      run dispatch reply --relaunch --as "$as" 400 11 '回答'
+    [ "$status" -eq 0 ]
+    [ "$output" = 'relaunched 11' ]
+  done
+}
+
+@test "reply auto: resumed records and moved logs suppress even a selected relaunch" {
+  for as in parent owner; do
+    reply_auto_ready
+    put_transcript 60 160000
+    put_record 11 status=running stop=resumed stop_uuid=$MAIN_UUID
+    run dispatch reply --as "$as" 400 11 '回答'
+    [ "$status" -eq 0 ]
+    [ "$output" = 'skipped 11 not-stopped' ]
+    [ "$(calls '^orca terminal')" -eq 0 ]
+    reply_auto_ready
+    put_transcript 60 160000
+    put_record 11 status=waiting stop=stopped-seen stop_uuid=$MAIN_UUID
+    file="$(find "$CLAUDE_PROJECTS_DIR" -name s1.jsonl)"
+    printf '{"type":"user","uuid":"d2","timestamp":"%s","message":{"content":"回答済み"}}\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$file"
+    run dispatch reply --as "$as" 400 11 '回答'
+    [ "$status" -eq 0 ]
+    [ "$output" = 'skipped 11 not-stopped' ]
+    [ "$(calls '^orca terminal')" -eq 0 ]
+  done
+}
+
+@test "reply auto: docs distinguish automatic reply from manual notify-closed" {
+  f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
+  grep -F -- '--as parent' "$f" | grep -F -- '--as owner' | grep -F -- '--relaunch' | grep -qF '自動判定'
+  grep -F 'notify-closed' "$f" | grep -qF '本体が'
+  grep -F 'notify-closed' "$f" | grep -qF '`--relaunch` が効くのは止まっている子だけ'
+  grep -F '主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない。' "$f" | grep -qF '`notify-closed` の完了の促しだけは、止まっていない子にも送る。その子には `--relaunch` を付けても端末を閉じず、起動し直さない'
+  grep -qF '完了の印の無い completed の子への `scripts/epic-dispatch.sh notify-closed`' "$f"
+  ! grep -qF '停止中の completed の子' "$f" || return 1
+  grep -F '明示' "$f" | grep -qF -- '--relaunch'
+}
+
+@test "reply auto: cleanup docs skip finish-only replies within existing safe conditions" {
+  f="$PLUGIN_DIR/skills/develop/references/epic-loop.md"
+  grep -F '親だけ' "$f" | grep -qF '全対象には足りない'
+  grep -F '終えて' "$f" | grep -F 'reply' | grep -qF '省く'
+  grep -F 'waiting と stopped（親がまだ受けていない止まり）は完了推定の対象外' "$f" | grep -qF 'stopped-seen（親が受けた止まり）は完了推定の対象に入る'
+  ! grep -qF 'stopped / stopped-seen は完了推定の対象外' "$f" || return 1
+  grep -F 'notify-closed' "$f" | grep -qF '止まった印の有無によらず'
+  grep -F 'not-done' "$f" | grep -qF 'reap'
+  grep -F 'notify-closed' "$f" | grep -qF 'mark done'
+}
+
+# --- 作業待ちの子への声かけ（#1777 epic-background-keepalive-send） ---
+# 記録: Orca の作業報告に background_wait。会話: turn_input.transcript_path の現行 CLI 1 本。
+BGW_SID=bbbbbbbb-2222-4222-8222-222222222222
+bgw_log() { printf '%s/bgw.jsonl' "$BATS_TEST_TMPDIR"; }
+bgw_stamp() { jq -rn --argjson t "$1" '$t | todate'; }
+# bgw_record [sender] [value] [dependency_wait] [started_at の何秒前] [項目=値...]（put_record に渡す）
+bgw_record() {
+  local sender="${1:-parent}" value="${2:-作業報告}" dep="${3:-false}" age="${4-3600}" f
+  shift 4 2>/dev/null || shift "$#"
+  put_record 11 session=term-11 "$@"
+  f="$(rec_of 1122 11)"
+  jq -c --arg sender "$sender" --arg value "$value" --argjson dep "$dep" --arg path "$(bgw_log)" \
+    --arg sid "$BGW_SID" --arg started "$(bgw_stamp "$((KEEPALIVE_TEST_NOW - age))")" '
+    .turn_input = {generation:2, session_id:$sid, sender:$sender, received_at:"2026-01-01T00:00:00Z",
+      transcript_path:$path, transcript_offset:0}
+    | .turn_state = {generation:2, session_id:$sid, value:$value, summary:"agent A の結果待ち",
+      recorded_at:"2026-01-01T00:00:01Z", dependency_wait:$dep,
+      background_wait:{id:"agent-A1", started_at:$started}}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+bgw_started() { jq -r .turn_state.background_wait.started_at "$(rec_of 1122 11)"; }
+# bgw_chat [最後のリクエストの何秒前] [TTL] [キャッシュ書き込みの何秒前]: 依頼 → ツール → 作業待ちの行と状態行
+bgw_chat() {
+  python3 - "$(bgw_log)" "$KEEPALIVE_TEST_NOW" "${1-3000}" "${2-1h}" "${3-7200}" "$BGW_SID" "$(rec_of 1122 11)" <<'PYCODE'
+import datetime, json, sys
+p, now, age, ttl, wage, sid, record = sys.argv[1:]
+with open(record) as f: state = json.load(f).get("turn_state") or {}
+bg = state.get("background_wait")
+if not isinstance(bg, dict): bg = {}
+started, ident = bg.get("started_at", ""), bg.get("id", "")
+now, age, wage = int(now), int(age), int(wage)
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).isoformat()
+base = dict(sessionId=sid, entrypoint='cli')
+rows = [dict(base, type='user', timestamp=stamp(now-9000), message=dict(role='user', content='親エピック #1122 から: 続けて')),
+        dict(base, type='assistant', timestamp=stamp(now-wage), message=dict(content=[dict(type='tool_use', id='t1', name='Agent', input={})],
+             usage=dict(input_tokens=10, cache_creation_input_tokens=100, cache_creation={'ephemeral_'+ttl+'_input_tokens': 100}))),
+        dict(base, type='user', timestamp=stamp(now-wage+1), message=dict(role='user', content=[dict(type='tool_result', tool_use_id='t1', content='async_launched')])),
+        dict(base, type='assistant', timestamp=stamp(now-age), message=dict(content=[dict(type='text',
+             text='agent A を待ちます。\n\n作業待ち: %s %s\n状態: %s — %s' % (ident, started, state.get('value', ''), state.get('summary', '')))],
+             usage=dict(input_tokens=0, cache_read_input_tokens=200000)))]
+with open(p, 'w') as f:
+    for row in rows: f.write(json.dumps(row, ensure_ascii=False)+'\n')
+PYCODE
+}
+# bgw_append <user|assistant> <本文> [何秒前] [追加の JSON]
+bgw_append() {
+  local extra="${4:-}"; [ -n "$extra" ] || extra='{}'
+  jq -cn --arg type "$1" --arg text "$2" --arg ts "$(bgw_stamp "$((KEEPALIVE_TEST_NOW - ${3-2000}))")" \
+    --arg sid "$BGW_SID" --argjson extra "$extra" \
+    '{type:$type, sessionId:$sid, entrypoint:"cli", timestamp:$ts, message:{role:$type, content:$text}} + $extra' >> "$(bgw_log)"
+}
+bgw_setup() {
+  keepalive_orca_setup
+  set_current 400
+  export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects"
+  export KEEPALIVE_TEST_NOW=2000000000
+  # date +%s の k 回目の前に $STUB_CFG/date_hook_<k> があれば実行する（観測の途中の変化を差し込む）
+  cat > "$STUB_BIN/date" <<'DATE'
+#!/bin/bash
+if [ "$*" = '+%s' ]; then
+  k=$(( $(cat "$STUB_CFG/datecount" 2>/dev/null || echo 0) + 1 )); echo "$k" > "$STUB_CFG/datecount"
+  [ ! -e "$STUB_CFG/date_hook_$k" ] || bash "$STUB_CFG/date_hook_$k" >/dev/null 2>&1
+  echo "$KEEPALIVE_TEST_NOW"
+else /bin/date "$@"; fi
+DATE
+  chmod +x "$STUB_BIN/date"
+  bgw_record
+  bgw_chat
+}
+bgw_run() {
+  reset_keepalive_poll
+  rm -f "$STUB_CFG/datecount"
+  gh_seq 11 open closed
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  # 依存待ち・完了の記録は wait の既存の止まりの検知が先に返す（出力の契約は既存のまま）
+  [ "${1-}" = any ] || { [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]; }
+}
+bgw_sends() { [ "$(calls '^orca terminal send ')" -eq "$1" ]; }
+bgw_text() { python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text background; }
+
+@test "background keepalive: a large Orca work wait gets the background text once without stop-only steps" {
+  bgw_setup
+  bgw_run
+  bgw_sends 1
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "$(bgw_text)" ]
+  [ "$(cat "$STUB_CFG/sent_term-11")" != "$(python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text)" ]
+  keepalive_note_is sent
+  [ "$(rec_get 11 stop)" = "" ]
+  [ "$(calls '^gh issue comment ')" -eq 0 ]; [ "$(calls '/comments')" -eq 0 ]
+  [ "$(calls '^orca terminal create ')" -eq 0 ]; [ "$(calls '^orca terminal close ')" -eq 0 ]
+}
+
+@test "background keepalive: startup work waits send the background text once" {
+  bgw_setup
+  bgw_record startup; bgw_chat
+  bgw_run; bgw_sends 1
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "$(bgw_text)" ]
+  keepalive_note_is sent
+}
+
+@test "background keepalive: owner, plain report, dependency wait, done, waiting, stopped and malformed records send nothing" {
+  bgw_setup
+  local c
+  for c in owner plain dep done waiting stopped seenkept badid extra gen sid bgtrue bgstr bgnull bgarr bgempty idnum timenum badutc offsetutc statenull legacy tmux failed nosession noworktree; do
+    case "$c" in
+      owner) bgw_record owner ;;
+      dep) bgw_record parent 作業報告 true ;;
+      done) bgw_record parent 完了 ;;
+      waiting) bgw_record parent 作業報告 false 3600 status=waiting ;;
+      stopped|stopped-seen) bgw_record parent 作業報告 false 3600 stop="$c" ;;
+      tmux) bgw_record parent 作業報告 false 3600 launcher=tmux ;;
+      failed) bgw_record parent 作業報告 false 3600 launch_failed=x ;;
+      nosession) bgw_record; jq -c '.session=""' "$(rec_of 1122 11)" > "$BATS_TEST_TMPDIR/r" && mv "$BATS_TEST_TMPDIR/r" "$(rec_of 1122 11)" ;;
+      noworktree) bgw_record parent 作業報告 false 3600 worktree=/nonexistent/issue-11 ;;
+      *) bgw_record ;;
+    esac
+    local f; f="$(rec_of 1122 11)"
+    case "$c" in
+      plain) jq -c 'del(.turn_state.background_wait)' "$f" > "$f.t" ;;
+      badid) jq -c '.turn_state.background_wait.id="bad id"' "$f" > "$f.t" ;;
+      extra) jq -c '.turn_state.background_wait.x=1' "$f" > "$f.t" ;;
+      seenkept) jq -c --arg sid "$BGW_SID" '.stop="stopped-seen" | .stop_turn={generation:2,session_id:$sid}' "$f" > "$f.t" ;;
+      sid) jq -c '.turn_state.session_id="old-session"' "$f" > "$f.t" ;;
+      bgtrue) jq -c '.turn_state.background_wait=true' "$f" > "$f.t" ;;
+      bgstr) jq -c '.turn_state.background_wait="agent-A1"' "$f" > "$f.t" ;;
+      bgnull) jq -c '.turn_state.background_wait=null' "$f" > "$f.t" ;;
+      bgarr) jq -c '.turn_state.background_wait=[]' "$f" > "$f.t" ;;
+      bgempty) jq -c '.turn_state.background_wait={}' "$f" > "$f.t" ;;
+      idnum) jq -c '.turn_state.background_wait.id=42' "$f" > "$f.t" ;;
+      timenum) jq -c '.turn_state.background_wait.started_at=2000000000' "$f" > "$f.t" ;;
+      badutc) jq -c '.turn_state.background_wait.started_at="2026-02-30T00:00:00Z"' "$f" > "$f.t" ;;
+      offsetutc) jq -c --arg t "$(bgw_started)" '.turn_state.background_wait.started_at=($t | sub("Z$"; "+00:00"))' "$f" > "$f.t" ;;
+      statenull) jq -c '.turn_state=null' "$f" > "$f.t" ;;
+      legacy) jq -c 'del(.turn_input,.turn_state)' "$f" > "$f.t" ;;
+      gen) jq -c '.turn_state.generation=1' "$f" > "$f.t" ;;
+      *) cp "$f" "$f.t" ;;
+    esac
+    mv "$f.t" "$f"
+    bgw_chat
+    # 候補検査を単独でも確かめる。ログ側の拒否や wait の停止受領に隠れない。
+    case "$c" in
+      tmux|failed|nosession|noworktree) ;;
+      *)
+        sed -n "/^WAIT_TURN_DEFS='/,/^'$/p" "$SCRIPT" > "$BATS_TEST_TMPDIR/defs.sh"
+        run bash -c 'source "$1"; jq -e "$WAIT_TURN_DEFS""bg_turn" "$2"' _ "$BATS_TEST_TMPDIR/defs.sh" "$f"
+        [ "$status" -eq 1 ]; [ "$output" = false ]
+        ;;
+    esac
+    bgw_run any
+    echo "$c: $output / $(jq -r .keepalive "$f")" >&3
+    bgw_sends 0
+    case "$c" in
+      dep) [ "$output" = 'stopped 11' ]; [ "$(rec_get 11 keepalive)" = null ] ;;
+      tmux) keepalive_note_is "skipped unsupported-launcher" ;;
+      failed) keepalive_note_is "skipped launch-failed" ;;
+      nosession) keepalive_note_is "skipped no-session" ;;
+      noworktree) keepalive_note_is "skipped no-worktree" ;;
+      *) keepalive_note_is "skipped not-stopped" ;;
+    esac
+  done
+  # stopped-seen のまま新しい作業待ちの組になった子は、wait の既存の再開の確かめが resumed にしてから判定する
+  bgw_record parent 作業報告 false 3600 stop=stopped-seen; bgw_chat; bgw_run
+  [ "$(rec_get 11 stop)" = resumed ]
+  bgw_sends 1
+  # 理由の語: 作業待ちでも条件外は not-stopped、Orca 以外は unsupported-launcher
+  bgw_record parent 作業報告 false 3600 launcher=tmux; bgw_run; keepalive_note_is "skipped unsupported-launcher"
+  bgw_record owner; bgw_run; keepalive_note_is "skipped not-stopped"
+}
+
+@test "background keepalive: one-shot, no watch-stopped and watch-done only polls do not read or send" {
+  bgw_setup
+  local args
+  for args in "--watch-stopped --interval 0 --timeout 0 11" "--interval 1 --timeout 100 11" "--watch-stopped --interval 1 --timeout 0 11" "--watch-done 11 --interval 1 --timeout 2" "--watch-stopped --watch-done 11 --interval 1 --timeout 2"; do
+    reset_keepalive_poll; rm -f "$STUB_CFG/datecount"
+    gh_seq 11 open closed
+    # shellcheck disable=SC2086
+    run dispatch wait $args
+    case "$args" in
+      *--timeout\ 0*|*--watch-done*) [ "$status" -eq 2 ] ;;
+      *) [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ] ;;
+    esac
+    bgw_sends 0
+    [ "$(cat "$STUB_CFG/readcount")" -eq 0 ]
+    [ "$(rec_get 11 keepalive)" = null ]
+  done
+}
+
+@test "background keepalive: a failed poll never reads or sends" {
+  bgw_setup
+  reset_keepalive_poll
+  gh_seq 11 FAIL closed
+  run dispatch wait --watch-stopped --interval 1 --timeout 100 11
+  [ "$status" -eq 0 ]; [ "$output" = 'closed 11' ]
+  [ "$(cat "$STUB_CFG/ghcount_11")" -eq 2 ]
+  bgw_sends 0
+  [ "$(cat "$STUB_CFG/readcount")" -eq 0 ]
+  [ "$(rec_get 11 keepalive)" = null ]
+}
+
+@test "background keepalive: request window 2999/3000/3599/3600, and future requests" {
+  bgw_setup
+  local age
+  for age in 2999 3000 3599 3600 -5; do
+    bgw_chat "$age"
+    bgw_run
+    if [ "$age" = 3000 ] || [ "$age" = 3599 ]; then bgw_sends 1; else bgw_sends 0; keepalive_note_is "skipped out-of-window"; fi
+  done
+}
+
+@test "background keepalive: TTL comes from the current log only (5m, future, other log)" {
+  bgw_setup
+  bgw_chat 3000 5m; bgw_run; bgw_sends 0; keepalive_note_is "skipped cache-unknown"
+  bgw_chat 3000 1h -100; bgw_run; bgw_sends 0; keepalive_note_is "skipped cache-future"
+  # 別の CLI ログの 1h 書き込みは借りない
+  keepalive_extra_log past cli 3000 dddddddd-1111-4111-8111-111111111111 1h 3500
+  bgw_chat 3000 5m; bgw_run; bgw_sends 0; keepalive_note_is "skipped cache-unknown"
+  # cache-read だけの最後のリクエストと 2 時間前の 1h 書き込みは送れる
+  bgw_chat 3000 1h 7200; bgw_run; bgw_sends 1
+}
+
+@test "background keepalive: 12 hour base 43199/43200, owner-wait 0/3600/86400 and a future base" {
+  bgw_setup
+  local age
+  for age in 43199 43200; do
+    bgw_record parent 作業報告 false "$age"; bgw_chat
+    bgw_run
+    if [ "$age" = 43199 ]; then bgw_sends 1; else bgw_sends 0; keepalive_note_is "skipped expired"; fi
+  done
+  export EPIC_DISPATCH_OWNER_WAIT_SEC=86400
+  bgw_record parent 作業報告 false 43200; bgw_chat; bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+  bgw_record parent 作業報告 false 43199; bgw_chat; bgw_run; bgw_sends 1
+  export EPIC_DISPATCH_OWNER_WAIT_SEC=3600
+  bgw_record parent 作業報告 false 3600; bgw_chat; bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+  bgw_record parent 作業報告 false 3599; bgw_chat; bgw_run; bgw_sends 1
+  export EPIC_DISPATCH_OWNER_WAIT_SEC=0
+  bgw_record parent 作業報告 false 0; bgw_chat; bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+  unset EPIC_DISPATCH_OWNER_WAIT_SEC
+  # 未来の基点
+  bgw_record parent 作業報告 false -60; bgw_chat; bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+}
+
+@test "background keepalive: polls, resends and re-waits cannot extend the 12 hour base" {
+  bgw_setup
+  bgw_record parent 作業報告 false 43199; bgw_chat
+  local started; started="$(bgw_started)"
+  bgw_run; bgw_sends 1
+  [ "$(bgw_started)" = "$started" ]
+  # 返事後は同じ待ちに再送できる。記録はテスト側で作り直さない。
+  bgw_append user "$(bgw_text)" 3100
+  bgw_append assistant '[child-background-cache-keepalive] | 待ち: agent A | 次: 回収' 3000 \
+    '{"message":{"content":"[child-background-cache-keepalive] | 待ち: agent A | 次: 回収","usage":{"cache_read_input_tokens":5}}}'
+  bgw_run; bgw_sends 1
+  [ "$(bgw_started)" = "$started" ]
+  # 1 秒進めると初回開始から12時間。最後の成功リクエストは3001秒前で送信窓内。
+  export KEEPALIVE_TEST_NOW=$((KEEPALIVE_TEST_NOW + 1))
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+  [ "$(bgw_started)" = "$started" ]
+  # 親の新しい入力・同じ待ちへの再入でも開始時刻を上書きしない。
+  bgw_append user '親エピック #1122 から: 状況は' 3010
+  bgw_append assistant "続けて待ちます。
+作業待ち: agent-A1 $started
+状態: 作業報告 — agent A の結果待ち" 3000 \
+    '{"message":{"content":"続けて待ちます。\n作業待ち: agent-A1 '"$started"'\n状態: 作業報告 — agent A の結果待ち","usage":{"cache_read_input_tokens":5}}}'
+  local f; f="$(rec_of 1122 11)"
+  jq -c '.turn_input.generation=3 | .turn_state.generation=3' "$f" > "$f.t" && mv "$f.t" "$f"
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped expired"
+  [ "$(bgw_started)" = "$started" ]
+}
+
+@test "background keepalive: a pending previous keepalive is not repeated, a reply clears it" {
+  bgw_setup
+  bgw_append user "$(bgw_text)" 2500
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped pending"
+  bgw_append assistant '[child-background-cache-keepalive] | 待ち: agent A | 次: 回収' 2490 '{"message":{"content":"[child-background-cache-keepalive] | 待ち: agent A | 次: 回収","usage":{"cache_read_input_tokens":5}}}'
+  # 返事のリクエストが 2490 秒前なので窓の外
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped out-of-window"
+}
+
+@test "background keepalive: a later input, task notification, new utterance or tool use is answered" {
+  bgw_setup
+  local c
+  for c in input input-no-session notice-no-session notice notice-origin utterance tool other-marker; do
+    bgw_chat
+    case "$c" in
+      input) bgw_append user '主の直接の入力' 2900 ;;
+      # 入力の側は sessionId・entrypoint が欠けても入力として数える（送らない側に倒す）
+      input-no-session) bgw_append user '主の直接の入力' 2900
+        jq -c 'if .type == "user" then del(.sessionId, .entrypoint) else . end' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+      notice-no-session) bgw_append user '<task-notification><task-id>agent-A1</task-id></task-notification>' 2900
+        jq -c 'if .type == "user" then del(.sessionId, .entrypoint) else . end' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+      notice) bgw_append user '<task-notification><task-id>agent-A1</task-id></task-notification>' 2900 ;;
+      notice-origin) bgw_append user 'agent done' 2900 '{"origin":{"kind":"task-notification"}}' ;;
+      utterance) bgw_append assistant '別の話です' 2900 ;;
+      tool) bgw_append assistant '' 2900 '{"message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{}}]}}' ;;
+      other-marker) bgw_append assistant "作業待ち: agent-B1 $(bgw_started)
+状態: 作業報告 — agent A の結果待ち" 2900 ;;
+    esac
+    bgw_run
+    echo "$c: $(rec_get 11 keepalive)" >&3
+    bgw_sends 0; keepalive_note_is "skipped answered"
+  done
+}
+
+@test "background keepalive: a marker and a tool use in the same assistant utterance is not a send candidate" {
+  bgw_setup
+  # 正常経路: 作業待ちの行と状態行だけの発言は送れる
+  bgw_chat; bgw_run; bgw_sends 1
+  # 同じ発言に tool_use も入っているときは、作業待ちの記録として数えない（親は送らない）
+  bgw_chat
+  jq -c 'if .type == "assistant" and (.message.usage.cache_read_input_tokens == 200000)
+    then .message.content += [{type:"tool_use", id:"t9", name:"Bash", input:{}}] else . end' \
+    "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)"
+  grep -q '"t9"' "$(bgw_log)"
+  bgw_run; bgw_sends 0
+  local note; note="$(rec_get 11 keepalive)"
+  case "$note" in *"skipped answered"*|*"skipped no-transcript"*) ;; *) echo "unexpected: $note" >&3; false ;; esac
+}
+
+@test "background keepalive: missing or other-session logs never borrow another log" {
+  bgw_setup
+  rm -f "$(bgw_log)"
+  keepalive_extra_log past cli 3000 dddddddd-1111-4111-8111-111111111111 1h 3500
+  bgw_run; bgw_sends 0; keepalive_note_is "skipped no-transcript"
+  # 別セッションの行だけ・sidechain だけ・sdk だけ
+  local c
+  for c in session sidechain sdk; do
+    bgw_chat
+    case "$c" in
+      session) sed -i.bak "s/$BGW_SID/cccccccc-0000-4000-8000-000000000000/" "$(bgw_log)" ;;
+      sidechain) jq -c '.isSidechain=true' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+      sdk) jq -c '.entrypoint="sdk-py"' "$(bgw_log)" > "$BATS_TEST_TMPDIR/l" && mv "$BATS_TEST_TMPDIR/l" "$(bgw_log)" ;;
+    esac
+    bgw_run
+    echo "$c: $(rec_get 11 keepalive)" >&3
+    bgw_sends 0
+  done
+  # 会話の最後の発言の作業待ちの行が記録と違う
+  bgw_chat
+  jq -c '.turn_state.background_wait.id="agent-Z9"' "$(rec_of 1122 11)" > "$BATS_TEST_TMPDIR/r" && mv "$BATS_TEST_TMPDIR/r" "$(rec_of 1122 11)"
+  bgw_run; bgw_sends 0
+}
+
+@test "background keepalive: a record or log change before the launcher call sends nothing in that poll" {
+  bgw_setup
+  local c f; f="$(rec_of 1122 11)"
+  for c in input done owner ownerq sid started other-wait session parentwt childwt launcher notice utterance grow; do
+    bgw_record; bgw_chat
+    mkdir -p "$BATS_TEST_TMPDIR/work/other"
+    case "$c" in
+      input) echo "jq -c '.turn_input.generation=3 | .turn_state=null' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      done) echo "jq -c '.status=\"done\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      owner) echo "jq -c '.turn_input.sender=\"owner\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      other-wait) echo "jq -c '.turn_state.background_wait.id=\"agent-B2\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      session) echo "jq -c '.session=\"term-99\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      ownerq) echo "jq -c '.turn_state.value=\"主の返事待ち\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      sid) echo "jq -c '.turn_input.session_id=\"new-session\" | .turn_state.session_id=\"new-session\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      started) echo "jq -c --arg t '$(bgw_stamp $((KEEPALIVE_TEST_NOW-3500)))' '.turn_state.background_wait.started_at=\$t' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      childwt) echo "jq -c '.worktree=\"$BATS_TEST_TMPDIR/work/other\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      parentwt) echo "jq -c '.parent_worktree=\"/work/other\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      launcher) echo "jq -c '.launcher=\"tmux\"' '$f' > '$f.t' && mv '$f.t' '$f'" ;;
+      notice) printf '%s\n' "printf '%s\n' '{\"type\":\"user\",\"sessionId\":\"$BGW_SID\",\"timestamp\":\"$(bgw_stamp $((KEEPALIVE_TEST_NOW-10)))\",\"message\":{\"content\":\"<task-notification>x</task-notification>\"}}' >> '$(bgw_log)'" ;;
+      utterance) printf '%s\n' "printf '%s\n' '{\"type\":\"assistant\",\"sessionId\":\"$BGW_SID\",\"entrypoint\":\"cli\",\"timestamp\":\"$(bgw_stamp $((KEEPALIVE_TEST_NOW-10)))\",\"message\":{\"content\":\"新しい発言\"}}' >> '$(bgw_log)'" ;;
+      grow) printf '%s\n' "printf '%s\n' '{\"type\":\"system\",\"subtype\":\"x\"}' >> '$(bgw_log)'" ;;
+    esac > "$STUB_CFG/date_hook_3"
+    bgw_run
+    echo "$c: $(jq -r .keepalive "$f")" >&3
+    bgw_sends 0
+    [ "$(cat "$STUB_CFG/readcount")" -eq 0 ]
+    # 判定前の記録は書かない（既存の理由と時刻を変えない）
+    [ "$(jq -r .keepalive "$f")" = null ]
+  done
+  rm -f "$STUB_CFG/date_hook_3"
+}
+
+@test "background keepalive: the same skip reason keeps its time across polls" {
+  bgw_setup
+  bgw_chat 2999
+  bgw_run; keepalive_note_is "skipped out-of-window"
+  local first; first="$(rec_get 11 keepalive)"
+  sleep 1
+  bgw_run; [ "$(rec_get 11 keepalive)" = "$first" ]
+}
+
+@test "background keepalive: the stopped child path still ignores a work-wait record and keeps its own text" {
+  keepalive_wait_setup
+  local f; f="$(rec_of 1122 11)"
+  jq -c '.turn_state.background_wait={id:"agent-A1",started_at:"2033-05-18T02:00:00Z"}' "$f" > "$f.t" && mv "$f.t" "$f"
+  keepalive_wait_run
+  bgw_sends 1
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "$(python3 "$PLUGIN_DIR/scripts/child-log-read.py" --keepalive-text)" ]
+}
+
+# Orca の画面: 検査済みの作業待ちの一呼び出しだけが背景待機行を許す
+bgw_classify() {
+  sed -n '/^keepalive_screen_reason() {$/,/^}$/p' "$PLUGIN_DIR/scripts/epic-launch-orca.sh" > "$BATS_TEST_TMPDIR/classifier.sh"
+  run env EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT="${1-}" bash -c 'source "$1"; keepalive_screen_reason "$(cat "$2")" orca ${3-}' _ \
+    "$BATS_TEST_TMPDIR/classifier.sh" "$STUB_CFG/screen" "${2-}"
+}
+
+@test "keepalive orca: the background wait permission releases only a known wait line right before the frame" {
+  keepalive_orca_setup
+  local c reason hist
+  local cases=(
+    "ready|conv|$W"
+    "ready|conv|✻ Waiting for 2 background agents to finish||"
+    "ready|$W|$R"
+    "skipped busy|$W|conv"
+    "skipped busy|$W|✻ Thinking about it"
+    "skipped busy|conv|$W|✶ Thinking… (3s · esc to interrupt)"
+    "skipped dialog|conv|$W|Do you want to proceed?"
+  )
+  for c in "${cases[@]}"; do
+    reason="${c%%|*}"; hist="${c#*|}"
+    orca_history_screen "$hist"
+    bgw_classify 1
+    echo "$hist: $output" >&3
+    [ "$status" -eq 0 ]; [ "$output" = "$reason" ]
+    # 許可なし（空・親の環境の 0）は従来どおり busy
+    bgw_classify ""
+    [ "$output" != ready ]
+  done
+  # 入力枠の中・後ろの待機行、入力済み・draft は許可があっても送らない
+  orca_screen "conv
+──────────────
+❯
+$W
+──────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  bgw_classify 1; [ "$output" = "skipped busy" ]
+  orca_screen "conv
+──────────────
+❯
+──────────────
+$W
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  bgw_classify 1; [ "$output" != ready ]
+  orca_history_screen "conv|$W"
+  jq -c '.result.terminal.draft="human"' "$STUB_CFG/screen" > "$STUB_CFG/s" && mv "$STUB_CFG/s" "$STUB_CFG/screen"
+  bgw_classify 1; [ "$output" = "skipped input-not-empty" ]
+  orca_screen "conv
+$W
+──────────────
+❯ human
+──────────────
+  ⏵⏵ bypass permissions on (shift+tab to cycle)"
+  bgw_classify 1; [ "$output" = "skipped input-not-empty" ]
+  # 送信後の観測では許可を使わない（背景待機行だけでは到達の証拠にならない）
+  orca_history_screen "conv|$W"
+  bgw_classify 1 after-send; [ "$output" != busy-empty ]
+}
+
+orca_keepalive_bg() { EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT=1 orca_keepalive "$@"; }
+
+@test "keepalive orca: the permission is checked on both observations and a wait-only post-send screen is failed send" {
+  keepalive_orca_setup
+  orca_history_screen "conv|$W"
+  # 許可ありで 2 回とも背景待機だけ → 送る（turn_started あり）
+  : > "$STUB_LOG"; echo 0 > "$STUB_CFG/readcount"
+  run orca_keepalive_bg keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = sent ]; bgw_sends 1
+  # 許可なしは同じ画面で skipped busy
+  : > "$STUB_LOG"; echo 0 > "$STUB_CFG/readcount"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$output" = "skipped busy" ]; bgw_sends 0
+  # 2 回目の観測で前景スピナー・dialog・draft に変わる
+  local second
+  for second in spinner dialog draft; do
+    orca_history_screen "conv|$W"
+    case "$second" in
+      spinner) orca_history_screen "conv|$W|✶ Thinking… (3s · esc to interrupt)" ;;
+      dialog) orca_history_screen "conv|$W|Do you want to proceed?" ;;
+      draft) jq -c '.result.terminal.draft="human"' "$STUB_CFG/screen" > "$STUB_CFG/s" && mv "$STUB_CFG/s" "$STUB_CFG/screen" ;;
+    esac
+    cp "$STUB_CFG/screen" "$STUB_CFG/screen_2"
+    orca_history_screen "conv|$W"
+    : > "$STUB_LOG"; echo 0 > "$STUB_CFG/readcount"
+    run orca_keepalive_bg keepalive /work/issue-11 reserved
+    echo "$second: $output" >&3
+    [ "$status" -eq 0 ]; [[ "$output" == skipped\ * ]] || return 1; bgw_sends 0
+    rm -f "$STUB_CFG/screen_2"
+  done
+  # turn_started が無く、送信後の画面が背景待機行だけ → failed send・再送なし
+  orca_history_screen "conv|$W"
+  echo '{"ok":true,"result":{"stages":["input_accepted"]}}' > "$STUB_CFG/send_json_term-11"
+  : > "$STUB_LOG"; echo 0 > "$STUB_CFG/readcount"
+  run orca_keepalive_bg keepalive /work/issue-11 reserved
+  [ "$status" -eq 1 ]; [ "$output" = "failed send" ]; bgw_sends 1
+  [ "$(calls '^orca terminal wait ')" -eq 0 ]
+}
+
+@test "background keepalive: dispatch passes the permission only on the work-wait call, never inherited" {
+  bgw_setup
+  # 背景待機行のある画面: 作業待ちは送る
+  orca_history_screen "conv|$W"
+  bgw_run; bgw_sends 1
+  # 停止済み子は親の環境に 1 があっても許可を受け継がず skipped busy
+  keepalive_wait_setup
+  orca_history_screen "conv|$W"
+  export EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT=1 KEEPALIVE_BG_ALLOW=1
+  keepalive_wait_run
+  bgw_sends 0; keepalive_note_is "skipped busy"
+  unset EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT KEEPALIVE_BG_ALLOW
 }

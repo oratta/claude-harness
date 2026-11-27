@@ -2,7 +2,7 @@
 #
 # statusline-prompt-cache:
 #   statusline.sh の 2 行目に出すプロンプトキャッシュの区画（Cache <N>% と miss:<原因>）の契約。
-#   仕様: openspec/changes/statusline-prompt-cache-segment/specs/
+#   仕様: openspec/specs/statusline-prompt-cache-segment/
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"

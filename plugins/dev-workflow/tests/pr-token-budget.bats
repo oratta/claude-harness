@@ -7,6 +7,7 @@
 # spec: openspec/changes/add-pr-token-budget（dev-workflow-pr-token-budget）
 
 setup() {
+  bats_require_minimum_version 1.5.0
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/pr-token-budget.sh"
   WORK="$(cd "$(mktemp -d)" && pwd -P)"
@@ -42,12 +43,14 @@ make_agent() {
 }
 
 # assistant 行: $1=requestId（空なら省略） $2=message.id（空なら省略） $3=uuid $4..$7=input,cache_create,cache_read,output
+# $8=message.model の JSON 値（省略時は表に無い "claude-sonnet-5"、missing ならフィールドなし）
 arec() {
-  local rid="" mid=""
+  local rid="" mid="" model='"model":"claude-sonnet-5",'
   [ -n "$1" ] && rid="\"requestId\":\"$1\","
   [ -n "$2" ] && mid="\"id\":\"$2\","
-  printf '{"type":"assistant",%s"uuid":"%s","message":{%s"model":"claude-sonnet-5","usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":%s}}}\n' \
-    "$rid" "$3" "$mid" "$4" "$5" "$6" "$7"
+  if [ "${8-}" = missing ]; then model=""; elif [ -n "${8-}" ]; then model="\"model\":$8,"; fi
+  printf '{"type":"assistant",%s"uuid":"%s","message":{%s%s"usage":{"input_tokens":%s,"cache_creation_input_tokens":%s,"cache_read_input_tokens":%s,"output_tokens":%s}}}\n' \
+    "$rid" "$3" "$mid" "$model" "$4" "$5" "$6" "$7"
 }
 
 # 固定入力。#288 に紐付くのは R1（346）・W（6664）・G（100）の 3 体で Claude 分 7110
@@ -109,14 +112,14 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "script: is executable and exits 1 without a record number" {
   [ -x "$SCRIPT" ]
   cd "$REPO"
-  run "$SCRIPT" --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" --projects "$PROJECTS"
   [ "$status" -eq 1 ]
 }
 
 @test "fixed input: claude/codex/total tokens, counts, unresolved and skipped lines match hand-computed values" {
   fixture_agents; fixture_codex
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "$RECORDS" --codex-home "$HOME1" --codex-home "$HOME2"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "$RECORDS" --codex-home "$HOME1" --codex-home "$HOME2"
   echo "$output"
   [ "$status" -eq 0 ]
   [ "$(j 'd["claude_tokens"]')" = 7110 ]
@@ -137,7 +140,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "linking: unnamed R1 and worktree-isolated W are counted; W counts every request incl. resume, once per requestId" {
   fixture_agents
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
   [ "$status" -eq 0 ]
   [ "$(j '[a["tokens"] for a in d["agents"] if a["description"].startswith("R1")][0]')" = 346 ]
   [ "$(j '[(a["name"], a["tokens"], a["requests"]) for a in d["agents"] if a["description"].startswith("W:")][0]')" = "('W-288', 6664, 3)" ]
@@ -148,7 +151,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
   arec r3 m4 u8 999999 0 0 0 |
     make_agent a3 '{"description":"W: impl for #2880","name":"W-2880","model":"sonnet"}' "$REPO"
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
   [ "$status" -eq 0 ]
   [ "$(j 'd["agent_count"]')" = 0 ]
   [ "$(j 'd["total_tokens"]')" = 0 ]
@@ -157,7 +160,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "linking: passing 288 and 400 counts the G matching both only once" {
   fixture_agents
   cd "$REPO"
-  run "$SCRIPT" 288 400 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" 288 400 --projects "$PROJECTS"
   [ "$status" -eq 0 ]
   [ "$(j 'd["agent_count"]')" = 3 ]
   [ "$(j 'd["claude_tokens"]')" = 7110 ]
@@ -167,7 +170,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "repo: another repository's #288 is excluded, missing workdir goes to unresolved" {
   fixture_agents
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
   [ "$(j '[a for a in d["agents"] if a["name"] == "W-other"]')" = "[]" ]
   [ "$(j 'd["unresolved"]')" = 1 ]
 }
@@ -175,7 +178,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "repo: running from the side worktree counts the same agents" {
   fixture_agents
   cd "$WT"
-  run "$SCRIPT" 288 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
   [ "$status" -eq 0 ]
   [ "$(j 'd["claude_tokens"]')" = 7110 ]
 }
@@ -183,7 +186,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "cap: over the --cap exits 2 with over_cap true" {
   fixture_agents
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --cap 7000
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --cap 7000
   [ "$status" -eq 2 ]
   [ "$(j 'd["over_cap"]')" = True ]
 }
@@ -191,14 +194,14 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "cap: codex tokens push the total over the cap (exit 2)" {
   fixture_agents; fixture_codex
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --cap 8000 --codex-records "$RECORDS" --codex-home "$HOME1" --codex-home "$HOME2"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --cap 8000 --codex-records "$RECORDS" --codex-home "$HOME1" --codex-home "$HOME2"
   [ "$status" -eq 2 ]
   [ "$(j 'd["claude_tokens"] <= d["cap"] < d["total_tokens"]')" = True ]
 }
 
 @test "cap: no agents and no codex records exits 0 with zeros" {
   cd "$REPO"
-  run "$SCRIPT" 999 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" 999 --projects "$PROJECTS"
   [ "$status" -eq 0 ]
   [ "$(j '(d["total_tokens"], d["agent_count"], d["codex_threads"])')" = "(0, 0, 0)" ]
 }
@@ -206,33 +209,35 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "cap: DEV_WORKFLOW_PR_TOKEN_CAP is used, and --cap overrides it" {
   fixture_agents
   cd "$REPO"
-  DEV_WORKFLOW_PR_TOKEN_CAP=7000 run "$SCRIPT" 288 --projects "$PROJECTS"
+  DEV_WORKFLOW_PR_TOKEN_CAP=7000 run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
   [ "$status" -eq 2 ]
   [ "$(j 'd["cap"]')" = 7000 ]
-  DEV_WORKFLOW_PR_TOKEN_CAP=7000 run "$SCRIPT" 288 --projects "$PROJECTS" --cap 9000
+  DEV_WORKFLOW_PR_TOKEN_CAP=7000 run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --cap 9000
   [ "$status" -eq 0 ]
   [ "$(j 'd["cap"]')" = 9000 ]
 }
 
 @test "cap: a non-numeric --cap or env cap exits 1" {
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --cap abc
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --cap abc
   [ "$status" -eq 1 ]
-  DEV_WORKFLOW_PR_TOKEN_CAP=x run "$SCRIPT" 288 --projects "$PROJECTS"
+  DEV_WORKFLOW_PR_TOKEN_CAP=x run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
   [ "$status" -eq 1 ]
+  [[ "$(j 'd["error"]')" == invalid_override:*DEV_WORKFLOW_PR_TOKEN_CAP* ]] || false
+  [[ "$stderr" == *invalid_override* ]] || false
 }
 
 @test "errors: outside a git repository exits 1" {
   mkdir -p "${WORK}/plain"
   cd "${WORK}/plain"
-  run "$SCRIPT" 288 --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
   [ "$status" -eq 1 ]
 }
 
 @test "codex: recorded tokens are summed" {
   printf 't1 1000\nt2 500\n' > "${WORK}/r.txt"
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1"
   [ "$status" -eq 0 ]
   [ "$(j '(d["codex_tokens"], d["codex_threads"], d["total_tokens"])')" = "(1500, 2, 1500)" ]
 }
@@ -240,7 +245,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "codex: the same thread is counted once (max of recorded values)" {
   printf 't1 1000\nt1 1000\nt1 900\n' > "${WORK}/r.txt"
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1"
   [ "$(j '(d["codex_tokens"], d["codex_threads"])')" = "(1000, 1)" ]
 }
 
@@ -248,7 +253,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
   printf 't3 -\n' > "${WORK}/r.txt"
   printf '100\n250\n250\nnull\n' | make_rollout "$HOME1" t3
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1"
   [ "$(j '(d["codex_tokens"], d["codex"][0]["source"])')" = "(250, 'rollout')" ]
 }
 
@@ -256,7 +261,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
   printf 't5 -\n' > "${WORK}/r.txt"
   printf '300\n' | make_rollout "$HOME2" t5
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1" --codex-home "$HOME2"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1" --codex-home "$HOME2"
   [ "$(j 'd["codex_tokens"]')" = 300 ]
 }
 
@@ -264,14 +269,14 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
   printf 't6 -\n' > "${WORK}/r.txt"
   printf '42\n' | make_rollout "$CODEX_HOME" t6
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt"
   [ "$(j 'd["codex_tokens"]')" = 42 ]
 }
 
 @test "codex: a '-' thread with no rollout anywhere goes to codex_unresolved, exit decided by total vs cap" {
   printf 't9 -\n' > "${WORK}/r.txt"
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1" --cap 0
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt" --codex-home "$HOME1" --cap 0
   [ "$status" -eq 0 ]
   [ "$(j '(d["codex_tokens"], d["codex_threads"], d["codex_unresolved"])')" = "(0, 0, 1)" ]
 }
@@ -279,7 +284,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "codex: an empty records file means codex_threads 0 and no error" {
   : > "${WORK}/r.txt"
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt"
   [ "$status" -eq 0 ]
   [ "$(j '(d["codex_tokens"], d["codex_threads"], d["skipped_lines"])')" = "(0, 0, 0)" ]
 }
@@ -287,13 +292,211 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 @test "codex: malformed record lines are skipped and counted in skipped_lines" {
   printf 't4 abc\nlonely\nt1 10\n' > "${WORK}/r.txt"
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/r.txt"
   [ "$status" -eq 0 ]
   [ "$(j '(d["codex_tokens"], d["skipped_lines"])')" = "(10, 2)" ]
 }
 
 @test "codex: a missing --codex-records file exits 1" {
   cd "$REPO"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/nope.txt"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --codex-records "${WORK}/nope.txt"
   [ "$status" -eq 1 ]
+}
+
+# 探索先の決まり方（#1231）。実行者の環境に左右されないよう、HOME を一時ディレクトリにして環境変数を外して起動する
+@test "search root: without CLAUDE_PROJECTS_DIR the usage under CLAUDE_CONFIG_DIR is counted" {
+  PROJECTS="${WORK}/cfg/projects"
+  arec r1 m1 u1 100 20 3 4 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  mkdir -p "${WORK}/home"
+  cd "$REPO"
+  run --separate-stderr env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 127 ]
+  [ "$(j 'd["agent_count"]')" = 1 ]
+}
+
+@test "search root: CLAUDE_PROJECTS_DIR wins over CLAUDE_CONFIG_DIR" {
+  PROJECTS="${WORK}/cfg/projects"
+  arec r1 m1 u1 1 0 0 0 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  PROJECTS="${WORK}/explicit"
+  arec r2 m2 u2 2 0 0 0 | make_agent a2 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  mkdir -p "${WORK}/home"
+  cd "$REPO"
+  run --separate-stderr env HOME="${WORK}/home" CLAUDE_CONFIG_DIR="${WORK}/cfg" CLAUDE_PROJECTS_DIR="$PROJECTS" "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 2 ]
+}
+
+@test "search root: with neither variable set, \$HOME/.claude/projects is counted" {
+  PROJECTS="${WORK}/home/.claude/projects"
+  arec r1 m1 u1 5 0 0 0 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  cd "$REPO"
+  run --separate-stderr env -u CLAUDE_PROJECTS_DIR -u CLAUDE_CONFIG_DIR HOME="${WORK}/home" "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 5 ]
+}
+
+@test "search root: an empty CLAUDE_CONFIG_DIR falls back to \$HOME/.claude/projects" {
+  PROJECTS="${WORK}/home/.claude/projects"
+  arec r1 m1 u1 7 0 0 0 | make_agent a1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  cd "$REPO"
+  run --separate-stderr env -u CLAUDE_PROJECTS_DIR HOME="${WORK}/home" CLAUDE_CONFIG_DIR= "$SCRIPT" 288
+  echo "$output"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["claude_tokens"]')" = 7 ]
+}
+
+# ---- モデル別の上限（共通の解決処理 token_thresholds.py への接続。change wire-pr-token-cap-thresholds）----
+
+KEYS='["agent_count","agents","cap","claude_tokens","codex","codex_threads","codex_tokens","codex_unresolved","over_cap","records","skipped_lines","total_tokens","unresolved"]'
+
+# 配布先を模したコピー。元の表・共通処理・手順は編集しない。$1 があれば表を差し替える python の式（d が表）
+budget_plugin() {
+  local dest="$WORK/cache-installed"
+  mkdir -p "$dest/scripts" "$dest/references" "$dest/skills/develop/references"
+  cp "$PLUGIN_DIR/scripts/"{pr-token-budget.sh,token_thresholds.py} "$dest/scripts/"
+  cp "$PLUGIN_DIR/references/token-thresholds.json" "$dest/references/"
+  cp "$PLUGIN_DIR/skills/develop/references/token-thresholds.md" "$dest/skills/develop/references/"
+  SCRIPT="$dest/scripts/pr-token-budget.sh"
+  TABLE="$dest/references/token-thresholds.json"
+  GUIDE="$dest/skills/develop/references/token-thresholds.md"
+}
+
+# 2 体: $1 / $2 は各体のリクエストの message.model（arec の $8 と同じ書き方）
+two_models() {
+  arec r1 m1 u1 100 0 0 0 "$1" | make_agent b1 '{"description":"W for #288","name":"W-288","model":"sonnet"}' "$REPO"
+  arec r2 m2 u2 200 0 0 0 "$2" | make_agent b2 '{"description":"R1 for #288","model":"opus"}' "$REPO"
+}
+
+@test "thresholds: registered models only use the table value without diagnostics" {
+  two_models '"claude-opus-5-5"' '"claude-sonnet-5-5"'
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["cap"]')" = 30000000 ]
+  [ -z "$stderr" ]
+  [ "$(python3 -c 'import json,sys; print(json.dumps(sorted(json.loads(sys.argv[1])), separators=(",", ":")))' "$output")" = "$KEYS" ]
+}
+
+@test "thresholds: an unknown model falls back and asks for revalidation of pr_token_cap once" {
+  two_models '"claude-opus-5-5"' '"claude-sonnet-5"'
+  arec r3 m3 u3 1 0 0 0 '"claude-sonnet-5"' | make_agent b3 '{"description":"G for #288"}' "$REPO"
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["cap"]')" = 30000000 ]
+  [[ "$stderr" == *"pr-token-budget: unknown_model: claude-sonnet-5"* ]] || false
+  [[ "$stderr" == *"pr-token-budget: revalidation_required: claude-sonnet-5"*"対象=pr_token_cap"*"${PLUGIN_DIR}/skills/develop/references/token-thresholds.md"* ]] || false
+  [[ "$stderr" != *context_cap* ]] || false
+  [ "$(printf '%s\n' "$stderr" | grep -c 'unknown_model')" -eq 1 ]
+  [ "$(printf '%s\n' "$stderr" | grep -c 'revalidation_required')" -eq 1 ]
+  [[ "$stderr" != *claude-opus-5-5\;* ]] || false
+}
+
+@test "thresholds: a missing or blank message.model is unknown and the meta alias is not used" {
+  two_models missing '"  "'
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"pr-token-budget: unknown_model: 不明"* ]] || false
+  [[ "$stderr" == *"revalidation_required: 不明"* ]] || false
+  [[ "$stderr" != *"unknown_model: sonnet"* && "$stderr" != *"unknown_model: opus"* ]] || false
+  [ "$(printf '%s\n' "$stderr" | grep -c 'unknown_model')" -eq 1 ]
+}
+
+@test "thresholds: no counted request uses the fallback value without diagnostics" {
+  fixture_codex
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 999 --projects "$PROJECTS" --codex-records "$RECORDS" --codex-home "$HOME1" --codex-home "$HOME2"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["cap"]')" = 30000000 ]
+  [ "$(j 'd["codex_tokens"]')" = 1550 ]
+  [ -z "$stderr" ]
+}
+
+@test "thresholds: env with surrounding spaces is valid, blank env is unset" {
+  fixture_agents
+  cd "$REPO"
+  DEV_WORKFLOW_PR_TOKEN_CAP=" 7000 " run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 2 ]
+  [ "$(j 'd["cap"]')" = 7000 ]
+  DEV_WORKFLOW_PR_TOKEN_CAP="  " run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["cap"]')" = 30000000 ]
+  DEV_WORKFLOW_PR_TOKEN_CAP=0 run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 2 ]
+  [ "$(j 'd["cap"]')" = 0 ]
+}
+
+@test "thresholds: an invalid env exits 1 with invalid_override, a valid --cap shields it" {
+  fixture_agents
+  cd "$REPO"
+  DEV_WORKFLOW_PR_TOKEN_CAP=-1 run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 1 ]
+  [[ "$(j 'd["error"]')" == invalid_override:*DEV_WORKFLOW_PR_TOKEN_CAP* ]] || false
+  [[ "$stderr" == *invalid_override* ]] || false
+  DEV_WORKFLOW_PR_TOKEN_CAP=abc run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --cap 9000
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["cap"]')" = 9000 ]
+}
+
+@test "thresholds: --cap still prints the diagnostics and keeps the JSON keys" {
+  fixture_agents
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --cap 9000
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["cap"]')" = 9000 ]
+  [[ "$stderr" == *"pr-token-budget: unknown_model: claude-sonnet-5"* ]] || false
+  [[ "$stderr" == *"対象=pr_token_cap"* ]] || false
+  [ "$(python3 -c 'import json,sys; print(json.dumps(sorted(json.loads(sys.argv[1])), separators=(",", ":")))' "$output")" = "$KEYS" ]
+}
+
+@test "thresholds: the copied distribution points at its own guide and takes the minimum" {
+  budget_plugin
+  python3 - "$TABLE" <<'PYFIX'
+import json, sys
+from pathlib import Path
+p = Path(sys.argv[1]); d = json.loads(p.read_text())
+d['models']['claude-opus-5-5']['pr_token_cap']['value'] = 40000000
+d['models']['claude-sonnet-5-5']['pr_token_cap']['value'] = 20000000
+d['fallback']['pr_token_cap']['value'] = 10000000
+p.write_text(json.dumps(d))
+PYFIX
+  two_models '"claude-opus-5-5"' '"claude-sonnet-5-5"'
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["cap"]')" = 20000000 ]
+  [ -z "$stderr" ]
+  two_models '"claude-opus-5-5"' '"claude-x"'
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$(j 'd["cap"]')" = 10000000 ]
+  [[ "$stderr" == *"手順=${GUIDE}"* ]] || false
+  [ -f "$GUIDE" ]
+  [ -z "$(find "$WORK/cache-installed" -name '*.pyc' -o -name __pycache__)" ]
+}
+
+@test "thresholds: a missing resolver is resolver_unavailable (exit 1), not a constant cap" {
+  budget_plugin
+  rm -f "$WORK/cache-installed/scripts/token_thresholds.py"
+  fixture_agents
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS"
+  [ "$status" -eq 1 ]
+  [[ "$(j 'd["error"]')" == resolver_unavailable:* ]] || false
+  [[ "$stderr" == *resolver_unavailable* ]] || false
+  [ "$(j '"cap" in d')" = False ]
+}
+
+@test "thresholds: a broken table is invalid_table (exit 1), also with no agents" {
+  budget_plugin
+  printf '{broken' > "$TABLE"
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 999 --projects "$PROJECTS"
+  [ "$status" -eq 1 ]
+  [[ "$(j 'd["error"]')" == invalid_table:* ]] || false
+  [[ "$stderr" == *invalid_table* ]] || false
 }

@@ -124,7 +124,7 @@ jobs:
           out=$(lsof -a -d cwd -F pn) || lsof_rc=$?
           if [ "$lsof_rc" -ne 0 ]; then
             if [ -z "$out" ]; then
-              echo "lsof が失敗した（終了コード $lsof_rc）" >&2
+              echo "lsof が失敗した（終了コード ${lsof_rc}）" >&2
               exit 1
             fi
             echo "lsof が終了コード $lsof_rc で終わった。出た分の一覧で掃除を続け、最後に失敗で終わる" >&2

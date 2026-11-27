@@ -28,7 +28,7 @@ set -uo pipefail
 # Claude Code が入力待ちのとき、ペインの画面の最下部に出ている文字列（grep -E の式）。Claude Code の版で変わりうるので
 # ここ 1 か所に置く。変わると start は failed ready になり、黙って誤送信しない
 # 実機で確かめた画面（Claude Code 2.1.305）: 既定の画面は「? for shortcuts」、状態行を持つ環境では「<モード> on (shift+tab to cycle)」
-READY_PATTERN='\? for shortcuts|\(shift\+tab to cycle\)'
+READY_PATTERN='\? for shortcuts|\(shift\+tab to cycle\)|manual mode on'
 # 許可・選択・信頼の確認画面が出ているときの文字列（grep -E の式）。最下部にこれが出ている間は何も送らない。
 # 実機で確かめた画面（2.1.305）: フォルダの信頼の確認は「Enter to confirm · Esc to cancel」と選択肢の行、許可の確認は
 # 「Do you want to ...?」と番号付きの選択肢の行。版で文言が変わると見逃すので、変わったら送らずに止まる側（READY_PATTERN が当たらない）に倒れる
@@ -89,6 +89,27 @@ pane_ready() {
   ! printf '%s\n' "$tail" | grep -Eq -- "$DIALOG_PATTERN"
 }
 
+# 最下部に確認画面が出ていないか（<ペイン ID>）。入力待ちの印は見ない
+pane_no_dialog() {
+  ! screen_tail "$1" | grep -Eq -- "$DIALOG_PATTERN"
+}
+
+# 入力欄に文の先頭が残っているか（<ペイン ID> <文の先頭 20 文字>）。入力欄は、画面全体の最後の 2 本の罫線（─ か ━ だけの行）の
+# 間の行とする。文の先頭が会話の履歴など入力欄の外に出ているだけでは当たらない。罫線が 2 本無ければ入力欄を特定できないので
+# 残っていないと見る（重ね送りしない側）。既定のモードでは入力欄に文があると入力待ちの印が消えることがあるので、印は見ない
+input_has_text() {
+  local line n region="" borders=() lines=()
+  while IFS= read -r line; do lines+=("$line"); done < <(tmux capture-pane -p -t "$1" 2>/dev/null | awk 'NF')
+  for (( n = 0; n < ${#lines[@]}; n++ )); do
+    [[ "${lines[$n]}" =~ ^[[:space:]]*(─|━)+[[:space:]]*$ ]] && borders+=("$n")
+  done
+  [ "${#borders[@]}" -ge 2 ] || return 1
+  for (( n = borders[${#borders[@]}-2] + 1; n < borders[${#borders[@]}-1]; n++ )); do
+    region+="${lines[$n]}"$'\n'
+  done
+  case "$region" in *"$2"*) return 0 ;; *) return 1 ;; esac
+}
+
 # ペインで Claude Code が動き、入力待ちの画面か（<ペイン ID> <前面のコマンド>）
 is_claude_pane() {
   case "$SHELL_COMMANDS" in *" $2 "*) return 1 ;; esac
@@ -96,11 +117,11 @@ is_claude_pane() {
 }
 
 # 送った文が会話ログに現れたか（<ワークツリー> <この時刻より後> <送った文>）。ログは
-# ${CLAUDE_PROJECTS_DIR:-~/.claude/projects}/<パスの英数字以外を - にした名前>/*.jsonl で、送る直前に控えた時刻より後の
+# ${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<パスの英数字以外を - にした名前>/*.jsonl で、送る直前に控えた時刻より後の
 # user の行の本文が、送った文の先頭 40 文字（短ければ全体）を含むこと
 log_has_prompt() {
   local wt="$1" since="$2" text="$3" root key d phys
-  root="${CLAUDE_PROJECTS_DIR:-$HOME/.claude/projects}"
+  root="${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
   phys="$(cd "$wt" 2>/dev/null && pwd -P)" || phys=""
   for d in "$wt" "$phys"; do
     [ -n "$d" ] || continue
@@ -140,10 +161,10 @@ send_and_confirm() {
     sleep 1
     # 起動して間もない Claude Code は最初の Enter を取りこぼすことがある（実機 2.1.305。指示は入力欄に残る）。
     # 文は打ち直さず、届くまで 4 秒ごとに Enter だけを重ねる（空の入力欄への Enter は何もしない）。重ねる前に毎回画面の
-    # 最下部を読み、入力待ちで・確認画面が出ておらず・送った文の先頭がまだ入力欄に残っているときだけ重ねる。
+    # 最下部を読み、確認画面が出ておらず・送った文の先頭がまだ入力欄（最後の 2 本の罫線の間）に残っているときだけ重ねる。入力待ちの印は条件にしない。
     # 一度でも満たさなければ重ね送りをやめる（会話ログの確認は続ける。確認画面に Enter が選択として届くのを避けるため）
     if [ "$resend" -eq 1 ] && [ $(( i % 4 )) -eq 3 ]; then
-      if pane_ready "$pane" && screen_tail "$pane" | grep -qF -- "$head20"; then
+      if pane_no_dialog "$pane" && input_has_text "$pane" "$head20"; then
         tmux send-keys -t "$pane" C-m
       else
         resend=0
@@ -284,6 +305,7 @@ shq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
 resend_hint() {
   {
     echo "the prompt may not have reached pane $1 (worktree $2)."
+    echo "the pane and the worktree are still there (not closed or removed), and the prompt may still sit in the input line."
     echo "check the input line and whether a turn started before resending: tmux capture-pane -p -t $1"
     echo "resend: bash $(shq "$0") deliver $(shq "$2") 0 $(shq "$3") $(shq "$4") $(shq "$5")"
   } >&2

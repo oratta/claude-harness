@@ -15,6 +15,9 @@ LOST='The self-hosted runner lost communication with the server.'
 TIMED_OUT='The job running on runner mac-1 has exceeded the maximum execution time of 40 minutes.'
 CANCELED='The operation was canceled.'
 
+load lib/develop-docs
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/ci-watch.sh"
@@ -53,6 +56,7 @@ EOF
   export DEV_WORKFLOW_PR_STATE_DIR="$STATE_DIR"
   export DEV_WORKFLOW_CI_WATCH_INTERVAL=1
   export DEV_WORKFLOW_CI_WATCH_TIMEOUT=30
+  gate_test_docs
 }
 
 teardown() {
@@ -474,7 +478,7 @@ pr_view_calls() {
   row="$(grep -F '| `escalate` |' "$REF")"
   [ -n "$row" ]
   grep -qF 'エピックの子' <<<"$row"
-  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり記録を残して `mark stopped` で止まる' <<<"$row"
+  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり最後の発言の末尾に `止まった理由:` の行を書いて止まる' <<<"$row"
   ! grep -qF '先頭 7 文字' <<<"$row" || return 1
   ! grep -qF 'obs.head' <<<"$row" || return 1
   ! grep -qF 'headRefOid' <<<"$row" || return 1
@@ -485,7 +489,7 @@ pr_view_calls() {
   row="$(grep -F '| `none` |' "$REF")"
   [ -n "$row" ]
   grep -qF 'エピックの子' <<<"$row"
-  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり記録を残して `mark stopped` で止まる' <<<"$row"
+  grep -qF '`skills/develop/references/epic-child-stop.md` の手順どおり最後の発言の末尾に `止まった理由:` の行を書いて止まる' <<<"$row"
   ! grep -qF '先頭 7 文字' <<<"$row" || return 1
   ! grep -qF 'obs.head' <<<"$row" || return 1
   ! grep -qF 'headRefOid' <<<"$row" || return 1
@@ -553,10 +557,12 @@ resume_section() {
 
 @test "develop skill: resume notification points to section 9 without copying the decision" {
   local row
-  row="$(grep 'stopped.*killed' "$DEVELOP")"
+  body="$(develop_procedures)"
+  row="$(grep 'stopped.*killed' <<<"$body")"
   [ "$(printf '%s\n' "$row" | wc -l | tr -d ' ')" -eq 1 ]
   grep -qF 'references/ci-watch.md' <<<"$row"
-  grep -qF '9 に従う' <<<"$row"
+  grep -qF '全文を必ず Read' <<<"$row"
+  grep -q 'stopped.*killed.*9 に従う' "$REF"
   ! grep -qE 'CI 見張り終了:|gh pr view|--paginate|ci-watch.sh next' "$DEVELOP" || return 1
 }
 
@@ -585,11 +591,15 @@ resume_section() {
 }
 
 @test "develop skill: (4) hands passed to the main session's watch and loops fix through W and G" {
-  grep -qF 'references/ci-watch.md' "$DEVELOP"
-  grep -q 'passed → 本体が .*ci-watch.md.*見張りを始める' "$DEVELOP"
-  grep -q '`fix` なら W に直させ' "$DEVELOP"
-  grep -q 'W が push したら.*passed を外したまま.*`wait` → `next` を続け' "$DEVELOP"
-  grep -q '`ready` になってから前提確認と重さ判定の G を新しく起こして.*取り直させ' "$DEVELOP"
+  body="$(develop_procedures)"
+  grep -q 'passed → 本体が .*ci-watch.md.*見張りを始める' <<<"$body"
+  grep -qF 'ci-watch.md` 全文を必ず Read' <<<"$body"
+  grep -qF 'CI 見張りの fix からの戻し方' <<<"$body"
+  # 手順本体は既存正本へ集約。push 後は passed を外したまま wait/next、ready 後に再ゲート。
+  grep -q 'push したら.*`agent-review:passed` を外したまま.*`wait`' "$REF"
+  grep -q '`wait` → `next` を続け.*`ready` になってからゲートを取り直す' "$REF"
+  grep -qF '通常経路のゲート取り直しは前提確認と重さ判定の新しい G から' <<<"$body"
+
 }
 
 @test "gate-runner: G returns passed without starting the CI watch" {

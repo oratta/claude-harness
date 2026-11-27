@@ -1,8 +1,8 @@
 #!/usr/bin/env bats
 #
 # 主の委任の合否（issue #1293）。
-# spec: dev-workflow-owner-reply-check「owner-reply-check.sh --delegated は主の委任の確認を親の会話ログの場所で確かめる」
-#       「--delegated の守備範囲」「主の委任の合否を、名指しの許容と混在したログで機械的に固定する」
+# spec: dev-workflow-owner-reply-check「owner-reply-check.sh --delegated は主の委任の確認を、挟まった主の発言で落とさずに確かめる」
+#       「--delegated の守備範囲」「主の委任の合否を、名指しの許容と挟まった発言の混在したログで機械的に固定する」
 # 親の会話ログ 1 本に、委任の記録より前の名指しの許容・委任の記録より後で親の問いより前の別の主の発言・
 # 委任の記録を示した親の問い・主の委任の確認・その後の停止を並べ、--delegated と --relayed を当てる。
 # 固定するのは owner-reply-check.sh の出力と終了コードまで。GitHub 上の確かめ（委任の記録の書式・投稿者・最新か・
@@ -31,6 +31,7 @@ setup() {
   ASK_UUID="cccccccc-0000-4000-8000-000000000001"        # 親の問い
   CONFIRM_UUID="bbbbbbbb-0000-4000-8000-000000000001"    # 主の委任の確認
   AFTER_UUID="cccccccc-0000-4000-8000-000000000002"      # 確認のあとの親の発言
+  BETWEEN_UUID="aaaaaaaa-0000-4000-8000-000000000003"    # 親の問いと確認のあいだの別の主の発言
 }
 
 add() { printf '%s\n' "$1" >> "$LOG"; }
@@ -53,6 +54,14 @@ build_log() {  # $1 = 親の問いの URL（既定は委任の記録の URL）, 
   ask_with "${1:-$DELEG_URL}"
   owner_line "$CONFIRM_UUID" "2026-10-23T11:06:00.000Z" "${2:-任せる}"
   parent_line "$AFTER_UUID" "2026-10-23T11:06:30.000Z" "委任を受け取った"
+}
+
+# 2026-11-09 の flatmate #2058 と同じ並び（issue #1653）: 委任の記録（11:03:32）→ 親が委任の記録の URL を見せる（11:05）
+#       → 主の別の発言（11:05:30）→ 主の「任せる。今回の件も許容する。」（11:06）→ 停止（11:10）
+build_1109_log() {
+  parent_line "$ASK_UUID" "2026-10-23T11:05:00.000Z" "委任の記録: $DELEG_URL この範囲で子のリスク許容を任せてよいか"
+  owner_line "$BETWEEN_UUID" "2026-10-23T11:05:30.000Z" "2058 の状態はどうなっている"
+  owner_line "$CONFIRM_UUID" "2026-10-23T11:06:00.000Z" "任せる。今回の件も許容する。"
 }
 
 delegated() {  # $1 = uuid, $2 = 停止の記録の作成日時（既定は STOP_AT）
@@ -101,13 +110,26 @@ expect_pass() {  # $1 = MATCH の行に出る本文
   expect_fail not-before
 }
 
-@test "delegated scenario: another owner message between the ask and the confirmation is not-direct" {
+@test "delegated scenario: another owner message between the ask and the confirmation does not fail on order (#1653)" {
   owner_line "$NAMED_UUID" "2026-10-23T10:00:00.000Z" "1034は許容"
   ask_with "$DELEG_URL"
-  owner_line "aaaaaaaa-0000-4000-8000-000000000003" "2026-10-23T11:05:30.000Z" "ちょっと待って"
+  owner_line "$BETWEEN_UUID" "2026-10-23T11:05:30.000Z" "ちょっと待って"
   owner_line "$CONFIRM_UUID" "2026-10-23T11:06:00.000Z" "任せる"
   delegated "$CONFIRM_UUID"
-  expect_fail not-direct
+  expect_pass "任せる"
+  [[ "$output" != *"not-direct"* ]] || return 1
+  # 挟まった発言の uuid を渡しても並び順では落とさない（意思は呼び出し側が全文で読む）
+  delegated "$BETWEEN_UUID"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCH: 2026-10-23T11:05:30.000Z ちょっと待って"* ]] || return 1
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
+@test "delegated scenario: the 2026-11-09 flatmate #2058 order (URL shown, another owner message, then the confirmation) passes (#1653)" {
+  build_1109_log
+  delegated "$CONFIRM_UUID"
+  expect_pass "任せる。今回の件も許容する。"
+  [[ "$output" != *"REASON="* ]] || return 1
 }
 
 @test "delegated scenario: a parent message with only a longer URL (digits appended) is not-asked" {

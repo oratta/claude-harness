@@ -208,9 +208,9 @@ def stack_one(gate_report, repo, cwd, scripts_dir, at, number, kind, children=0)
     try:
         # 行の時刻と累計を切る時刻は、GitHub が記録した出来事の時刻（セッションを始めた時刻ではない）
         gate_report.stack(kind, repo, number, branch, names, "%.3f" % at, cwd, scripts_dir,
-                          extra=["--backfill"], children=children if kind == "issue" else 0)
+                          extra=["--backfill"], children=children if kind == "issue" else 0, cache_lock=fd)
     finally:
-        os.close(fd)  # 閉じるとロックも外れる
+        gate_report.unlock(fd)  # 検査済みの置き場も対象のロックと同時に解放
 
 
 def sweep(gate_report, ledger, cwd, scripts_dir):

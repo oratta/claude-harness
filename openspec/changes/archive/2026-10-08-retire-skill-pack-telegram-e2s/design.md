@@ -34,7 +34,7 @@
 
 ### 公式プラグイン名を README の代替として書く
 
-telegram の代替は `telegram@claude-plugins-official`。切り替え手順は uninstall と、`enabledPlugins` に `telegram@claude-plugins-official` を入れる 2 手順にとどめ、公式側の設定（Bot トークンの置き場など）は公式の README に委ねてリンクせず名前だけ示す。skill-pack は `/skills` 画面・`skillOverrides`・`claude plugin enable|disable --scope`、experience-to-skill は公式 skill-creator スキルを代替として書く。
+telegram の代替は `telegram@claude-plugins-official`。切り替え手順は uninstall → uninstall で消えずに `settings.json` / `settings.local.json` の `enabledPlugins` に残る旧 `telegram@oratta-claude-harness` エントリの削除 → 公式の `telegram@claude-plugins-official` の導入の 3 手順にとどめ、公式側の設定（Bot トークンの置き場など）は公式の README に委ねてリンクせず名前だけ示す。skill-pack は `/skills` 画面・`skillOverrides`・`claude plugin enable|disable --scope`、experience-to-skill は公式 skill-creator スキルを代替として書く。
 
 ### version bump と変更の記録
 
