@@ -52,6 +52,8 @@ printf "判断: 主に上げる\n理由: 主の判断が要る\n返事:\n記録:
   local ts ts0 dir
   ts="$(jq -rn '(now - 600) | floor | todate')"
   ts0="$(jq -rn '(now - 660) | floor | todate')"
+  # 起動時の入力行の時刻（判断に渡る last_input_at と比べる）
+  STARTUP_TS="$ts0"
   dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$CHILD_WT" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$dir"
   {
@@ -102,6 +104,9 @@ record_turn() {
   [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = "$SAID_UUID" ]
   jq -r .text "$STUB_CFG/judge_json" | grep -qF "$SECRET"
   [ "$(jq -r .marked "$STUB_CFG/judge_json")" = false ]
+  # 起動時の入力行が最後の入力として渡り、止まりの発言より前なので input_after は false
+  [ "$(jq -r .last_input_at "$STUB_CFG/judge_json")" = "$STARTUP_TS" ]
+  [ "$(jq -r .input_after "$STUB_CFG/judge_json")" = false ]
 }
 
 @test "stop scenario: an escalation posts the uuid and never the statement" {

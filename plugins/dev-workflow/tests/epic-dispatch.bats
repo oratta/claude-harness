@@ -7475,7 +7475,7 @@ wait_stop() { gh_seq 11 open; run dispatch wait --interval 0 --timeout 0 --watch
   wait_stop
   [ "$output" = 'stopped 11' ]; [ "$(rec_get 11 stop_uuid)" = d1 ]
   # stop_at は時刻の形（null や空や任意の文字列では通さない）
-  [[ "$(rec_get 11 stop_at)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]]
+  [[ "$(rec_get 11 stop_at)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]] || return 1
 }
 
 @test "wait state: re-marking or changing log uuid cannot receive the same turn twice" {
