@@ -103,7 +103,7 @@
     {
       "source": "skills/develop/references/roles/gate-runner.md",
       "line": 97,
-      "text": "| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと）、論点なしの確認を受け取ったとき（合格処理の G が `needs-no-point-check` を返したあと） | 前の段の Gate Result ブロック（引き継ぎの判定のあとは加えて引き継ぎの判定と判定の記録の URL、論点なしの確認のあとは加えて確認の結果と論点なしの確認の記録の URL） | passed / failed（確かめ方の非 0。`次の段: 前提確認と重さ判定`） / 保留 / `needs-carryover-judge` / `needs-no-point-check` |"
+      "text": "| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと）、論点なしの確認を受け取ったとき（合格処理の G が `needs-no-point-check` を返したあと） | 前の段の Gate Result ブロック（引き継ぎの判定のあとは加えて引き継ぎの判定と判定の記録の URL、論点なしの確認のあとは加えて確認の結果と論点なしの確認の記録の URL） | passed / failed（確かめ方の非 0、または手順 4-2 の食い違い。`次の段: 前提確認と重さ判定`） / 保留 / `needs-carryover-judge` / `needs-no-point-check` |"
     },
     {
       "source": "skills/develop/references/roles/gate-runner.md",
