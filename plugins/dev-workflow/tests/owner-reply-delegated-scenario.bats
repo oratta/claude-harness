@@ -3,6 +3,8 @@
 # 主の委任の合否（issue #1293）。
 # spec: dev-workflow-owner-reply-check「owner-reply-check.sh --delegated は主の委任の確認を、挟まった主の発言で落とさずに確かめる」
 #       「--delegated の守備範囲」「主の委任の合否を、名指しの許容と挟まった発言の混在したログで機械的に固定する」
+#       「owner-reply-check.sh --delegated-trigger は、きっかけの発言を委任の確認として確かめる」
+#       「--delegated-trigger の守備範囲」「きっかけの形の委任の合否を、会話ログで機械的に固定する」（issue #1609）
 # 親の会話ログ 1 本に、委任の記録より前の名指しの許容・委任の記録より後で親の問いより前の別の主の発言・
 # 委任の記録を示した親の問い・主の委任の確認・その後の停止を並べ、--delegated と --relayed を当てる。
 # 固定するのは owner-reply-check.sh の出力と終了コードまで。GitHub 上の確かめ（委任の記録の書式・投稿者・最新か・
@@ -256,4 +258,172 @@ expect_pass() {  # $1 = MATCH の行に出る本文
   run bash "$SCRIPT" --relayed "$SID" "$CONFIRM_UUID" "$STOP_AT" "$STOP_URL"
   [ "$status" -eq 0 ]
   [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
+# ---- --delegated の停止の記録の引数 -（issue #1609。リスク許容の止まりは委任の確認より前の止まりにも効く）
+
+@test "delegated: a - stop record argument does not check not-before (the 2026-11-09 flatmate #2058 stop before the confirmation)" {
+  build_1109_log
+  # 停止の記録（EARLY_STOP_AT 11:05:30）は確認（11:06）より前。日時を渡すと not-before、- なら通る
+  delegated "$CONFIRM_UUID" "$EARLY_STOP_AT"
+  expect_fail not-before
+  delegated "$CONFIRM_UUID" "-"
+  expect_pass "任せる。今回の件も許容する。"
+}
+
+@test "delegated: a - stop record argument still checks not-found, not-owner, not-after and not-asked" {
+  build_log
+  delegated "99999999-9999-4999-8999-999999999999" "-"
+  expect_fail not-found
+  delegated "$AFTER_UUID" "-"
+  expect_fail not-owner
+  delegated "$NAMED_UUID" "-"
+  expect_fail not-after
+  delegated "$BEFORE_ASK_UUID" "-"
+  expect_fail not-asked
+}
+
+@test "delegated: a stop record argument that is neither - nor a date gives exit 2" {
+  build_log
+  for bad in "--" "x" "-1" ""; do
+    run bash "$SCRIPT" --delegated "$SID" "$CONFIRM_UUID" "$DELEG_AT" "$DELEG_URL" "$bad"
+    [ "$status" -eq 2 ] || return 1
+  done
+}
+
+# ---- --delegated-trigger（issue #1609。主が会話で任せる旨を述べた発言そのものを委任の確認にする）
+
+TRIGGER_UUID="eeeeeeee-0000-4000-8000-000000000001"     # 主のきっかけの発言（委任の記録より前）
+LATER_UUID="eeeeeeee-0000-4000-8000-000000000002"       # 委任の記録より後の主の発言
+NEXT_UUID="eeeeeeee-0000-4000-8000-000000000003"        # きっかけと記録のあいだの主の発言
+REPORT_UUID="eeeeeeee-0000-4000-8000-000000000004"      # 親が 1 件の止まりを報告した発言
+
+# 並び: 親が #2058 の止まりを報告（11:01）→ 主のきっかけ（11:02、2 行）→ 親の発言（11:03）→ 委任の記録（11:03:32）
+#       → 主の別の発言（11:04）
+build_trigger_log() {  # $1 = きっかけと記録のあいだに主の発言を入れるなら 1
+  parent_line "$REPORT_UUID" "2026-10-23T11:01:00.000Z" "子 #2058 がリスク許容で止まった。停止の記録: $STOP_URL"
+  owner_line "$TRIGGER_UUID" "2026-10-23T11:02:00.000Z" 'このエピックでは子の止まりは\n親が許可を出して続けさせて'
+  [ "${1:-}" = 1 ] && owner_line "$NEXT_UUID" "2026-10-23T11:02:30.000Z" "あと 2060 も見て"
+  parent_line "$AFTER_UUID" "2026-10-23T11:03:00.000Z" "委任の記録を出す"
+  owner_line "$LATER_UUID" "2026-10-23T11:04:00.000Z" "ありがとう"
+}
+
+# 記録の きっかけ: に写した全文（GitHub が改行を \r\n にした形。改行の位置は発言と同じで、空白の種類だけ違う）
+TRIGGER_TEXT=$'このエピックでは子の止まりは\r\n親が許可を出して続けさせて'
+
+
+trigger() {  # $1 = uuid, $2 = きっかけの全文（既定は TRIGGER_TEXT）
+  run bash "$SCRIPT" --delegated-trigger "$SID" "$1" "$DELEG_AT" "${2-$TRIGGER_TEXT}"
+}
+
+expect_trigger_pass() {
+  [ "$status" -eq 0 ] || return 1
+  [[ "$output" == *"MATCH: 2026-10-23T11:02:00.000Z このエピックでは子の止まりは 親が許可を出して続けさせて"* ]] || return 1
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+  [[ "$output" != *"REASON="* ]] || return 1
+}
+
+@test "delegated-trigger scenario: the trigger message passes with only the line breaks differing" {
+  build_trigger_log
+  trigger "$TRIGGER_UUID" "このエピックでは子の止まりは 親が許可を出して続けさせて"
+  expect_trigger_pass
+  # GitHub の \r\n と前後の空白も揃う
+  trigger "$TRIGGER_UUID" $'  このエピックでは子の止まりは\r\n親が許可を出して続けさせて \r\n'
+  expect_trigger_pass
+}
+
+@test "delegated-trigger scenario: an owner message after the delegation record is not-before-record" {
+  build_trigger_log
+  trigger "$LATER_UUID" "ありがとう"
+  expect_fail not-before-record
+}
+
+@test "delegated-trigger scenario: a message exactly at the record time is not-before-record (Z and +00:00 are the same)" {
+  owner_line "$TRIGGER_UUID" "2026-10-23T11:03:32.000Z" "このエピックでは子の止まりは親が許可を出して続けさせて"
+  run bash "$SCRIPT" --delegated-trigger "$SID" "$TRIGGER_UUID" "2026-10-23T11:03:32+00:00" "このエピックでは子の止まりは親が許可を出して続けさせて"
+  expect_fail not-before-record
+}
+
+@test "delegated-trigger scenario: a part of the message or a longer text is not-same" {
+  build_trigger_log
+  # 空白はまとめるだけで落とさないので、発言に無い位置の改行は同じに数えない
+  trigger "$TRIGGER_UUID" $'このエピックでは子の止まりは親が許可を出して\n続けさせて'
+  expect_fail not-same
+  trigger "$TRIGGER_UUID" "親が許可を出して続けさせて"
+  expect_fail not-same
+  trigger "$TRIGGER_UUID" "このエピックでは子の止まりは親が許可を出して続けさせて。#2058 以外"
+  expect_fail not-same
+}
+
+@test "delegated-trigger scenario: another owner message between the trigger and the record is not-adjacent" {
+  build_trigger_log 1
+  trigger "$TRIGGER_UUID"
+  expect_fail not-adjacent
+}
+
+@test "delegated-trigger scenario: a named acceptance of another child before the record is not-same" {
+  owner_line "$NAMED_UUID" "2026-10-23T10:00:00.000Z" "1034は許容"
+  build_trigger_log
+  trigger "$NAMED_UUID"
+  expect_fail not-same
+}
+
+@test "delegated-trigger: the words of acceptance are not read (a refusal passes and is printed in full)" {
+  owner_line "$TRIGGER_UUID" "2026-10-23T11:02:00.000Z" "任せない"
+  trigger "$TRIGGER_UUID" "任せない"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"MATCH: 2026-10-23T11:02:00.000Z 任せない"* ]] || return 1
+  [[ "$output" == *"MATCHES=1"* ]] || return 1
+}
+
+@test "delegated-trigger: does not read the stop record (a stop before the trigger does not fail)" {
+  build_trigger_log
+  # 引数は 4 個で、停止の記録の作成日時を取らない
+  run bash "$SCRIPT" --delegated-trigger "$SID" "$TRIGGER_UUID" "$DELEG_AT" "$TRIGGER_TEXT" "$EARLY_STOP_AT"
+  [ "$status" -eq 2 ]
+  trigger "$TRIGGER_UUID"
+  expect_trigger_pass
+}
+
+@test "delegated-trigger: wrong number of arguments gives exit 2" {
+  build_trigger_log
+  run bash "$SCRIPT" --delegated-trigger "$SID" "$TRIGGER_UUID" "$DELEG_AT"
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"usage: "*"--delegated-trigger"* ]] || return 1
+  run bash "$SCRIPT" --delegated-trigger "$SID" "$TRIGGER_UUID" "$DELEG_AT" "$TRIGGER_TEXT" extra
+  [ "$status" -eq 2 ]
+  [[ "$output" == *"usage: "*"--delegated-trigger"* ]] || return 1
+}
+
+@test "delegated-trigger: a non-UUID id, an unreadable record time or a blank trigger gives exit 2" {
+  build_trigger_log
+  run bash "$SCRIPT" --delegated-trigger "0a1b2c3d" "$TRIGGER_UUID" "$DELEG_AT" "$TRIGGER_TEXT"
+  [ "$status" -eq 2 ]
+  run bash "$SCRIPT" --delegated-trigger "$SID" "eeeeeeee" "$DELEG_AT" "$TRIGGER_TEXT"
+  [ "$status" -eq 2 ]
+  run bash "$SCRIPT" --delegated-trigger "$SID" "$TRIGGER_UUID" "yesterday" "$TRIGGER_TEXT"
+  [ "$status" -eq 2 ]
+  run bash "$SCRIPT" --delegated-trigger "$SID" "$TRIGGER_UUID" "2026-10-23T11:03:32" "$TRIGGER_TEXT"
+  [ "$status" -eq 2 ]
+  run bash "$SCRIPT" --delegated-trigger "$SID" "$TRIGGER_UUID" "$DELEG_AT" $' \n\t '
+  [ "$status" -eq 2 ]
+}
+
+@test "delegated-trigger: a missing uuid is not-found and a non-owner line is not-owner" {
+  build_trigger_log
+  trigger "99999999-9999-4999-8999-999999999999"
+  expect_fail not-found
+  trigger "$REPORT_UUID"
+  expect_fail not-owner
+  # 親が子の端末に打ち込んだ決まった頭の文も主の発言ではない
+  owner_line "$NEXT_UUID" "2026-10-23T11:02:10.000Z" "主の返事（親エピック #1038 経由）: このエピックでは子の止まりは親が許可を出して続けさせて"
+  trigger "$NEXT_UUID" "主の返事（親エピック #1038 経由）: このエピックでは子の止まりは親が許可を出して続けさせて"
+  expect_fail not-owner
+}
+
+@test "delegated-trigger: a non-owner line between the trigger and the record does not make it not-adjacent" {
+  build_trigger_log
+  add '{"type":"user","isSidechain":false,"uuid":"dddddddd-0000-4000-8000-000000000009","timestamp":"2026-10-23T11:02:40.000Z","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}'
+  trigger "$TRIGGER_UUID"
+  expect_trigger_pass
 }
