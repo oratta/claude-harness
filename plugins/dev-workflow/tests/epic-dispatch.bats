@@ -5132,14 +5132,80 @@ nothing_sent() {
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
 }
 
-@test "notify-closed: a child that is not stopped gets nothing" {
+# 子 11 の記録の stop_turn を今のターンと合わない組にする（受領した組が古い）
+stale_stop_turn() {
+  local f; f="$(rec_of 1122 11)"
+  jq -c '.stop_turn={generation:9,session_id:"s9"}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# 子 11 の会話ログを、止まりの発言 d1 より後に主の入力がある形にする（会話ログが進んだ）
+moved_log() {
+  local f; f="$(rec_of 1122 11)"
+  jq -c '.stop_uuid="d1"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(chat_line assistant "$(jq -rn '(now - 900) | floor | todate')" 'どちらに' '{"uuid":"d1"}')" \
+    "$(chat_line user "$(jq -rn '(now - 300) | floor | todate')" 'こちらで' '{"uuid":"i1"}')"
+}
+
+# 子 11 に促しが今の端末にだけ送られ、エピックに通した行が 1 行残っている
+notified_in_place() {
+  [ "$output" = "notified 11" ] || return 1
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "${CLOSED_MSG_HEAD}（停止の記録: ${CLOSED_STOP_URL}）" ] || return 1
+  starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した — 記録先が completed で閉じたので" || return 1
+  [ "$(calls '^orca terminal close')" -eq 0 ] || return 1
+  [ "$(calls '^orca terminal create')" -eq 0 ] || return 1
+  [ "$(calls '^orca terminal send')" -eq 1 ]
+}
+
+@test "notify-closed: a child without the stopped mark still gets the reply whether running or waiting" {
   for mark in "" resumed; do
-    : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
-    closed_ready "$mark"
+    for st in running waiting; do
+      : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+      closed_ready "$mark" "$st"
+      run dispatch notify-closed 400 11
+      [ "$status" -eq 0 ] || { echo "mark=$mark st=$st status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+      notified_in_place || { echo "mark=$mark st=$st output=$output"; cat "$STUB_LOG"; false; }
+      [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $CLOSED_STOP_URL" ]
+    done
+  done
+}
+
+@test "notify-closed: a stale received turn or a moved log does not stop the reply" {
+  for kind in turn log; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    closed_ready stopped-seen
+    case "$kind" in turn) stale_stop_turn ;; log) moved_log ;; esac
     run dispatch notify-closed 400 11
-    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; false; }
-    [ "$output" = "skipped 11 not-stopped" ]
-    nothing_sent
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    notified_in_place || { echo "kind=$kind output=$output"; cat "$STUB_LOG"; false; }
+  done
+}
+
+@test "notify-closed: --relaunch does not close or recreate the terminal of a child that is not stopped" {
+  for kind in empty resumed turn log; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    case "$kind" in
+      empty) closed_ready "" running ;;
+      resumed) closed_ready resumed ;;
+      turn) closed_ready stopped-seen; stale_stop_turn ;;
+      log) closed_ready stopped-seen; moved_log ;;
+    esac
+    run dispatch notify-closed --relaunch 400 11
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    notified_in_place || { echo "kind=$kind output=$output"; cat "$STUB_LOG"; false; }
+  done
+}
+
+@test "notify-closed: --relaunch closes and recreates the terminal of a stopped child" {
+  for mark in stopped stopped-seen; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    closed_ready "$mark"
+    run dispatch notify-closed --relaunch 400 11
+    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = "notified 11" ]
+    [ "$(calls '^orca terminal close')" -eq 1 ]
+    [ "$(first_line '^orca terminal close')" -lt "$(first_line '^orca terminal create')" ]
+    starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
+    [ "$(calls '^gh issue comment 400')" -eq 1 ]
   done
 }
 
