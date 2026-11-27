@@ -116,6 +116,13 @@ if [ -n "$stop_json" ]; then
 
 最後の発言:
 \(.text)"' "$stop_json")" || { echo "the stop json is not readable: $stop_json" >&2; exit 1; }
+  # 子が書いた文（最後の発言・未回答の問い）に見出しを模した行があっても節と取り違えないよう、実行ごとの乱数の境界行で囲む。
+  # 乱数は発言を読む前に作る（発言が境界を知って偽装できない）。基準の「子の最後の発言の読み方」に読み方がある
+  bound="$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')" || bound=""
+  [ "${#bound}" -eq 16 ] || { echo "could not make a boundary token" >&2; exit 1; }
+  statement="=====子の発言ここから $bound=====
+$statement
+=====子の発言ここまで $bound====="
 fi
 
 # 定型の完了報告に返事を送ると同じ報告を繰り返す。停止の証拠や問いが無いときだけ、
