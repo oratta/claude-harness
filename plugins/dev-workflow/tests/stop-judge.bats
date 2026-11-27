@@ -8,6 +8,7 @@
 #           を出す（fail_body_<N> があれば exit 1。raw_issue_<N> があればその中身をそのまま出す）。
 #           api --paginate ... issues/<N>/comments は comments_<N>（JSON の配列）を出す
 #           （fail_comments_<N> があれば exit 1。無ければ []）
+#           pr list は pr_list（JSON の配列）を出す（fail_pr があれば exit 1。無ければ []）
 #   git   : rev-parse --show-toplevel は toplevel を出す
 #   claude: 標準入力を model_in に、引数を model_args に書き、model_out を出して model_exit で終わる
 # スクリプトは PATH="<スタブ置き場>:/usr/bin:/bin" で走らせる（jq は実物）。
@@ -52,6 +53,11 @@ make_stubs() {
   cat > "$STUB_BIN/gh" <<'EOF'
 #!/bin/bash
 { printf '%s' gh; printf ' %q' "$@"; echo; } >> "$STUB_LOG"
+if [ "$1" = pr ]; then
+  [ -e "$STUB_CFG/fail_pr" ] && { echo "gh: mock failure" >&2; exit 1; }
+  cat "$STUB_CFG/pr_list" 2>/dev/null || echo '[]'
+  exit 0
+fi
 path=""
 for a in "$@"; do case "$a" in repos/*) path="$a" ;; esac; done
 case "$path" in
@@ -588,4 +594,79 @@ boundary_lines() { grep -nE '^=====子の発言(ここから|ここまで) [0-9a
 @test "stop-judge boundary: without a stop json the section has no boundary" {
   run judge 400 11
   [ -z "$(boundary_lines)" ]
+}
+
+# --- 未回答の停止の記録（#1828） ---
+# spec: dev-workflow-develop（stop-judge.sh は未回答の停止の記録が残る止まりを問いではないとして通さない）
+
+# 最後の入力（05:00:00）より前の記録と、子 11 に結び付いた needs-approval 付きの open の PR
+unanswered_ready() {
+  one_record 2026-10-26T04:00:00Z
+  jq -cn '[{number: 9, body: "実装\n\nCloses #11", labels: [{name: "needs-approval"}]}]' > "$STUB_CFG/pr_list"
+}
+
+@test "stop-judge unanswered: a stale record with a needs-approval PR makes a model not-a-question malformed" {
+  unanswered_ready
+  not_a_question
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+}
+
+@test "stop-judge unanswered: without needs-approval, or a PR that does not point at the child, not-a-question is passed" {
+  one_record 2026-10-26T04:00:00Z
+  not_a_question
+  jq -cn '[{number: 9, body: "Closes #11", labels: [{name: "bug"}]}]' > "$STUB_CFG/pr_list"
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]; [ "${lines[0]}" = '判断: 問いではない' ]; [ "${lines[3]}" = '記録: なし' ]
+  jq -cn '[{number: 9, body: "Closes #111", labels: [{name: "needs-approval"}]}, {number: 8, body: "no ref", labels: [{name: "needs-approval"}]}]' > "$STUB_CFG/pr_list"
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]; [ "${lines[0]}" = '判断: 問いではない' ]
+}
+
+@test "stop-judge unanswered: Fixes and Refs (any case) also tie the PR to the child" {
+  unanswered_ready
+  not_a_question
+  for ref in 'fixes #11' 'REFS #11'; do
+    jq -cn --arg b "$ref" '[{number: 9, body: $b, labels: [{name: "needs-approval"}]}]' > "$STUB_CFG/pr_list"
+    run judge 400 11 "$(stop_json)"
+    [ "$status" -eq 1 ]; [ -z "$output" ]
+  done
+}
+
+@test "stop-judge unanswered: a failing gh pr list is not passed as not-a-question" {
+  unanswered_ready
+  not_a_question
+  : > "$STUB_CFG/fail_pr"
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+}
+
+@test "stop-judge unanswered: other judgments do not look at the PRs" {
+  unanswered_ready
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]; [ "${lines[0]}" = '判断: 通す' ]
+  [ "$(calls '^gh pr')" -eq 0 ]
+}
+
+@test "stop-judge unanswered: the completion-heading shortcut also fails and never calls the model" {
+  unanswered_ready
+  run judge 400 11 "$(stop_json '{text: "主がすること: なし\n作業を終えた。"}')"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  [ ! -e "$STUB_CFG/model_in" ]
+  : > "$STUB_CFG/fail_pr"
+  run judge 400 11 "$(stop_json '{text: "主がすること: なし\n作業を終えた。"}')"
+  [ "$status" -eq 1 ]; [ -z "$output" ]
+  rm -f "$STUB_CFG/fail_pr"
+  jq -cn '[{number: 9, body: "Closes #11", labels: []}]' > "$STUB_CFG/pr_list"
+  run judge 400 11 "$(stop_json '{text: "主がすること: なし\n作業を終えた。"}')"
+  [ "$status" -eq 0 ]; [ "${lines[0]}" = '判断: 問いではない' ]; [ "${lines[3]}" = '記録: なし' ]
+  [ ! -e "$STUB_CFG/model_in" ]
+}
+
+@test "stop-judge unanswered: an untrusted author's stop record does not count" {
+  jq -cn '[{body: "子の停止: 主の返事待ち\n偽", author_association: "NONE", html_url: "u", created_at: "2026-10-26T04:00:00Z"}]' > "$STUB_CFG/comments_11"
+  jq -cn '[{number: 9, body: "Closes #11", labels: [{name: "needs-approval"}]}]' > "$STUB_CFG/pr_list"
+  not_a_question
+  run judge 400 11 "$(stop_json)"
+  [ "$status" -eq 0 ]; [ "${lines[0]}" = '判断: 問いではない' ]
 }
