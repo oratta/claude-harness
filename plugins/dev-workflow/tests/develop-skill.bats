@@ -1236,7 +1236,9 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   grep -qF '**主の委任** の段落の「委任で送る」に当たるかを確かめ' <<<"$line"
   # 委任で送るかの確かめが、基準に照らす文より前にある
   grep -qF '親が自分で今回の停止の記録（無ければ最後の発言）を `references/parent-pass-criteria.md` に照らす' <<<"$line"
-  before="${line%%親が自分で記録を \`references/parent-pass-criteria.md\` に照らす*}"
+  before="${line%%親が自分で今回の停止の記録（無ければ最後の発言）を \`references/parent-pass-criteria.md\` に照らす*}"
+  # 切り出しが空振りしていない（パターンが行に当たって先頭側だけが残っている）
+  [ "$before" != "$line" ]
   grep -qF '**主の委任**' <<<"$before"
 }
 
