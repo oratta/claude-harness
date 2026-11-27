@@ -19,4 +19,4 @@
 
 ## 4. 全体の確認
 
-- [ ] 4.1 `bash scripts/test.sh` と `openspec validate reintegrate-gate-doc-string-check --type change --strict` が通り、design.md の表のとおり受け入れ条件 3 つを確かめる（`SKILL.md` は追加のみ。ほかのファイルの削除行の一覧は PR に載せる）。触る範囲: openspec/changes/reintegrate-gate-doc-string-check/tasks.md
+- [x] 4.1 `bash scripts/test.sh` と `openspec validate reintegrate-gate-doc-string-check --type change --strict` が通り、design.md の表のとおり受け入れ条件 3 つを確かめる（`SKILL.md` は追加のみ。ほかのファイルの削除行の一覧は PR に載せる）。触る範囲: openspec/changes/reintegrate-gate-doc-string-check/tasks.md
