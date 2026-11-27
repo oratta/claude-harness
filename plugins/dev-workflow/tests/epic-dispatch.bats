@@ -9929,6 +9929,40 @@ no_touch() {
   done
 }
 
+@test "wait owner-away: a child resumed in a new session with a newer owner input is not reported and nothing is written" {
+  make_stub orca
+  put_record 11
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  put_chat 11 s2 "$(said d1 "$(ago 3800)" '前のセッションの続き')" "$(chat_line user "$(ago 60 | sed 's/Z$/.500Z/')" '新しいセッションで再開した')"
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 owner_away_told)" = null ]
+  no_touch
+}
+
+@test "wait owner-away: the same session, an older input in another session or an unreadable log is still reported" {
+  make_stub orca
+  local kind
+  for kind in same older none; do
+    put_record 11
+    put_turn 11 owner 主の返事待ち
+    age_turn 11 3700
+    rm -rf "$BATS_TEST_TMPDIR/projects"
+    case "$kind" in
+      same) put_chat 11 s1 "$(said d1 "$(ago 3800)" 'どちらに')" "$(chat_line user "$(ago 60)" '同じセッションの入力')" ;;
+      older) put_chat 11 s2 "$(chat_line user "$(ago 7200)" '古い入力')" "$(said d1 "$(ago 7100)" 'どちらに')" ;;
+      none) export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects" ;;
+    esac
+    EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = 'owner-away 11' ]
+    [ "$(rec_get 11 owner_away_told.session_id)" = s1 ]
+    no_touch
+  done
+}
+
 @test "wait owner-away: a parent question still goes through the stopped path" {
   make_stub orca
   put_record 11

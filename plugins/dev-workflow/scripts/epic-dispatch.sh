@@ -115,6 +115,8 @@
 #   主の新しい入力が無ければ、排他つきで記録の owner_away_told に今回のターンを書いてから `owner-away <N>...` を
 #   unrecorded の次の行に出して exit 0（同じターンでは二度出さない）。子には何も送らず、端末を閉じず、起動し直さず、
 #   stop・stop_uuid も変えず、--resolve・声かけ・長い待ちにも渡さない（#1745。references/epic-stop.md）。
+#   ただし子の最新の本体の会話ログが turn_state.session_id と違うセッションで、その last_input_at が
+#   turn_state.recorded_at より新しい（新しいセッションで再開した）子は知らせず、owner_away_told も書かない（#1815）。
 #   --watch-done も --watch-stopped（子 1 件以上）も無ければ記録を読まない。
 #   --resolve <epic>（--watch-stopped と位置引数の子が 1 件以上あるときだけ働く）を付けると、止まった子ごとに
 #   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child> <止まりの
@@ -2060,13 +2062,25 @@ detect_stopped() {
 
 # 主が子のタブで打った入力から始まった主の返事待ちが EPIC_DISPATCH_OWNER_AWAY_SEC 以上続いたかを見て、
 # 一度だけ owner_away_told に今回のターンを書く（<子の引数> <記録>）。0 = 今回知らせる、1 = 知らせない、3 = 記録を書けなかった。
-# 子に何も送らず、stop・stop_uuid も変えない。書く直前に入力が更新されていたら書かない
+# 子に何も送らず、stop・stop_uuid も変えない。書く直前に入力が更新されていたら書かない。
+# 記録の条件を満たした子だけ会話ログを読み、最新の本体のログの session が空でなく turn_state.session_id と違い、
+# その last_input_at（小数秒は落とす）が turn_state.recorded_at より新しければ、新しいセッションで再開した子として
+# 知らせず owner_away_told も書かない（1。書くと古いセッションに戻ったときに知らせが出なくなる）。
+# ログを読めない・値が空なら今までどおり知らせる
 detect_owner_away() {
-  local f="$2" snapshot rc=0 nowsec sec="${EPIC_DISPATCH_OWNER_AWAY_SEC-3600}"
+  local f="$2" snapshot rc=0 nowsec sec="${EPIC_DISPATCH_OWNER_AWAY_SEC-3600}" json
   nowsec="$(date +%s)"
   snapshot="$(es_read "$f" | jq -ce --argjson now "$nowsec" --argjson sec "$sec" "$WAIT_TURN_DEFS"'
     select(owner_away($now; $sec)) | {turn_input,turn_state}')" || return 1
   [ -n "$snapshot" ] || return 1
+  json="$(record_log_json "$f")" || json=""
+  if [ -n "$json" ] && printf '%s' "$json" | jq -e --argjson snap "$snapshot" '
+      def secs: sub("\\.[0-9]+"; "") | fromdateiso8601;
+      (.session // "") as $s | (.last_input_at // "") as $li | ($snap.turn_state.recorded_at // "") as $ra
+      | $s != "" and $s != ($snap.turn_state.session_id // "") and $li != "" and $ra != ""
+        and (($li | secs) > ($ra | secs))' >/dev/null 2>&1; then
+    return 1
+  fi
   es_modify "$f" "$WAIT_TURN_DEFS"'
     if owner_away($nowsec; $sec) and .turn_input == $snapshot.turn_input and .turn_state == $snapshot.turn_state
     then .owner_away_told = turn_key else empty end' \
