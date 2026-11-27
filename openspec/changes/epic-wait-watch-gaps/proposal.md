@@ -13,7 +13,7 @@
 
 ## What Changes
 
-- `notify-closed` は、記録の `stop` の値と `status` が `running` か `waiting` かによらず、完了の印（`status` が `done`）の無い子に促しを送る。送る直前の止まりの確かめ（`stop`・`stop_turn`・会話ログの進み）も掛けない。`skipped <N> not-stopped` は出なくなる
+- `notify-closed` は、記録の `stop` の値と `status` が `running` か `waiting` かによらず、完了の印（`status` が `done`）の無い子に促しを送る。送る直前の止まりの確かめ（`stop`・`stop_turn`・会話ログの進み）で止まっていないと決まった子にも送るのを止めず、その子には `--relaunch` を当てずに今の端末に送るだけにする（作業中の子や主が会話中の子の端末を閉じない）。`skipped <N> not-stopped` は出なくなる
 - `wait --watch-done` の完了推定は、`stop` が `stopped-seen` の子を対象に含める（`stopped` は外したまま）。推定しても `stop` 系の項目は変えない
 - `stop-judge.sh` は判断の 1 行目に `判断: 親が動く` を受け付け、基準のファイルが「推奨が親の操作を含むときに出す」と定める。`wait --resolve` はこの判断の止まりを子に送らず、子 issue に `親の判断: 親の操作が要る` を残して `stopped <N>` で返す。親は `epic-stop.md` の手順 8 で操作を行ってから返事を送る
 - `wait --watch-stopped` の `owner-away` の判定は、子の最新の会話ログのセッションが `turn_state` のセッションと違い、そちらに `turn_state.recorded_at` より新しい入力があるときは知らせない
@@ -27,7 +27,7 @@
 
 ### Modified Capabilities
 
-- `dev-workflow-develop`: 要件「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」「epic-dispatch.sh wait は完了の印の無いまま記録先が閉じて動きの止まった子を完了と推定する」「回し方の手順は推定した done も子の付けた done と同じに片付ける」「完了を伝えるだけの子を起こす必要は既存の片付け条件で分ける」を変え、要件「wait --resolve は親の操作が要る止まりを通さず stopped で返す」を足す
+- `dev-workflow-develop`: 要件「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」「epic-dispatch.sh wait は完了の印の無いまま記録先が閉じて動きの止まった子を完了と推定する」「回し方の手順は推定した done も子の付けた done と同じに片付ける」「完了を伝えるだけの子を起こす必要は既存の片付け条件で分ける」を変え、要件「stop-judge.sh は判断の値に「親が動く」を受け付ける」「通す基準は親の操作を含む推奨に「親が動く」を出すと定める」「wait --resolve は親の操作が要る止まりを通さず stopped で返す」「親は親の操作が要る止まりで操作をしてから返事を送る」「親は親の操作が要る止まりを dismiss と照らし直しより先に扱う」「親の操作が要る止まりの守備範囲を限る」を足す
 - `dev-workflow-epic-state`: 要件「親の見張りは記録だけで子の状態を判定する」「wait --watch-done は推定した完了を記録に書き、Orca の印へ写す」「主が打った返事待ちは時間がたったら親が主に知らせる」「owner-away の守備範囲を限る」を変える
 
 ## Impact

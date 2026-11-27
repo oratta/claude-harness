@@ -108,16 +108,16 @@
 - **THEN** `owner-away` は返らない
 
 #### Scenario: 新しいセッションで再開した子の古い返事待ちは知らせない
-- **WHEN** 子 11 の `turn_input.sender` が `owner`、`turn_state` が有効な `主の返事待ち` で `session_id` が `s-old`・`recorded_at` が 3600 秒以上前、子のワークツリーの最新の会話ログの `sessionId` が `s-new` でその主の入力の `timestamp` が `recorded_at` より新しい状態で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped 11` を実行する
+- **WHEN** 子 11 の `turn_input.sender` が `owner`、`turn_state` が有効な `主の返事待ち` で `session_id` が `s-old`・`recorded_at` が 3600 秒以上前、子のワークツリーの最新の会話ログの `session` が `s-new` で、その `last_input_at`（主の入力に限らず、親の返事・起動時の指示も入力に数える）が `recorded_at` より新しい状態で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped 11` を実行する
 - **THEN** stdout は `timeout 11`、exit 2 で、記録に `owner_away_told` は書かれない
 
 #### Scenario: 会話ログが同じセッションなら今までどおり知らせる
-- **WHEN** 同じ記録で、最新の会話ログの `sessionId` が `turn_state.session_id` と同じか、会話ログが読めない状態で同じコマンドを実行する
+- **WHEN** 同じ記録で、最新の会話ログの `session` が `turn_state.session_id` と同じか、会話ログが読めない状態で同じコマンドを実行する
 - **THEN** stdout は `owner-away 11`、exit 0 である
 
 ### Requirement: owner-away の守備範囲を限る
 
-上の 2 つの要件（主が打った返事待ちの知らせ・owner-away の一度きりの記録）は、入力として扱うものを、子の記録の `turn_input` / `turn_state` / `owner_away_told` / `worktree`、その `worktree` の会話ログの `session` と `last_input_at`、`EPIC_DISPATCH_OWNER_AWAY_SEC` の値に限らなければならない（MUST）。拾いたい誤りは、主が話している最中の子への送信と端末の終了、同じ問いの繰り返しの知らせ、主が答えたあとの知らせ、子を新しいセッションで再開したあとに古いセッションの返事待ちを知らせることである。次は通してよく、止めない: 親や起動時の入力のターン（既存の停止の経路で扱う）・状態記録の無い古い子（知らせない）・別の経路で解決済みの問いへの余分な 1 回の知らせ・会話ログを読めない子の古いセッションの返事待ちの知らせ・新しいセッションに主の入力がまだ無い子の古い返事待ちの知らせ。穴が見つかるたびに塞ぎ切ることは完了条件にしない。
+上の 2 つの要件（主が打った返事待ちの知らせ・owner-away の一度きりの記録）は、入力として扱うものを、子の記録の `turn_input` / `turn_state` / `owner_away_told` / `worktree`、その `worktree` の会話ログの `session` と `last_input_at`、`EPIC_DISPATCH_OWNER_AWAY_SEC` の値に限らなければならない（MUST）。拾いたい誤りは、主が話している最中の子への送信と端末の終了、同じ問いの繰り返しの知らせ、主が答えたあとの知らせ、子を新しいセッションで再開したあとに古いセッションの返事待ちを知らせることである。次は通してよく、止めない: 親や起動時の入力のターン（既存の停止の経路で扱う）・状態記録の無い古い子（知らせない）・別の経路で解決済みの問いへの余分な 1 回の知らせ・会話ログを読めない子の古いセッションの返事待ちの知らせ・新しいセッションに主の入力がまだ無い子の古い返事待ちの知らせ・子のワークツリーで主が別の Claude Code を開いて入力したあと、古いセッションの問いが未回答のまま残っていても知らせが出ないこと（新しいセッションの入力を古い問いの終わりとみなす）。穴が見つかるたびに塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 親が送った入力のターンと古い子は知らせの対象にしない
 - **WHEN** `turn_input.sender` が `parent` の返事待ち、または `turn_input` / `turn_state` の無い記録に `wait --watch-stopped` を実行する

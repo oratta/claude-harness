@@ -8,24 +8,26 @@
 1. 子 issue（`gh api repos/{owner}/{repo}/issues/<child>`）の `state` が `closed` でなければ `skipped <child> not-closed`、`state_reason` が `completed` でなければ `skipped <child> not-completed` を出す。`gh` が失敗したら `failed <child> issue` を出す
 2. 今のワークツリーと同じ repoId・linkedIssue が `<child>`・archive されていない子のワークツリーが 0 件なら `skipped <child> no-worktree`、2 件以上なら `failed <child> ambiguous-worktree`、一覧を読めなければ `failed <child> list` を出す
 3. 記録の `status` が `done` なら `skipped <child> already-done` を出す。記録の `stop` の値（空・`stopped`・`stopped-seen`・`resumed`）と、`status` が `running` か `waiting` かでは、送るかを分けてはならない（MUST NOT。止まった印を付けずに主にマージを頼んで見張りを終えた子も、記録先が閉じたら完了報告と mark done を促されるようにするため）
-4. 条件を満たしたら、要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」の `--as parent` と同じ処理（`--relaunch` があれば起動し直す）で、ただし `reply` が送る直前に行う止まりの確かめ（記録の `stop` が `stopped` / `stopped-seen` か、受領した組 `stop_turn` が今も有効か、会話ログが止まりの発言より進んでいないか）は行わずに（MUST NOT。この確かめは主が子のタブで答えた止まりに重ねて送らないためのもので、閉じた記録先の完了の促しには当てない）、`記録先の issue #<child> は completed で閉じた。完了報告を書き、mark done で終える（停止の記録: <URL>）` を子に送る。`<URL>` は子 issue の 1 行目が `子の停止: 主の返事待ち` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` の最新のものの URL で、見つからなければ子 issue の URL とする。送信の結果が `failed <child> <段>` なら、それを出して exit 1 で終わる
+4. 条件を満たしたら、要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」の `--as parent` と同じ処理で、`記録先の issue #<child> は completed で閉じた。完了報告を書き、mark done で終える（停止の記録: <URL>）` を子に送る。`<URL>` は子 issue の 1 行目が `子の停止: 主の返事待ち` のコメントのうち投稿者の `author_association` が `OWNER`・`MEMBER`・`COLLABORATOR` の最新のものの URL で、見つからなければ子 issue の URL とする。`reply` が送る直前に行う止まりの確かめ（記録の `stop` が `stopped` / `stopped-seen` か、受領した組 `stop_turn` が今も有効か、会話ログが止まりの発言より進んでいないか）で止まっていないと決まった子（今までなら `skipped <child> not-stopped` になった子）にも、送るのを止めてはならない（MUST NOT。止まった印を付けずに見張りを終えた子も促すため）。その子には `--relaunch` を当てず、端末が 1 つ以上あれば子のセッションの端末に送るだけにしなければならず（MUST）、端末を閉じたり起動し直したりしてはならない（MUST NOT。ターンの途中の子や主が子のタブで会話中の子の作業と会話を失わせないため）。端末が 0 個なら今までどおり起動し直す。止まっていると決まった子には `--relaunch` の有無のとおりに送る。送信の結果が `failed <child> <段>` なら、それを出して exit 1 で終わる
 5. 送れたら（`sent` か `relaunched`）、エピックに `親の判断: 子 #<child> 通した — 記録先が completed で閉じたので、完了報告と mark done を促した <URL>` の 1 行をコメントする（記録に `stop_uuid` があれば `<URL>` の前に `発言 <uuid> ` を足す。空なら足さない）。投稿できたら `notified <child>` を出し、投稿に失敗したら `unrecorded <child>` を出して stderr に投稿し直すコマンド（`gh issue comment <epic> --body <その 1 行>`）を出す。エピックへの記録は送信のあとに投稿しなければならない（MUST。送る前に投稿すると、送れなかったときに送っていない判断が残るため）
 
 `skipped`・`notified`・`unrecorded` はどれも exit 0 で、stdout はちょうど 1 行とする（MUST）。`skipped` のときは子に何も送らず、エピックにも子 issue にも投稿してはならない（MUST NOT）。
 
+この要件は、要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」の「`notify-closed` はすでに同じ確認をしており、出力は変わらない」の文と、要件「epic-loop.md は出力語を受けた動作指示を残す」の残すもののうち手順 4 の `skipped <N> not-stopped` の扱いに優先する（`notify-closed` は `skipped <N> not-stopped` を返さなくなる）。要件「Orca 経路の親は止まった子を解決し、解決できないものを主に分かる形で上げる」の、主が子のタブで打った入力から始まったターンには返事を送らない文は止まりの解決の規定で、`notify-closed` の完了の促しには当てない（端末を閉じず、起動し直さない部分は上の手順 4 のとおり `notify-closed` にも当てる）。
+
 develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経路の手順 4 は、`closed <N>...` で起こされて `state_reason` が `completed` の子ごとに、`references/reply-after-idle.md` の表で起動し直すかを決めてから `scripts/epic-dispatch.sh notify-closed`（起動し直すなら `--relaunch`）を呼ぶと書かなければならない（MUST）。`notify-closed` は、依存が解けた子の `launch` より先に呼ぶと書く（MUST。`launch` が `failed` を返すと親は手順 6 で止まり、再開の手順 7 は `notify-closed` を呼ばないので、後ろに置くと閉じた子に送られないまま残る）。出力の扱いとして、`notified` と `skipped` は何もしない（止まった印の無い子も `notify-closed` が促すので、`skipped <N> not-stopped` の子を別に扱う文は書かない）、`unrecorded` は stderr に出た投稿し直しのコマンドでエピックに 1 行を残す、`failed` は主に報告する（主に出す発言の 1 行目と最後の行は、要件「エピックの親が主に出す発言は、正本の 1 行目の書き分けに従う」に従う）と書く（MUST）。`state_reason` が `completed` でない子には `notify-closed` を呼ばない（SHALL。作業されていない件に完了を促さない）。
 
-`plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `orca` と `gh` で、上の振る舞い（completed で閉じた子には、記録の `stop` が `stopped-seen`・空・`resumed` のどれでも、`status` が `running`・`waiting` のどちらでも返事が送られ、エピックに `親の判断: 子 #<child> 通した` で始まる 1 行が残ること、受領した組や会話ログの進みでは送るのを止めないこと、既に完了の印の子・completed でない子・閉じていない子には何も送らずどこにも投稿しないこと、送れたがエピックへの投稿に失敗すると `unrecorded` を出すこと、送信の失敗で `failed` を出しエピックに投稿しないこと、引数の誤りで `orca` を呼ばないこと）と、手順 4 の文面が `notify-closed` を呼ぶこと、手順 4 の中で `notify-closed` が `launch` より先に現れることを確かめなければならない（MUST）。
+`plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `orca` と `gh` で、上の振る舞い（completed で閉じた子には、記録の `stop` が `stopped-seen`・空・`resumed` のどれでも、`status` が `running`・`waiting` のどちらでも返事が送られ、エピックに `親の判断: 子 #<child> 通した` で始まる 1 行が残ること、受領した組や会話ログの進みでは送るのを止めないこと、止まっていないと決まった子には `--relaunch` を付けても `orca terminal close` と `orca terminal create` を呼ばずに今の端末に送ること、止まっている子には `--relaunch` で起動し直すこと、既に完了の印の子・completed でない子・閉じていない子には何も送らずどこにも投稿しないこと、送れたがエピックへの投稿に失敗すると `unrecorded` を出すこと、送信の失敗で `failed` を出しエピックに投稿しないこと、引数の誤りで `orca` を呼ばないこと）と、手順 4 の文面が `notify-closed` を呼ぶこと、手順 4 の中で `notify-closed` が `launch` より先に現れることを確かめなければならない（MUST）。
 
-この要件の守備範囲で入力として扱うのは、`gh` の出力（子 issue の状態・閉じた理由・コメント）と `orca` の出力（ワークツリーの一覧・端末）である。拾いたい誤りは、完了の印の無いまま completed で閉じた子（止まった印の有無によらない）に何も届かずワークツリーが残り続けること、作業されていない件に完了を促すこと、送れなかった返事をエピックに通したと残すことの 3 つである。次は通ってよく、この要件では止めない: 親が同じ `closed` を 2 回処理して同じ促しが 2 回届くこと（子は完了報告を 1 回書いて印を付けるだけ）／主が PR をマージせずに issue を completed で閉じた子に促しが届くこと（`reap` の既存の確認が片付けを止める）／判定のあとに子が自分で再開していて、促しが進んでいる子に届くこと／記録先が閉じたあとも子のターンが動いていて（`stop` が空のまま作業中）、促しが作業中の子に届くこと（子は完了報告を書いて終えるか、作業の続きを報告する）。この 3 つの誤りを起こす入力の組み合わせが見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
+この要件の守備範囲で入力として扱うのは、`gh` の出力（子 issue の状態・閉じた理由・コメント）と `orca` の出力（ワークツリーの一覧・端末）である。拾いたい誤りは、完了の印の無いまま completed で閉じた子（止まった印の有無によらない）に何も届かずワークツリーが残り続けること、作業されていない件に完了を促すこと、送れなかった返事をエピックに通したと残すことの 3 つである。次は通ってよく、この要件では止めない: 親が同じ `closed` を 2 回処理して同じ促しが 2 回届くこと（子は完了報告を 1 回書いて印を付けるだけ）／主が PR をマージせずに issue を completed で閉じた子に促しが届くこと（`reap` の既存の確認が片付けを止める）／判定のあとに子が自分で再開していて、促しが進んでいる子に届くこと／記録先が閉じたあとも子のターンが動いていて（`stop` が空のまま作業中）、または主が子のタブで会話していて、促しがその子のセッションに届くこと（端末を閉じず起動し直さないので作業と会話は残り、子は完了報告を書いて終えるか、作業の続きを報告する）／作業中の子のセッションに送った促しのターンの開始を確かめられず `failed <child> send` になり、親が主に報告すること。この 3 つの誤りを起こす入力の組み合わせが見つかるたびに塞ぎ切ることは、この要件の完了条件としない。
 
 #### Scenario: 止まった印のまま completed で閉じた子には返事を送り、エピックに 1 行を残す
-- **WHEN** 子 11 の issue が `closed`・`completed` で、子 11 のワークツリーのコメント欄が `epic-stopped-seen`、`workspaceStatus` が `in-review` で、`notify-closed 400 11` を実行する
+- **WHEN** 子 11 の issue が `closed`・`completed` で、子 11 の記録の `stop` が `stopped-seen`、`status` が `waiting` で、`notify-closed 400 11` を実行する
 - **THEN** 子 11 の端末に `親エピック #400 の判断（主の承認ではない）: 記録先の issue #11 は completed で閉じた。完了報告を書き、mark done で終える` で始まる文が送られ、エピック 400 に `親の判断: 子 #11 通した` で始まるコメントが投稿され、stdout は `notified 11` で exit 0 で終わる
 
 #### Scenario: 止まっていない子が閉じたときは返事を送らない
 - **WHEN** 子 11 の issue が `closed`・`completed` で、子 11 の記録の `stop` が空、`status` が `done`（子が完了の印を付けて終えた）で、`notify-closed 400 11` を実行する
-- **THEN** stdout は `skipped 11 already-done` で exit 0 で終わり、`orca terminal send` も `orca terminal create` も呼ばれず、`gh issue comment` も呼ばれない（止まっていなくても完了の印の無い子には、次の Scenario のとおり送る）
+- **THEN** stdout は `skipped 11 already-done` で exit 0 で終わり、`orca terminal send` も `orca terminal create` も呼ばれず、`gh issue comment` も呼ばれない（`stop` が空の子に送らないのは `status` が `done` のときだけで、`done` でなければ次の Scenario のとおり送る。`stop` が `stopped-seen` で `done` の子は Scenario「既に完了の印を付けた子には返事を送らない」）
 
 #### Scenario: 止まった印の無い子が閉じたときも返事を送る
 - **WHEN** 子 11 の issue が `closed`・`completed` で、子 11 の記録の `stop` が空か `resumed`、`status` が `running` か `waiting` で、`notify-closed 400 11` を実行する
@@ -35,8 +37,16 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 - **WHEN** 子 11 の issue が `closed`・`completed` で、記録の `stop` が `stopped-seen`、`stop_turn` が今の `turn_input` と合わず、会話ログに止まりの発言より新しい入力がある状態で `notify-closed 400 11` を実行する
 - **THEN** 子 11 の端末に促しが送られ、stdout は `notified 11` で exit 0 で終わる
 
+#### Scenario: 止まっていない子には --relaunch を当てず今の端末に送る
+- **WHEN** 子 11 の issue が `closed`・`completed` で、子 11 のワークツリーに子のセッションの端末が 1 つあり、記録の `stop` が空・`resumed` のどれか、または `stopped-seen` で `stop_turn` が今の `turn_input` と合わないか会話ログが止まりの発言より進んでいる状態で、`notify-closed --relaunch 400 11` を実行する
+- **THEN** 子のセッションの端末に促しが送られ、`orca terminal close` と `orca terminal create` は呼ばれず、stdout は `notified 11` で exit 0 で終わる
+
+#### Scenario: 止まっている子には --relaunch で起動し直す
+- **WHEN** 子 11 の issue が `closed`・`completed` で、記録の `stop` が `stopped-seen`、`stop_turn` が今の `turn_input` と合い、会話ログが止まりの発言より進んでいない状態で、`notify-closed --relaunch 400 11` を実行する
+- **THEN** 子 11 のワークツリーの端末が閉じられて作り直され、`/develop #11 （エピック #400 の子。返事を受けて起動し直し）` で始まる文が送られ、stdout は `notified 11` で exit 0 で終わる
+
 #### Scenario: completed でない理由で閉じた子には返事を送らない
-- **WHEN** 子 11 の issue が `closed`・`not_planned` で、ワークツリーのコメント欄が `epic-stopped` で、`notify-closed 400 11` を実行する
+- **WHEN** 子 11 の issue が `closed`・`not_planned` で、子 11 の記録の `stop` が `stopped` で、`notify-closed 400 11` を実行する
 - **THEN** stdout は `skipped 11 not-completed` で exit 0 で終わり、子の端末には何も送られず、`gh issue comment` は呼ばれない
 
 #### Scenario: 既に完了の印を付けた子には返事を送らない
@@ -85,7 +95,7 @@ develop の `references/epic-loop.md` の「通常進行の手順」の Orca 経
 
 `plugins/dev-workflow/tests/epic-dispatch.bats` は、偽の `gh` とテスト用の `CLAUDE_PROJECTS_DIR` で、次を確かめなければならない（MUST）: 6 つを満たすと stdout が `done <N>` で記録の `status` が `done` になり推定の項目が付くこと／最後の活動が閾値より新しい・トランスクリプトが 0 本・2 本のうち片方だけ新しい・`status` が `waiting`・`stop` が `stopped` のときは `gh` を呼ばずに推定しないこと／`stop` が `stopped-seen` でほかの条件を満たせば推定し、記録の `stop` は `stopped-seen` のまま残ること／2 本とも古ければ推定すること／issue が `open`・`state_reason` が `completed` でない・閉じてから閾値より短い・`closed_at` が無いときは推定しないこと／サブエージェントのトランスクリプトにだけ閾値より新しい行があるときは推定しないこと／排他の中の確かめ直しで外れたとき（推定の `gh` の間に子が `waiting` を付けた）は推定せず Orca の印へ写さないこと／`EPIC_DISPATCH_DONE_IDLE_SEC` で閾値を変えられ、数字でない値は exit 1 で `gh` を呼ばないこと／同じ子を位置引数と `--watch-done` の両方に渡したとき、閉じたポーリングで `closed <N>` と `done <N>` の 2 行がこの順に出ること。
 
-この要件の守備範囲で入力として扱うのは、記録の `status`・`stop`・`worktree`、子のトランスクリプト（サブエージェントのものを含む）の `timestamp`、子 issue の `state` と `state_reason` と `closed_at` である。拾いたい誤りは、主がマージして記録先が閉じたのに子が印を付けず親が待ち続けることと、まだ動いている子・主の確認待ちの印（`waiting`）を付けた子・親がまだ受けていない止まり（`stopped`）の子を完了とすることである。次は通ってよく、この要件では止めない: 主が閾値より長く子のタブを離れてから同じタブで追加の作業を頼もうとしたときにワークツリーが片付いていること（`reap` の確認が未コミットの変更とマージに入っていない commit を残す）／時計のずれで最後の活動が未来になり推定されないこと／記録先が閉じたあと、子が 1 回のツール呼び出しを閾値より長く動かしている（その間トランスクリプトに行が増えない）ときに推定されること（`reap` の確認は変えないので、失うのは後片付けの途中だけ）／マージ後の依頼（動作確認など）を完了報告に書いてマージを主に頼んだ子も、PR が未マージのうちは `waiting` を付けられないので推定され、主の返事の前にタブが閉じること（依頼は完了報告と記録先に残る）。親が受けた止まり（`stopped-seen`）のまま主の返事を待っている子が、記録先が completed で閉じて閾値を過ぎたあとに推定されること（閉じた記録先の件に主の返事は要らず、`reap` の確認は変えない）も通してよい。この要件は、ここに挙げていない穴が見つかるたびに塞ぎ切ることを完了条件にしない。
+この要件の守備範囲で入力として扱うのは、記録の `status`・`stop`・`worktree`、子のトランスクリプト（サブエージェントのものを含む）の `timestamp`、子 issue の `state` と `state_reason` と `closed_at` である。拾いたい誤りは、主がマージして記録先が閉じたのに子が印を付けず親が待ち続けることと、まだ動いている子・主の確認待ちの印（`waiting`）を付けた子・親がまだ受けていない止まり（`stopped`）の子を完了とすることである。次は通ってよく、この要件では止めない: 主が閾値より長く子のタブを離れてから同じタブで追加の作業を頼もうとしたときにワークツリーが片付いていること（`reap` の確認が未コミットの変更とマージに入っていない commit を残す）／時計のずれで最後の活動が未来になり推定されないこと／記録先が閉じたあと、子が 1 回のツール呼び出しを閾値より長く動かしている（その間トランスクリプトに行が増えない）ときに推定されること（`reap` の確認は変えないので、失うのは後片付けの途中だけ）／マージ後の依頼（動作確認など）を完了報告に書いてマージを主に頼んだ子も、PR が未マージのうちは `waiting` を付けられないので推定され、主の返事の前にタブが閉じること（依頼は完了報告と記録先に残る）。親が受けた止まり（`stopped-seen`）のまま主の返事を待っている子が、記録先が completed で閉じて閾値を過ぎたあとに推定されること（閉じた記録先の件に主の返事は要らず、`reap` の確認は変えない）も通してよい。推定した完了の子は記録の `stop` が `stopped-seen` のまま残るが、片付けの前に親が起動し直されても、再開の手順 7 は開いている子だけを `pending-owner` に渡すので、その子が主に出し直されることは今は起きない（手順 7 が閉じた子も渡すように変わったら、この要件の守備範囲を見直す）。この要件は、ここに挙げていない穴が見つかるたびに塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 閉じて動きの止まった子は完了と推定される
 - **WHEN** 子 11 の記録が `status` `running`・`stop` 空、トランスクリプトが 1 本で最後の活動が 40 分前、子 issue が `closed`・`completed` の状態で `epic-dispatch.sh wait --interval 0 --timeout 60 --watch-done 11` を実行する
@@ -167,7 +177,7 @@ develop の `references/epic-loop.md` の「通常進行の手順」の別セッ
 `plugins/dev-workflow/scripts/stop-judge.sh` は、モデルの出力の 1 行目に、`判断: 通す`・`判断: 主に上げる`・`判断: 問いではない` に加えて `判断: 親が動く` を受け付けなければならない（MUST）。2 行目 `理由:`（空でない）と 3 行目 `返事:`（空でよい）の検査と、4 行目 `記録:` の付け方はほかの値と同じにする（MUST）。`判断: 親が動く` は、止まりの JSON・停止の記録・止まった印の有無によらず出せる（MUST）。この要件は、要件「epic-dispatch.sh の wait は止まった子を判断し、通すものには返事を送って待ちを続ける」と要件「親が通してよい範囲の基準を 1 つのファイルに置く」の、1 行目の値を 3 つに限る規定に優先する。`plugins/dev-workflow/tests/stop-judge.bats` がこれを確かめる（MUST）。
 
 #### Scenario: stop-judge は親が動くの出力を受け付ける
-- **WHEN** モデルのスタブが `判断: 親が動く`・`理由: 親が #12 を起動する`・`返事: ` を出し、`stop-judge.sh 400 11` を止まりの JSON なしで実行する
+- **WHEN** 子 11 に停止の記録（子 issue の `子の停止: 主の返事待ち` のコメント）があり、モデルのスタブが `判断: 親が動く`・`理由: 親が #12 を起動する`・`返事: ` を出し、`stop-judge.sh 400 11` を止まりの JSON なしで実行する
 - **THEN** stdout は 4 行で 1 行目が `判断: 親が動く`、exit 0 である
 
 ### Requirement: 通す基準は親の操作を含む推奨に「親が動く」を出すと定める
@@ -202,9 +212,18 @@ develop の `references/epic-stop.md` の手順 8 は、子 issue の最新の `
 - **WHEN** `references/epic-stop.md` の手順 8 を読む
 - **THEN** `親の判断: 親の操作が要る` の止まりは、親が理由の操作を行ってから `reply --as parent` で送るはずだった返事を送り、エピックに通した行を残すことが書かれている
 
+### Requirement: 親は親の操作が要る止まりを dismiss と照らし直しより先に扱う
+
+develop の `references/epic-stop.md` の手順 8 の中では、`親の判断: 親の操作が要る` の件は、今回の止まった理由が `PR トークン上限（`・`PR のマージ待ち（` で始まるものを除いて、`dismiss` の判定（今回の停止の記録が無く主への問いでもない止まり）・主の委任・`parent-pass-criteria.md` への照らし直しより先に扱い、照らし直さないと書く（MUST。判断のモデルが既に通してよい止まりと読み、親の操作だけが残っているため。`dismiss` で戻すと操作が行われない）。`PR トークン上限（`・`PR のマージ待ち（` で始まる止まりは、`親の操作が要る` でもそれぞれの手順を先に当てる（親の権限と主の承認を確かめる手順で、操作の前に要るため）。`epic-stop.md` の「pending-owner の復元」も、最新の `親の判断:` が `親の判断: 親の操作が要る` の子は手順 8 と同じく操作をしてから返事を送り、出し直さないと書く（MUST）。
+
+#### Scenario: 親の操作が要る止まりは dismiss と照らし直しより先に書かれている
+- **WHEN** `references/epic-stop.md` の手順 8 と「pending-owner の復元」を読む
+- **THEN** `親の判断: 親の操作が要る` の件は `dismiss` の判定・主の委任・基準への照らし直しより前に書かれ、照らし直さないことと、`PR トークン上限（`・`PR のマージ待ち（` の止まりはそれぞれの手順が先なことが書かれている
+- **AND** 「pending-owner の復元」に、`親の判断: 親の操作が要る` の子は手順 8 と同じく操作をしてから返事を送ることが書かれている
+
 ### Requirement: 親の操作が要る止まりの守備範囲を限る
 
-上の 4 つの要件は、入力として、判断のモデルの出力の 1〜3 行目と子 issue の `親の判断:` のコメントだけを扱わなければならない（MUST）。拾いたい誤りは、推奨が親の操作を含む止まりを通して子に「親がする」と送ったまま親が起こされず操作が行われないこと、子の側の行動だけの止まりで親を起こすことの 2 つである。次は通ってよく、止めない: 判断のモデルが親の操作を含む推奨を `判断: 通す` と読み誤ること（繰り返せば基準の「繰り返していない」で親に上がる）／子の側の行動だけの推奨を `判断: 親が動く` と読み誤り親が起こされること（親が操作の無いことを確かめて返事を送る）。返事の文面から親の操作を機械で見つけることは完了条件にしない。
+上の 5 つの要件は、入力として、判断のモデルの出力の 1〜3 行目と子 issue の `親の判断:` のコメントだけを扱わなければならない（MUST）。拾いたい誤りは、推奨が親の操作を含む止まりを通して子に「親がする」と送ったまま親が起こされず操作が行われないこと、子の側の行動だけの止まりで親を起こすことの 2 つである。次は通ってよく、止めない: 判断のモデルが親の操作を含む推奨を `判断: 通す` と読み誤ること（繰り返せば基準の「繰り返していない」で親に上がる）／子の側の行動だけの推奨を `判断: 親が動く` と読み誤り親が起こされること（親が操作の無いことを確かめて返事を送る）。判断のモデルの読み誤りは、上の 2 つに限らずどの形でも塞ぎ切ることを完了条件にしない（返事の文面から親の操作を機械で見つけることも含む。読み誤りを減らす手段は基準のファイルの書き方である）。
 
 #### Scenario: 返事の文面だけでは止めない
 - **WHEN** 判断のスタブが `判断: 通す`・`返事: 親が見張りを続けるので、そのまま待つ` を出し、`wait --interval 0 --timeout 60 --resolve 400 --watch-stopped 11` を実行する
