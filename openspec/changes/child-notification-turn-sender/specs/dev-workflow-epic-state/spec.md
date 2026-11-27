@@ -28,9 +28,9 @@
 - **WHEN** 同じ worktree の別セッションに、記録の親子・repo と一致する起動指示を意図的に送り直す
 - **THEN** その ID への切替を受理する。これは起動指示の輸送上の分類であり、主本人の承認や起動元の認証を証明しない
 
-#### Scenario: 裏の作業の通知で始まった入力は owner にしない
+#### Scenario: 裏の作業の通知で始まった入力は本文から owner と決めない
 - **WHEN** 保存済み ID と同じセッションへの入力が `<task-notification>` で始まる
-- **THEN** `sender` は `owner` にならず、要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」の送り手になる
+- **THEN** `sender` は本文から `owner` と決めず、直前の `turn_input.sender` と同じ値になる（直前が `parent` / `startup` なら `owner` にならない。要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」）
 
 ## ADDED Requirements
 
@@ -53,3 +53,15 @@
 #### Scenario: 主が子のタブで打った入力は変わらない
 - **WHEN** 主が保存済み ID と同じ子のタブに通常の文を打ち、そのターンを `主の返事待ち` で終える
 - **THEN** `sender` は `owner` で、`wait --watch-stopped` は `stopped` を返さず、`EPIC_DISPATCH_OWNER_AWAY_SEC` たてば `owner-away <N>` を一度だけ返す
+
+### Requirement: 直前の送り手の引き継ぎの守備範囲を限る
+
+要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」は、入力として扱うものを UserPromptSubmit の payload の `prompt` と記録の直前の `turn_input.sender` に限らなければならない（MUST。会話ログの `origin.kind` は読まない）。拾いたい誤りは、裏の作業の終わりの通知や Claude Code が処理した出力を主が打った入力（`owner`）と数えることである。次は通してよく、止めない: 主が本当に 5 つの接頭辞で始まる文を打った入力（直前の送り手を引き継ぐ）／`<command-name>` を含むプロンプト（今までどおり `owner` になりうる）／本文の途中にだけ接頭辞がある入力（`owner`）／主が子のタブで打った依頼から始まった作業の通知のターン（`owner` を引き継ぎ、止まりは `owner-away` で拾う。エピック #1826 の条件の答え）。接頭辞の漏れを見つけるたびに塞ぎ切ることは完了条件にしない。
+
+#### Scenario: command-name を含むプロンプトは引き継がない
+- **WHEN** 直前の `sender` が `parent` の子が、`<command-name>` を含むプロンプトを受ける
+- **THEN** `sender` は `owner` である
+
+#### Scenario: 主の依頼の作業の通知は owner-away で拾う
+- **WHEN** 直前の `sender` が `owner` の子が `<task-notification>` で始まる入力を受け、そのターンを `主の返事待ち` で終える
+- **THEN** `wait --watch-stopped` は `stopped` を返さず、`EPIC_DISPATCH_OWNER_AWAY_SEC` たてば `owner-away <N>` を返す
