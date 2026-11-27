@@ -8,7 +8,8 @@
 
 - 入力文の 2 行目に、実行ごとに作る乱数を `区切り: <乱数>` で宣言する
 - 各節の本文を `<<<本文 <乱数>` と `本文 <乱数>>>>` の行で囲む。見出しは区切りの外にだけ出す
-- 集めた値が乱数を含んでいたら、stdout を空にして exit 1 にする
+- 集めた値が乱数を含んでいたら、stdout を空にして exit 1 にする。作った乱数が 32 桁の 16 進数でなくても exit 1 にする
+- 乱数は `od` で `/dev/urandom` から作る。固定する環境変数は作らず、テストは PATH の偽の `od` で固定する
 - 決める役の基準 `parent-merge-criteria.md` に、区切りの外の見出しだけを節として読むことを書く
 
 ## Capabilities
@@ -25,5 +26,6 @@
 
 - `plugins/dev-workflow/scripts/parent-merge-inputs.sh`
 - `plugins/dev-workflow/tests/parent-merge-inputs.bats`
+- `plugins/dev-workflow/tests/parent-merge.bats`（基準の文の読み方の確かめ）
 - `plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md`
 - 1 行目の `HEAD:`、節の見出しの名前、`（なし）` の書き方、exit code の意味は変えない
