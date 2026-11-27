@@ -7,7 +7,7 @@
 
 ## 2. epic-dispatch.sh
 
-- [ ] 2.1 ヘッダーの出力行数を直し（112 行の `--resolve` あり: 1〜4 → 1〜5 行、134 行の `--resolve` なし: 1〜3 → 1〜4 行。どちらも `owner-away` が増えた分）、`cmd_pending_owner` に `status != done` を足す。`--help`（348-375 付近）と HELP_WORDS のテストへの影響を確かめ、pending-owner の新テストと owner-away の閾値後 `--resolve`・排他取得失敗のテストを足して通す。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:112、plugins/dev-workflow/scripts/epic-dispatch.sh:134、plugins/dev-workflow/scripts/epic-dispatch.sh:2454（cmd_pending_owner）、plugins/dev-workflow/tests/epic-dispatch.bats:5707、plugins/dev-workflow/tests/epic-dispatch.bats:9940-10061
+- [ ] 2.1 ヘッダーの出力行数を直し（112 行の `--resolve` なし: 1〜3 → 1〜4 行、134 行の `--resolve` あり: 1〜4 → 1〜5 行。どちらも `owner-away` が増えた分）、`cmd_pending_owner` に `status != done` を足す。`--help`（348-375 付近）と HELP_WORDS のテストへの影響を確かめ、pending-owner の新テストと owner-away の閾値後 `--resolve`・排他取得失敗のテストを足して通す。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:112、plugins/dev-workflow/scripts/epic-dispatch.sh:134、plugins/dev-workflow/scripts/epic-dispatch.sh:2454（cmd_pending_owner）、plugins/dev-workflow/tests/epic-dispatch.bats:5707、plugins/dev-workflow/tests/epic-dispatch.bats:9940-10061
 
 ## 3. stop-judge.sh
 
