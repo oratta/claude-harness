@@ -96,13 +96,13 @@
 #   この順に（1 行か 2 行）出して exit 0。読めない記録はそのポーリングを失敗したポーリングに数え、
 #   3 回続いて gh の失敗が無ければ `error workspaces`。位置引数 0 件も可（timeout は `timeout` だけ）。
 #   --watch-done の子で status が done でないものは、ポーリングごとに完了を推定する（LLM なし）。条件は、
-#   status が running・stop が stopped / stopped-seen でない・記録の worktree のトランスクリプト（下の
+#   status が running・stop が stopped（親がまだ受けていない止まり）でない（stopped-seen は対象）・記録の worktree のトランスクリプト（下の
 #   wait --resolve と同じ置き場の *.jsonl）が 1 本以上あり、全ファイルを通して timestamp を持つ行（種類を問わない）の
 #   最大値が EPIC_DISPATCH_DONE_IDLE_SEC（秒・既定 1800）以上前・子 issue（位置引数の子と同じ呼び先）が closed で
 #   state_reason が completed・その closed_at から EPIC_DISPATCH_DONE_IDLE_SEC 以上たった、の 6 つすべて。
 #   サブエージェントのトランスクリプト（<置き場>/<セッション>/subagents/*.jsonl）の行も最後の活動に数える。
 #   gh（state・state_reason・closed_at を 1 回で読む）はほかの 4 つを満たした子にだけ 1 回呼び、その失敗は推定せず
-#   失敗したポーリングにも数えない。満たせば排他の中で running と止まった印でないことを確かめ直して status を
+#   失敗したポーリングにも数えない。満たせば排他の中で running と stopped でないことを確かめ直して status を
 #   done にし、done_inferred_at（UTC の時刻）と done_inferred_last_activity（最後の活動の timestamp）を足して
 #   Orca の印へ写し、stderr に `inferred done <N>: ...` を出して、子が付けた done と同じ `done <N>...` の行に入れる。
 #   排他が取れない・書けないときは失敗したポーリングに数える。
@@ -1404,16 +1404,16 @@ PY
 }
 
 # wait --watch-done: 完了の印の無い子 1 件の完了を推定する（<子の引数> <記録のパス>）。
-# 記録が running・止まった印でない・トランスクリプトの最後の活動が EPIC_DISPATCH_DONE_IDLE_SEC 秒以上前・
+# 記録が running・親がまだ受けていない止まり（stopped）でない・トランスクリプトの最後の活動が EPIC_DISPATCH_DONE_IDLE_SEC 秒以上前・
 # 子 issue が completed で閉じた・閉じてから EPIC_DISPATCH_DONE_IDLE_SEC 秒以上たった、のすべてなら、
-# 排他の中で確かめ直して done と推定の項目を書く。
+# 排他の中で確かめ直して done と推定の項目を書く。親が受けた止まり（stopped-seen）の子も推定し、stop・stop_uuid は変えない。
 # gh はローカルの条件を満たした子にだけ呼ぶ。gh の失敗と確かめ直しの外れは推定しない（失敗に数えない）。
 # 戻り値 0 = 推定して書いた / 1 = 推定しない / 3 = 書けなかった（失敗したポーリングに数える）。
 # gh と es_modify の stderr は呼び出し側（cmd_wait）の $errf に足す
 infer_done() {
   local n="$1" f="$2" w facts last ts st state reason age
   [ "$(es_get "$f" status)" = running ] || return 1
-  case "$(es_get "$f" stop)" in stopped|stopped-seen) return 1 ;; esac
+  [ "$(es_get "$f" stop)" = stopped ] && return 1
   w="$(es_get "$f" worktree)"
   [ -n "$w" ] || return 1
   facts="$(last_activity "$(transcript_dir "$w")")" || return 1
@@ -1430,7 +1430,7 @@ EOF_ST
   [ "$state $reason" = "closed completed" ] || return 1
   is_num "$age" || return 1
   [ "$age" -ge "${EPIC_DISPATCH_DONE_IDLE_SEC-1800}" ] || return 1
-  es_modify "$f" 'if .status == "running" and .stop != "stopped" and .stop != "stopped-seen"
+  es_modify "$f" 'if .status == "running" and .stop != "stopped"
     then .status = "done" | .done_inferred_at = $now | .done_inferred_last_activity = $ts else empty end' \
     --arg ts "$ts" >/dev/null 2>>"$errf"
   case $? in

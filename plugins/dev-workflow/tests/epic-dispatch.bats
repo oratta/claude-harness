@@ -2513,9 +2513,9 @@ infer_ready() {
   [ "$(rec_get 11 done_inferred_last_activity)" = "$(cat "$BATS_TEST_TMPDIR/ts_s2")" ]
 }
 
-@test "wait infer: waiting, stopped and stopped-seen children are not inferred and gh is not called" {
+@test "wait infer: waiting and stopped children are not inferred and gh is not called" {
   local kv
-  for kv in status=waiting stop=stopped stop=stopped-seen; do
+  for kv in status=waiting stop=stopped; do
     infer_ready
     put_record 11 extra=1 "$kv"
     : > "$STUB_LOG"
@@ -2526,6 +2526,18 @@ infer_ready() {
     [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
     [ "$(calls '^gh ')" -eq 0 ] || { echo "$kv"; cat "$STUB_LOG"; false; }
   done
+}
+
+@test "wait infer: a stopped-seen child meeting the conditions is inferred done and keeps stop and stop_uuid" {
+  infer_ready
+  put_record 11 extra=1 stop=stopped-seen stop_uuid=d1
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG" "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+  [ "$(rec_get 11 status)" = done ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  [ "$(rec_get 11 done_inferred_last_activity)" = "$(cat "$BATS_TEST_TMPDIR/ts_s1")" ]
 }
 
 @test "wait infer: an open issue or one closed as not_planned is not inferred" {
