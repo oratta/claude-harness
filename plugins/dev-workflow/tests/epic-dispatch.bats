@@ -2513,9 +2513,9 @@ infer_ready() {
   [ "$(rec_get 11 done_inferred_last_activity)" = "$(cat "$BATS_TEST_TMPDIR/ts_s2")" ]
 }
 
-@test "wait infer: waiting, stopped and stopped-seen children are not inferred and gh is not called" {
+@test "wait infer: waiting and stopped children are not inferred and gh is not called" {
   local kv
-  for kv in status=waiting stop=stopped stop=stopped-seen; do
+  for kv in status=waiting stop=stopped; do
     infer_ready
     put_record 11 extra=1 "$kv"
     : > "$STUB_LOG"
@@ -2526,6 +2526,18 @@ infer_ready() {
     [ "$(cat "$(rec_of 1122 11)")" = "$before" ]
     [ "$(calls '^gh ')" -eq 0 ] || { echo "$kv"; cat "$STUB_LOG"; false; }
   done
+}
+
+@test "wait infer: a stopped-seen child meeting the conditions is inferred done and keeps stop and stop_uuid" {
+  infer_ready
+  put_record 11 extra=1 stop=stopped-seen stop_uuid=d1
+  run dispatch wait --interval 0 --timeout 60 --watch-done 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$STUB_LOG" "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "done 11" ]
+  [ "$(rec_get 11 status)" = done ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+  [ "$(rec_get 11 stop_uuid)" = d1 ]
+  [ "$(rec_get 11 done_inferred_last_activity)" = "$(cat "$BATS_TEST_TMPDIR/ts_s1")" ]
 }
 
 @test "wait infer: an open issue or one closed as not_planned is not inferred" {
@@ -4966,6 +4978,81 @@ EOF
   grep -qF 'gh issue comment 11' "$BATS_TEST_TMPDIR/stderr"
 }
 
+@test "wait --resolve: a parent action is not sent, not recorded as passed, and posted on the child with the reply" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が #12 を起動する' '#12 を起動した。マージを待って再開する'
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 親の操作が要る" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: 不明" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 4p "$STUB_CFG/comment_11")" = "親が #12 を起動する" ]
+  [ "$(sed -n 5p "$STUB_CFG/comment_11")" = "送るはずだった返事: #12 を起動した。マージを待って再開する" ]
+  [ "$(calls '^orca terminal')" -eq 0 ]
+  [ ! -e "$STUB_CFG/sent_term-a-11" ]
+  [ ! -e "$STUB_CFG/comment_400" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait --resolve: a parent action with an empty reply posts none as the reply" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が依存を張り替える' ''
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 5p "$STUB_CFG/comment_11")" = "送るはずだった返事: なし" ]
+}
+
+@test "wait --resolve: a failing post of a parent action prints the repost command and still wakes the parent" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が #12 を起動する' '再開する'
+  echo 1 > "$STUB_CFG/comment_exit_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  grep -F 'gh issue comment 11' "$BATS_TEST_TMPDIR/stderr" | grep -qF '親の判断: 親の操作が要る'
+  [ ! -e "$STUB_CFG/comment_400" ]
+}
+
+@test "wait --resolve: a pass whose reply mentions the parent is still sent" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 '親が見張りを続けるので、そのまま待つ'
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 親が見張りを続けるので、そのまま待つ" ]
+  starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した"
+}
+
+@test "docs: the pass criteria define a parent action and emit the parent-acts decision after the escalation check" {
+  f="$PLUGIN_DIR/skills/develop/references/parent-pass-criteria.md"
+  l="$(grep -F '**親の操作を含む推奨**' "$f")"
+  printf '%s\n' "$l" | grep -qF 'この子に返事を送ること（`wait` が決める起動し直しを含む）以外で親がすること'
+  printf '%s\n' "$l" | grep -qF '`判断: 通す` ではなく `判断: 親が動く` を出す'
+  printf '%s\n' "$l" | grep -qF '親の操作を含んでも `判断: 主に上げる` が先に効く'
+  printf '%s\n' "$l" | grep -qF '`理由:` に親がする操作を、`返事:` に操作のあとに子に送る返事を書く'
+  grep -F '止まった子の起動し直し' "$f" | grep -qF '親の操作に当たらず `判断: 通す` とする'
+  grep -F '1 行目は' "$f" | grep -qF '`判断: 問いではない`・`判断: 親が動く` のどれか'
+}
+
+@test "docs: step 8 reads the parent-action paragraph before the dismiss sentence and the pending-owner restore does the action" {
+  f="$PLUGIN_DIR/skills/develop/references/epic-stop.md"
+  l8="$(grep -E '^8\. ' "$f")"
+  before="${l8%%今回の停止の記録が無く、最後の発言に*}"
+  [ "$before" != "$l8" ]
+  printf '%s\n' "$before" | grep -qF '`親の判断: 親の操作が要る` の件は、次の `dismiss` の文より先に'
+  p="$(grep -F '**親の操作が要る子**（手順 8 の続き）' "$f")"
+  printf '%s\n' "$p" | grep -qF '`PR トークン上限（`・`PR のマージ待ち（` で始まる止まりはそれぞれの手順'
+  printf '%s\n' "$p" | grep -qF '`dismiss` の判定・**主の委任**・`parent-pass-criteria.md` への照らし直しより先に'
+  printf '%s\n' "$p" | grep -qF '`送るはずだった返事:`'
+  printf '%s\n' "$p" | grep -qF 'reply --as parent'
+  printf '%s\n' "$p" | grep -qF '操作をせずに返事だけを送らない'
+  r="$(awk '/^## pending-owner の復元/{f=1;next} /^## /{f=0} f' "$f")"
+  printf '%s\n' "$r" | grep -qF '最新の `親の判断:` が `親の判断: 親の操作が要る` の子は、手順 8 の **親の操作が要る子** と同じく操作をしてから返事を送り、照らし直さず出し直さない'
+  ! printf '%s\n' "$l8" | grep -qF '完了の推定が止まり、' || return 1
+}
+
 @test "wait --resolve: a failing judge is posted as could-not-decide with an unknown record" {
   resolve_ready
   echo 1 > "$STUB_CFG/judge_exit"
@@ -5200,14 +5287,80 @@ nothing_sent() {
   starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
 }
 
-@test "notify-closed: a child that is not stopped gets nothing" {
+# 子 11 の記録の stop_turn を今のターンと合わない組にする（受領した組が古い）
+stale_stop_turn() {
+  local f; f="$(rec_of 1122 11)"
+  jq -c '.stop_turn={generation:9,session_id:"s9"}' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+}
+
+# 子 11 の会話ログを、止まりの発言 d1 より後に主の入力がある形にする（会話ログが進んだ）
+moved_log() {
+  local f; f="$(rec_of 1122 11)"
+  jq -c '.stop_uuid="d1"' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  put_chat 11 s1 "$(chat_line assistant "$(jq -rn '(now - 900) | floor | todate')" 'どちらに' '{"uuid":"d1"}')" \
+    "$(chat_line user "$(jq -rn '(now - 300) | floor | todate')" 'こちらで' '{"uuid":"i1"}')"
+}
+
+# 子 11 に促しが今の端末にだけ送られ、エピックに通した行が 1 行残っている
+notified_in_place() {
+  [ "$output" = "notified 11" ] || return 1
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "${CLOSED_MSG_HEAD}（停止の記録: ${CLOSED_STOP_URL}）" ] || return 1
+  starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した — 記録先が completed で閉じたので" || return 1
+  [ "$(calls '^orca terminal close')" -eq 0 ] || return 1
+  [ "$(calls '^orca terminal create')" -eq 0 ] || return 1
+  [ "$(calls '^orca terminal send')" -eq 1 ]
+}
+
+@test "notify-closed: a child without the stopped mark still gets the reply whether running or waiting" {
   for mark in "" resumed; do
-    : > "$STUB_LOG"; rm -f "$STUB_CFG"/ghcount_*
-    closed_ready "$mark"
+    for st in running waiting; do
+      : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+      closed_ready "$mark" "$st"
+      run dispatch notify-closed 400 11
+      [ "$status" -eq 0 ] || { echo "mark=$mark st=$st status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+      notified_in_place || { echo "mark=$mark st=$st output=$output"; cat "$STUB_LOG"; false; }
+      [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 記録先が completed で閉じたので、完了報告と mark done を促した $CLOSED_STOP_URL" ]
+    done
+  done
+}
+
+@test "notify-closed: a stale received turn or a moved log does not stop the reply" {
+  for kind in turn log; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    closed_ready stopped-seen
+    case "$kind" in turn) stale_stop_turn ;; log) moved_log ;; esac
     run dispatch notify-closed 400 11
-    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; false; }
-    [ "$output" = "skipped 11 not-stopped" ]
-    nothing_sent
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    notified_in_place || { echo "kind=$kind output=$output"; cat "$STUB_LOG"; false; }
+  done
+}
+
+@test "notify-closed: --relaunch does not close or recreate the terminal of a child that is not stopped" {
+  for kind in empty resumed turn log; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    case "$kind" in
+      empty) closed_ready "" running ;;
+      resumed) closed_ready resumed ;;
+      turn) closed_ready stopped-seen; stale_stop_turn ;;
+      log) closed_ready stopped-seen; moved_log ;;
+    esac
+    run dispatch notify-closed --relaunch 400 11
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    notified_in_place || { echo "kind=$kind output=$output"; cat "$STUB_LOG"; false; }
+  done
+}
+
+@test "notify-closed: --relaunch closes and recreates the terminal of a stopped child" {
+  for mark in stopped stopped-seen; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount
+    closed_ready "$mark"
+    run dispatch notify-closed --relaunch 400 11
+    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = "notified 11" ]
+    [ "$(calls '^orca terminal close')" -eq 1 ]
+    [ "$(first_line '^orca terminal close')" -lt "$(first_line '^orca terminal create')" ]
+    starts_with "$(cat "$STUB_CFG/sent_term-11")" "/develop #11 "
+    [ "$(calls '^gh issue comment 400')" -eq 1 ]
   done
 }
 
@@ -5324,11 +5477,16 @@ nothing_sent() {
   l3="$(printf '%s\n' "$r" | grep -E '^3\. ')"
   l4="$(printf '%s\n' "$r" | grep -E '^4\. ')"
   printf '%s\n' "$l2" | grep -F 'EPIC_DISPATCH_DONE_IDLE_SEC' | grep -F '1800' | grep -qF '推定'
-  printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '止まった印'
+  printf '%s\n' "$l2" | grep -F '`waiting`' | grep -qF '親がまだ受けていない止まり（`stopped`）の子'
+  printf '%s\n' "$l2" | grep -qF '親が受けた止まり（`stopped-seen`）の子は推定の対象に入る'
+  ! printf '%s\n' "$l2" | grep -qF '止まった印の子' || return 1
   printf '%s\n' "$l2" | grep -F '閉じてから' | grep -qF 'サブエージェント'
   printf '%s\n' "$l3" | grep -F '推定の `done`' | grep -qF '`reap`'
   printf '%s\n' "$l3" | grep -F '`closed` と `done` の両方' | grep -qF '4 を処理してから'
-  printf '%s\n' "$l4" | grep -F '`skipped <N> not-stopped`' | grep -qF '推定'
+  printf '%s\n' "$l4" | grep -qF '止まった印の有無によらず、完了の印の無い子に送る'
+  printf '%s\n' "$l4" | grep -F '促しの届かなかった子' | grep -F -- '--watch-done' | grep -qF '推定'
+  ! printf '%s\n' "$l4" | grep -qF 'not-stopped' || return 1
+  ! printf '%s\n' "$l4" | grep -qF '止まった印の無い子' || return 1
   printf '%s\n' "$l4" | grep -qF 'ステータスを変えるよう頼まない'
 }
 
@@ -9054,7 +9212,8 @@ reset_keepalive_poll() {
   echo 1 > "$STUB_CFG/send_exit_term-11"
   on_poll 11 2 status=done
   gh_seq 11 open
-  run dispatch wait --watch-stopped --watch-done 11 --interval 1 --timeout 100 11
+  # stopped-seen の子も完了推定の対象なので、推定より先に声かけが走るよう閾値を上げて推定を外す
+  EPIC_DISPATCH_DONE_IDLE_SEC=99999999 run dispatch wait --watch-stopped --watch-done 11 --interval 1 --timeout 100 11
   [ "$status" -eq 0 ]; [ "$output" = 'done 11' ]
   [ "$(calls '^orca terminal send ')" -eq 1 ]
   grep -qF 'keepalive 11: failed send' "$BATS_TEST_TMPDIR/stderr"
@@ -10001,6 +10160,40 @@ no_touch() {
   done
 }
 
+@test "wait owner-away: a child resumed in a new session with a newer owner input is not reported and nothing is written" {
+  make_stub orca
+  put_record 11
+  put_turn 11 owner 主の返事待ち
+  age_turn 11 3700
+  put_chat 11 s2 "$(said d1 "$(ago 3800)" '前のセッションの続き')" "$(chat_line user "$(ago 60 | sed 's/Z$/.500Z/')" '新しいセッションで再開した')"
+  EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+  [ "$status" -eq 2 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 owner_away_told)" = null ]
+  no_touch
+}
+
+@test "wait owner-away: the same session, an older input in another session or an unreadable log is still reported" {
+  make_stub orca
+  local kind
+  for kind in same older none; do
+    put_record 11
+    put_turn 11 owner 主の返事待ち
+    age_turn 11 3700
+    rm -rf "$BATS_TEST_TMPDIR/projects"
+    case "$kind" in
+      same) put_chat 11 s1 "$(said d1 "$(ago 3800)" 'どちらに')" "$(chat_line user "$(ago 60)" '同じセッションの入力')" ;;
+      older) put_chat 11 s2 "$(chat_line user "$(ago 7200)" '古い入力')" "$(said d1 "$(ago 7100)" 'どちらに')" ;;
+      none) export CLAUDE_PROJECTS_DIR="$BATS_TEST_TMPDIR/projects" ;;
+    esac
+    EPIC_DISPATCH_OWNER_AWAY_SEC=3600 away_wait
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "$output" = 'owner-away 11' ]
+    [ "$(rec_get 11 owner_away_told.session_id)" = s1 ]
+    no_touch
+  done
+}
+
 @test "wait owner-away: a parent question still goes through the stopped path" {
   make_stub orca
   put_record 11
@@ -10568,6 +10761,10 @@ assert_reply_auto() {
   f="$PLUGIN_DIR/skills/develop/references/reply-after-idle.md"
   grep -F -- '--as parent' "$f" | grep -F -- '--as owner' | grep -F -- '--relaunch' | grep -qF '自動判定'
   grep -F 'notify-closed' "$f" | grep -qF '本体が'
+  grep -F 'notify-closed' "$f" | grep -qF '`--relaunch` が効くのは止まっている子だけ'
+  grep -F '主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない。' "$f" | grep -qF '`notify-closed` の完了の促しだけは、止まっていない子にも送る。その子には `--relaunch` を付けても端末を閉じず、起動し直さない'
+  grep -qF '完了の印の無い completed の子への `scripts/epic-dispatch.sh notify-closed`' "$f"
+  ! grep -qF '停止中の completed の子' "$f" || return 1
   grep -F '明示' "$f" | grep -qF -- '--relaunch'
 }
 
@@ -10575,7 +10772,9 @@ assert_reply_auto() {
   f="$PLUGIN_DIR/skills/develop/references/epic-loop.md"
   grep -F '親だけ' "$f" | grep -qF '全対象には足りない'
   grep -F '終えて' "$f" | grep -F 'reply' | grep -qF '省く'
-  grep -F 'waiting' "$f" | grep -F 'stopped-seen' | grep -qF '完了推定の対象外'
+  grep -F 'waiting と stopped（親がまだ受けていない止まり）は完了推定の対象外' "$f" | grep -qF 'stopped-seen（親が受けた止まり）は完了推定の対象に入る'
+  ! grep -qF 'stopped / stopped-seen は完了推定の対象外' "$f" || return 1
+  grep -F 'notify-closed' "$f" | grep -qF '止まった印の有無によらず'
   grep -F 'not-done' "$f" | grep -qF 'reap'
   grep -F 'notify-closed' "$f" | grep -qF 'mark done'
 }

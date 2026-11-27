@@ -4,7 +4,7 @@
 
 子は会話量が閾値以上、または 60 分以上止まったら起動し直す。コンパクトされた子は develop の `SKILL.md` の中身を持たずに進むためである（#1039 の決定を #1323 で覆した）。親も 60 分以上なら記録から起動し直す（「親への適用」）。
 
-送信・起動し直しの手順本体は `references/epic-stop.md` 手順 8（`scripts/epic-dispatch.sh reply`、#1034）と `references/epic-loop.md` 手順 4（停止中の completed の子への `scripts/epic-dispatch.sh notify-closed`、#1093）に置き、ここを参照する。
+送信・起動し直しの手順本体は `references/epic-stop.md` 手順 8（`scripts/epic-dispatch.sh reply`、#1034）と `references/epic-loop.md` 手順 4（完了の印の無い completed の子への `scripts/epic-dispatch.sh notify-closed`、#1093）に置き、ここを参照する。
 
 ## 開始時の設定
 
@@ -39,9 +39,9 @@ disk 上の成功を live 反映済みとは扱わない。check / apply の後�
 
 ## そのまま送るか、起動し直すか（子）
 
-`reply --as parent` / `--as owner` と `wait --resolve` は子の表で自動判定する。明示の `--relaunch` は自動判定・閾値検査をせず起動し直す。`notify-closed` は本体が表で分類し、必要なら `--relaunch` を付ける。
+`reply --as parent` / `--as owner` と `wait --resolve` は子の表で自動判定する。明示の `--relaunch` は自動判定・閾値検査をせず起動し直す。`notify-closed` は本体が表で分類し、必要なら `--relaunch` を付ける（`--relaunch` が効くのは止まっている子だけ）。
 
-表の対象は状態の記録で止まりと決まった子だけ。主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない。表は上から順に読み、最初に当たった行で決める。
+表の対象は状態の記録で止まりと決まった子だけ。主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない。`notify-closed` の完了の促しだけは、止まっていない子にも送る。その子には `--relaunch` を付けても端末を閉じず、起動し直さない。表は上から順に読み、最初に当たった行で決める。
 
 | 子の状態 | 扱い | 理由 |
 |---|---|---|
