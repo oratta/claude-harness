@@ -150,11 +150,14 @@
 #   jq が無い・今のワークツリーを読めない（rev-parse の失敗）なら stdout に何も出さず exit 1
 # reply: 今のワークツリーを parent_worktree に持つ <child> の記録が 1 件で（その worktree が子のワークツリー）、
 #   端末があり（明示・自動判定の起動し直しなし）、子のセッションの端末（agentIdentity が claude の端末、無ければタイトルに
-#   Claude Code を含む端末がちょうど 1 つ）が決まれば、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
+#   Claude Code を含む端末がちょうど 1 つ。どちらでも決まらず端末がちょうど 1 つなら、その画面を 1 回読み、下端に
+#   Claude Code の入力枠があればその端末）が決まれば、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
 #   owner は `主の返事（親エピック #<epic> 経由）: `）を付けた文を送り、ターンの開始まで確かめて `sent <child>`。
 #   端末が 0 か明示・自動判定で起動し直すなら（起動し直しは先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
-#   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`。
-#   端末はあるが子のセッションの端末を決められない（シェルの端末だけも含む）
+#   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`
+#   （別のリポジトリの子は `/develop <子の owner>/<repo>#<N> （エピック #<epic> の子。エピックのリポジトリ <owner>/<repo>。
+#   返事を受けて起動し直し） <頭付きの文>`）。
+#   端末はあるが子のセッションの端末を決められない（シェルの端末だけ・1 端末の画面を読めない・下端に入力枠が無いも含む）
 #   ときは `failed <child> ambiguous-terminal`。記録が 0 件は `failed <child> no-worktree`、2 件以上は
 #   `failed <child> ambiguous-worktree`、読めない記録は `failed <child> state-unreadable`。送信 / 作成 / 閉じるの失敗は `failed <child> <段>` で exit 1
 #   （送り直しか作り直しのコマンドを stderr に出す）。引数の誤りは orca を呼ばずに使い方を出して exit 1
@@ -945,7 +948,7 @@ cmd_launch() {
       echo "failed $n"; failed=1; continue
     fi
     if [ "$xrepo" -eq 1 ]; then
-      prompt="/develop #$num （エピック #$epic の子。エピックのリポジトリ ${erepo}。親ワークツリー $parent から ${lname_label} で起動）"
+      prompt="/develop $crepo#$num （エピック #$epic の子。エピックのリポジトリ ${erepo}。親ワークツリー $parent から ${lname_label} で起動）"
       agent_cmd_for "$erepo#$epic"
       # 子の clone の origin から起点を取る（失敗したら記録を消して作らない）
       if ! git -C "$cclone" fetch origin "$cbase" >&2; then
@@ -1082,7 +1085,7 @@ deliver_reply() {
     *) msg="主の返事（親エピック #$epic${erefs}経由）: $text" ;;
   esac
   if [ -n "$xrepo_epic" ]; then
-    prompt="/develop #$(es_get "$rec" number) （エピック #$epic の子。エピックのリポジトリ ${xrepo_epic%%#*}。返事を受けて起動し直し） $msg"
+    prompt="/develop $(es_get "$rec" repo)#$(es_get "$rec" number) （エピック #$epic の子。エピックのリポジトリ ${xrepo_epic%%#*}。返事を受けて起動し直し） $msg"
   else
     prompt="/develop $(child_label "$n") （エピック #$epic の子。返事を受けて起動し直し） $msg"
   fi

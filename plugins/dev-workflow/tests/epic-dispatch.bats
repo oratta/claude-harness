@@ -4538,7 +4538,8 @@ orca_cmd_scripts() {
 # 子 <N> のワークツリーの端末を置く（引数はハンドル。0 個なら端末なし）。Orca の実際の一覧の形に合わせ、
 # <h> は Claude Code の端末（agentIdentity が claude、タイトルは Claude Code が書き換えたもの）、
 # <h>:shell はシェルの端末（タイトル Terminal 1、agentIdentity なし）、
-# <h>:title は agentIdentity がまだ無くタイトルが ✳ Claude Code の端末
+# <h>:title は agentIdentity がまだ無くタイトルが ✳ Claude Code の端末、
+# <h>:session は agentIdentity が null でタイトルが子の付けたセッション名の端末（#1598 で観測した形）
 set_terms() {
   local n="$1"; shift
   local t="" h e
@@ -4546,6 +4547,7 @@ set_terms() {
     case "$h" in
       *:shell) e="{\"handle\":\"${h%:shell}\",\"title\":\"Terminal 1\",\"connected\":true}" ;;
       *:title) e="{\"handle\":\"${h%:title}\",\"title\":\"✳ Claude Code\",\"connected\":true}" ;;
+      *:session) e="{\"handle\":\"${h%:session}\",\"title\":\"flatmate #2217 burn モード開発\",\"connected\":true,\"agentIdentity\":null}" ;;
       *) e="{\"handle\":\"$h\",\"title\":\"◑ 子の作業\",\"connected\":true,\"agentIdentity\":\"claude\"}" ;;
     esac
     t="$t${t:+,}$e"
@@ -4701,6 +4703,57 @@ reply_ready() {
   [ "$status" -eq 1 ]
   [ "$output" = "failed 11 ambiguous-terminal" ]
   grep -qF -- '--relaunch' "$BATS_TEST_TMPDIR/stderr"
+  [ "$(calls '^orca terminal send')" -eq 0 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+}
+
+# Claude Code の入力枠が下端にある画面（<h>:session の端末の画面の読み取り）
+SESSION_FRAME='────────────────
+❯
+────────────────
+? for shortcuts'
+
+@test "reply: one unidentified terminal with the Claude Code input frame at the bottom gets the answer (#1598)" {
+  reply_ready term-s-11:session
+  orca_screen "$SESSION_FRAME"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = "sent 11" ]
+  [ "$(cat "$STUB_CFG/sent_term-s-11")" = "主の返事（親エピック #400 経由）: A" ]
+  [ "$(calls '^orca terminal read --terminal term-s-11 --screen --json$')" -eq 1 ]
+  [ "$(calls '^orca terminal create')" -eq 0 ]
+  [ "$(calls '^orca terminal close')" -eq 0 ]
+}
+
+@test "reply: one unidentified terminal with a shell prompt or an unreadable screen sends nothing (#1598)" {
+  for kind in no-frame shell-below read-fail broken; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/sent_* "$STUB_CFG"/read_exit "$STUB_CFG"/readcount
+    reply_ready term-s-11:session
+    case "$kind" in
+      no-frame) orca_screen 'user@host work %' ;;
+      shell-below) orca_screen "$SESSION_FRAME
+user@host work %" ;;
+      read-fail) orca_screen "$SESSION_FRAME"; echo 1 > "$STUB_CFG/read_exit" ;;
+      broken) echo broken > "$STUB_CFG/screen" ;;
+    esac
+    run dispatch reply --as owner 400 11 'A'
+    [ "$status" -eq 1 ] || { echo "kind=$kind status=$status output=$output"; false; }
+    [ "$output" = "failed 11 ambiguous-terminal" ] || { echo "kind=$kind output=$output"; false; }
+    [ "$(calls '^orca terminal read')" -eq 1 ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]
+    [ "$(calls '^orca terminal create')" -eq 0 ]
+    [ "$(calls '^orca terminal close')" -eq 0 ]
+  done
+}
+
+@test "reply: two unidentified terminals are not read and send nothing (#1598)" {
+  reply_ready term-s-11:session term-sh-11:shell
+  orca_screen "$SESSION_FRAME"
+  run dispatch reply --as owner 400 11 'A'
+  [ "$status" -eq 1 ]
+  [ "$output" = "failed 11 ambiguous-terminal" ]
+  [ "$(calls '^orca terminal read')" -eq 0 ]
   [ "$(calls '^orca terminal send')" -eq 0 ]
   [ "$(calls '^orca terminal create')" -eq 0 ]
   [ "$(calls '^orca terminal close')" -eq 0 ]
@@ -5168,6 +5221,21 @@ nothing_sent() {
     [ "$(first_line '^orca terminal send')" -lt "$(first_line '^gh issue comment 400')" ]
     [ ! -e "$STUB_CFG/comment_11" ]
     [ "$(calls '^gh issue comment')" -eq 1 ]
+  done
+}
+
+@test "notify-closed: one unidentified terminal with the input frame gets the reply after the merge (#1598)" {
+  for mark in stopped-seen stopped; do
+    : > "$STUB_LOG"; rm -f "$STUB_CFG"/comment_* "$STUB_CFG"/sent_* "$STUB_CFG"/ghcount_* "$STUB_CFG"/listcount "$STUB_CFG"/readcount
+    closed_ready "$mark"
+    set_terms 11 term-s-11:session
+    orca_screen "$SESSION_FRAME"
+    run dispatch notify-closed 400 11
+    [ "$status" -eq 0 ] || { echo "mark=$mark status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+    [ "$output" = "notified 11" ]
+    case "$output" in *ambiguous-terminal*) false ;; esac
+    [ "$(cat "$STUB_CFG/sent_term-s-11")" = "${CLOSED_MSG_HEAD}（停止の記録: ${CLOSED_STOP_URL}）" ]
+    [ "$(calls '^orca terminal read --terminal term-s-11 --screen --json$')" -eq 1 ]
   done
 }
 
@@ -6306,7 +6374,7 @@ xnothing_made() {
   EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch --note 範囲を守る 1122 genetta-inc/flatmate#1615
   [ "$output" = "launched genetta-inc/flatmate#1615" ]
   case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。"*) ;; *) false ;; esac
+  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop genetta-inc/flatmate#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。親ワークツリー "*) ;; *) cat "$STUB_CFG/sent_term-1615"; false ;; esac
   grep -qF -- "gh issue comment 1615 -R genetta-inc/flatmate --body" "$STUB_LOG"
   case "$(cat "$STUB_CFG/comment_1615")" in "親エピックからの注意書き: oratta/claude-harness#1122"*) ;; *) false ;; esac
 }
@@ -6325,7 +6393,7 @@ xnothing_made() {
   run dispatch launch --note 範囲を守る 1122 11
   [ "$output" = "launched 11" ]
   case "$(cat "$STUB_CFG/tcmd_11")" in "EPIC_DISPATCH_PARENT_EPIC=1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-11")" in "/develop #11 （エピック #1122 の子。親ワークツリー"*) ;; *) false ;; esac
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "/develop #11 （エピック #1122 の子。親ワークツリー /work/parent から Orca で起動） 範囲を守る" ] || { cat "$STUB_CFG/sent_term-11"; false; }
   grep -qF -- "gh issue comment 11 --body" "$STUB_LOG"
   case "$(cat "$STUB_CFG/comment_11")" in "親エピックからの注意書き: #1122"*) ;; *) false ;; esac
 }
@@ -6378,7 +6446,16 @@ xnothing_made() {
   run dispatch reply --relaunch --as parent 1122 genetta-inc/flatmate#1615 続けてよい
   [ "$output" = "relaunched genetta-inc/flatmate#1615" ]
   case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。"*) ;; *) false ;; esac
+  [ "$(cat "$STUB_CFG/sent_term-1615")" = "/develop genetta-inc/flatmate#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。返事を受けて起動し直し） 親エピック #1122（oratta/claude-harness）の判断（主の承認ではない）: 続けてよい" ] || { cat "$STUB_CFG/sent_term-1615"; false; }
+}
+
+@test "reply --relaunch: a same-repository child keeps the old instruction" {
+  make_stub orca
+  set_current 1122
+  put_record 11 stop=stopped
+  run dispatch reply --relaunch --as parent 1122 11 続けてよい
+  [ "$output" = "relaunched 11" ] || { echo "output=$output"; false; }
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "/develop #11 （エピック #1122 の子。返事を受けて起動し直し） 親エピック #1122 の判断（主の承認ではない）: 続けてよい" ] || { cat "$STUB_CFG/sent_term-11"; false; }
 }
 
 @test "reply: a same-repository child keeps the old header" {
@@ -6595,6 +6672,32 @@ part() { PATH="$STUB_BIN:/usr/bin:/bin" bash "$PLUGIN_DIR/scripts/epic-launch-or
   [ "$(calls '^orca terminal list')" -eq 1 ]
   [ "$(grep -oE '^orca terminal (close|create|wait|send)' "$STUB_LOG" | tr '\n' ' ')" \
     = "orca terminal close orca terminal create orca terminal wait orca terminal send " ]
+}
+
+@test "launcher orca: deliver reads the screen once only for one unidentified terminal (#1598)" {
+  make_stub orca
+  echo '{"ok":true,"result":{"terminals":[{"handle":"s-5","title":"flatmate #2217 burn モード開発","agentIdentity":null}]}}' > "$STUB_CFG/tlist_json_5"
+  orca_screen "$SESSION_FRAME"
+  run part deliver /work/issue-5 0 返事 cld 指示
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "sent" ]
+  [ "$(calls '^orca terminal list')" -eq 1 ]
+  [ "$(calls '^orca terminal read --terminal s-5 --screen --json$')" -eq 1 ]
+  [ "$(calls '^orca terminal read')" -eq 1 ]
+  [ "$(grep -oE '^orca terminal (list|read|send|close|create|wait)' "$STUB_LOG" | tr '\n' ' ')" \
+    = "orca terminal list orca terminal read orca terminal send " ]
+  [ "$(cat "$STUB_CFG/sent_s-5")" = 返事 ]
+  : > "$STUB_LOG"
+  echo '{"ok":true,"result":{"terminals":[{"handle":"c-5","title":"x","agentIdentity":"claude"}]}}' > "$STUB_CFG/tlist_json_5"
+  run part deliver /work/issue-5 0 返事 cld 指示
+  [ "$status" -eq 0 ]; [ "$output" = "sent" ]
+  [ "$(calls '^orca terminal read')" -eq 0 ]
+  : > "$STUB_LOG"
+  echo '{"ok":true,"result":{"terminals":[{"handle":"s-5","title":"a"},{"handle":"t-5","title":"b"}]}}' > "$STUB_CFG/tlist_json_5"
+  run part deliver /work/issue-5 0 返事 cld 指示
+  [ "$status" -eq 1 ]; [ "$output" = "failed ambiguous-terminal" ]
+  [ "$(calls '^orca terminal read')" -eq 0 ]
+  [ "$(calls '^orca terminal send')" -eq 0 ]
 }
 
 @test "launcher orca: mirror does nothing without orca" {
@@ -8860,6 +8963,67 @@ user@host work %'
   [ "$status" -eq 1 ]; [ "$output" = 'failed terminal-list' ]
   run orca_keepalive keepalive only-one
   [ "$status" -eq 2 ]; [ -z "$output" ]
+}
+
+@test "keepalive orca: one unidentified terminal is chosen by its input frame and still observed twice (#1598)" {
+  keepalive_orca_setup
+  echo '{"result":{"terminals":[{"handle":"term-11","title":"flatmate #2217 burn モード開発","agentIdentity":null}]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; cat "$STUB_LOG"; false; }
+  [ "$output" = 'sent' ]
+  [ "$(calls '^orca terminal read --terminal term-11 --screen --json$')" -eq 3 ]
+  [ "$(calls '^orca terminal send --terminal term-11 ')" -eq 1 ]
+  # the second pre-send observation is not skipped: input typed there stops the send
+  : > "$STUB_LOG"; rm -f "$STUB_CFG/readcount"
+  orca_screen "$SESSION_FRAME" human
+  cp "$STUB_CFG/screen" "$STUB_CFG/screen_3"
+  orca_screen "$SESSION_FRAME"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped input-not-empty' ]
+  [ "$(calls '^orca terminal read')" -eq 3 ]
+  [ "$(calls '^orca terminal send ')" -eq 0 ]
+}
+
+@test "keepalive orca: one unidentified terminal without the input frame skips, and a failed read is failed observe (#1598)" {
+  for kind in no-frame shell-below source; do
+    keepalive_orca_setup
+    : > "$STUB_LOG"; rm -f "$STUB_CFG/readcount" "$STUB_CFG/read_exit"
+    echo '{"result":{"terminals":[{"handle":"term-11","title":"flatmate #2217 burn モード開発","agentIdentity":null}]}}' > "$STUB_CFG/tlist_json_11"
+    case "$kind" in
+      no-frame) orca_screen 'user@host work %' ;;
+      shell-below) orca_screen "$SESSION_FRAME
+user@host work %" ;;
+      source) orca_screen "$SESSION_FRAME"
+        jq '.result.terminal.source = "buffer"' "$STUB_CFG/screen" > "$STUB_CFG/screen.tmp"
+        mv "$STUB_CFG/screen.tmp" "$STUB_CFG/screen" ;;
+    esac
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 0 ] || { echo "kind=$kind status=$status output=$output"; false; }
+    [ "$output" = 'skipped ambiguous-terminal' ] || { echo "kind=$kind output=$output"; false; }
+    [ "$(calls '^orca terminal read')" -eq 1 ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+  for kind in read-fail broken; do
+    keepalive_orca_setup
+    : > "$STUB_LOG"; rm -f "$STUB_CFG/readcount" "$STUB_CFG/read_exit"
+    echo '{"result":{"terminals":[{"handle":"term-11","title":"flatmate #2217 burn モード開発","agentIdentity":null}]}}' > "$STUB_CFG/tlist_json_11"
+    case "$kind" in
+      read-fail) echo 1 > "$STUB_CFG/read_exit" ;;
+      broken) echo broken > "$STUB_CFG/screen" ;;
+    esac
+    run orca_keepalive keepalive /work/issue-11 reserved
+    [ "$status" -eq 1 ] || { echo "kind=$kind status=$status output=$output"; false; }
+    [ "$output" = 'failed observe' ] || { echo "kind=$kind output=$output"; false; }
+    [ "$(calls '^orca terminal read')" -eq 1 ]
+    [ "$(calls '^orca terminal send ')" -eq 0 ]
+  done
+  # two unidentified terminals are not read
+  keepalive_orca_setup
+  : > "$STUB_LOG"
+  echo '{"result":{"terminals":[{"handle":"a","title":"x"},{"handle":"b","title":"y"}]}}' > "$STUB_CFG/tlist_json_11"
+  run orca_keepalive keepalive /work/issue-11 reserved
+  [ "$status" -eq 0 ]; [ "$output" = 'skipped ambiguous-terminal' ]
+  [ "$(calls '^orca terminal read')" -eq 0 ]
 }
 
 @test "keepalive orca: unconfirmed send fails without retry; background shell does not block" {

@@ -29,11 +29,15 @@
 #   7. 本文が <bash-stdout> / <bash-stderr> / <local-command-stdout> / <local-command-stderr> で始まらない
 #   8. isCompactSummary が true でない（会話の圧縮後にモデルが書いた要約の行。本文の書き出しでは判定しない）
 #   9. 本文（先頭の空白を除く）が "主の返事（親エピック #" / "親エピック #" で始まらず、<command-args> の中身
-#      （先頭の空白を除く）が "#<数字> （エピック #<数字> の子。" で始まらない（エピックの親が子の端末に打ち込んだ返事と、
+#      （先頭の空白を除く）が "#<数字> （エピック #<数字> の子。" か、子の "#<数字>" の前に "<owner>/<repo>" を付けた形で
+#      始まらない（エピックの親が子の端末に打ち込んだ返事と、
 #      子を起動する指示）。<command-args> の頭の出どころは scripts/epic-dispatch.sh の次の 2 つの文字列で、
 #      ここはそれに結び付いている（epic-dispatch.sh の文を変えたらこの条件と bats の入力も直す）:
 #        launch（epic-dispatch.sh の cmd_launch の prompt=）:            /develop #$n （エピック #$epic の子。親ワークツリー $parent から ${lname_label} で起動）（${lname_label} は Orca か tmux）
 #        reply --relaunch（epic-dispatch.sh の deliver_reply の prompt=）: /develop #$n （エピック #$epic の子。返事を受けて起動し直し） $msg
+#      別のリポジトリの子は、子の番号にリポジトリを付け、エピックのリポジトリの句を足す:
+#        launch:           /develop $crepo#$num （エピック #$epic の子。エピックのリポジトリ ${erepo}。親ワークツリー $parent から ${lname_label} で起動）
+#        reply --relaunch: /develop <repo>#<number> （エピック #$epic の子。エピックのリポジトリ <エピックの repo>。返事を受けて起動し直し） $msg
 #   <command-args>（スラッシュコマンドの引数）と <bash-input>（主が ! で打った入力）は、9 に当たらなければタグごと本文として比べる。
 # 出力:
 #   既定:      一致した発言ごとに "MATCH: <timestamp> <空白をまとめた本文の全文>"、最後に "MATCHES=<件数>"
@@ -149,7 +153,7 @@ FORWARD_PREFIX = "Another Claude session sent a message"
 OUTPUT_PREFIXES = ("<bash-stdout>", "<bash-stderr>", "<local-command-stdout>", "<local-command-stderr>")
 # 9 つ目の条件（issue #1059）。出どころは冒頭の説明（epic-dispatch.sh の cmd_launch / deliver_reply の prompt=）
 RELAY_PREFIXES = ("主の返事（親エピック #", "親エピック #")
-DISPATCH_ARGS = re.compile(r"<command-args>\s*#\d+\s*（エピック #\d+ の子。")
+DISPATCH_ARGS = re.compile(r"<command-args>\s*(?:[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)?#\d+\s*（エピック #\d+ の子。")
 # チャンネル経由の行（issue #1125）。開きタグは Claude Code がチャンネルプラグインの通知の meta から組み立てて本文の先頭に置く
 CHANNEL_OPEN = re.compile(r'<channel((?: [A-Za-z_][A-Za-z0-9_]*="[^"\n]*")*)>\n')
 CHANNEL_ATTR = re.compile(r' ([A-Za-z_][A-Za-z0-9_]*)="([^"\n]*)"')
