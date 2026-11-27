@@ -7976,7 +7976,7 @@ unanswered_ready() {
       : > "$STUB_LOG"
       run dispatch wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11
       [ "$status" -eq 2 ] || { echo "dw=$dw status=$status output=$output"; false; }
-      ! printf '%s\n' "$output" | grep -q '^stopped'
+      ! printf '%s\n' "$output" | grep -q '^stopped' || return 1
       [ "$(rec_get 11 stop)" != stopped-seen ]
       [ "$(calls '^judge')" -eq 0 ]
     done
