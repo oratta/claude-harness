@@ -2,8 +2,8 @@
 
 ## 1. 文書（epic-stop.md・epic-multirepo.md）
 
-- [ ] 1.1 手順 8 の `dismiss` の条件、未回答の停止の記録の定義と dismiss しないこと、`owner-away` の掛け直しの文、pending-owner 復元の文を直し、`develop-skill.bats` の grep で確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/epic-stop.md:7、plugins/dev-workflow/skills/develop/references/epic-stop.md:13、plugins/dev-workflow/skills/develop/references/epic-stop.md:17、plugins/dev-workflow/tests/develop-skill.bats:1366、plugins/dev-workflow/tests/develop-skill.bats:1498
-- [ ] 1.2 `epic-multirepo.md` の列挙に `dismiss` を足し、`epic-dispatch.bats` の 8032 行の列挙のテストを更新して通す。触る範囲: plugins/dev-workflow/skills/develop/references/epic-multirepo.md:12、plugins/dev-workflow/tests/epic-dispatch.bats:8032
+- [x] 1.1 手順 8 の `dismiss` の条件、未回答の停止の記録の定義と dismiss しないこと、`owner-away` の掛け直しの文、pending-owner 復元の文を直し、`develop-skill.bats` の grep で確かめる。触る範囲: plugins/dev-workflow/skills/develop/references/epic-stop.md:7、plugins/dev-workflow/skills/develop/references/epic-stop.md:13、plugins/dev-workflow/skills/develop/references/epic-stop.md:17、plugins/dev-workflow/tests/develop-skill.bats:1366、plugins/dev-workflow/tests/develop-skill.bats:1498
+- [x] 1.2 `epic-multirepo.md` の列挙に `dismiss` を足し、`epic-dispatch.bats` の 8032 行の列挙のテストを更新して通す。触る範囲: plugins/dev-workflow/skills/develop/references/epic-multirepo.md:12、plugins/dev-workflow/tests/epic-dispatch.bats:8032
 
 ## 2. epic-dispatch.sh
 

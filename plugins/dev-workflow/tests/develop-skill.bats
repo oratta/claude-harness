@@ -1365,10 +1365,25 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
 
 @test "skill: a stop that is not a question is dismissed and goes back to the wait, in steps 8 and 7" {
   p="$(grep -E '^8\. `stopped <N>\.\.\.` で起こされたら' "$EPIC")"
-  printf '%s\n' "$p" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`scripts/epic-dispatch.sh dismiss <N>` を呼んでから `references/epic-loop.md` の手順 2 に戻る'
+  printf '%s\n' "$p" | grep -qF '今回の停止の記録が無く、未回答の停止の記録も無く、`child-log --last` の `.questions` が空で `unreadable` でもなく、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ、主に上げず、`scripts/epic-dispatch.sh dismiss <N>` を呼んでから `references/epic-loop.md` の手順 2 に戻る'
+  printf '%s\n' "$p" | grep -qF '`.questions` が残る止まり・`unreadable` の止まり・未回答の停止の記録がある止まりは `dismiss` の対象でなく'
   printf '%s\n' "$p" | grep -qF '`dismiss` の出力が `skipped` か `failed` でも主に上げない'
   p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
   printf '%s\n' "$p7" | grep -qF '手順 8 と同じく `dismiss` で戻して出し直さない'
+}
+
+@test "skill: step 8 defines the unanswered stop record the same way as stop-judge.sh and never dismisses it (#1828)" {
+  p="$(cat "$SKILL_DIR/references/epic-stop.md")"
+  printf '%s\n' "$p" | grep -qF '未回答の停止の記録'
+  printf '%s\n' "$p" | grep -qF '`needs-approval`'
+  printf '%s\n' "$p" | grep -qF '`Closes`・`Fixes`・`Refs`'
+  printf '%s\n' "$p" | grep -qF 'この止まりは `dismiss` しない'
+}
+
+@test "skill: after owner-away the parent handles the other lines of the same output before re-waiting (#1828)" {
+  p="$(cat "$SKILL_DIR/references/epic-stop.md")"
+  printf '%s\n' "$p" | grep -qF '同じ出力のほかの行を `references/epic-loop.md` の手順どおりに処理し終えてから手順 2 に戻って掛け直す。`owner-away` の行だけなら同じ引数で掛け直す'
+  ! printf '%s\n' "$p" | grep -qF '知らせたら同じ引数で `wait` を掛け直す' || return 1
 }
 
 @test "skill: a stop without a record is built from child-log --last with the number and the time, and is not delegated" {
@@ -1495,7 +1510,7 @@ xrepo_block() { cat "$SKILL_DIR/references/epic-multirepo.md" | awk '/^\*\*別�
 
 @test "skill (cross-repo): children are passed to every subcommand as <owner>/<repo>#N" {
   b="$(xrepo_block)"
-  printf '%s\n' "$b" | grep -qF '`route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`adopt`・`child-log`'
+  printf '%s\n' "$b" | grep -qF '`route`・`launch`・`wait`（位置引数と `--watch-done`）・`reap`・`pending-owner`・`notify-closed`・`reply`・`dismiss`・`adopt`・`child-log`'
   printf '%s\n' "$b" | grep -qF '`<owner>/<repo>#N` の形で渡す'
 }
 
@@ -1967,7 +1982,8 @@ stop_cond() { run_section | awk '/^\*\*待ちをやめてよい条件\*\*/{f=1; 
 
 @test "skill: step 7 and the parent criteria keep a stop with the reason line from being dismissed" {
   p7="$(grep -E '^7\. `回し方: Orca`' "$EPIC"; cat "$SKILL_DIR/references/epic-stop.md")"
-  printf '%s\n' "$p7" | grep -qF '今回の停止の記録が無く、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ'
+  printf '%s\n' "$p7" | grep -qF '今回の停止の記録が無く、未回答の停止の記録も無く、`child-log --last` の `.questions` が空で `unreadable` でもなく、最後の発言に `止まった理由:` の行も無く、主への問いでもなければ'
+  printf '%s\n' "$p7" | grep -qF '今回の停止の記録・未回答の停止の記録・`.questions`・`unreadable` が無く、最後の発言に `止まった理由:` の行も無く'
   ! printf '%s\n' "$p7" | grep -qF 'mark resumed' || return 1
   c="${SKILL_DIR}/references/parent-pass-criteria.md"
   grep -F '`判断: 問いではない`' "$c" | grep -qF '最後の発言の `止まった理由:` の行'

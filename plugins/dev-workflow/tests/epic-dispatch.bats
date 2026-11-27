@@ -8029,7 +8029,7 @@ log_resolve_ready() {
   grep -qF '`launch` に渡した子ごとに会話ログの末尾を' "$e"
   grep -qF '`未起動（<理由>）`' "$e"
   grep -qF '子の停止の記録の URL は、1 行目で聞く 1 件にだけ書き' "$e"
-  grep -qF '`adopt`・`child-log` に渡す' "$e"
+  grep -qF '`dismiss`・`adopt`・`child-log` に渡す' "$e"
   ! grep -qF '答えが要る子の issue（または停止の記録）の URL' "$e" || return 1
 }
 
