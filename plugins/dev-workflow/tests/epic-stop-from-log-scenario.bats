@@ -48,12 +48,14 @@ printf "判断: 主に上げる\n理由: 主の判断が要る\n返事:\n記録:
     branch: "oratta/issue-11", base: "main", session: "", launch_failed: "", status: "running", stop: "",
     created_at: "2026-01-01T00:00:00Z", updated_at: "2026-01-01T00:00:00Z"}' > "$RECORD"
 
-  # 会話ログ: 子が 10 分前に問いを書いてターンを終え、そのあと何も無い
-  local ts dir
+  # 会話ログ: 起動時の入力（親が最初に送った行）のあと、子が 10 分前に問いを書いてターンを終え、そのあと何も無い
+  local ts ts0 dir
   ts="$(jq -rn '(now - 600) | floor | todate')"
+  ts0="$(jq -rn '(now - 660) | floor | todate')"
   dir="$CLAUDE_PROJECTS_DIR/$(printf '%s' "$CHILD_WT" | sed 's/[^A-Za-z0-9]/-/g')"
   mkdir -p "$dir"
   {
+    jq -cn --arg ts "$ts0" '{type: "user", entrypoint: "cli", uuid: "00000000-0000-4000-8000-000000000000", timestamp: $ts, message: {role: "user", content: "/develop #11"}}'
     jq -cn --arg ts "$ts" --arg u "$SAID_UUID" --arg x "$SECRET どちらにしますか" \
       '{type: "assistant", entrypoint: "cli", uuid: $u, timestamp: $ts, message: {role: "assistant", content: [{type: "text", text: $x}]}}'
     jq -cn --arg ts "$ts" '{type: "system", subtype: "turn_duration", entrypoint: "cli", timestamp: $ts}'

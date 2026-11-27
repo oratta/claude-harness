@@ -487,9 +487,12 @@ not_a_question() { printf '%s\n' '判断: 問いではない' '理由: 完了の
   [ "$status" -eq 1 ]
   [ -z "$output" ]
   [ ! -e "$STUB_CFG/model_in" ]
+  # 記録がある状態で読めない JSON を渡す（JSON なしへの読み替えは、記録があれば判断に進んでしまう）
+  one_record 2026-10-26T05:00:00Z
   printf 'not json' > "$BATS_TEST_TMPDIR/bad.json"
   run judge 400 11 "$BATS_TEST_TMPDIR/bad.json"
   [ "$status" -eq 1 ]
+  [ -z "$output" ]
   [ ! -e "$STUB_CFG/model_in" ]
 }
 

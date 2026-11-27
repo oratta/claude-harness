@@ -7417,7 +7417,13 @@ stop_uuid: bb'
   put_record 11 stop=stopped-seen
   run dispatch pending-owner 11
   [ "$status" -eq 0 ]
-  [[ "$output" == *"pending 11"* ]] || return 1
+  [ "$output" = 'pending 11' ]
+  # wait も同じ記録を読める（読めない記録なら unreadable になる）。受け取り済みの止まりは再び報告されず、記録はそのまま
+  gh_seq 11 open
+  run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+  [ "$status" -eq 2 ]
+  [ "$output" = 'timeout 11' ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
 }
 
 @test "records: a stop_uuid or stop_at that is not a string makes the record unreadable" {
@@ -7573,6 +7579,15 @@ log_resolve_ready() {
   [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 d1" ]
 }
 
+@test "wait --resolve log: a pass with a record URL from the judge names both the uuid and the URL" {
+  log_resolve_ready
+  judge_says judge_out 通す 範囲の内側 推奨どおり進めてよい "$STOP_URL"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(head -1 "$STUB_CFG/comment_400")" = "親の判断: 子 #11 通した — 範囲の内側 発言 d1 $STOP_URL" ]
+}
+
 @test "wait --resolve log: a statement that is not a question goes back to resumed, wakes nobody and sends nothing" {
   log_resolve_ready
   printf '判断: 問いではない\n理由: 完了の報告\n返事:\n記録: なし\n' > "$STUB_CFG/judge_out"
@@ -7589,6 +7604,23 @@ log_resolve_ready() {
   [ ! -e "$STUB_CFG/comment_11" ]
 }
 
+@test "wait --resolve log: a restated question after the parent's reply reaches the judge as d2" {
+  log_resolve_ready
+  judge_says judge_out 主に上げる 主の判断が要る '' なし
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d1 ]
+  # 親が返事を送ったあと、子が同じ問いを言い直す（新しい発言 d2）。判断には d2 が渡る
+  rm -f "$STUB_CFG/judge_json"
+  put_turn 11 parent 主の返事待ち 2
+  put_chat 11 s1 "$(said d1 "$(ago 300)" 'ここに秘密の本文')" "$(turn_end "$(ago 299)")" "$(said d2 "$(ago 5)" '言い直した本文')" "$(turn_end "$(ago 4)")"
+  gh_seq 11 open closed; printf '0\n' > "$STUB_CFG/ghcount_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$(jq -r .uuid "$STUB_CFG/judge_json")" = d2 ]
+  [ "$(jq -r .text "$STUB_CFG/judge_json")" = '言い直した本文' ]
+}
+
 @test "wait --resolve log: completion headings use the real judge to dismiss without a model or reply" {
   for heading in '主がこのセッションで次にすること: なし' '主がすること: なし'; do
     log_resolve_ready
@@ -7601,7 +7633,7 @@ log_resolve_ready() {
     [ "$output" = "closed 11" ]
     [ "$(rec_get 11 stop)" = resumed ]
     [ "$(rec_get 11 stop_uuid)" = d1 ]
-    [[ "$(rec_get 11 stop_at)" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2} ]]
+    rec_get 11 stop_at | grep -Eq '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}'
     [ "$(calls '^model-called')" -eq 0 ]
     [ "$(calls '^orca terminal send')" -eq 0 ]
     [ "$(calls '^gh issue comment')" -eq 0 ]
