@@ -111,6 +111,25 @@ calls() { LC_ALL=C grep -c -- "$1" "$STUB_LOG" || true; }
   [ "${lines[3]}" = "記録: https://github.com/o/r/issues/11#issuecomment-5" ]
 }
 
+@test "stop-judge: a parent action is passed through as four lines with or without the stop JSON" {
+  local mode
+  for mode in nojson json; do
+    if [ "$mode" = json ]; then
+      printf '%s\n' '判断: 親が動く' '理由: 親が #12 を起動する' '返事: #12 を起動したので、その結果を待つ' > "$STUB_CFG/model_out"
+      run judge 400 11 "$(stop_json)"
+    else
+      printf '%s\n' '判断: 親が動く' '理由: 親が #12 を起動する' '返事: ' > "$STUB_CFG/model_out"
+      run judge 400 11
+    fi
+    [ "$status" -eq 0 ] || { echo "mode=$mode status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+    [ "${#lines[@]}" -eq 4 ]
+    [ "${lines[0]}" = "判断: 親が動く" ]
+    [ "${lines[1]}" = "理由: 親が #12 を起動する" ]
+    if [ "$mode" = json ]; then [ "${lines[2]}" = "返事: #12 を起動したので、その結果を待つ" ]; else [ "${lines[2]}" = "返事: " ] || [ "${lines[2]}" = "返事:" ]; fi
+    case "${lines[3]}" in "記録: "?*) ;; *) echo "mode=$mode line4=${lines[3]}"; false ;; esac
+  done
+}
+
 @test "stop-judge: the model gets the epic, the child, the owner's note, the latest stop, past decisions and the criteria" {
   run judge 400 11
   [ "$status" -eq 0 ]

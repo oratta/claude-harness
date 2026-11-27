@@ -4925,6 +4925,53 @@ EOF
   grep -qF 'gh issue comment 11' "$BATS_TEST_TMPDIR/stderr"
 }
 
+@test "wait --resolve: a parent action is not sent, not recorded as passed, and posted on the child with the reply" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が #12 を起動する' '#12 を起動した。マージを待って再開する'
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 1p "$STUB_CFG/comment_11")" = "親の判断: 親の操作が要る" ]
+  [ "$(sed -n 2p "$STUB_CFG/comment_11")" = "止まりの発言: 不明" ]
+  [ "$(sed -n 3p "$STUB_CFG/comment_11")" = "停止の記録: $STOP_URL" ]
+  [ "$(sed -n 4p "$STUB_CFG/comment_11")" = "親が #12 を起動する" ]
+  [ "$(sed -n 5p "$STUB_CFG/comment_11")" = "送るはずだった返事: #12 を起動した。マージを待って再開する" ]
+  [ "$(calls '^orca terminal')" -eq 0 ]
+  [ ! -e "$STUB_CFG/sent_term-a-11" ]
+  [ ! -e "$STUB_CFG/comment_400" ]
+  [ "$(rec_get 11 stop)" = stopped-seen ]
+}
+
+@test "wait --resolve: a parent action with an empty reply posts none as the reply" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が依存を張り替える' ''
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  [ "$(sed -n 5p "$STUB_CFG/comment_11")" = "送るはずだった返事: なし" ]
+}
+
+@test "wait --resolve: a failing post of a parent action prints the repost command and still wakes the parent" {
+  resolve_ready
+  judge_says judge_out 親が動く '親が #12 を起動する' '再開する'
+  echo 1 > "$STUB_CFG/comment_exit_11"
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ]
+  [ "$output" = "stopped 11" ]
+  grep -F 'gh issue comment 11' "$BATS_TEST_TMPDIR/stderr" | grep -qF '親の判断: 親の操作が要る'
+  [ ! -e "$STUB_CFG/comment_400" ]
+}
+
+@test "wait --resolve: a pass whose reply mentions the parent is still sent" {
+  resolve_ready
+  judge_says judge_out 通す 範囲の内側 '親が見張りを続けるので、そのまま待つ'
+  run dispatch wait --interval 0 --timeout 60 --watch-stopped --resolve 400 11
+  [ "$status" -eq 0 ] || { echo "status=$status output=$output"; cat "$BATS_TEST_TMPDIR/stderr"; false; }
+  [ "$output" = "closed 11" ]
+  [ "$(cat "$STUB_CFG/sent_term-a-11")" = "親エピック #400 の判断（主の承認ではない）: 親が見張りを続けるので、そのまま待つ" ]
+  starts_with "$(head -1 "$STUB_CFG/comment_400")" "親の判断: 子 #11 通した"
+}
+
 @test "wait --resolve: a failing judge is posted as could-not-decide with an unknown record" {
   resolve_ready
   echo 1 > "$STUB_CFG/judge_exit"
