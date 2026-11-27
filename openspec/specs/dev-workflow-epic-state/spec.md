@@ -956,7 +956,7 @@ UserPromptSubmit と Stop は、payload の `cwd` の git 最上位と `worktree
 
 ### Requirement: 入力の送り手は予約文と起動形と先頭の接頭辞で決める
 
-フックは予約文を先に除外し、記録の親子と一致する既存 launcher の起動形をそのセッションで初めて受けたら `startup`、それ以外で先頭が `親エピック #` / `主の返事（親エピック #` なら `parent`、残りを `owner` としなければならない（MUST）。対象外入力では分類結果を記録してはならない（MUST NOT）。起動形の子は `#N` または `owner/repo#N` とし、明示された子 repo は記録側と双方小文字化して一致することを求める（MUST）。記録の表記は変えてはならない（MUST NOT）。起動形は先頭の子番号・親番号に加え、明示されたエピックの repo と記録側を双方小文字化して照合し、省略時の同一 repo 判定も双方小文字化しなければならない（MUST）。一致する起動指示でだけ未登録または別 ID から登録・切替し、保存済みの世代を1増やす（初回は1）（MUST）。送り手は到着経路であり承認の権限を表さない。本文の途中の引用や子の自己申告から決めてはならない（MUST NOT）。
+フックは予約文を先に除外し、記録の親子と一致する既存 launcher の起動形をそのセッションで初めて受けたら `startup`、それ以外で先頭が `親エピック #` / `主の返事（親エピック #` なら `parent`、要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」の接頭辞で始まる入力はその要件の送り手、残りを `owner` としなければならない（MUST）。対象外入力では分類結果を記録してはならない（MUST NOT）。起動形の子は `#N` または `owner/repo#N` とし、明示された子 repo は記録側と双方小文字化して一致することを求める（MUST）。記録の表記は変えてはならない（MUST NOT）。起動形は先頭の子番号・親番号に加え、明示されたエピックの repo と記録側を双方小文字化して照合し、省略時の同一 repo 判定も双方小文字化しなければならない（MUST）。一致する起動指示でだけ未登録または別 ID から登録・切替し、保存済みの世代を1増やす（初回は1）（MUST）。送り手は到着経路であり承認の権限を表さない。本文の途中の引用や子の自己申告から決めてはならない（MUST NOT）。
 
 #### Scenario: 主が直接入力する
 - **WHEN** 主が保存済み ID と同じ子のタブに `調査結果を教えて` と入力する
@@ -981,6 +981,10 @@ UserPromptSubmit と Stop は、payload の `cwd` の git 最上位と `worktree
 #### Scenario: 一致する起動指示の形は認証に使わない
 - **WHEN** 同じ worktree の別セッションに、記録の親子・repo と一致する起動指示を意図的に送り直す
 - **THEN** その ID への切替を受理する。これは起動指示の輸送上の分類であり、主本人の承認や起動元の認証を証明しない
+
+#### Scenario: 裏の作業の通知で始まった入力は本文から owner と決めない
+- **WHEN** 保存済み ID と同じセッションへの入力が `<task-notification>` で始まる
+- **THEN** `sender` は本文から `owner` と決めず、直前の `turn_input.sender` と同じ値になる（直前が `parent` / `startup` なら `owner` にならない。要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」）
 
 ### Requirement: 新しい通常入力は前の終了状態を原子的に無効にする
 
@@ -1411,3 +1415,35 @@ dispatch は検査済みの作業待ち候補の Orca 一呼び出しだけに�
 #### Scenario: 背景待機表示だけを送信成功としない
 - **WHEN** 作業待ちに一回 send したが turn_started が無く、送信後再観測には背景待機行だけがあり新しい前景実行を確認できない
 - **THEN** failed send、exit 1 とし、再送・terminal wait・入力消去を行わない。新しい前景実行と空欄が揃う場合だけ既存どおり sent とする
+
+### Requirement: 裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ
+
+フックは、予約文でも起動形でもない対象の入力のうち、先頭の空白を除いた本文が `<task-notification` / `<local-command-` / `<bash-input>` / `<bash-stdout>` / `<bash-stderr>` のどれかで始まるものの `sender` を、同じセッションの直前の `turn_input.sender` にしなければならない（MUST）。世代を 1 増やし、受付時刻と会話ログの位置を更新し、`turn_state` を `null` にする扱いはほかの通常入力と同じにする（MUST）。`sender` の値を `owner` / `parent` / `startup` 以外にしてはならない（MUST NOT）。
+
+#### Scenario: 親の作業の通知で起こされたターンの返事待ちは止まりになる
+- **WHEN** 直前の `sender` が `parent`（または `startup`）の子が `<task-notification>` で始まる入力を受け、そのターンを `状態: 主の返事待ち — <中身>` で終える
+- **THEN** 記録の `sender` は `parent`（または `startup`）のまま世代が 1 増え、`epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped <N>` は `stopped <N>` を返す
+
+#### Scenario: 主の作業の通知で起こされたターンは今までどおり owner の扱い
+- **WHEN** 直前の `sender` が `owner` の子が `<task-notification>` で始まる入力を受け、そのターンを `主の返事待ち` で終える
+- **THEN** 記録の `sender` は `owner` のままで、`wait --watch-stopped` は `stopped` を返さず、`turn_state.recorded_at` から `EPIC_DISPATCH_OWNER_AWAY_SEC` たてば `owner-away <N>` を返す
+
+#### Scenario: 5 つの接頭辞と先頭の空白
+- **WHEN** 直前の `sender` が `parent` の子が、先頭に空白や改行を置いたものを含め、`<task-notification` / `<local-command-` / `<bash-input>` / `<bash-stdout>` / `<bash-stderr>` のどれかで始まる入力を受ける
+- **THEN** どれも `sender` は `parent` で、本文の途中にだけこれらの文字列がある入力は `owner` になる
+
+#### Scenario: 主が子のタブで打った入力は変わらない
+- **WHEN** 主が保存済み ID と同じ子のタブに通常の文を打ち、そのターンを `主の返事待ち` で終える
+- **THEN** `sender` は `owner` で、`wait --watch-stopped` は `stopped` を返さず、`EPIC_DISPATCH_OWNER_AWAY_SEC` たてば `owner-away <N>` を一度だけ返す
+
+### Requirement: 直前の送り手の引き継ぎの守備範囲を限る
+
+要件「裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ」は、入力として扱うものを UserPromptSubmit の payload の `prompt` と記録の直前の `turn_input.sender` に限らなければならない（MUST。会話ログの `origin.kind` は読まない）。拾いたい誤りは、裏の作業の終わりの通知や Claude Code が処理した出力を主が打った入力（`owner`）と数えることである。次は通してよく、止めない: 主が本当に 5 つの接頭辞で始まる文を打った入力（直前の送り手を引き継ぐ）／`<command-name>` を含むプロンプト（今までどおり `owner` になりうる）／本文の途中にだけ接頭辞がある入力（`owner`）／主が子のタブで打った依頼から始まった作業の通知のターン（`owner` を引き継ぎ、止まりは `owner-away` で拾う。エピック #1826 の条件の答え）。接頭辞の漏れを見つけるたびに塞ぎ切ることは完了条件にしない。
+
+#### Scenario: command-name を含むプロンプトは引き継がない
+- **WHEN** 直前の `sender` が `parent` の子が、`<command-name>` を含むプロンプトを受ける
+- **THEN** `sender` は `owner` である
+
+#### Scenario: 主の依頼の作業の通知は owner-away で拾う
+- **WHEN** 直前の `sender` が `owner` の子が `<task-notification>` で始まる入力を受け、そのターンを `主の返事待ち` で終える
+- **THEN** `wait --watch-stopped` は `stopped` を返さず、`EPIC_DISPATCH_OWNER_AWAY_SEC` たてば `owner-away <N>` を返す
