@@ -29,7 +29,7 @@
 - [ ] 5.1 `epic-loop.md` の親だけの片付けの段落を、`waiting` と `stopped` は完了推定の対象外・`stopped-seen` は対象・completed で閉じた完了の印の無い子には `notify-closed` で促す、に直す。触る範囲: plugins/dev-workflow/skills/develop/references/epic-loop.md:72
 - [ ] 5.2 `epic-loop.md` の手順 2 の推定の括弧書き（推定しない子）を、`waiting` の子・親がまだ受けていない止まり（`stopped`）の子・トランスクリプトが無い子に直し、`stopped-seen` は対象に入ると書く。手順 4 の `notify-closed` の説明から「止まった印の無い子…には何も送らない」と `skipped <N> not-stopped` の子の文を消し、止まった印の有無によらず促すこと、促しの届かなかった子（`failed` の子など）は `--watch-done` の推定で片付くので主にステータスを変えるよう頼まないことを書く。触る範囲: plugins/dev-workflow/skills/develop/references/epic-loop.md:75（手順 2）、plugins/dev-workflow/skills/develop/references/epic-loop.md:77（手順 4）
 
-- [ ] 5.3 `reply-after-idle.md`「そのまま送るか、起動し直すか（子）」の前置きの「主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない。」は文字列を変えずに残し（`tests/develop-skill.bats` が検査している）、その後ろに「`notify-closed` の完了の促しだけは、止まっていない子にも送る。その子には `--relaunch` を付けても端末を閉じず、起動し直さない」の 1 文を足す。42 行の「`notify-closed` は本体が表で分類し、必要なら `--relaunch` を付ける」に「`--relaunch` が効くのは止まっている子だけ」を足す。触る範囲: plugins/dev-workflow/skills/develop/references/reply-after-idle.md:42-44
+- [ ] 5.3 `reply-after-idle.md` 7 行の「停止中の completed の子への notify-closed」を「完了の印の無い completed の子への notify-closed」に直す。「そのまま送るか、起動し直すか（子）」の前置きの「主が子のタブで始めたターンの子には何も送らず、端末を閉じず、起動し直さない。」は文字列を変えずに残し（`tests/develop-skill.bats` が検査している）、その後ろに「`notify-closed` の完了の促しだけは、止まっていない子にも送る。その子には `--relaunch` を付けても端末を閉じず、起動し直さない」の 1 文を足す。42 行の「`notify-closed` は本体が表で分類し、必要なら `--relaunch` を付ける」に「`--relaunch` が効くのは止まっている子だけ」を足す。触る範囲: plugins/dev-workflow/skills/develop/references/reply-after-idle.md:7、plugins/dev-workflow/skills/develop/references/reply-after-idle.md:42-44
 
 ## 6. テスト
 
@@ -38,7 +38,7 @@
 - [ ] 6.3 推定: 「waiting, stopped and stopped-seen children are not inferred」から `stopped-seen` を外し、`stopped-seen` で条件を満たせば `done 11` が出て `stop`・`stop_uuid` が残るテストを足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:2516-2530
 - [ ] 6.4 `wait --resolve`: 判断のスタブが `判断: 親が動く` を出すと、子の端末に送られず、エピックに通した行が無く、子 issue に `親の判断: 親の操作が要る` と `送るはずだった返事:` の行のコメントが投稿され、`stopped 11` が出るテストを足す（投稿の失敗で `repost_hint` が出るものも）。`判断: 通す` で返事に「親が」を含む止まり（`返事: 親が見張りを続けるので、そのまま待つ`）が今までどおり送られるテストも足す。`parent-pass-criteria.md` と `epic-stop.md` の文面の検査を足す（`epic-stop.md` は、`親の操作が要る` の件が `dismiss` の文より前に現れることと、「pending-owner の復元」の扱いも確かめる）。既存の通すテストは変えずに通ることを確かめる。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:4841-4900（wait --resolve の節の先頭。足すのは 4892 の主に上げるテストの後ろ）
 - [ ] 6.5 stop-judge: スタブが `判断: 親が動く` を出すと 4 行が出て exit 0 になること（止まりの JSON の有無の両方）を足す。触る範囲: plugins/dev-workflow/tests/stop-judge.bats:94-113（足すのは 104 のテストの後ろ）
-- [ ] 6.6 owner-away: `turn_state.session_id` と違うセッションの最新ログに `recorded_at` より新しい主の入力があると `owner-away` が出ず `owner_away_told` が書かれないテストと、同じセッション・ログが読めないときは今までどおり出るテストを足す。トランスクリプトの作り方は同じファイルの推定のテストにならう。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:9734-9837（owner-away の節）
+- [ ] 6.6 owner-away: `turn_state.session_id` と違うセッションの最新ログに `recorded_at` より新しい `last_input_at`（主の入力の時刻）があると `owner-away` が出ず `owner_away_told` が書かれないテストと、同じセッション・ログが読めないときは今までどおり出るテストを足す。トランスクリプトの作り方は同じファイルの推定のテストにならう。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:9734-9837（owner-away の節）
 - [ ] 6.7 `bats plugins/dev-workflow/tests/epic-dispatch.bats plugins/dev-workflow/tests/stop-judge.bats plugins/dev-workflow/tests/epic-stop-from-log-scenario.bats plugins/dev-workflow/tests/develop-skill.bats`（`develop-skill.bats` は `epic-stop.md` の `dismiss` の文・`reply-after-idle.md` の前置きの文をそのままの文字列で検査している）と `bats tests/injection-budget.bats` を通す。触る範囲: なし（実行だけ）
 
 ## 7. 記録
