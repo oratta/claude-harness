@@ -1,0 +1,20 @@
+# Tasks
+
+## 1. テストを先に書く
+
+- [ ] 1.1 `reply --as owner` で、端末 1 つ・`agentIdentity` null・題名がセッション名・画面の下端に Claude Code の入力枠（既存の screen のスタブの形）があれば `sent 11` になるテストを足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:4527-4680（reply の端末選択のスタブとテスト）、plugins/dev-workflow/tests/epic-dispatch.bats:295-310（`terminal read` のスタブ）
+- [ ] 1.2 同じ一覧で、画面の下端がシェルのプロンプト・画面を読めない（`terminal read` が失敗）ときは `failed 11 ambiguous-terminal` で、送信・作成・閉じるが呼ばれないテストを足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:4527-4680
+- [ ] 1.3 識別できない端末が 2 つのとき `terminal read` が呼ばれず `failed 11 ambiguous-terminal` になるテストを足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:4527-4680
+- [ ] 1.4 `notify-closed`（`stopped-seen`・`completed`）で同じ 1 端末に送られ、stdout に `ambiguous-terminal` が無いテストを足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:5072-5100（notify-closed のテスト）
+- [ ] 1.5 `keepalive` で同じ 1 端末が選ばれて画面の判定に進むテストを足す。触る範囲: plugins/dev-workflow/tests/epic-dispatch.bats:7880-7910（keepalive の orca スタブ）
+
+## 2. 実装
+
+- [ ] 2.1 `keepalive_screen_reason` の Python に、入力枠が取れたかだけを返すモードを足す（取れれば `claude`、取れなければ `unknown`。観測の形が読めなければ `unknown`）。触る範囲: plugins/dev-workflow/scripts/epic-launch-orca.sh:112-238（keepalive_screen_reason）
+- [ ] 2.2 端末一覧 JSON から選べず、端末がちょうど 1 つのときだけ画面を 1 回読み、2.1 のモードで `claude` ならそのハンドルを返す関数を足す（`pick_session_term` 自体は一覧だけで決める今の形のまま残し、`shell_start` はそれを使い続ける）。触る範囲: plugins/dev-workflow/scripts/epic-launch-orca.sh:97-108（pick_session_term）
+- [ ] 2.3 `cmd_deliver` と `cmd_keepalive` を 2.2 の関数に切り替える。触る範囲: plugins/dev-workflow/scripts/epic-launch-orca.sh:243-253（cmd_keepalive）、plugins/dev-workflow/scripts/epic-launch-orca.sh:461-470（cmd_deliver）
+- [ ] 2.4 `epic-dispatch.sh` の reply の説明コメントの端末の決め方に 1 端末の画面の段を足す。触る範囲: plugins/dev-workflow/scripts/epic-dispatch.sh:145-155
+
+## 3. 確かめる
+
+- [ ] 3.1 `scripts/test.sh plugins/dev-workflow/tests/epic-dispatch.bats` が exit 0
