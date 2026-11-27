@@ -125,6 +125,65 @@ JSON
   echo "$output" | grep -q 'depleted'
 }
 
+# 共有枠モードは guard 自身の場所の usage_view.py から得る（#1625）。guard を一時の scripts ディレクトリに
+# 写し、偽の usage_view.py を置いて、guard が自分の式ではなく usage_view.py の導出で決めることを確かめる。
+fake_scripts() {  # $1 = 偽の usage_view.py の本文（空なら置かない）
+  mkdir -p "${WORK}/plugin/scripts"
+  cp "$SCRIPT" "${WORK}/plugin/scripts/agent-model-guard.sh"
+  [ -n "$1" ] && printf '%s\n' "$1" > "${WORK}/plugin/scripts/usage_view.py"
+  FAKE_SCRIPT="${WORK}/plugin/scripts/agent-model-guard.sh"
+}
+
+@test "fork: the shared mode comes from usage_view.py (a fake returning throttled denies without data)" {
+  fake_scripts 'SOURCE_EXPLICIT = "明示 env"
+def build_view(**kw):
+    return {"active": "default", "accounts": {"default": {}}}
+def budget_mode_details(slot, now, environ=None):
+    return {"fable": {"mode": "conserve", "shown": "conserve", "source": "x"},
+            "shared": {"mode": "throttled", "shown": "throttled", "source": "自動導出"}}'
+  run env USAGE_SNAPSHOT="${WORK}/none.json" "$FAKE_SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q 'throttled'
+}
+
+@test "fork: an explicit SHARED_BUDGET_MODE is judged without calling build_view" {
+  fake_scripts 'import os
+SOURCE_EXPLICIT = "明示 env"
+def build_view(**kw):
+    raise RuntimeError("build_view must not be called")
+def budget_mode_details(slot, now, environ=None):
+    environ = os.environ if environ is None else environ
+    v = (environ.get("SHARED_BUDGET_MODE") or "").strip()
+    shared = {"mode": v, "shown": v, "source": SOURCE_EXPLICIT} if v else {"mode": "ok", "shown": "ok", "source": "既定"}
+    return {"fable": {"mode": "conserve", "shown": "conserve", "source": "x"}, "shared": shared}'
+  run env SHARED_BUDGET_MODE=depleted USAGE_SNAPSHOT="${WORK}/none.json" "$FAKE_SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q 'depleted'
+}
+
+@test "fork: an unknown explicit value is denied as throttled and the reason shows the value as written" {
+  run env SHARED_BUDGET_MODE=foo "$SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  denied
+  echo "$output" | grep -q '共有枠モードが foo のあいだ'
+}
+
+@test "fork: without a loadable usage_view.py the explicit env is not read and fork is allowed" {
+  fake_scripts ''
+  run env SHARED_BUDGET_MODE=depleted USAGE_SNAPSHOT="${WORK}/none.json" "$FAKE_SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  fake_scripts 'raise ImportError("broken")'
+  run env SHARED_BUDGET_MODE=depleted USAGE_SNAPSHOT="${WORK}/none.json" "$FAKE_SCRIPT" <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"fork","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "fork: the guard has no formula of the shared budget mode (week seconds, the 90 threshold)" {
+  run grep -nE '86400|> *90|weekly_all_pct|weekly_resets_epoch' "$SCRIPT"
+  [ "$status" -eq 1 ]
+  [ -z "$output" ]
+}
+
 @test "large payload: a multi-megabyte prompt is still judged (no ARG_MAX failure)" {
   big="$(head -c 3000000 /dev/zero | tr '\0' 'a')"
   printf '{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"%s"}}' "$big" > "${WORK}/big.json"
@@ -228,4 +287,91 @@ JSON
   denied
   ! echo "$output" | grep -q 'fable（最終 verify' || return 1
   echo "$output" | grep -q 'dev-workflow:decider'
+}
+
+# ===== 実行役の種別は対応表の上限を超える格で起こせない（#615） =====
+
+@test "role cap: worker with fable is denied naming the roles, the tiers and the decider type" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"fable","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  denied
+  for word in 'spec-write' 'implement' '最上位' '上位' 'dev-workflow:decider' 'role_caps' 'subagent-model-selection'; do
+    echo "$output" | grep -q -- "$word"
+  done
+}
+
+@test "role cap: gate-runner with the full Fable id is denied naming implement and the tiers" {
+  call '{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:gate-runner","model":"claude-fable-5-1","prompt":"x"}}'
+  denied
+  for word in 'implement' '最上位' '上位' 'role_caps'; do
+    echo "$output" | grep -q -- "$word"
+  done
+}
+
+@test "role cap: worker with haiku, sonnet, opus, an unknown name or no model passes" {
+  for model_part in ',"model":"haiku"' ',"model":"sonnet"' ',"model":"opus"' ',"model":"fabel"' ''; do
+    call "{\"tool_name\":\"Agent\",\"tool_input\":{\"subagent_type\":\"dev-workflow:worker\",\"prompt\":\"x\"$model_part}}"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+
+copy_plugin() {  # $1 = destination; copies scripts and references, the table the guard reads
+  mkdir -p "$1"
+  cp -R "${PLUGIN_DIR}/scripts" "${PLUGIN_DIR}/references" "$1/"
+}
+
+@test "role cap: a broken table skips the cap check, so worker fable is still denied by the Fable check and opus passes" {
+  copy_plugin "${WORK}/copy"
+  echo '{not json' > "${WORK}/copy/references/model-tier-map.json"
+  run env USAGE_SNAPSHOT="${WORK}/none.json" "${WORK}/copy/scripts/agent-model-guard.sh" \
+    <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"fable","prompt":"x"}}'
+  denied
+  ! echo "$output" | grep -q 'role_caps' || return 1
+  echo "$output" | grep -q 'dev-workflow:decider'
+  run env USAGE_SNAPSHOT="${WORK}/none.json" "${WORK}/copy/scripts/agent-model-guard.sh" \
+    <<<'{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"opus","prompt":"x"}}'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
+@test "role cap: lowering the cap in one table changes both the guard and codex-develop.py request" {
+  copy_plugin "${WORK}/copy"
+  python3 - "${WORK}/copy/references/model-tier-map.json" <<'PY'
+import json, sys
+path = sys.argv[1]
+table = json.load(open(path, encoding='utf-8'))
+table['role_caps'] = {'spec-write': '中位', 'implement': '中位'}
+json.dump(table, open(path, 'w', encoding='utf-8'), ensure_ascii=False)
+PY
+  repo="${WORK}/repo"
+  git init -q "$repo"
+  git -C "$repo" -c user.name=Test -c user.email=test@example.invalid commit --allow-empty -qm fixture
+  echo 'Do only this phase.' > "${WORK}/input.txt"
+  worker_opus='{"tool_name":"Agent","tool_input":{"subagent_type":"dev-workflow:worker","model":"opus","prompt":"x"}}'
+  request() {  # $1 = plugin dir whose codex-develop.py is run
+    run env CLAUDE_CONFIG_DIR="$WORK" USAGE_PROBE_RESPONSE_FILE="${WORK}/nonexistent.json" \
+      FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=ok \
+      python3 "$1/scripts/codex-develop.py" request --profile claude-default --phase implement \
+      --pre-class contract --input "${WORK}/input.txt" --cwd "$repo" --out "${WORK}/request-$2.json"
+  }
+
+  # The bundled table lets both through.
+  run env USAGE_SNAPSHOT="${WORK}/none.json" FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=ok "$SCRIPT" <<<"$worker_opus"
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+  request "$PLUGIN_DIR" bundled
+  [ "$status" -eq 0 ]
+  echo "$output" | grep -q '上位'
+
+  # The lowered copy refuses both.
+  run env USAGE_SNAPSHOT="${WORK}/none.json" FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=ok \
+    "${WORK}/copy/scripts/agent-model-guard.sh" <<<"$worker_opus"
+  denied
+  echo "$output" | grep -q '中位'
+  request "${WORK}/copy" copy
+  [ "$status" -ne 0 ]
+  for word in 'implement' '上位' '中位'; do
+    echo "$output" | grep -q -- "$word"
+  done
 }

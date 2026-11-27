@@ -1,15 +1,19 @@
 #!/usr/bin/env bats
 #
-# 仕様の文言合わせの軽い通し方（issue #986。エピック #973 の子）
+# 仕様の文言合わせの通し方（issue #986。エピック #973 の子）
 # 既存の仕様の文言を実装に合わせて直すだけの変更を、仕様の差分 1 ファイルだけで通し、
 # R1 の仕様レビューを省く通し方が、指示書（develop）とゲート（pr-review-gate）に揃って書かれていること、
 # ゲートの照合コマンドが fixture で期待どおりに振る舞うことを確かめる。
 # spec: dev-workflow-spec-review / dev-workflow-develop / dev-workflow-pr-review-gate
 
+load lib/develop-docs
+
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
-  CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  CRITERIA="${PLUGIN_DIR}/skills/develop/references/spec-decision.md"
   REVIEWER="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
   W_SPEC="${PLUGIN_DIR}/skills/develop/references/roles/worker/spec.md"
   W_COMMON="${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md"
@@ -17,6 +21,7 @@ setup() {
   W_FINISH="${PLUGIN_DIR}/skills/develop/references/roles/worker/finish.md"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
   PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  gate_test_docs
 }
 
 # 「## <見出し>」で始まる節を、次の「## 」の手前まで切り出す（多バイトの見出しは index で比べる）
@@ -80,8 +85,9 @@ step5() { LC_ALL=C awk '/^### 5\. /{f=1} /^## (G として動くとき|出口)/{
   section "$W_SPEC" '仕様化判断' | grep -q '通し方: 文言合わせ'
   section "$W_SPEC" '仕様化判断' | grep -q '直す文:'
   section "$W_SPEC" '仕様化判断' | grep -qE 'gh (issue|pr) comment.*通し方: 文言合わせ.*直す文: '
-  section "$W_SPEC" '仕様化判断' | grep -qE '文言合わせ.*decision-criteria.md'
-  section "$W_SPEC" '仕様化判断' | grep -qE '迷ったら当てない'
+  section "$W_SPEC" '仕様化判断' | grep -qE '文言合わせ.*spec-decision.md'
+  # 迷ったときの倒し方は W の要約から spec-decision.md「判定に迷ったら」へ移した（#1683）
+  develop_docs | grep -qE '文言合わせの通し方を当てるかどうかで迷ったら.*主に聞かず、当てない側'
 }
 
 @test "worker/spec: spec section writes only the delta file and no proposal/design/tasks" {
@@ -131,7 +137,7 @@ step5() { LC_ALL=C awk '/^### 5\. /{f=1} /^## (G として動くとき|出口)/{
   loop_sec | grep -qE '通し方: 文言合わせ.*R1 の工程を飛ばし.*段: implement'
   loop_sec | grep -qE 'return の文面ではなく'
   loop_sec | grep -qE '行が無ければ.*段: spec.*R1 の工程を通す'
-  loop_sec | grep -q 'references/decision-criteria.md` Step B'
+  loop_sec | grep -q 'references/spec-decision.md` Step B'
 }
 
 @test "loop: (2) names the wording-sync path as the only exception, (3a) uses --type change" {
@@ -237,7 +243,7 @@ table5() { step5 | grep '^| '; }
 # 手順 5 に書かれた照合のコマンド（DEC= の行から、要件名の突き合わせの行まで）を抜き出して fixture で実行する。
 # gh は fixture を返す偽物に差し替え、archive 済みの差分は一時ディレクトリに置く。
 light_cmds() {
-  step5 | LC_ALL=C awk '/^DEC=/{f=1} f{print} f && /^grep -h .*Requirement: /{exit}'
+  step5 | LC_ALL=C awk '/^```bash$/{bash=1; next} /^```$/{bash=0; next} bash && /^DEC=/{f=1} bash && f{print} bash && f && /^grep -h .*Requirement: /{exit}'
 }
 
 install_fake_gh() {

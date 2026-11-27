@@ -15,7 +15,9 @@
 #     1 行目の最初の文（引用と URL を 1 回の走査で隠し、。！!？? の最初まで）が ？/? で終わるか、
 #     （URL の中で開いて閉じる引用の記号は URL の一部、外で開いた引用の閉じが URL の中に来たら URL はその手前で終わる、
 #     URL の中で閉じない開きは引用にしない）
-#     区切り（- が 3 つ以上だけの行）より上の最後の行が答え方の語を含むときだけ対象
+#     区切り（- が 3 つ以上だけの行）より上の最後の行が答え方の語を含むか（この 2 つは旧い書き分けの手がかりで、狭めない）、
+#     並びの 2 番目の行（前後の空白と * を除く）が「アクション」で始まり : か ： が続くとき（正本の新しい書き分けの、
+#     1 行目が題名で 2 行目がアクションの行の依頼の手がかり）だけ対象
 #   - URL を取り除いてから #数字 を探す。区切りより上に番号がある（条件 1）か、番号があるのに
 #     /issues/<数字> か /pull/<数字> を含む URL が無い（条件 2）と差し戻す
 #   - 理由の文は事実と正本の場所だけを書き、正本の文言を写さない（正本を直すときの直す場所を 1 か所に保つ）
@@ -65,6 +67,7 @@ FIRST_END_RE = re.compile(r"[。！!？?]")
 NUM_RE = re.compile(r"#[0-9]+")
 SEP_RE = re.compile(r"-{3,}")
 NO_ACTION_RE = re.compile(r"主がすること[:：]\s*なし")
+ACTION_LINE_RE = re.compile(r"アクション[:：]")
 
 # 逆引用符のブロックを除き、空白だけでない行を並べる
 lines = []
@@ -137,7 +140,9 @@ first_plain = mask_quotes_and_urls(first)
 m_end = FIRST_END_RE.search(first_plain)
 is_question = first.endswith(("？", "?")) or bool(m_end and m_end.group(0) in ("？", "?"))
 has_answer_line = bool(above) and any(w in above[-1] for w in ANSWER_WORDS)
-if not (is_question or has_answer_line):
+# 正本の新しい書き分け: 1 行目が題名、2 行目が「アクション:」で始まる行の依頼。行頭に限り、行の中ほどの語では拾わない
+has_action_line = len(lines) > 1 and bool(ACTION_LINE_RE.match(lines[1].strip().strip("*").strip()))
+if not (is_question or has_answer_line or has_action_line):
     raise SystemExit(0)
 
 def numbers(line):

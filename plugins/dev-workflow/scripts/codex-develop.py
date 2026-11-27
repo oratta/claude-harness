@@ -6,7 +6,9 @@ from concurrent.futures import ThreadPoolExecutor
 import fcntl
 import hashlib
 import json
+import math
 import os
+import re
 from pathlib import Path
 import select
 import subprocess
@@ -20,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'scripts'))
 import usage_view  # noqa: E402
 import headroom  # noqa: E402
+import tier_caps  # noqa: E402
 CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
                    'decider', 'explore', 'summarize')
 PHASES = {
@@ -42,6 +45,22 @@ comments, push, PR creation and commit yourself here, and do not return needs-co
 them. The coordinator performs only operations already recorded as ones it could not align.'''
 READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
 its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
+# The tiers from lowest to highest. Tier names are the only thing that crosses from the rule to
+# the executors; model-tier-map.json alone turns a tier into a model name.
+TIERS = ('最安', '中位', '上位', '最上位')
+TIER_MAP = ROOT / 'references/model-tier-map.json'
+# Every phase starts from one tier. W and G share the implement role, so this is keyed by phase.
+BASE_TIERS = {'spec': '中位', 'implement': '中位', 'finish': '中位', 'gate': '中位',
+              'spec-review': '上位', 'review': '上位', 'decider': '最上位',
+              'explore': '最安', 'summarize': '最安'}
+WRITER_PHASES = frozenset({'spec', 'implement', 'finish'})
+REVIEW_PHASES = frozenset({'spec-review', 'review'})
+PRE_CLASSES = ('sacred', 'merge', 'contract', 'billing')
+# A sacred path alone does not raise a reader: in repositories whose product is agent settings
+# nearly every change touches one, and raising them would spend most of the top tier.
+DECIDER_PRE_CLASSES = frozenset({'merge', 'contract', 'billing'})
+
+
 def _setting_error(exc):
     """An invalid HEADROOM_* setting stops the automatic selection (blocked, exit 2)."""
     return RuntimeError(f'automatic selection cannot count headroom: {exc}')
@@ -85,11 +104,51 @@ def claude_usage_evidence(snapshot_path, now):
             'fetched_at': row['observed_at']}
 
 
-def select_configuration(claude_margin, codex_margin, codex_enabled=True):
+def usage_paths():
+    config_dir = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
+    return config_dir, Path(os.environ.get('USAGE_SNAPSHOT', config_dir / '.usage-snapshot'))
+
+
+def read_budget_modes(now=None):
+    # Unreadable usage is not a reason to stop a request: it reads as no data.
+    now = int(time.time()) if now is None else now
+    try:
+        view = usage_view.build_view(snapshot_path=str(usage_paths()[1]), now=now)
+        slot = view['accounts'].get(view['active'])
+    except Exception:
+        slot = None
+    return usage_view.budget_modes(slot, now)
+
+
+# Codex at or above this margin takes every role whatever Claude has (issue #1677). The
+# default matches flatmate's ACCOUNT_ALLOC_MIN_SURPLUS_PCT.
+ALL_CODEX_THRESHOLD_SETTING = 'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'
+ALL_CODEX_THRESHOLD_DEFAULT = 10
+
+
+def all_codex_threshold():
+    """The all-Codex threshold; an invalid value stops the selection instead of using 10."""
+    name = ALL_CODEX_THRESHOLD_SETTING
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == '':
+        return ALL_CODEX_THRESHOLD_DEFAULT
+    try:
+        value = float(raw)
+    except ValueError:
+        raise RuntimeError(f'automatic selection cannot read {name}: must be a number') from None
+    if not math.isfinite(value) or not 0 <= value <= 100:
+        raise RuntimeError(f'automatic selection cannot read {name}: must be between 0 and 100')
+    return int(value) if value.is_integer() else value
+
+
+def select_configuration(claude_margin, codex_margin, codex_enabled=True,
+                         threshold=ALL_CODEX_THRESHOLD_DEFAULT):
     # Codex off (accounts.json "codex"."enabled": false) is the user's setting, not a
     # headroom result, so it has its own reason whatever the margins are.
     if not codex_enabled:
         return 'claude-default', 'codex-off'
+    if codex_margin is not None and codex_margin >= threshold:
+        return 'codex-standard', 'codex-headroom-meets-threshold'
     claude_ok, codex_ok = (claude_margin is not None and claude_margin >= 0,
                            codex_margin is not None and codex_margin >= 0)
     if claude_ok and codex_ok:
@@ -301,8 +360,8 @@ def _run_usage_probe(snapshot_path):
 
 
 def automatic_selection(mapping, now=None):
-    config_dir = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
-    snapshot_path = Path(os.environ.get('USAGE_SNAPSHOT', config_dir / '.usage-snapshot'))
+    config_dir, snapshot_path = usage_paths()
+    threshold = all_codex_threshold()
     _run_usage_probe(snapshot_path)
     now = int(time.time()) if now is None else now
     claude = claude_usage_evidence(snapshot_path, now)
@@ -319,7 +378,8 @@ def automatic_selection(mapping, now=None):
              'fetched_at': best[3].get('fetched_at') if best else None}
     if not codex_enabled:
         codex['enabled'] = False
-    selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled)
+    selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled,
+                                           threshold)
     return selected, {'selection_mode': 'automatic', 'configuration': selected,
         'reason': reason,
         'claude': {'account': claude['account'], 'margin': claude['margin'],
@@ -334,19 +394,10 @@ def bind_codex_account(config, account, accounts):
     for role, entry in config['roles'].items():
         roles[role] = dict(entry, account=account) if entry['executor'] == 'codex' else dict(entry)
         validate_role_entry(role, roles[role], accounts, source='automatic profile role')
-    bound = {'version': 1, 'profile': config['profile'], 'roles': roles}
+    bound = {'version': 2, 'profile': config['profile'], 'roles': roles}
     if bound['roles']['review'] != bound['roles']['impl-review']:
         raise RuntimeError('profile review must equal impl-review')
     return bound
-
-
-def claude_default(role):
-    model = ('haiku' if role in {'explore', 'summarize'} else
-             'fable' if role == 'decider' else
-             'opus' if role in {'spec-review', 'impl-review', 'review'} else 'sonnet')
-    effort = 'low' if model == 'haiku' else 'high' if model in {'opus', 'fable'} else 'medium'
-    return {'role': role, 'executor': 'claude', 'account': 'current',
-            'model': model, 'effort': effort}
 
 
 def _unique_object(pairs):
@@ -356,6 +407,109 @@ def _unique_object(pairs):
             raise ValueError(f'duplicate JSON key: {key}')
         value[key] = item
     return value
+
+
+def load_tier_map(path=None):
+    # model-tier-resolution: nothing falls back to a default here, because a default would
+    # silently pick another model. Whether a model name exists is not checked.
+    source = TIER_MAP if path is None else path
+    try:
+        document = json.loads(Path(source).read_text(), object_pairs_hook=_unique_object)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError('tier map is unavailable or invalid') from exc
+    if (not isinstance(document, dict) or
+            set(document) != {'version', 'tiers', 'executors', 'role_caps'} or
+            type(document['version']) is not int or document['version'] != 1 or
+            document['tiers'] != list(TIERS)):
+        raise RuntimeError('tier map must have exactly version=1, tiers, executors and role_caps')
+    executors = document['executors']
+    if not isinstance(executors, dict) or set(executors) != {'claude', 'codex'}:
+        raise RuntimeError('tier map must define exactly the claude and codex executors')
+    for executor, models in executors.items():
+        if not isinstance(models, dict) or set(models) != set(TIERS):
+            raise RuntimeError(f'tier map {executor} must define exactly the four tiers')
+        if any(not isinstance(model, str) or not model for model in models.values()):
+            raise RuntimeError(f'tier map {executor} has an empty or non-string model')
+    # Only the writer roles carry a cap. The legacy form decides from the role name alone
+    # whether to read the table, so a cap on another role needs its own change.
+    caps = document['role_caps']
+    if not isinstance(caps, dict) or set(caps) != set(tier_caps.CAPPED_ROLES):
+        raise RuntimeError('tier map role_caps must cap exactly spec-write and implement')
+    if any(cap not in TIERS for cap in caps.values()):
+        raise RuntimeError('tier map role_caps has an undefined tier')
+    return document
+
+
+def switches_to_decider(phase, pre_class):
+    return phase in REVIEW_PHASES and bool(DECIDER_PRE_CLASSES.intersection(pre_class))
+
+
+def requested_tier(phase, pre_class, design_judgment, failure):
+    # Configuration, executor and automatic selection are deliberately not parameters: a route
+    # that could read them would need the rule copied for it. An input not named here is inert.
+    if switches_to_decider(phase, pre_class):
+        return '最上位'
+    if phase in WRITER_PHASES and (pre_class or design_judgment or failure == 'executor'):
+        return '上位'
+    if phase == 'decider' and failure in {'first', 'executor'}:
+        return '上位'
+    return BASE_TIERS[phase]
+
+
+def apply_budget(tier, phase, switched, modes, unmanned):
+    # Returns the tier after the modes and what lowered it. The shared mode goes first, so it is
+    # the one named when both would land on the same tier. Nothing here raises a tier, and the
+    # lowest tier stays where it is even when depleted: that mode must not add consumption.
+    applied, reason = tier, 'unchanged'
+    if modes['shared'] == 'depleted':
+        limit = '中位'
+    elif modes['shared'] == 'throttled':
+        keeps_upper = switched or phase == 'decider' or phase in WRITER_PHASES
+        limit = '上位' if keeps_upper else '中位'
+    else:
+        limit = None
+    if cap_tier(applied, limit) != applied:
+        applied, reason = cap_tier(applied, limit), 'SHARED_BUDGET_MODE=' + modes['shared']
+    if modes['fable'] == 'exhausted' or modes['fable'] == 'reserve' and unmanned:
+        if cap_tier(applied, '上位') != applied:
+            applied, reason = '上位', 'FABLE_BUDGET_MODE=' + modes['fable']
+    return applied, reason
+
+
+def tier_fields(args, execution, switched, tier_map):
+    # The stdout fields of a resolved request. The cap comes last, so `tier` is the same for
+    # every configuration; `model` is the only value that depends on who executes.
+    modes = read_budget_modes()
+    requested = requested_tier(args.phase, args.pre_class, args.design_judgment, args.failure)
+    tier, reason = apply_budget(requested, args.phase, switched, modes, args.unmanned)
+    cap = execution.get('tier_cap')
+    executed = cap_tier(tier, cap)
+    models = tier_map['executors'][execution['executor']]
+    return {'requested_tier': requested, 'tier': tier, 'tier_reason': reason, 'tier_cap': cap,
+            'executed_tier': executed, 'requested_model': models[requested],
+            'model': models[executed], 'budget_modes': modes}
+
+
+def check_role_cap(role, tier, tier_map):
+    # A tier above the role's cap is refused, never lowered: the Claude guard can only refuse,
+    # and a tier above the cap means the table or the rule is set wrong.
+    cap = tier_map['role_caps'].get(role)
+    if cap is not None and tier_caps.exceeds(tier, cap):
+        raise RuntimeError(tier_caps.refusal(role, tier, cap))
+
+
+def cap_tier(tier, cap):
+    # A cap only ever lowers: min over the tier order, with no cap leaving the tier alone.
+    return tier if cap is None else min(tier, cap, key=TIERS.index)
+
+
+def tier_model(executor, tier):
+    table = load_tier_map()
+    if executor not in table['executors']:
+        raise RuntimeError(f'executor is not defined: {executor}')
+    if tier not in TIERS:
+        raise RuntimeError(f'tier is not defined: {tier}')
+    return {'executor': executor, 'tier': tier, 'model': table['executors'][executor][tier]}
 
 
 def execution_config_hash(config):
@@ -403,25 +557,24 @@ def default_automatic_account_home():
 
 
 def validate_role_entry(role, entry, accounts=None, *, source='profile role'):
-    if not isinstance(entry, dict) or set(entry) != {'executor', 'account', 'model', 'effort'}:
+    # An entry names who runs a role, never a model: the model comes from the tier, so a
+    # model key is an unknown key and refuses the whole profile (a version 1 leftover).
+    required = {'executor', 'account', 'effort'}
+    if not isinstance(entry, dict) or not required <= set(entry) <= required | {'tier_cap'}:
         raise RuntimeError(f'{source} {role} has invalid fields')
     if any(not isinstance(entry[key], str) or not entry[key] for key in entry):
         raise RuntimeError(f'{source} {role} has an empty or non-string value')
+    if 'tier_cap' in entry and entry['tier_cap'] not in TIERS:
+        raise RuntimeError(f'{source} {role} tier_cap is not a defined tier')
     executor = entry['executor']
     if executor not in {'claude', 'codex'}:
         raise RuntimeError(f'{source} {role} executor must be claude or codex')
     if executor == 'codex':
         if accounts is not None and entry['account'] not in accounts:
             raise RuntimeError(f'{source} {role} account is not registered')
-    else:
-        if entry['account'] != 'current':
-            raise RuntimeError(
-                f'{source} {role}: different Claude account execution is not supported yet')
-        if entry['model'] not in {'haiku', 'sonnet', 'opus', 'fable'}:
-            raise RuntimeError(
-                f'{source} {role} Claude model must be one of haiku, sonnet, opus, fable')
-        if entry['model'] == 'fable' and role != 'decider':
-            raise RuntimeError(f'{source} {role}: fable is only supported for decider')
+    elif entry['account'] != 'current':
+        raise RuntimeError(
+            f'{source} {role}: different Claude account execution is not supported yet')
     return dict(entry)
 
 
@@ -432,8 +585,8 @@ def load_profile(name, profile_file, accounts):
     except (OSError, ValueError) as exc:
         raise RuntimeError('profile file is unavailable or invalid') from exc
     if (not isinstance(document, dict) or set(document) != {'version', 'profiles'} or
-            type(document['version']) is not int or document['version'] != 1):
-        raise RuntimeError('profile document must have exactly version=1 and profiles')
+            type(document['version']) is not int or document['version'] != 2):
+        raise RuntimeError('profile document must have exactly version=2 and profiles')
     profiles = document['profiles']
     if not isinstance(profiles, dict) or name not in profiles:
         raise RuntimeError('profile is not defined')
@@ -448,7 +601,7 @@ def load_profile(name, profile_file, accounts):
         clean[role] = validate_role_entry(role, roles[role], accounts)
     if clean['review'] != clean['impl-review']:
         raise RuntimeError('profile review must equal impl-review')
-    return {'version': 1, 'profile': name, 'roles': clean}
+    return {'version': 2, 'profile': name, 'roles': clean}
 
 
 def validate_execution_config(state):
@@ -456,7 +609,7 @@ def validate_execution_config(state):
     if config is None:
         return
     if (not isinstance(config, dict) or set(config) != {'version', 'profile', 'roles'} or
-            type(config.get('version')) is not int or config.get('version') != 1 or
+            type(config.get('version')) is not int or config.get('version') != 2 or
             set(config.get('roles', {})) != set(CANONICAL_ROLES)):
         raise RuntimeError('execution config mismatch')
     for role, entry in config['roles'].items():
@@ -493,17 +646,53 @@ def write(path, value):
     tmp.replace(path)
 
 
-def prompt(phase, instructions, state):
+def prompt(phase, instructions, state, *, plugin_root=None):
+    # plugin_root is only the displayed root (the budget measurement passes a fixed value so the
+    # prompt length does not depend on the install location). Sources are always read from ROOT.
     role, source = PHASES[phase]
-    docs = [('agents/decider.md' if phase == 'decider' else 'skills/develop/references/roles/' + ('gate-runner.md' if phase == 'review' else source)), 'skills/develop/references/decision-criteria.md']
+    # return の 1 行目の宣言は return-declaration.md、仕様化判断と分割判定は spec-decision.md が正本（#1683）。
+    # decision-criteria.md は本体（coordinator）向けの規則なので phase には付けない。
+    docs = [('agents/decider.md' if phase == 'decider' else 'skills/develop/references/roles/' + ('gate-runner.md' if phase == 'review' else source)), 'skills/develop/references/return-declaration.md']
+    if phase == 'spec':
+        docs.append('skills/develop/references/spec-decision.md')
     if source in ('worker/spec.md', 'worker/implement.md', 'worker/finish.md'):
         # W の phase は全段で読む common.md と段のファイルを正本にする（explore / summarize は common.md だけ）
         docs.insert(0, 'skills/develop/references/roles/worker/common.md')
     if phase == 'gate':
-        docs += ['skills/pr-review-gate/SKILL.md', 'skills/pr-review-gate/declarations.md'] + [
-            f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold')]
+        # Read only the launch instruction, before a previous result or quoted brief.
+        # A previous Gate Result's 段/次の段 must never select this request's stage.
+        launch = re.split(r'^## Gate Result\s*$|^```', instructions, maxsplit=1, flags=re.M)[0]
+        route = re.search(r'^レビュー経路: (.+)$', launch, re.M)
+        stage = re.search(r'^段: (.+)$', launch, re.M)
+        stage_docs = {
+            '前提確認と重さ判定': ['stages/prepare.md'],
+            '照合と振り分け': ['stages/triage.md'],
+            '合格処理': ['declarations.md', 'stages/pass.md'],
+            '保留の解除': ['stages/hold.md'],
+        }
+        if route and route[1] == 'adapter' and stage and stage[1] in stage_docs:
+            docs += ['skills/pr-review-gate/' + name for name in stage_docs[stage[1]]]
+        else:
+            # Preserve legacy and missing-line callers' bulk protocol.
+            docs += ['skills/pr-review-gate/SKILL.md', 'skills/pr-review-gate/declarations.md'] + [
+                f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold')]
     elif phase == 'review':
         docs.append('skills/pr-review-gate/stages/reviewer-brief.md')
+    root_note = ''
+    if phase in ('gate', 'review'):
+        root_note = f'''Plugin root: {plugin_root or ROOT}
+Work and changes stay in the cwd above. Plugin root is read-only: it is only where the canonical
+sources and the check scripts they name are read. Read only the details an entry conditionally points to,
+resolving them at that moment: `stages/foo.md` resolves to <Plugin root>/skills/pr-review-gate/stages/foo.md
+and `skills/...` resolves to <Plugin root>/skills/... . Do not read details ahead of their condition.
+'''
+    scratch_note = ''
+    if role in WRITER_ROLES:
+        # #1608: a writer that is told only "work in the cwd" put scratchpad/ inside the worktree.
+        scratch_note = '''Scratch files (notes, fetched data, drafts, logs, throwaway scripts) go outside the cwd: under $TMPDIR, or
+a directory made with `mktemp -d`. Never create scratchpad/ or any other directory for scratch files in the cwd;
+real work files stay in the cwd as usual.
+'''
     text = f'''Codex delegated develop phase: {phase}. Role: {role}.
 The Claude coordinator follows the canonical develop workflow; execute ONLY the requested assignment.
 Phase labels select role instructions, not an alternate workflow or mandatory sequence.
@@ -511,7 +700,7 @@ The spec label includes the canonical decision whether specification is needed: 
 creating a specification. Follow the same decision criteria and return contract as a Claude worker.
 The coordinator alone applies workflow prerequisites, reviews, checks and transitions.
 Account is fixed by the worker. Work only in {state['cwd']}.
-Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
+{root_note}{scratch_note}Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
 return needs-reviewer/needs-decider with the exact request; the coordinator dispatches a fresh thread.
 Claude Agent/SendMessage/Skill/opsx operations in canonical references are provider-specific:
 use repository CLI equivalents for openspec only where available; do not pretend a Claude hook ran.
@@ -556,6 +745,13 @@ def build_request(args):
         raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
     if legacy and not (args.account and args.model):
         raise RuntimeError('legacy request requires both account and model')
+    # The legacy pair goes around the tiers, so only the other forms need the table, except
+    # that a writer role is checked against its cap (whether to read it is decided by name).
+    phase_role = PHASES[args.phase][0]
+    tier_map = None if legacy and phase_role not in tier_caps.CAPPED_ROLES else load_tier_map()
+    if legacy and tier_map is not None:
+        check_role_cap(phase_role, tier_caps.model_tier(tier_map['executors']['codex'], args.model),
+                       tier_map)
     if legacy or profile:
         refuse_explicit_codex_when_off(args, legacy)
     mapping = account_homes(args.account_home, args.account_home_file)
@@ -584,28 +780,33 @@ def build_request(args):
                      'reason': 'explicit-account-model'}
     else:
         selected, selection = automatic_selection(mapping)
-        if selected == 'claude-default':
-            state = {'cwd': str(cwd), 'automatic_claude_default': True}
-        else:
-            config = load_profile(selected, None, None)
-            config = bind_codex_account(config, selection['codex']['account'], set(mapping))
-            state = {'cwd': str(cwd), 'execution_config': config,
-                     'execution_config_hash': execution_config_hash(config)}
+        config = load_profile(selected, None, None)
+        config = bind_codex_account(config, selection['codex']['account'], set(mapping))
+        state = {'cwd': str(cwd), 'execution_config': config,
+                 'execution_config_hash': execution_config_hash(config)}
     role = PHASES[args.phase][0]
-    execution = (claude_default(role) if state.get('automatic_claude_default') else
-                 resolve_execution(state, role))
+    # A switched review runs on the decider entry but keeps the phase role in the request file:
+    # the worker chooses the sandbox from that role, and the phase instructions use gh.
+    switched = not legacy and switches_to_decider(args.phase, args.pre_class)
+    execution = resolve_execution(state, 'decider' if switched else role)
+    # The legacy pair is the one way to pin a version, so no rule, mode or table touches it.
+    tiers = (dict.fromkeys(('requested_tier', 'tier', 'tier_reason', 'tier_cap', 'executed_tier',
+                            'budget_modes'))
+             | {'requested_model': args.model, 'model': args.model} if legacy else
+             tier_fields(args, execution, switched, tier_map))
+    if not legacy:
+        check_role_cap(execution['role'], tiers['executed_tier'], tier_map)
     head = git(str(cwd), 'rev-parse', 'HEAD')
     if execution['executor'] == 'claude':
-        result = {'status': 'agent-required', 'phase': args.phase, 'role': role,
+        result = {'status': 'agent-required', 'phase': args.phase, 'role': execution['role'],
                 'executor': execution['executor'], 'account': execution['account'],
-                'model': execution['model'], 'effort': execution.get('effort'),
-                'head': head, 'selection': selection}
+                'effort': execution.get('effort'), 'head': head, 'selection': selection} | tiers
         if 'execution_config' in state:
             result.update(execution_config=state['execution_config'],
                           execution_config_hash=state['execution_config_hash'])
         return result
     request = dict(request_id='develop-' + uuid.uuid4().hex, origin='manual',
-                   account=execution['account'], model=execution['model'], cwd=str(cwd), role=role,
+                   account=execution['account'], model=tiers['model'], cwd=str(cwd), role=role,
                    codex_home=mapping[execution['account']],
                    prompt=prompt(args.phase, 'Dispatch HEAD: ' + head + '\n' + Path(args.input).read_text(), state))
     if 'effort' in execution:
@@ -615,10 +816,10 @@ def build_request(args):
     out = Path(args.out).expanduser().resolve()
     write(out, request)
     result = {'status': 'request-written', 'request': str(out), 'request_id': request['request_id'],
-            'phase': args.phase, 'role': role, 'executor': execution['executor'],
+            'phase': args.phase, 'role': execution['role'], 'executor': execution['executor'],
             'account': execution['account'],
-            'codex_home': request['codex_home'], 'model': execution['model'],
-            'effort': execution.get('effort'), 'head': head, 'selection': selection}
+            'codex_home': request['codex_home'], 'effort': execution.get('effort'),
+            'head': head, 'selection': selection} | tiers
     if 'execution_config' in state:
         result.update(execution_config=state['execution_config'],
                       execution_config_hash=state['execution_config_hash'])
@@ -642,9 +843,22 @@ def main():
     request.add_argument('--account-home-file',
                          help='flat JSON object of account name to CODEX_HOME')
     request.add_argument('--quota-margin-pct', type=float)
+    request.add_argument('--pre-class', action='append', default=[], choices=PRE_CLASSES,
+                         help='pre-classification of the work; repeatable')
+    request.add_argument('--design-judgment', action='store_true')
+    request.add_argument('--failure', choices=('first', 'executor', 'judgment'))
+    request.add_argument('--unmanned', action='store_true')
     request.add_argument('--out', required=True,
                          help='where to write the request file for codex-worker.py run')
-    return build_request(parser.parse_args())
+    # The values are checked in tier_model: argparse choices would refuse them without the
+    # blocked JSON that the callers read.
+    lookup = sub.add_parser('tier-model')
+    lookup.add_argument('--executor', required=True)
+    lookup.add_argument('--tier', required=True)
+    args = parser.parse_args()
+    if args.command == 'tier-model':
+        return tier_model(args.executor, args.tier)
+    return build_request(args)
 
 
 if __name__ == '__main__':

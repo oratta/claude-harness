@@ -286,7 +286,7 @@ TBD - created by archiving change harness-public-private-split. Update Purpose a
 
 ### Requirement: 載せない行の基準に起動部品の 1 つとして並べた行を含める
 
-`docs/public-private-split.md` の「載せない行の基準」は、「差し替え可能な起動部品の 1 つとして Orca を並べた行」を載せない行に含めなければならない（MUST）。当たる行は、Orca を tmux など他の起動部品や方式と並べた 1 つとして書いていなければならず（MUST）、Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらない（MUST NOT）。develop の `references/epic.md` の「部品ごとの欄」の見出しと表は、この基準に当たる行として一覧に載せない。既存の基準の例「Orca や端末から起動した Claude Code」は一般の製品を並べた例で、この基準は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。
+`docs/public-private-split.md` の「載せない行の基準」は、「差し替え可能な起動部品の 1 つとして Orca を並べた行」を載せない行に含めなければならない（MUST）。当たる行は、Orca を tmux など他の起動部品や方式と並べた 1 つとして書いていなければならず（MUST）、Orca だけを前提にした行（Orca 経路と名乗る・Orca に登録済みのリポジトリを探す・Orca の親が子のターミナルに打ち込む）は当たらない（MUST NOT）。develop の `references/epic-loop.md` の「部品ごとの欄」の見出しと表は、この基準に当たる行として一覧に載せない。既存の基準の例「Orca や端末から起動した Claude Code」は一般の製品を並べた例で、この基準は `epic-launch-<名前>.sh` の差し替えの部品として並べた行である。
 
 この基準は `epic-launch-orca.sh` が公開版に決まる前提で当てるもので、#1129 で `epic-launch-orca.sh` は公開版に確定した。文書はこの前提が満たされたことを書かなければならず（MUST）、#1177 で外した行（節「起動部品の 1 つとして一覧から外した行」）は一覧に戻さない。節は外した行の場所の記録として残す。
 
@@ -391,7 +391,7 @@ issue #1129 で個人版のリポジトリ `oratta/claude-harness-oratta` に移
 
 ### Requirement: 公開版のプラグイン編集ルールは全員に要る部分だけを持ち、個人版の側のファイル名を変える
 
-公開版の `rules/plugin-editing.md` は、プラグインを入れた誰の環境でも当てはまる次の 5 点だけを書かなければならない（MUST）。(1) インストールされたフォルダ（`~/.claude/plugins/marketplaces/...`）は自動更新されるので直接編集しない、(2) `~/.claude/commands/` と `~/.claude/skills/` へのローカルコピーを編集しない、(3) `~/.claude/rules/*.md` は marketplace のフォルダを指す symlink なので、ルールもその部品を持つリポジトリ側で直す、(4) 部品は、その部品を持つリポジトリの開発用 clone（marketplace のフォルダの外）で直す。公開版の部品にも個人版の部品にも当てはまる書き方にし、個人版の名前とパスは書かない、(5) 状態がおかしくなっても手動で削除せず、`/plugin uninstall` → `/reload-plugins` → `/plugin install` → `/reload-plugins` の順で直す。
+公開版の `rules/plugin-editing.md` は、プラグインを入れた誰の環境でも当てはまる次の 6 点だけを書かなければならない（MUST）。(1) インストールされたフォルダ（`~/.claude/plugins/marketplaces/...`）は自動更新されるので直接編集しない、(2) `~/.claude/commands/` と `~/.claude/skills/` へのローカルコピーを編集しない、(3) `~/.claude/rules/*.md` は marketplace のフォルダを指す symlink なので、ルールもその部品を持つリポジトリ側で直す、(4) 部品は、その部品を持つリポジトリの開発用 clone（marketplace のフォルダの外）で直す。公開版の部品にも個人版の部品にも当てはまる書き方にし、個人版の名前とパスは書かない、(5) 状態がおかしくなっても手動で削除せず、`/plugin uninstall` → `/reload-plugins` → `/plugin install` → `/reload-plugins` の順で直す、(6) プラグインの動きへの指摘をメモリにその場しのぎで書くときは、同じターンでその部品を持つリポジトリに直し先の issue を立て、メモリの frontmatter に `patches: <issue の URL>` を書く（issue が閉じたらそのメモリは消す候補になる）。(6) は全プロジェクトのセッションに常時読み込まれる規則で、メモリを書く時点で効かせるために rules に置く（memory-refresh の手順は整理のときにしか読まれない）。
 
 次のものは公開版の `rules/plugin-editing.md` に書いてはならない（MUST NOT）: Harness 開発者向けの手順（開発用 clone の場所を決める環境変数 `CLAUDE_HARNESS_DEV_DIR`、別プロジェクト作業中に Harness を直すときの手順、`/wt-setup`、`sync.sh`、版を上げないことと `changes/` の記録と Draft PR）と、個人版の名前（`claude-harness-oratta`）。これらは個人版のリポジトリ `oratta/claude-harness-oratta` の `rules/harness-dev.md` に置く。
 
@@ -406,7 +406,7 @@ issue #1129 で個人版のリポジトリ `oratta/claude-harness-oratta` に移
 
 #### Scenario: 公開版のルールが全員に要る部分だけを持つ
 - **WHEN** 公開版の `rules/plugin-editing.md` を読む
-- **THEN** 上の (1)〜(5) が書かれ、`CLAUDE_HARNESS_DEV_DIR`・`/wt-setup`・`sync.sh`・`claude-harness-oratta`・`Draft PR` のどれも書かれていない
+- **THEN** 上の (1)〜(6) が書かれ、`CLAUDE_HARNESS_DEV_DIR`・`/wt-setup`・`sync.sh`・`claude-harness-oratta`・`Draft PR` のどれも書かれていない
 
 #### Scenario: Harness 開発者向けの語が戻ると落ちる
 - **WHEN** 公開版の `rules/plugin-editing.md` に `CLAUDE_HARNESS_DEV_DIR` を含む行を足す
@@ -423,3 +423,7 @@ issue #1129 で個人版のリポジトリ `oratta/claude-harness-oratta` に移
 #### Scenario: 個人版のファイル名が公開版と重ならない
 - **WHEN** 個人版のリポジトリの `rules/` を列挙する
 - **THEN** `plugin-editing.md` が無く、`harness-dev.md` がある
+
+#### Scenario: 公開版のルールがメモリの patches: の書き方を持つ
+- **WHEN** 公開版の `rules/plugin-editing.md` を読む
+- **THEN** プラグインの動きへの指摘をメモリにその場しのぎで書くときは同じターンで issue を立て `patches:` を書くことが書かれ、個人版の名前とパスは書かれていない

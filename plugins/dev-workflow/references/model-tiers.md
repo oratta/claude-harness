@@ -19,11 +19,11 @@ Workflow ツールのスクリプトで `agent(prompt, opts)` に渡す `opts.mo
 
 ## develop role の provider-neutral profile
 
-`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各 role は、`references/codex-role-profiles.json`（または明示した version 1 profile-file）の同名 entry にある executor/account/model/effort へ解決する。歴史的なファイル名は維持するが、version 1 table は Claude と Codex を同じ profile 内で扱う provider-neutral な正本である。本表へ個別 Codex model ID を重複記載せず、Claude の tier alias を Codex model へ暗黙変換しない。
+`spec-write`、`spec-review`、`implement`、`impl-review`、`review`、`decider`、`explore`、`summarize` の各 role は、`references/codex-role-profiles.json`（または明示した形式版 2 の profile-file）の同名 entry にある executor/account/effort と、`codex-develop.py request` が決める格へ解決する。歴史的なファイル名は維持するが、形式版 2 の table は Claude と Codex を同じ profile 内で扱う provider-neutral な正本である。格は低い順に `最安`・`中位`・`上位`・`最上位` で、格からモデル名への対応は `references/model-tier-map.json` の 1 か所にあり、`codex-develop.py tier-model --executor <executor> --tier <格>` で引ける。実行役（`spec-write`・`implement`）の格の上限も同じ表の `role_caps` にある（今は両方とも `上位`）。本表へ個別 Codex model ID を重複記載せず、Claude の tier alias を Codex model へ暗黙変換しない。
 
-Claude entry は account=`current`、model=`haiku|sonnet|opus|fable`、非空の effort を要求する。`fable` は `decider` role だけに許可する。別 Claude account の実行はまだ対応せず、account 欄自体は allocator の共通出力として保持する。Codex entry は登録済み account と非空の model/effort を要求し、正式な model/effort の対応可否は worker 起動時にも検証する。
+Claude entry は account=`current` と非空の effort を要求する。別 Claude account の実行はまだ対応せず、account 欄自体は allocator の共通出力として保持する。Codex entry は登録済み account と非空の effort を要求し、正式な model/effort の対応可否は worker 起動時にも検証する。どの entry にも `model` は書けず、任意の `tier_cap` で役の格より低い格に抑える。
 
-重めの実装・レビューを中位ティアで回すときは `'opus'` を渡す（`rules/subagent-model-selection.md` の対応表と同じ）。
+重めの実装・レビューを中位ティアで回すときは `'opus'` を渡す（`rules/subagent-model-selection.md` の対応表と同じ）。この「中位（重めは opus）」は、上の格の `上位` に当たる。
 
 ## `inherit` の意味
 
@@ -31,7 +31,7 @@ Claude entry は account=`current`、model=`haiku|sonnet|opus|fable`、非空の
 
 ## 残量モードによる降格（`fable` のみ対象）
 
-残量モード `FABLE_BUDGET_MODE` の定義と導出の正本は `plugins/dev-workflow/skills/develop/references/decision-criteria.md`。ワークフロー側の適用は次の 2 行に閉じる:
+残量モード `FABLE_BUDGET_MODE` の定義と導出の正本は `plugins/dev-workflow/skills/develop/references/decision-criteria.md`。Agent の起動では残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`。ワークフロー側の適用は次の 2 行に閉じる:
 
 - `reserve` の**自動実行**（unmanned / cron / loop 経由）では、`fable` ティアを `'opus'` として渡す（interactive では降格しない）
 - `exhausted` では **全経路**で `fable` ティアを `'opus'` として渡す（枠が実際に無いため）
@@ -49,7 +49,7 @@ effort は親セッションの値を継ぐだけだと、答えの型が決ま�
 | `reviewer` | `high` | 判断が集中する差分レビュー |
 | `decider` | `high` | 修正方針・最終 verify・マージ可否 |
 
-**上書き。** Agent ツールの `effort` 引数（Claude Code 2.1.292）で呼び出し単位に上書きできる（出典は issue #711。公式文書には記載なし）。`model` と違い、呼び出しごとの明示は義務ではない。未指定でも frontmatter の値が効くので、最上位枠を無言で消費する事故は起きない。
+**上書き。** Agent ツールの `effort` 引数（Claude Code 2.1.292）で呼び出し単位に上書きできる（公式文書には記載なし）。`model` と違い、呼び出しごとの明示は義務ではない。未指定でも frontmatter の値が効くので、最上位枠を無言で消費する事故は起きない。
 
 **優先順位。** 公式文書（https://code.claude.com/docs/en/sub-agents ）が定める範囲は、frontmatter の `effort` はセッションの effort を上書きするが、環境変数 `CLAUDE_CODE_EFFORT_LEVEL` は上書きしない、まで。環境変数が設定された環境では、4 役の frontmatter の値は効かず環境変数の値が全役に効く（測定前に `echo $CLAUDE_CODE_EFFORT_LEVEL` で確認する）。Agent の `effort` 引数と frontmatter・環境変数の優先関係は文書に記載なし。
 
@@ -61,7 +61,7 @@ effort は親セッションの値を継ぐだけだと、答えの型が決ま�
 
 ### なぜ `model` の明示が必須か
 
-モデル未指定のサブエージェントは**親セッションのモデルを継承する**ため、親が最上位モデルのセッションでは調査 1 回ごとに最上位枠を無言で消費する。2026-08 に実際に発生した（pr-review-gate に記録した 2026-08-07 のレビュー自動発火事故と同じメカニズム）。
+モデル未指定のサブエージェントは**親セッションのモデルを継承する**ため、親が最上位モデルのセッションでは調査 1 回ごとに最上位枠を無言で消費する。
 
 `subagent_type: "fork"` は仕様として常に親モデルで動き、`model` 指定は無視される。fork を使ってよいのは**役割が最上位ティア相当の仕事のときだけ**（下の枠残量確認も同様に適用）。それ以外は fork ではなく `model` 明示の通常サブエージェントで立てる。
 
@@ -73,11 +73,11 @@ effort は親セッションの値を継ぐだけだと、答えの型が決ま�
 - **中位ティア** — 通常の実装・複数ファイルにまたがる調査・通常のコードレビュー。**迷ったらここ**
 - **最上位ティア** — 判断が一点に集中する仕事だけ（最終 verify・マージ可否・アーキテクチャ判断）。手を動かす仕事（実装・修正ループ）は聖域パスでも中位ティア止まり。枠残量（`FABLE_BUDGET_MODE`。正本は dev-workflow の `scripts/session-tripwires.sh`、未設定時は `conserve` 扱い）を確認してから使う
 
-**最上位ティアは決める役の種別（`dev-workflow:decider`）でだけ spawn する**（`general-purpose` / `Explore` / `Plan` / 他種別に `model: fable` を付けない）。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`（`Agent` の PreToolUse。全解除は `DEV_WORKFLOW_MODEL_GUARD=off`）。
+**最上位ティアは決める役の種別（`dev-workflow:decider`）でだけ spawn する**（`general-purpose` / `Explore` / `Plan` / 他種別に `model: fable` を付けない）。強制層は `plugins/dev-workflow/scripts/agent-model-guard.sh`（`Agent` の PreToolUse。全解除は `DEV_WORKFLOW_MODEL_GUARD=off`）。実行役の上限は `plugins/dev-workflow/references/model-tier-map.json` の `role_caps` にあり、guard（`dev-workflow:worker` → spec-write・implement、`dev-workflow:gate-runner` → implement）と `codex-develop.py request` が同じ表から判定し、上限を超える格を下げずに拒否する（model 名から格を引く規則と拒否の文面は `scripts/tier_caps.py` で共有）。
 
 ### 対応表の保守
 
-`rules/subagent-model-selection.md` の対応表（2026-08 時点）について: `model` パラメータはエイリアス指定でバージョン非依存のため、モデルが更新されたらこの表だけ直せばよい。原則の節は書き換え不要。
+`rules/subagent-model-selection.md` の対応表について: `model` パラメータはエイリアス指定でバージョン非依存のため、モデルが更新されたらこの表だけ直せばよい。原則の節は書き換え不要。
 
 ### 適用範囲
 

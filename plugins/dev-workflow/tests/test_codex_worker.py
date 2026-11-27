@@ -1,5 +1,8 @@
 import base64
+import contextlib
+import datetime
 import importlib.util
+import io
 import json
 import os
 from pathlib import Path
@@ -210,6 +213,17 @@ class ForegroundTest(unittest.TestCase):
     def children(self, pid):
         out = subprocess.run(['pgrep','-P',str(pid)],text=True,capture_output=True)
         return [int(s) for s in out.stdout.split()]
+
+    def await_children(self, pid, what, deadline=30):
+        # A process table read right after an event can still miss a child that is being
+        # spawned, so wait until the count is the expected one instead of reading it once.
+        stop = time.monotonic()+deadline
+        found = self.children(pid)
+        while len(found) != 1 and time.monotonic() < stop:
+            time.sleep(.05)
+            found = self.children(pid)
+        self.assertEqual(len(found),1,'expected one '+what)
+        return found[0]
 
     def alive(self, pid):
         try:
@@ -714,16 +728,57 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(execution['evidence']['effort'],'turn/start:result.turn.effort')
         self.assertEqual(execution['evidence']['executor'],'transport:codex-app-server')
 
+    TIMESTAMP = r'^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$'
+
+    @staticmethod
+    def utc_now():
+        # Seconds precision, truncated, matching the worker's own format.
+        return datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
+
+    def test_foreground_result_carries_the_start_and_end_of_the_run(self):
+        # #1321: the consumption comment copies these into 開始= / 終了=, so a completed run
+        # must carry both, in UTC, and within the time the caller spent waiting for it.
+        self.config(usage={'inputTokens':12,'outputTokens':3})
+        before = self.utc_now()
+        r = self.run_cli()
+        after = self.utc_now()
+        self.assertEqual(r['status'],'completed')
+        for key in ('started_at','ended_at'):
+            self.assertRegex(r[key], self.TIMESTAMP, key)
+        self.assertLessEqual(before, r['started_at'])
+        self.assertLessEqual(r['started_at'], r['ended_at'])
+        self.assertLessEqual(r['ended_at'], after)
+
+    def test_end_is_not_before_the_start_when_the_clock_steps_back(self):
+        # #1321 F1: the spec forbids started_at after ended_at. The wall clock can step back
+        # (NTP) between the two readings, so the end must be held at the start.
+        readings = iter(['2026-11-12T10:00:05Z', '2026-11-12T10:00:00Z'])
+        original = worker_module.utc_timestamp
+        worker_module.utc_timestamp = lambda: next(readings)
+        out = io.StringIO()
+        try:
+            with contextlib.redirect_stdout(out), self.assertRaises(SystemExit) as stopped:
+                worker_module.run(str(self.root/'missing-request.json'))
+        finally:
+            worker_module.utc_timestamp = original
+        self.assertEqual(stopped.exception.code, 2)
+        r = json.loads(out.getvalue().splitlines()[-1])
+        self.assertEqual(r['started_at'], '2026-11-12T10:00:05Z')
+        self.assertEqual(r['ended_at'], '2026-11-12T10:00:05Z')
+
     def develop(self, *args, code=0):
         p = subprocess.run([sys.executable,str(DEVELOP),*args],env=self.env,text=True,capture_output=True,timeout=60)
         self.assertEqual(p.returncode,code,p.stdout+p.stderr)
         return json.loads(p.stdout.splitlines()[-1])
 
     def test_request_built_by_the_adapter_runs_exactly_as_written(self):
-        roles = {role:{'executor':'codex','account':'personal','model':'fixture-model','effort':'low'}
+        # #614: a version 2 profile has no model, so the adapter takes it from the tier map
+        # (implement is 中位, which is sol on Codex) and the worker resolves that family.
+        (self.home/'fixture.json').write_text(json.dumps({'model_pages':[CURRENT_LIST]}))
+        roles = {role:{'executor':'codex','account':'personal','effort':'low'}
                  for role in worker_module.ROLES}
         profile = self.root/'profiles.json'
-        profile.write_text(json.dumps({'version':1,'profiles':{'custom':{'roles':roles}}}))
+        profile.write_text(json.dumps({'version':2,'profiles':{'custom':{'roles':roles}}}))
         instructions = self.root/'input.txt';instructions.write_text('Do only this phase.')
         out = self.root/'request.json'
         built = self.develop('request','--phase','implement','--input',str(instructions),
@@ -732,7 +787,7 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(built['codex_home'],str(self.home.resolve()))
         request = json.loads(out.read_text())
         self.assertEqual([request['role'],request['model'],request['effort'],request['codex_home']],
-                         ['implement','fixture-model','low',str(self.home.resolve())])
+                         ['implement','sol','low',str(self.home.resolve())])
         p = subprocess.run([sys.executable,str(SCRIPT),'run','--request',str(out)],
                            env=self.env,text=True,capture_output=True,timeout=40)
         self.assertEqual(p.returncode,0,p.stdout+p.stderr)
@@ -742,7 +797,8 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(result['text'],'DONE')
         self.assertEqual(result['execution']['role'],'implement')
         self.assertEqual(result['execution']['requested'],
-                         {'executor':'codex','account':'personal','model':'fixture-model','effort':'low'})
+                         {'executor':'codex','account':'personal','model':'sol','effort':'low'})
+        self.assertEqual(result['execution']['model_resolution']['resolved'],'gpt-6-sol')
         # The fixture advertises no thread/turn observation, so the effective side stays
         # unobserved instead of being filled in from the request.
         self.assertIsNone(result['execution']['effective']['model'])
@@ -777,7 +833,11 @@ class ForegroundTest(unittest.TestCase):
             self.config(job,**config)
             r = self.run_cli(job,code=2)
             self.assertEqual(r['error_kind'],kind,job)
-            self.assertEqual(set(r),{'text','status','usage','execution','thread_id','turn_id','error_kind'})
+            self.assertEqual(set(r),{'text','status','usage','execution','thread_id','turn_id','error_kind',
+                                     'started_at','ended_at'})
+            for key in ('started_at','ended_at'):
+                self.assertRegex(r[key], self.TIMESTAMP, (job,key))
+            self.assertLessEqual(r['started_at'], r['ended_at'], job)
             self.assertIsNone(r['status'],job)
             self.assertIsNone(r['text'],job)
             self.assertIsNone(r['usage'],job)
@@ -799,17 +859,16 @@ class ForegroundTest(unittest.TestCase):
                                    stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
         try:
             self.await_turn()
-            shells = self.children(between.pid)
-            self.assertEqual(len(shells),1,'expected one shell wrapper')
-            runs = self.children(shells[0])
-            self.assertEqual(len(runs),1,'expected one foreground command')
-            run_pid = runs[0]
-            servers = self.children(run_pid)
-            self.assertEqual(len(servers),1,'expected one app-server child')
-            server_pid = servers[0]
+            shell_pid = self.await_children(between.pid,'shell wrapper')
+            run_pid = self.await_children(shell_pid,'foreground command')
+            server_pid = self.await_children(run_pid,'app-server child')
             between.kill();between.wait(timeout=10)
             start = time.monotonic()
-            while time.monotonic()-start < 30 and (self.alive(run_pid) or self.alive(server_pid)):
+            # The spec allows 30 seconds from the loss to both processes being gone (MUST), and
+            # the worker's own worst case (stop_budget) has to fit inside it.
+            self.assertLess(self.stop_budget(),30)
+            limit = 30
+            while time.monotonic()-start < limit and (self.alive(run_pid) or self.alive(server_pid)):
                 time.sleep(.1)
             self.assertFalse(self.alive(run_pid),'foreground command outlived its caller')
             self.assertFalse(self.alive(server_pid),'app-server outlived its caller')
@@ -817,14 +876,132 @@ class ForegroundTest(unittest.TestCase):
             if between.poll() is None:
                 between.kill();between.wait(timeout=10)
 
+    def stop_budget(self):
+        # Everything that may pass between the caller's loss and both processes being gone:
+        # failed lookups are tolerated for the window, the lookup that crosses it comes up to
+        # one interval and one lookup timeout later, the main flow notices the flag, the
+        # interrupt waits out the grace period and Rpc.close waits three times.
+        w = worker_module
+        return (w.LOOKUP_FAILURE_WINDOW+w.WATCH_INTERVAL+w.LOOKUP_TIMEOUT+w.STOP_SLACK
+                +w.ForegroundRecorder.grace+3*w.CLOSE_WAIT)
+
+    def test_the_stop_after_a_lost_caller_fits_the_30_seconds_of_the_spec(self):
+        self.assertGreater(worker_module.LOOKUP_FAILURE_WINDOW,0)
+        self.assertLess(self.stop_budget(),30)
+
+    def watch(self, chain, answers, cost=0):
+        # Runs the watcher against scripted lookups on a fake clock: every tick advances it by
+        # one watch interval and every lookup by cost. Returns (stopped, ticks, clock).
+        import threading,types
+        stop = threading.Event()
+        queue = list(answers)
+        ticks = []
+        clock = [0.0]
+        def lookup(pid):
+            ticks.append(pid)
+            clock[0] += worker_module.WATCH_INTERVAL+cost
+            if not queue:
+                # The script ran out: end the watcher without counting it as a stop.
+                stop.set()
+                return chain
+            return queue.pop(0)
+        original,real_time = worker_module.ancestors,worker_module.time
+        worker_module.ancestors = lookup
+        worker_module.time = types.SimpleNamespace(monotonic=lambda: clock[0],sleep=lambda s: None)
+        try:
+            worker_module.watch_caller(stop,chain,0.0,interval=.001)
+        finally:
+            worker_module.ancestors,worker_module.time = original,real_time
+        return stop.is_set() and len(ticks) <= len(answers), len(ticks), clock[0]
+
+    def test_watch_caller_stops_when_the_chain_changes(self):
+        self.assertEqual(self.watch([10,20],[[]])[:2],(True,1))
+        self.assertEqual(self.watch([10,20],[[10,20],[11,20]])[:2],(True,2))
+
+    def test_watch_caller_ignores_a_failed_lookup_that_agrees_with_the_baseline(self):
+        stopped,ticks,_ = self.watch([10,20],[[10,-1],[10,-1],[10,20]])
+        self.assertFalse(stopped)
+        self.assertEqual(ticks,4)
+
+    def test_watch_caller_stops_on_a_failed_lookup_that_disagrees(self):
+        self.assertEqual(self.watch([10,20],[[10,-1],[11,-1]])[:2],(True,2))
+        # Reading past the end of the baseline means the chain is not the one recorded.
+        self.assertEqual(self.watch([10,20],[[10,20,30,-1]])[:2],(True,1))
+
+    def test_watch_caller_stops_within_the_window_when_lookups_keep_failing(self):
+        window = worker_module.LOOKUP_FAILURE_WINDOW
+        latest = window+worker_module.WATCH_INTERVAL+worker_module.LOOKUP_TIMEOUT
+        # Fast failures and failures that each use the whole lookup timeout both stop once
+        # the window since the last good lookup has passed, and no later than one more tick.
+        for cost in (0,worker_module.LOOKUP_TIMEOUT):
+            with self.subTest(cost=cost):
+                stopped,ticks,clock = self.watch([10,20],[[10,-1]]*100,cost=cost)
+                self.assertTrue(stopped)
+                self.assertGreaterEqual(clock,window)
+                self.assertLess(clock,latest)
+
+    def test_watch_caller_counts_the_window_from_the_last_good_lookup(self):
+        # Each tick takes one interval on the fake clock and the window restarts where the good
+        # lookup began, so n failures on either side stay inside it while 2n+1 ticks do not.
+        ticks_per_window = worker_module.LOOKUP_FAILURE_WINDOW/worker_module.WATCH_INTERVAL
+        n = int(ticks_per_window)-2
+        self.assertGreater(n,0)
+        self.assertGreater(2*n+1,ticks_per_window)
+        stopped,_,_ = self.watch([10,20],[[10,-1]]*n+[[10,20]]+[[10,-1]]*n)
+        self.assertFalse(stopped)
+
+    def fake_ps(self, body):
+        directory = self.root/'fake-ps';directory.mkdir(exist_ok=True)
+        (directory/'ps').write_text('#!/bin/sh\n'+body+'\n');(directory/'ps').chmod(0o700)
+        return str(directory)
+
+    def lookup_with(self, directory):
+        original = os.environ['PATH']
+        os.environ['PATH'] = directory+os.pathsep+original
+        try:
+            start = time.monotonic()
+            chain = worker_module.ancestors(4242)
+            return chain, time.monotonic()-start
+        finally:
+            os.environ['PATH'] = original
+
+    def test_ancestors_gives_up_on_a_ps_that_hangs(self):
+        chain,took = self.lookup_with(self.fake_ps('sleep 30'))
+        self.assertEqual(chain,[4242,-1])
+        self.assertLess(took,worker_module.LOOKUP_TIMEOUT+1)
+
+    def test_ancestors_bounds_the_whole_lookup_not_each_ps(self):
+        # Every ps answers, slowly, with a parent that has a parent: 64 links at 0.6 s each
+        # would take far longer than the lookup timeout.
+        chain,took = self.lookup_with(self.fake_ps('sleep .6; echo $(($4+1))'))
+        self.assertEqual(chain[-1],-1)
+        self.assertGreater(len(chain),2)
+        self.assertLess(took,worker_module.LOOKUP_TIMEOUT+1)
+
+    def test_a_caller_that_cannot_be_read_at_start_ends_before_the_server(self):
+        self.env['PATH'] = self.fake_ps('exit 1')+os.pathsep+self.env['PATH']
+        r = self.run_cli(code=2)
+        self.assertEqual(r['error_kind'],'caller_lookup_failed')
+        self.assertIsNone(r['status'])
+        self.assertEqual(self.calls(),[])
+
+    def test_settled_ancestors_retries_a_failed_lookup(self):
+        answers = iter([[10,-1],[10,-1],[10,20]])
+        original,sleep = worker_module.ancestors,worker_module.time.sleep
+        worker_module.ancestors = lambda pid: next(answers)
+        worker_module.time.sleep = lambda s: None
+        try:
+            self.assertEqual(worker_module.settled_ancestors(5),[10,20])
+        finally:
+            worker_module.ancestors,worker_module.time.sleep = original,sleep
+
     def test_sigterm_interrupts_the_turn_and_leaves_no_server(self):
         self.config(wait=True)
         process = subprocess.Popen(self.command(),env=self.env,text=True,
                                    stdout=subprocess.PIPE,stderr=subprocess.PIPE)
         try:
             self.await_turn()
-            servers = self.children(process.pid)
-            self.assertEqual(len(servers),1,'expected one app-server child')
+            servers = [self.await_children(process.pid,'app-server child')]
             process.terminate()
             out,err = process.communicate(timeout=30)
         finally:

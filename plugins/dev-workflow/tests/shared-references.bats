@@ -7,6 +7,8 @@
 # reference は実行コードではないため、規定の記述が存在することを grep で検証する。
 # テスト名は ASCII のみ。
 
+load lib/develop-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   REPO_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
@@ -159,7 +161,9 @@ setup() {
 
 @test "tripwires and develop SKILL.md route large work to workflow-execution instead of /lr:e" {
   grep -q 'workflow-execution.md' "$TRIPWIRES"
-  grep -q 'workflow-execution.md' "$SKILL"
+  local docs
+  docs="$(develop_docs)"
+  grep -qF 'workflow-execution.md' <<< "$docs"
   ! grep -qF '/lr:' "$TRIPWIRES" || return 1
   ! grep -qF '/lr:' "$SKILL" || return 1
   ! grep -q 'longrun' "$SKILL" || return 1

@@ -45,6 +45,15 @@
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/unclear-reply-rephrase.sh\""
           }
         ]
+      },
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/epic-child-state.sh\"",
+            "timeout": 30
+          }
+        ]
       }
     ],
     "PreToolUse": [
@@ -63,6 +72,24 @@
           {
             "type": "command",
             "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/unattended-ask-guard.sh\""
+          }
+        ]
+      },
+      {
+        "matcher": "Write|Edit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/git-guard-base-write-guard.sh\""
           }
         ]
       },
@@ -133,7 +160,8 @@
         "hooks": [
           {
             "type": "command",
-            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/owner-message-number-check.sh\""
+            "command": "\"${CLAUDE_PLUGIN_ROOT}/scripts/epic-child-state.sh\"",
+            "timeout": 30
           }
         ]
       }

@@ -16,7 +16,8 @@ setup() {
   WORKER="${PLUGIN_DIR}/skills/develop/references/roles/worker/spec.md"
   REF="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
   FIX_CHECK="${PLUGIN_DIR}/skills/develop/references/fix-check.md"
-  CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  CRITERIA="${PLUGIN_DIR}/skills/develop/references/spec-decision.md"
+  BUDGET_DC="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
 }
@@ -141,7 +142,7 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
   s="$(cond_sec)"
   [ -n "$s" ] || { echo "no section"; return 1; }
   echo "$s" | grep -qF '条件がいつ成り立つか'
-  echo "$s" | grep -qF '`stages/triage.md` の段 B'
+  echo "$s" | grep -qF '`stages/triage-nonblocking.md` の段 B'
   for row in \
     '| 条件を書けない | 捨てる。理由を 1 行残す |' \
     '| いまのエピック（無ければ記録先）の範囲で成り立つ | BLOCKER に残す |' \
@@ -305,8 +306,11 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
   s="$(fix_cond_sec)"
   pr="$(echo "$s" | grep -F '**PR のレビュー**')"
   echo "$pr" | grep -qF 'この節の本体の手順は G の `needs-fix-check` には当てない'
-  echo "$pr" | grep -qF '`stages/triage.md`'
-  echo "$pr" | grep -qF '段落「周の終わりの止める指摘の条件」'
+  echo "$pr" | grep -qF '`stages/triage-nonblocking.md`'
+  echo "$pr" | grep -qF '`stages/triage-convergence.md`'
+  # 段 B と周の終わりの条件は、それぞれの移動先に結び付いている
+  echo "$pr" | grep -qF '`stages/triage-nonblocking.md` の段 B'
+  echo "$pr" | grep -qF '`stages/triage-convergence.md` の段落「周の終わりの止める指摘の条件」'
   echo "$pr" | grep -qF '本体は判定しない'
   echo "$pr" | grep -qF '決める役に渡すのは `needs-fix-check` で渡された指摘に限る'
   line="$(echo "$s" | grep -F 'この手順の守備範囲は')"
@@ -363,8 +367,10 @@ step2_sec() { loop_sec | awk '/^\(2\) /{f=1} /^\(3\) /{f=0} f'; }
 }
 
 @test "review model: reserve only for automatic runs, exhausted for all paths" {
-  { section "$SKILL" 'モデル'; cat "$REF"; } | grep -qE 'reserve.*自動実行'
-  { section "$SKILL" 'モデル'; cat "$REF"; } | grep -qE 'exhausted.*(全経路|すべて)'
+  # 値ごとの上限は decision-criteria.md の優先順位の表が正本（#1683）。R1 の指示書はそこを 1 行で指す
+  grep -qF '優先順位の表は `skills/develop/references/decision-criteria.md`' "$REF"
+  grep -F '| `reserve`' "$BUDGET_DC" | grep -qF '自動実行'
+  grep -F '| `exhausted`' "$BUDGET_DC" | grep -qF '全経路'
 }
 
 # --- 配布 ---
