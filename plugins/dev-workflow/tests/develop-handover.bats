@@ -9,12 +9,16 @@
 #
 # spec: dev-workflow-develop, dev-workflow-pr-review-gate
 
+load lib/develop-docs
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
   HANDOVER="${PLUGIN_DIR}/skills/develop/references/handover.md"
   COMMAND="${PLUGIN_DIR}/commands/develop.md"
   HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
+  gate_test_docs
 }
 
 # 引き継ぎの節（見出し「## 保留で止まるときの引き継ぎ」から次の ## まで）
@@ -121,8 +125,10 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 }
 
 @test "loop: the hold row and the token-cap exit 2 point to the handover section" {
-  grep -n '保留 → needs-approval' "$SKILL" | grep -qF 'references/handover.md'
-  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'references/handover.md'
+  body="$(develop_procedures)"
+  grep -n '保留 → needs-approval' <<<"$body" | grep -qF 'references/handover.md'
+  body="$(develop_procedures)"
+  awk '/\*\*exit 2（上限超）\*\*/{print}' <<<"$body" | grep -qF 'references/handover.md'
 }
 
 @test "command: an existing handover comment routes to the resume steps regardless of the label" {
@@ -139,7 +145,8 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 }
 
 @test "loop: the token-cap exit 2 puts the label where the handover's label target says (PR if any, else the record)" {
-  awk '/\*\*exit 2（上限超）\*\*/{print}' "$SKILL" | grep -qF 'PR があれば PR、無ければ記録先に `needs-approval` を付け'
+  body="$(develop_procedures)"
+  awk '/\*\*exit 2（上限超）\*\*/{print}' <<<"$body" | grep -qF 'PR があれば PR、無ければ記録先に `needs-approval` を付け'
 }
 
 @test "handover (#721): guidance accepts a conversation reply or /develop args without a PR comment" {
@@ -150,6 +157,14 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 
 @test "handover (#721): resume step 2 passes session id, timestamp and text to the G" {
   handover_section | grep '^2\. ' | grep -qF 'CLAUDE_CODE_SESSION_ID'
+}
+
+@test "handover: guidance goes in the action line (line 2), not a last answer line" {
+  s="$(handover_section)"
+  printf '%s' "$s" | grep -qF '依頼のアクションの行（2 行目。1 行目と 2 行目の書き分けは `~/.claude/output-styles/readable.md` の節 3）'
+  printf '%s' "$s" | grep -qF 'この案内は依頼のアクションの行に書く'
+  printf '%s' "$s" | grep -qF '1 行目は題名にし、2 行目のアクションの行にこのチャンネルで何を返すかを書く'
+  run grep -nE '最後の答え方|1 行目と最後の行|1 行目は質問' <<<"$s"; [ "$status" -eq 1 ]
 }
 
 # 保留の依頼の出し直し（issue #724）
@@ -170,5 +185,6 @@ handover_section() { awk 'index($0,"## 保留で止まるときの引き継ぎ")
 }
 
 @test "resend: the gate hold line in the loop points at the resend rule" {
-  grep -F '保留 → needs-approval のまま' "$SKILL" | grep -qF '依頼の出し直し'
+  body="$(develop_procedures)"
+  grep -F '保留 → needs-approval のまま' <<<"$body" | grep -qF '依頼の出し直し'
 }

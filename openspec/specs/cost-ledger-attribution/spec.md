@@ -317,7 +317,7 @@ Claude Code は 1 回の API 応答を、中身のブロックごとに別の行
 - **PR の分**: 渡された PR 1 件ごとに、行のブランチ名がその PR のヘッドブランチと一致する行の合計。`/cost <PR番号>` と同じ引き方で、リポジトリでは絞らない
 - **PR の外の分**: その issue に帰属した区間の行（「issue による帰属（第 2 の鍵）」が数える行）のうち、行のブランチ名が、渡された PR のどのヘッドブランチとも一致しない行の合計
 
-システムは同じ行を 2 回数えてはなら MUST NOT ない。同じヘッドブランチを持つ PR が複数渡されたときは、番号のいちばん小さい PR だけを数え、残りは PR の分にも内訳にも入れてはなら MUST NOT ない。PR が 1 件も渡されないとき、issue の合計は `/cost <issue番号>` の値（区間の合計）と同じで MUST ある。入出力トークンとキャッシュトークンの合計も、金額と同じ行の集合から数え SHALL る。
+システムは同じ行を 2 回数えてはなら MUST NOT ない。同じヘッドブランチを持つ PR が複数渡されたときは、番号のいちばん小さい PR だけを数え、残りは PR の分にも内訳にも入れてはなら MUST NOT ない。PR が 1 件も渡されないとき、issue の合計は `cost_ledger.py issue <issue番号>` の 1 行目の値（区間の合計。子 issue を持たない issue の `/cost <issue番号>` の 1 行目と同じ）と同じで MUST ある。子 issue を持つ issue の `/cost <issue番号>` の 1 行目は子 issue の分を含む合計（帰属: `子 issue 込み`）なので、この値とは一致しない。入出力トークンとキャッシュトークンの合計も、金額と同じ行の集合から数え SHALL る。
 
 `cost_ledger.py issue <番号>` は `--closing-pr <PR番号>:<ヘッドブランチ>`（繰り返し可）を受け、JSON 出力に次の鍵を足 MUST す。既存の鍵（`total_usd`・`intervals` など）の値と、表示の 1 行目は変えてはなら MUST NOT ない。
 
@@ -334,7 +334,7 @@ Claude Code は 1 回の API 応答を、中身のブロックごとに別の行
 - **THEN** `total_usd` は 3.0、`closing_prs` は `[{"number": 300, "branch": "feat/a", "usd": 3.0}]`、`outside_pr_usd` は 2.0、`combined_total_usd` は 5.0（6.0 ではない）
 
 #### Scenario: 閉じた PR が 0 件なら `/cost` と同じ値
-- **WHEN** issue #12 に帰属する区間がある会話ログで、`--closing-pr` を付けずに `cost_ledger.py issue 12 --json` と `cost_ledger.py cost 12` を実行する
+- **WHEN** 子 issue を持たない issue #12 に帰属する区間がある会話ログで、`--closing-pr` を付けずに `cost_ledger.py issue 12 --json` と `cost_ledger.py cost 12` を実行する
 - **THEN** `closing_prs` は空の配列で、`combined_total_usd` と `outside_pr_usd` は `total_usd` と同じ値であり、その金額は `cost 12` の 1 行目の金額と一致する
 
 #### Scenario: PR が 2 件

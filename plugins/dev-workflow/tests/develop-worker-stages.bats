@@ -90,8 +90,9 @@ nchars() {
 }
 
 @test "pre-classification: referrers point to pre-classification.md, not roles/worker.md" {
+  grep -qF 'stages/triage-escalation.md' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
   for f in skills/develop/SKILL.md skills/develop/references/roles/spec-reviewer.md \
-           skills/develop/references/decision-criteria.md skills/pr-review-gate/stages/triage.md \
+           skills/develop/references/decision-criteria.md skills/pr-review-gate/stages/triage-escalation.md \
            references/model-tiers.md README.md; do
     grep -qF 'pre-classification.md' "${PLUGIN_DIR}/${f}" || { echo "no pointer: $f"; return 1; }
     if grep -n '事前分類' "${PLUGIN_DIR}/${f}" | grep -qE '(roles/)?worker\.md'; then
@@ -127,4 +128,14 @@ nchars() {
   for stage in spec implement finish; do
     grep -qF "段: ${stage}" "$SKILL" || { echo "missing: 段: ${stage}"; return 1; }
   done
+}
+
+# W の段のファイルと索引は decision-criteria.md を指さない（分けたあとは本体だけが読む。#1683）
+@test "stages: the index and the three stage files do not point to decision-criteria.md (#1683)" {
+  for f in "$INDEX" "${WDIR}/spec.md" "${WDIR}/implement.md" "${WDIR}/finish.md" "$AGENT"; do
+    if grep -qF 'decision-criteria.md' "$f"; then echo "points to decision-criteria.md: $f" >&2; return 1; fi
+  done
+  if grep -F 'decision-criteria.md' "${WDIR}/common.md" | grep -qF '読'; then
+    echo "common.md が decision-criteria.md を読ませている" >&2; return 1
+  fi
 }

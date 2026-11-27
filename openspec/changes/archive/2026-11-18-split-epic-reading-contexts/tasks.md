@@ -1,0 +1,40 @@
+# Tasks
+
+行番号は main e10f0a98 時点。R は `plugins/dev-workflow/skills/develop/references/`。各タスクの編集前に範囲を読み直す。実装開始は #1684 の最新の仕様レビュー APPROVE を確認してから。この工程では下のタスクを実装しない。
+
+## 1. 読込の境界と通常進行
+
+- [x] 1.1 design の集合・形式・固定上限の検査を新しい scene-budget Bats に作り、子の停止・委任には parent-pass-criteria.md 全文を含める。使い捨て root の正常値・同字数かつ同 bytes の内容入れ替え（予算検査では通す）・1 byte 超過・欠落・未知キー・重複・不足・1.1 倍境界・案内削除の fixture を検査する。実ファイル用の予算整数は 3.2 で式どおり固定する。確認: `bats tests/develop-epic-scene-budget.bats --filter regress`。触る範囲: tests/develop-epic-scene-budget.bats（新規）、tests/develop-epic-scene-budget.txt（新規）
+- [x] 1.2 入口に読むものの表・注意書きの子側・nested・両経路共通・完了の意味を残し、通常進行と親の子エピック除外・待ち受け・完了報告を loop、subagent と multirepo を各参照先へ移す。nested の子側は入口に保ち、子エピックの既存要件の本文・scenario・存在検査をこの配置に合わせる。枠の通常進行は loop、手順 8 は stop、サブエージェント方式の枠・手渡し・再開優先順は subagent とし、本文・scenario・テスト対象をそろえる。手順 7 内の停止解決を stop の事前 Read にし、後の 2.1 の移設先へ接続する。経路・復元・片付け・終了の動きと出力語の説明は維持する。関連する文言テストの読込 helper と参照の検査を同時に更新する。確認: `./scripts/test.sh epic-dispatch develop-channel-mode`（script の振る舞い検査は維持）。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:1-173、plugins/dev-workflow/skills/develop/references/epic-loop.md（新規）、plugins/dev-workflow/skills/develop/references/epic-subagent.md（新規）、plugins/dev-workflow/skills/develop/references/epic-multirepo.md（新規）、plugins/dev-workflow/tests/epic-dispatch.bats:1-8712、plugins/dev-workflow/tests/develop-channel-mode.bats:1-234
+
+## 2. 停止時だけ読む規則と共有正本
+
+- [x] 2.1 手順 8・今回の止まった理由・PR トークン上限・委任の親の操作を stop へ、マージ待ちの操作を merge-wait へ移す。委任の定型・確認と失効の意味・有効性と種類別条件は delegation だけに置き、親子が事前にそこを読む指定にする。parent-pass と parent-merge の例・判断条件を保ち、参照パスだけ変える。関連 Bats を全文複写の要求から正本・参照・優先順の検査へ変える。確認: `./scripts/test.sh parent-merge owner-escalation-narrowing develop-skill stop-judge`。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:88-127、plugins/dev-workflow/skills/develop/references/epic-stop.md（新規）、plugins/dev-workflow/skills/develop/references/epic-delegation.md（新規）、plugins/dev-workflow/skills/develop/references/epic-merge-wait.md（新規）、plugins/dev-workflow/skills/develop/references/epic-child-stop.md:13-40、plugins/dev-workflow/skills/develop/references/parent-pass-criteria.md:1-116（参照のみ）、plugins/dev-workflow/skills/develop/references/parent-merge-criteria.md:1-43（参照のみ）、plugins/dev-workflow/tests/parent-merge.bats:1-161、plugins/dev-workflow/tests/owner-escalation-narrowing.bats:1-224、plugins/dev-workflow/tests/develop-skill.bats:1-1930
+- [x] 2.2 時間分類を reply-after-idle に集め、loop から起床の処理前にその正本へ到達させる。keepalive に親子で共有する声かけの規則を集め、子は停止前に JSON と合わせて読む。予約文の受信ターンでツールを使わない、停止を解除しない等を保つ。各タスクのテストを正本参照へ変え、必要時の Read の検査も加える。確認: `./scripts/test.sh epic-dispatch develop-skill child-log-read epic-launch-tmux`。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:59-90、plugins/dev-workflow/skills/develop/references/epic.md:155-173、plugins/dev-workflow/skills/develop/references/reply-after-idle.md:1-127、plugins/dev-workflow/skills/develop/references/epic-child-stop.md:1-18、plugins/dev-workflow/skills/develop/references/epic-keepalive.md（新規）、plugins/dev-workflow/skills/develop/references/epic-loop.md（新規）、plugins/dev-workflow/skills/develop/references/epic-stop.md（新規）、plugins/dev-workflow/tests/epic-dispatch.bats:1-8712、plugins/dev-workflow/tests/develop-skill.bats:1-1930
+- [x] 2.3 loop の「主への報告」に書き分けを一度宣言し、stop・merge・subagent がそこを読むようにする。個別の例外は維持する。epic の規則に混ざる日付・実測・issue 経緯と、child-stop の (a)–(c) の後の三つの重複例を整理し、子が `主に聞く理由:` を書く前に parent-pass「例」を読む指定を加え、同ファイル全文を子の停止・委任の集合と予算に含める。互換分岐は design の調査表どおり残す。確認: `./scripts/test.sh owner-question-style owner-escalation-narrowing develop-skill`。触る範囲: plugins/dev-workflow/skills/develop/references/epic.md:46-77、plugins/dev-workflow/skills/develop/references/epic.md:149-173、plugins/dev-workflow/skills/develop/references/epic-child-stop.md:33-40、plugins/dev-workflow/skills/develop/references/epic-loop.md（新規）、plugins/dev-workflow/skills/develop/references/epic-stop.md（新規）、plugins/dev-workflow/skills/develop/references/epic-merge-wait.md（新規）、plugins/dev-workflow/skills/develop/references/epic-subagent.md（新規）、tests/owner-question-style.bats:1-315、plugins/dev-workflow/tests/owner-escalation-narrowing.bats:1-224、plugins/dev-workflow/tests/develop-skill.bats:1-1930
+
+## 3. 参照・仕様・予算の接続
+
+- [x] 3.1 SKILL.md 等の移動した節への参照を更新し、ゲートはパスのみ付け替える。G の判定本文を保ち、既存の一致テストは共有正本と G の一致・子の参照を確かめる形へ変える。現行 specs の要件を `reference-inventory.md` と delta で照合し、既存の specs 形式検査を維持する。main specs への反映は finish の archive で行い、このタスクでは delta と実装の対応を確認する。確認: `./scripts/test.sh develop-skill pr-review-gate-skill git-destructive-guard openspec-specs-format` と `openspec validate split-epic-reading-contexts --type change --strict`。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:50-370（epic の参照のみ）、plugins/dev-workflow/skills/develop/references/spec-decision.md:79-108（入口の参照の確認のみ）、plugins/dev-workflow/references/commit-and-pr-operations.md:18-18、plugins/dev-workflow/skills/pr-review-gate/stages/pass.md:138-147（参照パスのみ）、plugins/dev-workflow/tests/pr-review-gate-skill.bats:2076-2140、plugins/dev-workflow/tests/develop-skill.bats:1-1930、plugins/dev-workflow/tests/git-destructive-guard.bats:2454-2460、tests/openspec-specs-format.bats:63-83（既存検査の確認のみ）、openspec/changes/split-epic-reading-contexts/specs/（作成済み delta 6 ファイル、対応確認・必要な訂正のみ）
+- [x] 3.2 全 10 集合を測り、初期予算を実測 bytes ちょうどで固定し、実ファイルの予算・参照・正本一本化の Bats を通す。startup 予算は参照パスの長さで上限を超えるときだけ実測に合わせ、理由を記録する。injection-budget.txt は変更しない。確認: `bats tests/develop-epic-scene-budget.bats tests/develop-startup-budget.bats tests/develop-worker-stage-budget.bats`。触る範囲: tests/develop-epic-scene-budget.txt（新規）、tests/develop-epic-scene-budget.bats（新規）、tests/develop-startup-budget.txt:1-3（必要時のみ）
+
+## 4. 統合確認と実装段の記録
+
+- [x] 4.1 既存・新規の Bats が git 追跡対象にある状態で `./scripts/test.sh` と `./scripts/lint.sh` を実行し、終了コードを記録する。OpenSpec strict 検証と `git diff --check` も通す。親子の各場面から読込先をたどり、子に親専用の操作本文を新たに読ませないことと、G 本文・基準の例・出力語を変えていないことを差分で確認する。触る範囲: 本 change の手順書・参照・Bats・delta 全体（検査のみ）
+- [x] 4.2 子の停止・委任の parent-pass-criteria.md は例の節指定でも全文を含め、design の R1 修正後の分割前集合を基準にする。main e10f0a98 と実装後の集合を UTF-8 の `wc -m`・`wc -c` で再測定し、同じ共通起動分の定義で前後表を作る。#1682 に実装段のコメントを投稿し、PR 用に段落ごとの移設先・読む場面・案内元と残した互換分岐を実装の return にまとめる。変更記録も作る。確認: コメント URL、前後表、段落対応表、残した分岐と根拠がそろっていること。触る範囲: plugins/dev-workflow/changes/1684.md（新規）、GitHub issue #1682 の実装段のコメント、実装段の return（PR 本文用の記録）
+
+## Workflow follow-up
+
+- coordinator が別コンテキストの仕様レビューを実行する。W は R1 APPROVE と次の段の指示まで実装しない。
+- 実装＋verify のあとに return し、finish の指示で archive と main specs 反映を行い、reference-inventory と `rg` で旧節の参照がないことを照合し、`./scripts/test.sh openspec-specs-format` を通す。そのうえで PR 本文の段落対応表／字数前後／残した互換分岐・仕様宣言を仕上げる。W はマージも auto-merge 有効化も行わない。
+
+## 実装担当の記録（試行 2）
+
+- 4.2 の測定・前後表・段落対応・互換分岐・変更記録は `plugins/dev-workflow/changes/1684.md` に用意済み。今回の dispatch に従い、#1682 への投稿と URL の記録は coordinator が行うため、4.2 全体のチェックは投稿まで残す。
+
+- 統合検査: 単一の `./scripts/test.sh` は新規 Bats の assertion guard 2 件で exit 1。その 5 行に `|| return 1` を加え、`bats tests/bats-assertion-guard.bats tests/develop-epic-scene-budget.bats tests/develop-startup-budget.bats tests/develop-worker-stage-budget.bats` は 36 件・exit 0。最終の全件再検査は CI と同じ `TEST_SHARD=1/4`〜`4/4 ./scripts/test.sh` で各 exit 0（1318 / 1311 / 1310 / 1311 件）。git 追跡下の全 167 スイート・5250 件と和集合が一致し、重複・欠落・除外 0。
+- `./scripts/lint.sh`、`./scripts/test-auto-merge-workflow.sh`（145 件）、`openspec validate split-epic-reading-contexts --type change --strict`、`git diff --check f7ec7c4a HEAD` は exit 0。最終再測定で全 10 予算と変更記録の表の完全一致を確認した。
+
+## finish 担当の記録
+
+- 4.2 の #1682 への実装段の結果・全10場面の前後表の投稿を完了: https://github.com/oratta/claude-harness/issues/1682#issuecomment-6979848473

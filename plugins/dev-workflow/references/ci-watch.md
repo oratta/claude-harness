@@ -24,10 +24,11 @@
 状態ファイルは読んで書き戻すので、同じ PR を 2 つのセッションが見張ると修正回数の数え落としや二重の修正が起きる。
 
 - 見張りを始める前に PR のコメントを見る。1 行目が `CI 見張り開始:` のコメントのあとに、1 行目が `CI 見張り終了:` のコメントが無ければ、ほかのセッションが見張り中として始めず、PR の URL を添えてオーナーに伝える
+- 通常経路の develop では、見張りを始める前に 7 冒頭の CI 用引き継ぎを読み、記録を残す。
 - 始めるときは、1 行目が `CI 見張り開始:` のコメントを PR に投稿する。本文には何を待っているか（PR の CI の決着を本体が待っていること）を 1 行添える。見張りを終えるときは、1 行目が `CI 見張り終了:` のコメントを投稿する（終えた理由を 1 行添える）
 - 前のセッションが閉じて終了のコメントが残らなかった見張りを、通知を受けていない別のセッションが引き継ぐには、下のオーナーの指示による再開の規則に従う。自分の会話で起動した待ちの `stopped` / `killed` の通知を受けた起動し直しのセッションは 9 に従う（オーナーの指示を待たない）。
 - オーナーの指示で見張りを再開するとき（前のセッションが閉じて終了のコメントが残らなかった・オーナーに上げたあと続けるよう言われた）は、状態ファイルの `raised` を消すだけで済ませない。`decide` は前回と同じ状態・同じ HEAD の決着を `none` にするので、中断した一手を飛ばしたまま見張りが終わってしまう。先に状態ファイル（`state`・`head`・`fixes`・`reran_head`）と PR の記録（直しの依頼・push・`gh run rerun`・ラベル）から、中断した一手が済んでいるかを確かめる
-  - 状態ファイルの `head` が PR の今の HEAD と同じで、`fix` の判定のあと直しの push が無いときは、`next` を呼ばずに、下の 7 の直し方の実装者への修正依頼から再開する（`fixes` は判定のときに数え済みなので書き換えない）
+  - 状態ファイルの `head` が PR の今の HEAD と同じで、`fix` の判定のあと直しの push が無いときは、`next` を呼ばずに、下の 7 の直し方の実装者への修正依頼から再開する（`fixes` は判定のときに数え済みなので書き換えない）。develop では `plugins/dev-workflow/skills/develop/references/light-path.md`「CI 見張りの fix からの戻し方」で担当を用意する。W 不明なら最新の CI 用引き継ぎの許可を確かめ、最新が不可なら古い可で二人目を起こさない
   - `rerun` の判定のあと、その HEAD で `gh run rerun` が実行されていなければ、6 の表の `rerun` の行の `gh run rerun` から再開する
   - `escalate` のあとに続けるよう言われたときは、オーナーの具体的な指示（直す・やり直す・関係ない失敗として扱うなど）を先に実行してから、`raised` を消して `wait` から見張りに戻る。指示が具体的でなければ、何をすればよいかをオーナーに聞き返す
   - `raised` の消し方: `f=<状態ファイル>; jq -c 'del(.raised)' "$f" > "$f.tmp" && mv -f "$f.tmp" "$f"`
@@ -98,10 +99,12 @@
 
 ## 7. 直し方
 
-genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ待ち PR の見張り」の修正手順を移したもの（住人の依頼の列とあなた待ちの操作は持ち込んでいない）。担い手は PR の実装者で、ゲートを回した側ではない（実装とレビューを別のコンテキストに保つため）。develop では W が直す。develop を使わずメインセッションで pr-review-gate を回したときは、メインセッションが実装者のサブエージェント（model は sonnet）を起こして直させる。
+develop の通常経路では、見張りを始める前と修正後の待ちへ戻る前に、本体が `plugins/dev-workflow/skills/develop/references/handover.md`「CI 見張りの修正担当の引き継ぎ」を PR に記録する。通常経路の W の起動／再開前の不可の投稿と今回の完了／停止確認後だけの再許可も同節に従う。
+
+genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ待ち PR の見張り」の修正手順を移したもの（住人の依頼の列とあなた待ちの操作は持ち込んでいない）。担い手は PR の実装者で、ゲートを回した側ではない（実装とレビューを別のコンテキストに保つため）。develop では W が直す。W がまだいない軽い通し方も含め、担当と起動段は `plugins/dev-workflow/skills/develop/references/light-path.md`「CI 見張りの fix からの戻し方」に従って用意する。develop を使わずメインセッションで pr-review-gate を回したときは、メインセッションが実装者のサブエージェント（model は sonnet）を起こして直させる。
 
 1. `git fetch origin` し、PR ブランチの worktree で作業する。残っていればそれを使い、無ければ対象リポの clone から切る。harness では開発用の clone から切り、marketplace dir では作業しない
-2. `conflict` は `git merge origin/main` で解く。版番号だけの競合は、main の値に PR の上げ幅を積んだ値にする（main が 1.4.0・PR が 1.3.0 → 1.3.1 なら 1.4.1）。`ci-fail` は `gh run view <run> --log-failed` を読んで直す。実装者がログを読んで PR の差分と関係ない失敗だと判断したら、直さず push もせずに呼び出し側へ返し、呼び出し側は `next --unrelated <チェック名> --after-fix` を 1 回だけ実行してその一手に従う（`--after-fix` は、直前の `fix` の判定で書かれた同じ状態・同じ HEAD の記録を外してやり直しを効かせる。同じ HEAD でのやり直しは 1 回までなので、失うのは CI 1 周分で止まる）
+2. `conflict` は `git merge origin/main` で解く。版番号だけの競合は、main の値に PR の上げ幅を積んだ値にする（main が 1.4.0・PR が 1.3.0 → 1.3.1 なら 1.4.1）。`ci-fail` は `gh run view <run> --log-failed` を読み、PR 差分との関係を「5. `--unrelated` を渡す基準」の 2 条件で確かめる。develop の軽い通し方から起きた新しい W は、仕様化判断の再投稿より先にこの関係確認を行う（`plugins/dev-workflow/skills/develop/references/light-path.md`「CI 見張りの fix からの戻し方」）。実装者がログを読んで PR の差分と関係ない失敗だと判断したら、直さず push もせずに呼び出し側へ返し、呼び出し側は `next --unrelated <チェック名> --after-fix` を 1 回だけ実行してその一手に従う（`--after-fix` は、直前の `fix` の判定で書かれた同じ状態・同じ HEAD の記録を外してやり直しを効かせる。同じ HEAD でのやり直しは 1 回までなので、失うのは CI 1 周分で止まる）。関係がある、または無関係と判断できない場合は修正へ進む
 3. `agent-review:passed` が付いていた PR のとき、push の前に `gh api -X DELETE repos/<owner/repo>/issues/<PR番号>/labels/agent-review:passed` で外し、`gh pr view <PR番号> --repo <owner/repo> --json labels` で外れたことを確かめ、PR が Draft でなければ `gh pr ready --undo`（`gh pr ready <PR番号> --repo <owner/repo> --undo`）で Draft に戻し、`agent-review:pending` を付ける
 4. オーナーにマージを頼んだ未解決の依頼があれば、差分が変わったので取り下げると PR にコメントする
 5. commit して push する
@@ -125,7 +128,7 @@ genetta-inc/flatmate の `docs/project-modes.md`「止まった人間マージ�
    - 終了のコメントがあれば何もしない。
    - 終了のコメントが無く、PR が merged / closed なら再開せず、1 行目が `CI 見張り終了:` のコメントを投稿する（終えた理由を 1 行添える）。merged ならマージを報告し、closed なら見張りを終える。
    - PR が open で、最新の開始のコメントがあり、そのあとに終了のコメントが無いときだけ再開する。
-3. 再開すると決まったら、主やオーナーに再開してよいかを聞き返さずに `ci-watch.sh next <owner/repo> <PR番号>` を `--unrelated` なしで実行し、その出力を 6 の表どおりに処理する。`obs.state` が `wait` の `none` なら待ちに戻り、`ready` なら「`ready` を受けたあと」に進む（切れた待ちが `--until-merged` 付きでも同じ）。
+3. 再開すると決まったら、主やオーナーに再開してよいかを聞き返さずに `ci-watch.sh next <owner/repo> <PR番号>` を `--unrelated` なしで実行し、その出力を 6 の表どおりに処理する。develop の `fix` は `plugins/dev-workflow/skills/develop/references/light-path.md`「CI 見張りの fix からの戻し方」に従い、W 不明の場合も CI 用引き継ぎから担当を用意するか停止する。`obs.state` が `wait` の `none` なら待ちに戻り、`ready` なら「`ready` を受けたあと」に進む（切れた待ちが `--until-merged` 付きでも同じ）。
 
 同じ見張りの続きなので、2 の開始の判定も開始のコメントもしない。通知が届くのは `wait` の実行中に落ちた場合で、待ちの前の一手は済んでいるため、2 の中断した一手の確認も要らない。通知を受けていない別のセッションが始める・引き継ぐ場合は、2 のオーナーの指示による再開の規則に従う。
 

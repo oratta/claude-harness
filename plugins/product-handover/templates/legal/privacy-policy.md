@@ -55,7 +55,7 @@
 
 ## 7. 個人情報インシデントへの対応
 
-漏えい等が発生した場合の対応手順は、社内の incident runbook に定める。
+漏えい等が発生した場合の対応手順は、社内の incident runbook（雛形: `../ops/incident-runbook.md`。展開先の目安は `docs/ops/incident-runbook.md`）に定める。
 利用者への通知と個人情報保護委員会への報告は、法令の定める期限内に行う。
 
 ## 8. 改定

@@ -31,17 +31,26 @@ scratch_dir() {
 
 BASE() { printf '%s' "$TMPDIR/dev-workflow-git-guard"; }
 
-# call <command> <agent_id(JSON か "-")> <cwd> [session_id] — PermissionRequest の payload を hook に渡す
+# call <command> <agent_id(JSON か "-")> <cwd> [session_id] [permission_mode(JSON か "-")]
+#   — PermissionRequest の payload を hook に渡す。permission_mode の既定は "default"、"-" は項目を付けない
 call() {
   local json
   json="$(printf '%s' "$1" | python3 -c '
 import json, sys
-p = {"hook_event_name": "PermissionRequest", "tool_name": "Bash", "permission_mode": "default",
+p = {"hook_event_name": "PermissionRequest", "tool_name": "Bash",
      "tool_input": {"command": sys.stdin.read()}, "cwd": sys.argv[2], "session_id": sys.argv[3]}
 if sys.argv[1] != "-":
     p["agent_id"] = json.loads(sys.argv[1])
-print(json.dumps(p))' "$2" "$3" "${4:-$SID}")"
+if sys.argv[4] != "-":
+    p["permission_mode"] = json.loads(sys.argv[4])
+print(json.dumps(p))' "$2" "$3" "${4:-$SID}" "${5:-\"default\"}")"
   run "$SCRIPT" <<<"$json"
+}
+
+# no_guard_files — 許可・拒否の記録・ログのどれも作られていない
+no_guard_files() {
+  [ ! -e "$(BASE)/denied" ] && [ ! -e "$(BASE)/permits" ] && [ ! -e "$(BASE)/permit-log.jsonl" ] ||
+    { ls -laR "$(BASE)"; return 1; }
 }
 
 behavior() {
@@ -153,6 +162,76 @@ PY
   [ "$status" -eq 0 ] && [ -z "$output" ]
 }
 
+# --- rm でない確認（#1610） ---
+
+BYPASS='"bypassPermissions"'
+
+@test "hook: a bypassPermissions child's non-rm confirmation is denied" {
+  call 'gh issue comment 1 --body "$(printf '"'"'a `x` b'"'"')"' '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$status" -eq 0 ]
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+}
+
+@test "hook: the non-rm deny uses no permit, writes no record and no log" {
+  call "ls -la" '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  no_guard_files
+}
+
+@test "hook: the non-rm deny message names the retry forms and returning to the parent" {
+  call "ls -la" '"a1"' "$SP" "$SID" "$BYPASS"
+  m="$(message)"
+  [[ "$m" == "[dev-workflow rm-permission-guard]"* ]] || { echo "$m"; return 1; }
+  local w
+  for w in "rm の判定に当たらない" "--body-file" '$(...)' "逆引用符" "親に返"; do
+    [[ "$m" == *"$w"* ]] || { echo "missing: $w / $m"; return 1; }
+  done
+  [[ "$m" != *"rm ではない"* ]] || { echo "$m"; return 1; }
+}
+
+@test "hook: without the common file a bypassPermissions child's non-rm confirmation is still denied" {
+  iso="${BATS_TEST_TMPDIR}/iso"
+  mkdir -p "$iso"
+  cp "$SCRIPT" "$iso/rm-permission-guard.sh"
+  SCRIPT="$iso/rm-permission-guard.sh"
+  call "ls -la" '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(message)" == *"rm の判定に当たらない"* ]] || { echo "$output"; return 1; }
+  [ ! -d "$(BASE)/denied" ]
+}
+
+@test "hook: children in modes that ask, and the main session in bypassPermissions, get no output for non-rm" {
+  local mode
+  for mode in '"default"' '"acceptEdits"' '"plan"' '-' '7'; do
+    call "ls -la" '"a1"' "$SP" "$SID" "$mode"
+    [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "mode $mode: $output"; return 1; }
+  done
+  local aid
+  for aid in '-' '""' '7'; do
+    call "ls -la" "$aid" "$SP" "$SID" "$BYPASS"
+    [ "$status" -eq 0 ] && [ -z "$output" ] || { echo "agent_id $aid: $output"; return 1; }
+  done
+  no_guard_files
+}
+
+@test "hook: a bypassPermissions payload whose command is not a string gets no output" {
+  run "$SCRIPT" <<<'{"tool_name":"Bash","tool_input":{"command":7},"agent_id":"a1","permission_mode":"bypassPermissions","session_id":"s","cwd":"/tmp"}'
+  [ "$status" -eq 0 ] && [ -z "$output" ]
+  run "$SCRIPT" <<<'{"tool_name":"Bash","agent_id":"a1","permission_mode":"bypassPermissions","session_id":"s","cwd":"/tmp"}'
+  [ "$status" -eq 0 ] && [ -z "$output" ]
+}
+
+@test "hook: a bypassPermissions child's rm is still answered by the permit" {
+  call "rm -rf $SP/tbl/x/*" '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(message)" == *'実パスで単独のコマンド'* ]] || { echo "$output"; return 1; }
+  rec="$(only_record)"
+  run "$PERMIT" "$rec" "検証用の片づけ"
+  [ "$status" -eq 0 ] || { echo "permit failed: $output"; return 1; }
+  call "rm -rf $SP/tbl/x/*" '"a1"' "$SP" "$SID" "$BYPASS"
+  [ "$(behavior)" = "allow" ] || { echo "$output"; return 1; }
+}
+
 @test "hook: a matching permit allows the call exactly once and the log has permit then use" {
   deny_then_permit "cd $SP/tbl; rm -rf x/*" "$SP"
   call "cd $SP/tbl; rm -rf x/*" '"a1"' "$SP"
@@ -243,6 +322,67 @@ PY
   [[ "$m" == *"作れなかった"* && "$m" != *"denied/"* ]] || { echo "$m"; return 1; }
 }
 
+# --- <base> の確かめ（spec: rm の hook も <base> を確かめてから使う） ---
+
+# key_for <command> <cwd> — hook と同じ規則の key（子 a1・セッション SID）
+key_for() {
+  printf '%s' "$1" | python3 -I -c '
+import sys
+ns = {"__name__": "x"}
+exec(compile(open(sys.argv[1]).read(), sys.argv[1], "exec"), ns)
+print(ns["key_of"](sys.argv[2], "a1", sys.argv[3], sys.stdin.read()))' "$COMMON" "$SID" "$2"
+}
+
+# permit_json <file> <command> <cwd> — 子 a1 の、4 つの値が一致し期限内の許可の中身を <file> に書く
+permit_json() {
+  printf '%s' "$2" | python3 -c '
+import json, sys, time
+json.dump({"session_id": sys.argv[2], "agent_id": "a1", "cwd": sys.argv[3], "command": sys.stdin.read(),
+           "expires_at": int(time.time()) + 600}, open(sys.argv[1], "w"))' "$1" "$SID" "$3"
+}
+
+@test "hook: a symlinked base gets deny and nothing is created at its target" {
+  local real="${BATS_TEST_TMPDIR}/real-base" m
+  mkdir -p "$real"
+  ln -s "$real" "$(BASE)"
+  call "rm -rf $SP/tbl/x/*" '"a1"' "$SP"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  m="$(message)"
+  [[ "$m" == *'拒否の記録を作れなかった'* && "$m" == *"$(BASE)"* && "$m" != *'denied/'* ]] || { echo "$m"; return 1; }
+  [ ! -e "$real/denied" ]
+  [ ! -e "$real/permit-log.jsonl" ]
+}
+
+@test "hook: a matching permit placed behind a symlinked base is not used" {
+  local real="${BATS_TEST_TMPDIR}/real-base" cmd="cd ./tbl; rm -rf x/*" k
+  chk_ "$SID" "$SP" "$cmd"
+  mkdir -p "$real/permits"
+  ln -s "$real" "$(BASE)"
+  k="$(key_for "$cmd" "$SP")"
+  permit_json "$real/permits/$k.json" "$cmd" "$SP"
+  call "$cmd" '"a1"' "$SP"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  [[ "$(message)" == *'拒否の記録を作れなかった'* ]] || { message; return 1; }
+  [ -f "$real/permits/$k.json" ]
+  [ -f "$SP/tbl/x/a" ]
+}
+
+@test "hook: a permit that is a symlink to a matching permit outside the base is not used and its target is kept" {
+  local cmd="cd ./tbl; rm -rf x/*" c="${BATS_TEST_TMPDIR}/C.json" k
+  k="$(key_for "$cmd" "$SP")"
+  permit_json "$c" "$cmd" "$SP"
+  cp "$c" "${BATS_TEST_TMPDIR}/C.orig"
+  mkdir -p "$(BASE)/permits"
+  ln -s "$c" "$(BASE)/permits/$k.json"
+  call "$cmd" '"a1"' "$SP"
+  [ "$(behavior)" = "deny" ] || { echo "$output"; return 1; }
+  cmp "$c" "${BATS_TEST_TMPDIR}/C.orig"
+  # 同じ中身を普通のファイルとして置けば通る（symlink だから通さなかったことの確かめ）
+  cp "$c" "$(BASE)/permits/$k.json"
+  call "$cmd" '"a1"' "$SP"
+  [ "$(behavior)" = "allow" ] || { echo "$output"; return 1; }
+}
+
 @test "hook: a command with an unreadable form is denied even with a permit written directly" {
   call "rm -rf \"$SP/tbl/x\"" '"a1"' "$SP"
   [ "$(behavior)" = "deny" ]
@@ -269,6 +409,23 @@ PY
 
 @test "permit: an rm record for an outside target gets no permit" {
   call "rm -rf $OUT/dir/*" '"a1"' "$SP"
+  run "$PERMIT" "$(only_record)" "検証"
+  [ "$status" -ne 0 ]
+  permits_empty
+}
+
+@test "permit: cd <scratchpad> && rm with cwd outside gets a permit and is allowed (#1159)" {
+  local cmd="cd $SP/tbl && rm -f x/*"
+  deny_then_permit "$cmd" "$OUT"
+  call "$cmd" '"a1"' "$OUT"
+  [ "$(behavior)" = "allow" ] || { echo "$output"; return 1; }
+  # 判定は rm を実行しない
+  [ -f "$SP/tbl/x/a" ] && [ -f "$SP/tbl/x/b" ]
+}
+
+@test "permit: cd <scratchpad>; rm with cwd outside gets no permit (#1159)" {
+  call "cd $SP/tbl; rm -f x/*" '"a1"' "$OUT"
+  [ "$(behavior)" = "deny" ]
   run "$PERMIT" "$(only_record)" "検証"
   [ "$status" -ne 0 ]
   permits_empty
@@ -339,6 +496,17 @@ rm -R b"
   chk_ "$SID" "$SP" "cd ./tbl; rm -rf x/*"
   # 絶対パスの削除先は cd の成否によらず同じ
   chk_ "$SID" "$OUT" "cd $SP/tbl; rm -rf $SP/tbl/x/*"
+}
+
+@test "check_rm: with only && separators, cd is checked against its success base only (#1159)" {
+  chk_ "$SID" "$OUT" "cd $SP/tbl && rm -f x/*"
+  chk_ "$SID" "$OUT" "cd $SP/tbl && rm -f x/a && rm -f x/b"
+  local c
+  for c in "cd $SP/tbl; rm -f x/*" "cd $SP/tbl
+rm -f x/*" "cd $SP/tbl && rm -f x/a; rm -f x/b"; do
+    run chk_ "$SID" "$OUT" "$c"
+    [ "$status" -ne 0 ] || { echo "satisfied: $c"; return 1; }
+  done
 }
 
 @test "check_rm: judging does not run rm" {

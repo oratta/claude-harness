@@ -7,11 +7,15 @@ TBD - created by archiving change owner-message-number-check-hook. Update Purpos
 
 ### Requirement: Stop のエントリで主への発言の番号の検査を起動する
 
-`plugins/dev-workflow/hooks/hooks.json` は `hooks.Stop` に 1 件のエントリを持ち、その hook は `type` が `command` で `"${CLAUDE_PLUGIN_ROOT}/scripts/owner-message-number-check.sh"` を起動しなければならない（MUST）。このエントリにも hook にも `matcher` と `timeout` を付けてはならない（MUST NOT）。既存の他のイベントのエントリは変えてはならない（MUST NOT）。スクリプトは実行権限を持ち、python3 を起動するときは `python3 -I` で起動しなければならない（MUST）。
+`plugins/dev-workflow/hooks/hooks.json` は `hooks.Stop` に 1 件のエントリを持ち、そのエントリの 1 件の hook は `type` が `command` で `"${CLAUDE_PLUGIN_ROOT}/scripts/epic-child-state.sh"` を `timeout` 30 秒で起動しなければならない（MUST）。エントリに `timeout` を付けてはならず、エントリにも hook にも `matcher` を付けてはならない（MUST NOT）。`epic-child-state.sh` は Stop の入力の末尾改行を除き、`owner-message-number-check.sh` に 1 回渡して番号検査を呼ばなければならない（MUST）。既存の他のイベントのエントリは変えてはならない（MUST NOT）。`owner-message-number-check.sh` は実行権限を持ち、python3 を起動するときは `python3 -I` で起動しなければならない（MUST）。
 
 #### Scenario: hooks.json に Stop のエントリがある
 - **WHEN** `plugins/dev-workflow/hooks/hooks.json` を JSON として読む
-- **THEN** `hooks.Stop` は 1 件のエントリを持ち、その hook は `type` が `command` で、`command` に `${CLAUDE_PLUGIN_ROOT}` と `scripts/owner-message-number-check.sh` を含み、エントリにも hook にも `matcher` と `timeout` のキーが無い
+- **THEN** `hooks.Stop` は 1 件のエントリを持ち、そのエントリの 1 件の hook は `type` が `command` で、`command` に `${CLAUDE_PLUGIN_ROOT}` と `scripts/epic-child-state.sh` を含み、hook の `timeout` は 30 で、エントリには `timeout` のキーが無く、エントリにも hook にも `matcher` のキーが無い
+
+#### Scenario: 共通入口が末尾改行を除いた入力で番号検査を 1 回呼ぶ
+- **WHEN** Stop の入力を `epic-child-state.sh` に渡す
+- **THEN** `owner-message-number-check.sh` に末尾改行を除いた同じ入力が 1 回だけ渡される
 
 #### Scenario: スクリプトが実行できる
 - **WHEN** `plugins/dev-workflow/scripts/owner-message-number-check.sh` の権限を調べる
@@ -57,9 +61,9 @@ TBD - created by archiving change owner-message-number-check-hook. Update Purpos
 
 ### Requirement: 主に判断・確認・操作を求める発言だけを対象にする
 
-上の要件で対象外にしなかった発言は、1 行目の末尾の文字が `？` か `?` であるか、1 行目の最初の文の終わりが `？` か `?` であるか（前者は従来の条件で、狭めない。最初の文の数え方は次の要件）、区切りより上の最後の行が `と打って`・`と打つ`・`を押して`・`と返して`・`と答えて` のどれかを含むときだけ対象にしなければならない（MUST）。対象にしない発言では何も出力してはならない（MUST NOT）。
+上の要件で対象外にしなかった発言は、1 行目の末尾の文字が `？` か `?` であるか、1 行目の最初の文の終わりが `？` か `?` であるか（前者は従来の条件で、狭めない。最初の文の数え方は次の要件）、区切りより上の最後の行が `と打って`・`と打つ`・`を押して`・`と返して`・`と答えて` のどれかを含むか、並びの 2 番目の行（前後の空白と `*` を除く）が `アクション` で始まり `:` か `：` が続くとき（正本の新しい書き分けの、1 行目が題名で 2 行目がアクションの行の依頼）だけ対象にしなければならない（MUST）。質問の条件と答え方の行の条件は、旧い書き分けで書かれた発言を拾い続けるために残し、狭めない。対象にしない発言では何も出力してはならない（MUST NOT）。
 
-守備範囲: ①入力は、メインセッション（`claude -p` の子を含む）の `Stop` の payload。②拾いたいのは、正本の 1 行目の書き分けに従って書いた主への依頼。③通してよい例は、1 行目が質問でなく答え方の行も無い依頼と、ツールで送った発言。`と書いて` は「…と書いてある」で当たるので入れず、「…と書いてください」の依頼は 1 行目の質問で拾う。答えの 1 行目が問い返しで入る害は理由の最後の文で抑える。④見分け切ることを完了条件にしない。
+守備範囲: ①入力は、メインセッション（`claude -p` の子を含む）の `Stop` の payload。②拾いたいのは、正本の 1 行目と 2 行目の書き分け（新しい形）か、旧い書き分け（1 行目を質問、最後の行を答え方）に従って書いた主への依頼。③通してよい例は、1 行目が質問でなく、答え方の行も 2 行目のアクションの行も無い依頼と、ツールで送った発言。2 行目の条件を `アクション` の行頭に限るのは、行の中ほどの「アクション」の語で報告を拾わないため。`と書いて` は「…と書いてある」で当たるので入れず、「…と書いてください」の依頼は 1 行目の質問で拾う。答えの 1 行目が問い返しで入る害は理由の最後の文で抑える。④見分け切ることを完了条件にしない。
 
 #### Scenario: 1 行目が質問でも答え方の行でもない発言は対象にしない
 - **WHEN** `last_assistant_message` が「テストは通った。」の行と「#1712 を直した。」の行だけを持つ入力を渡す
@@ -76,6 +80,18 @@ TBD - created by archiving change owner-message-number-check-hook. Update Purpos
 #### Scenario: 報告の文が先に来て末尾が質問の 1 行目は従来どおり対象にする
 - **WHEN** `last_assistant_message` が「#1330 をマージした。続けて #1303 も見ますか？」の行だけを持ち、URL を持たない入力を渡す
 - **THEN** 差し戻しの JSON が出る
+
+#### Scenario: 題名とアクションの行の依頼で対象に入る
+- **WHEN** `last_assistant_message` が「手順書の PR #1712 をマージしてほしい」の行と「アクション: 下の PR のページでマージする」の行を持ち、URL を持たない入力を渡す
+- **THEN** 差し戻しの JSON が出て、`reason` は `行 1: #1712` を含む
+
+#### Scenario: 太字の項目名のアクションの行でも対象に入る
+- **WHEN** `last_assistant_message` が「#1712 を入れてほしい」の行と「**アクション：** このタブで『OK』と書く」の行を持つ入力を渡す
+- **THEN** 差し戻しの JSON が出る
+
+#### Scenario: 2 行目の途中のアクションの語では対象にしない
+- **WHEN** `last_assistant_message` が「#1712 を直した。」の行と「次のアクション: なし」の行だけを持つ入力を渡す
+- **THEN** 終了コードは 0 で、標準出力は空である
 
 ### Requirement: 1 行目の最初の文は、引用と URL を隠してから数える
 

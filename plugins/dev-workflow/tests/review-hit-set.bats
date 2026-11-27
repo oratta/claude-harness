@@ -34,8 +34,9 @@ write_reversible_table() {
 
 write_table() {
   local handling_a="${1:-一致}" handling_b="${2:-直した}"
+  local before_sha="${3:-$SHA}"
   {
-    printf '修正前 SHA: %s\n' "$SHA"
+    printf '修正前 SHA: %s\n' "$before_sha"
     printf '検索コマンド: git grep -n needle <rev> -- .\n'
     printf '| ファイル | 行（修正前 SHA） | ヒットした行の本文 | 扱い |\n'
     printf '|---|---:|---|---|\n'
@@ -43,6 +44,45 @@ write_table() {
     printf '| other/b.txt | 1 | `needle two` | %s |\n' "$handling_b"
     printf '| other/c.txt | 1 | `    needle \\| three  ` | 一致 |\n'
   } > "$REPO/table.md"
+}
+
+@test "review hit set (#728): backtick-wrapped SHA preserves output and exit status" {
+  local mode plain_status plain_output
+  for mode in matching missing; do
+    write_table
+    if [ "$mode" = missing ]; then
+      sed -i.bak '/other\/b.txt/d' "$REPO/table.md"
+    fi
+    run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+    plain_status="$status"
+    plain_output="$output"
+    if [ "$mode" = matching ]; then
+      [ "$plain_status" -eq 0 ]
+    else
+      [ "$plain_status" -eq 1 ]
+      [[ "$plain_output" == *'missing: other/b.txt:1'* ]] || return 1
+    fi
+
+    write_table '一致' '直した' "\`$SHA\`"
+    if [ "$mode" = missing ]; then
+      sed -i.bak '/other\/b.txt/d' "$REPO/table.md"
+    fi
+    run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+    [ "$status" -eq "$plain_status" ]
+    [ "$output" = "$plain_output" ]
+  done
+}
+
+@test "review hit set (#728): one-sided backticks and invalid SHAs retain contract rejection" {
+  local invalid_sha
+  for invalid_sha in "\`$SHA" "$SHA\`" \
+    "${SHA:1}" "${SHA}0" "g${SHA:1}" \
+    "\`${SHA:1}\`" "\`${SHA}0\`" "\`g${SHA:1}\`"; do
+    write_table '一致' '直した' "$invalid_sha"
+    run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+    [ "$status" -eq 1 ]
+    [ "$output" = 'contract: 修正前 SHA must be a full 40-digit SHA' ]
+  done
 }
 
 @test "review hit set (#355): matching repository-wide table exits zero regardless of handling values" {
@@ -825,5 +865,60 @@ add_latin1_hit() {
     done
   } > "$REPO/full.md"
   run python3 "$CHECKER" --repo "$REPO" "$REPO/full.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "preflight (#1765): excerpt is rejected then restored without changing SHA, query or handling" {
+  write_table '一致' '食い違い: P1-F1'
+  cp "$REPO/table.md" "$REPO/final.md"
+  sed -i.bak 's/needle one/needle .../' "$REPO/table.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'missing: changed/a.txt:1'* ]] || return 1
+  [[ "$output" == *'extra: changed/a.txt:1'* ]] || return 1
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/final.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "preflight (#1765): renamed columns are rejected then corrected" {
+  write_table '一致' '食い違い: P1-F1'
+  cp "$REPO/table.md" "$REPO/final.md"
+  sed -i.bak 's/行（修正前 SHA）/行/; s/ヒットした行の本文/本文（抜粋）/' "$REPO/table.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'* ]] || return 1
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/final.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "preflight (#1765): zero-hit placeholder is rejected while an empty table succeeds" {
+  write_table
+  sed -i.bak 's/grep -n needle/grep -n absent/; /changed\/a.txt/d; /other\/b.txt/d; /other\/c.txt/d' "$REPO/table.md"
+  cp "$REPO/table.md" "$REPO/final.md"
+  printf '| （ヒットなし） | - | - | 一致 |\n' >> "$REPO/table.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'contract:'* ]] || return 1
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/final.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "preflight (#1765): backtick paths produce missing and extra then plain paths succeed" {
+  write_table '一致' '食い違い: P1-F1'
+  cp "$REPO/table.md" "$REPO/final.md"
+  sed -i.bak 's@| changed/a.txt |@| `changed/a.txt` |@' "$REPO/table.md"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/table.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *'missing: changed/a.txt:1'* ]] || return 1
+  [[ "$output" == *'extra: `changed/a.txt`:1'* ]] || return 1
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/final.md"
+  [ "$status" -eq 0 ]
+}
+
+@test "preflight (#1765): a correct all-hit summary also passes the same checker" {
+  commit_bulk 11
+  measure
+  write_summary "$COUNT 行 $DIGEST"
+  run python3 "$CHECKER" --repo "$REPO" "$REPO/summary.md"
   [ "$status" -eq 0 ]
 }

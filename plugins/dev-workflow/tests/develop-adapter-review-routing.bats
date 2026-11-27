@@ -9,6 +9,9 @@
 #
 # spec: dev-workflow-develop
 
+load lib/develop-docs
+load lib/gate-docs
+
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
@@ -24,12 +27,42 @@ setup() {
   PRGATE="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
   USER_DOC="${PLUGIN_DIR}/docs/codex-develop.md"
   ARCHIVE_TASKS="${PLUGIN_DIR}/../../openspec/changes/archive/2026-09-23-codex-model-family-resolution/tasks.md"
+  gate_test_docs
 }
 
 section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next} /^## /{f=0} f' "$1"; }
 
 # develop SKILL.md の (4) ブロック（「(4) G を」からコードブロックの終わりまで）
-step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
+step4() { develop_procedures; }
+startup_step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
+
+@test "review (#1649): temporary-directory routing covers bash and pytest as well as bats" {
+  for file in "$CODEX_DEVELOP" "$REVIEWER_BRIEF"; do
+    paragraph="$(grep -F '#1401' "$file")"
+    echo "$paragraph" | grep -qF '再実行に書き込める一時ディレクトリが要るテスト'
+    echo "$paragraph" | grep -qF 'bats のほか、`mktemp` を使う bash テスト'
+    echo "$paragraph" | grep -qF '`BATS_TMPDIR` / `TMPDIR` に書くテスト'
+    echo "$paragraph" | grep -qF '`pytest` のように一時ファイルを書くテスト'
+    echo "$paragraph" | grep -qE '関係するテストに.*一時ディレクトリが要るテスト.*Claude のレビュアー'
+  done
+}
+
+@test "review (#1649): bats still routes to Claude with writable temp paths and read-only policy intact" {
+  for file in "$CODEX_DEVELOP" "$REVIEWER_BRIEF"; do
+    paragraph="$(grep -F '#1401' "$file")"
+    echo "$paragraph" | grep -qF 'bats のほか'
+    echo "$paragraph" | grep -qF '書けず'
+    echo "$paragraph" | grep -qF 'Claude のレビュアー'
+    echo "$paragraph" | grep -qF '`TMPDIR`'
+    echo "$paragraph" | grep -qF '`BATS_TMPDIR`'
+    echo "$paragraph" | grep -qF 'read-only role に `writableRoots` を与え'
+  done
+  paragraph="$(grep -F '#1401' "$REVIEWER_BRIEF")"
+  echo "$paragraph" | grep -qF 'export TMPDIR=<パス> BATS_TMPDIR=<パス>'
+  echo "$paragraph" | grep -qF '同じ固定 HEAD'
+  echo "$paragraph" | grep -qF '補足済み回数は増やさず'
+  echo "$paragraph" | grep -qF '`review-incomplete` で止めない'
+}
 
 @test "docs (#405): model example and explanation accept families and exact IDs" {
   grep -qF '<sol|luna|astra などの系統名、または完全なCodexモデルID>' "$USER_DOC"
@@ -43,10 +76,10 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "review (#405): Codex result model resolution is passed to G without inferring missing resolved values" {
   s="$(step4)"
-  echo "$s" | grep -qF 'execution.model_resolution.requested'
-  echo "$s" | grep -qF 'execution.model_resolution.resolved'
-  echo "$s" | grep -qF 'G に渡す'
-  echo "$s" | grep -qF '補完しない'
+  grep -qF 'execution.model_resolution.requested' <<<"$s"
+  grep -qF 'execution.model_resolution.resolved' <<<"$s"
+  grep -qF 'G に渡す' <<<"$s"
+  grep -qF '補完しない' <<<"$s"
 }
 
 @test "review (#405): both G instructions record requested to resolved in the existing reviewer line" {
@@ -63,74 +96,75 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
 @test "gate-runner (#390): input contract includes the route and adapter resume dispatch details" {
   intro="$(sed -n '1,3p' "$GATE")"
-  echo "$intro" | grep -qF '`レビュー経路:` の 1 行'
-  echo "$intro" | grep -qF '選ばれた executor / model'
-  echo "$intro" | grep -qF 'dispatch 記録のコメント URL'
+  grep -qF '`レビュー経路:` の 1 行' <<<"$intro"
+  grep -qF '選ばれた executor / model' <<<"$intro"
+  grep -qF 'dispatch 記録のコメント URL' <<<"$intro"
 }
 
 @test "gate-runner (#385): has a route-detection section that names both values and treats a missing line as the legacy route" {
   s="$(section "$GATE" 'レビュー経路の判別')"
   [ -n "$s" ] || { echo "no レビュー経路の判別 section"; return 1; }
-  echo "$s" | grep -qF '`レビュー経路: adapter`'
-  echo "$s" | grep -qF '`レビュー経路: 従来`'
-  echo "$s" | grep -qF 'この行だけで'
-  echo "$s" | grep -qF '環境変数・記録先のコメント・自分の起動方法から推測しない'
-  echo "$s" | grep -qE '行が無い.*従来経路'
+  grep -qF '`レビュー経路: adapter`' <<<"$s"
+  grep -qF '`レビュー経路: 従来`' <<<"$s"
+  grep -qF 'この行だけで' <<<"$s"
+  grep -qF '環境変数・記録先のコメント・自分の起動方法から推測しない' <<<"$s"
+  grep -qE '行が無い.*従来経路' <<<"$s"
 }
 
 @test "gate-runner (#554): every stage G decides the route from its own launch line, with no same-G sticky rule" {
   s="$(section "$GATE" 'レビュー経路の判別')"
-  echo "$s" | grep -qF 'どの段の G も自分の起動指示の行だけで判別する'
-  ! echo "$s" | grep -qF '起動済みの同一 G' || return 1
+  grep -qF 'どの段の G も自分の起動指示の行だけで判別する' <<<"$s"
+  ! grep -qF '起動済みの同一 G' <<<"$s" || return 1
 }
 
 @test "gate-runner (#391): a missing route selects legacy only when starting a new G, including a handoff successor" {
   s="$(section "$GATE" 'レビュー経路の判別')"
-  echo "$s" | grep -qF '新しい G の起動指示（手渡しで起こされた後任 G を含む）'
-  echo "$s" | grep -qF '行が無い場合だけ従来経路'
+  grep -qF '新しい G の起動指示（手渡しで起こされた後任 G を含む）' <<<"$s"
+  grep -qF '行が無い場合だけ従来経路' <<<"$s"
 }
 
 @test "gate-runner (#385): route-detection section comes before the reviewer table" {
   # 表は段のファイルへ移ったので、経路の判別の節が表の置き場（review-run.md）を指すことで順序を見る
   grep -q '^## レビュー経路の判別' "$GATE"
   grep -q '^### レビューの実行者' "$REVIEW_RUN"
-  section "$GATE" 'レビュー経路の判別' | grep -qF 'stages/review-run.md'
+  generated="$(section "$GATE" 'レビュー経路の判別')"
+  grep -qF 'stages/review-run.md' <<<"$generated"
 }
 
 @test "gate-runner (#385): adapter route covers every adapter configuration and the legacy table applies only to the legacy value or no line" {
   s="$(section "$GATE" 'レビュー経路の判別')"
-  echo "$s" | grep -qF '新 Codex モードを含む adapter 解決の全構成'
-  echo "$s" | grep -qF '`claude-default`'
-  echo "$s" | grep -qE '従来モードのレビュー実行者の表.*は.*`レビュー経路: 従来`.*行が無い.*ときだけ'
+  grep -qF '新 Codex モードを含む adapter 解決の全構成' <<<"$s"
+  grep -qF '`claude-default`' <<<"$s"
+  grep -qE '従来モードのレビュー実行者の表.*は.*`レビュー経路: 従来`.*行が無い.*ときだけ' <<<"$s"
 }
 
 @test "gate-runner (#385): adapter route never calls Codex/companion/reviewer itself, even for full, and returns needs-reviewer" {
   s="$(section "$GATE" 'レビュー経路の判別')"
-  echo "$s" | grep -qF 'full でも'
-  echo "$s" | grep -qF '`codex exec`'
-  echo "$s" | grep -qF '`codex-companion.mjs`'
-  echo "$s" | grep -qF 'レビュアーを自分で呼ばず'
-  echo "$s" | grep -qF '`needs-reviewer`'
-  echo "$s" | grep -qF 'Codex 不可の実測'
+  grep -qF 'full でも' <<<"$s"
+  grep -qF '`codex exec`' <<<"$s"
+  grep -qF '`codex-companion.mjs`' <<<"$s"
+  grep -qF 'レビュアーを自分で呼ばず' <<<"$s"
+  grep -qF '`needs-reviewer`' <<<"$s"
+  grep -qF 'Codex 不可の実測' <<<"$s"
 }
 
 @test "gate-runner (#396): adapter route checks for another G on the same PR and HEAD before needs-reviewer" {
   s="$(section "$GATE" 'レビュー経路の判別')"
   line="$(echo "$s" | grep -F '| `レビュー経路: adapter` |')"
-  echo "$line" | grep -qF '手順 1 と手順 2-0 まで済ませ'
-  echo "$line" | grep -qF '同一 PR/HEAD で他の G が着手済みでないことを確認してから'
-  echo "$line" | grep -qF '`needs-reviewer`'
+  grep -qF '手順 1 と手順 2-0 まで済ませ' <<<"$line"
+  grep -qF '同一 PR/HEAD で他の G が着手済みでないことを確認してから' <<<"$line"
+  grep -qF '`needs-reviewer`' <<<"$line"
 }
 
 @test "gate-runner (#385): the adapter rule is limited to G and excluded for the phase review reviewer" {
   s="$(section "$GATE" 'レビュー経路の判別')"
-  echo "$s" | grep -qF 'phase `gate`'
-  echo "$s" | grep -qE 'phase `review` のレビュアー.*適用しない'
+  grep -qF 'phase `gate`' <<<"$s"
+  grep -qE 'phase `review` のレビュアー.*適用しない' <<<"$s"
 }
 
 @test "gate-runner (#385): needs-reviewer payload has the adapter full verdict and the adapter not-run value for every evidence field" {
   n="$(section "${PREPARE}" 'needs-reviewer')"
-  echo "$n" | grep -qF -- '- 判定: light | full（Codex 不可） | full（Codex オフ） | full（adapter 経路）'
+  grep -qF -- '- 判定: light | full（Codex 不可） | full（Codex オフ） | full（adapter 経路）' <<<"$n"
   for field in '選んだ経路:' '実行コマンド:' '終了コード:' '出力の要点:' '実待ち時間:'; do
     echo "$n" | grep -F -- "- ${field}" | grep -qF '未実行（adapter 経路）' || { echo "missing adapter value in ${field}"; return 1; }
   done
@@ -153,7 +187,7 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 @test "gate-runner (#385): legacy full row still calls Codex directly from G's Bash" {
   row="$(grep -F '| **full**（既定） | Codex CLI |' "${REVIEW_RUN}")"
   [ -n "$row" ] || { echo "legacy full row missing"; return 1; }
-  echo "$row" | grep -qF 'G の **Bash から直接**呼ぶ'
+  grep -qF 'G の **Bash から直接**呼ぶ' <<<"$row"
 }
 
 # ===== develop SKILL.md（1.3） =====
@@ -161,65 +195,70 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 @test "develop (#392): reviewer model source differs between legacy and adapter routes" {
   row="$(grep -F '| G が要求するレビュアー（読んで判断する役） |' "$DEVELOP")"
   [ -n "$row" ] || { echo "reviewer model row missing"; return 1; }
-  echo "$row" | grep -qF '従来経路では G の `needs-reviewer` の推奨モデルに従う'
-  echo "$row" | grep -qF 'adapter 経路では adapter が返した model に残量上限を適用した値を使い'
-  echo "$row" | grep -qF '推奨モデルは参考値'
+  grep -qF '従来経路では G の `needs-reviewer` の推奨モデルに従う' <<<"$row"
+  grep -qF 'adapter 経路では `request` が返した `model` を使い' <<<"$row"
+  grep -qF '推奨モデルは参考値' <<<"$row"
 }
 
 @test "develop (#395): defect discovery names the adapter reviewer and legacy Codex" {
   s="$(step4)"
-  echo "$s" | grep -qF '欠陥探索は needs-reviewer で本体が起こすレビュアー（従来経路では Codex）が担う'
+  grep -qF '欠陥探索は needs-reviewer で本体が起こすレビュアー（従来経路では Codex）が担う' <<<"$s"
 }
 
 @test "develop (#385): Role profile section always writes the adapter route line and never writes the legacy value" {
   s="$(section "$DEVELOP" 'Role profile の選択')"
-  echo "$s" | grep -qF '起動形を問わず常に `レビュー経路: adapter`'
-  echo "$s" | grep -qF 'request の instructions'
-  echo "$s" | grep -qF '`レビュー経路: 従来` を書かない'
+  grep -qF '起動形を問わず常に `レビュー経路: adapter`' <<<"$s"
+  grep -qF 'request の instructions' <<<"$s"
+  grep -qF '`レビュー経路: 従来` を書かない' <<<"$s"
 }
 
 @test "develop (#554): Role profile section writes the route line on every stage G and treats a missing line as legacy" {
   s="$(section "$DEVELOP" 'Role profile の選択')"
-  echo "$s" | grep -qF '段ごとに新しく起こす G と、手渡しで起こす後任 G のすべて'
-  echo "$s" | grep -qF '起動指示に行が無い G は従来経路'
-  echo "$s" | grep -qF 'どの段の起動指示でも行を省略しない'
-  ! echo "$s" | grep -qF '起動済みの同一 G' || return 1
+  grep -qF '段ごとに新しく起こす G と、手渡しで起こす後任 G のすべて' <<<"$s"
+  grep -qF '起動指示に行が無い G は従来経路' <<<"$s"
+  grep -qF 'どの段の起動指示でも行を省略しない' <<<"$s"
+  ! grep -qF '起動済みの同一 G' <<<"$s" || return 1
 }
 
 @test "develop (#385): step (4) always writes the adapter route line and never writes the legacy value" {
-  s="$(step4)"
+  s="$(startup_step4)"
   [ -n "$s" ] || { echo "no (4) block"; return 1; }
-  echo "$s" | grep -qF '常に `レビュー経路: adapter`'
-  echo "$s" | grep -qF '`レビュー経路: 従来` は書かない'
+  grep -qF '常に `レビュー経路: adapter`' <<<"$s"
+  grep -qF '`レビュー経路: 従来` は書かない' <<<"$s"
 }
 
 @test "develop (#385): step (4) re-selects phase review, records dispatch before starting the reviewer, and hands results to G" {
   s="$(step4)"
-  echo "$s" | grep -qF 'codex-develop.py request --phase review'
-  echo "$s" | grep -qF '構成・reason・両 provider の margin・各 fetched_at'
-  echo "$s" | grep -qF 'dispatch 記録'
-  echo "$s" | grep -qF '投稿に成功するまでレビュアーを起動しない'
-  echo "$s" | grep -qF 'executor / model・dispatch 記録のコメント URL を G に渡す'
-  echo "$s" | grep -qF 'Claude の G は照合と振り分けの G を新しく起こし'
-  echo "$s" | grep -qF 'Codex の G は新しい phase gate'
-  # 順序: 選び直し → 記録 → 起動 → G に渡す
-  a="$(echo "$s" | grep -nF 'request --phase review' | head -1 | cut -d: -f1)"
-  b="$(echo "$s" | grep -nF '投稿に成功するまで' | head -1 | cut -d: -f1)"
-  c="$(echo "$s" | grep -nF 'G に渡す' | head -1 | cut -d: -f1)"
-  [ "$a" -le "$b" ] && [ "$b" -le "$c" ]
+  grep -qF 'phase `review` の投げ先を選び直す' <<<"$s"
+  generated="$(codex_procedures)"
+  grep -qF '両 margin / fetched_at' <<<"$generated"
+  grep -qF 'dispatch 記録' <<<"$s"
+  grep -qF '投稿に成功するまでレビュアーを起動しない' <<<"$s"
+  grep -qF 'executor / model・dispatch 記録のコメント URL を G に渡す' <<<"$s"
+  grep -qF 'Claude の G は照合と振り分けの G を新しく起こし' <<<"$s"
+  grep -qF 'Codex の G は新しい phase gate' <<<"$s"
+  # 順序だけは該当 Status の手順内で検査する。
+  ordered="$(develop_status needs-reviewer)"
+  [ -n "$ordered" ]
+  a="$(awk 'index($0, "①") && index($0, "phase `review` の投げ先を選び直す") && !n {n=NR} END {if(n) print n}' <<<"$ordered")"
+  b="$(awk 'index($0, "②") && index($0, "投稿に成功するまでレビュアーを起動しない") && !n {n=NR} END {if(n) print n}' <<<"$ordered")"
+  c="$(awk 'index($0, "③") && index($0, "同正本の provider 操作でレビュアーを起動する") && !n {n=NR} END {if(n) print n}' <<<"$ordered")"
+  d="$(awk 'index($0, "④") && index($0, "dispatch 記録のコメント URL を G に渡す") && !n {n=NR} END {if(n) print n}' <<<"$ordered")"
+  [ -n "$a" ] && [ -n "$b" ] && [ -n "$c" ] && [ -n "$d" ]
+  [ "$a" -lt "$b" ] && [ "$b" -lt "$c" ] && [ "$c" -lt "$d" ]
 }
 
 @test "develop (#514): review dispatch preserves first-pass partition layout for supplement" {
   s="$(step4)"
   for token in 'executor が claude' '区画ごとに' '並列' 'Reviewer: 区画 <k>/<n> for PR #<N> (#<issue>)' 'executor が codex' '差分全体' '全区画の要約' '各要約の先頭に `区画 <k>/<n>` の見出し' 'G を 1 体' '残差のある区画だけ' '一周目の区画:' '計算し直さず' 'Reviewer: 補足 区画 <k>/<n> for PR #<N> (#<issue>)' '1 つの request' '接頭辞の無い ID' '元の三表を置き換えず' '補足済み回数'; do
-    echo "$s" | grep -qF "$token" || { echo "missing: $token"; return 1; }
+    grep -qF "$token" <<<"$s" || { echo "missing: $token"; return 1; }
   done
 }
 
 @test "reviewer-brief (#514): partitioned first pass hands all results to G under partition headings" {
   line="$(grep -F '全区画の結果を照合と振り分けの G' "$REVIEWER_BRIEF")"
   [ -n "$line" ] || { echo "hand-off sentence missing"; return 1; }
-  echo "$line" | grep -qF '各結果の先頭に `区画 <k>/<n>` の見出し'
+  grep -qF '各結果の先頭に `区画 <k>/<n>` の見出し' <<<"$line"
 }
 
 # ===== codex-develop.md（1.4） =====
@@ -227,24 +266,24 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 @test "codex-develop (#385): the G rule mentions the explicit adapter route line" {
   s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
   line="$(echo "$s" | grep -F 'needs-reviewer')"
-  echo "$line" | grep -qF '`レビュー経路: adapter`'
+  grep -qF '`レビュー経路: adapter`' <<<"$line"
 }
 
 @test "codex-develop (#554): the G rule spawns every stage G fresh and defaults a G without a route line to legacy" {
   s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
   line="$(echo "$s" | grep -F 'needs-reviewer')"
-  echo "$line" | grep -qF 'G を段ごとに新しく起こし（Claude の G も再開しない）'
-  echo "$line" | grep -qF '起動指示に行が無い G は従来経路'
-  ! echo "$line" | grep -qF '起動済みの同一 G' || return 1
+  grep -qF 'G を段ごとに新しく起こし（Claude の G も再開しない）' <<<"$line"
+  grep -qF '起動指示に行が無い G は従来経路' <<<"$line"
+  ! grep -qF '起動済みの同一 G' <<<"$line" || return 1
 }
 
 @test "codex-develop (#394): missing-route legacy behavior distinguishes Claude G from Codex G" {
   s="$(section "$CODEX_DEVELOP" '品質と transport 差分')"
   line="$(echo "$s" | grep -F '起動指示に行が無い G は従来経路')"
   old='行が無ければ従来経路として Codex を直接''呼ぶ'
-  echo "$line" | grep -qF 'Claude の G は Codex を直接呼ぶ'
-  echo "$line" | grep -qF 'Codex の G は prompt の禁止により呼ばない'
-  ! echo "$line" | grep -qF "$old" || return 1
+  grep -qF 'Claude の G は Codex を直接呼ぶ' <<<"$line"
+  grep -qF 'Codex の G は prompt の禁止により呼ばない' <<<"$line"
+  ! grep -qF "$old" <<<"$line" || return 1
 }
 
 # ===== レビュー実行者: の adapter 経路の形（1.5） =====
@@ -268,6 +307,6 @@ step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 @test "develop (#385): prerequisites table Codex CLI row separates the adapter route from the legacy route" {
   row="$(grep -F '| **Codex CLI** |' "$DEVELOP")"
   [ -n "$row" ] || { echo "Codex CLI row missing"; return 1; }
-  echo "$row" | grep -qE 'adapter 経路.*`needs-reviewer`.*phase `review` で投げ先を選び直す'
-  echo "$row" | grep -qE '従来経路.*G が full レビューを Bash から'
+  grep -qE 'adapter 経路.*`needs-reviewer`.*phase `review` で投げ先を選び直す' <<<"$row"
+  grep -qE '従来経路.*G が full レビューを Bash から' <<<"$row"
 }

@@ -11,7 +11,8 @@
 #    "codex_unresolved":0,"skipped_lines":0,"agents":[{"name":…,"description":…,"model":…,
 #    "tokens":…,"requests":…}],"codex":[{"thread_id":…,"tokens":…,"source":"record|rollout"}]}
 # exit code: 0 = 上限以内 / 2 = 上限超過（over_cap）/ 1 = 引数エラー・python3 が無い・
-#            カレントディレクトリがリポジトリでない
+#            カレントディレクトリがリポジトリでない・上限を解決できない（表・上書きの不正、
+#            共通処理 token_thresholds.py を読めない。stdout は {"error": …}）
 #
 # 紐付けの規約（正本は openspec の dev-workflow-pr-token-budget と skills/develop/SKILL.md）:
 # - Claude 分: develop の本体は spawn 時の Agent ツールの description に記録先番号を `#N` で入れる。
@@ -24,12 +25,14 @@
 #   --codex-records で渡す。同じ thread_id は 1 回（最大値）。`-` は --codex-home（無ければ
 #   ${CODEX_HOME:-~/.codex}）の sessions/*/*/*/rollout-*-<thread_id>.jsonl の token_count の
 #   total_token_usage.total_tokens の最大値を使う。見つからなければ codex_unresolved に数える。
-# 上限は total_tokens に 1 本で掛ける。--cap > DEV_WORKFLOW_PR_TOKEN_CAP > 30000000 の順。
+# 上限は total_tokens に 1 本で掛ける。--cap > DEV_WORKFLOW_PR_TOKEN_CAP > モデル別の表（token_thresholds.py）の順。
+# 表は数えた各リクエストの message.model ごとに引き、最小値を使う（Codex は含めない。0 件なら fallback を診断なしで）。
+# 未知モデル・再検証の診断は stderr に出す（手順: skills/develop/references/token-thresholds.md）。
 # このスクリプトは GitHub を読まない。exit 2 のあとの扱いは skills/develop/SKILL.md が正本。
 set -uo pipefail
 
 records=()
-cap="${DEV_WORKFLOW_PR_TOKEN_CAP:-30000000}"
+cap=""
 projects="${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
 codex_records=""
 codex_homes=()
@@ -48,25 +51,25 @@ while [ $# -gt 0 ]; do
     --codex-home)
       if [ -z "${2-}" ]; then echo '{"error":"--codex-home needs a directory"}'; exit 1; fi
       codex_homes+=("$2"); shift 2 ;;
-    -h|--help) sed -n '2,28p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,31p' "$0"; exit 0 ;;
     *)
       if [[ "$1" =~ ^[0-9]+$ ]]; then records+=("$1"); shift
       else echo "unknown arg: $1" >&2; echo "$usage" >&2; exit 1; fi ;;
   esac
 done
 if [ ${#records[@]} -eq 0 ]; then echo "$usage" >&2; exit 1; fi
-if ! [[ "$cap" =~ ^[0-9]+$ ]]; then echo '{"error":"DEV_WORKFLOW_PR_TOKEN_CAP must be a non-negative integer"}'; exit 1; fi
 if [ ${#codex_homes[@]} -eq 0 ]; then codex_homes=("${CODEX_HOME:-$HOME/.codex}"); fi
 command -v python3 >/dev/null 2>&1 || { echo '{"error":"python3 not found"}'; exit 1; }
 repo_id="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || repo_id=""
 if [ -z "$repo_id" ]; then echo '{"error":"current directory is not a git repository"}'; exit 1; fi
 
-RECORDS="${records[*]}" CAP="$cap" PROJECTS="$projects" REPO_ID="$repo_id" \
+SCRIPT_PATH="${BASH_SOURCE[0]}" RECORDS="${records[*]}" CAP="$cap" PROJECTS="$projects" REPO_ID="$repo_id" \
 CODEX_RECORDS="$codex_records" CODEX_HOMES="$(printf '%s\n' "${codex_homes[@]}")" python3 <<'PY'
-import glob, json, os, re, subprocess, sys
+import glob, importlib.util, json, os, re, subprocess, sys
+from pathlib import Path
+sys.dont_write_bytecode = True
 
 records = [int(x) for x in os.environ["RECORDS"].split()]
-cap = int(os.environ["CAP"])
 projects = os.environ["PROJECTS"]
 repo_id = os.path.realpath(os.environ["REPO_ID"])
 codex_records = os.environ["CODEX_RECORDS"]
@@ -111,6 +114,7 @@ def n(u, k):
     return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
 
 agents = []
+models = set()  # 数えたリクエストの message.model（不明は None）。Codex は入れない
 unresolved = 0
 for meta_path in sorted(glob.glob(os.path.join(projects, "*", "*", "subagents", "agent-*.meta.json"))):
     try:
@@ -151,12 +155,16 @@ for meta_path in sorted(glob.glob(os.path.join(projects, "*", "*", "subagents", 
                     skipped += 1
                     continue
                 key = d.get("requestId") or (msg.get("id") if isinstance(msg, dict) else None) or d.get("uuid") or line
+                model = msg.get("model")
+                if not isinstance(model, str) or not model.strip():
+                    model = None
                 seen[key] = (n(u, "input_tokens") + n(u, "cache_creation_input_tokens")
-                             + n(u, "cache_read_input_tokens") + n(u, "output_tokens"))
+                             + n(u, "cache_read_input_tokens") + n(u, "output_tokens"), model)
     except FileNotFoundError:
         pass
     agents.append({"name": meta.get("name"), "description": desc, "model": meta.get("model"),
-                   "tokens": sum(seen.values()), "requests": len(seen)})
+                   "tokens": sum(v[0] for v in seen.values()), "requests": len(seen)})
+    models.update(v[1] for v in seen.values())
 
 # Codex: thread_id → 記録されたトークン数の最大値（None は `-` だけの thread）
 threads = {}
@@ -214,6 +222,66 @@ for tid, tok in threads.items():
 claude_tokens = sum(a["tokens"] for a in agents)
 codex_tokens = sum(c["tokens"] for c in codex)
 total = claude_tokens + codex_tokens
+
+# 上限の解決。実行中のスクリプトの実体と同じ配布物の共通処理を使い、cwd / Python 環境から探さない。
+# 共通処理との境界（取得・callable 確認・呼出し・必須結果の取り出し・診断の準備）で起きた Exception は
+# resolver_unavailable、表・上書きの不正（ValueError）はその理由で、どちらも error の JSON と exit 1。
+def fail(message):
+    print(f"pr-token-budget: {message}", file=sys.stderr)
+    print(json.dumps({"records": records, "error": message}, ensure_ascii=False))
+    sys.exit(1)
+
+try:
+    plugin = Path(os.environ["SCRIPT_PATH"]).resolve().parent.parent
+    spec = importlib.util.spec_from_file_location("token_thresholds", plugin / "scripts/token_thresholds.py")
+    resolver = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(resolver)
+    resolve = resolver.resolve_thresholds
+    if not callable(resolve):
+        raise TypeError("resolve_thresholds is not callable")
+except Exception as error:
+    fail(f"resolver_unavailable: {type(error).__name__}: {error}")
+# 有効な --cap は env を遮る（不正な env も見ない）。無ければ DEV_WORKFLOW_PR_TOKEN_CAP だけを渡す
+if os.environ["CAP"]:
+    env = {"DEV_WORKFLOW_PR_TOKEN_CAP": os.environ["CAP"]}
+else:
+    env = {k: os.environ[k] for k in ("DEV_WORKFLOW_PR_TOKEN_CAP",) if k in os.environ}
+targets = sorted(models, key=lambda m: (m is not None, m or "")) or [None]
+results = []
+for model in targets:
+    try:
+        results.append((model, resolve(model, env)))
+    except ValueError as error:
+        fail(str(error))
+    except Exception as error:
+        fail(f"resolver_unavailable: {type(error).__name__}: {error}")
+try:
+    guide = plugin / "skills/develop/references/token-thresholds.md"
+    values = []
+    lines = []
+    for model, resolved in results:
+        value = resolved["thresholds"]["pr_token_cap"]["value"]
+        if isinstance(value, bool) or not isinstance(value, int):
+            raise TypeError("threshold value is not an integer")
+        values.append(value)
+        if not models:
+            continue  # 数えたリクエストが無ければ、使っていないモデルについて知らせない
+        for diagnostic in resolved["diagnostics"]:
+            if diagnostic["code"] == "unknown_model":
+                line = f"pr-token-budget: {diagnostic['message']}"
+            elif diagnostic.get("metric") == "pr_token_cap":
+                line = (f"pr-token-budget: revalidation_required: {model or '不明'}; "
+                        f"根拠モデル={diagnostic['decided_models']}; 対象=pr_token_cap; 手順={guide}")
+            else:
+                continue
+            if line not in lines:
+                lines.append(line)
+    cap = min(values)
+except Exception as error:
+    fail(f"resolver_unavailable: {type(error).__name__}: {error}")
+for line in lines:
+    print(line, file=sys.stderr)
+
 over = total > cap
 print(json.dumps({"records": records, "claude_tokens": claude_tokens, "codex_tokens": codex_tokens,
                   "total_tokens": total, "agent_count": len(agents), "codex_threads": len(codex),

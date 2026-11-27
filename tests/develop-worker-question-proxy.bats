@@ -30,7 +30,7 @@ question_contract() {
 }
 
 ambiguous_criteria() {
-  awk '/^### 割り方が判断できないほど曖昧な場合/ {p=1; next} /^## / {p=0} p' "$DEVELOP/references/decision-criteria.md"
+  awk '/^### 割り方が判断できないほど曖昧な場合/ {p=1; next} /^## / {p=0} p' "$DEVELOP/references/spec-decision.md"
 }
 
 execution_modes() {

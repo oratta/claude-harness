@@ -40,7 +40,9 @@ TBD - created by archiving change dev-workflow-execution-strategy. Update Purpos
 - **THEN** 判定は conserve と同一に振る舞い、ユーザー自身の Fable 利用（/model 切替等）を妨げる指示を出さない
 
 ### Requirement: Step B 基準の重心移動
-develop スキルの `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の仕様化要否（Step B）は、「設計判断・トレードオフを含むか（= 意図と決定の記録価値があるか)」を一次基準としなければならない（SHALL）。受け入れ条件が記録先（issue または Draft PR 本文）に明記された機械的な振る舞い変更は、記録先とテストを記録として spec 化を省略できる。テスト作成の必須性はいかなる判定でも緩めてはならない（MUST NOT）。unmanned モードの「迷ったら spec 化に倒す」は維持する。
+develop スキルの `plugins/dev-workflow/skills/develop/references/spec-decision.md` の仕様化要否（Step B）は、「設計判断・トレードオフを含むか（= 意図と決定の記録価値があるか)」を一次基準としなければならない（SHALL）。受け入れ条件が記録先（issue または Draft PR 本文）に明記された機械的な振る舞い変更は、記録先とテストを記録として spec 化を省略できる。テスト作成の必須性は、軽い通し方（`dev-workflow-spec-review` の「些細な修正は軽い通し方で新しいテストと W の起動を省く」Requirement）を除くいかなる判定でも緩めてはならない（MUST NOT）。軽い通し方では、記録先に書いた既存のテストかチェックのコマンドを走らせることが新しいテストの代わりになる（SHALL）。unmanned モードの「迷ったら spec 化に倒す」は維持する。
+
+この判定の守備範囲は次のとおりとする。①入力の出どころは、記録先の本文（受け入れ条件・機能単位。Draft PR が記録先なら PR 本文）と、W が投稿する仕様化判断のコメント（1 行目と理由）である。W は協力的だが、一次基準を甘く読み、設計判断を含む変更を「機械的な振る舞い変更」と読むことがある前提で扱う。②拾いたい誤りは、複数案からの選択を含む変更をコード直行にすること、軽い通し方以外の判定でテスト作成を省くこと、unmanned で判断がつかないのにコード直行にすることである。③次はこの判定を通ることを許す: 設計判断の有無の線引きが割れる変更で W がどちらかに倒したもの（「する」なら R1、「しない」なら PR レビューが見る）。理由の行が Step B のどの条件に当たるかを短く書いただけのもの。④ここに挙げた以外の通り方は見つけるたびに条件を足し、穴を塞ぎ切ることを完了条件にしない。
 
 #### Scenario: 機械的な振る舞い変更は spec を省略できる
 - **WHEN** 受け入れ条件が記録先に明記され、設計判断（トレードオフの選択）を含まない振る舞い変更を interactive で判定する
@@ -49,6 +51,10 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/decision-cr
 #### Scenario: unmanned は安全側を維持
 - **WHEN** unmanned モードで spec 化要否の判断がつかない
 - **THEN** spec 化する側に倒す
+
+#### Scenario: 軽い通し方だけが新しいテストを省く
+- **WHEN** 記録先の最新の仕様化判断のコメントが `仕様化判断: しない` で `通し方: 軽い` の行を持つ
+- **THEN** 新しいテストは書かず、`確かめ方:` の行のコマンドを走らせて確かめる。この行が無い判断では、どの判定でもテストを書く
 
 ### Requirement: usage snapshot からの残量モード自動導出
 `FABLE_BUDGET_MODE` が明示設定されていないとき、残量モードは usage snapshot（`fable_weekly_pct` / `fable_active` / 週次リセット時刻を含む）から自動導出されなければならない（SHALL）。導出ルールは develop スキルの `plugins/dev-workflow/skills/develop/references/decision-criteria.md` に定義し、次の優先順位に従う: ① `fable_weekly_pct` が読めない/snapshot 無し → `conserve` ② `fable_weekly_pct > 90` → `exhausted` ③ `fable_weekly_pct <= 週経過%`（週次リセット時刻から算出）→ `abundant` ④ それ以外 → `conserve`。導出は「Fable の消費ペースが週の経過ペースを上回るか」のバーンレート比較であることを明記する。
@@ -66,22 +72,32 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/decision-cr
 - **THEN** 残量モードは exhausted に導出される
 
 ### Requirement: 共有枠モードが役割の既定モデルの下限を決める
-`scripts/session-tripwires.sh` は usage snapshot の `weekly_all_pct`（全モデル共通の週次枠の消化率）から共有枠モード `SHARED_BUDGET_MODE` を導出し、Fable 残量モードと並べてセッション文脈に注入しなければならない（SHALL）。導出の優先順位: ① 明示 env `SHARED_BUDGET_MODE` ② `weekly_all_pct` が読めない / snapshot 無し → `ok` ③ `weekly_all_pct > 90` → `depleted` ④ `weekly_all_pct` が週経過%（週次リセット時刻から算出）より大きい → `throttled` ⑤ それ以外 → `ok`。効果は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の表に置く（SHALL）: `ok` は制約なし、`throttled` は W / R1 / G の既定を Sonnet に落とし昇格上限 Opus・`abundant` の押し上げ無効、`depleted` は全役割 Sonnet 固定・昇格なし（事前分類に当たっても Fable / Opus を使わない）。Fable 残量モードと共有枠モードが食い違うときは共有枠モードの下限が勝たなければならない（MUST）。導出は Fable 残量モードの導出を変えてはならない（MUST NOT）。
+共有枠モード `SHARED_BUDGET_MODE` は active スロットの週次の実効値（`usage-session-records` の規則でセッション記録と snapshot から求めた `weekly_all_pct`。全モデル共通の週次枠の消化率）から導出し、`scripts/session-tripwires.sh` が Fable 残量モードと並べてセッション文脈に注入しなければならない（SHALL）。導出の式は `scripts/usage_view.py` の 1 か所にだけ置く（SHALL）。導出の優先順位: ① 明示 env `SHARED_BUDGET_MODE` ② 明示 env が無く、セッション記録と snapshot の双方から週次の実効値が求まらない → `ok` ③ 週次の実効値 `weekly_all_pct > 90` → `depleted` ④ `weekly_all_pct` が週経過%（週次リセット時刻から算出）より大きい → `throttled` ⑤ それ以外 → `ok`。効果は `plugins/dev-workflow/skills/develop/references/decision-criteria.md` の表に置く（SHALL）: `ok` は制約なし、`throttled` は W / R1 / G の既定を Sonnet に落とし昇格上限 Opus・`abundant` の押し上げ無効、`depleted` は最安の役（explore と summarize）はそのまま、それ以外の役は中位（Sonnet）が上限・昇格なし（事前分類に当たっても Fable / Opus を使わない）。Fable 残量モードと共有枠モードが食い違うときは共有枠モードの下限が勝たなければならない（MUST）。導出は Fable 残量モードの導出を変えてはならない（MUST NOT）。Fable 残量モードの既定 `conserve` に倒れるのは、明示 env が無く、active スロットの実効値の `fable_weekly_pct` が求まらないとき（Fable 週次はセッション記録に無く snapshot だけから求めるので、snapshot が無い・その値かリセット時刻が無いとき）である。
+
+守備範囲: 残量モードの導出の入力の出どころ・拾いたい誤り・通してよい入力・完了条件は、`dev-workflow-escalation-tripwires` の要件「SessionStart で残量モードを自動導出注入」の守備範囲の段落に従う（式が 1 か所なので守備範囲も 1 か所に置く）。
 
 #### Scenario: Fable が余っていても全モデル枠が速く減っていれば throttled
-- **WHEN** snapshot の `fable_weekly_pct` が週経過% 以下（abundant）で、`weekly_all_pct` が週経過% より大きく 90 以下
+- **WHEN** active スロットの実効値の `fable_weekly_pct` が週経過% 以下（abundant）で、週次の実効値 `weekly_all_pct` が週経過% より大きく 90 以下
 - **THEN** `FABLE_BUDGET_MODE` は abundant、`SHARED_BUDGET_MODE` は throttled と注入され、役割の既定は Sonnet 起点になる
 
 #### Scenario: 全モデル枠 90% 超は depleted
-- **WHEN** snapshot の `weekly_all_pct` が 90 を超え、`SHARED_BUDGET_MODE` が未設定
+- **WHEN** 週次の実効値 `weekly_all_pct` が 90 を超え、`SHARED_BUDGET_MODE` が未設定
 - **THEN** 共有枠モードは depleted に導出される
 
 #### Scenario: データが無ければ ok
-- **WHEN** snapshot が無い、または `weekly_all_pct` が読めない
+- **WHEN** `SHARED_BUDGET_MODE` と `FABLE_BUDGET_MODE` が未設定で、active スロットのセッション記録も snapshot も無い（週次の実効値も Fable 週次も求まらない）
 - **THEN** 共有枠モードは ok（制約なし）に導出され、Fable 残量モードの導出は従来どおり conserve に倒れる
 
+#### Scenario: snapshot が無くてもセッション記録の週次で depleted
+- **WHEN** snapshot が無く、active スロットの鍵のセッション記録に週次 95% があり、`SHARED_BUDGET_MODE` が未設定
+- **THEN** 共有枠モードは depleted に導出される（ok にならない）
+
+#### Scenario: depleted でも最安の役は上げない
+- **WHEN** `SHARED_BUDGET_MODE=depleted` の状態で decision-criteria の残量モードと共有枠モードの優先順位の表の共有枠モードの行と、表の下の `haiku` の役割の行と、`session-tripwires.sh` が注入する `depleted` の効果の文を読む
+- **THEN** どちらも explore と summarize を最安のまま残し、それ以外の役の上限を中位とする。「全役割 Sonnet 固定」の語を含まない
+
 ### Requirement: サブエージェントのコンテキスト上限と手渡し
-`plugins/dev-workflow/scripts/subagent-context.sh` は、対象のトランスクリプトの最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。対象の指定は次の 2 通りとする（SHALL）: `--file <path>` はそのファイルを直接測る（`agent` はファイル名から導く）。`<agent-name>` は `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}/*/*/subagents/` 内の `agent-<id>.meta.json` の `name` が指定名と完全一致する場合、対応する実在の `agent-<id>.jsonl` を候補に加え、従来の名前 glob（`agent-*<name>-*.jsonl` と `agent-*<name>.jsonl`）による候補と統合して重複を除かなければならない（SHALL）。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、その中でログの更新時刻が新しいものを選び、一致するものが無ければ全候補で最新のログを選ばなければならない（SHALL）。metadata が無い・`name` が一致しない・壊れている場合も従来のファイル名探索にフォールバックし、候補が無ければ `transcript not found` を含む JSON を出力して exit 1 としなければならない（SHALL）。上限は `--cap` または `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）で、上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないときは exit 1 とし、exit 1 は作業を止めない（fail-open。SHALL）。develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、exit 2 なら再開せず、前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）と記録先を渡して新しい W / G を spawn しなければならない（MUST。モデルは変えない）。W は工程の終わりに必ず return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
+`plugins/dev-workflow/scripts/subagent-context.sh` は、対象のトランスクリプトの最後の assistant レコードの usage から `input_tokens + cache_creation_input_tokens + cache_read_input_tokens` を読み、1 行 JSON（`agent` / `file` / `context_tokens` / `calls` / `cap` / `over_cap`）を出力しなければならない（SHALL）。対象の指定は次の 2 通りとする（SHALL）: `--file <path>` はそのファイルを直接測る（`agent` はファイル名から導く）。`<agent-name>` は `${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}/*/*/subagents/` 内の `agent-<id>.meta.json` の `name` が指定名と完全一致する場合、対応する実在の `agent-<id>.jsonl` を候補に加え、従来の名前 glob（`agent-*<name>-*.jsonl` と `agent-*<name>.jsonl`）による候補と統合して重複を除かなければならない（SHALL）。同名が複数あれば最初のレコードの `cwd` が現在のディレクトリと一致するものを優先し、その中でログの更新時刻が新しいものを選び、一致するものが無ければ全候補で最新のログを選ばなければならない（SHALL）。metadata が無い・`name` が一致しない・壊れている場合も従来のファイル名探索にフォールバックし、候補が無ければ `transcript not found` を含む JSON を出力して exit 1 としなければならない（SHALL）。上限は計測に採用した assistant レコードの `message.model` を使って共通処理から解決した `context_cap` とし、`--cap` > `DEV_WORKFLOW_CONTEXT_CAP` > モデル別既定値 / fallback（初期値 150000）の順に適用しなければならない（SHALL）。モデル入力・上書き・診断の契約は dev-workflow-token-thresholds の文脈計測の要件に従う（MUST）。上限超なら exit 2、上限以内なら exit 0、トランスクリプトが無い・usage が無い・読めないとき、または共通処理を解決できないときは `error` を持つ 1 行 JSON と exit 1 にし、exit 1 は作業を止めない（fail-open。SHALL）。fallback・再検証と解決失敗の理由は stderr に出し、stdout の 1 行 JSON を保つ（MUST）。develop の本体は W / G を SendMessage で再開する前に毎回これを実行し、exit 2 なら再開せず、前回の return（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）と記録先を渡して新しい W / G を spawn しなければならない（MUST。モデルは変えない）。W は工程の終わりに必ず return し、手渡しで起こされた W は前任の return と記録先・ファイルの現状から再出発して前任の埋めた決定を再発明してはならない（MUST NOT）。昇格トリップワイヤーの一覧（`templates/escalation-tripwires.md`）は【コンテキスト上限 → 手渡し】を 4 として含み、rate-limit 実エラーの reactive 降格を 5 とする（SHALL）。
 
 守備範囲: 名前探索で扱う入力は、Claude Code が生成するローカルの metadata（`agent-<id>.meta.json`）とトランスクリプト（JSONL）である。防ぐのは、metadata の `name` の部分一致による誤採用、候補を統合せず cwd 一致優先・ログの更新時刻順を適用しないことによる誤選択、metadata の破損による探索停止である。metadata の `name` が指定名と不一致でも、従来のファイル名 glob に一致するログは候補として採用してよい。未知の入力による穴をすべて塞ぐことは、この要件の完了条件にしない（MUST NOT）。探索先は 1 か所で、別の設定フォルダの下の会話記録は探さない（そのセッションの W は `transcript not found` の exit 1 になる）。
 
@@ -162,13 +178,13 @@ develop スキルの `plugins/dev-workflow/skills/develop/references/decision-cr
 - **THEN** そのトランスクリプトを測る
 
 ### Requirement: model 未指定の Agent spawn は hook が拒否する
-`hooks/hooks.json` は PreToolUse（matcher: `Agent`）に `scripts/agent-model-guard.sh` を登録しなければならない（MUST）。hook は stdin の payload（`tool_name` / `tool_input`）を読み、`tool_name` が `Agent` 以外なら何もしない。`tool_input.subagent_type` が `fork` なら `model` の有無にかかわらず共有枠モード（明示 env `SHARED_BUDGET_MODE`、無ければ `scripts/usage_view.py` が求める active スロットの全体週次枠の実効値 `weekly_all_pct` から導出。実効値はセッション記録と usage snapshot を突き合わせた値で、規則の正本は usage-session-records の「記録と snapshot から実効値を求める」。90 超は `depleted`、週経過% 超は `throttled`）が `ok` のときだけ許可し、それ以外は拒否する（MUST。fork は model パラメータを無視して親モデルで動くため）。
+`hooks/hooks.json` は PreToolUse（matcher: `Agent`）に `scripts/agent-model-guard.sh` を登録しなければならない（MUST）。hook は stdin の payload（`tool_name` / `tool_input`）を読み、`tool_name` が `Agent` 以外なら何もしない。`tool_input.subagent_type` が `fork` なら `model` の有無にかかわらず共有枠モード（明示 env `SHARED_BUDGET_MODE`、無ければ `scripts/usage_view.py` が求める active スロットの全体週次枠の実効値 `weekly_all_pct` から導出。実効値はセッション記録と usage snapshot を突き合わせた値で、規則の正本は usage-session-records の「記録と snapshot から実効値を求める」。90 超は `depleted`、週経過% 超は `throttled`）が `ok` のときだけ許可し、それ以外は拒否する（MUST。fork は model パラメータを無視して親モデルで動くため）。共有枠モードは guard 自身の場所の `scripts/usage_view.py` から得なければならない（MUST）。導出の規則（明示 env の優先・データ無しは `ok`・90 超・週経過との比較）は要件「共有枠モードが役割の既定モデルの下限を決める」のとおりで、式は `usage_view.py` の 1 か所にだけ置き、`agent-model-guard.sh` は閾値の比較も週経過の計算も明示 env の優先の判定も自分で行ってはならない（MUST NOT）。判定に使う現在時刻は環境変数 `USAGE_PROBE_NOW`（整数）があればその値、無ければ現在時刻である。
 
 fork 以外で `model` が Fable（エイリアス `fable`、または `claude-fable-*` の完全 ID。大文字小文字と前後の空白を無視して判定する）を指す場合は、`subagent_type` が決める役の allowlist（`dev-workflow:decider`。将来増えたらスクリプト内の allowlist に足す）に載っているときだけ許可し、それ以外（`general-purpose` / `Explore` / `Plan` / 未指定 / 他のプラグイン種別）は拒否しなければならない（MUST）。拒否理由には決める役の種別名 `dev-workflow:decider` と、実行役の代替（`sonnet` / `opus`）と、規範（`rules/subagent-model-selection.md`）を含める（SHALL）。この判定はセッションの種類（対話 / 住人 / cron / loop）で変えてはならない（MUST NOT）。Fable 判定は残量（`FABLE_BUDGET_MODE` / `SHARED_BUDGET_MODE` / セッション記録 / usage snapshot）をいっさい参照してはならない（MUST NOT。ガードは「誰が Fable になりうるか」の構造上の上限を見る層で、「今 Fable を使ってよいか」の助言は従来どおり develop 側の残量モードが担う。ガードが snapshot を読むと判定が鮮度と fail-open に依存してしまう）。既存の `fork` 判定が `SHARED_BUDGET_MODE` を見ることと、全解除の `DEV_WORKFLOW_MODEL_GUARD=off` はこの制限の対象外で、従来どおり残す（SHALL）。
 
-Fable 以外の `model` があれば許可し、定義側に model を持つエージェント種別（`plugin:agent` 形式・casting 系）も許可する。`subagent_type` が空・`general-purpose`・`Explore`・`Plan`・`claude`・`claude-code-guide`・`statusline-setup` で `model` が無ければ拒否する（MUST）。拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とし、理由に規範（rules/subagent-model-selection.md）と選ぶべきティアを含める（SHALL）。`model` 未指定の拒否理由に列挙するティアは `haiku`（機械的）/ `sonnet`（通常実装・調査）/ `opus`（設計・レビュー）とし、`fable` は決める役の種別でだけ使えることを添える（SHALL）。payload は環境変数や引数に載せず stdin から読む（MUST。長い prompt で ARG_MAX を超えると hook が非 0 で落ちて素通りになるため）。python3 が無い・stdin が JSON として読めない（空の stdin を含む）・payload がオブジェクトでないときは fail-open（exit 0・無出力）とする（SHALL）。`tool_input` は、真とみなされるオブジェクト以外の値（空でない配列・空でない文字列・0 以外の数値・`true`）のときだけ fail-open（exit 0・無出力）とし、無い・`null`・空配列・空文字列・`0`・`false` のときは空のオブジェクトとして扱って `model` 未指定の判定へ進む（`subagent_type` も空になるので拒否される）（SHALL）。`subagent_type` が文字列でないときは空として扱い、`model` が文字列でないときは `model` 無しとして扱う（SHALL）。`fork` の共有枠判定では、`SHARED_BUDGET_MODE` が未設定で、セッション記録と snapshot のどちらからも active スロットの全体週次枠の値が求まらないとき、共有枠モードを `ok` とみなして許可する（SHALL。fail-open）。この fail-open は `fork` の共有枠判定に限り、`fork` 以外の判定（model 未指定・Fable）はセッション記録も snapshot も読まないので、snapshot が読めなくても結果は変わらない（SHALL）。`DEV_WORKFLOW_MODEL_GUARD=off` で全許可できる（SHALL）。
+Fable 以外の `model` は、要件「実行役の種別は対応表の上限を超える格で起こせない」で拒否されない限り許可し、定義側に model を持つエージェント種別（`plugin:agent` 形式・casting 系）も許可する。`subagent_type` が空・`general-purpose`・`Explore`・`Plan`・`claude`・`claude-code-guide`・`statusline-setup` で `model` が無ければ拒否する（MUST）。拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とし、理由に規範（rules/subagent-model-selection.md）と選ぶべきティアを含める（SHALL）。`model` 未指定の拒否理由に列挙するティアは `haiku`（機械的）/ `sonnet`（通常実装・調査）/ `opus`（設計・レビュー）とし、`fable` は決める役の種別でだけ使えることを添える（SHALL）。payload は環境変数や引数に載せず stdin から読む（MUST。長い prompt で ARG_MAX を超えると hook が非 0 で落ちて素通りになるため）。python3 が無い・stdin が JSON として読めない（空の stdin を含む）・payload がオブジェクトでないときは fail-open（exit 0・無出力）とする（SHALL）。`tool_input` は、真とみなされるオブジェクト以外の値（空でない配列・空でない文字列・0 以外の数値・`true`）のときだけ fail-open（exit 0・無出力）とし、無い・`null`・空配列・空文字列・`0`・`false` のときは空のオブジェクトとして扱って `model` 未指定の判定へ進む（`subagent_type` も空になるので拒否される）（SHALL）。`subagent_type` が文字列でないときは空として扱い、`model` が文字列でないときは `model` 無しとして扱う（SHALL）。`fork` の共有枠判定では、`SHARED_BUDGET_MODE` が未設定で、セッション記録と snapshot のどちらからも active スロットの全体週次枠の値が求まらないとき、共有枠モードを `ok` とみなして許可する（SHALL。fail-open）。この fail-open は `fork` の共有枠判定に限り、`fork` 以外の判定（model 未指定・Fable）はセッション記録も snapshot も読まないので、snapshot が読めなくても結果は変わらない（SHALL）。`DEV_WORKFLOW_MODEL_GUARD=off` で全許可できる（SHALL）。
 
-守備範囲: この要件が受け取る入力は次の 3 つに限る。1 つ目は、Claude Code が PreToolUse で hook の stdin に渡す Agent 呼び出しの payload（`tool_name` と、`tool_input` の `subagent_type` / `model`）で、`subagent_type` と `model` はエージェント（本体やサブエージェント）が書く値である。2 つ目は、利用者が自分で設定する環境変数 `DEV_WORKFLOW_MODEL_GUARD` と `SHARED_BUDGET_MODE` である。3 つ目は、`subagent_type` が `fork` で `SHARED_BUDGET_MODE` が未設定のときだけ `scripts/usage_view.py` を通じて読む、アカウント一覧（`accounts.json`）・active スロットのセッション記録（`.usage-sessions/<鍵>.json`。ステータスラインが書く）・usage snapshot（使用量の取得処理が書く）である。この 3 つ目の置き場所・active スロットの選び方・判定に使う現在時刻は、環境変数（`CLAUDE_CONFIG_DIR` / `CLAUDE_ACCOUNTS_FILE` / `USAGE_SESSIONS_DIR` / `USAGE_SNAPSHOT` / `CLAUDE_SECURESTORAGE_CONFIG_DIR` / `USAGE_PROBE_NOW`）で差し替わる。`fork` 以外の判定は 3 つ目を読まない。拾いたい誤りは、`model` を省いた `general-purpose` / `Explore` / `Plan` などの呼び出しが親セッションのモデルを継承すること、決める役の種別以外が `model: "fable"`（または `claude-fable-*`）で起こされること、共有枠モードが `ok` でないときに `fork` が起こされることの 3 つである。次の入力は通ることを許す: `general-purpose` に `model: "opus"` / `"sonnet"` / `"haiku"` を付けた呼び出し（実行役の通常の形）／Fable を指さない `model` の文字列は、実在するモデル名かどうかを確かめずに通す（例: 綴りを誤った `model: "fabel"`、`model: "opus-typo"`）／`model` が文字列でない payload は `model` 無しとして扱う（`subagent_type` が文字列でないときは空として扱うので、`model` が無ければ拒否される）／上に列挙していない `subagent_type`（`plugin:agent` 形式、casting 系、将来増える組み込みの種別。列挙との照合は大文字小文字を区別するので `explore` も含む）は、定義側に model があるかを確かめずに `model` 無しで通す／python3 が無い・stdin が JSON として読めない・payload がオブジェクトでないとき、および `tool_input` が真とみなされるオブジェクト以外の値（空でない配列・空でない文字列・0 以外の数値・`true`）のときは判定せずに通す（fail-open）。`tool_input` が無い・`null`・空配列・空文字列・`0`・`false` のときは通さず、空のオブジェクトとして `model` 未指定の判定へ進むので拒否される／`fork` は、`SHARED_BUDGET_MODE` が未設定で、セッション記録と snapshot のどちらからも active スロットの全体週次枠の値が求まらない（どちらも無い・読めない・値が範囲外など）ときは `ok` とみなして通す（fail-open）。snapshot だけが読めないときはセッション記録の値で判定する。`fork` 以外の判定はこの fail-open の対象外で、snapshot が読めなくても model 未指定の呼び出しと決める役以外の Fable は拒否する／`DEV_WORKFLOW_MODEL_GUARD=off` のときはすべて通す。これらの穴を見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
+守備範囲: この要件が受け取る入力は次の 4 つに限る。1 つ目は、Claude Code が PreToolUse で hook の stdin に渡す Agent 呼び出しの payload（`tool_name` と、`tool_input` の `subagent_type` / `model`）で、`subagent_type` と `model` はエージェント（本体やサブエージェント）が書く値である。2 つ目は、利用者が自分で設定する環境変数 `DEV_WORKFLOW_MODEL_GUARD` と `SHARED_BUDGET_MODE` である。3 つ目は、`subagent_type` が `fork` で `SHARED_BUDGET_MODE` が未設定のときだけ `scripts/usage_view.py` を通じて読む、アカウント一覧（`accounts.json`）・active スロットのセッション記録（`.usage-sessions/<鍵>.json`。ステータスラインが書く）・usage snapshot（使用量の取得処理が書く）である。この 3 つ目の置き場所・active スロットの選び方・判定に使う現在時刻は、環境変数（`CLAUDE_CONFIG_DIR` / `CLAUDE_ACCOUNTS_FILE` / `USAGE_SESSIONS_DIR` / `USAGE_SNAPSHOT` / `CLAUDE_SECURESTORAGE_CONFIG_DIR` / `USAGE_PROBE_NOW`）で差し替わる。`fork` 以外の判定は 3 つ目を読まない。4 つ目は、`subagent_type` が `dev-workflow:worker` か `dev-workflow:gate-runner` のときだけ読む、リポジトリ同梱の `plugins/dev-workflow/references/model-tier-map.json` である（置き場所は guard 自身の場所から決まり、環境変数で差し替わらない）。拾いたい誤りは、`model` を省いた `general-purpose` / `Explore` / `Plan` などの呼び出しが親セッションのモデルを継承すること、決める役の種別以外が `model: "fable"`（または `claude-fable-*`）で起こされること、共有枠モードが `ok` でないときに `fork` が起こされること、実行役の種別が対応表の上限を超える格のモデルで起こされることの 4 つである。次の入力は通ることを許す: `general-purpose` に `model: "opus"` / `"sonnet"` / `"haiku"` を付けた呼び出し（実行役の通常の形）／Fable を指さない `model` の文字列は、実行役の種別で対応表の上限を超える場合を除き、実在するモデル名かどうかを確かめずに通す（例: 綴りを誤った `model: "fabel"`、`model: "opus-typo"`）／`model` が文字列でない payload は `model` 無しとして扱う（`subagent_type` が文字列でないときは空として扱うので、`model` が無ければ拒否される）／上に列挙していない `subagent_type`（`plugin:agent` 形式、casting 系、将来増える組み込みの種別。列挙との照合は大文字小文字を区別するので `explore` も含む）は、定義側に model があるかを確かめずに `model` 無しで通す／python3 が無い・stdin が JSON として読めない・payload がオブジェクトでないとき、および `tool_input` が真とみなされるオブジェクト以外の値（空でない配列・空でない文字列・0 以外の数値・`true`）のときは判定せずに通す（fail-open）。`tool_input` が無い・`null`・空配列・空文字列・`0`・`false` のときは通さず、空のオブジェクトとして `model` 未指定の判定へ進むので拒否される／`fork` は、`SHARED_BUDGET_MODE` が未設定で、セッション記録と snapshot のどちらからも active スロットの全体週次枠の値が求まらない（どちらも無い・読めない・値が範囲外など）ときは `ok` とみなして通す（fail-open）。`usage_view.py` を読み込めない（ファイルが無い・import で例外を出す）ときは、明示 env `SHARED_BUDGET_MODE` も読まず `ok` とみなして通す（fail-open。明示 env の優先の判定も式の一部で、guard に写しを残さないため）。明示 env があるときは、セッション記録や snapshot が読めなくても明示値で判定する。snapshot だけが読めないときはセッション記録の値で判定する。`fork` 以外の判定はこの fail-open の対象外で、snapshot が読めなくても model 未指定の呼び出しと決める役以外の Fable は拒否する／`DEV_WORKFLOW_MODEL_GUARD=off` のときはすべて通す。これらの穴を見つかるたびに塞ぎ切ることは、この要件の完了条件にしない。
 
 #### Scenario: model 無しの general-purpose は拒否される
 - **WHEN** `{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}` を hook に渡す
@@ -201,6 +217,18 @@ Fable 以外の `model` があれば許可し、定義側に model を持つエ�
 #### Scenario: snapshot が無くてもセッション記録から fork を止める
 - **WHEN** `SHARED_BUDGET_MODE` 未設定・snapshot 無しで、active スロットのセッション記録の `weekly_all_pct` が 95（リセット前）のまま `{"tool_name":"Agent","tool_input":{"subagent_type":"fork"}}` を渡す
 - **THEN** 拒否され、理由に `depleted` が含まれる
+
+#### Scenario: fork の共有枠モードを usage_view.py から得る
+- **WHEN** 共有枠モードを固定値（`throttled`）で返す偽の `usage_view.py` を置いた scripts ディレクトリから、`SHARED_BUDGET_MODE` 未設定・セッション記録も snapshot も無い状態で `agent-model-guard.sh` に `{"tool_name":"Agent","tool_input":{"subagent_type":"fork"}}` を渡す
+- **THEN** 拒否され、理由に `throttled` が含まれる（guard が自分の式で導けば `ok` になって通る）
+
+#### Scenario: usage_view.py を読み込めなければ明示 env も読まずに fork を通す
+- **WHEN** `usage_view.py` の無い（または import で例外を出す）scripts ディレクトリから、`SHARED_BUDGET_MODE=depleted` で `agent-model-guard.sh` に `{"tool_name":"Agent","tool_input":{"subagent_type":"fork"}}` を渡す
+- **THEN** 無出力・exit 0 で許可される
+
+#### Scenario: guard に共有枠モードの式が無い
+- **WHEN** `scripts/agent-model-guard.sh` を読む
+- **THEN** 週経過率の計算（`7 * 86400` などの週の秒数）と、週次使用率をしきい値 90 や週経過率と比べる式が無い
 
 #### Scenario: snapshot もセッション記録も無くても model 無しは拒否される
 - **WHEN** snapshot もセッション記録も無い状態で `{"tool_name":"Agent","tool_input":{"subagent_type":"general-purpose","prompt":"x"}}` を渡す
@@ -237,7 +265,7 @@ Fable 以外の `model` があれば許可し、定義側に model を持つエ�
 
 導出したパスが存在しないときは `<transcript_path の親ディレクトリ>/<session_id>/subagents/` 以下を**深さ 3 段まで**（`subagents/` 直下を 1 段目と数える）`agent-<agent_id>.jsonl` で探してよい（MAY。入れ子のサブエージェント）。この探索は毎ツール呼び出しのコストになるため上限を設けなければならず（MUST）、走査したディレクトリエントリが 200 件を超えるか探索が 20ms を超えたら打ち切って何も出力せず exit 0 とする（SHALL）。
 
-読み取りはファイル末尾の固定 256KB だけを対象とし、そこに現れる最後の `assistant` レコードの usage を合算する（MUST）。この 256KB は環境変数で上書きできる形にしてはならない（MUST NOT。小さすぎる値を与えられると静かに fail-open して途中計測が全体で無効になるため。変更は仕様変更として扱う）。トランスクリプトが 5MB でも hook 1 回の実行時間は 100ms 未満でなければならない（MUST）。
+読み取りはファイル末尾の固定 256KB だけを対象とし、そこに現れる最後の `assistant` レコードの usage を合算する（MUST）。しきい値はこの計測レコードの `message.model` を使って共通処理から取得した `context_cap` / `context_hard_cap` とし、モデル入力・上書き・正数条件・診断は dev-workflow-token-thresholds の文脈計測の要件に従わなければならない（MUST）。この 256KB は環境変数で上書きできる形にしてはならない（MUST NOT。小さすぎる値を与えられると静かに fail-open して途中計測が全体で無効になるため。変更は仕様変更として扱う）。トランスクリプトが 5MB でも hook 1 回の実行時間は 100ms 未満でなければならない（MUST）。
 
 `DEV_WORKFLOW_CONTEXT_TRIPWIRE` が `off` である・`python3` が無い・読み込んだ stdin が**メインスレッドからの呼び出しであることを JSON をパースせずに判定できる**のいずれかは、**python3 を起動する前に判定して** exit 0 しなければならない（MUST）。この hook は install 先の全ユーザーの全ツール呼び出しで走り、大多数がメインスレッドであるため、そこに python3 の起動コストを課してはならない（MUST NOT）。
 
@@ -247,7 +275,9 @@ Fable 以外の `model` があれば許可し、定義側に model を持つエ�
 
 判定は必要条件であって十分条件ではなく、`agent_id` を持たない payload が python3 に渡ってよい（MAY）。その場合はパース後に `agent_id` フィールドが無いと判定され、何も出力せず exit 0 する。この向きの外し方が起きる頻度は payload の内容に依存する（PostToolUse の payload は `tool_response` を含むため、Read が読んだファイル内容・Bash の出力・Grep の結果にこの並びがあれば起動する。JSON シリアライザが `\b \f \n \r \t` 以外の制御文字を 4 桁 16 進で綴った出力も同じ）。判定を誤ってよいのはこの向き（余計に起動して無音で終わる）だけであり、逆向き（`agent_id` を持つ payload の早期 exit）は許されない（MUST NOT）。
 
-次のいずれかに当たるときは何も出力せず exit 0 で終わらなければならない（MUST。fail-open）: 上の 3 つ ／ stdin が読めない・JSON でない ／ 導出したトランスクリプトが無い・usage が読めない ／ 探索の上限に達した ／ 閾値の環境変数が正の整数でない ／ 閾値以内。
+次のいずれかに当たるときは何も出力せず exit 0 で終わらなければならない（MUST。fail-open）: 上の 3 つ ／ stdin が読めない・JSON でない ／ 導出したトランスクリプトが無い・usage が読めない ／ 探索の上限に達した。しきい値解決の失敗（共通処理の API 欠損・呼出し時の通常例外を含む）・解決値の正数条件違反は stdout 空・exit 0 とし、理由を stderr に出さなければならない（MUST）。再検証通知が無い閾値以内は stdout 空・exit 0 とし、fallback・再検証が必要なら stderr に診断を出す（MUST）。再検証通知があるときは、閾値以内でも stderr の診断に加えて、診断だけの単一 JSON（`hookSpecificOutput` の `hookEventName` と `additionalContext` のみ）を stdout に出して exit 0 とし、本人への通知経路とする（MUST）。出力の形・文面・決定フィールドを付けない規則は dev-workflow-token-thresholds の文脈計測の診断の要件に従う。共通処理の正常な fallback だけを理由に判定を無効にしてはならない（MUST NOT）。
+
+守備範囲は、同梱表・共通処理の結果と payload・ログを入力元とし、閾値以内の無音を理由に再検証の必要が本人に届かない誤りと、診断だけでツールを止める誤りを拾う。通知の到達は出力検査と公式の配送規則を根拠とし、実機観測や入力の穴の完全封鎖を完了条件にしない。通してよい入力の例は、根拠に含まれる既知モデルで閾値以内の呼出し（stdout も stderr も空で通す）と、`agent_id` を持たないが `\u00` を含む payload（python3 を起動したうえで無音で通す）である。
 
 #### Scenario: agent_id が無い呼び出しは python3 を起動せず無音
 
@@ -266,8 +296,8 @@ Fable 以外の `model` があれば許可し、定義側に model を持つエ�
 
 #### Scenario: 上限内では無音
 
-- **WHEN** 導出したトランスクリプトの最後の usage 合算が `DEV_WORKFLOW_CONTEXT_CAP` 以内である
-- **THEN** 何も出力せず exit 0 で終わる
+- **WHEN** 導出したトランスクリプトの最後の usage 合算が解決した `context_cap` 以内である
+- **THEN** 根拠に含まれる既知モデルなら stdout も stderr も空・exit 0 で終わる。fallback・再検証が必要なモデルなら stderr に診断が出ると同時に、stdout は `additionalContext` だけの再検証通知 JSON（拒否・締めの決定フィールドなし）になり、exit 0 で終わる
 
 #### Scenario: 測れないときは止めない
 
@@ -287,7 +317,7 @@ Fable 以外の `model` があれば許可し、定義側に model を持つエ�
 #### Scenario: 5MB のトランスクリプトでも 100ms 未満
 
 - **WHEN** 5MB のトランスクリプトを対象に hook を 1 回実行する
-- **THEN** 実行時間が 100ms 未満で、出力は閾値判定の結果だけである
+- **THEN** 実行時間が 100ms 未満で、stdout は閾値判定の結果と必要な再検証通知だけであり、必要なモデル診断は stderr にも出る
 
 #### Scenario: 全解除できる
 
@@ -300,7 +330,11 @@ PostToolUse で計測値が `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を超�
 
 `additionalContext` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_CAP` の値 ／ 今の工程を締め、成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定・残作業）を列挙して return せよという指示 ／ **return の 1 行目の書き分け**（そのとき進めていた tasks グループの項目がすべて済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:`）。この通知は役割で出し分けないため、`tasks.md` を持たない受け手にも届く。したがって「tasks グループ」の指すものを本文の中で一意にしなければならない（MUST）: **`tasks.md` が無い場合は本体から渡された作業項目、G は pr-review-gate の手順 1〜5 を 1 グループとみなす**。
 
-役割（W / R1 / G / decider）による出し分けをしてはならない（MUST NOT。全サブエージェント一律）。出力は 1 回あたり数行に抑え、ツールの実行結果を書き換えてはならない（MUST NOT）。
+利用する文脈指標の再検証通知がある場合は、この `additionalContext` の既存本文を変えずに保ち、別段落で再検証通知を追記してよい（MAY。本文の保持は MUST）。再検証通知の文面・出力規則は dev-workflow-token-thresholds の文脈計測の診断の要件に従う。
+
+役割（W / R1 / G / decider）による出し分けをしてはならない（MUST NOT。全サブエージェント一律）。出力は 1 回あたり数行（再検証通知の段落を除く）に抑え、ツールの実行結果を書き換えてはならない（MUST NOT）。
+
+守備範囲は、締め通知の本文・書式を入力元の計測値と上限から作る誤りと、再検証通知の追記で既存の締め指示が消える誤りを拾う。追記の文面の細部や入力の穴の完全封鎖は完了条件にしない。通してよい入力の例は、cap 以下の PostToolUse（締め通知は出さない。再検証通知だけは付きうる）と、`agent_type` の違う payload（同じ本文を出す）である。
 
 #### Scenario: 上限超で締めの指示が additionalContext に出る
 
@@ -311,6 +345,11 @@ PostToolUse で計測値が `DEV_WORKFLOW_CONTEXT_CAP`（既定 150000）を超�
 
 - **WHEN** 同じ payload で `additionalContext` を読む
 - **THEN** tasks グループが全部済んでいれば `工程完了:`、1 つでも残っていれば `工程中断:` を 1 行目にする旨と、`tasks.md` が無い場合に何を 1 グループとみなすか（本体から渡された作業項目、G は pr-review-gate の手順 1〜5）が含まれる
+
+#### Scenario: 再検証通知は既存の締め通知を消さず別段落で足される
+
+- **WHEN** 再検証通知が出る未知モデルで、計測値が `DEV_WORKFLOW_CONTEXT_CAP` を超える PostToolUse payload を渡し、出力を解析する
+- **THEN** `additionalContext` は再検証通知が無い場合の本文をそのまま含み、そのあとの別段落に再検証通知を持つ。単一 JSON・exit 0
 
 #### Scenario: 役割で出し分けない
 
@@ -323,14 +362,21 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 `Bash` は**コマンド内容によらず拒否しなければならない**（MUST）。コマンド文字列を解析して一部の形だけを通す判定を置いてはならない（MUST NOT）。理由: 判定はこのプロセスの中でコマンド文字列をトークン化するが、実際に実行するのは別プロセスのシェル（zsh または bash）で、両者のトークン化は一致を保証できない。実際に、シェル側にだけ意味を持つ記法（zsh の ANSI-C クォート `$'…'`、シェルのブレース展開 `{a,b}` 等）を判定側が「危険でない 1 トークン」と誤認し、実行側では任意コマンドの引数に展開される迂回が 2 度にわたって実機で再現した（`git -c` の値読み飛ばし、および `git push $'--receive-pack=/tmp/x' origin main`）。受理する経路が 1 つでも残る限り、この種の迂回は形を変えて再発するため、`Bash` は内容を一切見ず全件拒否する構造に閉じる。
 
-拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とする（SHALL）。`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_HARD_CAP` の値 ／ `Bash` はコマンド内容によらず一切通らないこと ／ payload の `cwd`（＝そのサブエージェントの作業ツリーのパス）／ 編集済みファイルの一覧と、その作業ツリーのパス（`cwd`）を return に書けという指示 ／ commit は本体が行うという指示（サブエージェント自身は commit できないため）／ **return の 1 行目は `工程中断:` にすること**（強制停止で止まった時点で予定していた作業が残っているため、常に中断とする）。`-C <path>` や `-c <k=v>` といった、通る形についての案内を含めてはならない（MUST NOT）— 通る形は存在しないため。
+拒否は `{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":...}}` を stdout に出して exit 0 とする（SHALL）。`permissionDecisionReason` は次をすべて含まなければならない（MUST）: 計測値と `DEV_WORKFLOW_CONTEXT_HARD_CAP` の値 ／ `Bash` はコマンド内容によらず一切通らないこと ／ payload の `cwd`（＝そのサブエージェントの作業ツリーのパス）／ 編集済みファイルの一覧と、その作業ツリーのパス（`cwd`）を return に書けという指示 ／ commit は本体が行うという指示（サブエージェント自身は commit できないため）／ **return の 1 行目は `工程中断:` にすること**（強制停止で止まった時点で予定していた作業が残っているため、常に中断とする）。`-C <path>` や `-c <k=v>` といった、通る形についての案内を含めてはならない（MUST NOT）— 通る形は存在しないため。利用する文脈指標の再検証通知がある場合は、`permissionDecision` と `permissionDecisionReason` を変更せず、同じ `hookSpecificOutput` に再検証の `additionalContext` を追加してよい（MAY。既存の拒否の保持は MUST）。
 
-`DEV_WORKFLOW_CONTEXT_HARD_CAP` は `DEV_WORKFLOW_CONTEXT_CAP` より大きくなければならず、小さいか等しい場合は fail-open（何もしない）とする（MUST）。
+`DEV_WORKFLOW_CONTEXT_HARD_CAP` は `DEV_WORKFLOW_CONTEXT_CAP` より大きくなければならず、小さいか等しい場合は PreToolUse で拒否しない（MUST）。この場合の stdout は、再検証通知が無ければ空、あれば診断だけの JSON とし、exit 0 とする。必要なモデル診断はこの場合も stderr に出さなければならない（MUST）。
+
+守備範囲は、閾値と対象ツールの判定を入力元とする拒否・非拒否の境界の誤りを拾う。再検証通知は拒否の条件を変えず、診断だけで拒否・締めを起こさない。入力の穴の完全封鎖は完了条件にしない。通してよい入力の例は、Read・Grep・Glob、cap 超かつ hard 以内の Edit・Bash、`hard <= cap` の設定での全ツールで、いずれも拒否しない（再検証通知の JSON は付きうる）。ここでの環境変数名は共通処理で解決した値を指し、モデル別既定値も同じ比較に使う。
 
 #### Scenario: 強制停止の閾値超で Edit が拒否される
 
 - **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP` を超える状態で `tool_name: "Edit"` の PreToolUse payload を渡す
 - **THEN** `permissionDecision: deny` の JSON を出力し、理由に計測値と「commit は本体が行う」と `工程中断:` が含まれる
+
+#### Scenario: 再検証通知があっても拒否の本文は変わらない
+
+- **WHEN** 再検証通知が出るモデルで、計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP` を超える `Edit` と `Bash` の PreToolUse payload を渡し、出力を解析する
+- **THEN** `permissionDecision` は `deny`、`permissionDecisionReason` は再検証通知が無い場合と同じ本文で、同じ `hookSpecificOutput` に再検証の `additionalContext` が加わる。exit 0
 
 #### Scenario: Bash はどんな形でも拒否される
 
@@ -345,12 +391,12 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 #### Scenario: 通知の閾値と強制停止の閾値の間では拒否しない
 
 - **WHEN** 計測値が `DEV_WORKFLOW_CONTEXT_CAP` 超・`DEV_WORKFLOW_CONTEXT_HARD_CAP` 以内の状態で `tool_name: "Edit"` または `tool_name: "Bash"`（`command: "git status"`）の PreToolUse payload を渡す
-- **THEN** どちらも何も出力せず exit 0 で終わる（編集も Bash も通る）
+- **THEN** どちらも拒否されず exit 0 で終わる（編集も Bash も通る）。stdout は再検証通知が無ければ空、あれば `additionalContext` だけの診断 JSON（`permissionDecision` なし）。必要なモデル診断は stderr にも出る
 
 #### Scenario: 閾値の大小が逆なら何もしない
 
 - **WHEN** `DEV_WORKFLOW_CONTEXT_HARD_CAP` が `DEV_WORKFLOW_CONTEXT_CAP` 以下に設定されている
-- **THEN** PreToolUse は何も出力せず exit 0 で終わる
+- **THEN** PreToolUse は拒否せず exit 0 で終わる。stdout は再検証通知が無ければ空、あれば診断だけの JSON。必要なモデル診断は stderr にも出る
 
 ### Requirement: worktree 隔離のサブエージェントでも途中計測が効く
 
@@ -673,3 +719,67 @@ PreToolUse で計測値が `DEV_WORKFLOW_CONTEXT_HARD_CAP`（既定 220000）を
 
 - **WHEN** 担当別の傾向を確認したい人が `plugins/dev-workflow/docs/usage-audit.md` を読む
 - **THEN** `--by-role` の実行コマンド・出力キーの意味・分類規則・`reread_pct` の母数の注意が揃っており、他のファイルを見ずに担当別監査を 1 回回せる
+
+### Requirement: 実行役の種別は対応表の上限を超える格で起こせない
+
+`scripts/agent-model-guard.sh` は、`subagent_type` が `dev-workflow:worker`（役 spec-write・implement）または `dev-workflow:gate-runner`（役 implement）で `model` があるとき、`plugins/dev-workflow/references/model-tier-map.json` の claude の列で `model` を格に戻し（照合の規則は `model-tier-resolution` の要件「上限の判定を Claude と Codex で共有する」）、その格が `role_caps` にあるその種別の役の上限（役が複数なら、そのうちいちばん低い上限）を超えるなら拒否しなければならない（MUST）。種別と役の対応は guard の中に置き、環境変数で足せる形にしてはならない（MUST NOT）。守備範囲は `model-tier-resolution` の要件「上限の判定の守備範囲」に従う。
+
+#### Scenario: ゲート実行者の種別の完全 ID は拒否される
+
+- **WHEN** `subagent_type: dev-workflow:gate-runner`・`model: claude-fable-5-1` の Agent 呼び出しをガードに通す
+- **THEN** `permissionDecision` が `deny` になる
+
+#### Scenario: 上限以下の格は通る
+
+- **WHEN** `subagent_type: dev-workflow:worker` で `model: haiku`・`sonnet`・`opus` の呼び出しをそれぞれガードに通す
+- **THEN** どれも無出力・終了コード 0 で通る
+
+### Requirement: 上限の拒否理由は役と格を名指す
+
+前の要件で拒否するとき、拒否理由は役・要求された格・その役の上限の格を含み、続けて決める役の種別名 `dev-workflow:decider`・実行役の代替（`sonnet` / `opus`）・規範（`rules/subagent-model-selection.md`）を含めなければならない（MUST）。
+
+#### Scenario: 作業者の種別に最上位の格を付ける
+
+- **WHEN** `subagent_type: dev-workflow:worker`・`model: fable` の Agent 呼び出しをガードに通す
+- **THEN** `permissionDecision` が `deny` になり、理由に `spec-write`・`implement`・`最上位`・`上位`・`dev-workflow:decider` を含む
+
+### Requirement: 上限の判定の対象外
+
+上限の判定は、格に戻せない `model` と、`model` の省略（定義の `model` が使われる）を拒否してはならない（MUST NOT）。`dev-workflow:worker`・`dev-workflow:gate-runner` 以外の種別（`dev-workflow:reviewer`・`dev-workflow:decider`・`general-purpose` など）は上限の判定の対象外とし、従来の判定だけを受ける（SHALL）。`DEV_WORKFLOW_MODEL_GUARD=off` は上限の判定も解除する（SHALL）。
+
+#### Scenario: 格に戻せない名前と省略は通る
+
+- **WHEN** `subagent_type: dev-workflow:worker` で `model: fabel` の呼び出しと、`model` を省いた呼び出しをガードに通す
+- **THEN** どちらも無出力・終了コード 0 で通る
+
+### Requirement: 表が読めないときは Fable 判定に任せる
+
+対応表が読めない・JSON として壊れている・claude の列か `role_caps` が欠けているとき、guard は上限の判定を飛ばし、要件「model 未指定の Agent spawn は hook が拒否する」の Fable 判定に任せなければならない（MUST。決める役以外の Fable は表が壊れていても拒否される）。
+
+#### Scenario: 表が壊れていても Fable は止まる
+
+- **WHEN** guard と表の一時コピーで表を壊し、`subagent_type: dev-workflow:worker`・`model: fable` の呼び出しをコピーの guard に通す
+- **THEN** `permissionDecision` が `deny` になる
+
+#### Scenario: 表が壊れていれば opus は通る
+
+- **WHEN** 同じ壊れた表のコピーで、`subagent_type: dev-workflow:worker`・`model: opus` の呼び出しをコピーの guard に通す
+- **THEN** 無出力・終了コード 0 で通る
+
+### Requirement: 残量モードと共有枠モードの優先順位の表は 1 か所に置く
+
+Fable 残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`）の値ごとの効果と、両者と事前分類が重なったときの優先順位（①共有枠モード ②その範囲内で事前分類による決める役 ③Fable 残量モード）は、`plugins/dev-workflow/skills/develop/references/decision-criteria.md` の 1 つの表に置かなければならない（MUST）。この表と同じ形の表を他のファイルに置いてはならない（MUST NOT）。値ごとの効果の文は、`scripts/session-tripwires.sh` が注入する効果の文と食い違ってはならない（MUST NOT）。
+
+#### Scenario: 表は decision-criteria.md だけにある
+
+- **WHEN** develop 配下の手順書と `plugins/dev-workflow/references/model-tiers.md` から、残量モードと共有枠モードの値ごとの効果を表の行で並べた箇所を探す
+- **THEN** `decision-criteria.md` の 1 つの表だけが見つかる
+
+### Requirement: 他のファイルは残量モードと共有枠モードの優先順位を 1 行で指す
+
+`skills/develop/references/pre-classification.md`・`skills/develop/references/roles/spec-reviewer.md`・`skills/develop/references/roles/worker/common.md`・`plugins/dev-workflow/references/model-tiers.md` は、優先順位を言い換えて書いてはならず（MUST NOT）、適用は `codex-develop.py request` が行うことと、表が `decision-criteria.md` にあることを 1 行で指さなければならない（MUST）。`skills/develop/references/roles/gate-runner.md` の本文にある同じ言い換えはこの要件の対象外とする（`gate-runner.md` の本文はゲートの手順書を割る別の変更が直す。この変更では参照先のパスだけを直す）。
+
+#### Scenario: 他のファイルは 1 行で指す
+
+- **WHEN** `pre-classification.md`・`spec-reviewer.md`・`worker/common.md`・`model-tiers.md` を読む
+- **THEN** 優先順位の言い換えが無く、`request` が適用することと `decision-criteria.md` の表への参照が 1 行で書かれている

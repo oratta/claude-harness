@@ -184,6 +184,9 @@ else:
             err(f"公開版のプラグイン編集ルールに復旧の手順の語が無い: {w}")
     if cls_of.get(PE) != "公開版":
         err(f"仕分けの表の {PE} の分類が公開版でない: {cls_of.get(PE)}")
+    # (6) メモリの patches: の規則（#1654）: issue を立てて frontmatter に patches: を書く行がある
+    if not any("patches:" in l and "issue" in l and "メモリ" in l for l in pe_text.splitlines()):
+        err(f"公開版のプラグイン編集ルールにメモリの patches: の規則が無い: {PE}")
 
 # --- 分割したプラグインを部品の行で覆う ---
 def headings(path):
@@ -480,6 +483,21 @@ PY
   echo "$output"
   [ "$status" -eq 1 ]
   [[ "$output" == *"Harness 開発者向けの語がある: CLAUDE_HARNESS_DEV_DIR"* ]] || return 1
+}
+
+@test "public plugin-editing rule: dropping the memory patches: line fails (fixture repo)" {
+  local fx="${BATS_TEST_TMPDIR}/repo4"
+  mkdir -p "$fx"
+  (cd "$REPO_ROOT" && git ls-files -z | tar --null -T - -cf -) | tar -xf - -C "$fx"
+  cp "$DOC" "${fx}/docs/public-private-split.md"
+  grep -q 'patches:' "${fx}/rules/plugin-editing.md"
+  grep -v 'patches:' "${fx}/rules/plugin-editing.md" > "${fx}/pe.tmp" && mv "${fx}/pe.tmp" "${fx}/rules/plugin-editing.md"
+  git -C "$fx" init -q
+  git -C "$fx" add -A
+  run check_split "$fx" "${fx}/docs/public-private-split.md"
+  echo "$output"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"メモリの patches: の規則が無い: rules/plugin-editing.md"* ]] || return 1
 }
 
 @test "public plugin-editing rule: removing it fails and names the path (fixture repo)" {

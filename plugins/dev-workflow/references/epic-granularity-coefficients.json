@@ -1,0 +1,13 @@
+{
+  "version": "1799-v1-policy-0.8",
+  "source": "https://github.com/oratta/claude-harness/issues/1799#issuecomment-7120074012",
+  "total_intercept": 9900000,
+  "total_per_token": 49.9,
+  "record_intercept": 8200000,
+  "record_per_line": 18650,
+  "guard_multiplier": 1.6,
+  "planning_fraction": 0.8,
+  "guard_basis": "停止例の実測/見積もりの中央値。信頼区間ではない",
+  "planning_basis": "0.8 は本 change の政策値（20% の余裕）。測定結果ではない",
+  "uncertainty": "累計回帰は停止しなかった件からの外挿。実測/見積もりは0.9〜4.2倍。実時間・実消費・精度を保証しない。既存の実測停止判定を維持する"
+}

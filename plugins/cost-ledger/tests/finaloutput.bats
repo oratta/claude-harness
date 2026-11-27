@@ -417,6 +417,7 @@ PY
 import json, sys
 rows = [json.loads(l) for l in open(sys.argv[1])]
 assert [r["output_tokens"] for r in rows] == [8, 243, 243], rows
+assert rows[2]["request_id"] == "r1#u2" and rows[2].get("continuation") is True, rows
 PY
 }
 

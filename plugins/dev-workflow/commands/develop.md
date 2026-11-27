@@ -1,17 +1,13 @@
 ---
 name: develop
-description: 標準開発ワークフロー（develop スキル）を起動する。issue があればそれを記録先に、無ければ Draft PR を記録先にして進める（issue を切るのは追跡・キュー・議論が要るときだけ）
+description: 標準開発ワークフロー（develop スキル）を起動する。issue があればそれを記録先に、無ければ Draft PR を記録先にして進める（issue を切るのは追跡・キュー・議論が要るときだけ）。リポジトリの追跡ファイルを変えるときは会話の依頼でも必ず通す。
 argument-hint: "[(--profile NAME [--profile-file PATH] | --account NAME --model MODEL) (--account-home NAME=PATH… | --account-home-file PATH) [--executor codex]] [issue URL | request]"
 allowed-tools: Read, Glob, Grep, Bash, Agent, SendMessage, AskUserQuestion
 ---
 
 ## 実行先オプション
 
-`$ARGUMENTS` に `--profile <名前> [--profile-file <JSON>]` または旧形式の `--account <登録名> --model <Codex系統名またはモデルID>` があればprovider adapterを適用する。`--executor codex` も後方互換の別名として受理するが、その場合もprofile形式か旧形式のどちらか一方を必須とする。両形式の併用、`--profile-file` 単独、旧形式の片方欠落は開始前に拒否する。これらを依頼本文から分離し、まず下記のSKILLパス探索でpluginルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（環境変数がなければ発見した `skills/develop/SKILL.md` の3階層上のpluginルート＋`references/codex-develop.md`）を絶対パスでReadしてprovider adapterを適用し、同じ `references/codex-develop-explicit.md`（明示指定の検証規則と外部 profile の書式）も続けてReadする。実行先オプションが無ければ、`references/codex-develop-explicit.md` は読まず同じ `references/codex-develop.md` をReadし、各 phase で profile なしの request を使って自動選択する。未知のexecutorは拒否する。profile が決めた投げ先を別 provider で代行しない。実行先オプションは委譲transportだけを変え、仕様要否・レビュー・チェック・順序は既存develop正本を使う。adapter の適用を理由に仕様を必須にしない。
-
-引数なしの追加依頼でも各 phase で profile なしの request を使って自動選択する。明示 profile・旧形式を引き継ぐ場合は初回の設定を再推測せず、実行先オプションと account-home の対応の両方を改めて明示する。
-
-前景実行のCodexオプションは、account名からCODEX_HOMEへの対応表である。本体はこれを依頼本文から分離し、`codex-develop.py request` へそのまま渡す。渡し方・併用の拒否・無指定のときの既定値・対応に無い account 名を拒否する時点は `references/codex-develop.md`「起動と role 解決」が正本である。
+実行先オプションの有無を問わず、下の SKILL パス探索で plugin ルートを特定し、`${CLAUDE_PLUGIN_ROOT}/references/codex-develop.md`（未設定なら発見した `skills/develop/SKILL.md` の3階層上＋`references/codex-develop.md`）を絶対パスで必ず Read する。「起動と role 解決」が引数・役割解決・監査・起動／再開の正本。明示指定があるときだけ `references/codex-develop-explicit.md` も続けて Read する。追加依頼も同じ入口に従う。
 
 `develop` スキルの薄いラッパー。手順の正（本体＝オーケストレータの 1 ループ・入口 0）は **`skills/develop/SKILL.md` の 1 箇所にのみ存在する**。エピックの扱いの正は `skills/develop/references/epic.md` にある。このコマンドは `skills/develop/SKILL.md` を Read tool で読み込み、その指示に従ってメインセッションでインライン実行する（実行モードは SKILL.md「実行モード」の決め方で決める）。本体はコードを書かない（`allowed-tools` に Edit / Write が無いのはそのため。編集は W が行う）。
 

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # エピックの子の経路判定・起動・待ち受けを LLM なしで行う。develop の本体（エピックの解決
-# セッション）が skills/develop/references/epic.md「回し方」の手順どおりに呼ぶ。
+# セッション）が skills/develop/references/epic-loop.md の手順どおりに呼ぶ。出力語の意味は --help が出す。
 #
 #   epic-dispatch.sh route <child>...
 #   epic-dispatch.sh launch [--note <text>] [--base <branch>] <epic> <child>...
@@ -110,6 +110,11 @@
 #   記録の stop が stopped のものを排他つきで stopped-seen に書き換え（そのあと Orca の印へ写す）、書けたら
 #   「止まった子」とする（書けなければ失敗したポーリングに数える）。出力は `closed <N>...`・
 #   `done <N>...`・`stopped <N>...` を該当するものだけこの順に（1〜3 行）出して exit 0。
+#   主が子のタブで打った入力から始まった主の返事待ち（turn_input.sender が owner・有効な turn_state の値が主の返事待ち）は
+#   止まりに数えない。turn_state.recorded_at から EPIC_DISPATCH_OWNER_AWAY_SEC（非負整数・既定 3600 秒）以上たち、
+#   主の新しい入力が無ければ、排他つきで記録の owner_away_told に今回のターンを書いてから `owner-away <N>...` を
+#   unrecorded の次の行に出して exit 0（同じターンでは二度出さない）。子には何も送らず、端末を閉じず、起動し直さず、
+#   stop・stop_uuid も変えず、--resolve・声かけ・長い待ちにも渡さない（#1745。references/epic-stop.md）。
 #   --watch-done も --watch-stopped（子 1 件以上）も無ければ記録を読まない。
 #   --resolve <epic>（--watch-stopped と位置引数の子が 1 件以上あるときだけ働く）を付けると、止まった子ごとに
 #   判断のコマンド（EPIC_DISPATCH_JUDGE。既定は同じディレクトリの stop-judge.sh）を `<epic> <child> <止まりの
@@ -139,10 +144,10 @@
 #   次のポーリングに回し、失敗したポーリングには数えない
 #   jq が無い・今のワークツリーを読めない（rev-parse の失敗）なら stdout に何も出さず exit 1
 # reply: 今のワークツリーを parent_worktree に持つ <child> の記録が 1 件で（その worktree が子のワークツリー）、
-#   端末があり（--relaunch なし）、子のセッションの端末（agentIdentity が claude の端末、無ければタイトルに
+#   端末があり（明示・自動判定の起動し直しなし）、子のセッションの端末（agentIdentity が claude の端末、無ければタイトルに
 #   Claude Code を含む端末がちょうど 1 つ）が決まれば、頭（--as parent は `親エピック #<epic> の判断（主の承認ではない）: `、
 #   owner は `主の返事（親エピック #<epic> 経由）: `）を付けた文を送り、ターンの開始まで確かめて `sent <child>`。
-#   端末が 0 か --relaunch なら（--relaunch は先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
+#   端末が 0 か明示・自動判定で起動し直すなら（起動し直しは先に端末を全部閉じて）launch と同じ起動コマンドで端末を作り、
 #   `/develop #<child> （エピック #<epic> の子。返事を受けて起動し直し） <頭付きの文>` を送って `relaunched <child>`。
 #   端末はあるが子のセッションの端末を決められない（シェルの端末だけも含む）
 #   ときは `failed <child> ambiguous-terminal`。記録が 0 件は `failed <child> no-worktree`、2 件以上は
@@ -219,7 +224,7 @@
 #   無ければ物理メモリの GiB（`sysctl -n hw.memsize` のバイト、読めなければ
 #   EPIC_DISPATCH_MEMINFO_FILE（テスト用。既定 /proc/meminfo）の MemTotal の kB）を 4 で割って切り捨て、最小 1。
 #   どちらも読めなければ 2 で、stderr に `physical memory not readable`。launch も同じ値を使う
-# wait --resolve が通す返事は、送る前に references/reply-after-idle.md の子の表で起動し直すかを決める:
+# reply の両送り手（明示 --relaunch なし）と wait --resolve が通す返事は、送る前に references/reply-after-idle.md の子の表で起動し直すかを決める:
 #   子のトランスクリプト（${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-~/.claude}/projects}/<ワークツリーのパスの英数字以外を - にした名前>/*.jsonl、
 #   ちょうど 1 本。置き場の求め方は wait --watch-done の完了の推定と共有する）の最後の assistant の timestamp が EPIC_DISPATCH_RELAUNCH_IDLE_SEC（既定 3600）秒以上前なら、
 #   compact_boundary の有無と会話量によらず --relaunch 相当。
@@ -270,6 +275,121 @@ usage:
   epic-dispatch.sh max-parallel
 EOF
   exit 1
+}
+
+# --help / -h: サブコマンドの書式と、stdout の結果行の語頭（出力語）の意味を stdout に出して exit 0。
+# gh・orca・git を呼ばず、状態の記録も読み書きしない（es_check_env より前に呼ぶ）。
+# 結果行の語頭を足したら、ここにも語を足す（tests/epic-dispatch.bats が固定リストと突き合わせる）
+help_text() {
+  # cat を呼ばない（PATH に何も無くても出せる）
+  local t
+  IFS= read -r -d '' t <<'HELP' || true
+epic-dispatch.sh: エピックの子の経路判定・起動・待ち受け・片付けを LLM なしで行う。
+
+結果行は stdout に出す。語頭が出力語で、<N> は子の番号、<理由> は 1 語。エラーの説明は stderr に出る。
+サブコマンドを知らない・引数が足りないときは、使い方を stderr に出して exit 1（stdout は空）。
+
+route <child>...
+  経路を 1 語で返す。exit 0。
+  nested     エピックの子のセッションの中（さらに展開しない）
+  orca       orca が PATH にあり、Orca 管理のワークツリーにいる
+  tmux       Orca 管理外で、環境変数 TMUX があり tmux が PATH にある
+  subagent   どちらでもない（サブエージェント方式）。子が 0 件のときも subagent
+  EPIC_DISPATCH_LAUNCHER=orca|tmux で部品を固定できる（使えなければ subagent）。
+
+launch [--note <text>] [--base <branch>] <epic> <child>...
+  子ごとに 1 行。exit 0、1 件でも failed なら 1。
+  launched <N>         最初の指示を子の入力欄に送り、ターンの開始まで確かめた
+  skipped <N>          既存 worktree があれば二重起動しない
+  failed <N> [<理由>]  起動できなかった（ワークツリーを作ったあとなら記録に段を残し、stderr に作り直しのコマンドが出る）
+  deferred <N>         同時上限に達して起動しなかった後回しの子
+  同時上限: 環境変数 EPIC_DISPATCH_MAX_PARALLEL（1 以上の整数）。無ければ物理メモリの GiB を 4 で割って切り捨てた値
+  （最小 1。メモリ量を読めなければ 2）。実際の値は max-parallel が出す。
+
+reply [--relaunch] --as <parent|owner> <epic> <child> <text>
+  子の端末に返事を届ける。1 行。exit 0、failed なら 1。
+  sent <N>          子のセッションへ送った
+  relaunched <N>    明示 --relaunch・reply の自動判定・端末なしで起動し直した
+  skipped <N> not-stopped  止まりの印が無く何も送らない
+  failed <N> <理由>
+
+notify-closed [--relaunch] <epic> <child>
+  記録先が completed で閉じた子に、完了報告と mark done を促す。1 行。exit 0、failed なら 1。
+  notified <N>        子に送り、エピックに「親の判断」の 1 行を残した
+  unrecorded <N>      子には届いたが、エピックへの 1 行を残せなかった（stderr に投稿し直しのコマンド）
+  skipped <N> <理由>  何も送らない（not-closed・not-completed・no-worktree・already-done・not-stopped）
+  failed <N> <段>     送れなかった（stderr に送り直しか作り直しのコマンド）
+
+wait [--interval <sec>] [--timeout <sec>] [--watch-done <child>]... [--watch-stopped] [--resolve <epic>] [<child>...]
+  子の変化を待つ。起こす行は該当する語だけ（複数行ありうる）。子の番号が空白区切りで続く。
+  closed <N>...      記録先の issue が閉じた。exit 0
+  done <N>...        子が完了の印を付けた、または --watch-done の子の完了を推定した。exit 0
+  stopped <N>...     子が主の返事待ちで止まった（--watch-stopped）。exit 0
+  unrecorded <N>...  --resolve で子には返事を送ったが、エピックへの 1 行を残せなかった。exit 0
+  owner-away <N>...  主が子のタブで打った入力から始まった主の返事待ちが EPIC_DISPATCH_OWNER_AWAY_SEC（既定 3600 秒）続いた（--watch-stopped）。子には何も送らない。同じターンでは一度だけ。exit 0
+  expired <N>...     主に伝え済みの止まりだけが続き、EPIC_DISPATCH_OWNER_WAIT_SEC（既定 43200 秒）たった。exit 0
+  timeout [<N>...]   上限に達した。exit 2。上限は --timeout か EPIC_DISPATCH_TIMEOUT。どちらも無ければ親の会話キャッシュの有効期限から決める
+  error gh <N>... / error workspaces  3 回続けて確認に失敗した（stderr に理由）。exit 1
+  keepalive          出力語ではなく、長い待ちのあいだ止まった子に送る固定の声かけ。結果は子の記録に残る
+
+mark <done|waiting|stopped|resumed> <issue>
+  今いるワークツリーの記録に印を付ける。exit 0、失敗は 1。
+  marked <N> <kind>   印を付けた
+  skipped <N> <理由>  付けない（no-workspace・not-linked・not-stopped）
+
+reap <child>...
+  完了の印が付いた子の端末を閉じ、ワークツリーとローカルブランチを消す。子ごとに 1 行。exit 0。
+  reaped <N> [branch-kept]  片付けた（branch-kept はローカルブランチを残した）
+  gone <N>                  すでに無い（記録を消した）
+  kept <N> <理由>           消さずに残した。理由は not-done・dirty・llm-logs・unmerged-commits・ambiguous・state-unreadable・
+                            close-failed・launcher-unavailable・no-branch・git-failed・pr-lookup-failed・issue-lookup-failed・
+                            base-lookup-failed・rm-failed など
+
+pending-owner <child>...
+  主の返事待ちを受けたまま子が再開していない子を返す（読み取り専用）。exit 0。
+  pending <N> [<uuid>]  止まりの発言の uuid が分かれば続く
+
+dismiss <child>...
+  止まりの印を解いて再開扱いにする。子ごとに 1 行。exit 0、failed があれば 1。
+  dismissed <N>
+  skipped <N> not-stopped  止まりの印が無く何もしない
+  failed <N>               印を解けなかった
+
+told <child> <uuid>
+  止まりを主に伝え済みとして記録する。1 行。exit 0、failed なら 1。
+  told <N>
+  skipped <N> uuid-mismatch  止まりの発言の uuid が記録と違う（何も記録しない）
+  skipped <N> not-stopped    止まりの印が無く何も記録しない
+  failed <N>                 記録できなかった
+
+child-log [--last] <child>...
+  子の会話ログの末尾を読む（読み取り専用）。子ごとに 1 行。exit 0（jq が無い・ワークツリーを読めないときは stdout 空で 1）。
+  列（タブ区切り）: <子> / 主の最後の発言の時刻（JST） / その冒頭 80 文字 / 子の最後の発言の時刻 / その冒頭（無いものは -）
+  unreadable <N>  記録が無い・読めない・一意に決まらない、会話ログが読めない、python3 が無い
+  --last は子ごとに JSON を 1 行出す（child・uuid・at・stop_uuid・last_input_at・questions・text）
+
+adopt <epic> <child>...
+  未記録の子を起動部品の印から取り込む。子ごとに 1 行。exit 0、failed があれば 1。
+  adopted <N>  記録を作った
+  skipped <N>  すでに記録がある
+  none <N>     取り込める対象が無い
+  failed <N> [ambiguous|state-unreadable]
+
+clear <epic>
+  エピックの状態の記録の置き場を消す。1 行。exit 0。
+  cleared <epic>  消した
+  none <epic>     置き場が無かった
+
+max-parallel
+  同時に動く子の上限（整数 1 行）を出す。exit 0。
+
+子の起動コマンド（launch・reply が組み立てる）:
+  [CLD_DEFAULT_ARGS=...] <コマンド> --settings '{"idleCompaction":false}' --model '<model>'
+  コマンド: 環境変数 EPIC_DISPATCH_CLAUDE_CMD（既定は bin/cld の絶対パス。クォートせずそのまま置くので引数付きも可）
+  model: 環境変数 EPIC_DISPATCH_MODEL（既定 opus）
+  idleCompaction を切るのは、子のアイドル時のコンパクトをそのプロセスだけ止めるため。
+HELP
+  printf '%s\n' "$t"
 }
 
 is_num() { [[ "$1" =~ ^[0-9]+$ ]]; }
@@ -325,11 +445,14 @@ issue_api() {
 # 既定を当てた値を同じ名前の環境変数で渡す（ready / submit は agent_setup、close_wait は reap が入れる。空なら部品の既定）
 LAUNCHER_DIR="${BASH_SOURCE[0]%/*}"
 close_wait=""
+# 作業待ちの声かけ（keepalive_background）の一呼び出しだけが 1 にする。親の環境の値は持ち越さない
+KEEPALIVE_BG_ALLOW=""
 launcher_run() {
   local name="$1"
   shift
   EPIC_DISPATCH_READY_TIMEOUT_MS="${ready-}" EPIC_DISPATCH_SUBMIT_WAIT="${submit-}" \
-    EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT="$close_wait" bash "$LAUNCHER_DIR/epic-launch-$name.sh" "$@"
+    EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT="$close_wait" \
+    EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT="${KEEPALIVE_BG_ALLOW-}" bash "$LAUNCHER_DIR/epic-launch-$name.sh" "$@"
 }
 
 # 今の操作が使う部品の名前（launch / adopt は pick_launcher、記録に従う操作は子の記録の launcher で決める）。
@@ -893,7 +1016,7 @@ cmd_launch() {
 # 1 行を出し、failed なら 1 を返す。orca 自身の出力は stderr。reply・notify-closed・wait --resolve が共用する
 deliver_reply() {
   local relaunch="$1" as="$2" epic="$3" n="$4" text="$5"
-  local msg rec path res prompt json erefs=" " xrepo_epic=""
+  local msg rec path res prompt json erefs=" " xrepo_epic="" expected="${6-}"
   child_record "$PARENT_TOP" "$n"
   case $? in
     0) ;;
@@ -910,9 +1033,19 @@ deliver_reply() {
     stopped|stopped-seen) ;;
     *) echo "skipped $n not-stopped"; return 2 ;;
   esac
+  # 親の判断として送るときは、受領した組（stop_turn）が今も有効な停止かを状態記録で確かめる（ログは読まない）。
+  # stop_turn の無い旧記録と --as owner は今までどおり。
+  if [ -z "$expected" ] && [ "$as" = parent ]; then
+    expected="$(es_read "$rec" 2>/dev/null | jq -ce '.stop_turn | select(type == "object")' 2>/dev/null)" || expected=""
+    if [ -n "$expected" ]; then
+      wait_received "$rec" "$expected" >/dev/null || { echo "skipped $n not-stopped"; return 2; }
+    fi
+  fi
   # 記録がまだ stopped-seen でも、子が mark resumed を呼ばず会話ログだけで先へ進んでいる（止まりの発言より新しい発言か
-  # 入力がある）ことがある。会話ログを読めたときだけ、その子も再開済みとして送らない（読めなければ今までどおり送る）
-  if [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ]; then
+  # 入力がある）ことがある。会話ログを読めたときだけ、その子も再開済みとして送らない（読めなければ今までどおり送る）。
+  # 状態記録で有効な依存待ちの停止は、会話ログの進みで止めない（pending-owner と同じ）。
+  if [ -z "${6-}" ] && [ "$(es_get "$rec" stop)" = stopped-seen ] && [ -n "$(es_get "$rec" stop_uuid)" ] \
+    && ! received_dependency_stop "$rec"; then
     json="$(record_log_json "$rec")" || json=""
     if [ -n "$json" ] && log_moved "$json" "$(es_get "$rec" stop_uuid)"; then
       echo "skipped $n not-stopped"; return 2
@@ -940,6 +1073,9 @@ deliver_reply() {
   fi
   # 部品がセッションの一覧を 1 回だけ読み、子のセッションへ送るか、閉じて起動し直すかを決める
   # （出力は sent / relaunched <session> / failed <理由> の 1 行）
+  if [ -n "$expected" ]; then
+    wait_received "$rec" "$expected" >/dev/null || { echo "skipped $n not-stopped"; return 2; }
+  fi
   res="$(launcher deliver "$path" "$relaunch" "$msg" "$agent_cmd" "$prompt")"
   case "$res" in
     sent) echo "sent $n"; return 0 ;;
@@ -969,6 +1105,17 @@ cmd_reply() {
   [ -n "$3" ] || { echo "the reply text must not be empty" >&2; usage; }
   agent_setup "$1" || usage
   need_parent
+  if [ "$relaunch" -eq 0 ]; then
+    is_num "${EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS-150000}" || { echo "EPIC_DISPATCH_RELAUNCH_FORCE_TOKENS must be a non-negative integer" >&2; usage; }
+    is_num "${EPIC_DISPATCH_RELAUNCH_IDLE_SEC-3600}" || { echo "EPIC_DISPATCH_RELAUNCH_IDLE_SEC must be a non-negative integer" >&2; usage; }
+    # 判定できない記録のエラーは deliver_reply が従来どおり返す。
+    # notify-closed の手動分類には広げず、直接の返事だけ既存判定を使う。
+    if child_record "$PARENT_TOP" "$2"; then
+      local rec="$ES_HIT" path
+      path="$(es_get "$rec" worktree)"
+      [ -z "$path" ] || relaunch="$(decide_relaunch "$path" "$(es_get "$rec" stop_uuid)")"
+    fi
+  fi
   launchers_gate "$2"
   deliver_reply "$relaunch" "$as" "$1" "$2" "$3"
   case $? in 0|2) exit 0 ;; *) exit 1 ;; esac
@@ -1301,15 +1448,32 @@ resolve_stopped() {
   local judge="${EPIC_DISPATCH_JUDGE:-$(dirname "$0")/stop-judge.sh}"
   local out rc l1 l2 l3 l4 reason="" reply="" url="" why="" res line body rl wpath
   local head1="親の判断: 判断できなかった"
-  local rec="" su="" stopjson
+  local rec="" su="" stopjson turn check_rc
   stopjson="$STOP_DIR/$(var_key "$n")"
-  if child_record "$PARENT_TOP" "$n"; then rec="$ES_HIT"; su="$(es_get "$rec" stop_uuid)"; fi
+  child_record "$PARENT_TOP" "$n" || return 1
+  rec="$ES_HIT"; su="$(es_get "$rec" stop_uuid)"
+  # 受領した世代の有効な停止だけを判断へ渡す。明示的な reply の契約には適用しない。
+  turn="$(wait_received "$rec")"; check_rc=$?
+  case "$check_rc" in 0) ;; 3) return 1 ;; *) return 0 ;; esac
+  # 状態記録の依存待ちの停止は、止まりの JSON の有無によらず判断へ渡さない（親の依存照合へ返す）。
+  if received_dependency_stop "$rec"; then
+    return 1
+  fi
+  # 依存待ちの終了は判断モデルへ渡さず、停止記録を保ったまま親の依存照合へ返す。
+  # マーカーは合図だけで、登録・解消の証拠や実行する指示としては使わない。
+  # フェンスの文脈を失わないよう、切り詰め前の全文で判定した結果を使う。
+  if [ -e "$stopjson" ] && jq -e '.dependency_wait == true' "$stopjson" >/dev/null; then
+    return 1
+  fi
   # 会話ログを読めなかった止まりは JSON が無いので、引数を 2 つで呼ぶ
   if [ -e "$stopjson" ]; then
     out="$("$judge" "$epic" "$n" "$stopjson")"; rc=$?
   else
     out="$("$judge" "$epic" "$n")"; rc=$?
   fi
+  # 判断中に子へ入力があった、または状態が無効になったら、判断全体を破棄する。
+  wait_received "$rec" "$turn" >/dev/null; check_rc=$?
+  case "$check_rc" in 0) ;; 3) return 1 ;; *) return 0 ;; esac
   l1="$(printf '%s\n' "$out" | sed -n 1p)"
   l2="$(printf '%s\n' "$out" | sed -n 2p)"
   l3="$(printf '%s\n' "$out" | sed -n 3p)"
@@ -1328,7 +1492,7 @@ resolve_stopped() {
     return 1
   elif [ "$l1" = "判断: 問いではない" ]; then
     rc=3
-    [ -z "$rec" ] || { stop_to_resumed "$rec"; rc=$?; }
+    [ -z "$rec" ] || { stop_to_resumed "$rec" "$turn"; rc=$?; }
     # 4 は判断のあいだに止まりが外れていた場合で、戻すものが無い
     case "$rc" in
       0|4) printf '問いではない %s %s\n' "$n" "$reason" >&2; return 0 ;;
@@ -1343,8 +1507,10 @@ resolve_stopped() {
     # 子のワークツリーのパスは記録の worktree から読む（読めなければそのまま送る）
     wpath=""
     [ -z "$rec" ] || wpath="$(es_get "$rec" worktree)"
+    wait_received "$rec" "$turn" >/dev/null; check_rc=$?
+    case "$check_rc" in 0) ;; 3) return 1 ;; *) return 0 ;; esac
     [ -z "$wpath" ] || rl="$(decide_relaunch "$wpath" "$su")"
-    res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply")"
+    res="$(deliver_reply "$rl" parent "$epic" "$n" "$reply" "$turn")"
     case "$res" in
       # 送る直前に子が再開済みだった（主が子のタブで答えた）。送らず、エピックにも残さない
       "skipped $n not-stopped") return 0 ;;
@@ -1451,15 +1617,35 @@ try:
     last_request = None
     owner = question = None
     pending = False
+    rows = []
     for line in open(files[0], encoding="utf-8"):
         try: d = json.loads(line)
         except ValueError: continue
+        # child-log-read.py の read_rows と同じ読み方（辞書で、type が user・assistant・system・queue-operation の行だけ）
+        if isinstance(d, dict) and d.get("type") in ("user", "assistant", "system", "queue-operation"): rows.append(d)
+    def not_input(d, content, i):
+        # Not the owner's reply (same reading as child-log-read.py is_notification / NOT_INPUT_PREFIXES / local_command):
+        # background task notifications, ! lines and their output, and a command line Claude Code handled itself.
+        origin = d.get("origin")
+        if isinstance(origin, dict) and origin.get("kind") == "task-notification": return True
+        st = content.lstrip()
+        if st.startswith(("<task-notification", "<local-command-", "<bash-input>", "<bash-stdout>", "<bash-stderr>")): return True
+        if "<command-name>" in st:
+            for e in rows[i + 1:]:
+                if not isinstance(e, dict) or e.get("type") == "queue-operation" or e.get("isSidechain"): continue
+                if e.get("type") == "system": return e.get("subtype") == "local_command"
+                m = e.get("message")
+                following = text_of(m.get("content")) if isinstance(m, dict) else ""
+                return e.get("type") == "user" and following.lstrip().startswith("<local-command-")
+        return False
+    for i, d in enumerate(rows):
         if not isinstance(d, dict) or d.get("isSidechain") or d.get("isMeta"): continue
         msg = d.get("message")
         if not isinstance(msg, dict): continue
         t = stamp(d.get("timestamp"))
         content = text_of(msg.get("content"))
         if d.get("type") == "user" and content.strip():
+            if not_input(d, content, i): continue
             if content == os.environ["KEEPALIVE_TEXT"]:
                 pending = True
             else:
@@ -1497,9 +1683,13 @@ PY
 # Only a normal continuing poll calls this. Recheck local state and substantive
 # input after remote reads, then use the launcher's own screen reobservation.
 keepalive_child() {
-  local n="$1" f wt name childcomments epiccomments epic repo enum text now out why
+  local n="$1" f wt name childcomments epiccomments epic repo enum text now out why turn
   child_record "$PARENT_TOP" "$n" || return 0
   f="$ES_HIT"
+  # 受領済みの返事待ちでなければ、作業待ちの別経路だけを見る（#1777。停止済み子の条件は流用しない）
+  turn="$(wait_received "$f")" || { keepalive_background "$n" "$f"; return 0; }
+  # 声かけは主の返事待ちだけ。依存待ちの停止には送らない。
+  ! received_dependency_stop "$f" || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ "$(es_get "$f" stop)" = stopped-seen ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ "$(es_get "$f" status)" != "done" ] || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   [ -z "$(es_get "$f" launch_failed)" ] || { keepalive_note "$f" "skipped launch-failed"; return 0; }
@@ -1520,6 +1710,8 @@ keepalive_child() {
   [ "$(es_get "$f" launcher)" = "$name" ] || return 0
   why="$(keepalive_candidate "$f" "$childcomments" "$epiccomments" "$(date +%s)" "$text")" \
     || { keepalive_note "$f" "skipped ${why:-no-transcript}"; return 0; }
+  wait_received "$f" "$turn" >/dev/null || { keepalive_note "$f" "skipped not-stopped"; return 0; }
+  ! received_dependency_stop "$f" || { keepalive_note "$f" "skipped not-stopped"; return 0; }
   out="$(launcher_run "$name" keepalive "$wt" "$text")"
   case "$out" in
     sent) keepalive_note "$f" "sent" ;;
@@ -1528,6 +1720,150 @@ keepalive_child() {
        case "$out" in failed\ *) keepalive_note "$f" "$out" ;; *) keepalive_note "$f" "failed send" ;; esac ;;
   esac
   return 0
+}
+
+# 作業待ちの子（#1777）への声かけ（<子> <記録>）。Stop が保存した background_wait・parent/startup の作業報告・
+# Orca の登録セッションを記録で確かめ、turn_input.transcript_path の現行 CLI 1 本（keepalive_background_log）で、
+# 最後の通常発言が同じ作業待ちの行と状態行であること・TTL 1h・最後の成功リクエストから 3000 以上 3600 秒未満・
+# 初回開始から min(43200, EPIC_DISPATCH_OWNER_WAIT_SEC) 秒未満を確かめる。停止済み子の stop_uuid・停止コメント・
+# 150k の除外は使わない。部品を呼ぶ直前に記録と会話を読み直し、どちらかが変わっていれば記録を書かずに見送る
+# （同じポーリングで取り直して送らない）。Orca の画面の背景待機の許可はこの一呼び出しだけに渡す
+keepalive_background() {
+  local n="$1" f="$2" key key2 wt text now why why2 out
+  key="$(es_read "$f" 2>/dev/null | jq -ce "$WAIT_TURN_DEFS"'select(bg_turn) | bg_key' 2>/dev/null)" \
+    || { keepalive_note "$f" "skipped not-stopped"; return 0; }
+  [ -z "$(es_get "$f" launch_failed)" ] || { keepalive_note "$f" "skipped launch-failed"; return 0; }
+  [ -n "$(es_get "$f" session)" ] || { keepalive_note "$f" "skipped no-session"; return 0; }
+  wt="$(es_get "$f" worktree)"; [ -d "$wt" ] || { keepalive_note "$f" "skipped no-worktree"; return 0; }
+  [ "$(es_get "$f" launcher)" = orca ] || { keepalive_note "$f" "skipped unsupported-launcher"; return 0; }
+  text="$(keepalive_text background)" || return 0
+  now="$(date +%s)"
+  why="$(keepalive_background_log "$f" "$now" "$text")" || { keepalive_note "$f" "skipped ${why:-no-transcript}"; return 0; }
+  now="$(date +%s)"
+  child_record "$PARENT_TOP" "$n" || return 0
+  [ "$ES_HIT" = "$f" ] || return 0
+  key2="$(es_read "$f" 2>/dev/null | jq -ce "$WAIT_TURN_DEFS"'select(bg_turn) | bg_key' 2>/dev/null)" || return 0
+  [ "$key2" = "$key" ] || return 0
+  why2="$(keepalive_background_log "$f" "$now" "$text")" || return 0
+  [ "$why2" = "$why" ] || return 0
+  out="$(KEEPALIVE_BG_ALLOW=1 launcher_run orca keepalive "$wt" "$text")"
+  case "$out" in
+    sent) keepalive_note "$f" "sent" ;;
+    skipped\ *) keepalive_note "$f" "$out" ;;
+    *) echo "keepalive $n: ${out:-failed send}" >&2
+       case "$out" in failed\ *) keepalive_note "$f" "$out" ;; *) keepalive_note "$f" "failed send" ;; esac ;;
+  esac
+  return 0
+}
+
+# 作業待ちの会話の判定（<記録> <今の epoch 秒> <固定文>）。読取専用で、turn_input.transcript_path の 1 本だけを読み、
+# sidechain / meta でない行のうち、発言と usage は sessionId が turn_input.session_id で entrypoint が cli の行だけを使う。
+# 送れるなら stdout に `ok <行数> <バイト数>` を出して 0、送れなければ skipped の理由の語を出して 1
+keepalive_background_log() {
+  command -v python3 >/dev/null 2>&1 || { echo no-transcript; return 1; }
+  REC="$1" NOW="$2" KEEPALIVE_TEXT="$3" \
+    OWNER_WAIT="$(num_or_default "${EPIC_DISPATCH_OWNER_WAIT_SEC-}" 43200)" python3 - <<'PY' 2>/dev/null
+import datetime, json, math, os, re
+
+def reject(reason):
+    print(reason)
+    raise SystemExit(1)
+def stamp(value):
+    try:
+        t = datetime.datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return (t if t.tzinfo else t.replace(tzinfo=datetime.timezone.utc)).timestamp()
+    except (ValueError, TypeError, AttributeError):
+        return None
+def num(value):
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) and math.isfinite(value) and value > 0 else 0
+def blocks(msg):
+    c = msg.get("content")
+    if isinstance(c, str): return [{"type": "text", "text": c}]
+    return [b for b in c if isinstance(b, dict)] if isinstance(c, list) else []
+def text_of(msg):
+    return "\n".join(str(b.get("text", "")) for b in blocks(msg) if b.get("type") == "text")
+
+try:
+    now = int(os.environ["NOW"])
+    rec = json.load(open(os.environ["REC"]))
+    inp, state = rec["turn_input"], rec["turn_state"]
+    bg = state["background_wait"]
+    started = stamp(bg["started_at"])
+    # 基点は初回開始だけ（stop_at・更新時刻・声かけの時刻を使わない）。未来・不明・上限以上は送らない
+    if started is None or not 0 <= now - started < min(43200, int(os.environ["OWNER_WAIT"])): reject("expired")
+    path, sid = inp["transcript_path"], inp["session_id"]
+    marker = "作業待ち: %s %s" % (bg["id"], bg["started_at"])
+    status_line = "状態: %s — %s" % (state["value"], state["summary"])
+    def is_marker(text):
+        # Stop と同じく空行を飛ばし、最終行が記録の状態行、その直前が記録の作業待ちの行
+        lines = [l for l in text.rstrip().splitlines() if l.strip()]
+        if len(lines) < 2: return False
+        m = re.fullmatch(r"状態: (主の返事待ち|作業報告|完了) — (.+)", lines[-1])
+        return bool(m) and "状態: %s — %s" % (m[1], m[2].strip()) == status_line and lines[-2] == marker
+    if not isinstance(path, str) or not os.path.isabs(path) or not os.path.isfile(path): reject("no-transcript")
+    raw = open(path, "rb").read()
+    seen = False      # 最後の通常発言が記録と同じ作業待ちの行と状態行
+    after = False     # その後に通常入力・元作業の通知・新しい通常発言・ツールがある
+    pending = False   # 作業待ちの固定文を送り、まだ返事が無い
+    last_request = ttl = None
+    future = False    # 時刻が読めないか今より未来の成功リクエストがある
+    for line in raw.decode("utf-8", "replace").splitlines():
+        try: d = json.loads(line)
+        except ValueError: continue
+        if not isinstance(d, dict) or d.get("type") not in ("user", "assistant"): continue
+        if d.get("isSidechain") or d.get("isMeta"): continue
+        # 子の発言と usage は同じ会話の CLI の行だけ。入力の側は欠けた項目があっても数える（送らない側に倒す）
+        if d.get("type") == "assistant" and (d.get("sessionId") != sid or d.get("entrypoint") != "cli"): continue
+        if d.get("type") == "user" and d.get("sessionId", sid) != sid: continue
+        msg = d.get("message")
+        if not isinstance(msg, dict): continue
+        t = stamp(d.get("timestamp"))
+        content = text_of(msg)
+        if d.get("type") == "user":
+            origin = d.get("origin")
+            notice = (isinstance(origin, dict) and origin.get("kind") == "task-notification") \
+                or content.lstrip().startswith("<task-notification")
+            if notice:
+                after = after or seen
+            elif content.strip():
+                if content == os.environ["KEEPALIVE_TEXT"]:
+                    pending = True
+                else:
+                    after = after or seen
+                    pending = False
+            continue
+        has_tool = any(b.get("type") == "tool_use" for b in blocks(msg))
+        if has_tool:
+            after = after or seen
+        if content.strip():
+            if pending:
+                # 型違いでも返事の到着として扱う（一行・ツールなしの成功とは数えない）
+                pending = False
+            elif is_marker(content) and not has_tool:
+                seen, after = True, False
+            else:
+                after = after or seen
+                seen = False
+        if d.get("isApiErrorMessage") or d.get("error") is not None: continue
+        u = msg.get("usage")
+        if not isinstance(u, dict): continue
+        if sum(num(u.get(k)) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens")) > 0:
+            if t is None or t > now: future = True
+            else: last_request = t if last_request is None else max(last_request, t)
+        cc = u.get("cache_creation")
+        if isinstance(cc, dict) and t is not None:
+            h1, m5 = num(cc.get("ephemeral_1h_input_tokens")), num(cc.get("ephemeral_5m_input_tokens"))
+            if h1 + m5 > 0 and (ttl is None or t >= ttl[1]): ttl = ("1h" if h1 > 0 else "5m", t)
+    if after: reject("answered")
+    if not seen: reject("no-transcript")
+    if pending: reject("pending")
+    if ttl is None or ttl[0] != "1h": reject("cache-unknown")
+    if ttl[1] > now: reject("cache-future")
+    if future or last_request is None or not 3000 <= now - last_request < 3600: reject("out-of-window")
+    print("ok %d %d" % (raw.count(b"\n"), len(raw)))
+except (OSError, ValueError, KeyError, TypeError):
+    reject("no-transcript")
+PY
 }
 
 # 声かけの判定結果（<記録> <結果>）を記録の keepalive に `<UTC の時刻> <結果>` で書く。結果が前回と同じなら書き直さない。
@@ -1553,8 +1889,13 @@ record_log_json() {
 # 受けた止まり（stopped-seen で stop_uuid がある）を再開に書き換え、Orca の印へ写す（<記録>）。stop_uuid・stop_at は変えない。
 # wait の再開の確かめ・--resolve の「問いではない」・dismiss が使う。戻り値は es_modify と同じ
 stop_to_resumed() {
-  local f="$1" rc=0
-  es_modify "$f" 'if .stop == "stopped-seen" and (.stop_uuid // "") != "" then .stop = "resumed" else empty end' \
+  local f="$1" rc=0 condition
+  condition='(.stop_uuid // "") != ""'
+  if [ -n "${2-}" ]; then
+    condition='owner_question and turn_key == $expected and .stop_turn == $expected'
+  fi
+  es_modify "$f" "$WAIT_TURN_DEFS"'if .stop == "stopped-seen" and ('"$condition"')
+    then .stop = "resumed" else empty end' --argjson expected "${2:-null}" \
     >/dev/null 2>>"$errf" || rc=$?
   [ "$rc" -ne 0 ] || mirror_state "$f" "$(es_get "$f" worktree)" resumed
   return "$rc"
@@ -1565,64 +1906,134 @@ log_moved() {
   printf '%s' "$1" | jq -e --arg u "$2" '(.uuid != "" and .uuid != $u) or .input_after' >/dev/null
 }
 
-# wait: stopped-seen で stop_uuid のある子の会話ログが進んでいたら再開に書く（<子>）。親は起こさない。
-# 戻り値 0 = 書いた・書くものが無い / 3 = 書けなかった（失敗したポーリングに数える）
+# #1670 の終了状態契約。世代は整数、時刻は UTC 秒精度で実在する日付。
+# この述語は検知の排他更新にも使い、ログや印を停止の代用にしない。
+WAIT_TURN_DEFS='
+  def nonempty: type == "string" and length > 0;
+  def integer($min): type == "number" and . >= $min and floor == . and (tojson | test("^[0-9]+$"));
+  def utc: type == "string" and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$")
+    and (. as $t | try (fromdateiso8601 | todateiso8601 == $t) catch false);
+  def valid_input:
+    .turn_input as $i | ($i | type == "object")
+    and ($i.generation | integer(1)) and ($i.session_id | nonempty)
+    and (["owner","parent","startup"] | index($i.sender) != null)
+    and ($i.received_at | utc) and ($i.transcript_path | nonempty and startswith("/"))
+    and ($i.transcript_offset | integer(0)) and has("turn_state");
+  # 停止対象の共通部分。dependency_wait は欠落か boolean のときだけ有効（記録全体の読取は拒まない）。
+  def turn_valid:
+    valid_input and .status != "done"
+    and (.turn_state | type == "object")
+    and (.turn_state.generation | integer(1)) and (.turn_state.session_id | nonempty)
+    and .turn_state.generation == .turn_input.generation
+    and .turn_state.session_id == .turn_input.session_id
+    and ((.turn_state | has("dependency_wait") | not) or (.turn_state.dependency_wait | type == "boolean"))
+    and (.turn_state.summary | nonempty and test("[^[:space:]]") and (test("[\\r\\n]") | not))
+    and (.turn_state.recorded_at | utc);
+  def turn_key: .turn_input | {generation,session_id};
+  def stop_base: turn_valid and .turn_input.sender != "owner";
+  # 主が打った入力から始まった主の返事待ち。時間がたてば owner-away で主に知らせる（子には何もしない。#1745）
+  def owner_asked: turn_valid and .turn_input.sender == "owner" and .turn_state.value == "主の返事待ち";
+  def owner_away($now; $sec):
+    owner_asked and ((.turn_state.recorded_at | fromdateiso8601) + $sec <= $now)
+    and ((.owner_away_told // null) != turn_key);
+  def owner_question: stop_base and .turn_state.value == "主の返事待ち";
+  def dependency_stop: stop_base and .turn_state.value == "作業報告" and .turn_state.dependency_wait == true;
+  def target: owner_question or dependency_stop;
+  # #1777 作業待ち（Orca の外部起こし）。停止済み子の target とは別。Stop が保存した background_wait を厳密に読む。
+  def bg_marker:
+    (.turn_state.background_wait | type == "object" and (keys == ["id","started_at"])
+      and (.id | type == "string" and test("^[A-Za-z0-9][A-Za-z0-9._:-]*$")) and (.started_at | utc));
+  def bg_turn:
+    turn_valid and .status == "running" and ((.stop // "") as $s | ["stopped","stopped-seen"] | index($s) == null)
+    and (.turn_input.sender as $i | ["parent","startup"] | index($i) != null)
+    and .turn_state.value == "作業報告" and ((.turn_state.dependency_wait // false) == false) and bg_marker;
+  # 送る直前の読み直しで同じ候補かを比べる組（keepalive・updated_at は含めない）
+  def bg_key: {epic, child, parent_worktree, worktree, launcher, session, launch_failed, status, stop,
+    input: (.turn_input | {generation, session_id, sender, transcript_path}), wait: .turn_state.background_wait,
+    state: (.turn_state | {generation, session_id, value, summary})};
+'
+
+# 受領済みで、同じ世代の有効な停止を現在も保っているか。一度の読取で照合する。
+wait_received() {
+  local current
+  current="$(es_read "$1")" || return 3
+  printf '%s\n' "$current" | jq -ce "$WAIT_TURN_DEFS"'
+    select(target and .stop == "stopped-seen" and turn_key == .stop_turn)
+    | turn_key | select($expected == null or . == $expected)' \
+    --argjson expected "${2:-null}" 2>/dev/null
+}
+
+# 受領済みの組が依存待ちの停止か（<記録>）。種類は記録の turn_state だけで決め、ログは読まない。
+received_dependency_stop() {
+  es_read "$1" 2>/dev/null | jq -e "$WAIT_TURN_DEFS"'
+    dependency_stop and .stop == "stopped-seen" and turn_key == .stop_turn' >/dev/null 2>&1
+}
+
+# 入力世代・セッションの更新を再開として記録する。uuid やログは参照しない。
 resume_moved() {
-  local n="$1" f su json
+  local n="$1" f rc=0
   child_record "$PARENT_TOP" "$n" 2>/dev/null || return 0
   f="$ES_HIT"
-  [ "$(es_get "$f" stop)" = stopped-seen ] || return 0
-  su="$(es_get "$f" stop_uuid)"
-  [ -n "$su" ] || return 0
-  json="$(record_log_json "$f")" || return 0
-  log_moved "$json" "$su" || return 0
-  stop_to_resumed "$f"
-  case $? in
-    0|4) return 0 ;;
+  # 旧版の受領済み記録は再受領しない。owner 入力か受領より後の入力なら再開、現在の停止なら受領キーを補う。
+  if es_read "$f" | jq -e "$WAIT_TURN_DEFS"'
+    .stop == "stopped-seen" and .stop_turn == null and valid_input' >/dev/null 2>&1; then
+    es_modify "$f" "$WAIT_TURN_DEFS"'
+      if .stop == "stopped-seen" and .stop_turn == null and valid_input
+      then if .turn_input.sender == "owner" or ((.stop_at // "") < .turn_input.received_at) then .stop = "resumed"
+        elif target then .stop_turn = turn_key else empty end
+      else empty end' >/dev/null 2>>"$errf" || rc=$?
+    case "$rc" in
+      0) [ "$(es_get "$f" stop)" != resumed ] || mirror_state "$f" "$(es_get "$f" worktree)" resumed ;;
+      4) ;;
+      *) return 3 ;;
+    esac
+  fi
+  rc=0
+  es_read "$f" | jq -e "$WAIT_TURN_DEFS"'
+    .stop == "stopped-seen" and .stop_turn != null and valid_input
+    and turn_key != .stop_turn' >/dev/null 2>&1 || return 0
+  es_modify "$f" "$WAIT_TURN_DEFS"'
+    if .stop == "stopped-seen" and .stop_turn != null and valid_input and turn_key != .stop_turn
+    then .stop = "resumed" else empty end' >/dev/null 2>>"$errf" || rc=$?
+  case "$rc" in
+    0) mirror_state "$f" "$(es_get "$f" worktree)" resumed ;;
+    4) ;;
     *) return 3 ;;
   esac
 }
 
-# wait --watch-stopped: 子 1 件が止まっていれば、排他の中で読んだときの値のままであることを確かめて
-# stopped-seen・stop_uuid・stop_at を書き、Orca の印へ写し、止まりの JSON を $STOP_DIR に残す（<子> <記録>）。
-# 読めない印の子は印だけで返す（stop_uuid は空、JSON は残さない）。stop_uuid が空の stopped-seen は uuid だけ埋める。
-# 判定は LLM を呼ばない。戻り値 0 = 止まった子 / 1 = 止まっていない / 3 = 書けなかった
+# 有効な停止だけを受領する。同じ世代・セッションは印・uuid が変わっても再受領しない。
+# 排他更新では読んだ入力・終了状態を比較する。子所有の項目は書き換えない。
 detect_stopped() {
-  local n="$1" f="$2" stop su json uuid="" marked=false rc=0
-  stop="$(es_get "$f" stop)"
-  su="$(es_get "$f" stop_uuid)"
-  json="$(record_log_json "$f")" || json=""
-  case "$stop" in
-    stopped) marked=true ;;
-    stopped-seen)
-      [ -z "$su" ] && [ -n "$json" ] || return 1
-      uuid="$(printf '%s' "$json" | jq -r .uuid)"
-      [ -n "$uuid" ] || return 1
-      # stop_at は声かけの期限（EPIC_DISPATCH_OWNER_WAIT_SEC）の基点なので動かさない
-      es_modify "$f" 'if .stop == "stopped-seen" and (.stop_uuid // "") == "" then .stop_uuid = $uuid else empty end' \
-        --arg uuid "$uuid" >/dev/null 2>>"$errf"
-      case $? in
-        0|4) return 1 ;;
-        *) return 3 ;;
-      esac ;;
-    *)
-      [ "$(es_get "$f" status)" != "done" ] && [ -n "$json" ] || return 1 ;;
-  esac
-  if [ -n "$json" ]; then
-    printf '%s' "$json" | jq -e --argjson marked "$marked" --arg su "$su" \
-      --argjson idle "$(num_or_default "${EPIC_DISPATCH_STOP_IDLE_SEC-}" 120)" \
-      --argjson bg "$(num_or_default "${EPIC_DISPATCH_STOP_BG_IDLE_SEC-}" 1800)" '
-      ((now | floor) - .last_activity_epoch) as $age
-      | (.questions | length > 0) as $asked
-      | if $marked then .turn_ended or $asked or $age >= $bg
-        else (.turn_ended or $asked) and .uuid != "" and .uuid != $su and (.input_after | not)
-          and ($asked or $age >= (if .bg_running then $bg else $idle end))
-        end' >/dev/null || return 1
-    uuid="$(printf '%s' "$json" | jq -r .uuid)"
+  local n="$1" f="$2" snapshot json uuid="" marked=false rc=0
+  # ログが後で読めても受領情報は更新し直さない。同じ組・セッションの uuid だけを補う。
+  snapshot="$(es_read "$f" | jq -ce "$WAIT_TURN_DEFS"'
+    select(target and .stop == "stopped-seen" and turn_key == .stop_turn and (.stop_uuid // "") == "")
+    | {turn_input,turn_state}')" || snapshot=""
+  if [ -n "$snapshot" ]; then
+    json="$(record_log_json "$f")" || json=""
+    uuid="$(printf '%s' "$json" | jq -r --arg sid "$(printf '%s' "$snapshot" | jq -r .turn_input.session_id)" '
+      select(.session == $sid) | .uuid // empty')"
+    if [ -n "$uuid" ]; then
+      es_modify "$f" "$WAIT_TURN_DEFS"'
+        if target and .stop == "stopped-seen" and turn_key == .stop_turn and (.stop_uuid // "") == ""
+          and .turn_input == $snapshot.turn_input and .turn_state == $snapshot.turn_state
+        then .stop_uuid = $uuid else empty end' --argjson snapshot "$snapshot" --arg uuid "$uuid" \
+        >/dev/null 2>>"$errf" || rc=$?
+      case "$rc" in 0|4) ;; *) return 3 ;; esac
+    fi
+    return 1
   fi
-  es_modify "$f" 'if .stop == $stop and (.stop_uuid // "") == $su
-    then .stop = "stopped-seen" | .stop_uuid = $uuid | .stop_at = $now else empty end' \
-    --arg stop "$stop" --arg su "$su" --arg uuid "$uuid" >/dev/null 2>>"$errf" || rc=$?
+  snapshot="$(es_read "$f" | jq -ce "$WAIT_TURN_DEFS"'
+    select(target and turn_key != .stop_turn) | {turn_input,turn_state}')" || return 1
+  [ "$(es_get "$f" stop)" != stopped ] || marked=true
+  json="$(record_log_json "$f")" || json=""
+  [ -z "$json" ] || uuid="$(printf '%s' "$json" | jq -r .uuid)"
+  es_modify "$f" "$WAIT_TURN_DEFS"'
+    if target and turn_key != .stop_turn
+      and .turn_input == $snapshot.turn_input and .turn_state == $snapshot.turn_state
+    then .stop = "stopped-seen" | .stop_turn = turn_key | .stop_uuid = $uuid | .stop_at = $now
+    else empty end' --argjson snapshot "$snapshot" --arg uuid "$uuid" >/dev/null 2>>"$errf" || rc=$?
   case "$rc" in
     0) ;;
     4) return 1 ;;
@@ -1633,10 +2044,33 @@ detect_stopped() {
   return 0
 }
 
+# 主が子のタブで打った入力から始まった主の返事待ちが EPIC_DISPATCH_OWNER_AWAY_SEC 以上続いたかを見て、
+# 一度だけ owner_away_told に今回のターンを書く（<子の引数> <記録>）。0 = 今回知らせる、1 = 知らせない、3 = 記録を書けなかった。
+# 子に何も送らず、stop・stop_uuid も変えない。書く直前に入力が更新されていたら書かない
+detect_owner_away() {
+  local f="$2" snapshot rc=0 nowsec sec="${EPIC_DISPATCH_OWNER_AWAY_SEC-3600}"
+  nowsec="$(date +%s)"
+  snapshot="$(es_read "$f" | jq -ce --argjson now "$nowsec" --argjson sec "$sec" "$WAIT_TURN_DEFS"'
+    select(owner_away($now; $sec)) | {turn_input,turn_state}')" || return 1
+  [ -n "$snapshot" ] || return 1
+  es_modify "$f" "$WAIT_TURN_DEFS"'
+    if owner_away($nowsec; $sec) and .turn_input == $snapshot.turn_input and .turn_state == $snapshot.turn_state
+    then .owner_away_told = turn_key else empty end' \
+    --argjson snapshot "$snapshot" --argjson nowsec "$nowsec" --argjson sec "$sec" >/dev/null 2>>"$errf" || rc=$?
+  case "$rc" in
+    0) return 0 ;;
+    4) return 1 ;;
+    *) return 3 ;;
+  esac
+}
+
 # 判断に渡す止まりの JSON を $STOP_DIR に書く（<子> <会話ログの JSON> <marked>）。detect_stopped と判断し直しが使う
 write_stop_json() {
+  local dependency_wait=false
+  printf '%s' "$2" | "$(dirname "$0")/epic-child-state.sh" --dependency-wait && dependency_wait=true
   printf '%s' "$2" | jq -c --argjson max "$(stop_text_max)" --argjson marked "$3" \
-    "$STOP_TEXT_CUT"' | .marked = $marked' > "$STOP_DIR/$(var_key "$1")"
+    --argjson dependency_wait "$dependency_wait" \
+    "$STOP_TEXT_CUT"' | .marked = $marked | .dependency_wait = $dependency_wait' > "$STOP_DIR/$(var_key "$1")"
 }
 
 # wait の長い待ちの判断し直し（--resolve）。基準と処理済みの版は、子の引数ごと（エピックは epic）に $RJ_DIR のファイルで持つ
@@ -1678,7 +2112,7 @@ rj_store() { printf '%s %s\n' "$2" "$3" > "$(rj_key "$1")"; }
 rejudge_init() {
   local epic="$1" k api snap ua
   shift
-  [ -n "$RJ_DIR" ] || RJ_DIR="$(mktemp -d)"
+  [ -n "$RJ_DIR" ] || RJ_DIR="$(mktemp -d)" || { echo "could not create a temporary directory" >&2; exit 1; }
   rm -f "$RJ_DIR"/*
   for k in epic "$@"; do
     api="$(rj_api "$k" "$epic")"
@@ -1724,6 +2158,9 @@ rejudge_changed() {
     rm -f "$STOP_DIR/$(var_key "$n")"
     if child_record "$PARENT_TOP" "$n" 2>/dev/null; then
       rec="$ES_HIT"
+      wait_received "$rec" >/dev/null || continue
+      # 判断し直すのは主の返事待ちだけ。依存待ちの停止は判断に渡さない。
+      ! received_dependency_stop "$rec" || continue
       json="$(record_log_json "$rec")" && [ -n "$json" ] && write_stop_json "$n" "$json" false
     fi
     resolve_stopped "$epic" "$n" >/dev/null
@@ -1788,6 +2225,10 @@ cmd_wait() {
     is_num "$ownerwait" \
       || { echo "EPIC_DISPATCH_OWNER_WAIT_SEC must be a non-negative integer: $ownerwait" >&2; usage; }
   fi
+  if [ "$watchstop" -eq 1 ]; then
+    is_num "${EPIC_DISPATCH_OWNER_AWAY_SEC-3600}" \
+      || { echo "EPIC_DISPATCH_OWNER_AWAY_SEC must be a non-negative integer: ${EPIC_DISPATCH_OWNER_AWAY_SEC-}" >&2; usage; }
+  fi
   # --resolve は --watch-stopped（子 1 件以上）のときだけ働く。返事の送り方の設定は待つ前に確かめる
   [ "$watchstop" -eq 1 ] || resolve=""
   if [ -n "$resolve" ]; then
@@ -1806,11 +2247,13 @@ cmd_wait() {
     PARENT_TOP="$(toplevel)" || PARENT_TOP=""
   fi
 
-  local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f seen
+  local fails=0 n state closed failed marked stopped wsfail unrecorded still rec f seen away
   # 長い待ちに入った時刻（SECONDS）。空は入っていない
   local lwstart="" pollfail
   # 止まりの JSON の置き場（子の引数を var_key にした名前で 1 ファイル。ポーリングごとに空にする）
-  local errf; errf="$(mktemp)"; STOP_DIR="$(mktemp -d)"; trap 'rm -f "$errf"; rm -rf "$STOP_DIR" ${RJ_DIR:+"$RJ_DIR"}' EXIT
+  STOP_DIR="$(mktemp -d)" || { echo "could not create a temporary directory" >&2; exit 1; }
+  local errf; errf="$(mktemp)"
+  trap 'rm -f "$errf"; rm -rf "$STOP_DIR" ${RJ_DIR:+"$RJ_DIR"}' EXIT
   # 上限の既定: 親の会話キャッシュが 5 分で書かれていれば 21600（起きるたびに書き直すので、起きる回数を減らす）、
   # 1 時間か判定できなければ 3000（キャッシュの 1 時間とアイドル時のコンパクトの約 54 分より前に起き、掛け直して延ばす）。
   # 起動の時点で 1 回だけ決める（待つ間は親がリクエストを出さないので変わらない）。references/reply-after-idle.md
@@ -1827,7 +2270,7 @@ cmd_wait() {
   fi
   SECONDS=0
   while :; do
-    closed=""; failed=""; marked=""; stopped=""; unrecorded=""; wsfail=0; : > "$errf"
+    closed=""; failed=""; marked=""; stopped=""; unrecorded=""; away=""; wsfail=0; : > "$errf"
     for n in "$@"; do
       rec=""
       if [ -n "$PARENT_TOP" ] && child_record "$PARENT_TOP" "$n" 2>/dev/null; then rec="$ES_HIT"; fi
@@ -1871,7 +2314,7 @@ cmd_wait() {
         3) wsfail=1 ;;
       esac
     done
-    # 止まった子は、閉じていない位置引数の子だけを、印と会話ログで検知し、排他つきで受けた印に書き換えてから数える
+    # 止まった子は、閉じていない位置引数の有効な終了状態だけを、排他つきで受領してから数える
     if [ "$watchstop" -eq 1 ]; then
       rm -f "$STOP_DIR"/*
       for n in "$@"; do
@@ -1885,6 +2328,12 @@ cmd_wait() {
         detect_stopped "$n" "$ES_HIT"
         case $? in
           0) stopped="$stopped $n" ;;
+          3) wsfail=1 ;;
+        esac
+        # 主が子のタブで打った返事待ちが長く続いたら、主に知らせる（子には何もしない）
+        detect_owner_away "$n" "$ES_HIT"
+        case $? in
+          0) away="$away $n" ;;
           3) wsfail=1 ;;
         esac
       done
@@ -1902,11 +2351,12 @@ cmd_wait() {
       done
       stopped="$still"
     fi
-    if [ -n "$closed" ] || [ -n "$marked" ] || [ -n "$stopped" ] || [ -n "$unrecorded" ]; then
+    if [ -n "$closed" ] || [ -n "$marked" ] || [ -n "$stopped" ] || [ -n "$unrecorded" ] || [ -n "$away" ]; then
       [ -n "$closed" ] && echo "closed${closed}"
       [ -n "$marked" ] && echo "done${marked}"
       [ -n "$stopped" ] && echo "stopped${stopped}"
       [ -n "$unrecorded" ] && echo "unrecorded${unrecorded}"
+      [ -n "$away" ] && echo "owner-away${away}"
       exit 0
     fi
     pollfail=0
@@ -1979,6 +2429,11 @@ cmd_pending_owner() {
       echo "pending $n"
       continue
     fi
+    # 受領した組が今も有効な依存待ちの停止なら、会話ログの進みによらず出す
+    if received_dependency_stop "$ES_HIT"; then
+      echo "pending $n $su"
+      continue
+    fi
     # 会話ログを読めなければ今どおり出す
     json="$(record_log_json "$ES_HIT")" || json=""
     if [ -n "$json" ] && log_moved "$json" "$su"; then continue; fi
@@ -2046,7 +2501,7 @@ cmd_told() {
 # 固定の声かけ文を共有定義から生成する。wait の送信と child-log の完全一致に同じ生成を使う。
 # 返事の欄の意味や真偽は検証しない（#1374）。受信手順も停止前にこの定義を読む。
 keepalive_text() {
-  python3 "$LAUNCHER_DIR/child-log-read.py" --keepalive-text
+  python3 "$LAUNCHER_DIR/child-log-read.py" --keepalive-text "$@"
 }
 
 # 子の会話ログの置き場（<dir>）を child-log-read.py で読み、JSON を 1 行出す。読めなければ何も出さずに 1。
@@ -2091,7 +2546,7 @@ def col(at, text):
     return (t.astimezone(JST).strftime("%Y-%m-%d %H:%M"), " ".join(text.split())[:80] or "-")
 
 owner = log["owner"] or {"at": "", "text": ""}
-print("\t".join(col(owner["at"], owner["text"]) + col(log["at"], log["text"])))
+print("\t".join(col(owner["at"], owner["text"]) + col(log["text_at"], log["text"])))
 ' 2>/dev/null
 }
 
@@ -2410,6 +2865,7 @@ cmd_clear() {
 }
 
 [ "$#" -ge 1 ] || usage
+case "$1" in -h|--help) help_text; exit 0 ;; esac
 sub="$1"; shift
 es_check_env || usage
 es_root_init || { case "$sub" in route|mark|max-parallel) ;; *) exit 1 ;; esac; }
