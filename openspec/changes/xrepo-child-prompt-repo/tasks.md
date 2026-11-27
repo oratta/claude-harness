@@ -17,7 +17,7 @@
 
 ## 3. 変更の記録
 
-- [ ] 3.1 #1831 の 3 つの change（orca-session-term-fallback・parent-merge-inputs-fence・xrepo-child-prompt-repo）の変更の記録を `plugins/dev-workflow/changes/1831.md` に書く（形は既存の `plugins/dev-workflow/changes/*.md` に合わせ、題名の行・何が変わったか・変えていないもの・受け入れること・戻し方を書く）。この change は 3 つのうち最後に実装するので、ここに置く。触る範囲: plugins/dev-workflow/changes/1831.md（新規）
+- [x] 3.1 #1831 の 3 つの change（orca-session-term-fallback・parent-merge-inputs-fence・xrepo-child-prompt-repo）の変更の記録を `plugins/dev-workflow/changes/1831.md` に書く（形は既存の `plugins/dev-workflow/changes/*.md` に合わせ、題名の行・何が変わったか・変えていないもの・受け入れること・戻し方を書く）。この change は 3 つのうち最後に実装するので、ここに置く。触る範囲: plugins/dev-workflow/changes/1831.md（新規）
 
 ## 4. 確かめる
 
