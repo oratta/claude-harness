@@ -194,3 +194,7 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 #### Scenario: keepalive は識別できない 1 端末に入力枠が無ければ送らない
 - **WHEN** 同じ 1 端末の画面の下端がシェルのプロンプト（入力枠が無い、または入力枠より下にシェルのプロンプトがある）環境で、`epic-launch-orca.sh keepalive /work/issue-5 声かけ` を実行する
 - **THEN** stdout は `skipped ambiguous-terminal` で exit 0、`orca terminal send` は呼ばれない
+
+#### Scenario: keepalive は識別できない 1 端末の画面を読めなければ failed observe にする
+- **WHEN** 子のワークツリーの端末が 1 つだけで、その `agentIdentity` が null、題名が `Claude Code` を含まず、その端末の `orca terminal read --screen --json` が失敗する環境か、出力の形を読めない環境で、`epic-launch-orca.sh keepalive /work/issue-5 声かけ` を実行する
+- **THEN** stdout は `failed observe` で exit 1、`orca terminal send` は呼ばれない。`result.terminal.source` が screen でない画面は、読めた画面に入力枠が取れないものとして `skipped ambiguous-terminal` で exit 0 とする

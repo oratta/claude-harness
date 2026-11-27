@@ -23,7 +23,7 @@ Non-Goals:
 
 - `deliver` に送る直前で止まっている子は入力待ちなので、入力枠が下端にある。busy な子（ツールの実行中）も入力枠は下端に出るので選ばれる。そのあと `orca terminal send --wait-submit` とターンの開始の確かめは今までどおり働く
 - `keepalive` は選んだあとに同じ画面をもう 2 回観測するので、ここで選んでも送信の条件は緩まない
-- `keepalive` のこの段の出力: 入力枠が無ければ `skipped ambiguous-terminal`（一覧で決まらないときの今の語と同じ）。画面の読み取りが失敗した・出力の形を読めないときは、`keepalive` の今の規則「読み取り自体の失敗や壊れた出力は `failed observe`」に合わせて `failed observe` にする。`deliver` には `failed observe` の語が無いので、`deliver` では読み取りの失敗も `failed ambiguous-terminal` にする
+- `keepalive` のこの段の出力: 入力枠が無ければ `skipped ambiguous-terminal`（一覧で決まらないときの今の語と同じ）。画面の読み取りが失敗した・出力の形を読めないときは、`keepalive` の今の規則「読み取り自体の失敗や壊れた出力は `failed observe`」に合わせて `failed observe` にする。`deliver` には `failed observe` の語が無いので、`deliver` では読み取りの失敗も `failed ambiguous-terminal` にする。`result.terminal.source` が screen でない画面は、読み取りは成功していて入力枠が取れないだけなので、識別のモードでは `unknown`（入力枠が無いのと同じ）とし、`keepalive` は `skipped ambiguous-terminal`、`deliver` は `failed ambiguous-terminal` にする（声かけの判定の `skipped unknown-state` の語はこの段では出さない。どちらに倒しても送らない）
 - 起動部品の契約（dev-workflow-epic-state の要件「起動部品は epic-launch-<名前>.sh の 1 本ずつで…」）は、Orca の部品の `deliver` が呼んでよい `orca` のコマンドを MUST NOT 付きで限り、呼び出しの順と回数を切り出す前と同じにすることを MUST にしている。この change はその要件を MODIFIED にし、`deliver` の許すコマンドと同一性の例外に、識別できない 1 端末のときだけの `orca terminal read --terminal <h> --screen --json` 1 回を足す
 
 ### 退けた案: 状態の記録の `.session` のハンドルを使う
@@ -36,5 +36,5 @@ Non-Goals:
 
 ## Risks / Trade-offs
 
-- 画面の読み取りが 1 回増える（1 端末で識別できないときだけ）。読み取りが失敗したら `ambiguous-terminal` のまま。`failed observe` という新しい語は足さない
+- 画面の読み取りが 1 回増える（1 端末で識別できないときだけ）。`deliver` では読み取りが失敗したら `ambiguous-terminal` のまま（`keepalive` は既存の `failed observe`）。どちらの部品にも新しい語は足さない
 - 入力枠の見た目が Claude Code の版で変わると、この段は選ばなくなる（今の `ambiguous-terminal` に戻るだけで、誤って送ることはない）
