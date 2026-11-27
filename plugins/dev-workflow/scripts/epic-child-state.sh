@@ -10,6 +10,7 @@ IFS= read -r -d '' PY_SRC <<'PY' || true
 import datetime, json, os, re, sys
 
 VALUES = ('主の返事待ち', '作業報告', '完了')
+NOT_OWNER_PREFIXES = ('<task-notification', '<local-command-', '<bash-input>', '<bash-stdout>', '<bash-stderr>')
 def status(text):
     lines = text.splitlines()
     while lines and not lines[-1].strip():
@@ -171,6 +172,11 @@ try:
             sender = 'startup'
         if sender != 'startup' and prompt.startswith(('親エピック #', '主の返事（親エピック #')):
             sender = 'parent'
+        # Background task notifications and Claude Code's own output are not the owner's words (#1821).
+        # Same prefixes as epic-dispatch.sh not_input; the turn continues the previous sender's work.
+        if (sender == 'owner' and i and i['session_id'] == sid
+                and prompt.lstrip().startswith(NOT_OWNER_PREFIXES)):
+            sender = i['sender']
         try:
             offset = os.path.getsize(path)
         except FileNotFoundError:

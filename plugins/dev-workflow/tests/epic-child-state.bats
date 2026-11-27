@@ -1255,3 +1255,95 @@ bgw_of() { jq -r 'if (.turn_state|type)=="object" and (.turn_state|has("backgrou
   run stop "$(bg_reply)"; [ "$status" -eq 0 ]; [ -z "$output" ]
   unchanged
 }
+
+# --- 裏の作業の通知などで始まる入力は直前の送り手を引き継ぐ（#1821） ---
+sender_is() { jq -e --arg s "$1" --argjson g "$2" '.turn_input.sender == $s and .turn_input.generation == $g and .turn_state == null' "$REC"; }
+
+@test "notification input: the five non-owner prefixes inherit the previous sender and start a new generation" {
+  register
+  stop '状態: 作業報告 — 裏で作業中'
+  input '<task-notification><task-id>b1</task-id><status>completed</status></task-notification>'
+  sender_is startup 2
+  input '親エピック #1 の判断（主の承認ではない）: ok'
+  sender_is parent 3
+  g=3
+  for p in '<task-notification><task-id>b2</task-id></task-notification>' '<local-command-stdout>x</local-command-stdout>' \
+      '<bash-input>ls</bash-input>' '<bash-stdout>x</bash-stdout>' '<bash-stderr>x</bash-stderr>' \
+      $'  \n\t<task-notification><task-id>b3</task-id></task-notification>'; do
+    stop '状態: 作業報告 — 続き'
+    jq -e '.turn_state != null' "$REC"
+    input "$p"; g=$((g + 1))
+    sender_is parent "$g"
+  done
+  input '調査結果を教えて'; g=$((g + 1))
+  sender_is owner "$g"
+  input '<task-notification><task-id>b4</task-id></task-notification>'; g=$((g + 1))
+  sender_is owner "$g"
+}
+
+@test "notification input: a prefix only in the middle and a command-name prompt stay owner" {
+  register
+  for p in '結果は <task-notification> の中にある' '<command-name>/compact</command-name><command-args></command-args>'; do
+    input '親エピック #1 の判断（主の承認ではない）: ok'
+    [ "$(jq -r .turn_input.sender "$REC")" = parent ]
+    input "$p"
+    [ "$(jq -r .turn_input.sender "$REC")" = owner ]
+  done
+}
+
+# Drive the real input/Stop hook against the parent suite's record 11, then let the parent watch it.
+child_hook_on_11() {
+  parent_fixture
+  put_record 11
+  WORK="$BATS_TEST_TMPDIR/work/issue-11"
+  git init -q "$WORK"
+  WORK="$(cd "$WORK" && pwd -P)"
+  f="$(rec_of 1122 11)"
+  jq --arg w "$WORK" '.worktree = $w' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+  REC="$f" LOG="$BATS_TEST_TMPDIR/child-11.jsonl" SID=s11
+  : > "$LOG"
+  input '/develop #11 （エピック #1122 の子。親ワークツリー /work/parent から Orca で起動）'
+  [ "$(jq -r .turn_input.sender "$REC")" = startup ]
+}
+
+@test "notification input: a parent-started work's notification turn that waits for the owner is stopped" {
+  for first in startup parent; do
+    child_hook_on_11
+    if [ "$first" = parent ]; then
+      input '親エピック #1122 の判断（主の承認ではない）: 進めてよい'
+    fi
+    stop '状態: 作業報告 — 裏でテストを回す'
+    input '<task-notification><task-id>b1</task-id><status>completed</status></task-notification>'
+    [ "$(jq -r .turn_input.sender "$REC")" = "$first" ]
+    stop '状態: 主の返事待ち — マージしてよいか'
+    jq -e '.turn_state.value == "主の返事待ち"' "$REC"
+    gh_seq 11 open
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+    [ "$status" -eq 0 ]; [ "$output" = 'stopped 11' ]
+    [ "$(rec_get 11 stop)" = stopped-seen ]
+  done
+}
+
+@test "notification input: owner turns and owner-started notification turns keep the owner-away handling" {
+  for kind in typed notified; do
+    child_hook_on_11
+    input '調査して結果を教えて'
+    if [ "$kind" = notified ]; then
+      stop '状態: 作業報告 — 裏で調べる'
+      input '<task-notification><task-id>b1</task-id><status>completed</status></task-notification>'
+    fi
+    [ "$(jq -r .turn_input.sender "$REC")" = owner ]
+    stop '状態: 主の返事待ち — どちらにしますか'
+    gh_seq 11 open
+    run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    gh_seq 11 open
+    EPIC_DISPATCH_OWNER_AWAY_SEC=0 run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+    [ "$status" -eq 0 ]; [ "$output" = 'owner-away 11' ]
+    gh_seq 11 open
+    EPIC_DISPATCH_OWNER_AWAY_SEC=0 run dispatch wait --interval 0 --timeout 0 --watch-stopped 11
+    [ "$status" -eq 2 ]; [ "$output" = 'timeout 11' ]
+    [ "$(rec_get 11 stop)" = '' ]
+    [ "$(calls '^orca terminal send')" -eq 0 ]; [ "$(calls '^judge ')" -eq 0 ]
+  done
+}
