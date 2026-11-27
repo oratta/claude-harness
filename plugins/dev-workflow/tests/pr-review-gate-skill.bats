@@ -2712,3 +2712,50 @@ doc_check() {  # stages/pass.md の 4-2
   grep -F 'light で変わるのはレビュー実行者だけ' "${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md" \
     | grep -qF '手順4-2のドキュメント文字列の整合確認'
 }
+
+# --- PR #174 の周回 1 の修正（決める役の方針） ---
+
+@test "doc-consistency (#166): 4-2 opens unresolved doc-mismatch findings even when the search misses them" {
+  s="$(doc_check)"
+  has_all "$s" '仕分けコメントで「説明の食い違い」とされた未解決の指摘' '検索に当たるかによらず' \
+    '- 指摘 <ID>: <file:line> — <一致する / 食い違う: 内容>' '振る舞いを変えないと判断した場合も、この確認は省かない' \
+    '仕分けコメントの未解決の説明の食い違いの指摘' '言い換えの説明のうち指摘されていないもの'
+}
+
+@test "doc-consistency (#166): the retake line sits once after the round line and is carried or dropped by one rule" {
+  has_all "$(cat "${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md")" \
+    '`周回:` 行の直後に箇条書き記号なしで一度だけ' '照合と振り分けの `次の段へ`' '順 3 だけの修正' \
+    '4-2 以外の failed' 'この行を外す' 'ゲートの新規開始' '注記は流用しない'
+  f="$(awk '/^### return の書式（手順 4-2 の食い違いで failed）/{f=1} /^### この段で/{f=0} f' "${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md")"
+  [ "$(grep -cx '取り直し: 説明の整合（周に数えない）' <<<"$f")" -eq 1 ]
+  grep -A1 '^- 周回:' <<<"$f" | grep -qx '取り直し: 説明の整合（周に数えない）'
+}
+
+@test "doc-consistency (#166): a retake at round 1 is a re-review without first-round tables, partitions or stage-A handling" {
+  st="${PLUGIN_DIR}/skills/pr-review-gate/stages"
+  grep -F '説明の整合の取り直しは周に数えない' "$st/triage-convergence.md" | grep -qF '周回の値によらず再レビュー'
+  has_all "$(cat "$st/prepare.md")" '説明の整合の取り直しは周回 1 でも区画の判定をせず'
+  has_all "$(cat "$st/prepare-reviewer.md")" '説明の整合の取り直し' '三表は要らない'
+  has_all "$(cat "$st/reviewer-brief.md")" '説明の整合の取り直しは、周回が 1 でも再レビューであり、一周目の三表は不要'
+  has_all "$(cat "$st/gate-triage.md")" '取り直し行がある周は' '補足済み回数で `review-incomplete` にしない'
+  has_all "$(nonblocking_para '段 A（')" '取り直し行がある周は 1 周目として扱わず'
+  for f in hold.md triage.md hold-resume.md; do
+    grep -qF '取り直し行が無い' "$st/$f" || { echo "no first-round rule: $f"; return 1; }
+  done
+}
+
+@test "doc-consistency (#166): carryover counts a retake at round 1 as a whole-PR round only with the whole-review note" {
+  c="$(cat "${PLUGIN_DIR}/skills/pr-review-gate/stages/carryover.md")"
+  has_all "$c" '`周回: 1` で取り直し行が無い場合' '今回のレビューに `（全体レビュー: …）` の注記がある場合' \
+    '説明の整合の取り直しは、全体レビューの注記が無ければ `周回: 1` でもこの条件を満たさない' \
+    '終了コード 0 で `PR_COMMITS=0` なら、`RESOLVED_OUTSIDE_ALLOWLIST=` の行があっても'
+}
+
+@test "doc-consistency (#166): outside develop the same mismatch stops automatic retakes on its second failure" {
+  s="$(doc_check)"
+  has_all "$s" '同じ食い違いで 2 回目の failed' '自動修正・取り直しを止め' '同じファイル・対象シンボル' \
+    '行番号移動・指摘 ID の変更・担当交代では回数をリセットしない' '主の明示指示なしに自動再開しない'
+  conv="$(grep -F '説明の整合の取り直しは周に数えない' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage-convergence.md")"
+  has_all "$conv" 'develop 以外は、同じ食い違いによる 2 回目の 4-2 の failed で自動取り直しを止める'
+  ! grep -qF '繰り返しは PR トークン上限で止まる' <<<"$conv" || return 1
+}

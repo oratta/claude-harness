@@ -1249,3 +1249,9 @@ step4_554() { awk '/^\(4\) G を/{f=1} f{print} f && /^```$/{exit}' "${PLUGIN_DI
   grep -F 'return-declaration.md' "$W_COMMON" | grep -qF '読' || return 1
   grep -F 'return-declaration.md' "$GATE" | grep -qF '読' || return 1
 }
+
+@test "gate-runner (#166): the pass stage row and the Status-field index both name the 4-2 failed" {
+  g="$(cat "$GATE")"
+  grep -E '^\| 合格処理 \|' "$GATE" | grep -qF 'failed（確かめ方の非 0、または手順 4-2 の食い違い。`次の段: 前提確認と重さ判定`）'
+  grep -F 'この共通欄のうしろに、Status ごとの欄を続ける' "$GATE" | grep -qF '手順 4-2 の食い違いによる `failed` は `stages/pass.md`'
+}
