@@ -107,6 +107,26 @@ pick_session_term() {
   return 0
 }
 
+# 端末の一覧の JSON から子のセッションの端末を決める（deliver と keepalive が使う。shell_start は一覧だけで決める
+# pick_session_term を使う）。一覧で決まらず端末がちょうど 1 つのときだけ、その画面を 1 回読み、下端に Claude Code の
+# 入力枠（keepalive_screen_reason の resolve_frame と同じ形）があればその端末に決める。端末が 2 つ以上なら読まない。
+# Claude Code は題名をセッション名に書き換え、agentIdentity が null になることがあるため（#1598）。
+# 戻り値 0 = 決まった（stdout にハンドル）/ 1 = 決められない（入力枠が無い・source が screen でない画面を含む）/
+# 2 = 画面の読み取りが失敗した・出力の形を読めない（keepalive は failed observe、deliver は ambiguous-terminal にする）
+pick_session_term_screen() {
+  local h one observed id
+  h="$(pick_session_term "$1")"
+  if [ -n "$h" ]; then printf '%s\n' "$h"; return 0; fi
+  one="$(printf '%s' "$1" | jq -r '.result.terminals | if type == "array" and length == 1 then (.[0].handle // empty | strings) else empty end' 2>/dev/null)"
+  [ -n "$one" ] || return 1
+  observed="$(orca terminal read --terminal "$one" --screen --json)" || return 2
+  id="$(keepalive_screen_reason "$observed" orca identify)" || return 2
+  case "$id" in
+    claude) printf '%s\n' "$one"; return 0 ;;
+    unknown) return 1 ;;
+    *) return 2 ;;
+  esac
+}
 
 # Classify observed foreground input. An unknown display never authorizes a send.
 # A background shell alone does not make the foreground busy.
@@ -116,6 +136,9 @@ import json, os, re, sys
 raw = os.environ["SCREEN"]
 mode = sys.argv[1]
 after_send = sys.argv[2] == "after-send"
+# identify: only report whether the Claude Code input frame is at the bottom
+# (claude / unknown; unreadable when the observation shape is broken).
+identify = sys.argv[2] == "identify"
 bg_allowed = mode == "orca" and not after_send and os.environ.get("EPIC_DISPATCH_KEEPALIVE_BACKGROUND_WAIT") == "1"
 if mode == "orca":
     try:
@@ -126,9 +149,11 @@ if mode == "orca":
         if not isinstance(draft, str):
             raise ValueError()
         if d.get("source") != "screen":
-            print("skipped unknown-state"); sys.exit()
+            print("unknown" if identify else "skipped unknown-state"); sys.exit()
         raw = "\n".join(d["tail"])
     except (ValueError, KeyError, TypeError):
+        if identify:
+            print("unreadable"); sys.exit()
         print("failed observe shape: expected result.terminal object, tail string[], optional draft string", file=sys.stderr)
         print("failed observe"); sys.exit()
 else:
@@ -203,6 +228,8 @@ def wait_state(frame):
         return "released"
     return "unknown"
 frame = resolve_frame()
+if identify:
+    print("claude" if frame is not None else "unknown"); sys.exit()
 # History release authorizes only pre-send readiness. After send, delivery
 # requires foreground execution and independently checked frame/draft emptiness.
 wait = "none" if after_send else wait_state(frame)
@@ -243,13 +270,14 @@ PYCODE
 # stdout: sent/skipped <reason> (0), failed <reason> (1); arity error: usage (2).
 cmd_keepalive() {
   argc 2 "$#"
-  local terms count handle observed reason sent rc i after
+  local terms count handle observed reason sent rc i after pick=0
   if ! terms="$(orca terminal list --worktree "path:$1" --json)" \
     || ! count="$(printf '%s' "$terms" | jq -e '.result.terminals | if type == "array" and all(.[]; type == "object" and (.handle | type) == "string" and .handle != "") then length else error("terminals") end' 2>/dev/null)"; then
     echo 'failed terminal-list'; return 1
   fi
   [ "$count" -gt 0 ] || { echo 'skipped no-terminal'; return 0; }
-  handle="$(pick_session_term "$terms")"
+  handle="$(pick_session_term_screen "$terms")" || pick=$?
+  [ "$pick" -ne 2 ] || { echo 'failed observe'; return 1; }
   [ -n "$handle" ] || { echo 'skipped ambiguous-terminal'; return 0; }
   for (( i = 0; i < 2; i++ )); do
     observed="$(orca terminal read --terminal "$handle" --screen --json)" || { echo 'failed observe'; return 1; }
@@ -461,9 +489,11 @@ cmd_deliver() {
   # 端末があれば、子のセッションの端末（Claude Code の端末 1 つ）に送る
   # （止まっている子の入力欄に打ち込み、ターンの開始まで確かめる）。Orca は子のワークツリーにシェルの
   # 端末も作るので、端末の数では決めない。決められなければ送らない（シェルの端末だけのときも、
-  # それが子のセッションでないと一覧から言い切れないので起動し直さない。主の判断で relaunch 1 を使う）
+  # それが子のセッションでないと一覧から言い切れないので起動し直さない。主の判断で relaunch 1 を使う）。
+  # 一覧で決まらず端末がちょうど 1 つなら、その画面を 1 回読み、下端に入力枠があればそこに送る
+  # （読めない・入力枠が無いときは決められないのと同じ扱い）
   if [ "$relaunch" = 0 ] && [ "$tcount" -gt 0 ]; then
-    handle="$(pick_session_term "$terms")"
+    handle="$(pick_session_term_screen "$terms")" || handle=""
     if [ -z "$handle" ]; then
       echo "terminals in $path: $tcount, but not exactly one is Claude Code (cannot tell which one runs the child session; use reply --relaunch to start it over)" >&2
       echo "failed ambiguous-terminal"; exit 1
