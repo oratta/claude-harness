@@ -24,7 +24,7 @@
 ## 4. 記録と全体の確認
 
 - [x] 4.1 変更の記録 `plugins/dev-workflow/changes/1609.md` を書く（何を変えたか・受け入れること〔主の会話の 1 回の発言で、以後と、そのとき止まっていたリスク許容が親経由で通る〕・戻し方〔差分を戻す。投稿済みのきっかけの形の記録は `主の委任: 取り消し` で止まる〕・聖域に触れること）。確かめ方: ファイルがあり、ほかの `changes/*.md` と同じ形。触る範囲: plugins/dev-workflow/changes/1609.md（新規）
-- [ ] 4.2 dev-workflow の bats 一式と shellcheck を通す。確かめ方: `bats plugins/dev-workflow/tests/` と、リポジトリ直下の `bats tests/`（ゲートの文言の控えと読込予算を含む）と、`shellcheck plugins/dev-workflow/scripts/owner-reply-check.sh` が通る。触る範囲: なし（確認だけ）
+- [x] 4.2 dev-workflow の bats 一式と shellcheck を通す。確かめ方: `bats plugins/dev-workflow/tests/` と、リポジトリ直下の `bats tests/`（ゲートの文言の控えと読込予算を含む）と、`shellcheck plugins/dev-workflow/scripts/owner-reply-check.sh` が通る。触る範囲: なし（確認だけ）
 
 ## Workflow follow-up
 
