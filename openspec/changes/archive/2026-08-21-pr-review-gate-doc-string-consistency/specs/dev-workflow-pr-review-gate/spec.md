@@ -1,0 +1,84 @@
+## ADDED Requirements
+
+### Requirement: 実装とドキュメント文字列の整合を合格の必須条件にする
+
+pr-review-gate スキルは、変更した振る舞いを説明しているドキュメント文字列が新しい振る舞いと一致していることの確認を、`agent-review:passed` 付与の必須条件として手順4に持たなければならない (MUST)。この確認は手順4-2 として、既存の振る舞いの確認（手順4-1）と並ぶ独立した確認として記述しなければならない (MUST)。6手順の骨格（前提を揃える → 別コンテキストレビュー → リスク宣言 → 動作確認 → 合格処理 → 保留処理）は変更してはならない (MUST NOT)。
+
+確認対象は次の4種を名指しで列挙しなければならない (MUST): ①API ドキュメント文字列（JSDoc / docstring / 型定義のコメント）②CLI の使い方（`--help` の USAGE・引数やサブコマンドの説明）③利用者向け文書（README・docs・spec・スキル/コマンド定義の説明文）④実行時に人が読む文字列（エラーメッセージ・警告・ログ・UI の文言）。
+
+#### Scenario: 4-2 が合格の必須条件として存在する
+
+- **WHEN** `plugins/dev-workflow/skills/pr-review-gate/SKILL.md` の手順4 を読む
+- **THEN** 「ドキュメント文字列の整合確認」の節が存在し、`usage` / `JSDoc` / エラーメッセージを含む確認対象が列挙され、合格（手順5）の必須条件であることが明記されている
+
+#### Scenario: 6手順の骨格が維持されている
+
+- **WHEN** SKILL.md の見出し構成を検査する
+- **THEN** `### 1. 前提を揃える` から `### 6. 保留処理` までの6手順がそのまま存在し、ドキュメント整合の確認は `### 4. 動作確認` の配下の小節として置かれている
+
+### Requirement: 整合確認は grep の対象と実行コマンドまで具体化する
+
+pr-review-gate スキルは、ドキュメント文字列の整合確認を「ドキュメントも見る」のような検証不能な指示で書いてはならない (MUST NOT)。この PR で振る舞いが変わったシンボル・フラグ・既定値を列挙し、その名前で当該リポを検索する具体的なコマンド例（`git grep -n '<シンボル>'` 形式）を含めなければならない (MUST)。ヒットが 0 件だった場合に「0 件」と記録することを求め、未確認を空欄にすることを禁じなければならない (MUST)。
+
+#### Scenario: 具体的な grep コマンド例がある
+
+- **WHEN** SKILL.md の手順4-2 を読む
+- **THEN** 変更したシンボル名でリポを検索する `git grep -n` の実行例が複数（フラグ名・関数名・既定値を説明する語）含まれている
+
+#### Scenario: 未確認を空欄にできない
+
+- **WHEN** grep のヒットが 0 件だった
+- **THEN** スキルは「0 件（説明文なし）」と記録することを求めており、確認していない項目を空欄のまま残すことを禁じている
+
+### Requirement: 整合確認の証拠は HEAD SHA 付きコメントとして実測される
+
+pr-review-gate スキルは、ドキュメント文字列の整合確認の結果を、対象 HEAD の 40 桁フル SHA を含む PR コメント（見出し `## ドキュメント文字列の整合確認`）として残すことを求めなければならない (MUST)。手順5 の合格前の API 実測は、リスク宣言・動作確認・ドキュメント文字列の整合確認の3つの見出しがすべて現在の HEAD SHA を含むコメントとして実在することを確認しなければならず (MUST)、1つでも欠けている場合は `agent-review:passed` を付けてはならない (MUST NOT)。
+
+#### Scenario: 3見出しの実測に更新されている
+
+- **WHEN** SKILL.md の手順5（合格処理）の実測手順を読む
+- **THEN** 確認する見出しが3つ（リスク宣言・動作確認・ドキュメント文字列の整合確認）に増えており、1つでも欠けたら合格処理をしないと規定されている
+
+#### Scenario: 既存の fail-closed 条件は緩んでいない
+
+- **WHEN** 手順5 の合格条件を変更前と比較する
+- **THEN** stale な `agent-review:passed` の除去、HEAD SHA 照合、リスク宣言の positive affirmation、許容リンクの真正性確認、`needs-approval` の3点実測はすべて残っている
+
+### Requirement: 実装と説明文の食い違いは follow-up issue に先送りしない
+
+pr-review-gate スキルは、実装と説明文の食い違いを follow-up issue へ回すことを禁じなければならない (MUST)。auto-merge 配備リポでは合格ラベルの付与が即マージを意味し「あとで直す」が成立しないため、この食い違いは既存の blocking 限定ルール（マージ後に issue で直せるものは blocking にしない）の適用対象外として、同じ PR の中で直さなければならない (MUST)。
+
+#### Scenario: 先送り禁止が明文化されている
+
+- **WHEN** SKILL.md の手順4-2 と「やらないこと」を読む
+- **THEN** 実装と説明文の食い違いを follow-up issue に先送りせず同じ PR で直すことが明記されており、整合確認を飛ばして `agent-review:passed` を付けないことが「やらないこと」に含まれている
+
+## MODIFIED Requirements
+
+### Requirement: light はレビュー実行者だけを変え、通過条件を免除しない
+
+light と判定した場合に省略してよいのは Codex CLI の呼び出しだけであり（MUST）、それ以外の工程——実装と別コンテキストでレビューすること、手順3 のリスク宣言、手順4-1 の動作確認証拠、手順4-2 のドキュメント文字列の整合確認、手順5 の HEAD SHA 照合と合格前の API 実測、収束ルール（2周キャップ・差分限定再レビュー・blocking 定義の限定）——は一切免除されない（MUST NOT 免除）。
+
+#### Scenario: light でも合格処理の条件は同じ
+
+- **WHEN** light と判定した PR が手順5（合格処理）に到達する
+- **THEN** 現在の HEAD SHA を含むリスク宣言コメント・動作確認証拠コメント・ドキュメント文字列の整合確認コメントの3つすべての実在を API で実測してからでなければ `agent-review:passed` を付けない（full の場合と同一）
+
+#### Scenario: light でも自己レビューは禁止
+
+- **WHEN** light と判定する
+- **THEN** レビューは実装したコンテキストではなく Task サブエージェント（別コンテキスト）が実行する
+
+### Requirement: ゲートの必須条件を説明する文字列は全箇所そろって更新される
+
+ゲートの合格必須条件を説明している利用者向け文字列は、必須条件をすべて列挙しなければならない (MUST)。対象は次の5か所である: pr-review-gate スキルの frontmatter `description`、`plugins/dev-workflow/.claude-plugin/plugin.json` の `description`、`.claude-plugin/marketplace.json` の dev-workflow エントリの `description`、`plugins/dev-workflow/README.md` の pr-review-gate 節、`plugins/dev-workflow/templates/auto-merge/README.md` のスキル連携の説明。ゲートに必須条件を追加したとき、この5か所の一部だけを更新して残りを旧条件のまま残してはならない (MUST NOT)。この同時更新は目視ではなく自動テストで機械的に検証しなければならない (MUST)。
+
+#### Scenario: 説明文だけ旧条件のまま取り残されると落ちる
+
+- **WHEN** ゲートの必須条件を追加し、5か所のうち一部の説明文を更新しないまま `bats plugins/dev-workflow/tests/pr-review-gate-skill.bats` を実行する
+- **THEN** `gate-description` テストが失敗し、どの場所でどの条件が抜けているかを名指しで出力する
+
+#### Scenario: 収束ルールの例外が説明文にも現れる
+
+- **WHEN** `plugins/dev-workflow/README.md` の収束ルールの記述を読む
+- **THEN** 「マージ後に直せるものは blocking にしない」に、実装とドキュメント文字列の食い違いは例外で同じ PR の中で直す旨が併記されている

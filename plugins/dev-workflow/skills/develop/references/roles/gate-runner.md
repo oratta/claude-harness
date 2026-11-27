@@ -52,7 +52,9 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 
 レビュアー起動前の軽い通し方の条件外の failed はレビューの周に数えず、次の G は前の Gate Result を貼らずにゲートの開始として起こし、`周回: 1` の全体レビューにする。
 
-`周回:` は前の段の Gate Result の値を引き継ぐ。W の修正後の再レビューで起こされた前提確認と重さ判定の G だけが 1 増やす（戻した指摘が順 3 だけの修正のあとは周を消費しない。`stages/triage.md` の規則のまま）。
+`周回:` は前の段の Gate Result の値を引き継ぐ。W の修正後の再レビューで起こされた前提確認と重さ判定の G だけが 1 増やす（戻した指摘が順 3 だけの修正のあとは周を消費しない。`stages/triage.md` の規則のまま）。前の Gate Result に行 `取り直し: 説明の整合（周に数えない）` がある failed のあとは足さない（pr-review-gate の手順 4-2 の不合格はレビューの指摘の周ではない）。
+
+この取り直し行は 4-2 の failed が初めて出し、Gate Result の `周回:` 行の直後に箇条書き記号なしで一度だけ書く。取り直した前提確認の `needs-reviewer`、照合と振り分けの `次の段へ`、合格処理、保留・保留の解除、判定待ちの Gate Result にも同じ行を引き継ぎ、順 3 だけの修正による往復でも残す。4-2 以外の failed で `次の段: 前提確認と重さ判定` に戻すときはこの行を外す（次の再レビューは周回を増やす）。ゲートの新規開始と CI の見張りのあとの全体レビューには持ち越さない。取り直しの前提確認はレビュー範囲を今回の修正差分から判定し直し、前回の `（全体レビュー: …）` の注記は流用しない（今回全体レビューにしたときだけ付け、その後の段は注記も引き継ぐ）。
 
 `次の段:` は G が Status ごとに次の表どおりに書く。本体は Status と `次の段:` だけを見て次に起こす G の段を決める。
 
@@ -66,7 +68,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 | 保留 | `保留の解除` |
 | passed / review-incomplete / 重複で降りた | `なし` |
 
-この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: 前提確認の軽い通し方の条件外の `failed` は `stages/prepare-light.md` の「軽い通し方の条件外」、`needs-reviewer` は `stages/prepare-reviewer.md` の「G として動くとき（develop）」節、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`、`needs-no-point-check` は `stages/hold.md`。
+この共通欄のうしろに、Status ごとの欄を続ける。Status ごとの欄の書式は、段のファイル（`skills/pr-review-gate/` から）の「G として動くとき（develop）」節にある: 前提確認の軽い通し方の条件外の `failed` は `stages/prepare-light.md` の「軽い通し方の条件外」、`needs-reviewer` は `stages/prepare-reviewer.md` の「G として動くとき（develop）」節、`failed`・`needs-decider`・`needs-fix-check`・`review-incomplete` と、指摘を受け取ったすべての周に付ける仕分け・効果測定の欄は `stages/triage.md`、`passed` と手順 4-2 の食い違いによる `failed` は `stages/pass.md`、`保留` は `stages/hold.md`、`needs-carryover-judge` は `stages/hold.md`、`needs-no-point-check` は `stages/hold.md`。
 
 ## 段ごとの起動と入力
 
@@ -76,7 +78,7 @@ return メッセージは宣言で始め、そのうしろに下の本文を続�
 |---|---|---|---|
 | 前提確認と重さ判定 | ゲートの開始、W の修正後の再レビュー（failed の `次の段: 前提確認と重さ判定`。`原因: 軽い通し方の条件外` を除く）、保留の解除が `次の段: 前提確認と重さ判定` を返したとき、CI の見張りで `ready` になったあとの取り直し | W の修正内容の要約（再レビューのとき） | failed（軽い通し方の条件外。`次の段: 前提確認と重さ判定`） / `needs-reviewer` / 保留 / `重複で降りた`（`次の段: なし`。同じ HEAD の `レビュー重量:` コメントを別のセッションの担当が投稿している。本体は取り直さず、着手済みコメントの URL と、別のセッションの担当が生きているかはこのセッションから確かめられないことを主に報告して止まる（channel ではチャンネルに送る）。主から前の担当は止まっていると返事が来たら、`取り直し: 明示（主の確認: 前の担当は止まっている）` の行を添えて前提確認の G を起こし直す） |
 | 照合と振り分け | レビュー要約・補足レビューの結果・決める役の裁定を受け取ったとき、直し方の判定を受け取ったとき、戻した指摘が順 3 だけの修正のあと（failed の `次の段: 照合と振り分け`） | レビュアーの要約・補足レビューの結果・決める役の裁定・直し方の判定と判定の記録の URL・W の修正内容の要約のうち、その時点のもの | `次の段へ` / failed / 保留 / `needs-reviewer`（補足） / `needs-decider` / `needs-fix-check` / `review-incomplete` |
-| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと）、論点なしの確認を受け取ったとき（合格処理の G が `needs-no-point-check` を返したあと） | 前の段の Gate Result ブロック（引き継ぎの判定のあとは加えて引き継ぎの判定と判定の記録の URL、論点なしの確認のあとは加えて確認の結果と論点なしの確認の記録の URL） | passed / failed（確かめ方の非 0。`次の段: 前提確認と重さ判定`） / 保留 / `needs-carryover-judge` / `needs-no-point-check` |
+| 合格処理 | 照合と振り分けが止める指摘なしで終わったとき、保留の解除が `次の段: 合格処理` を返したとき、引き継ぎの判定を受け取ったとき（合格処理の G が `needs-carryover-judge` を返したあと）、論点なしの確認を受け取ったとき（合格処理の G が `needs-no-point-check` を返したあと） | 前の段の Gate Result ブロック（引き継ぎの判定のあとは加えて引き継ぎの判定と判定の記録の URL、論点なしの確認のあとは加えて確認の結果と論点なしの確認の記録の URL） | passed / failed（確かめ方の非 0、または手順 4-2 の食い違い。`次の段: 前提確認と重さ判定`） / 保留 / `needs-carryover-judge` / `needs-no-point-check` |
 | 保留の解除 | 主の回答が届いたとき | 主の回答 | `次の段へ` / failed / needs-decider / 保留 |
 
 G は前の段の会話を持たない。段と段の間で渡すものは次の PR コメントに置き、起動指示と PR コメントが食い違ったら **PR コメントを正とする**。

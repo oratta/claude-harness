@@ -1,7 +1,7 @@
 #!/usr/bin/env bats
 #
 # pr-review-gate の仕様宣言（issue #191）
-# 手順 3 の第 3 のコメント（仕様宣言）、手順 5 の 3 見出し実測と issue 記録との整合照合、
+# 手順 3 の第 3 のコメント（仕様宣言）、手順 5 の 4 見出し実測と issue 記録との整合照合、
 # spec-touch-check の参照、auto-merge 範囲外の明記を 段のファイル（declarations.md・stages/prepare.md・stages/pass.md）の記述として検証する。
 # spec: dev-workflow-pr-review-gate
 
@@ -53,9 +53,10 @@ step5() { awk '/^### 5\. /{f=1} /^## (G として動くとき|出口)/{f=0} f' "
 
 # --- Requirement: 合格処理は仕様宣言の実在と issue 記録との整合を実測する ---
 
-@test "step 5: SHA-bound listing must show all three headings" {
+@test "step 5: SHA-bound listing must show all four headings" {
   step5 | grep -q '仕様宣言'
-  step5 | grep -qE '3 ?(見出し|つ).*(すべて|全部|揃)'
+  step5 | grep -q 'ドキュメント文字列の整合確認'
+  step5 | grep -qE '4 ?(見出し|つ).*(すべて|全部|揃)'
   ! step5 | grep -q '見出しが両方' || return 1
 }
 
