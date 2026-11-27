@@ -1,0 +1,27 @@
+---
+name: memory-refresh
+description: メモリを見直して減らす（memory-refresh スキルを起動する）
+allowed-tools: Read, Write, Edit, Bash, Grep, Glob
+---
+
+`memory-refresh` スキルの薄いラッパー。手順の正本は **`skills/memory-refresh/SKILL.md` の 1 箇所にのみ存在する**。このコマンドはそれを Read tool で読み込み、その指示に従ってメインセッションでそのまま実行する。
+
+**Skill tool は使わないこと。** この command は既に「ユーザーが起動した slash command」なので、Read tool で SKILL.md を読み込み、この command の frontmatter（`allowed-tools`）の範囲でインライン実行する。
+
+## ファイル特定
+
+```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
+DW_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; DW_NG=1; fi
+for dir in \
+  "${plugin_root:+$plugin_root/skills/memory-refresh}" \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/dev-workflow/skills/memory-refresh \
+  ~/.claude/plugins/marketplaces/*/plugins/dev-workflow/skills/memory-refresh \
+  ~/.claude/plugins/installed/*/dev-workflow/skills/memory-refresh; do
+  [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
+done
+if [ -n "$DW_NG" ]; then unsetopt nullglob; fi
+unset DW_NG
+```
+
+見つかった SKILL.md を Read で読み、手順 1 から始める。削除・短縮の適用は、手順 2 の一覧に主の承認を得てからにする。

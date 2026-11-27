@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+# cld [claude-args...]: 週の進行に対する余裕が最大のアカウントを選んで claude を起動する。
+#
+# 以前は README の zsh function を各端末の ~/.zshrc に貼っていたものの実行ファイル版。
+# 実行ファイルのあるディレクトリを PATH に入れれば、関数定義なしで使える。
+#
+# 環境変数:
+#   CLD_DEFAULT_ARGS      空白区切りの語を claude の引数の先頭に置く（個人の既定フラグ用。eval しない）
+#   CLAUDE_HARNESS_SCRIPTS  scripts ディレクトリの差し替え（未設定なら自分の位置から ../scripts）
+# CLAUDE_CODE_IDLE_COMPACT_MIN_TOKENS は上書きも既定値の追加もせず、そのまま claude に渡る。
+set -uo pipefail
+
+# symlink を解いた自分の実体の位置から scripts を求める
+src="${BASH_SOURCE[0]}"
+while [ -L "$src" ]; do
+  dir="$(cd -P -- "$(dirname -- "$src")" && pwd)"
+  src="$(readlink "$src")"
+  case "$src" in /*) ;; *) src="$dir/$src" ;; esac
+done
+self_dir="$(cd -P -- "$(dirname -- "$src")" && pwd)"
+SCRIPTS="${CLAUDE_HARNESS_SCRIPTS:-$self_dir/../scripts}"
+
+# probe は補助。実行条件を満たさない・取得に失敗したときも、selector はセッション記録と既存 snapshot の実効値で選ぶ。
+"$SCRIPTS/usage-probe.sh" >/dev/null 2>&1 || true
+
+selected="$("$SCRIPTS/select-account.sh")"
+rc=$?
+[ "$rc" -eq 0 ] || exit "$rc"
+
+default_args=()
+if [ -n "${CLD_DEFAULT_ARGS:-}" ]; then
+  # 語分割だけ（グロブ展開・eval はしない）
+  IFS=$' \t\n' read -r -d '' -a default_args <<<"$CLD_DEFAULT_ARGS" || true
+fi
+
+if [ -z "$selected" ]; then
+  exec env -u CLAUDE_SECURESTORAGE_CONFIG_DIR claude ${default_args[@]+"${default_args[@]}"} "$@"
+else
+  exec env CLAUDE_SECURESTORAGE_CONFIG_DIR="$selected" claude ${default_args[@]+"${default_args[@]}"} "$@"
+fi

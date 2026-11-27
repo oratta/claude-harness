@@ -2,7 +2,7 @@
 
 ## 1. main の取り込み
 
-- [ ] 1.1 `git merge origin/main` し、衝突は次の方針で解消する: marketplace.json・plugin.json・rules/git-commit-policy.md・pr-review-gate の SKILL.md・dev-workflow README・pr-review-gate-skill.bats・openspec/specs は main 版、`.claude/casting/precedents.md` は両方の行を残す。衝突せず自動で混ざったファイルも `git diff origin/main --stat` で確かめ、旧設計の差分は archive の 08-21 の change を除いて main に揃える。rebase・force push・bare な stash はしない。確認: `git diff origin/main --stat` に残るのが openspec の change 2 つ（08-21 の archive とこの change）と判例の追記だけ。触る範囲: .claude-plugin/marketplace.json、.claude/casting/precedents.md、openspec/specs/dev-workflow-pr-review-gate/spec.md、plugins/dev-workflow/.claude-plugin/plugin.json
+- [x] 1.1 `git merge origin/main` し、衝突は次の方針で解消する: marketplace.json・plugin.json・rules/git-commit-policy.md・pr-review-gate の SKILL.md・dev-workflow README・pr-review-gate-skill.bats・openspec/specs は main 版、`.claude/casting/precedents.md` は両方の行を残す。衝突せず自動で混ざったファイルも `git diff origin/main --stat` で確かめ、旧設計の差分は archive の 08-21 の change を除いて main に揃える。rebase・force push・bare な stash はしない。確認: `git diff origin/main --stat` に残るのが openspec の change 2 つ（08-21 の archive とこの change）と判例の追記だけ。触る範囲: .claude-plugin/marketplace.json、.claude/casting/precedents.md、openspec/specs/dev-workflow-pr-review-gate/spec.md、plugins/dev-workflow/.claude-plugin/plugin.json
 
 ## 2. ゲートの手順とテスト
 

@@ -1,9 +1,9 @@
 # Plugin Editing Rules
 
-プラグインのコマンド・スキル・エージェント編集は **marketplace 版のみ**（`~/.claude/plugins/marketplaces/...`）。
-`~/.claude/commands/` や `~/.claude/skills/` へのローカルコピーは禁止 —
-marketplace 版より優先されて更新が反映されなくなる事故が過去に繰り返し発生。
+Claude Code プラグイン（コマンド・スキル・エージェント・ルール）を編集しようと思ったら、またはその動きをメモリで補おうと思ったら、書き始める前に読む。
 
-- 変更時は plugin.json のバージョンを上げる（`~/.claude/plugins/cache/` はバージョン単位キャッシュのため、同バージョンのままでは他プロジェクトに反映されない）
-- `known_marketplaces.json` でリポジトリ URL を確認して commit & push
-- 状態がおかしくなったら手動削除せず `/plugin uninstall` → `/reload-plugins` → `/plugin install` → `/reload-plugins`
+- インストールされたフォルダ（`~/.claude/plugins/marketplaces/...`）は自動更新されるので直接編集しない。`~/.claude/commands/` `~/.claude/skills/` へのローカルコピーも編集しない
+- `~/.claude/rules/*.md` は marketplace のフォルダを指す symlink なので、ルールもその部品を持つリポジトリ側で直す
+- 部品は、その部品を持つリポジトリの開発用 clone（marketplace のフォルダの外）で直す
+- 状態がおかしくなっても手動で削除しない（`/plugin uninstall` → `/reload-plugins` → `/plugin install` → `/reload-plugins`）
+- プラグインの動きへの指摘をメモリにその場しのぎで書くときは、同じターンでその部品を持つリポジトリに直し先の issue を立て、メモリの frontmatter に `patches: <issue の URL>` を書く（閉じたら消す候補になる。書き方は dev-workflow の memory-refresh スキル）

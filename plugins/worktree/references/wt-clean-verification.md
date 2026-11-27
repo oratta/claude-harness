@@ -1,6 +1,6 @@
 # wt-clean 自己検証の詳細手順
 
-`wt-clean` スキルの `## 自己検証` 節から参照される検証詳細。共通原則は `plugins/loops/references/self-verification.md`。
+`wt-clean` スキルの `## 自己検証` 節から参照される検証詳細。共通原則は `plugins/dev-workflow/references/self-verification.md`。
 
 wt-clean は worktree を診断（🟢🟡🔴）して Pass 1（自動処理）/ Pass 2（判断バッチ）で処理する破壊的操作を含むため、完了宣言の前に「削除・退避が意図どおりに行われた evidence」を必ず確認する。
 

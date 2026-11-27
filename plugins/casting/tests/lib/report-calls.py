@@ -24,6 +24,11 @@ grep だけで数えていた頃は、行頭コメント行しか落とせず、
   - 算術式の中の左シフト     (( v = 1 << 2 )) / $(( 1 << 2 ))
                              `<<` をヒアドキュメント開始と誤認するとファイル末尾まで
                              本文扱いになり、以降の呼び出しが全消滅していた
+  - 配列添字の中の左シフト   a[1<<2]=3 / ${a[1<<2]}（#184）
+                             配列添字も bash の算術コンテキスト。bash が添字として
+                             読む位置の `[` から対応する `]` までを算術として読み、
+                             ヒアドキュメントと誤認しない（判定規則は下の「配列添字の
+                             判定」）
   - ANSI-C クオート          msg=$'don\\'t'
                              `\\'` を終端と誤認して引用状態が解除できず、以降が全消滅していた
   - 二重引用の中の $()       out="$(report "x" "m")"
@@ -32,13 +37,45 @@ grep だけで数えていた頃は、行頭コメント行しか落とせず、
 
 走査は「文脈フレームのスタック」で行う。フレームの種類とコード領域の扱いは次のとおり:
 
-  code / subst / backtick / arith   コード領域（arith だけは `<<` `>>` を演算子として読む）
+  code / subst / backtick / arith / subscript
+                                    コード領域（arith と subscript は `<<` `>>` を
+                                    演算子として読む。subscript は配列添字の `[` で
+                                    開き対応する `]` で閉じる算術コンテキスト）
   dquote / heredoc                  非コード。ただし中の `$(…)` `` `…` `` はコード領域として再走査する
   squote / ansic / heredoc-literal  すべて非コード（引用ヒアドキュメント本文は展開されない）
 
 ヒアドキュメントの終端は行単位で照合する。本文の中で開いたまま閉じ損ねたフレーム
 （不均衡な `` ` `` や `'` など）がスタックに残っていても、区切り語の行でそれごと捨てる。
 そうしないと本文が終わらず、以降の行が全部本文扱いになって呼び出しを数え落とす。
+
+配列添字の判定（#184、PR #199 レビュー指摘で規則を bash に揃えた）:
+
+  識別子直後の `[` を無条件に添字として開くと、`cat foo[bar <<EOF` のようなマッチしない
+  glob でも添字フレームが開き、本物のヒアドキュメント開始 `<<` を演算子として読み飛ばす。
+  本文が次の行からコードとして走査され、本文にアポストロフィが1つあるだけで引用フレームが
+  開きっぱなしになり、以降のファイル全体の呼び出しが消える（数え落とし側の無言経路）。
+  逆に本物の添字を開き損ねても `<<` がヒアドキュメント開始と誤認されて同じ壊れ方をする。
+  どちらへ倒しても数え落とすので、この判定だけは「迷ったら多めに数える」で逃げられず、
+  bash が添字として読む位置だけを添字として開く:
+
+  - パラメータ展開の中       ${name[…]} / ${#name[…]} / ${!name[…]}
+  - 代入語の添字             name[…]=v / name[…]+=v / 複合代入の中の [i]=v
+                             `[` が単語の先頭（またはその直後の識別子の先頭が単語の
+                             先頭）にあり、対応する `]` の直後が `=` か `+=` のもの
+                             （`]` と `=` の間の行継続 `\\` は越えて読む。#244）。
+                             さらにその単語がコマンド位置（先頭の予約語 `if` `{` `!`
+                             などの直後を含む）か前置き代入の連なり（`x=1 a[…]=3 cmd`）
+                             か複合代入 `=( … )` の中にあるもの。予約語の直後には
+                             `time -p` `time --` `time -p --` の直後も含み、前置き代入の連なりは
+                             先行する語の添字を `]` まで 1 単語として読む
+                             （`a[1<<2]=3 b[1<<2]=4`）。`: foo[bar <<EOF ]=3`
+                             のようなコマンドの引数は代入語ではない（PR #635 指摘）
+
+  どちらも、対応する `]` が論理行（行末 `\\` の行継続でつないだ物理行）の中に実在する
+  ことを先読みで確かめてから開く。見つからなければ添字ではない（bash も添字を閉じ損ねる
+  と構文エラーにする）。`[ -f x ]` の test コマンド・`[[ … ]]`・`echo file[a-z].txt` の
+  glob は上のどれにも当たらないので開かない。添字フレームは論理行の終わりで捨てる
+  （bash は代入語の添字の中に生の改行も許すが、この用途では追わない）。
 
 出力（1呼び出し1行・空白区切り）:
 
@@ -60,6 +97,8 @@ import sys
 
 # 呼び出しの直前に許す文字（行頭は別途）。grep 時代の [;&|(){}[:space:]] と同じ。
 _BEFORE = set(";&|(){}") | set(" \t")
+# 単語の先頭とみなす直前文字（行頭は別途）。代入語 `name[…]=` の判定に使う。
+_WORD_BEFORE = _BEFORE | set("`")
 # コメントの `#` を語中の `#`（${v#pat} 等）と区別するための直前文字。
 _COMMENT_BEFORE = set(";&|()`") | set(" \t")
 # 第1引数がリテラルのカテゴリ名か。grep 時代の "[a-z][a-z-]*" と同じ。
@@ -68,18 +107,33 @@ _LITERAL_ARG = re.compile(r'^"([a-z][a-z-]*)"')
 _DELIM_STOP = set(" \t;&|<>()\n")
 
 # コード領域として扱うフレーム。この中の `report` だけを呼び出しとして数える。
-_CODE_KINDS = ("code", "subst", "backtick", "arith")
+_CODE_KINDS = ("code", "subst", "backtick", "arith", "subscript")
+# `<<` `>>` をヒアドキュメントでなく演算子として読む算術コンテキストのフレーム。
+_ARITH_KINDS = ("arith", "subscript")
+# 配列名になりうる識別子文字（bash の変数名）。
+_IDENT_CHARS = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_")
+# パラメータ展開の中の添字 `${name[` `${#name[` `${!name[` の、識別子の直前に来る並び。
+_PARAM_BEFORE = ("${", "${#", "${!")
 # 中身は非コードだが `$(…)` `` `…` `` だけはコードとして再走査するフレーム。
 _EXPANDING_KINDS = ("dquote", "heredoc")
+# 代入語（前置き代入）の形。`name=` / `name+=` / `name[…]=` / `name[…]+=`。
+_ASSIGNMENT_WORD = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\[.*\])?\+?=")
+# 添字が続きうる単語（配列名）の形。
+_IDENTIFIER = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+# コマンドの先頭に置けて、その後ろもまだコマンド位置のままになる予約語。
+_LEADING_RESERVED = frozenset(("!", "time", "if", "then", "else", "elif", "do", "while", "until", "{"))
 
 
 class _Frame:
     """走査中の文脈（引用・コマンド置換・算術式・ヒアドキュメント本文）1つ分。"""
 
-    __slots__ = ("kind", "depth", "delim", "strip_tabs")
+    __slots__ = ("kind", "depth", "delim", "strip_tabs", "origin")
 
-    def __init__(self, kind, delim="", strip_tabs=False):
+    def __init__(self, kind, delim="", strip_tabs=False, origin=None):
         self.kind = kind
+        # コード領域フレーム（`$(` `` ` `` `((`）の中身が始まる (物理行 index, 位置)。
+        # 代入語の位置判定で、このフレームの中の単語だけを読むのに使う。
+        self.origin = origin
         self.depth = 0          # コード領域フレーム内の丸括弧の入れ子（`$(…)` の終端判定用）
         self.delim = delim      # ヒアドキュメントの区切り語
         self.strip_tabs = strip_tabs  # `<<-` の先頭タブ除去
@@ -88,16 +142,20 @@ class _Frame:
 class _Scanner:
     """引用・コメント・ヒアドキュメントの状態を行またぎで持つ走査器。"""
 
-    def __init__(self):
+    def __init__(self, lines):
+        self.lines = lines          # 全物理行（配列添字の閉じ `]` を論理行の中で先読みする）
         self.stack = [_Frame("code")]
         self.pending_heredocs = []  # この行で開いたヒアドキュメント（本文は次の行から）
+        self.continued = False      # 走査中の行がコード領域の行末 `\` で次の行へ続くか
 
-    def scan(self, line):
-        """1行を走査してコード領域マスク（各文字がコード領域かの真偽値リスト）を返す。
+    def scan(self, index):
+        """物理行 index（0 始まり）を走査してコード領域マスク（各文字がコード領域かの
+        真偽値リスト）を返す。
 
         引用の中・コメント・ヒアドキュメント本文は False になる。ただし二重引用と
         未引用ヒアドキュメント本文の中の `$(…)` `` `…` `` はコード領域として走査する。
         """
+        line = self.lines[index]
         mask = [False] * len(line)
 
         hd = self._innermost_heredoc()
@@ -114,7 +172,16 @@ class _Scanner:
             if frame.kind == "heredoc-literal" and hd == len(self.stack) - 1:
                 return mask  # 引用ヒアドキュメントの本文は展開されないので丸ごと非コード
 
-        self._scan_chars(line, mask)
+        self.continued = False
+        self._scan_chars(index, line, mask)
+
+        # 配列添字は論理行をまたがない。閉じ `]` を見ないまま論理行が終わったら添字
+        # フレームを捨て、以降の行の `<<` を演算子扱いのままにしない（残すと本物の
+        # ヒアドキュメント開始を取りこぼす側に漏れる）。行継続 `\` で続く行は同じ論理行
+        # なので残す（`a[1 + \` の次の行の `2 << 1]=3` はまだ添字の中）。
+        if not self.continued:
+            while self.stack[-1].kind == "subscript":
+                self.stack.pop()
 
         # 本文は次の行から始まる。1行に複数あるときは先に書いた方が先に閉じる＝上に積む。
         for delim, strip_tabs, expand in reversed(self.pending_heredocs):
@@ -131,7 +198,7 @@ class _Scanner:
                 return idx
         return None
 
-    def _scan_chars(self, line, mask):
+    def _scan_chars(self, index, line, mask):
         i, n = 0, len(line)
         while i < n:
             frame = self.stack[-1]
@@ -160,9 +227,10 @@ class _Scanner:
                     continue
                 if ch == "$" and line.startswith("$(", i):
                     i = self._open_substitution(line, i, mask)
+                    self.stack[-1].origin = (index, i)
                     continue
                 if ch == "`":
-                    self.stack.append(_Frame("backtick"))
+                    self.stack.append(_Frame("backtick", origin=(index, i + 1)))
                     mask[i] = True
                     i += 1
                     continue
@@ -171,9 +239,14 @@ class _Scanner:
                 i += 1
                 continue
 
-            # --- コード領域（code / subst / backtick / arith）---
-            if ch == "\\" and i + 1 < n:
-                i += 2  # エスケープされた文字はコードとして扱わない
+            # --- コード領域（code / subst / backtick / arith / subscript）---
+            if ch == "\\":
+                if i + 1 < n:
+                    i += 2  # エスケープされた文字はコードとして扱わない
+                    continue
+                self.continued = True  # 行末の `\` は行継続。次の物理行も同じ論理行
+                mask[i] = True
+                i += 1
                 continue
 
             if ch == "$" and line.startswith("$'", i):
@@ -183,6 +256,7 @@ class _Scanner:
 
             if ch == "$" and line.startswith("$(", i):
                 i = self._open_substitution(line, i, mask)
+                self.stack[-1].origin = (index, i)
                 continue
 
             if ch in "'\"":
@@ -194,7 +268,7 @@ class _Scanner:
                 if kind == "backtick":
                     self.stack.pop()
                 else:
-                    self.stack.append(_Frame("backtick"))
+                    self.stack.append(_Frame("backtick", origin=(index, i + 1)))
                 mask[i] = True
                 i += 1
                 continue
@@ -210,7 +284,7 @@ class _Scanner:
 
             if line.startswith("((", i):
                 # `((` / `$((` の中では `<<` は左シフト演算子。ヒアドキュメントと誤認しない。
-                self.stack.append(_Frame("arith"))
+                self.stack.append(_Frame("arith", origin=(index, i + 2)))
                 mask[i] = mask[i + 1] = True
                 i += 2
                 continue
@@ -230,7 +304,25 @@ class _Scanner:
                 i += 1
                 continue
 
-            if kind == "arith" and (line.startswith("<<", i) or line.startswith(">>", i)):
+            if kind == "subscript" and ch == "]":
+                self.stack.pop()
+                mask[i] = True
+                i += 1
+                continue
+
+            if ch == "[" and self._opens_subscript(index, i):
+                # 配列添字も bash の算術コンテキスト（a[1<<2]=3 / ${a[1<<2]}。#184）。
+                # 対応する `]` までを算術として読み、中の `<<` をヒアドキュメント開始と
+                # 誤認しない。開く条件は bash が添字として読む位置に限る（判定規則は
+                # モジュール冒頭の「配列添字の判定」）。`cat foo[bar <<EOF` のような
+                # マッチしない glob で開くと本物のヒアドキュメント開始を読み飛ばし、
+                # 数え落とし側に倒れる（PR #199 レビュー指摘）。
+                self.stack.append(_Frame("subscript"))
+                mask[i] = True
+                i += 1
+                continue
+
+            if kind in _ARITH_KINDS and (line.startswith("<<", i) or line.startswith(">>", i)):
                 mask[i] = mask[i + 1] = True
                 i += 2
                 continue
@@ -245,6 +337,213 @@ class _Scanner:
 
             mask[i] = True
             i += 1
+
+    def _opens_subscript(self, index, i):
+        """物理行 index の位置 i にある `[` が配列添字の開きか。
+
+        パラメータ展開の中（`${name[`）か代入語（単語先頭の `name[…]=` / `[…]=`）で、
+        対応する `]` が論理行の中に実在するものだけを添字とみなす。
+        """
+        line = self.lines[index]
+        start = i
+        while start > 0 and line[start - 1] in _IDENT_CHARS:
+            start -= 1
+        prefix = line[:start]
+
+        if start < i and prefix.endswith(_PARAM_BEFORE):
+            in_assignment = False
+        elif start == 0 or line[start - 1] in _WORD_BEFORE:
+            in_assignment = True
+        else:
+            return False
+
+        end = self._find_subscript_end(self.lines, index, i)
+        if end is None:
+            return False
+        if not in_assignment:
+            return True
+        # `]` と `=` の間に行末 `\` の行継続が挟まっても、bash は継続を除いてから
+        # 読むので代入語（#244）。`]` の直後が `\` だけで行が終わる間は次の物理行へ進む。
+        row, col = end[0], end[1] + 1
+        while self.lines[row][col:] == "\\" and row + 1 < len(self.lines):
+            row, col = row + 1, 0
+        after = self.lines[row][col:]
+        if not (after.startswith("=") or after.startswith("+=")):
+            return False
+        # `name[…]=` の形でも、代入語になるのはコマンド位置か前置き代入の連なりの中か
+        # 複合代入 `=( … )` の中だけ。`: foo[bar <<EOF ]=3` の `foo[bar` はコマンドの
+        # 引数で、開くと本物のヒアドキュメント開始を読み飛ばす（PR #635 レビュー指摘 F1）。
+        return self._at_assignment_position(index, start)
+
+    def _at_assignment_position(self, index, start):
+        """物理行 index の位置 start から始まる単語が、bash が代入語として読む位置にあるか。
+
+        論理行（行末 `\\` でつないだ前の物理行を含む）の start より前を単語に切り、
+        直近のコマンド区切り（`;` `&` `|` 改行・`(` `)`・`` ` ``）の後ろに並ぶ単語が、
+        先頭の予約語（`if` `{` `!` など。`time` の直後の `-p` も含む）を除いてすべて
+        代入語なら真。複合代入 `=( … )` の中も真。リダイレクト（`<` `>`）が前にあれば偽
+        （bash もその後ろを代入語として読まない）。先行する代入語の添字は対応する `]`
+        まで 1 単語として読み、中の `<` `;` や空白で切らない（`a[1<<2]=3 b[1<<2]=4`。
+        PR #635 指摘）。完全なシェルパーサではなく、この物理行より前で開いた引用は追わない。
+        いま居るコード領域フレーム（`$(` `` ` `` `((`）がこの論理行の中で開いていれば、
+        その開きの直後から読む（`echo "$(a[…]=3)"` の `$(` の中はコマンド位置）。
+        """
+        first = index
+        while first > 0 and _ends_with_continuation(self.lines[first - 1]):
+            first -= 1
+        row, col = first, 0
+        origin = self.stack[-1].origin
+        if origin is not None and first <= origin[0] <= index:
+            row, col = origin
+        parts = []
+        while row < index:
+            parts.append(self.lines[row][col:-1])  # 行末の継続 `\\` を除く
+            row, col = row + 1, 0
+        parts.append(self.lines[index][col:start])
+        text = "".join(parts)
+
+        words = []      # 直近のコマンド区切りの後ろに並ぶ単語
+        cur = None      # 読みかけの単語
+        parens = []     # 開いた丸括弧ごとの (種類, 開く前の words)
+        i, n = 0, len(text)
+        while i < n:
+            ch = text[i]
+            if ch == "\\":
+                cur = (cur or "") + text[i:i + 2]
+                i += 2
+                continue
+            if ch == "'":
+                j = text.find("'", i + 1)
+                j = n if j < 0 else j + 1
+                cur = (cur or "") + text[i:j]
+                i = j
+                continue
+            if ch == '"':
+                j = self._skip_dquote(text, i + 1)
+                j = n if j < 0 else j
+                cur = (cur or "") + text[i:j]
+                i = j
+                continue
+            if ch == "[" and cur is not None and _IDENTIFIER.match(cur):
+                end = self._find_subscript_end([text], 0, i)
+                if end is not None and text.startswith(("=", "+="), end[1] + 1):
+                    cur += text[i:end[1] + 1]
+                    i = end[1] + 1
+                    continue
+            if ch in " \t":
+                if cur is not None:
+                    words.append(cur)
+                    cur = None
+                i += 1
+                continue
+            if ch == "(":
+                if cur is not None and cur.endswith("="):
+                    parens.append(("compound", words + [cur]))
+                else:
+                    parens.append(("group", words + ([cur] if cur is not None else [])))
+                words, cur = [], None
+                i += 1
+                continue
+            if ch == ")":
+                if parens and parens[-1][0] == "compound":
+                    words = parens.pop()[1]
+                else:
+                    if parens:
+                        parens.pop()
+                    words = []  # サブシェル・コマンド置換の閉じ、または case の型の閉じ
+                cur = None
+                i += 1
+                continue
+            if ch in ";&|`\n":
+                words, cur = [], None
+                i += 1
+                continue
+            if ch in "<>":
+                words.append(ch)  # リダイレクトの後ろはもう代入語の位置ではない
+                cur = None
+                i += 1
+                continue
+            cur = (cur or "") + ch
+            i += 1
+        if cur is not None:
+            words.append(cur)
+
+        if parens and parens[-1][0] == "compound":
+            return True
+        k = 0
+        while k < len(words):
+            if words[k] == "time":
+                # `time` の直後の `-p` と `--` は `time` の続き（PR #635 指摘）。
+                # 順序は `-p` が先、`--` が後（`time -- -p` の `-p` はコマンド）。
+                k += 1
+                if k < len(words) and words[k] == "-p":
+                    k += 1
+                if k < len(words) and words[k] == "--":
+                    k += 1
+            elif words[k] in _LEADING_RESERVED:
+                k += 1
+            elif words[k] == "function" and k + 2 < len(words) and words[k + 2] == "{":
+                k += 3  # `function name {` の本体の先頭もコマンド位置
+            else:
+                break
+        return all(_ASSIGNMENT_WORD.match(w) for w in words[k:])
+
+    @staticmethod
+    def _find_subscript_end(lines, index, i):
+        """lines の物理行 index の位置 i の `[` に対応する `]` を論理行の中で探す。
+
+        引用の中と `\\` エスケープは読み飛ばし、入れ子の `[` `]` は深さで追う。
+        行末 `\\` の行継続は次の物理行へ続ける。見つかれば (物理行 index, 位置)、
+        論理行の中に無ければ None。
+        """
+        depth = 1
+        k = i + 1
+        while index < len(lines):
+            line = lines[index]
+            n = len(line)
+            while k < n:
+                ch = line[k]
+                if ch == "\\":
+                    if k + 1 == n:
+                        break  # 行継続。次の物理行へ
+                    k += 2
+                    continue
+                if ch == "'":
+                    k = line.find("'", k + 1)
+                    if k < 0:
+                        return None
+                    k += 1
+                    continue
+                if ch == '"':
+                    k = _Scanner._skip_dquote(line, k + 1)
+                    if k < 0:
+                        return None
+                    continue
+                if ch == "[":
+                    depth += 1
+                elif ch == "]":
+                    depth -= 1
+                    if depth == 0:
+                        return index, k
+                k += 1
+            if k >= n:
+                return None  # 行継続なしで物理行が終わった＝論理行の終わり
+            index += 1
+            k = 0
+        return None
+
+    @staticmethod
+    def _skip_dquote(line, k):
+        """位置 k から二重引用の閉じ `"` を探し、その次の位置を返す（無ければ -1）。"""
+        n = len(line)
+        while k < n:
+            if line[k] == "\\" and k + 1 < n:
+                k += 2
+                continue
+            if line[k] == '"':
+                return k + 1
+            k += 1
+        return -1
 
     def _open_substitution(self, line, i, mask):
         """`$(` / `$((` を開く。次の走査位置を返す。"""
@@ -292,11 +591,19 @@ class _Scanner:
         return i
 
 
+def _ends_with_continuation(line):
+    """物理行が行末 `\\` の行継続で次の行へ続くか（末尾の `\\` が奇数個）。"""
+    stripped = line.rstrip("\\")
+    return (len(line) - len(stripped)) % 2 == 1
+
+
 def report_calls(text):
     """`report` の実呼び出しを (行番号, "literal"/"nonliteral", 詳細) で列挙する。"""
-    scanner = _Scanner()
-    for lineno, raw in enumerate(text.splitlines(), start=1):
-        mask = scanner.scan(raw)
+    lines = text.splitlines()
+    scanner = _Scanner(lines)
+    for index, raw in enumerate(lines):
+        lineno = index + 1
+        mask = scanner.scan(index)
         if not any(mask):
             continue
 

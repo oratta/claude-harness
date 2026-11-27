@@ -1,0 +1,143 @@
+#!/usr/bin/env bash
+# PreToolUse hook（matcher: Agent）: model 未指定のサブエージェント spawn を拒否する。
+#
+# 理由: model を省いた Agent 呼び出しは親セッションのモデルを継承する。オーナーの対話セッションは
+# Fable なので、書き忘れ 1 回で Fable のサブエージェントが無言で立ち、週次枠を消費する
+# （2026-09 の監査: fork 1 本で 271 USD 換算・コンテキスト 49 万トークン）。
+# 規範の正本は rules/subagent-model-selection.md（model は必ず明示。fork は最上位ティアの仕事だけ）。
+#
+# 判定:
+#   - tool_name が Agent 以外 → 何もしない（exit 0・無出力）
+#   - 実行役の種別（dev-workflow:worker → spec-write・implement、dev-workflow:gate-runner → implement）で
+#     model あり → guard の場所から ../references/model-tier-map.json を読み、claude の列で model を格に戻し、
+#     role_caps の上限（役が複数なら低いほう）を超えたら拒否（#615。照合と文面の前半は scripts/tier_caps.py で
+#     codex-develop.py と共有）。格に戻せない名前は通す。表が読めない・壊れていれば飛ばして次の Fable 判定へ
+#   - model が Fable（エイリアス fable / 完全 ID claude-fable-*）→ subagent_type が決める役
+#     （dev-workflow:decider）のときだけ許可。それ以外は拒否（実行役の上限は opus）
+#   - worker / gate-runner / reviewer は DECIDER_TYPES に入れず、定義の model（worker / gate-runner は sonnet、reviewer は opus）を使う
+#   - model あり → 許可
+#   - subagent_type が定義に model を持つエージェント（plugin:agent 形式や casting-* 等）→ 許可
+#     （Agent ツールは定義側の model を使うため、パラメータ省略が親継承にならない）
+#   - subagent_type が fork → 共有枠モード（usage_view.py の budget_mode_details から得る。明示 env、無ければ
+#     active スロットの実効値から導出）が ok のときだけ許可。throttled / depleted では拒否（fork は常に親＝Fable で動く）。
+#     usage_view.py を読み込めなければ明示 env も読まず許可（fail-open）
+#   - それ以外（general-purpose / Explore / Plan / 未指定）で model 無し → 拒否
+#   - DEV_WORKFLOW_MODEL_GUARD=off で全許可（緊急の逃げ道。恒久設定にしない）
+#
+# 出力（拒否時のみ）: {"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny",
+#                       "permissionDecisionReason":"..."}}
+set -uo pipefail
+
+[ "${DEV_WORKFLOW_MODEL_GUARD:-on}" = "off" ] && exit 0
+command -v python3 >/dev/null 2>&1 || exit 0   # fail-open（判定できなければ止めない）
+
+SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
+
+# 実効値（セッション記録と snapshot を突き合わせた値）は usage_view.py の 1 か所の実装から得る。
+# Python 本体はヒアドキュメントで変数に読み、-c の引数で渡す。payload は stdin のまま読ませる
+# （payload を環境変数や引数に載せると、長い入力で ARG_MAX を超えて hook が落ちる。本体は固定長で数十 KB）。
+# 本体を fd 3 のヒアドキュメントに付けて /dev/fd/3 として python3 に読ませる形は使わない: Python 3.9（macOS 標準の
+# /usr/bin/python3 など）は複数行の本体を実行せず rc=0・無出力で終わり、hook が何もしないまま通す（#869）。
+# -I（隔離モード）で起動し、PYTHON* の環境変数・ユーザー site・カレントディレクトリを検索パスに使わない。
+PY_SRC=""
+IFS= read -r -d '' PY_SRC <<'PY' || true
+import json, os, sys, time
+
+try:
+    payload = json.load(sys.stdin)
+except Exception:
+    sys.exit(0)  # 入力が読めなければ fail-open
+if not isinstance(payload, dict) or payload.get("tool_name") != "Agent":
+    sys.exit(0)
+inp = payload.get("tool_input") or {}
+if not isinstance(inp, dict):
+    sys.exit(0)
+
+model = (inp.get("model") or "").strip() if isinstance(inp.get("model"), str) else ""
+stype = (inp.get("subagent_type") or "").strip() if isinstance(inp.get("subagent_type"), str) else ""
+
+def deny(reason):
+    print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse",
+                                              "permissionDecision": "deny",
+                                              "permissionDecisionReason": reason}}, ensure_ascii=False))
+    sys.exit(0)
+
+# fork は model パラメータを無視して常に親モデルで動くので、model の有無より先に判定する
+if stype == "fork":
+    # 共有枠モードの式（明示 env の優先・データ無し・90 超・週経過との比較）は usage_view.py の 1 か所にだけ置く
+    # （#1625）。明示 env があれば出どころが「明示 env」になるので、実効値（build_view）を読まずにその結果で判定する。
+    # usage_view.py を読み込めない・呼び出しが例外を出すときは明示 env も読まず ok（fail-open。session-tripwires.sh と同じ）。
+    mode, shown = "ok", "ok"
+    try:
+        now_env = os.environ.get("USAGE_PROBE_NOW")
+        now = int(now_env) if now_env and now_env.lstrip("-").isdigit() else int(time.time())
+        sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+        import usage_view
+        shared = usage_view.budget_mode_details({}, now)["shared"]
+        if shared["source"] != usage_view.SOURCE_EXPLICIT:
+            view = usage_view.build_view(snapshot_path=os.environ["SNAPSHOT"], now=now)
+            shared = usage_view.budget_mode_details(view["accounts"].get(view["active"]) or {}, now)["shared"]
+        mode, shown = shared["mode"], shared["shown"]
+    except Exception:
+        mode, shown = "ok", "ok"
+    if mode == "ok":
+        sys.exit(0)
+    deny(f"fork は親モデル（Fable）を継承して全履歴ごと動く（model パラメータは無視される）。共有枠モードが {shown} のあいだは fork を使わず、"
+         "model を明示した general-purpose（sonnet / opus）で spawn する。規範: rules/subagent-model-selection.md")
+
+# 実行役の種別は対応表の上限を超える格で起こせない（#615）。種別と役の対応は env で足せる形にしない
+# （DECIDER_TYPES と同じ理由）。表の置き場所は guard 自身の場所から決め、env で差し替えない。
+TYPE_ROLES = {"dev-workflow:worker": ("spec-write", "implement"),
+              "dev-workflow:gate-runner": ("implement",)}
+if model and stype in TYPE_ROLES:
+    try:
+        sys.path.insert(0, os.environ["USAGE_VIEW_DIR"])
+        import tier_caps
+        table = tier_caps.read_table(os.path.join(os.path.dirname(os.environ["USAGE_VIEW_DIR"]),
+                                                  "references", "model-tier-map.json"))
+    except Exception:
+        table = None  # 表を読めなければ上限の判定を飛ばし、下の Fable 判定に任せる
+    if table is not None:
+        roles = TYPE_ROLES[stype]
+        caps = [table["role_caps"].get(r) for r in roles]
+        caps = [c for c in caps if c in tier_caps.TIERS]
+        if caps:
+            cap = min(caps, key=tier_caps.TIERS.index)
+            tier = tier_caps.model_tier(table["executors"]["claude"], model)
+            if tier_caps.exceeds(tier, cap):
+                deny(tier_caps.refusal("/".join(roles), tier, cap, note=f"subagent_type: {stype}")
+                     + f"model: {model} は使えない。実行役は model: sonnet / opus を使い、"
+                     "決めさせたいなら subagent_type: dev-workflow:decider に替えて再実行。"
+                     "規範: rules/subagent-model-selection.md")
+
+# Fable は決める役の種別でだけ spawn できる（実行役の上限は opus）。
+# エイリアス fable の完全一致と、完全 ID claude-fable-* の前方一致で見る（世代交代で穴が開かないように）。
+DECIDER_TYPES = {"dev-workflow:decider"}   # env で外から足せるようにしない（例外がガードの外で作れてしまう）
+m = model.strip().lower()
+if (m == "fable" or m.startswith("claude-fable")) and stype not in DECIDER_TYPES:
+    deny(f"model: {model} は決める役の種別（{'/'.join(sorted(DECIDER_TYPES))}）でだけ spawn できる。"
+         "Fable が消費するのはターン数なので、実装・修正ループ（実行役）を Fable で回すと週次枠が溶ける。"
+         "実行役は model: sonnet（通常実装）/ opus（設計・レビュー・聖域パス）を使い、"
+         "決めさせたいなら subagent_type: dev-workflow:decider に替えて再実行。"
+         "規範: rules/subagent-model-selection.md")
+
+if model:
+    sys.exit(0)
+
+# 定義側に model を持つエージェント種別（plugin:agent 形式・casting 系）は省略が親継承にならない
+NEEDS_EXPLICIT = {"", "general-purpose", "Explore", "Plan", "claude", "claude-code-guide", "statusline-setup"}
+if stype in NEEDS_EXPLICIT:
+    deny("Agent の model が未指定。省略すると親セッションのモデル（多くは Fable）を継承して週次枠を無言で消費する。"
+         "model: haiku（機械的）/ sonnet（通常実装・調査）/ opus（設計・レビュー・聖域パス）を明示して再実行。"
+         "fable は決める役の種別（subagent_type: dev-workflow:decider）でだけ使える。"
+         "規範: rules/subagent-model-selection.md")
+sys.exit(0)
+PY
+if [ -z "$PY_SRC" ]; then
+  # 本体を読めなかった（ヒアドキュメントの一時ファイルを作れない等）。空の本体を python3 に渡すと
+  # rc=0・無出力で終わって黙って通すので、渡さずに stderr で知らせる。
+  echo "agent-model-guard: 判定の本体を読めなかったため、判定していない" >&2
+  exit 1
+fi
+SNAPSHOT="$SNAPSHOT" USAGE_VIEW_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)" \
+  python3 -I -c "$PY_SRC"

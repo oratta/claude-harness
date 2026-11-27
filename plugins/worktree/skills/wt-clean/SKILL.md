@@ -1,6 +1,6 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。削除前に対象パス配下の devサーバープロセスを停止する。配下で claude 等の非シェルプロセスが稼働中／当日のセッションログがある／git worktree lock されている worktree は git がクリーンでも自動削除せず判断バッチに回す。ただし「親セッションが消えて init に引き取られた（PPID=1）」かつ「worktree の更新もセッションログの更新も 24 時間以上前」の両方を満たす居残りプロセスは稼働シグナルから外し、根拠を表示する。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で Pass 2 を対話せず報告のみにして cron から無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
+description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」「worktree消したのにdevサーバーが残っている」「worktreeが溜まっている」「worktreeの定期掃除」で起動。
 version: 3.7.1
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
@@ -47,7 +47,7 @@ Step C  完了レポート
 - `wt-clean ~/wt/foo` → `foo` だけを対象に診断・処理
 - `wt-clean feat-x` → `feat-x` をチェックアウト中の worktree を逆引きして対象に
 - `wt-clean ~/wt/foo feat-y` → 2 件を対象に
-- `wt-clean --unattended --repo ~/repos/flatmate` → cron 用。別リポの worktree を無人で掃除し、判断が要る分は報告だけする
+- `wt-clean --unattended --repo ~/repos/example-app` → cron 用。別リポの worktree を無人で掃除し、判断が要る分は報告だけする
 
 ## 前提条件
 
@@ -66,6 +66,7 @@ zsh で実際に事故になった書き方（そのままコピーしないこ�
 | `for x in $pids`（複数行の変数を単語分割で回す） | zsh は既定で単語分割しないため全行が 1 要素に潰れる | `while IFS= read -r x; do … done <<< "$pids"` |
 | ループ本体で `local x` を毎周回宣言する | 2 周目以降の再宣言が `x=前回の値` を**標準出力に印字する**（bash は無言）。レポートにゴミ行が混ざる | 宣言は関数先頭にまとめる |
 | 配列の添字を 0 始まりで直接参照する | zsh の配列は 1 始まり | 添字を直に書かず `"${arr[@]}"` で回す |
+| `mktemp` で作った既存ファイルへ `>` / `2>` で書く（例: `$(cmd 2>"$TMP")`） | `noclobber` が有効だと「file exists」で拒否され、**コマンド置換の中身が実行されない**。結果が空になり「検出なし」と区別がつかない（issue #626） | `>\|` / `2>\|` を使う（bash・zsh とも noclobber を無視して上書きする） |
 
 新しいコード片を足すときは、`bats plugins/worktree/tests/` に **bash と zsh の両方で実行して結果が一致することを確かめるテスト**を添えること（既存例: `classify_dirty: behaves identically under bash and zsh`）。
 
@@ -333,8 +334,8 @@ resolve_token() {
 ```
 ❌ 'foo' に一致する worktree がありません。
 現存 worktree:
-  /Users/oratta/wt/bar  (fix-y, 3週間前)
-  /Users/oratta/wt/baz  (wip-z, 今日)
+  /Users/example/wt/bar  (fix-y, 3週間前)
+  /Users/example/wt/baz  (wip-z, 今日)
 絶対パスまたは正確なブランチ名で再指定してください。
 ```
 
@@ -342,7 +343,7 @@ resolve_token() {
 
 #### Step A-2: 位置引数なし → 全 worktree を確認なしで TARGETS に
 
-位置引数がない場合（`--keep` / `--no-sync` のみ、または完全無指定）は、**対象選択の質問をせず全 worktree を `TARGETS` にする**。以前は「全て/個別/キャンセル」を AskUserQuestion で聞いていたが、これは廃止した（対象選択で処理が止まる／途中で終わる事故を防ぐため）。対象を絞りたいときは位置引数 `<path|branch>` を渡す。
+位置引数がない場合（`--keep` / `--no-sync` のみ、または完全無指定）は、**対象選択の質問をせず全 worktree を `TARGETS` にする**。対象選択で質問すると、そこで処理が止まる／途中で終わる。対象を絞りたいときは位置引数 `<path|branch>` を渡す。
 
 > ℹ️ ここで対象選択のために `AskUserQuestion` を呼んではならない（SHALL NOT）。破壊判断が必要な 🔴 / dirty は Pass 2 で確認されるため、全件を対象にしても🟢/🟡 の安全な自動処理と 🔴/dirty の Pass 2 対話に正しく振り分けられる。
 
@@ -365,9 +366,9 @@ done
 
 ```
 Worktree 一覧（全件を対象に処理します）:
-  /Users/oratta/wt/foo  (feat-x, 2日前)
-  /Users/oratta/wt/bar  (fix-y, 3週間前)
-  /Users/oratta/wt/baz  (wip-z, 今日)
+  /Users/example/wt/foo  (feat-x, 2日前)
+  /Users/example/wt/bar  (fix-y, 3週間前)
+  /Users/example/wt/baz  (wip-z, 今日)
 ```
 
 リストアップした全 worktree（メインリポ自身を除く）を `TARGETS` に格納し、そのまま Step B へ進む。worktree が 0 件なら「対象の worktree がありません」と表示して終了する。
@@ -423,7 +424,7 @@ LLM=$(ls "$WT/LLM/" 2>/dev/null)
 #    居残り（孤児）と判定して稼働シグナルから外したプロセスは stderr のノートに残るので、
 #    Pass 1 の表示・Pass 2 の提示・Step C のレポートで根拠として使う（黙って捨てない）
 ORPHAN_NOTE_TMP=$(mktemp)
-ACTIVE_PROCS=$(detect_active_procs_under "$WT" 2>"$ORPHAN_NOTE_TMP")   # 例: "48213(claude), 48310(node)"
+ACTIVE_PROCS=$(detect_active_procs_under "$WT" 2>|"$ORPHAN_NOTE_TMP")   # 例（`>|` は noclobber でも上書きする）: "48213(claude), 48310(node)"
 STALE_ORPHANS=$(grep '居残りプロセス' "$ORPHAN_NOTE_TMP" 2>/dev/null || true)
 rm -f "$ORPHAN_NOTE_TMP"
 [ -n "$STALE_ORPHANS" ] && echo "  $STALE_ORPHANS"
@@ -524,7 +525,7 @@ if [ "$AHEAD_COUNT" != "0" ]; then
 fi
 ```
 
-判定規則（**「どれか 1 つでもマージ済みを示せば squash 済み」という旧規則は廃止した**）。上から順に評価し、最初に当たったものを採る:
+判定規則。上から順に評価し、最初に当たったものを採る:
 
 | 順 | 状況 | 判定 | 根拠 |
 |---|---|---|---|
@@ -548,6 +549,8 @@ fi
 | 🔴 Active | `AHEAD_COUNT > 0` **かつ** `SQUASHED` が空（squash でも普通 merge でもなく、本当に未マージの固有コミットがある） |
 
 **squash 済み（`SQUASHED` が非空）の worktree は 🟢/🟡 として扱う**。`AHEAD_COUNT > 0` でも 🔴 にしない。ブランチ削除は元 SHA が main の祖先にならないため `git branch -D`（大文字）を使う。
+
+**`git branch -D` が dev-workflow の hook に止められたら**（どの Step でも。squash 済みの 🟢/🟡 の削除と 🔴 の破棄削除のどちらも当たる）: dev-workflow の hook は `git branch -D` を実行前に止める。主の対話セッション（`cld` を含む）では確認画面が出て、主が承認すれば削除される。確認画面で断られたとき、または確認画面が出ないセッション（cron の `claude -p` など）で止まったときは、言い換えて再実行しない（`-d -f` や `--delete --force` に書き換える、スクリプトに書いて実行する、などで hook を避けない）。worktree の削除までで止め、そのブランチを `HELD+=("$BRANCH_NAME (ブランチ削除は hook に拒否: 主が実行)")` に入れて次の対象へ進む。完了レポートには、主が打つコマンド `git -C <メインリポ> branch -D <ブランチ>` を実際のパスとブランチ名で載せる。
 
 Pass 1 では、カテゴリに応じて以下へ分岐する:
 
@@ -991,7 +994,7 @@ Pass 1 が全対象を処理し終えた後にのみ実行する。`DEFERRED` �
   LLM: あり（退避済み）
 
 [3] business-idea (idea-x) — 🟡 稼働中の可能性
-  git 上はマージ済み・clean・LLM なし（＝従来なら 🟢 Safe 判定）
+  git 上はマージ済み・clean・LLM なし。ただし稼働シグナルがあるため自動処理を保留
   ⚠️ 稼働中プロセスあり: 48213(claude), 48310(node)
   ⚠️ 直近セッションログ: ~/.claude/projects/-Users-…-business-idea/ab12.jsonl (2026-08-07 14:32)
   → 壁打ち等の進行中セッションの可能性があります。削除するとプロセスも停止されます
@@ -1194,9 +1197,9 @@ wt-clean 完了:
 
 ```
   再利用化: feat-x
-    ディレクトリ: /Users/oratta/repo/.worktrees/feat-x
+    ディレクトリ: /Users/example/repo/.worktrees/feat-x
     現在ブランチ: main（元 feat-x は削除済み）
-    次の作業: cd /Users/oratta/repo/.worktrees/feat-x && git checkout -b <new-branch>
+    次の作業: cd /Users/example/repo/.worktrees/feat-x && git checkout -b <new-branch>
 注意:
   - package.json / Gemfile 等が更新されていれば、再作業前に依存を再インストールしてください
   - 必ず git checkout -b <new-branch> で新ブランチを切ってから作業を開始してください
@@ -1246,7 +1249,7 @@ Pass 2 送りになった対象を、**番号・パス・ブランチ名・分�
 
 ```
 wt-clean 完了（無人モード）:
-  対象リポジトリ: /Users/oratta/repos/flatmate
+  対象リポジトリ: /Users/example/repos/example-app
   Remote 同期: ✅ pulled 3 commits (origin/main → main)
   対象: 14 worktrees（全件・確認なし）
   自動処理（確認なし）: 7 件
@@ -1254,16 +1257,16 @@ wt-clean 完了（無人モード）:
   残存worktrees: 7
 
 判断が必要な残件（無人モードのため未処理・4 件）:
-  [1] /Users/oratta/wt/wip-z   ブランチ: wip-z    分類: 🔴 未マージ
+  [1] /Users/example/wt/wip-z   ブランチ: wip-z    分類: 🔴 未マージ
       理由: 未マージコミット 3 件（squash 検証も未マージと判定）
-  [2] /Users/oratta/wt/fix-q   ブランチ: fix-q    分類: 🟡 dirty
+  [2] /Users/example/wt/fix-q   ブランチ: fix-q    分類: 🟡 dirty
       理由: src/foo.ts ほか 2 ファイルに未コミット変更（lockfile 以外を含む）
-  [3] /Users/oratta/wt/idea-x  ブランチ: idea-x   分類: 🟡 稼働シグナル
+  [3] /Users/example/wt/idea-x  ブランチ: idea-x   分類: 🟡 稼働シグナル
       理由: 稼働中プロセス 48213(claude) / セッションログ 2026-08-07 14:32
-  [4] /Users/oratta/wt/det-h   (detached HEAD)    分類: 🔴 未マージ
+  [4] /Users/example/wt/det-h   (detached HEAD)    分類: 🔴 未マージ
       理由: detached HEAD のためマージ判定不能
 
-→ 対話モードで処理するには: wt-clean --repo /Users/oratta/repos/flatmate
+→ 対話モードで処理するには: wt-clean --repo /Users/example/repos/example-app
 ```
 
 ### cron への載せ方（参考）
@@ -1272,6 +1275,7 @@ wt-clean 完了（無人モード）:
 
 - `--repo` を必ず指定する（住人の作業ディレクトリと対象リポジトリを分離するため）
 - 出力は破棄せずログに残す。残件一覧は人間が後で読む前提の成果物である
+- ジョブの環境に `DEV_WORKFLOW_GIT_GUARD=off` を入れる。入れなければ squash 済みブランチの削除が dev-workflow の hook に止められ（`claude -p` では確認画面が出ないので実行されない）、完了レポートの保留（`HELD`）に載る。このジョブでは hook が全部外れるので、この SKILL.md の禁則（worktree 内で `git reset --hard` / `git clean -fd` を実行しない）が唯一の歯止めになる
 
 ## 🔴 Active worktree の強制破棄（破棄削除選択時）
 
@@ -1296,7 +1300,7 @@ Step B Pass 2 で「破棄削除 (force)」を選んだ場合のみ:
 
 ## 自己検証
 
-完了宣言の前に成果物の evidence を確認する（原則: `plugins/loops/references/self-verification.md`、詳細手順: `plugins/worktree/references/wt-clean-verification.md`）。
+完了宣言の前に成果物の evidence を確認する（原則: `plugins/dev-workflow/references/self-verification.md`、詳細手順: `plugins/worktree/references/wt-clean-verification.md`）。
 
 - 削除した worktree が `git worktree list` に現れないことを確認する。
 - 🟡 判定で LLM 退避を行った場合、退避先ファイルが実在し空でないことを**削除前に**検証済みであることを確認する（検証失敗のまま削除していないこと）。

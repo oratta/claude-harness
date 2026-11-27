@@ -1,0 +1,168 @@
+#!/usr/bin/env bats
+#
+# /develop コマンド定義と /work-issue エイリアスの構造検証（issue #203）
+# 旧 work-issue-command.bats（#36: 5 分岐・issueify フォールバック）と
+# issue-draft-sections.bats（#47: fail-soft ドラフトの承認判断 2 節）を統合したもの。
+# command md は実行コードではないため、仕様の記述が存在することを検証する。
+#
+# spec: dev-workflow-issue-entry, dev-workflow-develop
+
+load lib/develop-docs
+
+setup() {
+  PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  CMD="$PLUGIN_DIR/commands/develop.md"
+  ALIAS="$PLUGIN_DIR/commands/work-issue.md"
+  MANIFEST="$PLUGIN_DIR/.claude-plugin/plugin.json"
+}
+
+frontmatter() { awk 'NR==1 && /^---$/{f=1; next} f && /^---$/{exit} f' "$1"; }
+
+@test "command: develop.md and work-issue.md both exist" {
+  [ -f "$CMD" ]
+  [ -f "$ALIAS" ]
+}
+
+@test "command: allowed-tools includes Agent and SendMessage and excludes Edit" {
+  tools="$(frontmatter "$CMD" | awk -F': ' '/^allowed-tools:/{print $2; exit}')"
+  grep -qw 'Agent' <<<"$tools"
+  grep -qw 'SendMessage' <<<"$tools"
+  ! grep -qw 'Edit' <<<"$tools" || return 1
+  ! grep -qw 'Write' <<<"$tools" || return 1
+}
+
+@test "command: resolves skills/develop/SKILL.md via path-discovery and runs it inline (no Skill tool)" {
+  grep -q 'skills/develop' "$CMD"
+  grep -q 'CLAUDE_PLUGIN_ROOT' "$CMD"
+  grep -q 'plugins/dev-workflow/skills/develop' "$CMD"
+  grep -q 'interactive' "$CMD"
+  grep -qE 'Skill tool は使わない|Skill ツールは使わない' "$CMD"
+}
+
+@test "command: no executor options use the adapter's automatic profile selection for every phase" {
+  grep -q '実行先オプションの有無を問わず' "$CMD"
+  grep -q 'references/codex-develop.md' "$CMD"
+  codex_procedures | grep -q '各 phase で profile なしの request'
+  ! grep -q 'いずれの実行先オプションも無い場合は従来のClaude経路' "$CMD" || return 1
+}
+
+@test "command: no-arg follow-up keeps automatic selection instead of requiring explicit executor options" {
+  codex_procedures | grep -q '引数なしの追加依頼'
+  codex_procedures | grep -q 'profile なしの request'
+  ! grep -q '実行先オプションと account-home の対応を明示し直す' "$CMD" || return 1
+}
+
+# --- 5 分岐 ---
+
+@test "branch 1/3: existing number/URL/natural-language branches remain" {
+  grep -q '数字のみ' "$CMD"
+  grep -q 'GitHub issue URL' "$CMD"
+  grep -q 'gh issue list' "$CMD"
+}
+
+@test "branch 2: nonexistent issue number triggers typo check first, then entry-0 unless issueify is chosen" {
+  grep -q 'typo' "$CMD"
+  b2="$(grep -n '数字のみだが issue が存在しない' "$CMD" | head -1)"
+  [ -n "$b2" ]
+  grep -q '入口 0' <<<"$b2"
+}
+
+@test "branch 4: unmatched natural-language request defaults to entry-0 (Draft PR), issueify only when tracking is needed" {
+  b4="$(grep -n 'マッチしな' "$CMD" | head -1)"
+  [ -n "$b4" ]
+  grep -q '入口 0' <<<"$b4"
+  grep -q 'Draft PR' <<<"$b4"
+  grep -q '追跡・キュー・議論' <<<"$b4"
+}
+
+@test "branch 5: no-arg listing offers both start-without-issue and issue-ify options" {
+  grep -q '新しいタスクを説明して着手する' "$CMD"
+  grep -q '新しいタスクを説明して issue 化する' "$CMD"
+}
+
+# --- issueify フォールバック ---
+
+@test "fallback: mentions issueify and resolves the in-plugin issueify skill, never loops" {
+  grep -q 'issueify' "$CMD"
+  grep -q 'skills/issueify/SKILL.md' "$CMD"
+  ! grep -q 'loops-issueify' "$CMD" || return 1
+  ! grep -q 'plugins/loops' "$CMD" || return 1
+}
+
+@test "fallback: fail-soft degrades to minimal gh issue create" {
+  grep -qE 'fail-soft|フォールバック' "$CMD"
+  grep -q 'gh issue create' "$CMD"
+}
+
+@test "fail-soft: minimal draft includes what-changes, cost-of-inaction and measurable acceptance sections" {
+  grep -q 'これで何が変わるか' "$CMD"
+  grep -q 'やらないとどうなるか' "$CMD"
+  grep -q '測定可能な受け入れ条件' "$CMD"
+}
+
+@test "fallback: approval gate before filing" {
+  grep -q '承認' "$CMD"
+}
+
+@test "fallback: multi-issue split selects one issue to work on" {
+  grep -qE '着手する1件|着手1件' "$CMD"
+}
+
+# --- エイリアス ---
+
+@test "alias: work-issue.md points at develop.md, passes ARGUMENTS, and carries no branch body" {
+  grep -q 'エイリアス' "$ALIAS"
+  grep -q 'commands/develop.md' "$ALIAS"
+  grep -qF '$ARGUMENTS' "$ALIAS"
+  ! grep -q '数字のみ' "$ALIAS" || return 1
+  ! grep -q 'typo' "$ALIAS" || return 1
+  ! grep -q 'skills/issueify' "$ALIAS" || return 1
+  ! grep -q 'gh issue create' "$ALIAS" || return 1
+}
+
+# --- manifest ---
+
+@test "manifest: registers develop skill and both commands, not the old skill" {
+  jq -e '.skills | index("./skills/develop")' "$MANIFEST" >/dev/null
+  jq -e '.skills | index("./skills/github-" + "issue") == null' "$MANIFEST" >/dev/null
+  jq -e '.commands | index("./commands/develop.md")' "$MANIFEST" >/dev/null
+  jq -e '.commands | index("./commands/work-issue.md")' "$MANIFEST" >/dev/null
+}
+
+# commands/ に置いただけでは読み込まれない（#523 で /ci-watch が一覧に出なかった）
+@test "manifest: every commands/*.md is registered in plugin.json commands" {
+  local f rel
+  for f in "$PLUGIN_DIR"/commands/*.md; do
+    rel="./commands/$(basename "$f")"
+    jq -e --arg p "$rel" '.commands | index($p) != null' "$MANIFEST" >/dev/null \
+      || { echo "not registered: $rel"; return 1; }
+  done
+}
+
+# Claude Code がコマンド本文で置き換えるのは ${CLAUDE_PLUGIN_ROOT} の字面だけで、:- の形は置き換わらない（#523）
+@test "commands: no command uses the \${CLAUDE_PLUGIN_ROOT:- form" {
+  run grep -n 'CLAUDE_PLUGIN_ROOT:-' "$PLUGIN_DIR"/commands/*.md
+  [ "$status" -eq 1 ] || { echo "$output"; return 1; }
+}
+
+# ===== #1223: 明示指定専用の記述を codex-develop-explicit.md に分ける =====
+
+@test "command (#1223): explicit executor options also read references/codex-develop-explicit.md" {
+  grep -q 'references/codex-develop-explicit.md' "$CMD"
+  [ -f "${PLUGIN_DIR}/references/codex-develop-explicit.md" ]
+}
+
+@test "adapter (#1223): codex-develop.md carries no explicit-only rules and points to the explicit file once" {
+  a="${PLUGIN_DIR}/references/codex-develop.md"
+  x="${PLUGIN_DIR}/references/codex-develop-explicit.md"
+  grep -qF 'references/codex-develop-explicit.md' "$a"
+  for s in '組み込み profile は' '形式版 2 の profile' '併用、旧形式の片方欠落' 'Codex オフのあいだ' 'profile 全体を先に検証する' '明示 profile・旧形式の account も既定値や別 account へ倒さない' '導入方法は `docs/codex-develop.md`'; do
+    if grep -qF "$s" "$a"; then echo "still in codex-develop.md: $s"; return 1; fi
+    grep -qF "$s" "$x" || { echo "missing in explicit: $s"; return 1; }
+  done
+  if grep -qF '監査値として保持する' "$x"; then echo "effort rule must stay in codex-develop.md"; return 1; fi
+  # 自動選択に要る記述は残す側にある
+  for s in '無指定では各 canonical phase' '監査値として保持する' '明示対応表に無い名前を既定値や別 account へ倒さない' 'codex-off' 'current` の対応として評価' 'Codex role は次の3手順'; do
+    grep -qF "$s" "$a" || { echo "missing in codex-develop.md: $s"; return 1; }
+  done
+}

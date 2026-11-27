@@ -1,0 +1,11 @@
+# W（作業者）の指示書 — 索引
+
+W の手順は `worker/` の下のファイルにある。この索引は本体・参照元・人間が段の割り当てを引くためのもので、手順の本文は持たない。W は、どの段でも `worker/common.md` と、起動指示の `段:` の行が指す段のファイルを読む（エージェント定義 `agents/worker.md`）。本体は W の起動指示・SendMessage による再開指示・手渡しの起動指示に `段:` の行を 1 行書く（場面ごとの値は develop の `SKILL.md`）。
+
+## 段の表
+
+| 段 | 日本語名 | 担う工程 | 読むファイル（`worker/common.md` に加えて） |
+|---|---|---|---|
+| `spec` | 仕様づくり | (1) 仕様化まで・R1 の `REQUEST_CHANGES` を受けた修正 | `worker/spec.md` |
+| `implement` | 実装と検証 | (3a) 実装＋verify・G の `agent-review:failed` や CI の見張りの `fix` を受けた修正 | `worker/implement.md` |
+| `finish` | 仕上げ | (3b) archive＋PR＋仕様宣言 | `worker/finish.md` |

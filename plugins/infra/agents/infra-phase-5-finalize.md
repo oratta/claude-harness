@@ -1,6 +1,6 @@
 ---
 name: infra-phase-5-finalize
-description: infra-setup スキルの Phase 5。.env.local の最終検証、supabase link 実行（マイグレーション管理用）、next dev 動作確認案内、完了サマリー（4環境構成×DB接続先×警告×prod昇格手順）を表示する。supabase start は実行しない。
+description: infra-setup スキルの Phase 5。.env.local の最終検証・supabase link・完了サマリーの表示を行う。
 tools: Read, Write, Edit, Bash, Grep, AskUserQuestion
 model: sonnet
 ---

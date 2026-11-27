@@ -18,7 +18,7 @@
 | 1 | PR に `agent-review:passed` ラベルが付いている | REST でラベル取得（`gh pr list --label` はコロン入りラベルで 0 件を返すことがあるため使わない） |
 | 2 | その合格が**現在の HEAD に束縛**されている | PR コメントに「対象 HEAD: <現在の HEAD の40桁フル SHA>」を含むもの（pr-review-gate 手順3・4 が投稿する宣言・証拠コメント）が実在することを確認。無ければマージしない（fail-closed）。**合格ラベル付与後に push された未レビューコミットはここで止まる** |
 | 3 | ci.yml の必須チェックがすべて green | check-runs API を**チェック名の完全一致**で検証。名前ごとに最新 run の conclusion だけを見る |
-| 4 | 聖域パスに一切触れていない | PR の変更ファイル一覧を**パス正規表現**で判定。**rename 元のパス（`previous_filename`）も対象**にするので、聖域ファイルを別名に移して迂回することはできない |
+| 4 | 聖域パスに一切触れていない（例外は 1 つ: マージ条件そのもののパス（`MERGE_CONDITION`）に触れず、親の判断の印がある PR。下の「親の判断で human-merge を外す」） | PR の変更ファイル一覧を**パス正規表現**で判定。**rename 元のパス（`previous_filename`）も対象**にするので、聖域ファイルを別名に移して迂回することはできない |
 | 5 | リポ変数 `AUTOMERGE_PAUSED` が未設定 | 空でない値が入っていたら全停止 |
 
 加えて、次のいずれかに当てはまる PR は対象外（スキップ）:
@@ -26,6 +26,8 @@
 - draft
 - base が `main` 以外（スタック PR。親ブランチへのマージは main に入る内容と一致しないため人間判断に残す）
 - `human-merge` / `needs-human-merge` / `human-only` / `needs-approval` のいずれかのラベルが付いている
+  （例外は 1 つだけ: 聖域接触で付いた `human-merge` は、親の判断の印があり条件を満たせば数えない。
+  下の「親の判断で human-merge を外す」）
   （`needs-approval` はレビューゲートスキル（dev-workflow プラグインの `pr-review-gate`）が「主のリスク許容待ち」
   「自力で動作確認できず代行を依頼中」の PR に付ける保留印。`agent-review:passed` と同時に付く事故
   ＝付与順の入れ違いや人間の手動付与に対する防波堤として、合格ラベルより優先して見送る）
@@ -93,13 +95,15 @@ REST 読み取りは成功しないため。2026-08-03 実測）。run の寿命
 レビューエージェント（LLM）がやってよいのは合格ラベルの付与と発火ボタン
 （上の `gh workflow run`）までで、`gh pr merge` や REST の merge API を LLM が直接叩いて
 マージすることは、条件判定（聖域・CI green・SHA ピン・緊急停止）を素通りするため**禁止**。
+親（エピックを回すセッション）がマージしてよいと判断したときも同じで、親がするのは
+印（`parent-merge-approved` ラベルとコメント）を残すことまで。マージするかはこのロボットが決める。
 
 ---
 
-## 聖域パス（常に人間がマージする）
+## 聖域パス（人間がマージする。例外は下の「親の判断で human-merge を外す」）
 
 **パスベース判定**であり、内容の意味判定（LLM・レビューエージェント）には一切委ねない。
-聖域に触れる PR には `human-merge` ラベルが自動で付き、理由がコメントされ、以後スキップされる。
+聖域に触れる PR には `human-merge` ラベルが自動で付き、理由がコメントされ、以後スキップされる（親の判断の印がある PR だけ例外。マージ条件そのもののパスに触れる PR は例外なくスキップされる）。
 
 | パス | なぜ聖域か |
 |---|---|
@@ -122,7 +126,7 @@ ci.yml の隣に新しい workflow を置くだけで素通りできてしまう
   `previous_filename` も列挙して判定する
 
 聖域判定は `AUTOMERGE_PAUSED` の状態と無関係に必ず通る（停止中は何もマージしないので、
-どちらに転んでも聖域 PR が機械マージされることはない）。
+どちらに転んでも、親の判断の印が無い聖域 PR が機械マージされることはない。印がある聖域 PR も、停止中はマージされない）。
 
 ### 見送りラベルの使い分け（どれが付いていてもマージしない）
 
@@ -133,10 +137,67 @@ ci.yml の隣に新しい workflow を置くだけで素通りできてしまう
 | `needs-approval` | レビューゲートスキル（dev-workflow プラグインの `pr-review-gate`） | 主のリスク許容待ち、または自力で動作確認できず代行を依頼中の保留 |
 | `human-only` | 人間・トリアージ | ループが触らない印（PR に付いていたら機械マージもしない） |
 
+見送りラベルではないが、`parent-merge-approved`（親が付ける）は聖域接触だけで付いた `human-merge` を外す印（次の節）。
+
 `agent-review:passed` が付いていても、これらのどれか1つが付いていればマージしない
 （**合格ラベルだけを見て素通りさせない**。付与順の入れ違いで両方付く事故への防波堤）。
 `human-merge` を**手で付ければ**任意の PR を機械マージから外せる
 （＝人間が判断を留保したい PR の印としても使える）。
+聖域に触れる PR で親の判断からも外したいときは、`human-merge` ではなく `human-only` か `needs-approval` を付ける
+（次の節）。
+
+### 親の判断で human-merge を外す（エピックの子の PR）
+
+聖域に触れて `human-merge` が付いた PR のうち、マージ条件そのものに触れないものは、親が合理性と
+危険の低さを見てマージしてよいと判断した印を残せば、このロボットがマージする。親は直接マージしない。
+
+印は次の 2 つ。両方がそろって初めて数える。
+
+- PR に `parent-merge-approved` ラベル（ロボットが無ければ作る。付いた瞬間にラベル即応の判定が走る）
+- PR コメント。1 行目がちょうど `親のマージ判断: 可`、どこかの行がちょうど `親が見た HEAD: <今の HEAD の 40 桁 SHA>`。
+  投稿者が OWNER・MEMBER・COLLABORATOR のものだけを数える。Web UI から投稿した改行（`\r\n`）でも数える
+
+```
+親のマージ判断: 可
+親が見た HEAD: 0123456789abcdef0123456789abcdef01234567
+理由: <合理性と危険の低さの判断>
+```
+
+キーを `対象 HEAD:` にしないのは、合格の HEAD 束縛（コメントに `対象 HEAD: <SHA>` を含むか）を
+親のコメントが満たしてしまうため。
+
+`human-merge` を見送りの理由から外すのは、次の 4 つをすべて満たすときだけ（`parent-merge-judgment`）。
+
+| # | 条件 | 満たさないとき |
+|---|---|---|
+| 1 | 印（ラベルとコメント）があり、コメントの `親が見た HEAD:` が今の HEAD と一致する | 親が見たあとに push されたら、印を付け直すまで見送る |
+| 2 | `human-merge` が付いていて、ほかの見送りラベル（`needs-human-merge`・`human-only`・`needs-approval`）が無い | ほかの見送りラベルは親の判断では外れない |
+| 3 | 変更ファイル（rename 元を含む）のどれかが聖域に一致する | 聖域に触れていない PR の `human-merge` は人が手で付けた留保なので外さない |
+| 4 | 変更ファイル（rename 元を含む）のどれもマージ条件そのもののパス（`MERGE_CONDITION`）に一致しない | 主が手でマージする |
+
+ほかの条件（`agent-review:passed`・合格の HEAD 束縛・CI green・`AUTOMERGE_PAUSED`・SHA ピン・
+`AUTOMERGE_PAT` 未設定の fail-closed・draft と base の判定）は、親の判断の印があっても同じに効く。
+マージ直前の取り直しでも同じ判定をやり直すので、直前に印のラベルが外されたり見送りラベルが足されたりすれば止まる。
+マージしたときのコメントは `auto-merged（親の判断）` になり、印のコメントの URL が載る。
+
+印が `human-merge` より先に付いた場合、最初の判定では条件 2 を満たさないので、聖域判定が
+`human-merge` を付けて見送る。次の判定（CI 完了か日次 cron、急ぐときは手動実行）でマージに進む。
+
+**マージ条件そのもののパス（`MERGE_CONDITION`）** は聖域（`SACRED`）の一部で、`auto-merge.yml` の
+`# >>> merge-condition-paths` マーカーの間にある。`MERGE_CONDITION` に一致するパスは必ず `SACRED` にも一致させる
+（`scripts/test-auto-merge-workflow.sh` が検査する）。
+
+既定は `.github/workflows/`（ディレクトリ丸ごと。判定ルールと CI の必須チェックの定義）だけ。
+合格ラベルを発行するゲートの定義など、リポ固有のマージ条件があれば `auto-merge.yml` の
+`MERGE_CONDITION`（`# >>> merge-condition-paths` マーカーの間）に足し、
+`scripts/test-auto-merge-workflow.sh` の `MERGE_CONDITION` の must-match リストにも代表パスを足す。
+`CLAUDE.md`・`.claude/`・`docs/agent-loop*` などほかの聖域は、親の判断の印で `human-merge` を外せる。
+
+**親の判断からも外したい PR には `human-only` か `needs-approval` を付ける。** 聖域に触れる PR に
+人が手で付けた `human-merge` は、ロボットが付けたものと区別できないので、印があれば外れる。
+
+誰が印を付けたかは区別しない（主の資格情報で動くセッションはどれも付けられる。`agent-review:passed` と同じ信頼の置き方）。
+親だけが付けるという決まりは、親の手順書の側で扱う。
 
 ---
 
@@ -175,7 +236,7 @@ gh api -X DELETE repos/<owner>/<repo>/actions/variables/AUTOMERGE_PAUSED        
 
 - squash マージ（このロボットの既定）と merge commit の両方に対応する（親コミット数を見て
   `git revert -m 1` の要否を自動で切り替える）。
-- revert PR には `human-merge` が付くので、auto-merge が拾うことはない。
+- revert PR には `human-merge` が付くので、auto-merge が拾うことはない（聖域に触れる revert PR に親の判断の印が付いた場合だけ例外）。
 - revert がコンフリクトした場合はワークフローが失敗する。その場合は手で revert ブランチを作る。
 - 指定できるのは**既定ブランチへマージされた PR だけ**。別ブランチへマージされた PR や、
   マージコミットが既定ブランチの履歴に無い PR は、副作用（ブランチ作成・push）より前に
@@ -202,12 +263,14 @@ GITHUB_TOKEN でマージすると、その push が後続ワークフローを�
    - **Contents: Read and write**（マージ＝ push 相当）
    - **Pull requests: Read and write**
    - Metadata: Read-only（自動で付く）
-4. 有効期限は任意（切れると auto-merge が黙って止まる＝安全側に倒れる。カレンダーに更新を入れておく）
+4. 有効期限は任意（切れるとマージだけが止まる＝安全側に倒れる。カレンダーに更新を入れておく）。
+   失効しても無言では止まらない — run のログに「マージが認証・認可で失敗（HTTP 401）」の
+   **error** が出る（下の「マージされないときの調べ方」の項目 7）
 5. 生成したトークンを `https://github.com/<owner>/<repo>/settings/secrets/actions` で
    **Name: `AUTOMERGE_PAT`** として登録する
 
 > トークンの値はこのリポジトリのファイルには絶対に書かない（GitHub Secrets と
-> agents 保管庫にのみ置く）。
+> 秘密情報の保管庫にのみ置く）。
 
 ### 登録前に挙動を確かめたいとき（dry run）
 
@@ -243,17 +306,91 @@ CI green の判定は**チェック名の完全一致**で auto-merge が自前�
    出る）。判定は PR コメントの「対象 HEAD: <40桁フル SHA>」と現在の HEAD の一致を要求する。
    止まっていたら pr-review-gate を最初からやり直し、新しい HEAD で宣言・証拠を出し直す
 6. CI が green か。green に見えるのに通らないなら `REQUIRED_CHECKS` とジョブ名のズレを疑う
-7. `AUTOMERGE_PAT` の期限切れ（ログに「未設定」と出る）
+7. `AUTOMERGE_PAT` の期限切れ・権限剥奪。**「未設定」とは出ない**（未設定チェックは
+   secret が空のときだけ効き、期限切れの PAT は「設定済み」として素通りする）。
+   出るのは `PR #N のマージが認証・認可で失敗（HTTP 401）。secrets.AUTOMERGE_PAT が
+   失効／権限不足の可能性が高く、差し替えるまで自己回復しません` という **error** ログ。
+   これが出ていたら PAT を再発行して secret を差し替える（手順はこの文書の PAT の節）
 8. ラベル付与（`agent-review:passed`）では即時に判定が走る（`pull_request_target: labeled`）。
    その run のログを見る。付与時点で CI が未 green だった場合はスキップされるのが正常で、
    次の CI 完了（`workflow_run`）か日次 cron が拾う。急ぐときは手動実行で `pr` に番号を入れる
 9. ログに 409 が出ていないか（判定後に新しいコミットが push されると SHA ピンで拒否される。
-   次のイベントで新しい HEAD を検証し直すので、放置しても最終的にマージされる）
+   次のイベントで新しい HEAD を検証し直すので、放置しても最終的にマージされる）。
+   ただし**自己回復するのは 409 だけ**で、401 / 403（PAT 失効・権限不足）は別のログ
+   （項目 7）に分けて出る。そちらは放置しても直らないので、409 の案内を当てはめない
+10. 親の判断の印（`parent-merge-approved`）を付けたのにマージされないとき。ログに
+    「親の判断の印あり」が出ていなければ、印が数えられていない。次を順に見る:
+    コメントの 1 行目がちょうど `親のマージ判断: 可` か／`親が見た HEAD:` が今の HEAD の 40 桁と一致するか
+    （印のあとに push したら付け直す）／投稿者が OWNER・MEMBER・COLLABORATOR か／
+    `human-merge` 以外の見送りラベルが付いていないか／変更ファイルにマージ条件そのもののパス
+    （`MERGE_CONDITION`）が含まれていないか（含まれていたら主が手でマージする）／
+    まだ `human-merge` が付いていない（印が先に付いた）なら、次の判定で進む
+
+---
+
+## LLM 側の防壁: `.claude/settings.json` の deny 設定
+
+この仕組みは「マージするのはロボットだけ。LLM は `gh pr merge` も main への直接 push もしない」
+ことを前提にしている。その前提をプロンプト（規約文書）ではなく**ハーネスが実行前にブロックする層**で
+守るのが `.claude/settings.json` の `permissions.deny`（テンプレートの `.claude/settings.json`。
+展開手順は README の手順 7）:
+
+| deny | 塞ぐもの |
+|---|---|
+| `Bash(gh pr merge:*)` | LLM による直接マージ（ゲート・聖域判定・SHA ピンを全部素通りする経路） |
+| `Bash(git push origin main:*)` / `master:*` | PR を経ない main 更新 |
+| `Bash(git push -f:*)` / `--force:*` / `--force-with-lease:*` | 履歴の書き換え（マージ済み SHA の差し替え） |
+| `Bash(git push --no-verify:*)` | pre-push ガード（push-guard-setup）の迂回 |
+
+- 展開先に既存の deny があれば**消さずに足す**（README の jq コマンドは和集合を取る）。
+  deny を減らす変更は `.claude/` が聖域なので `human-merge` になるが、親の判断の印で外れる。主の目を必ず通したいリポは
+  `auto-merge.yml` の `MERGE_CONDITION` に `|^\.claude/settings\.json$` を足す（足したら `scripts/test-auto-merge-workflow.sh` の must-match にも足す）。
+- `git merge` / `git rebase` そのものは deny しない（feature ブランチでの main 追従に要る）。
+- 無課金 private リポで branch protection が使えない場合、この deny が LLM 側の主防壁になる。
+  branch protection が使えるリポでは GitHub 側でも main を保護する（PR 必須 + required status checks）。
+
+---
+
+## staging スモーク + auto-revert（`staging-smoke.yml`）
+
+マージ前のゲートで拾えない意味的な破壊（ビルドは通るが画面が死ぬ等）を、**main マージ後の staging
+デプロイ直後に外形チェックで検知し、自分で戻す**層。staging デプロイ（`Deploy to Staging` という名前の
+workflow）を持つリポだけに展開する（README の手順 6）。
+
+### 動き
+
+1. `Deploy to Staging` が成功で完了 → `vars.STAGING_DOMAIN` の代表 URL（既定 3 本。展開時に差し替え）を
+   curl し、HTTP 200 と期待文字列を確認する
+2. 失敗が 1 件でもあれば（5xx / 接続失敗 / 期待文字列なし）→ **revert PR を起票**
+   （`revert-auto-<sha12>` ブランチ、`incident` ラベルのみ。`agent-review:passed` は付けない）
+   + **incident issue を起票**（事実経過と残タスクのチェックリスト）
+3. `Deploy to Staging` 自体が失敗 → revert 対象なしとして incident issue だけ起票
+
+revert PR は auto-merge の合格条件（`agent-review:passed` + 現 HEAD の「対象 HEAD:」コメント）を
+**自己付与しない**。機械生成の PR がレビューゲートを迂回して自動マージされる経路は作らない設計で、
+**人間が revert PR の内容をレビューし、`agent-review:passed` を付けて初めて auto-merge の対象になる**
+（聖域パスに触れていれば人間がマージする。親の判断の印が付いた場合だけ例外）。staging の巻き戻しは人間のレビュー待ちの分だけ遅れる。
+
+### 誤検知ガード（revert しないケース）
+
+全チェックが**認証系（3xx / 401 / 403）だけ**で落ちたときは、Vercel の Deployment Protection 等に
+弾かれて「検証不能」なのであってコード欠陥の証拠ではない。この場合は revert せず、
+`warn: staging スモーク検証不能` の issue を 1 件だけ起票する（同種の open issue があれば重複起票しない）。
+対処は `VERCEL_AUTOMATION_BYPASS_SECRET` の登録か staging の保護解除。
+1 件でも認証系以外の失敗が混ざっていればコード欠陥の証拠ありとして revert する。
+この判定はプラグイン側の bats テストが固定している（401 のみ → revert 経路に入らない）。
+
+### 前提と止め方
+
+- `vars.STAGING_DOMAIN` 未設定の間はスモークをスキップして警告だけ出す（何も起票しない）
+- revert PR の push / 作成は `AUTOMERGE_PAT` を共用する。未設定なら revert PR の起票は失敗ログを残して終わる（incident issue は先に起票済み）
+- 同じコミットに対する revert ブランチが既にあれば二重起票しない
+- 止めたいときは `vars.STAGING_DOMAIN` を空にするか、workflow を Actions 画面で disable する
 
 ---
 
 ## この仕組みが担保していないこと（受容済みの残リスク）
 
-テストで拾えない意味的な破壊はこのゲートを通過しうる。その守りは main マージ後の検知
-（デプロイ後スモーク・稼働監視・この文書の巻き戻し手順）としてリポごとに別途用意する。
-本ドキュメントが扱うのは**マージ前のゲートと緊急停止・巻き戻し**まで。
+テストで拾えない意味的な破壊はマージ前のゲートを通過しうる。その守りは main マージ後の検知
+（上の staging スモーク・稼働監視・この文書の巻き戻し手順）として用意する。staging を持たないリポや
+スモークの導線に含まれない画面の破壊は、稼働監視と人間の巻き戻し判断に残る。

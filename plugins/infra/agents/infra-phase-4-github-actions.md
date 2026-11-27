@@ -1,6 +1,6 @@
 ---
 name: infra-phase-4-github-actions
-description: infra-setup スキルの Phase 4。product_stage（pre-release/released）に応じた GitHub Actions ワークフロー一式と補助ファイルを templates/ から生成し、GitHub Secrets を投入する。infra-setup からのみ起動される。
+description: infra-setup スキルの Phase 4。GitHub Actions ワークフロー一式を生成し、GitHub Secrets を投入する。infra-setup からのみ起動される。
 tools: Read, Write, Edit, Bash, Grep, Glob, AskUserQuestion
 model: sonnet
 ---
@@ -46,11 +46,15 @@ ${CLAUDE_PLUGIN_ROOT}/templates/workflows/
 `CLAUDE_PLUGIN_ROOT` が取れない環境では:
 ```bash
 # プラグインの一般的な配置場所を探索
+INFRA_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; INFRA_NG=1; fi
 for dir in \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/infra/templates/workflows \
   ~/.claude/plugins/marketplaces/*/plugins/infra/templates/workflows \
   ~/.claude/plugins/installed/*/infra/templates/workflows; do
   [ -d "$dir" ] && echo "$dir" && break
 done
+if [ -n "$INFRA_NG" ]; then unsetopt nullglob; fi
+unset INFRA_NG
 ```
 
 見つからなければユーザーに案内（プラグインの再インストールを促す）。

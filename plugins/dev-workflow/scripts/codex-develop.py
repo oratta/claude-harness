@@ -1,0 +1,869 @@
+#!/usr/bin/env python3
+"""Build one foreground Codex request or route a Claude role to the coordinator."""
+import argparse
+import base64
+from concurrent.futures import ThreadPoolExecutor
+import fcntl
+import hashlib
+import json
+import math
+import os
+import re
+from pathlib import Path
+import select
+import subprocess
+import sys
+import time
+import uuid
+
+ROOT = Path(__file__).resolve().parents[1]
+# Claude の実効値の規則は usage_view.py の 1 か所に置く（正本: usage-session-records）
+# margin（週の経過率 − 使用率）は headroom.py の行から取る（正本: dev-workflow-headroom）
+sys.path.insert(0, str(ROOT / 'scripts'))
+import usage_view  # noqa: E402
+import headroom  # noqa: E402
+import tier_caps  # noqa: E402
+CANONICAL_ROLES = ('spec-write', 'spec-review', 'implement', 'impl-review', 'review',
+                   'decider', 'explore', 'summarize')
+PHASES = {
+    'spec': ('spec-write', 'worker/spec.md'),
+    'spec-review': ('spec-review', 'spec-reviewer.md'),
+    'implement': ('implement', 'worker/implement.md'),
+    'finish': ('implement', 'worker/finish.md'),
+    'gate': ('implement', 'gate-runner.md'),
+    'review': ('impl-review', 'spec-reviewer.md'),
+    'decider': ('decider', 'spec-reviewer.md'),
+    'explore': ('explore', 'worker/common.md'),
+    'summarize': ('summarize', 'worker/common.md'),
+}
+# The writers run with no OS sandbox and inherit the parent environment, exactly like the
+# Claude subagent each one mirrors, so they finish their own GitHub work. Every other role
+# is readOnly and cannot write anywhere, so the coordinator posts its verdict for it.
+WRITER_ROLES = frozenset({'implement', 'spec-write'})
+WRITER_TRANSPORT = '''This worker has network access and the parent environment: perform GitHub reads and writes,
+comments, push, PR creation and commit yourself here, and do not return needs-coordinator for
+them. The coordinator performs only operations already recorded as ones it could not align.'''
+READER_TRANSPORT = '''This worker is read-only: never write to GitHub, push, or commit. Return the review verdict and
+its evidence; the coordinator posts it on your behalf, then starts a fresh phase with it.'''
+# The tiers from lowest to highest. Tier names are the only thing that crosses from the rule to
+# the executors; model-tier-map.json alone turns a tier into a model name.
+TIERS = ('最安', '中位', '上位', '最上位')
+TIER_MAP = ROOT / 'references/model-tier-map.json'
+# Every phase starts from one tier. W and G share the implement role, so this is keyed by phase.
+BASE_TIERS = {'spec': '中位', 'implement': '中位', 'finish': '中位', 'gate': '中位',
+              'spec-review': '上位', 'review': '上位', 'decider': '最上位',
+              'explore': '最安', 'summarize': '最安'}
+WRITER_PHASES = frozenset({'spec', 'implement', 'finish'})
+REVIEW_PHASES = frozenset({'spec-review', 'review'})
+PRE_CLASSES = ('sacred', 'merge', 'contract', 'billing')
+# A sacred path alone does not raise a reader: in repositories whose product is agent settings
+# nearly every change touches one, and raising them would spend most of the top tier.
+DECIDER_PRE_CLASSES = frozenset({'merge', 'contract', 'billing'})
+
+
+def _setting_error(exc):
+    """An invalid HEADROOM_* setting stops the automatic selection (blocked, exit 2)."""
+    return RuntimeError(f'automatic selection cannot count headroom: {exc}')
+
+
+def usage_margin(snapshot, now, account='codex'):
+    """Return the unrounded weekly margin of a Codex snapshot, or None for missing/unsafe input.
+
+    The margin is the one of headroom's row for this cache (headroom.codex_row, given the account
+    name of the mapping; the name does not change the margin): the age of the fetch is not
+    checked, past the weekly reset the window reads as 0%, a fetch more than 60 seconds in the
+    future is stale. Only an `ok` row gives a margin.
+    """
+    try:
+        row = headroom.codex_row(account, snapshot, now)
+    except headroom.ConfigError as exc:
+        raise _setting_error(exc) from None
+    return row['margin'] if row['status'] == 'ok' else None
+
+
+def claude_usage_evidence(snapshot_path, now):
+    """Margin of the launch account from headroom's row for it (usage-session-records values).
+
+    The launch account is the `active` of the effective values; its margin is the one of
+    headroom.claude_rows with the same snapshot, used only when that row is `ok`.
+    """
+    try:
+        view = usage_view.build_view(snapshot_path=str(snapshot_path), now=now)
+    except Exception:
+        return {'account': None, 'margin': None, 'fetched_at': None}
+    active = view['active']
+    try:
+        rows = headroom.claude_rows(now, str(snapshot_path))
+    except headroom.ConfigError as exc:
+        raise _setting_error(exc) from None
+    row = next((r for r in rows if r['account'] == active), None)
+    if row is None:
+        slot = view['accounts'].get(active) or {}
+        return {'account': active, 'margin': None, 'fetched_at': slot.get('observed_at')}
+    return {'account': active, 'margin': row['margin'] if row['status'] == 'ok' else None,
+            'fetched_at': row['observed_at']}
+
+
+def usage_paths():
+    config_dir = Path(os.environ.get('CLAUDE_CONFIG_DIR', Path.home() / '.claude'))
+    return config_dir, Path(os.environ.get('USAGE_SNAPSHOT', config_dir / '.usage-snapshot'))
+
+
+def read_budget_modes(now=None):
+    # Unreadable usage is not a reason to stop a request: it reads as no data.
+    now = int(time.time()) if now is None else now
+    try:
+        view = usage_view.build_view(snapshot_path=str(usage_paths()[1]), now=now)
+        slot = view['accounts'].get(view['active'])
+    except Exception:
+        slot = None
+    return usage_view.budget_modes(slot, now)
+
+
+# Codex at or above this margin takes every role whatever Claude has (issue #1677). The
+# default matches flatmate's ACCOUNT_ALLOC_MIN_SURPLUS_PCT.
+ALL_CODEX_THRESHOLD_SETTING = 'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'
+ALL_CODEX_THRESHOLD_DEFAULT = 10
+
+
+def all_codex_threshold():
+    """The all-Codex threshold; an invalid value stops the selection instead of using 10."""
+    name = ALL_CODEX_THRESHOLD_SETTING
+    raw = os.environ.get(name)
+    if raw is None or raw.strip() == '':
+        return ALL_CODEX_THRESHOLD_DEFAULT
+    try:
+        value = float(raw)
+    except ValueError:
+        raise RuntimeError(f'automatic selection cannot read {name}: must be a number') from None
+    if not math.isfinite(value) or not 0 <= value <= 100:
+        raise RuntimeError(f'automatic selection cannot read {name}: must be between 0 and 100')
+    return int(value) if value.is_integer() else value
+
+
+def select_configuration(claude_margin, codex_margin, codex_enabled=True,
+                         threshold=ALL_CODEX_THRESHOLD_DEFAULT):
+    # Codex off (accounts.json "codex"."enabled": false) is the user's setting, not a
+    # headroom result, so it has its own reason whatever the margins are.
+    if not codex_enabled:
+        return 'claude-default', 'codex-off'
+    if codex_margin is not None and codex_margin >= threshold:
+        return 'codex-standard', 'codex-headroom-meets-threshold'
+    claude_ok, codex_ok = (claude_margin is not None and claude_margin >= 0,
+                           codex_margin is not None and codex_margin >= 0)
+    if claude_ok and codex_ok:
+        return 'claude-write-codex-review', 'both-providers-have-headroom'
+    if not claude_ok and codex_ok:
+        return 'codex-standard', 'only-codex-has-headroom'
+    if claude_ok:
+        return 'claude-default', 'only-claude-has-headroom'
+    return 'claude-default', 'no-provider-has-headroom'
+
+
+def _auth_identity(home):
+    raw = json.loads((Path(home) / 'auth.json').read_text())
+    tokens = raw.get('tokens') or {}
+    parts = tokens.get('id_token', '').split('.')
+    if len(parts) != 3 or not tokens.get('account_id'):
+        raise RuntimeError('Codex identity is unavailable')
+    claims = json.loads(base64.urlsafe_b64decode(parts[1] + '=' * (-len(parts[1]) % 4)))
+    email = claims.get('email')
+    if not isinstance(email, str) or not email:
+        raise RuntimeError('Codex identity is unavailable')
+    return {'email_hash': hashlib.sha256(email.strip().lower().encode()).hexdigest(),
+            'account_id_hash': hashlib.sha256(tokens['account_id'].encode()).hexdigest()}
+
+
+def _rpc_requests(home, requests, timeout=None):
+    timeout = RPC_TIMEOUT if timeout is None else timeout
+    env = clean_env() | {'CODEX_HOME': home}
+    proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'],
+        env=env, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL,
+        bufsize=0)
+    results = []
+    buffered = b''
+    try:
+        for number, (method, params) in enumerate(requests, 1):
+            proc.stdin.write((json.dumps(
+                {'id': number, 'method': method, 'params': params}) + '\n').encode())
+            proc.stdin.flush()
+            deadline = time.monotonic() + timeout
+            while True:
+                while b'\n' not in buffered:
+                    wait = deadline - time.monotonic()
+                    if wait <= 0 or not select.select([proc.stdout], [], [], max(0, wait))[0]:
+                        raise RuntimeError('Codex quota RPC timed out')
+                    chunk = os.read(proc.stdout.fileno(), 65536)
+                    if not chunk:
+                        raise RuntimeError('Codex quota RPC disconnected')
+                    buffered += chunk
+                line, buffered = buffered.split(b'\n', 1)
+                if not line:
+                    continue
+                message = json.loads(line)
+                if message.get('id') != number or 'method' in message:
+                    continue
+                if message.get('error'):
+                    raise RuntimeError('Codex quota RPC was rejected')
+                results.append(message.get('result') or {})
+                if method == 'initialize':
+                    proc.stdin.write((json.dumps(
+                        {'method': 'initialized', 'params': {}}) + '\n').encode())
+                    proc.stdin.flush()
+                break
+        return results
+    finally:
+        try:
+            proc.stdin.close()
+        except (BrokenPipeError, OSError):
+            pass
+        try:
+            proc.terminate(); proc.wait(timeout=2)
+        except (OSError, subprocess.TimeoutExpired):
+            proc.kill(); proc.wait()
+
+
+def _quota_windows(result):
+    buckets = result.get('rateLimitsByLimitId')
+    if isinstance(buckets, dict):
+        values = [buckets.get('codex')]
+    else:
+        legacy = result.get('rateLimits')
+        values = [legacy] if (isinstance(legacy, dict) and
+                              legacy.get('limitId') in (None, 'codex')) else []
+    windows = []
+    for bucket in values:
+        if not isinstance(bucket, dict):
+            continue
+        for name in ('primary', 'secondary'):
+            value = bucket.get(name)
+            if not isinstance(value, dict):
+                continue
+            windows.append({'minutes': value.get('windowDurationMins'),
+                            'used_percent': value.get('usedPercent'),
+                            'reset_at': value.get('resetsAt')})
+    return windows
+
+
+def _reset_credits(result):
+    """rateLimitResetCredits -> {'available_count', 'expires_at'} or None when unreadable.
+
+    codex-role-profiles: only availableCount (an integer >= 0) and the expiresAt of credits whose
+    status is available are kept; an expiresAt that is not an integer is kept as null. No credit id
+    and no other field is stored. None (no resets in the cache) means "unknown", not zero.
+    """
+    credits = result.get('rateLimitResetCredits')
+    if not isinstance(credits, dict):
+        return None
+    count, items = credits.get('availableCount'), credits.get('credits')
+    if type(count) is not int or count < 0 or not isinstance(items, list):
+        return None
+    expires = []
+    for item in items:
+        if isinstance(item, dict) and item.get('status') == 'available':
+            value = item.get('expiresAt')
+            expires.append(value if type(value) is int else None)
+    return {'available_count': count, 'expires_at': expires}
+
+
+def probe_codex_account(home):
+    identity = _auth_identity(home)
+    initialized, observed, limits = _rpc_requests(home, [
+        ('initialize', {'clientInfo': {'name': 'develop-quota', 'version': '1'}}),
+        ('account/read', {'refreshToken': False}),
+        ('account/rateLimits/read', {}),
+    ])
+    del initialized
+    account = observed.get('account') or {}
+    email = account.get('email')
+    if (account.get('type') != 'chatgpt' or not isinstance(email, str) or
+            hashlib.sha256(email.strip().lower().encode()).hexdigest() != identity['email_hash']):
+        raise RuntimeError('Codex server identity mismatch')
+    windows = _quota_windows(limits)
+    if not windows:
+        raise RuntimeError('Codex weekly quota is unavailable')
+    value = {'identity': identity, 'windows': windows}
+    resets = _reset_credits(limits)
+    if resets is not None:
+        value['resets'] = resets
+    return value
+
+
+def _cache_path(config_dir, home):
+    digest = hashlib.sha256(str(Path(home).resolve()).encode()).hexdigest()
+    return Path(config_dir) / 'codex-usage' / (digest + '.json')
+
+
+def _update_codex_cache(name, home, config_dir, now):
+    path = _cache_path(config_dir, home)
+    path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    os.chmod(path.parent, 0o700)
+    lock_path = path.with_suffix('.lock')
+    lock_path.touch(mode=0o600, exist_ok=True); os.chmod(lock_path, 0o600)
+    with lock_path.open('r+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        previous = None
+        try:
+            previous = json.loads(path.read_text())
+        except (OSError, ValueError):
+            pass
+        if not isinstance(previous, dict):
+            previous = None
+        if previous is not None:
+            try:
+                if previous.get('identity') != _auth_identity(home):
+                    previous = None
+            except (OSError, ValueError, RuntimeError, KeyError):
+                previous = None
+        try:
+            result = probe_codex_account(home)
+            value = {'version': 2, 'identity': result['identity'],
+                     'fetched_at': now, 'windows': result['windows']}
+            if result.get('resets') is not None:
+                value['resets'] = result['resets']
+            write(path, value)
+        except Exception:
+            value = previous
+        return name, value
+
+
+def read_codex_usages(mapping, config_dir, now):
+    def update(name, home):
+        try:
+            return _update_codex_cache(name, home, config_dir, now)
+        except Exception:
+            return name, None
+
+    with ThreadPoolExecutor(max_workers=max(1, len(mapping))) as pool:
+        futures = [pool.submit(update, name, home)
+                   for name, home in mapping.items()]
+        values = dict(future.result() for future in futures)
+    return {name: values.get(name) for name in mapping}
+
+
+# usage-probe.sh runs headroom.py write --refresh-codex after the snapshot, which starts the Codex
+# app-server and sends 3 requests, each allowed RPC_TIMEOUT seconds (plus 2 to stop it): up to about
+# 47 seconds on a slow Codex, on top of the Claude fetches (curl --max-time 10 per slot). A kill on
+# timeout skips the probe's exit trap and leaves its lock for 120 seconds, so wait well past that.
+RPC_TIMEOUT = 15
+USAGE_PROBE_TIMEOUT = 90
+
+
+def _run_usage_probe(snapshot_path):
+    env = clean_env() | {'USAGE_SNAPSHOT': str(snapshot_path)}
+    try:
+        subprocess.run([str(ROOT / 'scripts/usage-probe.sh')], env=env,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                       timeout=USAGE_PROBE_TIMEOUT, check=False)
+    except (OSError, subprocess.TimeoutExpired):
+        pass
+
+
+def automatic_selection(mapping, now=None):
+    config_dir, snapshot_path = usage_paths()
+    threshold = all_codex_threshold()
+    _run_usage_probe(snapshot_path)
+    now = int(time.time()) if now is None else now
+    claude = claude_usage_evidence(snapshot_path, now)
+    codex_enabled = usage_view.read_codex_enabled(usage_view.default_paths()['accounts_file'])
+    # Off means no Codex usage read at all: no app-server start and no cache update.
+    usages = read_codex_usages(mapping, str(config_dir), now) if mapping and codex_enabled else {}
+    candidates = []
+    for order, (name, value) in enumerate(usages.items()):
+        margin = usage_margin(value, now, name)
+        if margin is not None:
+            candidates.append((margin, -order, name, value))
+    best = max(candidates) if candidates else None
+    codex = {'account': best[2] if best else None, 'margin': best[0] if best else None,
+             'fetched_at': best[3].get('fetched_at') if best else None}
+    if not codex_enabled:
+        codex['enabled'] = False
+    selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled,
+                                           threshold)
+    return selected, {'selection_mode': 'automatic', 'configuration': selected,
+        'reason': reason,
+        'claude': {'account': claude['account'], 'margin': claude['margin'],
+                   'fetched_at': claude['fetched_at']},
+        'codex': codex}
+
+
+def bind_codex_account(config, account, accounts):
+    if account is None:
+        return config
+    roles = {}
+    for role, entry in config['roles'].items():
+        roles[role] = dict(entry, account=account) if entry['executor'] == 'codex' else dict(entry)
+        validate_role_entry(role, roles[role], accounts, source='automatic profile role')
+    bound = {'version': 2, 'profile': config['profile'], 'roles': roles}
+    if bound['roles']['review'] != bound['roles']['impl-review']:
+        raise RuntimeError('profile review must equal impl-review')
+    return bound
+
+
+def _unique_object(pairs):
+    value = {}
+    for key, item in pairs:
+        if key in value:
+            raise ValueError(f'duplicate JSON key: {key}')
+        value[key] = item
+    return value
+
+
+def load_tier_map(path=None):
+    # model-tier-resolution: nothing falls back to a default here, because a default would
+    # silently pick another model. Whether a model name exists is not checked.
+    source = TIER_MAP if path is None else path
+    try:
+        document = json.loads(Path(source).read_text(), object_pairs_hook=_unique_object)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError('tier map is unavailable or invalid') from exc
+    if (not isinstance(document, dict) or
+            set(document) != {'version', 'tiers', 'executors', 'role_caps'} or
+            type(document['version']) is not int or document['version'] != 1 or
+            document['tiers'] != list(TIERS)):
+        raise RuntimeError('tier map must have exactly version=1, tiers, executors and role_caps')
+    executors = document['executors']
+    if not isinstance(executors, dict) or set(executors) != {'claude', 'codex'}:
+        raise RuntimeError('tier map must define exactly the claude and codex executors')
+    for executor, models in executors.items():
+        if not isinstance(models, dict) or set(models) != set(TIERS):
+            raise RuntimeError(f'tier map {executor} must define exactly the four tiers')
+        if any(not isinstance(model, str) or not model for model in models.values()):
+            raise RuntimeError(f'tier map {executor} has an empty or non-string model')
+    # Only the writer roles carry a cap. The legacy form decides from the role name alone
+    # whether to read the table, so a cap on another role needs its own change.
+    caps = document['role_caps']
+    if not isinstance(caps, dict) or set(caps) != set(tier_caps.CAPPED_ROLES):
+        raise RuntimeError('tier map role_caps must cap exactly spec-write and implement')
+    if any(cap not in TIERS for cap in caps.values()):
+        raise RuntimeError('tier map role_caps has an undefined tier')
+    return document
+
+
+def switches_to_decider(phase, pre_class):
+    return phase in REVIEW_PHASES and bool(DECIDER_PRE_CLASSES.intersection(pre_class))
+
+
+def requested_tier(phase, pre_class, design_judgment, failure):
+    # Configuration, executor and automatic selection are deliberately not parameters: a route
+    # that could read them would need the rule copied for it. An input not named here is inert.
+    if switches_to_decider(phase, pre_class):
+        return '最上位'
+    if phase in WRITER_PHASES and (pre_class or design_judgment or failure == 'executor'):
+        return '上位'
+    if phase == 'decider' and failure in {'first', 'executor'}:
+        return '上位'
+    return BASE_TIERS[phase]
+
+
+def apply_budget(tier, phase, switched, modes, unmanned):
+    # Returns the tier after the modes and what lowered it. The shared mode goes first, so it is
+    # the one named when both would land on the same tier. Nothing here raises a tier, and the
+    # lowest tier stays where it is even when depleted: that mode must not add consumption.
+    applied, reason = tier, 'unchanged'
+    if modes['shared'] == 'depleted':
+        limit = '中位'
+    elif modes['shared'] == 'throttled':
+        keeps_upper = switched or phase == 'decider' or phase in WRITER_PHASES
+        limit = '上位' if keeps_upper else '中位'
+    else:
+        limit = None
+    if cap_tier(applied, limit) != applied:
+        applied, reason = cap_tier(applied, limit), 'SHARED_BUDGET_MODE=' + modes['shared']
+    if modes['fable'] == 'exhausted' or modes['fable'] == 'reserve' and unmanned:
+        if cap_tier(applied, '上位') != applied:
+            applied, reason = '上位', 'FABLE_BUDGET_MODE=' + modes['fable']
+    return applied, reason
+
+
+def tier_fields(args, execution, switched, tier_map):
+    # The stdout fields of a resolved request. The cap comes last, so `tier` is the same for
+    # every configuration; `model` is the only value that depends on who executes.
+    modes = read_budget_modes()
+    requested = requested_tier(args.phase, args.pre_class, args.design_judgment, args.failure)
+    tier, reason = apply_budget(requested, args.phase, switched, modes, args.unmanned)
+    cap = execution.get('tier_cap')
+    executed = cap_tier(tier, cap)
+    models = tier_map['executors'][execution['executor']]
+    return {'requested_tier': requested, 'tier': tier, 'tier_reason': reason, 'tier_cap': cap,
+            'executed_tier': executed, 'requested_model': models[requested],
+            'model': models[executed], 'budget_modes': modes}
+
+
+def check_role_cap(role, tier, tier_map):
+    # A tier above the role's cap is refused, never lowered: the Claude guard can only refuse,
+    # and a tier above the cap means the table or the rule is set wrong.
+    cap = tier_map['role_caps'].get(role)
+    if cap is not None and tier_caps.exceeds(tier, cap):
+        raise RuntimeError(tier_caps.refusal(role, tier, cap))
+
+
+def cap_tier(tier, cap):
+    # A cap only ever lowers: min over the tier order, with no cap leaving the tier alone.
+    return tier if cap is None else min(tier, cap, key=TIERS.index)
+
+
+def tier_model(executor, tier):
+    table = load_tier_map()
+    if executor not in table['executors']:
+        raise RuntimeError(f'executor is not defined: {executor}')
+    if tier not in TIERS:
+        raise RuntimeError(f'tier is not defined: {tier}')
+    return {'executor': executor, 'tier': tier, 'model': table['executors'][executor][tier]}
+
+
+def execution_config_hash(config):
+    encoded = json.dumps(config, ensure_ascii=False, sort_keys=True,
+                         separators=(',', ':')).encode()
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def account_homes(pairs, path):
+    # The two ways of giving the table are alternatives, like profile versus account/model:
+    # when both are present nothing is merged and neither wins, the call is refused.
+    if pairs and path:
+        raise RuntimeError('account-home cannot be combined with account-home-file')
+    mapping = {}
+    if path:
+        try:
+            document = json.loads(Path(path).expanduser().resolve().read_text(), object_pairs_hook=_unique_object)
+        except (OSError, ValueError) as exc:
+            raise RuntimeError('account-home-file is unavailable or invalid') from exc
+        if not isinstance(document, dict):
+            raise RuntimeError('account-home-file must be a flat object of name to CODEX_HOME')
+        mapping = document
+    for item in pairs:
+        name, separator, value = item.partition('=')
+        if not separator or not name or name in mapping:
+            raise RuntimeError('account-home must be NAME=PATH with a NAME given once')
+        mapping[name] = value
+    clean = {}
+    for name, value in mapping.items():
+        if not isinstance(name, str) or not name or not isinstance(value, str) or not value:
+            raise RuntimeError('account-home entries must be non-empty strings')
+        home = Path(value)
+        if not home.is_absolute() or not home.is_dir():
+            raise RuntimeError(f'account-home {name} must be an existing absolute directory')
+        clean[name] = str(home.resolve())
+    return clean
+
+
+def default_automatic_account_home():
+    value = os.environ.get('CODEX_HOME')
+    candidate = Path(value).expanduser() if value is not None else Path.home() / '.codex'
+    if not candidate.is_absolute() or not candidate.is_dir():
+        return {}
+    return {'current': str(candidate.resolve())}
+
+
+def validate_role_entry(role, entry, accounts=None, *, source='profile role'):
+    # An entry names who runs a role, never a model: the model comes from the tier, so a
+    # model key is an unknown key and refuses the whole profile (a version 1 leftover).
+    required = {'executor', 'account', 'effort'}
+    if not isinstance(entry, dict) or not required <= set(entry) <= required | {'tier_cap'}:
+        raise RuntimeError(f'{source} {role} has invalid fields')
+    if any(not isinstance(entry[key], str) or not entry[key] for key in entry):
+        raise RuntimeError(f'{source} {role} has an empty or non-string value')
+    if 'tier_cap' in entry and entry['tier_cap'] not in TIERS:
+        raise RuntimeError(f'{source} {role} tier_cap is not a defined tier')
+    executor = entry['executor']
+    if executor not in {'claude', 'codex'}:
+        raise RuntimeError(f'{source} {role} executor must be claude or codex')
+    if executor == 'codex':
+        if accounts is not None and entry['account'] not in accounts:
+            raise RuntimeError(f'{source} {role} account is not registered')
+    elif entry['account'] != 'current':
+        raise RuntimeError(
+            f'{source} {role}: different Claude account execution is not supported yet')
+    return dict(entry)
+
+
+def load_profile(name, profile_file, accounts):
+    source = Path(profile_file).expanduser().resolve() if profile_file else ROOT / 'references/codex-role-profiles.json'
+    try:
+        document = json.loads(source.read_text(), object_pairs_hook=_unique_object)
+    except (OSError, ValueError) as exc:
+        raise RuntimeError('profile file is unavailable or invalid') from exc
+    if (not isinstance(document, dict) or set(document) != {'version', 'profiles'} or
+            type(document['version']) is not int or document['version'] != 2):
+        raise RuntimeError('profile document must have exactly version=2 and profiles')
+    profiles = document['profiles']
+    if not isinstance(profiles, dict) or name not in profiles:
+        raise RuntimeError('profile is not defined')
+    selected = profiles[name]
+    if not isinstance(selected, dict) or set(selected) != {'roles'} or not isinstance(selected['roles'], dict):
+        raise RuntimeError('profile must contain exactly roles')
+    roles = selected['roles']
+    if set(roles) != set(CANONICAL_ROLES):
+        raise RuntimeError('profile roles are incomplete or unknown')
+    clean = {}
+    for role in CANONICAL_ROLES:
+        clean[role] = validate_role_entry(role, roles[role], accounts)
+    if clean['review'] != clean['impl-review']:
+        raise RuntimeError('profile review must equal impl-review')
+    return {'version': 2, 'profile': name, 'roles': clean}
+
+
+def validate_execution_config(state):
+    config = state.get('execution_config')
+    if config is None:
+        return
+    if (not isinstance(config, dict) or set(config) != {'version', 'profile', 'roles'} or
+            type(config.get('version')) is not int or config.get('version') != 2 or
+            set(config.get('roles', {})) != set(CANONICAL_ROLES)):
+        raise RuntimeError('execution config mismatch')
+    for role, entry in config['roles'].items():
+        try:
+            validate_role_entry(role, entry, source='execution config role')
+        except RuntimeError as exc:
+            raise RuntimeError(f'execution config role {role} mismatch: {exc}') from exc
+    if config['roles']['review'] != config['roles']['impl-review']:
+        raise RuntimeError('execution config review must equal impl-review')
+    if state.get('execution_config_hash') != execution_config_hash(config):
+        raise RuntimeError('execution config hash mismatch')
+
+
+def resolve_execution(state, role):
+    validate_execution_config(state)
+    if 'execution_config' not in state:
+        return {'role': role, 'executor': 'codex', 'account': state['account'],
+                'model': state['model']}
+    return {'role': role} | dict(state['execution_config']['roles'][role])
+
+
+def clean_env():
+    return {k: v for k, v in os.environ.items() if not k.startswith('GIT_')}
+
+
+def git(cwd, *args):
+    return subprocess.check_output(['git', '-C', cwd, *args], text=True, env=clean_env()).strip()
+
+
+def write(path, value):
+    tmp = path.with_suffix('.tmp')
+    tmp.write_text(json.dumps(value, ensure_ascii=False, indent=2))
+    os.chmod(tmp, 0o600)
+    tmp.replace(path)
+
+
+def prompt(phase, instructions, state, *, plugin_root=None):
+    # plugin_root is only the displayed root (the budget measurement passes a fixed value so the
+    # prompt length does not depend on the install location). Sources are always read from ROOT.
+    role, source = PHASES[phase]
+    # return の 1 行目の宣言は return-declaration.md、仕様化判断と分割判定は spec-decision.md が正本（#1683）。
+    # decision-criteria.md は本体（coordinator）向けの規則なので phase には付けない。
+    docs = [('agents/decider.md' if phase == 'decider' else 'skills/develop/references/roles/' + ('gate-runner.md' if phase == 'review' else source)), 'skills/develop/references/return-declaration.md']
+    if phase == 'spec':
+        docs.append('skills/develop/references/spec-decision.md')
+    if source in ('worker/spec.md', 'worker/implement.md', 'worker/finish.md'):
+        # W の phase は全段で読む common.md と段のファイルを正本にする（explore / summarize は common.md だけ）
+        docs.insert(0, 'skills/develop/references/roles/worker/common.md')
+    if phase == 'gate':
+        # Read only the launch instruction, before a previous result or quoted brief.
+        # A previous Gate Result's 段/次の段 must never select this request's stage.
+        launch = re.split(r'^## Gate Result\s*$|^```', instructions, maxsplit=1, flags=re.M)[0]
+        route = re.search(r'^レビュー経路: (.+)$', launch, re.M)
+        stage = re.search(r'^段: (.+)$', launch, re.M)
+        stage_docs = {
+            '前提確認と重さ判定': ['stages/prepare.md'],
+            '照合と振り分け': ['stages/triage.md'],
+            '合格処理': ['declarations.md', 'stages/pass.md'],
+            '保留の解除': ['stages/hold.md'],
+        }
+        if route and route[1] == 'adapter' and stage and stage[1] in stage_docs:
+            docs += ['skills/pr-review-gate/' + name for name in stage_docs[stage[1]]]
+        else:
+            # Preserve legacy and missing-line callers' bulk protocol.
+            docs += ['skills/pr-review-gate/SKILL.md', 'skills/pr-review-gate/declarations.md'] + [
+                f'skills/pr-review-gate/stages/{s}.md' for s in ('prepare', 'review-run', 'reviewer-brief', 'triage', 'pass', 'hold')]
+    elif phase == 'review':
+        docs.append('skills/pr-review-gate/stages/reviewer-brief.md')
+    root_note = ''
+    if phase in ('gate', 'review'):
+        root_note = f'''Plugin root: {plugin_root or ROOT}
+Work and changes stay in the cwd above. Plugin root is read-only: it is only where the canonical
+sources and the check scripts they name are read. Read only the details an entry conditionally points to,
+resolving them at that moment: `stages/foo.md` resolves to <Plugin root>/skills/pr-review-gate/stages/foo.md
+and `skills/...` resolves to <Plugin root>/skills/... . Do not read details ahead of their condition.
+'''
+    scratch_note = ''
+    if role in WRITER_ROLES:
+        # #1608: a writer that is told only "work in the cwd" put scratchpad/ inside the worktree.
+        scratch_note = '''Scratch files (notes, fetched data, drafts, logs, throwaway scripts) go outside the cwd: under $TMPDIR, or
+a directory made with `mktemp -d`. Never create scratchpad/ or any other directory for scratch files in the cwd;
+real work files stay in the cwd as usual.
+'''
+    text = f'''Codex delegated develop phase: {phase}. Role: {role}.
+The Claude coordinator follows the canonical develop workflow; execute ONLY the requested assignment.
+Phase labels select role instructions, not an alternate workflow or mandatory sequence.
+The spec label includes the canonical decision whether specification is needed: it does not require
+creating a specification. Follow the same decision criteria and return contract as a Claude worker.
+The coordinator alone applies workflow prerequisites, reviews, checks and transitions.
+Account is fixed by the worker. Work only in {state['cwd']}.
+{root_note}{scratch_note}Do not spawn agents, invoke Claude, codex exec, or codex-companion. If an independent role is needed,
+return needs-reviewer/needs-decider with the exact request; the coordinator dispatches a fresh thread.
+Claude Agent/SendMessage/Skill/opsx operations in canonical references are provider-specific:
+use repository CLI equivalents for openspec only where available; do not pretend a Claude hook ran.
+If required verification/permissions/tools are unavailable return blocked with evidence.
+{WRITER_TRANSPORT if role in WRITER_ROLES else READER_TRANSPORT}
+Never merge or enable auto-merge. Do not claim quality success from transport completion.
+Fresh context: do not apply Claude transcript counters or assume usage=0 means empty context.
+References below retain quality criteria; Claude model names/escalation are not Codex model selection.
+Return a concise result with phase, artifacts, test commands and exit codes, review verdict where
+applicable, and blockers. Reviewer: read-only, review the coordinator's fixed HEAD/artifacts only.
+
+REQUEST:
+{instructions}
+'''
+    for name in docs:
+        content = (ROOT / name).read_text()
+        text += '\n\nCANONICAL SOURCE ' + name + ' sha256=' + hashlib.sha256(content.encode()).hexdigest() + '\n' + content
+    return text
+
+
+def refuse_explicit_codex_when_off(args, legacy):
+    # An explicit Codex request is never silently replaced by Claude. This runs before the
+    # account-home table is read, so the refusal names the off setting and not a missing
+    # account. A profile is read without the table only to see whether any role uses Codex.
+    accounts_file = usage_view.default_paths()['accounts_file']
+    if usage_view.read_codex_enabled(accounts_file):
+        return
+    if not legacy:
+        roles = load_profile(args.profile, args.profile_file, None)['roles']
+        if all(entry['executor'] != 'codex' for entry in roles.values()):
+            return
+    raise RuntimeError('codex is off: set "codex"."enabled" to true or remove it in '
+                       + str(accounts_file))
+
+
+def build_request(args):
+    # Role settings are resolved for each request, and CODEX_HOME comes from the caller's
+    # explicit account table. The profile form and account/model form are mutually exclusive.
+    legacy = bool(args.account or args.model)
+    profile = bool(args.profile or args.profile_file)
+    if legacy and profile or args.profile_file and not args.profile:
+        raise RuntimeError('profile cannot be combined with account/model; profile-file requires profile')
+    if legacy and not (args.account and args.model):
+        raise RuntimeError('legacy request requires both account and model')
+    # The legacy pair goes around the tiers, so only the other forms need the table, except
+    # that a writer role is checked against its cap (whether to read it is decided by name).
+    phase_role = PHASES[args.phase][0]
+    tier_map = None if legacy and phase_role not in tier_caps.CAPPED_ROLES else load_tier_map()
+    if legacy and tier_map is not None:
+        check_role_cap(phase_role, tier_caps.model_tier(tier_map['executors']['codex'], args.model),
+                       tier_map)
+    if legacy or profile:
+        refuse_explicit_codex_when_off(args, legacy)
+    mapping = account_homes(args.account_home, args.account_home_file)
+    if not legacy and not profile and not args.account_home and not args.account_home_file:
+        mapping = default_automatic_account_home()
+    cwd = Path(args.cwd).expanduser().resolve()
+    if not cwd.is_dir():
+        raise RuntimeError('cwd must be prepared target worktree')
+    check = subprocess.run(['git', '-C', str(cwd), 'rev-parse', '--show-toplevel'], capture_output=True, text=True, env=clean_env())
+    if check.returncode or Path(check.stdout.strip()).resolve() != cwd:
+        raise RuntimeError('cwd must be the repository/worktree root')
+    selection = None
+    if args.profile:
+        config = load_profile(args.profile, args.profile_file, set(mapping))
+        state = {'cwd': str(cwd), 'execution_config': config,
+                 'execution_config_hash': execution_config_hash(config)}
+        selection = {'selection_mode': 'explicit', 'configuration': args.profile,
+                     'reason': 'explicit-profile'}
+    elif legacy:
+        # load_profile refuses an account the table does not map; the legacy pair names one
+        # account directly, so the same refusal has to be made here.
+        if args.account not in mapping:
+            raise RuntimeError('account is not in the account-home table')
+        state = {'cwd': str(cwd), 'account': args.account, 'model': args.model}
+        selection = {'selection_mode': 'explicit', 'configuration': 'legacy',
+                     'reason': 'explicit-account-model'}
+    else:
+        selected, selection = automatic_selection(mapping)
+        config = load_profile(selected, None, None)
+        config = bind_codex_account(config, selection['codex']['account'], set(mapping))
+        state = {'cwd': str(cwd), 'execution_config': config,
+                 'execution_config_hash': execution_config_hash(config)}
+    role = PHASES[args.phase][0]
+    # A switched review runs on the decider entry but keeps the phase role in the request file:
+    # the worker chooses the sandbox from that role, and the phase instructions use gh.
+    switched = not legacy and switches_to_decider(args.phase, args.pre_class)
+    execution = resolve_execution(state, 'decider' if switched else role)
+    # The legacy pair is the one way to pin a version, so no rule, mode or table touches it.
+    tiers = (dict.fromkeys(('requested_tier', 'tier', 'tier_reason', 'tier_cap', 'executed_tier',
+                            'budget_modes'))
+             | {'requested_model': args.model, 'model': args.model} if legacy else
+             tier_fields(args, execution, switched, tier_map))
+    if not legacy:
+        check_role_cap(execution['role'], tiers['executed_tier'], tier_map)
+    head = git(str(cwd), 'rev-parse', 'HEAD')
+    if execution['executor'] == 'claude':
+        result = {'status': 'agent-required', 'phase': args.phase, 'role': execution['role'],
+                'executor': execution['executor'], 'account': execution['account'],
+                'effort': execution.get('effort'), 'head': head, 'selection': selection} | tiers
+        if 'execution_config' in state:
+            result.update(execution_config=state['execution_config'],
+                          execution_config_hash=state['execution_config_hash'])
+        return result
+    request = dict(request_id='develop-' + uuid.uuid4().hex, origin='manual',
+                   account=execution['account'], model=tiers['model'], cwd=str(cwd), role=role,
+                   codex_home=mapping[execution['account']],
+                   prompt=prompt(args.phase, 'Dispatch HEAD: ' + head + '\n' + Path(args.input).read_text(), state))
+    if 'effort' in execution:
+        request['effort'] = execution['effort']
+    if args.quota_margin_pct is not None:
+        request['quota_margin_pct'] = args.quota_margin_pct
+    out = Path(args.out).expanduser().resolve()
+    write(out, request)
+    result = {'status': 'request-written', 'request': str(out), 'request_id': request['request_id'],
+            'phase': args.phase, 'role': execution['role'], 'executor': execution['executor'],
+            'account': execution['account'],
+            'codex_home': request['codex_home'], 'effort': execution.get('effort'),
+            'head': head, 'selection': selection} | tiers
+    if 'execution_config' in state:
+        result.update(execution_config=state['execution_config'],
+                      execution_config_hash=state['execution_config_hash'])
+    return result
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    sub = parser.add_subparsers(dest='command', required=True)
+    request = sub.add_parser('request')
+    request.add_argument('--phase', choices=PHASES, required=True)
+    request.add_argument('--input', required=True,
+                         help='UTF-8 phase instructions prepared by coordinator')
+    request.add_argument('--cwd', required=True)
+    request.add_argument('--account')
+    request.add_argument('--model')
+    request.add_argument('--profile')
+    request.add_argument('--profile-file')
+    request.add_argument('--account-home', action='append', default=[], metavar='NAME=PATH',
+                         help='account name to CODEX_HOME; repeatable, not combinable with --account-home-file')
+    request.add_argument('--account-home-file',
+                         help='flat JSON object of account name to CODEX_HOME')
+    request.add_argument('--quota-margin-pct', type=float)
+    request.add_argument('--pre-class', action='append', default=[], choices=PRE_CLASSES,
+                         help='pre-classification of the work; repeatable')
+    request.add_argument('--design-judgment', action='store_true')
+    request.add_argument('--failure', choices=('first', 'executor', 'judgment'))
+    request.add_argument('--unmanned', action='store_true')
+    request.add_argument('--out', required=True,
+                         help='where to write the request file for codex-worker.py run')
+    # The values are checked in tier_model: argparse choices would refuse them without the
+    # blocked JSON that the callers read.
+    lookup = sub.add_parser('tier-model')
+    lookup.add_argument('--executor', required=True)
+    lookup.add_argument('--tier', required=True)
+    args = parser.parse_args()
+    if args.command == 'tier-model':
+        return tier_model(args.executor, args.tier)
+    return build_request(args)
+
+
+if __name__ == '__main__':
+    try:
+        print(json.dumps(main(), ensure_ascii=False))
+    except (OSError, ValueError, RuntimeError, KeyError) as exc:
+        print(json.dumps({'status': 'blocked', 'error': str(exc)}, ensure_ascii=False))
+        sys.exit(2)

@@ -1,6 +1,6 @@
 ---
 name: wt-clean
-description: Git worktree の安全なクリーンアップ（自動処理 → 判断バッチのみ対話の 2 パス）。配下で claude 等のプロセスが稼働中／当日のセッションログがある worktree は自動削除せず判断バッチに回す。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。`--unattended` で無人実行、`--repo` で cwd 以外のリポジトリを対象にできる。「worktree整理」「ワークツリークリーン」「worktree削除」「worktree再利用」「PRマージ後の整理」「プルリク後の片付け」「未マージworktreeのマージ」で起動。
+description: Git worktree の安全なクリーンアップ（`wt-clean` スキルの薄いラッパー）。`wt-clean [<path|branch>…] [--keep] [--no-sync] [--unattended] [--repo <path>]`、引数なしは全 worktree を対象。
 allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 ---
 
@@ -13,12 +13,17 @@ allowed-tools: Read, Write, Edit, Glob, Grep, Bash, AskUserQuestion
 `CLAUDE_PLUGIN_ROOT` を第一候補に、marketplace / installed 配下を探索して SKILL.md の絶対パスを特定する。
 
 ```bash
+plugin_root="${CLAUDE_PLUGIN_ROOT}"
+WT_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; WT_NG=1; fi
 for dir in \
-  "${CLAUDE_PLUGIN_ROOT:+${CLAUDE_PLUGIN_ROOT}/skills/wt-clean}" \
+  "${plugin_root:+$plugin_root/skills/wt-clean}" \
+  ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/worktree/skills/wt-clean \
   ~/.claude/plugins/marketplaces/*/plugins/worktree/skills/wt-clean \
   ~/.claude/plugins/installed/*/worktree/skills/wt-clean; do
   [ -n "$dir" ] && [ -f "$dir/SKILL.md" ] && echo "$dir/SKILL.md" && break
 done
+if [ -n "$WT_NG" ]; then unsetopt nullglob; fi
+unset WT_NG
 ```
 
 特定した絶対パス（`skills/wt-clean/SKILL.md`）を Read tool で読み込み、その手順（Step -1 対象リポ解決 → Step 0 同期 → Step A TARGETS 確定 → Step B 遅延診断 → Step C レポート）に一言一句従って実行する。

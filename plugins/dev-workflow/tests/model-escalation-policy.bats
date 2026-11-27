@@ -1,134 +1,354 @@
 #!/usr/bin/env bats
 #
-# 実装モデルのエスカレーションポリシー（issue #84）
+# 実装モデルのエスカレーションポリシー（issue #84 → #203 で develop 構造に移行）
 #
 # 「レビュー不合格の修正・重要実装（聖域/マージ権限/層間契約/課金・法務）は Fable 担当」という
 # 運用判断を、セッション内の心がけから dev-workflow の機械的ルールへ昇格させたもの。
+# 事前分類の正本は develop スキルの references/pre-classification.md にあり（#556 で W の指示書から移した）、
 # 正本の置き場所が1箇所であること（重複記述を作らないこと）も検証する。
 #
-# spec: dev-workflow-model-escalation-policy
+# spec: dev-workflow-model-escalation-policy, dev-workflow-develop
+
+load lib/develop-docs
+load lib/gate-docs
 
 setup() {
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
+  DECLARATIONS="${PLUGIN_DIR}/skills/pr-review-gate/declarations.md"
+  PREPARE="${PLUGIN_DIR}/skills/pr-review-gate/stages/prepare.md"
+  REVIEW_RUN="${PLUGIN_DIR}/skills/pr-review-gate/stages/review-run.md"
+  REVIEWER_BRIEF="${PLUGIN_DIR}/skills/pr-review-gate/stages/reviewer-brief.md"
+  TRIAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
+  PASS_STAGE="${PLUGIN_DIR}/skills/pr-review-gate/stages/pass.md"
+  HOLD="${PLUGIN_DIR}/skills/pr-review-gate/stages/hold.md"
   PLUGIN_ROOT="$(cd "${PLUGIN_DIR}/../.." && pwd)"
-  ISSUE_SKILL="${PLUGIN_DIR}/skills/github-issue/SKILL.md"
+  DEV_SKILL="${PLUGIN_DIR}/skills/develop/SKILL.md"
+  PRE="${PLUGIN_DIR}/skills/develop/references/pre-classification.md"
   GATE_SKILL="${PLUGIN_DIR}/skills/pr-review-gate/SKILL.md"
+  CRITERIA="${PLUGIN_DIR}/skills/develop/references/decision-criteria.md"
+  BUDGET_POINTER='残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`'
   MANIFEST="${PLUGIN_DIR}/.claude-plugin/plugin.json"
   MARKETPLACE="${PLUGIN_ROOT}/.claude-plugin/marketplace.json"
+  gate_test_docs
 }
 
-# --- ルール1: 事前分類（1周目から Fable）は github-issue の Step D にある ---
+# --- ルール1: 事前分類（1周目から Fable）は develop の pre-classification.md にある ---
 
-@test "pre-classification: section lives in github-issue Step D" {
-  grep -qF '重要実装の事前分類' "$ISSUE_SKILL"
-  sec="$(grep -n '重要実装の事前分類' "$ISSUE_SKILL" | head -1 | cut -d: -f1)"
-  stepd="$(grep -n '^### Step D' "$ISSUE_SKILL" | head -1 | cut -d: -f1)"
-  [ "$sec" -gt "$stepd" ]
+@test "pre-classification: section lives in develop pre-classification.md" {
+  grep -qF '重要実装の事前分類' "$PRE"
 }
 
 @test "pre-classification: names all 4 categories" {
-  grep -qF '聖域パス' "$ISSUE_SKILL"
-  grep -qF 'マージ権限' "$ISSUE_SKILL"
-  grep -qF '層間契約' "$ISSUE_SKILL"
-  grep -qF '課金/法務' "$ISSUE_SKILL"
+  grep -qF '聖域パス' "$PRE"
+  grep -qF 'マージ権限' "$PRE"
+  grep -qF '層間契約' "$PRE"
+  grep -qF '課金/法務' "$PRE"
 }
 
-@test "pre-classification: spawns with model fable from the first round" {
-  grep -qF '`model: fable`' "$ISSUE_SKILL"
-  grep -q '最初から' "$ISSUE_SKILL"
+@test "pre-classification: the first-round column has no fable (the worker's cap is opus)" {
+  tbl="$(awk '/^## 重要実装の事前分類/{f=1} f && /^\| /{print} /^## 昇格トリップワイヤー/{f=0}' "$PRE")"
+  [ -n "$tbl" ]
+  ! grep -qF '`fable`' <<<"$tbl" || return 1
+  grep -qF '`opus`' <<<"$tbl"
+  grep -q '最初から' "$PRE"
+  grep -qF 'W の上限は `opus`' "$PRE"
+}
+
+@test "pre-classification: reviewers that hit the table are spawned as dev-workflow:decider" {
+  grep -qF 'dev-workflow:decider' "$PRE"
+  grep -qF '`general-purpose` に `model: fable` を付けない' "$PRE"
 }
 
 @test "pre-classification: session model (AGENT_MODEL) is left unchanged" {
-  grep -qF 'AGENT_MODEL' "$ISSUE_SKILL"
+  grep -qF 'AGENT_MODEL' "$PRE"
+}
+
+# 残量モード表の abundant / conserve 行は「事前分類の fable 行」を前提に書かれていて、
+# 事前分類表から fable 行が消えた後も旧前提のまま残っていた（PR #252 の指摘）。
+@test "budget modes: the abundant / conserve rows route Fable through the decider type" {
+  for row in abundant conserve; do
+    line="$(grep -F "| \`${row}\`" "$CRITERIA")"
+    [ -n "$line" ]
+    grep -qF 'dev-workflow:decider' <<<"$line"
+  done
+  grep -qF '実行役（W）はどの分類でも `opus` 止まり' "$CRITERIA"
+}
+
+# 退役した言い回しがプラグインのどこかに残ると、配布される指示文がガードの deny する
+# 手順を案内することになる。文書・スクリプトを横断で見る（CHANGELOG は変更の記録なので対象外）。
+@test "retired wording: no live instruction still points at the removed fable row" {
+  offenders="$(grep -rn '事前分類の `\?fable`\? 行\|Fable は verify / checkpoint のみ' \
+      --include='*.md' --include='*.sh' --include='*.json' "$PLUGIN_DIR" \
+      | grep -v '/tests/' | grep -v '/CHANGELOG.md:' || true)"
+  if [ -n "$offenders" ]; then
+    echo "退役した『事前分類の fable 行』の言い回しが残っている:"
+    echo "$offenders"
+    false
+  fi
+}
+
+@test "pre-classification: the table feeds --pre-class and the sacred path alone does not raise a review" {
+  grep -qF '`--pre-class`' "$PRE"
+  grep -qF '聖域パスだけではレビューを上げない' "$PRE"
+  grep -qF 'マージ権限・層間契約・課金/法務に当たるときは' "$PRE"
+  line="$(grep -F '| `conserve`' "$CRITERIA")"
+  grep -qF 'マージ権限・層間契約・課金/法務に当たる' <<<"$line"
+  grep -qF '聖域パスだけでは上げない' <<<"$line"
+}
+
+@test "spec reviewer: the spawn uses the model and role request returned, keeping the wording of the spec" {
+  R1_DOC="${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md"
+  sec="$(awk '/^## R1 の spawn/{f=1; next} /^## /{f=0} f' "$R1_DOC")"
+  grep -qF '`codex-develop.py request --phase spec-review` が返す `model`' <<<"$sec"
+  grep -qF '`role: decider`' <<<"$sec"
+  grep -qF '`model: opus`' <<<"$sec"
+  grep -qF 'references/pre-classification.md' <<<"$sec"
+  grep -qF '聖域パスだけでは上げない' <<<"$sec"
+  # 優先順位の言い換えは decision-criteria.md の表への 1 行に替えた（#1683）
+  grep -qF "$BUDGET_POINTER" <<<"$sec"
+  ! grep -qF '`sonnet` 固定' <<<"$sec" || return 1
+}
+
+@test "shared budget: depleted is a Sonnet cap and haiku stays haiku under both modes" {
+  grep -F '| `depleted`' "$CRITERIA" | grep -qF 'Sonnet 上限'
+  ! grep -F '| `depleted`' "$CRITERIA" | grep -qF 'Sonnet 固定' || return 1
+  grep -qF '`haiku` の役割（explore と summarize）は `throttled` でも `depleted` でも `haiku` のまま' "$CRITERIA"
+  grep -qF "$BUDGET_POINTER" "$PRE"
+}
+
+@test "shared budget: the throttled row lowers the reviewer G requests to Sonnet, as request does" {
+  grep -F '| `throttled`' "$CRITERIA" | grep -qF 'W / R1 / G と G が要求するレビュアーの既定を **Sonnet** に落とす'
+  GATE_RUNNER="${PLUGIN_DIR}/skills/develop/references/roles/gate-runner.md"
+  grep -qF 'skills/develop/references/decision-criteria.md' "$GATE_RUNNER"
+  grep -qF 'G 自身は選び直さない' "$GATE_RUNNER"
+  grep -F '| ①共有枠モード | `throttled`' "$CRITERIA" | grep -qF '昇格上限 Opus'
+  ! grep -qF 'レビュアーは `throttled` では `opus` 止まり' "$GATE_RUNNER" || return 1
 }
 
 @test "pre-classification: budget mode still caps escalation" {
-  grep -qF 'FABLE_BUDGET_MODE=reserve' "$ISSUE_SKILL"
-  grep -qF 'exhausted' "$ISSUE_SKILL"
+  grep -qF "$BUDGET_POINTER" "$PRE"
+  grep -F '| `reserve`' "$CRITERIA" | grep -qF '自動実行'
+  grep -F '| `exhausted`' "$CRITERIA" | grep -qF '全経路'
+}
+
+# #1683: 優先順位の表は decision-criteria.md の 1 つだけ。他の 4 ファイルは言い換えず 1 行で指す。
+@test "budget modes: one priority table in decision-criteria, four files point at it in one line" {
+  [ "$(grep -c '^| ①共有枠モード |' "$CRITERIA")" -eq 3 ]
+  [ "$(grep -c '^| ②事前分類 |' "$CRITERIA")" -eq 1 ]
+  [ "$(grep -c '^| ③Fable 残量モード |' "$CRITERIA")" -eq 4 ]
+  ! grep -qF '## 共有枠モード `SHARED_BUDGET_MODE`' "$CRITERIA" || return 1
+  local f
+  for f in "$PRE" "${PLUGIN_DIR}/skills/develop/references/roles/spec-reviewer.md" \
+           "${PLUGIN_DIR}/skills/develop/references/roles/worker/common.md" "${PLUGIN_DIR}/references/model-tiers.md"; do
+    if grep -qF '①共有枠モード' "$f"; then echo "restated: $f" >&2; return 1; fi
+    # 表の行の効果（値ごとの扱い）を言い換えて書かない
+    if grep -qE 'FABLE_BUDGET_MODE=(abundant|conserve|reserve|exhausted)|interactive の `reserve`' "$f"; then
+      echo "restated effect: $f" >&2; return 1
+    fi
+    [ "$(grep -cF "$BUDGET_POINTER" "$f")" -eq 1 ] || { echo "no pointer: $f" >&2; return 1; }
+  done
+  # 表の行は他のファイルに無い
+  ! grep -rlF '| `throttled` |' "${PLUGIN_DIR}/skills/develop" "${PLUGIN_DIR}/references/model-tiers.md" | grep -v 'decision-criteria.md' || return 1
 }
 
 # --- ルール2: エスカレーション（failed → 修正実装）は pr-review-gate にある ---
 
 @test "escalation: fix-cycle model section lives in step 2 of the gate" {
-  grep -qF '修正サイクルのモデル昇格' "$GATE_SKILL"
-  sec="$(grep -n '修正サイクルのモデル昇格' "$GATE_SKILL" | head -1 | cut -d: -f1)"
-  step2="$(grep -n '^### 2\. レビュー' "$GATE_SKILL" | head -1 | cut -d: -f1)"
-  step3="$(grep -n '^### 3\. リスク宣言' "$GATE_SKILL" | head -1 | cut -d: -f1)"
-  [ "$sec" -gt "$step2" ]
-  [ "$sec" -lt "$step3" ]
+  # 手順 2-2 の正本は triage-escalation.md。入口・索引ともそこを指す
+  grep -qE '^#### 2-2\. 修正サイクルのモデル昇格' "$TRIAGE"
+  grep -qF '| 2-2 | 2-2. 修正サイクルのモデル昇格' "$GATE_SKILL"
+  grep -F '| 2-2 |' "$GATE_SKILL" | grep -qF 'stages/triage-escalation.md'
+  grep -qF 'stages/triage-escalation.md' "${PLUGIN_DIR}/skills/pr-review-gate/stages/triage.md"
 }
 
-@test "escalation: only implementation-quality failures escalate to fable" {
-  grep -qF '実装品質起因' "$GATE_SKILL"
-  grep -qF '`model: fable`' "$GATE_SKILL"
-  grep -qF '昇格は実装品質起因のときだけ' "$GATE_SKILL"
+@test "escalation: implementation-quality failures raise the decider or the executor, never both" {
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
+  grep -qF '実装品質起因' <<<"$sec"
+  grep -qF '決める役' <<<"$sec"
+  grep -qF '実行役' <<<"$sec"
+  grep -qF '一方だけ' <<<"$sec"
+  grep -qF 'dev-workflow:decider' <<<"$sec"
+  # 旧ラダー（実行役を 1 段ずつ sonnet → opus → fable）は残さない
+  ! grep -qF '`sonnet` → `opus` → `fable`' <<<"$sec" || return 1
+  # 旧ラダーの表記「...で spawn する」だけを拒否する。現行文は同じ語順で
+  # 「...で spawn しない」と続くため、"する" まで含めないと現行文自体に誤爆する。
+  ! grep -qF '修正実装を `model: fable` で spawn する' <<<"$sec" || return 1
+  grep -qF '昇格は実装品質起因のときだけ' "${TRIAGE}"
+}
+
+@test "escalation (#1632): the 2-2 section names --failure executor / first / judgment and uses the model request returned" {
+  sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
+  [ -n "$sec" ]
+  grep -qF 'request --phase implement --failure executor' <<<"$sec"
+  grep -qF 'request --phase decider --failure first' <<<"$sec"
+  grep -qF -- '--failure judgment' <<<"$sec"
+  grep -qF '`request` が返した model' <<<"$sec"
+  grep -qF '新しい thread に手渡す' <<<"$sec"
+  grep -qF '一方だけ' <<<"$sec"
+}
+
+@test "escalation (#1632): the 2-2 section no longer spawns the executor as opus or names opus -> fable as the rule" {
+  sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
+  ! grep -qF '実行役を `opus` で spawn' <<<"$sec" || return 1
+  ! grep -qF '`opus` → `fable`' <<<"$sec" || return 1
+  ! grep -qF '実行役の上限は `opus`' <<<"$sec" || return 1
+  ! grep -qF '実行役はどの分類でも `opus` 止まり' <<<"$sec" || return 1
+  ! grep -qF 'model: opus' <<<"$sec" || return 1
+}
+
+@test "escalation (#1632): the executor is never raised to the top tier and agent-model-guard.sh enforces it" {
+  sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
+  grep -qF '実行役を最上位の格に上げない' <<<"$sec"
+  grep -qF 'agent-model-guard.sh' <<<"$sec"
+}
+
+@test "escalation (#1632): the decider enters at --failure first on the gate's first failed and --failure judgment from the second" {
+  sec="$(awk '/^#### 2-2\. /{f=1;next} /^## G として動くとき/{f=0} f' "${TRIAGE}")"
+  grep -qF '1 回目の failed なら `--failure first`' <<<"$sec"
+  grep -qF '2 回目以降' <<<"$sec"
+  p="$(awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' "${TRIAGE}" | grep '^- 本体への提案:')"
+  grep -qF 'request --phase decider --failure first' <<<"$p"
+  grep -qF '`--failure judgment`' <<<"$p"
+  grep -qF 'request --phase decider --failure' <<<"$p"
+}
+
+@test "escalation: the two-round cap is given as the reason for raising on the first failed" {
+  sec="$(awk '/^#### 2-2\. /{f=1} /^### 3\. /{f=0} f' "${TRIAGE}")"
+  grep -qF '2 周キャップ' <<<"$sec"
+  grep -qF '既定の最終周' <<<"$sec"
+  grep -qF '1 回目の failed' <<<"$sec"
+  grep -qF '直し方の判定' <<<"$sec"
+}
+
+@test "escalation (#1628): the failed proposal names --failure executor / judgment and uses the model request returned" {
+  p="$(awk '/^### failed のとき/{f=1;next} /^### /{f=0} f' "${TRIAGE}" | grep '^- 本体への提案:')"
+  [ -n "$p" ]
+  grep -qF 'request --phase implement --failure executor' <<<"$p"
+  grep -qF 'request --phase decider --failure' <<<"$p"
+  grep -qF '`request` が返した model' <<<"$p"
+  grep -qF '新しい thread に手渡す' <<<"$p"
+  grep -qF '一方だけ' <<<"$p"
+  ! grep -qF '`opus`' <<<"$p" || return 1
+  ! grep -qF '`fable`' <<<"$p" || return 1
+  ! grep -qF 'W を `opus` で再開' "${TRIAGE}" || return 1
 }
 
 @test "escalation: ambiguous spec and reviewer false positives are not escalated" {
-  grep -q '仕様が曖昧' "$GATE_SKILL"
-  grep -q '誤検出' "$GATE_SKILL"
-  grep -q '反証' "$GATE_SKILL"
+  grep -q '仕様が曖昧' "${TRIAGE}"
+  grep -q '誤検出' "${TRIAGE}"
+  grep -q '反証' "${TRIAGE}"
 }
 
 # --- ルール3: フォールバック（Fable が使えないとき） ---
 
 @test "fallback: falls back to the previous model and records one PR comment line" {
-  grep -qF 'フォールバック' "$GATE_SKILL"
-  grep -qF '修正実装モデル: opus' "$GATE_SKILL"
-  grep -qF 'レート制限' "$GATE_SKILL"
+  grep -qF 'Fable が使えないときのフォールバック' "${TRIAGE}"
+  grep -qF '決める役モデル: opus' "${TRIAGE}"
+  grep -qF 'dev-workflow:decider のまま' "${TRIAGE}"
+  grep -qF 'レート制限' "${TRIAGE}"
 }
 
 # --- ルール4: 2周キャップ（収束ルール）との関係 ---
 
 @test "convergence: relation to the two-round cap is stated" {
-  grep -qF '2周キャップ' "$GATE_SKILL"
-  grep -qF '最終周' "$GATE_SKILL"
+  grep -qF '2周キャップ' "${TRIAGE}"
+  grep -qF '最終周' "${TRIAGE}"
 }
 
 # --- 重複を作らない: 正本はどちらか一方、他方は参照 ---
 
 @test "single source: the 4-category table is not duplicated into the gate skill" {
   # pr-review-gate は分類名を1行で挙げるだけで、分類表の中身（判定材料）は再掲せず
-  # github-issue を正本として参照する
-  grep -qF 'github-issue スキルの Step D が正本' "$GATE_SKILL"
+  # develop の pre-classification.md を正本として参照する
+  grep -qF 'develop スキルの references/pre-classification.md が正本' "${TRIAGE}"
+  for f in "$GATE_SKILL" "$DECLARATIONS" "$PREPARE" "$REVIEW_RUN" "$REVIEWER_BRIEF" "$TRIAGE" "$PASS_STAGE" "$HOLD"; do
+    ! grep -q 'github-''issue' "$f" || return 1
+  done
   # 4分類の名前が出るのは正本を指す1行だけ（表として再掲していない）
-  [ "$(grep -cF '層間契約' "$GATE_SKILL")" -eq 1 ]
-  [ "$(grep -cF '聖域パス・マージ権限' "$GATE_SKILL")" -eq 1 ]
+  [ "$(grep -cF '層間契約' "${TRIAGE}")" -eq 1 ]
+  [ "$(grep -cF '聖域パス・マージ権限' "${TRIAGE}")" -eq 1 ]
 }
 
 @test "single source: the fallback record format points back to pr-review-gate" {
-  grep -qF 'pr-review-gate' "$ISSUE_SKILL"
-  grep -q '正本' "$ISSUE_SKILL"
+  grep -qF 'pr-review-gate' "$PRE"
+  grep -q '正本' "$PRE"
+}
+
+@test "single source: develop SKILL.md model section defers the table to pre-classification.md" {
+  awk 'index($0,"## モデル")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL" | grep -q 'pre-classification.md'
+}
+
+# --- develop の「モデル」節は規則の説明と request への参照（model-tier-resolution, #614） ---
+
+model_section() {
+  awk 'index($0,"## モデル")==1{f=1; next} /^## /{f=0} f' "$DEV_SKILL"
+}
+
+@test "model section: the role table states tiers with the Claude value in parentheses" {
+  sec="$(model_section)"
+  echo "$sec" | grep -F '| W（実行役。' | grep -qF '| 中位（`sonnet`） | 上位（`opus`）:'
+  echo "$sec" | grep -F '| R1（読んで判断する役） |' | grep -qF '| 上位（`opus`） |'
+  echo "$sec" | grep -F '| G（`dev-workflow:gate-runner`） |' | grep -qF '| 中位（`sonnet`） |'
+  echo "$sec" | grep -F '| G が要求するレビュアー' | grep -qF '| 上位（`opus`） |'
+  grep -qF 'W の上限は `opus`' <<<"$sec"
+  echo "$sec" | grep -F '| R1（読んで判断する役） |' | grep -qF 'dev-workflow:decider'
+  echo "$sec" | grep -F '| G が要求するレビュアー' | grep -qF 'dev-workflow:decider'
+}
+
+@test "model section: V and the carryover judge do not go through request" {
+  sec="$(model_section)"
+  echo "$sec" | grep -F '| V（画面確認役。' | grep -F '中位（`sonnet`）' | grep -qF '`request` を通らない'
+  echo "$sec" | grep -F '| 引き継ぎの判定役' | grep -F '上位（`opus`）' | grep -qF '`request` を通らず'
+}
+
+@test "model section: new spawns use the model request returned and are not recalculated" {
+  sec="$(codex_procedures)"
+  grep -qF 'codex-develop.py request' <<<"$sec"
+  grep -qF '返った `model` で Agent を起動する' <<<"$sec"
+}
+
+@test "model section: budget modes are named but their value-by-value effects stay in decision-criteria" {
+  sec="$(model_section)"
+  grep -qF 'FABLE_BUDGET_MODE' <<<"$sec"
+  grep -qF 'SHARED_BUDGET_MODE' <<<"$sec"
+  grep -qF 'references/decision-criteria.md' <<<"$sec"
+  # 引き継ぎの判定役の行だけが例外: request を通らない役なので、depleted のときは起こさないことをその行に書く
+  ! echo "$sec" | grep -vF '| 引き継ぎの判定役' | grep -qE 'abundant|reserve|exhausted|throttled|depleted' || return 1
+  echo "$sec" | grep -F '| 引き継ぎの判定役' | grep -qF 'SHARED_BUDGET_MODE=depleted'
+}
+
+@test "model section: no route-by-route model names per configuration" {
+  [ "$(model_section | grep -cE 'claude-write-codex-review|codex-standard')" -eq 0 ]
+}
+
+@test "role profile section: request gets the tier inputs on every route, including Claude default" {
+  sec="$(codex_procedures)"
+  grep -qF 'Claude 既定の経路を含む全経路' <<<"$sec"
+  for flag in '--pre-class' '--design-judgment' '--failure' '--unmanned'; do
+    grep -qF -- "$flag" <<<"$sec" || { echo "missing $flag"; return 1; }
+  done
+  grep -qF '`role: decider`' <<<"$sec"
+  for field in requested_model tier_reason executed_tier tier_cap; do
+    grep -qF "\`$field\`" <<<"$sec" || { echo "missing $field"; return 1; }
+  done
+}
+
+@test "role profile section: a resume calls request again and compares tiers without reselecting" {
+  sec="$(codex_procedures)"
+  # #424: 呼び直しは今回の格の入力（失敗ループの段なら --failure の値を含む）で行う
+  grep -qF '同じ phase と、今回の再開に当たる格の入力' <<<"$sec"
+  grep -qF 'thread の格' <<<"$sec"
+  grep -qF '構成の選び直しにも使わない' <<<"$sec"
 }
 
 # --- バージョン ---
 
-@test "manifest: dev-workflow version bumped above 1.8.1" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  [ "$v" != "1.8.1" ]
-  highest="$(printf '1.8.1\n%s\n' "$v" | sort -V | tail -1)"
-  [ "$highest" = "$v" ]
-}
-
-@test "manifest: marketplace dev-workflow entry matches plugin.json" {
-  v="$(jq -r '.version' "$MANIFEST")"
-  m="$(jq -r '.plugins[] | select(.name == "dev-workflow") | .version' "$MARKETPLACE")"
-  [ "$m" = "$v" ]
-}
-
-@test "manifest: marketplace top-level version bumped above 2.38.0" {
-  v="$(jq -r '.version' "$MARKETPLACE")"
-  [ "$v" != "2.38.0" ]
-  highest="$(printf '2.38.0\n%s\n' "$v" | sort -V | tail -1)"
-  [ "$highest" = "$v" ]
-}
-
-@test "skills: both edited skills bumped their frontmatter version above 1.1.0" {
-  for f in "$ISSUE_SKILL" "$GATE_SKILL"; do
-    v="$(awk -F': ' '/^version:/{print $2; exit}' "$f")"
-    [ -n "$v" ]
-    [ "$v" != "1.1.0" ]
-    highest="$(printf '1.1.0\n%s\n' "$v" | sort -V | tail -1)"
-    [ "$highest" = "$v" ]
-  done
+@test "skills: develop SKILL.md is at least 2.0.0 and gate SKILL.md is above 1.4.0" {
+  v="$(awk -F': ' '/^version:/{print $2; exit}' "$DEV_SKILL")"
+  [ -n "$v" ]
+  printf '2.0.0\n%s\n' "$v" | sort -V -C
+  g="$(awk -F': ' '/^version:/{print $2; exit}' "$GATE_SKILL")"
+  [ -n "$g" ]
+  [ "$g" != "1.4.0" ]
+  printf '1.4.0\n%s\n' "$g" | sort -V -C
 }

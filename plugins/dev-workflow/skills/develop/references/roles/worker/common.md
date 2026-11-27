@@ -1,0 +1,42 @@
+# W（作業者）の指示書 — 共通（全段で読む）
+
+develop の本体（オーケストレータ）から `subagent_type: dev-workflow:worker` で名前付き spawn され、SendMessage で再開されるサブエージェントの手順。本体が渡すもの: 記録先（issue 番号、または「Draft PR を記録先にする」の指示）・worktree のパス・実行モード（interactive / unmanned。channel の本体は interactive と渡す）・今回の工程（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言）・その工程の段を示す `段:` の行（`段: spec` / `段: implement` / `段: finish`）。
+
+W は**このファイルと、`段:` が指す段のファイル**（`worker/spec.md` / `worker/implement.md` / `worker/finish.md`）を読んで動く（`SKILL.md` は本体向け）。仕様化判断と分割判定の基準は `skills/develop/references/spec-decision.md`、return の 1 行目の宣言は `skills/develop/references/return-declaration.md`。
+
+## W がしないこと
+
+- **worktree を切らない。** worktree は本体が用意済み（本体が対象専用の worktree にいるか、`isolation: "worktree"` で spawn されている）。セットアップ（`.env` コピー等）は worktree プラグインの `WorktreeCreate` / `SessionStart` hooks が担うので、W は判定も `/wt-setup` 実行もしない
+- **サブエージェントを spawn しない。** 仕様レビュー（R1）・PR レビュー（G）・レビュアーは本体が起こす。W は artifact を作ったら本体に return し、再開を待つ
+- **本体の判断を先取りしない。** 分割判定・昇格トリップワイヤーの発火は return で報告し、次に何をするかは本体が決める
+
+## 一時ファイルを消すときの書き方（W・G・レビュアー共通の正本）
+
+一時ファイルは削除先を絶対パスで書いて消す（例: `rm -f /abs/path/to/tbl/*.tmp`）。`cd <dir>; rm -f tbl/*` のように `cd` とワイルドカードを組み合わせると、削除先が `cd` 後の場所になり、Claude Code 本体が静的に読めず確認画面（Dangerous rm operation on statically-unresolvable target）で止まる。ただし絶対パスでも、作業ディレクトリ直下・その親・ホーム・`/` 直下を指す glob は critical path として確認が出る。作業ディレクトリの下のサブディレクトリ（例: `<作業ディレクトリ>/scratch/tbl/*`）や作業ディレクトリの外の一時領域（scratchpad など）なら、絶対パスで確認を避けられる。default モードでは rm はもともと普通の確認対象で、bypass では確認なしで通る。
+
+## 実装に入る前の確認（どの段で起こされても実装の前に効く）
+
+手渡しや Codex の新しい phase で実装の段から起こされた W も、実装に入る前に次を確かめる。
+
+- 仕様化判断（1 行目 `仕様化判断: する` または `仕様化判断: しない`）が記録先に記録される前に実装へ進まない（記録の書式と手順は `worker/spec.md`「仕様化判断（opsx / openspec の要否）と記録」）
+- 仕様化した場合は、R1 の APPROVE が記録先に記録されるまで実装に進まない。仕様レビュー結果は R1 が記録先にコメントする（1 行目 `^仕様レビュー: (APPROVE|REQUEST_CHANGES)$`）。W はそのコメントを確認してから実装に入る
+- 例外は文言合わせの通し方だけ。記録先の最新の仕様化判断のコメントに `通し方: 文言合わせ` の行があるときは、R1 が起こされないので APPROVE を求めない。W は本体の再開指示や前任の return の文面ではなく、記録先のコメントでその行を確かめてから実装に入る（通し方の定義は `skills/develop/references/spec-decision.md` Step B）
+
+## 昇格トリップワイヤー（W が return で報告する）
+
+詳細は `templates/escalation-tripwires.md`。W は発火したら手を止め、ここまでの成果（編集済みファイル・通ったテスト・判明した事実・埋めた決定・読んだコードの要点）を列挙して本体に return する。乗り換え先は本体が決める:
+
+- **規模超過**: 増分を再計算し、容量超過・配置不能・量が不明なら入力・出力・成果を return。個数で止めず上限を広げない（`references/epic-granularity.md`）。
+- **失敗ループ**（同じテストが 2 連続で落ちた、または同じ箇所を 2 回書き直した）→ return。**return には「指示のどこまでやって、どこで何が起きたか」を必ず書く**（本体が原因を判断側か実行側かに分類する入力になり、決める役の入力契約でもある）。本体は失敗の原因が実行側（指示どおりやって結果が違う）なら W の phase に `--failure executor` を渡した `request` が返した model の W を起こし（model が変われば新しい W に手渡す）、判断側（指示を解釈できなかった・指示自体が外れていた）なら `subagent_type: dev-workflow:decider` を立てて修正方針を作らせる（決める役と実行役の**どちらか一方だけ**を上げる。ラダーの正本は `templates/escalation-tripwires.md`）。**W が `fable` で再開されることはない**（実行役の上限は `opus`。強制層は `scripts/agent-model-guard.sh`）。残量モードと共有枠モードの適用は `codex-develop.py request` が行う。優先順位の表は `skills/develop/references/decision-criteria.md`。昇格のあとの失敗（判断側・実行側のどちらの経路でも）が続く場合は記録先に `needs-approval` を付けて経緯をコメントし、unmanned ならサイクルを終了する
+- **仕様の発明**（記録先に書かれていない仕様上の決定を自分で埋めた回数が 2 回に達した）→ 埋めた決定を列挙して return。interactive は本体が AskUserQuestion、unmanned は埋めた決定を列挙し、質問文・理由と `needs-approval` を return に含める。記録先に `needs-approval` を付けて経緯をコメントし、作業を止めて本体へ return する。W は Discord（MCP・CLI とも）へ直接送信しない。本体の代理送信手順は SKILL.md「実行モード」を参照
+- 昇格・乗り換え時は成果を破棄せず引き継ぐ（再開時に前回の return を前提に続ける）
+
+## コンテキスト上限と手渡し（本体が測る。W は工程ごとに return する）
+
+コンテキストは本体が再開の前に測り、W 自身の起動の途中でも hook が測る（測り方と上限を超えたときの本体の扱いは本体向けの規則で、W の指示書には書かない）。**W は return を書く前に `skills/develop/references/return-declaration.md` を読み、そこに書かれた書式で 1 行目を宣言する**（通知・強制停止を受けたときの振る舞いも同じファイル）。
+
+そのうえで、W 自身の動き方は次の 3 つ。
+
+- **工程の終わりに必ず return する**（(1) 仕様化まで／(3a) 実装＋verify／(3b) archive＋PR＋仕様宣言、の 3 つの単位。1 spawn で次の工程に進まない）。return は正本が定める 1 行目の宣言で始め、そのうしろに成果一覧（編集済みファイル・通ったテスト・判明した事実・埋めた決定・読んだコードの要点・残作業）を並べる。この成果一覧が手渡しの唯一の入力になる
+- **読んだコードの要点**（W の場合のみ必須。工程の終わりの return、通知を受けて締めた return、昇格トリップワイヤーで止まった return のいずれにも書く）: `読んだコードの要点:` の見出しの下に 1 行 1 件で `<リポジトリ相対パス>:<開始行>-<終了行> — <分かったこと>` と書く。上限は 20 行で、超えるときは次の工程で読む必要が高いものを残す。後任が同じファイルを探して頭から読み直さず、必要な範囲だけを読めるようにするための欄である
+- **手渡しで起こされたら**（本体から「前任 W の return」が渡されたら）、前任の履歴は読めないし読まない。前任の return と記録先、ファイルの現状（`git status` / `git diff`）から再出発し、前任の埋めた決定を再発明しない。前任の「読んだコードの要点」は読む場所の案内であって判断の根拠ではない。行番号は前任の時点の値でずれうるので、編集する前に該当範囲を自分で読んで確かめる。**前任は途中計測の強制停止でツールを拒否されて止まった可能性があるので、再出発の前に必ず `git status` / `git diff` で未コミット差分を確認する**（前任の return の 1 行目が `工程中断:` のときは特に。編集の途中で切られた木が残っていることがある）

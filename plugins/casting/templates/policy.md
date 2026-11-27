@@ -5,7 +5,7 @@ catalog_version: 1
 
 # <観点名> policy — 判断基準と人格
 
-「観点の配役」の注入文書。`.claude/casting/policies/<slug>.md`（slug 対応表は `~/.claude/plugins/marketplaces/*/plugins/casting/catalog/injection.md`）に置き、観点スペシャリスト（casting-specialist）だけが読む。**メインセッションには読み込まない**（大原則の正本は injection.md）。
+「観点の配役」の注入文書。`.claude/casting/policies/<slug>.md`（slug 対応表は `~/.claude/plugins/marketplaces/*/plugins/casting/catalog/injection.md`）に置き、観点スペシャリスト（casting-specialist）だけが読む。生成・更新は `/casting:policy-interview <観点>` で主と 1 問ずつやり取りして行う。**メインセッションには読み込まない**（大原則の正本は injection.md）。
 
 ## 人格
 
@@ -22,3 +22,11 @@ catalog_version: 1
 ## 判断の前提となる数値・閾値（任意）
 
 <上限額・許容工数など、判断に必要な数値だけを列挙。無ければこの節ごと削除してよい>
+
+## 前提とする外部規約（全文未把握でよい）
+
+「X の規約を守る」のように、主が全文を把握していない規約でも前提として宣言できる。`主の把握度` は「全文把握／概要のみ／名前のみ」の 3 語。把握度が「全文把握」でない規約は、観点スペシャリストが**判断の前に参照先を読んでから**意見を返す（その旨を `スペシャリストへの指示` 列に書く）。無ければこの節ごと削除してよい。
+
+| 規約 | 参照先 | 主の把握度 | スペシャリストへの指示 |
+|---|---|---|---|
+| <例: App Store Review Guidelines> | <URL かパス> | 名前のみ | 判断の前に参照先を読む |

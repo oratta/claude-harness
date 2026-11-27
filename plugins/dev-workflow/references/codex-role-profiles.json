@@ -1,0 +1,65 @@
+{
+  "version": 2,
+  "profiles": {
+    "codex-standard": {
+      "roles": {
+        "spec-write": {"executor": "codex", "account": "current", "effort": "high"},
+        "spec-review": {"executor": "codex", "account": "current", "effort": "high"},
+        "implement": {"executor": "codex", "account": "current", "effort": "medium"},
+        "impl-review": {"executor": "codex", "account": "current", "effort": "high"},
+        "review": {"executor": "codex", "account": "current", "effort": "high"},
+        "decider": {"executor": "codex", "account": "current", "effort": "high"},
+        "explore": {"executor": "codex", "account": "current", "effort": "low"},
+        "summarize": {"executor": "codex", "account": "current", "effort": "low"}
+      }
+    },
+    "codex-economy": {
+      "roles": {
+        "spec-write": {"executor": "codex", "account": "current", "effort": "medium", "tier_cap": "最安"},
+        "spec-review": {"executor": "codex", "account": "current", "effort": "high"},
+        "implement": {"executor": "codex", "account": "current", "effort": "medium", "tier_cap": "最安"},
+        "impl-review": {"executor": "codex", "account": "current", "effort": "high"},
+        "review": {"executor": "codex", "account": "current", "effort": "high"},
+        "decider": {"executor": "codex", "account": "current", "effort": "high"},
+        "explore": {"executor": "codex", "account": "current", "effort": "low"},
+        "summarize": {"executor": "codex", "account": "current", "effort": "low"}
+      }
+    },
+    "hybrid-standard": {
+      "roles": {
+        "spec-write": {"executor": "codex", "account": "current", "effort": "high"},
+        "spec-review": {"executor": "claude", "account": "current", "effort": "high"},
+        "implement": {"executor": "codex", "account": "current", "effort": "medium"},
+        "impl-review": {"executor": "claude", "account": "current", "effort": "high"},
+        "review": {"executor": "claude", "account": "current", "effort": "high"},
+        "decider": {"executor": "claude", "account": "current", "effort": "high"},
+        "explore": {"executor": "codex", "account": "current", "effort": "low"},
+        "summarize": {"executor": "codex", "account": "current", "effort": "low"}
+      }
+    },
+    "claude-write-codex-review": {
+      "roles": {
+        "spec-write": {"executor": "claude", "account": "current", "effort": "medium"},
+        "spec-review": {"executor": "codex", "account": "current", "effort": "high"},
+        "implement": {"executor": "claude", "account": "current", "effort": "medium"},
+        "impl-review": {"executor": "codex", "account": "current", "effort": "high"},
+        "review": {"executor": "codex", "account": "current", "effort": "high"},
+        "decider": {"executor": "codex", "account": "current", "effort": "high"},
+        "explore": {"executor": "claude", "account": "current", "effort": "low"},
+        "summarize": {"executor": "claude", "account": "current", "effort": "low"}
+      }
+    },
+    "claude-default": {
+      "roles": {
+        "spec-write": {"executor": "claude", "account": "current", "effort": "medium"},
+        "spec-review": {"executor": "claude", "account": "current", "effort": "high"},
+        "implement": {"executor": "claude", "account": "current", "effort": "medium"},
+        "impl-review": {"executor": "claude", "account": "current", "effort": "high"},
+        "review": {"executor": "claude", "account": "current", "effort": "high"},
+        "decider": {"executor": "claude", "account": "current", "effort": "high"},
+        "explore": {"executor": "claude", "account": "current", "effort": "low"},
+        "summarize": {"executor": "claude", "account": "current", "effort": "low"}
+      }
+    }
+  }
+}

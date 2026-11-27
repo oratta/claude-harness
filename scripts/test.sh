@@ -15,14 +15,37 @@
 #       無言で減らさず "skipped (excluded): N" として明示する。
 #       ※ 現時点で除外が必要なスイートは無い（全スイートが Linux で動く）。
 #
+#   TEST_SHARD=2/4 scripts/test.sh
+#       全体を N 個の組に分けたうちの k 番目だけを実行する（k/N。issue #990）。
+#       用途は CI で bats を複数のジョブに分けて同時に走らせること。未設定か空なら
+#       分けずに全件を実行する（手元の使い方は変わらない）。
+#       組の割り当て（issue #1028）: スイートごとの (@test の件数 + 1) を重みにして、重い順
+#       （同数は `git ls-files` の一覧の順）に、その時点でいちばん軽い組（同点は番号の
+#       小さい組）へ順に配る。組ごとのテスト件数がそろうので、所要時間もそろいやすい。
+#       組の割り当てはフィルタと TEST_EXCLUDE を当てる前の一覧で決めるので、
+#       あるスイートがどの組に入るかはフィルタや除外の指定で変わらない
+#       （フィルタに一致するスイートが別の組にしか無ければ、対象が空で失敗する）。
+#       受け付けるのは「0 で始まらない数字 / 0 で始まらない数字」で k <= N の形だけ。
+#       それ以外（先頭ゼロ・空白を含む値も）は読み替えず、何も実行せずに失敗する。
+#       既定に倒して全件を走らせると、CI の設定を書き間違えたときに各ジョブが
+#       全件を実行して「遅いだけで通る」状態になり、気づけないため。
+#
 # 設計:
 #   - 発見はハードコードせず `git ls-files '*.bats'`。新規スイートを自動で拾う。
 #   - 実行前に走らせるスイート名を stdout に出す（何を回したかを黙らせない）。
 #   - bats を 1 回だけ呼び、TAP のサマリと exit code をそのまま成否とする。
+#   - テストが起動した背景プロセスが bats の出力パイプを握って残ると失敗にする
+#     （下の「残留プロセス検査」。TEST_RESIDUAL_GRACE で猶予秒を変えられる）。
+#     プロセス一覧を取得できない環境（砂場など ps / pgrep が拒否される）では、
+#     検査を諦めて bats をそのまま流す（誤検知で全件実行を潰さない）。
 #   - cwd 非依存: $0 の所在から repo ルートを解決する。
 #   - POSIX sh 互換（bashism を使わない）。
 # ─────────────────────────────────────────────────────────────
 set -u
+
+# テストが起動する Python（hook 経由を含む）に .pyc を作らせない。gitignore 済みの __pycache__ が
+# 手元に残ると、ソースの絶対パスを拾って固定パス検査が落ちる（#699 / #702）。
+export PYTHONDONTWRITEBYTECODE=1
 
 # 未導入なら即エラー（bats が無いのに無言で成功扱いにしない）。
 if ! command -v bats >/dev/null 2>&1; then
@@ -38,13 +61,75 @@ ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 TEST_EXCLUDE="${TEST_EXCLUDE:-}"
 
+# TEST_SHARD=k/N の検証。値の出どころは ci.yml の env（${{ matrix.shard }}/N の展開）と
+# 手元のシェルだけなので、受け付ける形を 1 つに絞り、それ以外は読み替えずに落とす
+# （先頭ゼロを通すと算術展開が 8 進数として読む）。9 桁までにするのは [ -gt ] と
+# 算術展開が確実に扱える範囲に収めるため。
+TEST_SHARD="${TEST_SHARD:-}"
+SHARD_K=""
+SHARD_N=""
+if [ -n "$TEST_SHARD" ]; then
+  shard_ok=1
+  case "$TEST_SHARD" in
+    */*/*) shard_ok=0 ;;
+    */*) SHARD_K=${TEST_SHARD%/*}; SHARD_N=${TEST_SHARD#*/} ;;
+    *) shard_ok=0 ;;
+  esac
+  for shard_part in "$SHARD_K" "$SHARD_N"; do
+    case "$shard_part" in
+      ""|0*|*[!0-9]*) shard_ok=0 ;;
+    esac
+    [ "${#shard_part}" -le 9 ] || shard_ok=0
+  done
+  if [ "$shard_ok" -eq 1 ] && [ "$SHARD_K" -gt "$SHARD_N" ]; then
+    shard_ok=0
+  fi
+  if [ "$shard_ok" -ne 1 ]; then
+    echo "TEST_SHARD は k/N（k と N は 1 以上の整数で k <= N。先頭ゼロ・空白は不可）で指定してください: '$TEST_SHARD'" >&2
+    exit 1
+  fi
+fi
+
 # 対象を動的に列挙。_longruns/ のアーカイブスイートは除外する。
 # 代入コンテキストなので単語分割は起きない（改行区切りで受ける）。
 ALL_SUITES=$(git -C "$ROOT" ls-files -- '*.bats' ':(exclude)_longruns/')
 
+# TEST_SHARD: 組の割り当て（issue #1028）。スイートごとの (@test の件数 + 1) を重みにして、
+# 重い順（同数は一覧の順）に、その時点でいちばん軽い組（同点は番号の小さい組）へ順に配る。
+# 入力は追跡下の一覧とファイルの中身だけで決まるので、どの組のジョブでも同じ割り当てになる。
+# フィルタと除外より先に、一覧全体に対して決める。SHARD_MEMBERS は組 K に入るパスを改行で並べたもの。
+SHARD_MEMBERS=""
+if [ -n "$SHARD_N" ]; then
+  SHARD_MEMBERS=$(
+    idx=0
+    for f in $ALL_SUITES; do
+      idx=$((idx + 1))
+      weight=$(grep -c '^@test' "$ROOT/$f" 2>/dev/null) || weight=0
+      printf '%s\t%s\t%s\n' "$weight" "$idx" "$f"
+    done | sort -t "$(printf '\t')" -k1,1nr -k2,2n | awk -F '\t' -v n="$SHARD_N" -v k="$SHARD_K" '
+      {
+        best = 1
+        for (s = 2; s <= n; s++) if (load[s] + 0 < load[best] + 0) best = s
+        load[best] += $1 + 1
+        if (best == k) print $3
+      }'
+  )
+fi
+
 SUITES=""
 SKIPPED=0
 for f in $ALL_SUITES; do
+  if [ -n "$SHARD_N" ]; then
+    case "
+$SHARD_MEMBERS
+" in
+      *"
+$f
+"*) ;;
+      *) continue ;;
+    esac
+  fi
+
   # 引数（フィルタ）があれば、パス部分一致するものだけに絞る（OR 判定）。
   if [ "$#" -gt 0 ]; then
     match=0
@@ -77,7 +162,9 @@ done
 # 対象が空 = フィルタ指定ミス、または全件が除外された。非0で知らせる。
 if [ -z "$SUITES" ]; then
   if [ "$#" -gt 0 ]; then
-    echo "no test suites matched filter: $*" >&2
+    echo "no test suites matched filter: $*${SHARD_N:+ (shard $SHARD_K/$SHARD_N)}" >&2
+  elif [ -n "$SHARD_N" ]; then
+    echo "no test suites in shard $SHARD_K/$SHARD_N under $ROOT" >&2
   else
     echo "no test suites found under $ROOT" >&2
   fi
@@ -89,18 +176,228 @@ for f in $SUITES; do
   echo "  $f"
 done
 echo "  (skipped by TEST_EXCLUDE: $SKIPPED)"
+# どの組を実行しているか。対象スイートの一覧（上の行まで）には混ぜない。
+[ -z "$SHARD_N" ] || echo "  (shard $SHARD_K/$SHARD_N)"
 echo "----------------------------------------"
+
+# ─────────────────────────────────────────────────────────────
+# 残留プロセス検査（issue #215）
+#
+# bats は TAP 出力パイプを fd 3 に複製して子に渡す。テストが起動した背景プロセスが
+# それを握ったまま生き残ると、bats の formatter はパイプの EOF を待ち続け、
+# 「TAP は最後まで出るのに bats が終了しない → exit code が取れない」形で止まる。
+#
+# 対策:
+#   1. bats を専用のプロセスグループで起動する（perl の setpgrp。macOS に setsid は無い）。
+#      孤児（PPID=1）になった残留でも `pgrep -g` でグループから列挙・回収できる。
+#   2. TAP を出す bats-exec-suite が終わったのに bats 本体が RESIDUAL_GRACE 秒以内に
+#      終了しなければ「残留プロセスがパイプを握っている」と判定し、残留を表示して
+#      グループごと SIGKILL、非 0 で終える。
+#   3. bats が正常終了したあともグループに生き残りがあれば同様に失敗にする
+#      （fd を閉じていても teardown で回収し忘れた背景プロセスは欠陥）。
+#
+# 前提が崩れる環境（砂場の中など、ps / pgrep がプロセス一覧を取れない）では、
+# 「スイートが終わった」と「残留が居る」を区別できない。そこで検査を始める前に
+# 自分自身を列挙できるか試し、取れなければ検査を諦めて bats をそのまま流す
+# （issue #320。取れないまま続けると全件実行を誤検知で SIGKILL してしまう）。
+#
+#   TEST_RESIDUAL_GRACE=<秒>   判定の猶予（6 桁までの非負整数。既定 15。テストからの短縮用）
+# ─────────────────────────────────────────────────────────────
+RESIDUAL_GRACE="${TEST_RESIDUAL_GRACE:-15}"
+# 比較できる非負整数以外は拒否する。[ -ge ] が比較エラーになると猶予超過が永遠に偽になり、
+# 残留があっても検査が働かないまま rc=0 で終わる（誤設定を黙って成功にしない）。
+# 桁数の上限は macOS の bash 3.2 の [ ] が 64bit 整数を超える値で
+# 「integer expression expected」になるため（猶予秒に 7 桁＝11 日以上は要らない）。
+case "$RESIDUAL_GRACE" in
+  ""|*[!0-9]*)
+    echo "TEST_RESIDUAL_GRACE は非負の整数（秒）で指定してください: '$RESIDUAL_GRACE'" >&2
+    exit 1 ;;
+esac
+if [ "${#RESIDUAL_GRACE}" -gt 6 ]; then
+  echo "TEST_RESIDUAL_GRACE が大きすぎます（6 桁まで）: '$RESIDUAL_GRACE'" >&2
+  exit 1
+fi
+
+# bats 本体の実行ファイルがある libexec ディレクトリ（symlink を解決した実パス）。
+# bin/bats は自分の実パスの ../libexec/bats-core から bats・bats-exec-*・bats-format-* を
+# 起動するので、ps に出る bats のプロセスはこのディレクトリの実行ファイルになる。
+RESIDUAL_BATS_LIBEXEC=""
+if command -v perl >/dev/null 2>&1; then
+  RESIDUAL_BATS_LIBEXEC=$(perl -MCwd=abs_path -MFile::Basename=dirname \
+    -e '$b = abs_path($ARGV[0]) or exit; $d = abs_path(dirname($b) . "/../libexec/bats-core") or exit; print $d' \
+    "$(command -v bats)" 2>/dev/null)
+fi
+
+# コマンド行（ps -o command=）が bats 本体の実行ファイルか。
+# `bash <libexec>/bats-exec-test ...` のようにインタプリタ経由で見えるので先頭の bash/sh を外し、
+# 実行ファイルが RESIDUAL_BATS_LIBEXEC 直下の bats / bats-* であるときだけ真にし、その名前を name に残す
+# （コマンド文字列に bats-core 等を含むだけのプロセスは bats ではない）。
+is_bats_command() { # <command>
+  script=$1
+  case "${script%% *}" in bash|*/bash|sh|*/sh) script=${script#* } ;; esac
+  case "$script" in "$RESIDUAL_BATS_LIBEXEC"/*) ;; *) return 1 ;; esac
+  name=${script#"$RESIDUAL_BATS_LIBEXEC"/}
+  name=${name%% *}
+  case "$name" in */*) return 1 ;; bats|bats-*) return 0 ;; esac
+  return 1
+}
+
+# プロセス一覧を取得できる環境かを、自分自身（$$）を引けるかで判定する。
+# 自分のプロセスは必ず生きているので、ps で pgid が引けて pgrep -g がそれを列挙できれば
+# 残留プロセス検査は成立する。砂場では ps が operation not permitted、
+# pgrep が Cannot get process list になるため、どちらかで偽になる。
+process_listing_works() {
+  self_pgid=$(ps -o pgid= -p "$$" 2>/dev/null | tr -d ' ')
+  case "$self_pgid" in
+    ""|*[!0-9]*) return 1 ;;
+  esac
+  pgrep -g "$self_pgid" >/dev/null 2>&1 || return 1
+  return 0
+}
+
+# グループ内の bats 以外のプロセス（＝テストが起動して残った背景プロセス）の pid を列挙する。
+residual_pids() { # <pgid>
+  for p in $(pgrep -g "$1" 2>/dev/null); do
+    cmd=$(ps -ww -o command= -p "$p" 2>/dev/null)
+    [ -n "$cmd" ] || continue
+    is_bats_command "$cmd" && continue
+    if [ "$cmd" = cat ]; then
+      # bats-format-* の子 cat は bats 自身の一部
+      # （テストが起動した cat は親が bats-exec-test なので残留として扱う）
+      pp=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' ')
+      if is_bats_command "$(ps -ww -o command= -p "$pp" 2>/dev/null)"; then
+        case "$name" in bats-format-*) continue ;; esac
+      fi
+    fi
+    echo "$p"
+  done
+}
+
+# residual_pids を「pid ppid 経過時間 コマンド」で表示する。
+print_residuals() { # <pgid>
+  for p in $(residual_pids "$1"); do
+    # 長い TMPDIR 配下でも原因の実行ファイル名・引数が欠けないよう、行幅で切り詰めない（#1724）。
+    ps -ww -o pid=,ppid=,etime=,command= -p "$p" 2>/dev/null
+  done
+}
+
+# 残留を SIGKILL する。bats 本体は殺さない（残留が消えればパイプが閉じて自然に終わる）。
+kill_residuals() { # <pgid>
+  for p in $(residual_pids "$1"); do
+    kill -KILL "$p" 2>/dev/null
+  done
+}
+
+# status_file が書かれるまで最大 $1 秒待つ。
+wait_status() { # <seconds>
+  i=0
+  while [ "$i" -lt "$1" ] && [ ! -s "$status_file" ]; do sleep 1; i=$((i + 1)); done
+}
+
+# shellcheck disable=SC2329  # trap から間接的に呼ばれる
+guard_interrupt() {
+  pg=$(cat "$pgid_file" 2>/dev/null)
+  [ -n "$pg" ] && kill -KILL "-$pg" 2>/dev/null
+  rm -rf "$guard_dir"
+  exit 130
+}
+
+run_bats_guarded() {
+  if ! command -v perl >/dev/null 2>&1 || [ ! -d "$RESIDUAL_BATS_LIBEXEC" ]; then
+    echo "⚠ perl が無いか bats の libexec（bin/bats の ../libexec/bats-core）が見つからないので残留プロセス検査なしで bats を実行します" >&2
+    # shellcheck disable=SC2086
+    ( cd "$ROOT" && bats $SUITES )
+    return $?
+  fi
+
+  if ! process_listing_works; then
+    echo "⚠ プロセス一覧を取得できない環境（ps / pgrep が自分自身も引けない）なので残留プロセス検査なしで bats を実行します" >&2
+    # shellcheck disable=SC2086
+    ( cd "$ROOT" && bats $SUITES )
+    return $?
+  fi
+
+  guard_dir=$(mktemp -d) || return 1
+  pgid_file="$guard_dir/pgid"
+  status_file="$guard_dir/status"
+
+  # perl が自分を新グループの先頭にしてから bats に exec する。pgid = perl の pid。
+  # shellcheck disable=SC2086
+  ( cd "$ROOT" && TEST_SH_PGID_FILE="$pgid_file" \
+      perl -e 'setpgrp(0, 0); open(my $f, ">", $ENV{TEST_SH_PGID_FILE}) or die; print $f $$; close $f; exec @ARGV or die "exec: $!"' \
+      -- bats $SUITES
+    echo "$?" >"$status_file" ) &
+  job=$!
+
+  # Ctrl-C / TERM は専用グループの bats には届かない（バックグラウンド起動）ので転送する
+  trap 'guard_interrupt' INT TERM
+
+  # pgid が書かれるまで待つ（perl の起動失敗で status が先に来たらそれで終わる）
+  while [ ! -s "$pgid_file" ] && [ ! -s "$status_file" ]; do sleep 0.2; done
+  pgid=$(cat "$pgid_file" 2>/dev/null)
+
+  hang=0
+  suite_gone_since=""
+  while [ ! -s "$status_file" ]; do
+    sleep 1
+    if [ -z "$pgid" ] || pgrep -g "$pgid" -f bats-exec-suite >/dev/null 2>&1; then
+      suite_gone_since=""
+      continue
+    fi
+    now=$(date +%s)
+    [ -n "$suite_gone_since" ] || suite_gone_since=$now
+    if [ $((now - suite_gone_since)) -ge "$RESIDUAL_GRACE" ]; then
+      hang=1
+      break
+    fi
+  done
+
+  if [ "$hang" -eq 1 ]; then
+    echo "========================================"
+    echo "✖ bats の TAP 出力は終わったのに bats が ${RESIDUAL_GRACE} 秒以内に終了しません。"
+    echo "  テストが起動した背景プロセスが bats の出力パイプ（fd 3）を握ったまま残っています:"
+    print_residuals "$pgid"
+    echo "  背景プロセスは fd 3 以上を閉じて起動し、teardown で回収してください"
+    echo "  （plugins/worktree/tests/helper.bash の wt_close_inherited_fds / wt_track_pid を参照）。"
+    # 残留を消せばパイプが閉じて bats は自分で終わる。それでも終わらなければグループごと殺す
+    kill_residuals "$pgid"
+    wait_status "$RESIDUAL_GRACE"
+    [ -s "$status_file" ] || kill -KILL "-$pgid" 2>/dev/null
+  fi
+  wait "$job" 2>/dev/null
+  rc=$(cat "$status_file" 2>/dev/null)
+  [ -n "$rc" ] || rc=1
+  trap - INT TERM
+
+  # 正常終了後の生き残り（fd は閉じているが teardown で回収されなかった背景プロセス）。
+  # 直前のテストの子が終了処理中のことがあるので少しだけ待つ。
+  if [ "$hang" -eq 0 ] && [ -n "$pgid" ]; then
+    i=0
+    while [ "$i" -lt 3 ] && pgrep -g "$pgid" >/dev/null 2>&1; do sleep 1; i=$((i + 1)); done
+    survivors=$(print_residuals "$pgid")
+    if [ -n "$survivors" ]; then
+      echo "========================================"
+      echo "✖ bats は終了しましたが、テストが起動した背景プロセスが回収されずに残っています:"
+      echo "$survivors"
+      echo "  背景プロセスは teardown で必ず kill してください（wt_track_pid / wt_kill_tracked_pids）。"
+      kill_residuals "$pgid"
+      rc=1
+    fi
+  fi
+  rm -rf "$guard_dir"
+  [ "$hang" -eq 0 ] || rc=1
+  return "$rc"
+}
 
 # 相対パス表示のため repo ルートで実行。
 # SUITES は空白区切りの意図的な単語分割（各要素は空白を含まない git パス）。
-# shellcheck disable=SC2086  # $SUITES を意図的に単語分割してファイル列として渡す
-( cd "$ROOT" && bats $SUITES )
+run_bats_guarded
 rc=$?
 
 echo "========================================"
 if [ "$rc" -eq 0 ]; then
   echo "bats: 全スイート pass（excluded: ${SKIPPED}）"
 else
-  echo "bats: 失敗あり（上記 TAP 出力の not ok を参照。excluded: ${SKIPPED}）"
+  echo "bats: 失敗あり（上記 TAP 出力の not ok か残留プロセス報告を参照。excluded: ${SKIPPED}）"
 fi
 exit "$rc"

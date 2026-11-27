@@ -35,12 +35,12 @@ setup() {
 }
 
 @test "S3: goal description no longer says prod side is commented out" {
-  ! grep -q 'prod 側はコメントアウト状態' "$P5"
+  ! grep -q 'prod 側はコメントアウト状態' "$P5" || return 1
   grep -q '\.env\.production\.local' "$P5"
 }
 
 @test "S4: cautions section reflects two-file scheme" {
-  ! grep -q 'prod系がコメントアウトで保存されている前提' "$P5"
+  ! grep -q 'prod系がコメントアウトで保存されている前提' "$P5" || return 1
   grep -q '\.env\.production\.local.*に prod 値が分離保存されている前提' "$P5"
 }
 
@@ -75,12 +75,12 @@ setup() {
   step11="$(awk '/### Step 11: /{flag=1} /### Step 11\.5:/{flag=0} flag' "$P2")"
   step115="$(awk '/### Step 11\.5:/{flag=1} /### Step 12:/{flag=0} flag' "$P2")"
   echo "$step115" | grep -qi 'service_role'
-  ! echo "$step11" | grep -qi 'service_role'
+  ! echo "$step11" | grep -qi 'service_role' || return 1
 }
 
 @test "S10: state file write step does not record the raw service_role key value" {
   step13="$(awk '/### Step 13: /{flag=1} /### Step 14:/{flag=0} flag' "$P2")"
-  ! echo "$step13" | grep -qiE 'service_role_key: \{|service_role: \{[A-Za-z_]*_KEY\}'
+  ! echo "$step13" | grep -qiE 'service_role_key: \{|service_role: \{[A-Za-z_]*_KEY\}' || return 1
 }
 
 @test "S11: Phase 4 reads PROD_SUPABASE_URL/ANON_KEY/SERVICE_ROLE_KEY from .env.production.local" {
@@ -120,71 +120,120 @@ setup() {
   [ "$status" -ne 0 ]
 }
 
-# S16a 本体。引数のディレクトリ配下の *.yml.template から `uses:` 行を全数抽出し、
+# S16a 本体。引数のディレクトリ配下の *.yml.template を YAML としてパースし、`uses` キーを全数列挙して、
 # actions/* 以外が「40 桁コミット SHA ＋ 同一行のバージョンコメント」で固定されているか検査する。
 # 可変タグ／ブランチ参照（例: supabase/setup-cli@v2 は tag ではなくブランチ）は、上流の push だけで
 # 展開先の production ジョブが別コードを実行しうる。方針は oratta/claude-harness#138 / #162 / #176。
 #
-# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す）/ 2=抽出 0 件
+# 抽出は行 grep ではなく list-uses.rb（ruby -ryaml の AST 走査）に任せる（#182 / #198）。
+# 行 grep でキー形（行頭・引用キー・flow mapping）を追いかける方式は、flow mapping の前置キーの
+# 引用値がコメント境界（`- { name: "a#b", uses: evil/action@v1 }` が `[^#]*` 境界に阻まれて
+# 抽出されない）や公式判定（`- { name: "uses: actions/cache@v4", uses: evil/action@v1 }` の
+# 行内最初の `uses:` 風文字列が name の値側で `actions/` に当たる）を騙る形を素通りしていた。
+# パーサに任せれば、キー・値・コメントの区別は YAML の文法どおりに付く。
+# S17 が既に ruby YAML でテンプレートのパース可否を見ているので、依存は増えない。
+#
+# 戻り値: 0=合格 / 1=違反あり（違反行を stderr に出す。読めない／パースできないファイル・シンボリックリンクも違反）/ 2=抽出 0 件 / 3=find の列挙エラー
 # テスト関数から分離してあるのは、本物のテンプレート（正例）と、すり抜けを狙った
 # フィクスチャ（負例）の両方に同じ検査を当てるため。
 check_third_party_pins() {
   local dir="$1"
+  local lister="$PLUGIN_DIR/tests/list-uses.rb"
   local total=0
   local unpinned=""
-  local line value body
+  local file start_line end_line comment body value listed
+  local found find_rc
 
-  while IFS= read -r line; do
-    total=$((total + 1))
+  # find の出力は一時ファイルに落として終了コードを拾う。プロセス置換 `< <(find ...)` だと
+  # 読めないサブディレクトリで find が非 0 終了しても $? が見えず、列挙できたファイルだけで
+  # 合格する fail-open だった（#240）。列挙が不完全なら違反の有無を判定できないので fail させる。
+  found="$(mktemp "${BATS_TEST_TMPDIR:-${TMPDIR:-/tmp}}/found.XXXXXX")" || return 3
+  : "${found:?}"
+  # シンボリックリンクは名前を問わず列挙する（#900）。find は既定でリンク先のディレクトリに降りないので、
+  # `-name '*.yml.template'` をリンクにも掛けると、ディレクトリへのリンク（名前が *.yml.template でない）は
+  # 列挙されず、その下の違反テンプレートが一度も読まれないまま合格していた。リンクは下のループで違反に数える。
+  find "$dir" \( -type l -o \( -type f -name '*.yml.template' \) \) -print0 > "$found" 2> "$found.err"
+  find_rc=$?
+  if [ "$find_rc" -ne 0 ]; then
+    printf 'find failed (exit %s) while listing %s:\n' "$find_rc" "$dir" >&2
+    cat "$found.err" >&2
+    rm -f "$found" "$found.err"
+    return 3
+  fi
+  rm -f "$found.err"
 
-    # `grep -rn` の出力には `<パス>:<行番号>:` が前置される。コメント形の検査を
-    # YAML 本文だけに当てるため、ここで剥がす（パス側の `#` が版数コメントに化けるのを防ぐ）。
-    # 前置が付いていない形（パスに `:` を含む等）では sed が何もしないので、
-    # 剥がし損ねても検査が緩む方向には動かない。
-    body="$(printf '%s' "$line" | sed -E 's/^([^:]+):([0-9]+)://')"
-
-    # `uses:` の「値」だけを切り出してから公式判定する（#176 その2）。
-    # 行全体の部分一致で `actions/` を探すと、コメント中の文字列
-    # （例: `uses: evil/action@v1 # mimics uses: actions/cache@v4`）にも当たって
-    # 第三者 action が公式扱いでスキップされる。grep -o は行内の全一致を順に返すので、
-    # 先頭の 1 件＝キーとしての `uses:` を取る（コメント側は 2 件目以降になる）。
-    value="$(printf '%s\n' "$body" \
-      | grep -oE 'uses[[:space:]]*:[[:space:]]*[^[:space:]]+' \
-      | head -n 1 \
-      | sed -E 's/^uses[[:space:]]*:[[:space:]]*//')"
-    # YAML の引用符は値の一部ではないので剥がす（`uses: 'owner/action@sha'` 形の偽陽性を除く）
-    value="${value#\'}"; value="${value%\'}"
-    value="${value#\"}"; value="${value%\"}"
-
-    # actions/* は GitHub 公式所有なので #138 の方針どおり対象外
-    case "$value" in
-      actions/*) continue ;;
-    esac
-
-    # 値そのものが `<owner>/<action>@<40 桁 hex>` であること。
-    # `<owner>/` を必須にしてあるのは spec の字面に合わせるため（#180 レビュー指摘 A）。
-    # owner を落とした `uses: evil@<40hex>` は GitHub 上の第三者 action を指し得ないが、
-    # 検査が素通りさせると spec が保証すると読める形を実装が見ていないことになる。
-    # `<action>` 側は `owner/repo/subdir@<sha>` のサブパス形を許すため `/` を含んでよい。
-    if ! printf '%s' "$value" | grep -qE '^[^@[:space:]/]+/[^@[:space:]]+@[0-9a-f]{40}$'; then
-      unpinned="${unpinned}${line}"$'\n'
+  # ファイル列挙は NUL 区切り（-print0 / read -d ''）。改行区切りだと改行を含む
+  # ファイル名が 2 つの実在しないパスに行分断され、そのファイルの中身が一度も
+  # 読まれないまま別のパス名で扱われる。以前は行 grep のエラーが無視されて
+  # そのファイルだけ未走査のまま pass する fail-open だった（#197）。パーサ方式では
+  # 分断されたパスが違反に落ちるので pass はしないが、報告が実在しないパスになり
+  # 本当の違反行が出ないので、列挙の時点で分断させない。
+  while IFS= read -r -d '' file; do
+    # シンボリックリンクは追跡先を検査せず、リンク自体を違反として報告する（#240）。
+    # git はシンボリックリンクを追跡できるので、`-type f` だけだと違反入りの外部 yml への
+    # リンクを commit するだけで検査を丸ごと迂回できる。リンク先が壊れていても同じ。
+    # ディレクトリへのリンクも、名前が *.yml.template でないリンクも同じ扱い（#900）。
+    if [ -L "$file" ]; then
+      total=$((total + 1))
+      unpinned="${unpinned}${file}: symbolic link is not allowed as a template"$'\n'
       continue
     fi
-
-    # 同じ行のコメントが「バージョンらしい」こと（#176 その1）。
-    # `#` の後に非空白が 1 文字でもあれば通す旧判定だと `# TODO` でも合格してしまい、
-    # spec の「その SHA が指すバージョンを同じ行のコメントに併記」と字面が合わない。
-    # SHA とバージョンの対応そのものはオフラインで検証できないので、形だけ縛る。
-    # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` /
-    # 行内の別の `#176` のような「バージョンに見えるだけ」の形を弾くため。
-    # 行末を表すのに `(...|$)` を使わず末尾に空白 1 個を足しているのは、
-    # 括弧内の `$` をアンカーとして扱うかが grep 実装で揺れるのを避けるため。
-    if ! printf '%s ' "$body" | grep -qE '#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
-      unpinned="${unpinned}${line}"$'\n'
+    # ファイルパスは ruby の引数として渡す（`grep -rn` の前置 `<パス>:<行番号>:` を剥がす方式は
+    # パスが `:` や `# v9` を含むと本文に片が残ってコメント検査を肩代わりしていた。#183）。
+    # パースできないファイルは fail-closed で違反に数える（0 件扱いで無言 pass させない）。
+    if ! listed="$(ruby "$lister" "$file" 2>&1)"; then
+      total=$((total + 1))
+      unpinned="${unpinned}${file}: not parseable as YAML: ${listed}"$'\n'
+      continue
     fi
-    # 抽出パターンが `uses[[:space:]]*:` なのは、YAML として有効な `uses : owner/action@v1`
-    # （コロン前に空白）が密着形の grep から丸ごと漏れるのを防ぐため（#176 その3）。
-  done < <(grep -rnE --include='*.yml.template' '^[[:space:]]*-?[[:space:]]*uses[[:space:]]*:' "$dir")
+    while IFS=$'\t' read -r start_line end_line comment body value; do
+      # `uses` を 1 件も持たないファイルは here-string が空行 1 本になるので読み飛ばす
+      [ -n "$start_line" ] || continue
+      total=$((total + 1))
+      # 違反行の本文は list-uses.rb が libyaml と同じ改行判定で引いた列を使う（`sed -n` は LF 基準で
+      # bare CR を含むと別の物理行を指す。#247）。
+
+      # actions/* は GitHub 公式所有なので #138 の方針どおり対象外。
+      # 判定はパーサが返した `uses` の値そのものに対して行う（#176 その2 / #198 その1）。
+      # 引用符はパーサが剥がして返すので、`uses: 'owner/action@sha'` 形の偽陽性も出ない。
+      case "$value" in
+        actions/*) continue ;;
+      esac
+
+      # 値そのものが `<owner>/<action>@<40 桁 hex>` であること。
+      # `<owner>/` を必須にしてあるのは spec の字面に合わせるため（#180 レビュー指摘 A）。
+      # owner を落とした `uses: evil@<40hex>` は GitHub 上の第三者 action を指し得ないが、
+      # 検査が素通りさせると spec が保証すると読める形を実装が見ていないことになる。
+      # `<action>` 側は `owner/repo/subdir@<sha>` のサブパス形を許すため `/` を含んでよい。
+      # 複数行に跨る値（block scalar）や複合値は、パーサが空／改行入りで返すのでここで落ちる。
+      if [ "$start_line" != "$end_line" ] \
+        || ! printf '%s' "$value" | grep -qE '^[^@[:space:]/]+/[^@[:space:]]+@[0-9a-f]{40}$'; then
+        unpinned="${unpinned}${file}:${start_line}:${body}"$'\n'
+        continue
+      fi
+
+      # 同じ行のコメントが「バージョンらしい」こと（#176 その1）。
+      # `#` の後に非空白が 1 文字でもあれば通す旧判定だと `# TODO` でも合格してしまい、
+      # spec の「その SHA が指すバージョンを同じ行のコメントに併記」と字面が合わない。
+      # SHA とバージョンの対応そのものはオフラインで検証できないので、形だけ縛る。
+      # コメント部分の切り出しは list-uses.rb がパーサの位置情報で行う: 値の行で終わる
+      # 本文ノード（Scalar / Alias / flow collection）の終端より後ろで最初に現れる `#` から
+      # 行末まで。行全体への部分一致だと、コメント本体が `# TODO` でも行内の別位置の
+      # `#176 ` が条件を満たしてしまう（#183 その1）し、値より後ろの引用値の `#`
+      # （`{ uses: x@sha, name: "a\"# v1 " } # TODO`）や flow context の plain scalar の `#`
+      # （`{ uses: x@sha, name: x#v1 } # TODO`）を bash 側の引用除去 sed で追いかけると
+      # エスケープや空白無しの `#` で境界を取り違える。コメントが無い行は `-` で来るので
+      # 先頭アンカーの `^#` に一致せず違反側に落ちる（緩む方向には動かない）。
+      # 終端を空白で締めるのは、`# v1evil` / `# 1.` / `# 2026-08-22` のような
+      # 「バージョンに見えるだけ」の形を弾くため。
+      # 行末を表すのに `(...|$)` を使わず末尾に空白 1 個を足しているのは、
+      # 括弧内の `$` をアンカーとして扱うかが grep 実装で揺れるのを避けるため。
+      if ! printf '%s ' "$comment" | grep -qE '^#[[:space:]]*v?[0-9]+(\.[0-9]+)*[[:space:]]'; then
+        unpinned="${unpinned}${file}:${start_line}:${body}"$'\n'
+      fi
+    done <<< "$listed"
+  done < "$found"
+  rm -f "$found"
 
   # テンプレートの改名・移動で走査対象が 0 件になり、テストが無言で pass するのを防ぐ
   if [ "$total" -eq 0 ]; then
@@ -233,7 +282,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"# TODO"* ]]
+  [[ "$output" == *"# TODO"* ]] || return 1
 }
 
 @test "S16a-2: 'uses: actions/' inside a comment does not exempt a third-party action" {
@@ -242,7 +291,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: evil/action@v1 # mimics uses: actions/cache@v4' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-3: 'uses :' with a space before the colon is still extracted and checked" {
@@ -252,7 +301,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses : evil/action@v1' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil/action@v1"* ]]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
 }
 
 @test "S16a-4: a properly pinned third-party action passes (quoted form included)" {
@@ -284,7 +333,7 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
     'uses: evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v1' \
     "$PINNED_OK")"
   [ "$status" -eq 1 ]
-  [[ "$output" == *"evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"* ]]
+  [[ "$output" == *"evil@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"* ]] || return 1
 }
 
 @test "S16a-8: comments that only look like a version are rejected" {
@@ -320,6 +369,370 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   run check_third_party_pins "$(write_uses_fixture \
     'uses: aws-actions/aws-cli/setup@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1')"
   [ "$status" -eq 0 ]
+}
+
+@test "S16a-11: a version-like token elsewhere in the line does not satisfy the comment check" {
+  # コメント判定を行全体への部分一致で行うと、コメント本体が `# TODO` でも
+  # 行内の別位置にある `#176 ` が「バージョンらしいコメント」の条件を満たしてしまう。
+  # 判定は行内で最初に現れる `#` 以降（＝コメント部分）の先頭に限定する（#183 その1）。
+  run check_third_party_pins "$(write_uses_fixture \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO #176 follow-up' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"# TODO #176 follow-up"* ]] || return 1
+}
+
+@test "S16a-12: a scan path containing ':' does not let a path fragment satisfy the comment check" {
+  # `grep -rn` の前置剥がし（`<パス>:<行番号>:` 想定の sed）は、パス自体が `:` を含むと
+  # 誤った位置で剥がれてパス片が本文に残る。残った片の `# v9 ` がコメント検査を
+  # 肩代わりし、コメントが `# TODO` の行が pass していた（#183 その2、S16a-9 の変種）。
+  local dir="$BATS_TEST_TMPDIR/a:4:b # v9 x"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+}
+
+@test "S16a-13: a quoted 'uses' key is still extracted and checked" {
+  # 旧抽出（素のキー形のみ）は `- "uses": ...` を検査対象から丸ごと落としていた（#182）。
+  # 正しく固定された行を並べてあるので、旧実装は総数ガードにも掛からず PASS していた。
+  run check_third_party_pins "$(write_uses_fixture \
+    '"uses": evil/action@v1' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
+
+  run check_third_party_pins "$(write_uses_fixture \
+    "'uses': evil/action@v1" \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
+}
+
+@test "S16a-14: a flow-mapping step is still extracted and checked" {
+  # `- { uses: ... }` は YAML として有効だが、行頭キー形の旧抽出には一致しない（#182）。
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: evil/action@v1 }' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
+
+  # 密着形＋ uses が先頭キーでない形（値の直後に `}` が密着する）
+  run check_third_party_pins "$(write_uses_fixture \
+    '{name: deploy, uses: evil/action@v1}' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
+}
+
+@test "S16a-15: properly pinned quoted-key and flow-mapping forms pass" {
+  run check_third_party_pins "$(write_uses_fixture \
+    '"uses": supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1')"
+  [ "$status" -eq 0 ]
+
+  # flow mapping の中にはコメントを置けない（`#` 以降はコメントになり `}` が閉じない）ので、
+  # バージョンコメントは閉じ括弧の後に置く
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf } # v2.1.1')"
+  [ "$status" -eq 0 ]
+
+  run check_third_party_pins "$(write_uses_fixture \
+    '{uses: "supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf"} # v2.1.1')"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-16: a quoted 'uses: actions/' in a preceding flow-mapping key does not exempt the step" {
+  # 行 grep の値切り出し（行内最初の `uses:` 風文字列）は name の引用値内の `uses: actions/cache@v4`
+  # を拾い、第三者 action を公式扱いで素通りさせていた（#198 その1。S16a-2 の flow mapping 版）。
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ name: "uses: actions/cache@v4", uses: evil/action@v1 }' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
+}
+
+@test "S16a-17: a '#' inside a preceding flow-mapping quoted value does not hide the step" {
+  # flow mapping 抽出の `[^#]*` 境界（コメント誤検知防止）は引用値内の `#` を越えられず、
+  # この行を検査対象から丸ごと落としていた（#198 その2）。
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ name: "a#b", uses: evil/action@v1 }' \
+    "$PINNED_OK")"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
+
+  # 同じ形で正しく固定されていれば pass する（`#` を含む引用値がコメント判定を邪魔しない）
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ name: "a#b", uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf } # v2.1.1')"
+  [ "$status" -eq 0 ]
+
+  # 値より後ろの引用値に `#` があっても、閉じ括弧の後のバージョンコメントを見る
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "a#b" } # v2.1.1')"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-18: a template that does not parse as YAML fails instead of being skipped" {
+  # パーサ方式では「パースできない＝抽出 0 件」になりうる。無言で pass させず違反として落とす。
+  local dir="$BATS_TEST_TMPDIR/broken"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - uses: evil/action@v1\n   bad: [\n' > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"not parseable as YAML"* ]] || return 1
+}
+
+@test "S16a-19: a newline in a template filename does not skip that file's scan" {
+  # `find | while IFS= read -r` はファイル名の改行で行分断され、改行入りの名前が
+  # 2 つの実在しないパスに化けて、そのファイルの中身が一度も読まれない。以前は
+  # 行 grep のエラーが無視されて未走査のまま pass する fail-open だった（#197）。
+  # NUL 区切りで列挙すれば、名前に改行があっても中身が読まれて違反行が報告される。
+  local dir="$BATS_TEST_TMPDIR/newline"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$dir/"$'bad\nname.yml.template'
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"evil/action@v1"* ]] || return 1
+}
+
+@test "S16a-20: an unreadable template fails the scan instead of passing silently" {
+  # 読めないファイルを黙って無視すると、そのファイルの違反が未走査のまま
+  # 別ファイルの正例だけで pass する（改行入りファイル名の S16a-19 と同じ fail-open の別経路）。
+  # 走査エラーは違反の有無を判定できないので検査自体を fail させる（#197）。
+  [ "$(id -u)" -eq 0 ] && skip "root には chmod 000 が効かない"
+  local dir="$BATS_TEST_TMPDIR/unreadable"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$dir/secret.yml.template"
+  chmod 000 "$dir/secret.yml.template"
+  run check_third_party_pins "$dir"
+  chmod 644 "$dir/secret.yml.template"
+  # 「読めないファイルがあるのに pass しない」ことだけを固定する。走査エラーを
+  # 専用の 3 で返すか違反 1 に数えるかは抽出方式（行 grep / YAML パーサ）で変わるため、
+  # 合格 0 と抽出 0 件 2 を除外する形にして実装の書き換えに巻き込まれないようにする。
+  [ "$status" -ne 0 ]
+  [ "$status" -ne 2 ]
+  [[ "$output" == *"secret.yml.template"* ]] || return 1
+}
+
+@test "S16a-25: an unreadable subdirectory fails the scan instead of passing on the listed files" {
+  # find が Permission denied で非 0 終了しても、列挙できたファイルだけで合格していた（#240）。
+  [ "$(id -u)" -eq 0 ] && skip "root には chmod 000 が効かない"
+  local dir="$BATS_TEST_TMPDIR/unreadable-sub"
+  rm -rf "$dir"
+  mkdir -p "$dir/sub"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$dir/sub/bad.yml.template"
+  chmod 000 "$dir/sub"
+  run check_third_party_pins "$dir"
+  chmod 755 "$dir/sub"
+  [ "$status" -eq 3 ]
+  [[ "$output" == *"find failed"* ]] || return 1
+}
+
+@test "S16a-26: a symbolic link template is reported as a violation" {
+  # `-type f` だけの走査は、違反入りの外部 yml へのシンボリックリンクを素通りさせていた（#240）。
+  local dir="$BATS_TEST_TMPDIR/symlink"
+  rm -rf "$dir" "$BATS_TEST_TMPDIR/outside.yml"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$BATS_TEST_TMPDIR/outside.yml"
+  ln -s "$BATS_TEST_TMPDIR/outside.yml" "$dir/link.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"link.yml.template"* ]] || return 1
+  [[ "$output" == *"symbolic link"* ]] || return 1
+
+  # リンク先が無いリンクも同じく違反にする
+  rm -f "$dir/link.yml.template"
+  ln -s "$BATS_TEST_TMPDIR/does-not-exist.yml" "$dir/dangling.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"dangling.yml.template"* ]] || return 1
+}
+
+@test "S16a-27: a template under a symbolic link to a directory is not skipped" {
+  # find は既定でシンボリックリンクのディレクトリに降りない。リンクの名前が *.yml.template で
+  # ないと列挙もされず、その下の違反テンプレートが未走査のまま合格していた（#900）。
+  local dir="$BATS_TEST_TMPDIR/symlink-dir"
+  local outside="$BATS_TEST_TMPDIR/outside-dir"
+  rm -rf "$dir" "$outside"
+  mkdir -p "$dir" "$outside"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$outside/bad.yml.template"
+  ln -s "$outside" "$dir/linked"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/linked: symbolic link"* ]] || return 1
+}
+
+@test "S16a-28: every symbolic link in the scanned directory is a violation whatever its name or target" {
+  # S16a-26 は名前が *.yml.template のリンク、S16a-27 は名前が違うディレクトリへのリンクを見る。
+  # 残りの 3 通り（名前が違うファイルへのリンク・名前が違うリンク切れ・名前が *.yml.template の
+  # ディレクトリへのリンク）をここで見る。名前で絞った find に戻すと最初の 2 つが落ちる（#900）。
+  local dir="$BATS_TEST_TMPDIR/symlink-names"
+  local outside="$BATS_TEST_TMPDIR/outside-dir28"
+  rm -rf "$dir" "$outside" "$BATS_TEST_TMPDIR/outside.yml"
+  mkdir -p "$dir" "$outside"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' "$PINNED_OK" \
+    > "$dir/good.yml.template"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$BATS_TEST_TMPDIR/outside.yml"
+  printf 'jobs:\n  build:\n    steps:\n      - %s\n' \
+    'uses: evil/action@v1 # TODO' \
+    > "$outside/bad.yml.template"
+
+  # 名前が *.yml.template でない、ファイルへのリンク
+  ln -s "$BATS_TEST_TMPDIR/outside.yml" "$dir/link.txt"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/link.txt: symbolic link"* ]] || return 1
+  rm -f "$dir/link.txt"
+
+  # 名前が *.yml.template でない、リンク切れ
+  ln -s "$BATS_TEST_TMPDIR/does-not-exist" "$dir/dangling"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/dangling: symbolic link"* ]] || return 1
+  rm -f "$dir/dangling"
+
+  # 名前が *.yml.template の、ディレクトリへのリンク
+  ln -s "$outside" "$dir/dir.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"$dir/dir.yml.template: symbolic link"* ]] || return 1
+}
+
+@test "S16a-21: a 'uses' in the second YAML document of a template is still checked" {
+  # `Psych.parse_file` は最初の document しか返さないので、`---` で区切った 2 つ目以降に
+  # 置いた `uses` が走査から丸ごと落ちていた。行 grep 版なら構造的に見落とせない形なので、
+  # パーサ方式で検査が弱くなる後退。stream 全体（`Psych.parse_stream`）を走査する。
+  local dir="$BATS_TEST_TMPDIR/multidoc"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n---\njobs:\n  b:\n    steps:\n      - uses: evil/action@v1\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:9:"*"evil/action@v1"* ]] || return 1
+
+  # 2 つ目の document が正しく固定されていれば pass する
+  printf 'jobs:\n  a:\n    steps:\n      - uses: actions/checkout@v4\n---\njobs:\n  b:\n    steps:\n      - %s\n' \
+    "$PINNED_OK" > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-22: a '#' that is YAML content after the value does not stand in for the version comment" {
+  # コメント境界を bash の引用除去 sed（`s/"[^"]*"//g`）で追いかけると、空白を挟まない `#`
+  # （flow context では plain scalar の一部）や `\"` のエスケープで境界を取り違え、
+  # コメント本体が `# TODO` の行が pass していた。境界はパーサの位置情報
+  # （値の行で終わる本文ノードの終端）で引く。
+  # フィクスチャ行は単引用の字面で書く（`"$(... "{ ..., ... }")"` の形は bash が
+  # 引用を越えて brace 展開し、`{ uses: ..., name: ... }` が壊れる）。
+  local bad
+  for bad in \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: x#v1 } # TODO' \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "a\"# v1 " } # TODO'
+  do
+    run check_third_party_pins "$(write_uses_fixture "$bad" "$PINNED_OK")"
+    [ "$status" -eq 1 ] || { echo "not rejected: $bad"; return 1; }
+    [[ "$output" == *"# TODO"* ]] || { echo "unexpected output for: $bad"; return 1; }
+  done
+
+  # 値の行で始まって次行に続く引用値の中の `#` も境界にならない（その行にコメントは置けない）
+  local dir="$BATS_TEST_TMPDIR/spanning"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\n  build:\n    steps:\n      - { uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "multi #v1\n          line" } # TODO\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:4:"* ]] || return 1
+
+  # 同じ形で閉じ括弧の後にバージョンコメントがあれば pass する
+  run check_third_party_pins "$(write_uses_fixture \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: x#v9 } # v2.1.1' \
+    '{ uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf, name: "a\"# TODO " } # v2.1.1')"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-23: a 'uses' key referenced through a YAML alias is still checked" {
+  # `anchors: { k: &u uses }` の後の `- *u: evil/action@v1` は、YAML の意味論では `uses` キーで
+  # GitHub Actions が実行する。キーを Scalar でしか拾わない実装は 1 行も出力せず、走査対象に
+  # 正例が 1 件でもあれば rc=0 で合格していた（#246）。
+  local dir="$BATS_TEST_TMPDIR/alias"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'anchors:\n  k: &u uses\njobs:\n  b:\n    steps:\n      - *u: evil/action@v1\n      - %s\n' \
+    "$PINNED_OK" > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:6:"*"evil/action@v1"* ]] || return 1
+
+  # alias キーでも正しく固定されていれば pass する
+  printf 'anchors:\n  k: &u uses\njobs:\n  b:\n    steps:\n      - *u: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+
+  # `uses` 以外を指す alias キーは対象にならない
+  printf 'anchors:\n  k: &n name\njobs:\n  b:\n    steps:\n      - *n: evil/action@v1\n        uses: actions/checkout@v4\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+}
+
+@test "S16a-24: a bare CR does not shift the line used for the version comment or the reported body" {
+  # libyaml は bare CR も改行として数えるが、`String#lines` と `sed -n` は LF でしか切らない。
+  # 行番号がずれて、別の物理行の `# v9` をバージョンコメントに採用して合格し、違反行の本文も
+  # 空になっていた（#247）。本当のコメントは `# TODO`。
+  local dir="$BATS_TEST_TMPDIR/barecr"
+  rm -rf "$dir"
+  mkdir -p "$dir"
+  printf 'jobs:\r  build:\r    steps:\r      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # TODO\nx: 1\ny: 2\naaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa: 1 # v9\n' \
+    > "$dir/fixture.yml.template"
+  run ruby "$PLUGIN_DIR/tests/list-uses.rb" "$dir/fixture.yml.template"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\t# TODO\t'* ]] || return 1
+  [[ "$output" != *"# v9"* ]] || return 1
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:4:"*"# TODO"* ]] || return 1
+
+  # 本当のコメントがバージョンなら pass する（bare CR があっても）
+  printf 'jobs:\r  build:\r    steps:\r      - uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v2.1.1\ny: 1 # TODO\n' \
+    > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 0 ]
+
+  # bare CR の中に隠した未固定の uses も捕まり、違反行の本文が出る
+  printf 'jobs:\r  build:\r    steps:\r      - uses: evil/action@v1\r' > "$dir/fixture.yml.template"
+  run check_third_party_pins "$dir"
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"fixture.yml.template:4:"*"evil/action@v1"* ]] || return 1
 }
 
 @test "S17: all five workflow templates parse as YAML" {
@@ -408,12 +821,10 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   grep -E 'infra-phase-4-github-actions.*deploy-preview' "$SKILL"
 }
 
-@test "S29: SKILL.md frontmatter version matches plugin.json version" {
-  skill_version="$(grep -m1 '^version:' "$SKILL" | sed 's/^version: *//')"
-  plugin_version="$(grep -m1 '"version"' "$PLUGIN_JSON" | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
-  [ -n "$skill_version" ]
-  [ -n "$plugin_version" ]
-  [ "$skill_version" = "$plugin_version" ]
+# plugin.json は version を持たない（issue #447）。一致させる相手が無いので SKILL.md にも置かない。
+@test "S29: SKILL.md frontmatter has no version" {
+  run grep -n '^version:' "$SKILL"
+  [ "$status" -ne 0 ]
 }
 
 @test "S30: no personal Dropbox path remains" {
@@ -421,14 +832,347 @@ PINNED_OK='uses: supabase/setup-cli@3c2f5e2ae34c34e428e8e206e2c4d21fa2d20fbf # v
   [ "$status" -ne 0 ]
 }
 
-@test "S31: plugin.json version is bumped above 0.2.0" {
-  plugin_version="$(grep -m1 '"version"' "$PLUGIN_JSON" | sed -E 's/.*"version": *"([^"]+)".*/\1/')"
-  [ "$plugin_version" != "0.2.0" ]
-  # crude semver compare: split into major.minor.patch and compare numerically
-  IFS='.' read -r a b c <<< "$plugin_version"
-  [ "$a" -gt 0 ] || { [ "$a" -eq 0 ] && { [ "$b" -gt 2 ] || { [ "$b" -eq 2 ] && [ "$c" -gt 0 ]; }; }; }
-}
-
 @test "all touched JSON parses (jq)" {
   jq empty "$PLUGIN_JSON"
+}
+
+# --- infra-ci-job-timeout (#992) ---
+# 雛形のジョブが timeout-minutes（正の整数）を持ち、直前に連続するコメント行に「約 2 倍」があること。
+# YAML の読み込みは S17 と同じ ruby -ryaml。
+
+# $1=テンプレート $2=ジョブ名。timeout-minutes の値（正の整数）を出力する。整数以外・未設定は exit 1
+job_timeout_minutes() {
+  ruby -ryaml -e 'v = YAML.load_file(ARGV[0]).dig("jobs", ARGV[1], "timeout-minutes"); abort "timeout-minutes is not a positive integer: #{v.inspect}" unless v.is_a?(Integer) && v > 0; puts v' "$1" "$2"
+}
+
+# $1=テンプレート $2=ジョブ名。そのジョブ（`  <ジョブ名>:` から次のジョブまで）の timeout-minutes の行の
+# 直前に連続するコメント行に「約 2 倍」があれば 0
+timeout_comment_has_rule() {
+  awk -v job="$2" '
+    $0 ~ "^  " job ":" { injob = 1; next }
+    injob && /^  [^ #]/ { exit }
+    injob && /^[[:space:]]*timeout-minutes:/ { found = 1; exit }
+    injob && /^[[:space:]]*#/ { buf = buf $0 "\n"; next }
+    injob { buf = "" }
+    END { if (!found) exit 1; if (buf ~ /約 2 倍/) exit 0; exit 1 }
+  ' "$1"
+}
+
+@test "T1: ci.yml.template test job has a positive integer timeout-minutes" {
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/ci.yml.template" test)" || return 1
+  [[ "$v" =~ ^[1-9][0-9]*$ ]] || return 1
+}
+
+@test "T2: weekly-full.yml.template full job has a positive integer timeout-minutes" {
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/weekly-full.yml.template" full)" || return 1
+  [[ "$v" =~ ^[1-9][0-9]*$ ]] || return 1
+}
+
+@test "T3: timeout-minutes is preceded by a comment block with the 2x rule (both templates)" {
+  timeout_comment_has_rule "$WORKFLOWS_DIR/ci.yml.template" test
+  timeout_comment_has_rule "$WORKFLOWS_DIR/weekly-full.yml.template" full
+}
+
+@test "T6 (#997): deploy-production.yml.template preflight job has a positive integer timeout-minutes" {
+  v="$(job_timeout_minutes "$WORKFLOWS_DIR/deploy-production.yml.template" preflight)" || return 1
+  [[ "$v" =~ ^[1-9][0-9]*$ ]] || return 1
+}
+
+@test "T7 (#997): preflight timeout-minutes is preceded by a comment block with the 2x rule" {
+  timeout_comment_has_rule "$WORKFLOWS_DIR/deploy-production.yml.template" preflight
+}
+
+@test "T8 (#997): SKILL.md tells how to apply the preflight timeout to existing repos" {
+  # 「既に雛形から CI を入れたリポジトリへの反映」の項目（次の `- **` の行まで）だけを見る
+  item="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p && /^- \*\*/{q=0} p && /^- \*\*既に雛形から CI を入れたリポジトリへの反映\*\*/{q=1} q' "$SKILL")"
+  [ -n "$item" ]
+  echo "$item" | grep -q '`preflight` ジョブ'
+  echo "$item" | grep -qF 'timeout-minutes: <分>'
+}
+
+@test "T5: weekly-full report-failure also files an issue when full is cancelled by the timeout" {
+  ruby -ryaml -e '
+    j = YAML.load_file(ARGV[0])["jobs"]["report-failure"]
+    abort "needs must include full" unless Array(j["needs"]).include?("full")
+    c = j["if"].to_s
+    abort "if must handle cancelled: #{c}" unless c.include?("always()") && c.include?("needs.full.result == '"'"'cancelled'"'"'") && c.include?("needs.full.result == '"'"'failure'"'"'")
+  ' "$WORKFLOWS_DIR/weekly-full.yml.template"
+}
+
+@test "T4: SKILL.md timeout section explains how to decide and how to apply to existing repos" {
+  sec="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p' "$SKILL")"
+  echo "$sec" | grep -q 'timeout-minutes'
+  echo "$sec" | grep -q '約 2 倍'
+  echo "$sec" | grep -q 'weekly-full\.yml'
+  echo "$sec" | grep -q '確認なし'
+}
+
+# --- infra-selfhosted-job-cleanup (#994) ---
+# 両雛形の最後の手順（セルフホスト限定の掃除）の静的検査と、run を取り出して偽のプロセスで走らせる検査。
+# 偽のプロセスはテストが起こした sleep だけ。teardown は、記録した PID のうち開始時刻が記録と同じもの
+# （＝テストが起こした偽のプロセスそのもの）だけを止める。既に消えた PID と、消えたあと別のプロセスに
+# 使い回された PID には送らない。
+
+# $1=PID。そのプロセスの開始時刻を出力する（無ければ空）
+fake_started() { ps -o lstart= -p "$1" 2>/dev/null | sed 's/^ *//; s/ *$//'; }
+
+# 記録（1 行に「PID|開始時刻」）を読み、開始時刻が今も同じ PID だけを KILL する
+stop_fakes() {
+  local file="$1" p started now
+  [ -f "$file" ] || return 0
+  while IFS='|' read -r p started; do
+    [ -n "$p" ] && [ -n "$started" ] || continue
+    now="$(fake_started "$p")"
+    [ -n "$now" ] && [ "$now" = "$started" ] || continue
+    kill -KILL "$p" 2>/dev/null
+  done < "$file"
+  return 0
+}
+
+teardown() {
+  if [ -n "${BATS_TEST_TMPDIR:-}" ]; then
+    stop_fakes "$BATS_TEST_TMPDIR/fake-pids"
+  fi
+  return 0
+}
+
+# $1=テンプレート $2=ジョブ名 $3=項目（if / run / continue-on-error / name）。最後の手順のその値を出力する
+last_step_field() {
+  ruby -ryaml -e 's = YAML.load_file(ARGV[0]).dig("jobs", ARGV[1], "steps").last; v = s[ARGV[2]]; abort "no #{ARGV[2]}" if v.nil?; puts v' "$1" "$2" "$3"
+}
+
+# $1=テンプレート $2=ジョブ名 $3=出力先。最後の手順の run を書き出す
+extract_cleanup_run() {
+  last_step_field "$1" "$2" run > "$3"
+}
+
+# $1=作業ディレクトリ $2...=そのまま sleep の前に実行するシェル断片。偽のプロセスを孤児として起こし PID を出力・記録する
+spawn_fake() {
+  local dir="$1" pre="${2:-:}" pid
+  pid="$( cd "$dir" && { ( eval "$pre"; exec sleep 300 ) >/dev/null 2>&1 & echo $!; } )"
+  echo "$pid|$(fake_started "$pid")" >> "$BATS_TEST_TMPDIR/fake-pids"
+  echo "$pid"
+}
+
+fake_alive() { ps -p "$1" >/dev/null 2>&1; }
+fake_dead() { ! ps -p "$1" >/dev/null 2>&1; }
+
+# 作業ディレクトリ ws と、外の outside / 前方一致する隣 ws-other を作る
+make_dirs() {
+  mkdir -p "$BATS_TEST_TMPDIR/ws/sub" "$BATS_TEST_TMPDIR/ws-other" "$BATS_TEST_TMPDIR/outside"
+  WS="$(cd "$BATS_TEST_TMPDIR/ws" && pwd -P)"
+  OTHER="$(cd "$BATS_TEST_TMPDIR/ws-other" && pwd -P)"
+  OUTSIDE="$(cd "$BATS_TEST_TMPDIR/outside" && pwd -P)"
+  RUN="$BATS_TEST_TMPDIR/cleanup.sh"
+  extract_cleanup_run "$WORKFLOWS_DIR/ci.yml.template" test "$RUN"
+}
+
+# $1=前置きのシェル断片（kill / ps / lsof の差し替え）。前置き + run を bash -e で実行する
+# （shell を指定しない手順を GitHub Actions は bash -e で走らせるので、それに合わせる）
+run_cleanup() {
+  { printf '%s\n' "${1:-:}"; cat "$RUN"; } > "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  GITHUB_WORKSPACE="$WS" run bash -e "$BATS_TEST_TMPDIR/cleanup-full.sh"
+}
+
+@test "U1: last step of both templates is a self-hosted-only cleanup with always()" {
+  for spec in "ci.yml.template:test" "weekly-full.yml.template:full"; do
+    t="$WORKFLOWS_DIR/${spec%%:*}"; j="${spec##*:}"
+    c="$(last_step_field "$t" "$j" if)"
+    [[ "$c" == *"always()"* ]] || return 1
+    [[ "$c" == *"runner.environment == 'self-hosted'"* ]] || return 1
+    r="$(last_step_field "$t" "$j" run)"
+    [[ "$r" == *GITHUB_WORKSPACE* ]] || return 1
+    [[ "$r" != *pkill* ]] || return 1
+    [[ "$r" != *killall* ]] || return 1
+    [[ "$r" != *"|| true"* ]] || return 1
+    run last_step_field "$t" "$j" continue-on-error
+    [ "$status" -ne 0 ]
+  done
+}
+
+@test "U2: the cleanup run is identical in ci.yml.template and weekly-full.yml.template" {
+  a="$(last_step_field "$WORKFLOWS_DIR/ci.yml.template" test run)"
+  b="$(last_step_field "$WORKFLOWS_DIR/weekly-full.yml.template" full run)"
+  [ -n "$a" ]
+  [ "$a" = "$b" ]
+}
+
+@test "U3: only processes under the workspace are stopped; outside and prefix-sibling survive" {
+  command -v lsof >/dev/null
+  make_dirs
+  inside="$(spawn_fake "$WS")"
+  deep="$(spawn_fake "$WS/sub")"
+  outside="$(spawn_fake "$OUTSIDE")"
+  sibling="$(spawn_fake "$OTHER")"
+  moved="$(spawn_fake "$WS" "cd $OUTSIDE")"
+  sleep 1
+  run_cleanup
+  [ "$status" -eq 0 ]
+  fake_dead "$inside"
+  fake_dead "$deep"
+  fake_alive "$outside"
+  fake_alive "$sibling"
+  fake_alive "$moved"
+}
+
+@test "U4: exits 0 when there is nothing to stop (and does not stop itself)" {
+  command -v lsof >/dev/null
+  make_dirs
+  outside="$(spawn_fake "$OUTSIDE")"
+  sleep 1
+  # 自分の cwd も作業ディレクトリにして、自分を止めないことを確かめる
+  { printf ':\n'; printf 'cd %q\n' "$WS"; cat "$RUN"; } > "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  GITHUB_WORKSPACE="$WS" run bash -e "$BATS_TEST_TMPDIR/cleanup-full.sh"
+  [ "$status" -eq 0 ]
+  fake_alive "$outside"
+}
+
+@test "U5: a process ignoring TERM is stopped by KILL" {
+  command -v lsof >/dev/null
+  make_dirs
+  stubborn="$(spawn_fake "$WS" "trap '' TERM")"
+  sleep 1
+  run_cleanup
+  [ "$status" -eq 0 ]
+  fake_dead "$stubborn"
+}
+
+@test "U6: a target that cannot be stopped makes the step fail and prints its PID" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'kill() { return 0; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+}
+
+@test "U7: kill denied by permission (ps still sees the process) is not treated as gone" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'kill() { echo "kill: ($2) - Operation not permitted" >&2; return 1; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+}
+
+@test "U8: a PID that disappears while waiting (ps -p fails) is treated as success" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  # kill は何もせず、対象の ps -p だけが「存在しない」と答える（祖先を辿る ps -o ppid= は本物）
+  run_cleanup "kill() { return 0; }
+ps() { if [ \"\$1\" = -p ] && [ \"\$2\" = $pid ]; then return 1; fi; command ps \"\$@\"; }"
+  [ "$status" -eq 0 ]
+}
+
+@test "U9: SKILL.md explains the self-hosted cleanup and how to apply it to existing repos" {
+  sec="$(awk '/^## /{p=0} /^## CI\/CD 構成の 2 軸/{p=1} p' "$SKILL")"
+  echo "$sec" | grep -q 'ジョブ終了時の掃除'
+  echo "$sec" | grep -q 'self-hosted'
+  echo "$sec" | grep -q '作業ディレクトリ'
+  echo "$sec" | grep -q 'ほかのジョブ'
+  echo "$sec" | grep -q '作業ディレクトリの外'
+  echo "$sec" | grep -q 'ci\.yml'
+  echo "$sec" | grep -q 'weekly-full\.yml'
+  echo "$sec" | grep -q '手で書き足'
+}
+
+@test "U10: lsof ending non-zero after partial output still cleans up but the step fails" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  # 一覧（-p なし）の lsof だけ、出力のあと非 0 で終わる
+  run_cleanup 'lsof() { case " $* " in *" -p "*) command lsof "$@" ;; *) command lsof "$@"; return 1 ;; esac; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"lsof"* ]] || return 1
+  fake_dead "$pid"
+}
+
+@test "U11: lsof ending non-zero fails the step even when there is nothing to stop, or no output" {
+  command -v lsof >/dev/null
+  make_dirs
+  outside="$(spawn_fake "$OUTSIDE")"
+  sleep 1
+  run_cleanup 'lsof() { case " $* " in *" -p "*) command lsof "$@" ;; *) command lsof "$@"; return 1 ;; esac; }'
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"lsof"* ]] || return 1
+  inside="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'lsof() { return 1; }'
+  [ "$status" -ne 0 ]
+  fake_alive "$inside"
+  fake_alive "$outside"
+}
+
+@test "U12: a PID whose cwd is no longer under the workspace before TERM gets no signal" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  # 一覧のあと PID が別のジョブのプロセスに使い回された状況: 取り直した cwd は作業ディレクトリの外
+  run_cleanup "lsof() { case \" \$* \" in *\" -p $pid \"*|*\" -p $pid\") printf 'p%s\\nfcwd\\nn%s\\n' $pid '$OUTSIDE' ;; *) command lsof \"\$@\" ;; esac; }"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+  fake_alive "$pid"
+}
+
+@test "U13: a PID reused while waiting (cwd outside before KILL) gets no KILL" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS" "trap '' TERM")"
+  sleep 1
+  # 1 回目の取り直し（TERM の前）は本物、2 回目以降（KILL の前）は作業ディレクトリの外と答える
+  cnt="$BATS_TEST_TMPDIR/recheck-count"
+  run_cleanup "lsof() { case \" \$* \" in *\" -p $pid \"*|*\" -p $pid\") if [ -f '$cnt' ]; then printf 'p%s\\nfcwd\\nn%s\\n' $pid '$OUTSIDE'; else : >> '$cnt'; command lsof \"\$@\"; fi ;; *) command lsof \"\$@\" ;; esac; }"
+  [ "$status" -eq 0 ]
+  [ -f "$cnt" ]
+  [[ "$output" == *"TERM を送る"* ]] || return 1
+  [[ "$output" != *"KILL を送る"* ]] || return 1
+  fake_alive "$pid"
+}
+
+@test "U14: a live PID whose cwd cannot be re-read gets no signal and the step fails with its PID" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup "lsof() { case \" \$* \" in *\" -p $pid \"*|*\" -p $pid\") return 1 ;; *) command lsof \"\$@\" ;; esac; }"
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"$pid"* ]] || return 1
+  fake_alive "$pid"
+}
+
+@test "U15: failing to walk up the ancestors stops the step before any signal" {
+  command -v lsof >/dev/null
+  make_dirs
+  pid="$(spawn_fake "$WS")"
+  sleep 1
+  run_cleanup 'ps() { if [ "$1" = -o ]; then return 1; fi; command ps "$@"; }'
+  [ "$status" -ne 0 ]
+  fake_alive "$pid"
+}
+
+@test "U16: teardown stops only recorded fakes whose start time still matches" {
+  make_dirs
+  mine="$(spawn_fake "$OUTSIDE")"
+  # 記録の PID は生きているが開始時刻が違う（＝記録したあと別のプロセスに使い回された PID）
+  reused="$( cd "$OUTSIDE" && { sleep 300 >/dev/null 2>&1 & echo $!; } )"
+  sleep 1
+  rec="$BATS_TEST_TMPDIR/records"
+  {
+    echo "$reused|Thu Jan  1 00:00:00 1970"
+    echo "$reused|"
+    echo "$reused"
+    grep "^$mine|" "$BATS_TEST_TMPDIR/fake-pids"
+  } > "$rec"
+  stop_fakes "$rec"
+  sleep 1
+  fake_alive "$reused" || { kill -KILL "$reused" 2>/dev/null; return 1; }
+  # 後片付け: reused は今ここで起こして生存を確かめた直後の PID なので、開始時刻を記録して回収に回す
+  echo "$reused|$(fake_started "$reused")" >> "$BATS_TEST_TMPDIR/fake-pids"
+  fake_dead "$mine"
 }
