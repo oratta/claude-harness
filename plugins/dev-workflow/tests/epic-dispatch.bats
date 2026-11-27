@@ -6204,7 +6204,7 @@ xnothing_made() {
   EPIC_DISPATCH_CLONES="genetta-inc/flatmate=$c" run dispatch launch --note 範囲を守る 1122 genetta-inc/flatmate#1615
   [ "$output" = "launched genetta-inc/flatmate#1615" ]
   case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。"*) ;; *) false ;; esac
+  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop genetta-inc/flatmate#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。親ワークツリー "*) ;; *) cat "$STUB_CFG/sent_term-1615"; false ;; esac
   grep -qF -- "gh issue comment 1615 -R genetta-inc/flatmate --body" "$STUB_LOG"
   case "$(cat "$STUB_CFG/comment_1615")" in "親エピックからの注意書き: oratta/claude-harness#1122"*) ;; *) false ;; esac
 }
@@ -6223,7 +6223,7 @@ xnothing_made() {
   run dispatch launch --note 範囲を守る 1122 11
   [ "$output" = "launched 11" ]
   case "$(cat "$STUB_CFG/tcmd_11")" in "EPIC_DISPATCH_PARENT_EPIC=1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-11")" in "/develop #11 （エピック #1122 の子。親ワークツリー"*) ;; *) false ;; esac
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "/develop #11 （エピック #1122 の子。親ワークツリー /work/parent から Orca で起動） 範囲を守る" ] || { cat "$STUB_CFG/sent_term-11"; false; }
   grep -qF -- "gh issue comment 11 --body" "$STUB_LOG"
   case "$(cat "$STUB_CFG/comment_11")" in "親エピックからの注意書き: #1122"*) ;; *) false ;; esac
 }
@@ -6276,7 +6276,16 @@ xnothing_made() {
   run dispatch reply --relaunch --as parent 1122 genetta-inc/flatmate#1615 続けてよい
   [ "$output" = "relaunched genetta-inc/flatmate#1615" ]
   case "$(cat "$STUB_CFG/tcmd_1615")" in "EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 "*) ;; *) false ;; esac
-  case "$(cat "$STUB_CFG/sent_term-1615")" in "/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。"*) ;; *) false ;; esac
+  [ "$(cat "$STUB_CFG/sent_term-1615")" = "/develop genetta-inc/flatmate#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。返事を受けて起動し直し） 親エピック #1122（oratta/claude-harness）の判断（主の承認ではない）: 続けてよい" ] || { cat "$STUB_CFG/sent_term-1615"; false; }
+}
+
+@test "reply --relaunch: a same-repository child keeps the old instruction" {
+  make_stub orca
+  set_current 1122
+  put_record 11 stop=stopped
+  run dispatch reply --relaunch --as parent 1122 11 続けてよい
+  [ "$output" = "relaunched 11" ] || { echo "output=$output"; false; }
+  [ "$(cat "$STUB_CFG/sent_term-11")" = "/develop #11 （エピック #1122 の子。返事を受けて起動し直し） 親エピック #1122 の判断（主の承認ではない）: 続けてよい" ] || { cat "$STUB_CFG/sent_term-11"; false; }
 }
 
 @test "reply: a same-repository child keeps the old header" {

@@ -705,6 +705,16 @@ SH
   done
 }
 
+@test "input: cross-repo relaunch with the repository on the child number is startup; another epic repository is ignored" {
+  jq 'del(.turn_input,.turn_state) | .repo="genetta-inc/flatmate" | .number=892 | .epic="oratta/claude-harness#1810"' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
+  input '/develop genetta-inc/flatmate#892 （エピック #1810 の子。エピックのリポジトリ oratta/claude-harness。返事を受けて起動し直し） 主の返事（親エピック #1810（oratta/claude-harness）経由）: ok'
+  jq -e '.turn_input.sender == "startup" and .turn_input.session_id == "s1" and .turn_input.generation == 1' "$REC"
+  snapshot
+  SID=s2
+  run input '/develop genetta-inc/flatmate#892 （エピック #1810 の子。エピックのリポジトリ other/repo。返事を受けて起動し直し） 主の返事（親エピック #1810（other/repo）経由）: ok'
+  [ "$status" -eq 0 ]; [ -z "$output" ]; unchanged
+}
+
 @test "migration: unmatched inputs notify without locks or logs then resend activates Stop" {
   for launcher in orca tmux; do
     jq --arg l "$launcher" 'del(.turn_input,.turn_state) | .launcher=$l' "$REC" > "$REC.tmp"; mv "$REC.tmp" "$REC"
