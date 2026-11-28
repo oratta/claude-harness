@@ -5,6 +5,7 @@
 # 規範: rules/destructive-git-guard.md
 
 setup() {
+  unset DEVELOP_ROLE
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/git-destructive-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
@@ -2457,4 +2458,108 @@ assert_no_ask_reason() {
   for t in 'DEV_WORKFLOW_GIT_GUARD_NO_ASK' '起動側' '拒否後' '承認を求めてターンを終え' '会話ログが読める' 'wait --watch-stopped' '権限確認の画面で止まった子' '会話ログを読めない子' '検知できない'; do
     [[ "$step" == *"$t"* ]] || { echo "missing $t"; return 1; }
   done
+}
+
+assert_role_deny() {
+  [ "$status" -eq 0 ]
+  [ "$(decision)" = deny ] || { echo "$output"; return 1; }
+  ! has_continue || return 1
+  local r
+  r="$(reason)"
+  [[ "$r" == *本体* && "$r" == *承認* && "$r" == *主が実行* ]]
+  [[ "$r" != *'許可を受けられる打ち方'* && "$r" != *確認画面* && "$r" != *'2 回目'* ]]
+}
+@test "role: nine kinds deny for every mode FORCE and bypass marks including off" {
+  export DEVELOP_ROLE=worker
+  local mode force cmd
+  local commands=('git checkout -- .' 'git restore a' 'git reset --hard' 'git clean -fd' 'git push origin main' 'git push --force' 'git branch -D x' 'git commit --no-verify' 'git commit --no-gpg-sign')
+  for mode in default acceptEdits plan bypassPermissions auto dontAsk unknown -; do
+    for force in '' ask deny; do
+      export DEV_WORKFLOW_GIT_GUARD_FORCE="$force"
+      for cmd in "${commands[@]}"; do
+        call "$cmd" "$mode"
+        assert_role_deny
+      done
+    done
+  done
+  local off noask unattended
+  for off in on off; do
+    for noask in 0 1; do
+      for unattended in 0 1; do
+        export DEV_WORKFLOW_GIT_GUARD="$off" DEV_WORKFLOW_GIT_GUARD_NO_ASK="$noask" DEV_WORKFLOW_UNATTENDED="$unattended"
+        for cmd in "${commands[@]}"; do
+          call "$cmd" default
+          assert_role_deny
+        done
+        call 'git status'
+        [ "$status" -eq 0 ]
+        [ -z "$output" ]
+      done
+    done
+  done
+  [ ! -e "$(GUARD_BASE)" ]
+}
+@test "role: known self-permit paths stop with off while read-only references pass" {
+  export DEVELOP_ROLE=worker DEV_WORKFLOW_GIT_GUARD=off
+  local cmd
+  for cmd in 'bash git-guard-permit.sh record reason' 'python3 -c "write dev-workflow-git-guard/permits/k.json"' 'git reset --hard && echo "oops'; do
+    call "$cmd"
+    assert_role_deny
+  done
+  for cmd in 'cat git-guard-permit.sh' 'echo git-guard-permit.sh' 'git status'; do
+    call "$cmd"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+  [ ! -e "$(GUARD_BASE)" ]
+}
+@test "role: unjudgeable nested git denies and malformed input fails open" {
+  export DEVELOP_ROLE=worker
+  local c open close
+  open="$(printf '$(%.0s' $(seq 100000))"
+  close="$(printf ')%.0s' $(seq 100000))"
+  c="echo ${open}git status${close}"
+  call "$c"
+  assert_role_deny
+  for c in 'not json git' '{"tool_name":"Bash","tool_input":{"command":7}}' '{"tool_name":"Read","tool_input":{"command":"git reset --hard"}}'; do
+    run "$SCRIPT" <<<"$c"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+@test "role: deny preserves real child permit records and count, inherited child consumes once" {
+  setup_permit
+  deny_then_permit 'git checkout -- .' "$REPO"
+  local before agent
+  before="$(find "$(GUARD_BASE)" -type f -exec shasum {} \; | sort)"
+  for agent in - '""' 42; do
+    DEVELOP_ROLE=worker call_cwd 'git checkout -- .' "$agent" "$PERMIT_SID" "$REPO"
+    assert_role_deny
+    [ "$(find "$(GUARD_BASE)" -type f -exec shasum {} \; | sort)" = "$before" ]
+  done
+  DEVELOP_ROLE=worker call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = allow ]
+  permits_empty
+  DEVELOP_ROLE=worker call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = deny ]
+  ! has_continue || return 1
+  # Consuming a permit clears the existing child's count; this was the first new refusal.
+  DEVELOP_ROLE=worker call_cwd 'git checkout -- .' '"a1"' "$PERMIT_SID" "$REPO"
+  [ "$(decision)" = deny ]
+  python3 -c 'import json,sys; assert json.load(sys.stdin)["continue"] is False' <<<"$output"
+  DEV_WORKFLOW_GIT_GUARD=off DEVELOP_ROLE=worker call 'git reset --hard' default '"real-child"'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+@test "role: main env inheritance changes the same payload but empty and body-only do not" {
+  local body
+  body="$(payload 'git reset --hard # DEVELOP_ROLE=worker')"
+  run "$SCRIPT" <<<"$body"
+  [ "$(decision)" = ask ]
+  DEVELOP_ROLE= run "$SCRIPT" <<<"$body"
+  [ "$(decision)" = ask ]
+  DEV_WORKFLOW_GIT_GUARD=off run "$SCRIPT" <<<"$body"
+  [ -z "$output" ]
+  DEVELOP_ROLE=worker DEV_WORKFLOW_GIT_GUARD=off run "$SCRIPT" <<<"$body"
+  assert_role_deny
 }

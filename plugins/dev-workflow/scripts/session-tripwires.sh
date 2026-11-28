@@ -8,7 +8,8 @@
 # ブロック（「## Fable 残量モード（自動導出）」から共有枠モードの効果の行まで）だけを JSON でなく
 # 本文テキストで出す。この範囲では usage-probe・メモリ索引の検知・トリップワイヤー節の抽出を
 # 行わず、親向けの「W を再開する前に測る」行も出さない。テンプレートが無くても出す。
-# 未設定・それ以外の値のときは {"hookSpecificOutput": {"hookEventName": "SessionStart",
+# DEVELOP_ROLE が空でない通常呼び出しも同じ本文だけを SessionStart JSON に包む。
+# それ以外の通常呼び出しは {"hookSpecificOutput": {"hookEventName": "SessionStart",
 # "additionalContext": <本文>}} の JSON を出す（トップレベルに additionalContext を置かない。#1673）。
 #
 # 残量モードの式（明示 env の優先・閾値の比較）は usage_view.py の budget_mode_details の 1 か所に

@@ -664,3 +664,20 @@ for event in ("Stop", "SubagentStop"):
 assert any("epic-child-state.sh" in h["command"] for e in hooks["Stop"] for h in e["hooks"])
 CHECK
 }
+
+@test "role: unreadable counters and counter directories fail open without deletion" {
+  new_transcript "$TRANSCRIPT_PATH"; add_launch own "$TRANSCRIPT_PATH"
+  local counter="$COUNTER_DIR/role-sessions/$SESS.count"
+  mkdir -p "$COUNTER_DIR/role-sessions"
+  echo invalid > "$counter"
+  role_stop '[{"id":"own","status":"running"}]'
+  assert_silent
+  [[ "$stderr" == *見送る* ]]
+  [ "$(cat "$counter")" = invalid ]
+  rm -f "$counter"
+  rmdir "$COUNTER_DIR/role-sessions"
+  echo blocked > "$COUNTER_DIR/role-sessions"
+  role_stop '[{"id":"own","status":"running"}]'
+  assert_silent
+  [[ "$stderr" == *見送る* ]]
+}

@@ -11,7 +11,8 @@
 # skills/develop/references/decision-criteria.md「コンテキスト上限」、通知・強制停止を受けた
 # W と G の扱いが skills/develop/references/return-declaration.md。
 #
-# 計測対象は payload の transcript_path そのものではない。transcript_path は hook が発火した
+# DEVELOP_ROLE が空でない独立した役（有効な agent_id なし）は transcript_path 自身を測る。
+# 既存 subagent の計測対象は payload の transcript_path そのものではない。transcript_path は hook が発火した
 # セッション（サブエージェントの中でも親）のトランスクリプトを指すので、その親ディレクトリと
 # session_id・agent_id から <親ディレクトリ>/<session_id>/subagents/agent-<agent_id>.jsonl を
 # 導出する。直接パスが無ければ subagents/ 以下を深さ 3 段まで（上限つきで）探す。

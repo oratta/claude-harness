@@ -50,12 +50,15 @@
 #   （対話セッションでは確認画面が出て主が承認できる。claude -p では確認できず実行されない。どちらも実機で
 #   確認済み）、それ以外（dontAsk・auto・未知・欠落）は deny。DEV_WORKFLOW_GIT_GUARD_FORCE=ask|deny は
 #   実機確認と bats のための上書き（恒久設定にしない。子には効かない）。
-# DEV_WORKFLOW_GIT_GUARD=off で全許可（セッションの起動時の環境に入れる。コマンドの前置きでは効かない）。
+# マーカー付き役以外は DEV_WORKFLOW_GIT_GUARD=off で全許可（セッションの起動時の環境に入れる。コマンドの前置きでは効かない）。
 #
 # fail-open: python3 が無い・payload が読めない・Bash 以外・command が文字列でないときは何も出さず exit 0。
 set -uo pipefail
 
-[ "${DEV_WORKFLOW_GIT_GUARD:-on}" = "off" ] && exit 0
+# 独立した役は off でも対象。実在する子の off は Python の識別後に保つ。
+if [ "${DEV_WORKFLOW_GIT_GUARD:-on}" = "off" ] && [ -z "${DEVELOP_ROLE:-}" ]; then
+  exit 0
+fi
 command -v python3 >/dev/null 2>&1 || exit 0
 
 # Bash 呼び出しの大多数は git を含まないので、python3 の起動コストを課さない。payload 全体の文字列で
@@ -777,6 +780,9 @@ except TooMuch:
 # FORCE より先に見る: FORCE=ask が残ったセッションで子が起きても確認画面で止めないため。
 agent_id = payload.get("agent_id")
 is_child = isinstance(agent_id, str) and agent_id != ""
+is_role = not is_child and bool(os.environ.get("DEVELOP_ROLE"))
+if not is_role and os.environ.get("DEV_WORKFLOW_GIT_GUARD") == "off":
+    sys.exit(0)
 class Heads:
     """字句読みが読み終えた単純コマンドの先頭の語が、すべて READ_ONLY に入るかだけを持つ。"""
 
@@ -813,7 +819,7 @@ def read_only(s, depth=0):
 # 作業でも出やすい構文だけ（extglob・case・[[ などは並べない。この判定はセキュリティの境界ではなく、差を突く子は今の規則
 # でも名前を引用符で割れば届く）
 LEX_DIFFERS = ("$'", "((", "$[", "${")
-self_permit = is_child and PERMIT_NAME in command
+self_permit = (is_child or is_role) and PERMIT_NAME in command
 if self_permit and kinds is not None and not any(t in command for t in LEX_DIFFERS):
     try:
         self_permit = not read_only(command)
@@ -823,7 +829,7 @@ if self_permit and kinds is not None:
     kinds.add("permit-self")
 # 子のコマンド文字列に許可の置き場所の 2 つの名前が両方あれば permit-store として止める。kinds が None（判定しきれなかった）
 # でも当たったことを覚えておき、拒否の記録を書かず許可も使わない。主の呼び出しは止めない
-permit_store = is_child and all(n in command for n in STORE_NAMES)
+permit_store = (is_child or is_role) and all(n in command for n in STORE_NAMES)
 if permit_store and kinds is not None:
     kinds.add("permit-store")
 # permit-store のほかに当たった種類（破壊的 git 操作・判定しきれなかったもの・permit-self）があるか。無ければ回数を数えない
@@ -947,7 +953,9 @@ deny_count = 0
 record_path = None
 unverified = None
 base_err = None
-if is_child and permit_store and not other_kinds:
+if is_role:
+    decision = "deny"
+elif is_child and permit_store and not other_kinds:
     # 許可の置き場所を名指ししただけの拒否は、共通ファイルを読まず、<base> を作りも確かめもせず、回数も記録も触らない
     # （ルールを読み飛ばした子を 1 回で打ち切らない。記録があると親がこのコマンドの許可を書けてしまう）
     decision = "deny"
@@ -997,7 +1005,11 @@ else:
     found = "、".join(LABELS[k] for k in ORDER if k in kinds)
     head = ("[dev-workflow git-destructive-guard] 破壊的 git 操作を検出した: " + found + "。"
             "規範の正本は rules/destructive-git-guard.md（破壊的操作は例外なく事前承認）。")
-if is_child:
+if is_role:
+    body = ("このコマンドは実行されない。打ち直さず、別の書き方も試さないこと。"
+            "コマンド全文・対象のパス・必要な理由を本体に返す。承認後は主が実行する。"
+            "この役に許可を渡して再実行させない。")
+elif is_child:
     # 子には主向けの案内（確認画面・! を付けて打つ）を書かない。主に上げるのは親の役目
     body = ("このコマンドは実行されない。打ち直さず、別の書き方も試さないこと。scratchpad の検証用 repo を"
             "戻したいだけなら、git で戻さず作り直す。それ以外は作業を止め、報告に、打ちたかったコマンドの全文・"

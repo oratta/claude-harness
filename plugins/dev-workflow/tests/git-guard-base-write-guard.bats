@@ -6,6 +6,7 @@
 #       「置き場所への書き込みを止める hook の配線と逃げ道」「許可の置き場所への書き込みの拒否は親に返すよう案内する」
 
 setup() {
+  unset DEVELOP_ROLE
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/git-guard-base-write-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
@@ -173,4 +174,38 @@ assert last["matcher"] == "Bash", last
 assert last["hooks"][0]["command"] == '"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh"', last
 assert idx[0] < len(pre) - 1
 PY
+}
+
+@test "role: inherited main marker denies normalized relative case and symlink paths even off" {
+  mkdir -p "$T/dev-workflow-git-guard"
+  ln -s "$T/dev-workflow-git-guard" "$T/link"
+  local tool path mode
+  for mode in on off; do
+    export DEVELOP_ROLE=worker DEV_WORKFLOW_GIT_GUARD="$mode"
+    for tool in Write Edit NotebookEdit; do
+      for path in "$T/dev-workflow-git-guard/x" "$T/Dev-Workflow-Git-Guard/x" "$T/a/../dev-workflow-git-guard/x" 'dev-workflow-git-guard/x' "$T/link/x" 'link/x'; do
+        call_write "$tool" "$path" - "$T"
+        expect_deny
+        ! has_continue || return 1
+        [[ "$(reason)" == *本体* && "$(reason)" == *主が実行* ]]
+      done
+    done
+    call_write Write "$T/normal.txt" - "$T"
+    expect_silent
+  done
+  [ -z "$(ls -A "$T/dev-workflow-git-guard")" ]
+}
+@test "role: main empty and payload-only markers and inherited child preserve behavior" {
+  local body expected
+  body="$(write_payload Write "$T/dev-workflow-git-guard/x")"
+  run "$SCRIPT" <<<"$body"; expect_silent
+  DEVELOP_ROLE= run "$SCRIPT" <<<"$body"; expect_silent
+  run "$SCRIPT" <<<'{"text":"DEVELOP_ROLE=worker","tool_name":"Write","tool_input":{"file_path":"/x/dev-workflow-git-guard/x"}}'
+  expect_silent
+  call_write Write "$T/dev-workflow-git-guard/x" '"a1"'; expect_deny
+  expected="$output"
+  DEVELOP_ROLE=worker call_write Write "$T/dev-workflow-git-guard/x" '"a1"'; expect_deny
+  [ "$output" = "$expected" ]
+  DEVELOP_ROLE=worker DEV_WORKFLOW_GIT_GUARD=off call_write Write "$T/dev-workflow-git-guard/x" '"a1"'
+  expect_silent
 }
