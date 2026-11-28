@@ -2,6 +2,7 @@
 
 - [ ] 1.1 4 例外を識別できる request 入力と起動不可の結果を実装する。先に codex-standard の各例外が実行可能な依頼を作らず、Claude/Codex の起動呼び出しが 0 で、通常の書き込み不要レビューが継続するテストを書き、同テストの成功で確認する。触る範囲: plugins/dev-workflow/scripts/codex-develop.py:24-62（PHASES）、plugins/dev-workflow/scripts/codex-develop.py:737-869（request）、plugins/dev-workflow/tests/test_codex_develop.py:112-180、plugins/dev-workflow/tests/test_codex_develop.py:1083-1203
 - [ ] 1.2 V・一時書き込みレビュー・引き継ぎ判定・論点なし確認の呼び出しを request 結果に従わせる。起動不可時の未完了／実行不能／判断できないの既存経路と dispatch 記録を手順に書き、各呼び出し元が直に Claude を起こさないことを同テストの文書契約で確認する。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:137-138、plugins/dev-workflow/skills/develop/SKILL.md:205-219、plugins/dev-workflow/skills/develop/references/gate-result.md:66-85、plugins/dev-workflow/references/codex-develop.md:54-77、plugins/dev-workflow/tests/test_codex_develop.py:1888-1968
+- [ ] 1.3 reviewer-brief の一時領域が必要なら Claude reviewer で取り直す指示を、共通 request を通して今回の非起動条件に従う形に更新する。Claude を使える場合の再実行義務・同一固定 HEAD・read-only role に writableRoots を足さない契約を維持する。codex-standard の非起動条件と通常の Claude 取り直し条件を文書契約テストで確認する。主の確認だけで独立レビュー完了にはしない（復帰契約は R1 B3 の解消まで未確定）。触る範囲: plugins/dev-workflow/skills/pr-review-gate/stages/reviewer-brief.md:19-21、plugins/dev-workflow/references/codex-develop.md:69-77、plugins/dev-workflow/tests/test_codex_develop.py:1888-1968
 
 ## 2. Claude の実行可否と自動選択
 
