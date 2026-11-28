@@ -11,7 +11,8 @@
 # skills/develop/references/decision-criteria.md「コンテキスト上限」、通知・強制停止を受けた
 # W と G の扱いが skills/develop/references/return-declaration.md。
 #
-# 計測対象は payload の transcript_path そのものではない。transcript_path は hook が発火した
+# DEVELOP_ROLE が空でない独立した役（有効な agent_id なし）は transcript_path 自身を測る。
+# 既存 subagent の計測対象は payload の transcript_path そのものではない。transcript_path は hook が発火した
 # セッション（サブエージェントの中でも親）のトランスクリプトを指すので、その親ディレクトリと
 # session_id・agent_id から <親ディレクトリ>/<session_id>/subagents/agent-<agent_id>.jsonl を
 # 導出する。直接パスが無ければ subagents/ 以下を深さ 3 段まで（上限つきで）探す。
@@ -42,11 +43,13 @@ command -v python3 >/dev/null 2>&1 || exit 0   # fail-open（判定できなけ�
 # その先で agent_id フィールドが無いと判定されて fail-open するだけなので無害。逆向き
 # （agent_id を持つ payload を早期 exit させること）は spec が MUST NOT で禁じている。
 payload="$(cat)" || exit 0
+if [ -z "${DEVELOP_ROLE:-}" ]; then
 case "$payload" in
   *'"agent_id"'*) ;;   # 生表記（実運用のほぼ全て）
   *'\u00'*) ;;         # Unicode エスケープ表記かもしれない → 判定は python3 のパースに任せる
   *) exit 0 ;;
 esac
+fi
 
 # Python 本体はヒアドキュメントで変数に読み、-c の引数で渡す。payload は stdin のまま読ませる
 # （payload を環境変数や引数に載せると、長い入力で ARG_MAX を超えて hook が落ちる。本体は固定長で数十 KB）。
@@ -173,19 +176,27 @@ agent_id = payload.get("agent_id")
 session_id = payload.get("session_id")
 transcript_path = payload.get("transcript_path")
 event = payload.get("hook_event_name")
-if not all(isinstance(v, str) and v for v in (agent_id, session_id, transcript_path)):
+is_child = isinstance(agent_id, str) and bool(agent_id)
+is_role = not is_child and bool(os.environ.get("DEVELOP_ROLE"))
+if not (is_child or is_role):
+    sys.exit(0)
+if not all(isinstance(v, str) and v for v in (session_id, transcript_path)):
     sys.exit(0)
 # 導出先がディレクトリの外に出る値は測らない
-if os.sep in agent_id or os.sep in session_id or agent_id in (".", "..") or session_id in (".", ".."):
+if (is_child and (os.sep in agent_id or agent_id in (".", ".."))) or os.sep in session_id or session_id in (".", ".."):
     sys.exit(0)
 if event not in ("PostToolUse", "PreToolUse"):
     sys.exit(0)
 
-root = os.path.join(os.path.dirname(transcript_path), session_id, "subagents")
-fname = "agent-%s.jsonl" % agent_id
-target = os.path.join(root, fname)
-if not os.path.isfile(target):
-    target = find_transcript(root, fname)
+if is_role:
+    # Independent sessions own transcript_path; never borrow another session's usage.
+    target = transcript_path
+else:
+    root = os.path.join(os.path.dirname(transcript_path), session_id, "subagents")
+    fname = "agent-%s.jsonl" % agent_id
+    target = os.path.join(root, fname)
+    if not os.path.isfile(target):
+        target = find_transcript(root, fname)
 if not target:
     sys.exit(0)
 

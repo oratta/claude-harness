@@ -16,6 +16,7 @@
 bats_require_minimum_version 1.5.0
 
 setup() {
+  unset DEVELOP_ROLE
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/subagent-stop-guard.sh"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
@@ -569,4 +570,114 @@ PY
   echo "$r" | grep -qF 'bushn690g'
   # 停止する本人（type:"subagent"）は起動記録が無いので未完了に数えない
   ! echo "$r" | grep -qF 'a17e28bcaab978169' || return 1
+}
+
+role_stop() {
+  local body
+  body="$(NO_AGENT=1 SHA=1 ATP="$TRANSCRIPT" payload "$1")"
+  body="${body/SubagentStop/Stop}"
+  DEVELOP_ROLE=worker run_hook "$body"
+}
+@test "role: inherited main marker blocks own running task and keeps counters separate" {
+  new_transcript "$TRANSCRIPT_PATH"; add_launch own "$TRANSCRIPT_PATH"
+  new_transcript; add_launch sibling
+  local bt='[{"id":"own","status":"running"},{"id":"sibling","status":"running"}]' n
+  local counter="$COUNTER_DIR/role-sessions/$SESS.count"
+  mkdir -p "$COUNTER_DIR"
+  echo 2 > "$COUNTER_DIR/$SESS-$AGENT_ID.count"
+  for n in 1 2 3; do
+    role_stop "$bt"
+    assert_block
+    [[ "$(reason)" == *"$n/3"* ]] || return 1
+    [[ "$(reason)" == *own* ]] || return 1
+    [[ "$(reason)" != *sibling* ]] || return 1
+    [[ "$(reason)" == *TaskStop* ]] || return 1
+    [[ "$(reason)" == *subagent-waiting.md* ]] || return 1
+    [ "$(cat "$counter")" = "$n" ]
+  done
+  local old="$SESS"
+  SESS=other-session role_stop "$bt"
+  assert_block
+  [ "$(cat "$COUNTER_DIR/role-sessions/other-session.count")" = 1 ]
+  SESS="$old"
+  role_stop "$bt"
+  assert_silent
+  [[ "$stderr" == *上限* ]] || return 1
+  [ ! -e "$counter" ]
+  [ "$(cat "$COUNTER_DIR/$SESS-$AGENT_ID.count")" = 2 ]
+}
+@test "role: completion deletes counter and missing ledger log or off preserves it" {
+  new_transcript "$TRANSCRIPT_PATH"; add_launch own "$TRANSCRIPT_PATH"
+  local bt='[{"id":"own","status":"running"}]'
+  local counter="$COUNTER_DIR/role-sessions/$SESS.count"
+  role_stop "$bt"; assert_block
+  for condition in ledger off log; do
+    case "$condition" in
+      ledger) role_stop - ;;
+      off) DEV_WORKFLOW_STOP_GUARD=off role_stop "$bt" ;;
+      log) mv "$TRANSCRIPT_PATH" "$TRANSCRIPT_PATH.saved"; role_stop "$bt" ;;
+    esac
+    assert_silent
+    [ "$(cat "$counter")" = 1 ]
+  done
+  mv "$TRANSCRIPT_PATH.saved" "$TRANSCRIPT_PATH"
+  role_stop '[{"id":"own","status":"completed"},{"id":"foreign","status":"running"}]'
+  assert_silent
+  [ ! -e "$counter" ]
+  role_stop "$bt"; assert_block
+  [[ "$(reason)" == *1/3* ]] || return 1
+  role_stop '[]'; assert_silent
+  [ ! -e "$counter" ]
+}
+@test "role: no fallback to agent transcript and unsafe sessions fail open" {
+  new_transcript; add_launch own
+  local bt='[{"id":"own","status":"running"}]' sid
+  role_stop "$bt"; assert_silent
+  rm -f "$TRANSCRIPT_PATH"
+  role_stop "$bt"; assert_silent
+  for sid in '' . .. bad/path; do
+    SESS="$sid" role_stop "$bt"; assert_silent
+  done
+}
+@test "role: unmarked empty and body-only main stay silent while valid subagent retains output" {
+  new_transcript "$TRANSCRIPT_PATH"; add_launch own "$TRANSCRIPT_PATH"
+  local body expected
+  body="$(NO_AGENT=1 payload '[{"id":"own","status":"running"}]')"
+  run_hook "$body"; assert_silent
+  DEVELOP_ROLE= run_hook "$body"; assert_silent
+  run_hook '{"text":"DEVELOP_ROLE=worker","background_tasks":[]}'; assert_silent
+  new_transcript; add_launch child
+  body="$(payload '[{"id":"child","status":"running"}]')"
+  run_hook "$body"; assert_block
+  expected="$output"
+  rm -f "$COUNTER_DIR/$SESS-$AGENT_ID.count"
+  DEVELOP_ROLE=worker run_hook "$body"; assert_block
+  [ "$output" = "$expected" ]
+}
+@test "role: Stop wiring adds guard while preserving existing Stop and SubagentStop" {
+  python3 - "$HOOKS_JSON" <<'CHECK'
+import json,sys
+hooks=json.load(open(sys.argv[1]))["hooks"]
+for event in ("Stop", "SubagentStop"):
+    cmds=[h["command"] for e in hooks[event] for h in e["hooks"]]
+    assert sum("subagent-stop-guard.sh" in c for c in cmds)==1, cmds
+assert any("epic-child-state.sh" in h["command"] for e in hooks["Stop"] for h in e["hooks"])
+CHECK
+}
+
+@test "role: unreadable counters and counter directories fail open without deletion" {
+  new_transcript "$TRANSCRIPT_PATH"; add_launch own "$TRANSCRIPT_PATH"
+  local counter="$COUNTER_DIR/role-sessions/$SESS.count"
+  mkdir -p "$COUNTER_DIR/role-sessions"
+  echo invalid > "$counter"
+  role_stop '[{"id":"own","status":"running"}]'
+  assert_silent
+  [[ "$stderr" == *見送る* ]] || return 1
+  [ "$(cat "$counter")" = invalid ]
+  rm -f "$counter"
+  rmdir "$COUNTER_DIR/role-sessions"
+  echo blocked > "$COUNTER_DIR/role-sessions"
+  role_stop '[{"id":"own","status":"running"}]'
+  assert_silent
+  [[ "$stderr" == *見送る* ]] || return 1
 }

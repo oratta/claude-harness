@@ -169,12 +169,12 @@ blocked() { [ "$status" -eq 0 ]; [[ "$output" == *'"decision": "block"'* || "$ou
   run stop '状態: 完了 — x'; blocked
 }
 
-@test "hooks: input and Stop use one shared entry with timeout and no other event" {
+@test "hooks: input and Stop each register the shared state hook once with timeout and no other event" {
   jq -e '
     [.hooks.UserPromptSubmit[].hooks[] | select(.command | contains("epic-child-state.sh"))] | length == 1 and .[0].timeout == 30
   ' "$PLUGIN_DIR/hooks/hooks.json"
   jq -e '
-    [.hooks.Stop[].hooks[]] | length == 1 and .[0].timeout == 30 and (.[0].command | contains("epic-child-state.sh"))
+    [.hooks.Stop[].hooks[] | select(.command | contains("epic-child-state.sh"))] | length == 1 and .[0].timeout == 30
   ' "$PLUGIN_DIR/hooks/hooks.json"
   jq -e '[.hooks | to_entries[] | select(.key != "Stop" and .key != "UserPromptSubmit") | .value[].hooks[] | select(.command | contains("epic-child-state.sh"))] | length == 0' "$PLUGIN_DIR/hooks/hooks.json"
   export CLAUDE_PLUGIN_ROOT="$PLUGIN_DIR"

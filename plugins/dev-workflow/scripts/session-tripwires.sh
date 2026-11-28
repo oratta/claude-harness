@@ -8,7 +8,8 @@
 # ブロック（「## Fable 残量モード（自動導出）」から共有枠モードの効果の行まで）だけを JSON でなく
 # 本文テキストで出す。この範囲では usage-probe・メモリ索引の検知・トリップワイヤー節の抽出を
 # 行わず、親向けの「W を再開する前に測る」行も出さない。テンプレートが無くても出す。
-# 未設定・それ以外の値のときは {"hookSpecificOutput": {"hookEventName": "SessionStart",
+# DEVELOP_ROLE が空でない通常呼び出しも同じ本文だけを SessionStart JSON に包む。
+# それ以外の通常呼び出しは {"hookSpecificOutput": {"hookEventName": "SessionStart",
 # "additionalContext": <本文>}} の JSON を出す（トップレベルに additionalContext を置かない。#1673）。
 #
 # 残量モードの式（明示 env の優先・閾値の比較）は usage_view.py の budget_mode_details の 1 か所に
@@ -22,7 +23,14 @@ SELF_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd)" || SELF_DIR
 ROOT="${CLAUDE_PLUGIN_ROOT:-}"
 TEMPLATE="${ROOT:+${ROOT}/templates/escalation-tripwires.md}"
 SCOPE="${TRIPWIRES_SCOPE:-}"
-[ "$SCOPE" = "subagent-budget" ] || SCOPE="session"
+FORMAT="json"
+if [ "$SCOPE" = "subagent-budget" ]; then
+  FORMAT="text"
+elif [ -n "${DEVELOP_ROLE:-}" ]; then
+  SCOPE="subagent-budget"
+else
+  SCOPE="session"
+fi
 
 SNAPSHOT="${USAGE_SNAPSHOT:-$HOME/.claude/.usage-snapshot}"
 MEMORY_NOTICE=""
@@ -44,7 +52,7 @@ fi
 
 # 導出は active スロットの実効値（セッション記録と snapshot を突き合わせた値）から行う。
 # 実効値の規則（正本: openspec/specs/usage-session-records）も残量モードの式も usage_view.py にある。
-TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" SCOPE="$SCOPE" \
+TEMPLATE="$TEMPLATE" SNAPSHOT="$SNAPSHOT" MEMORY_NOTICE="$MEMORY_NOTICE" SCOPE="$SCOPE" FORMAT="$FORMAT" \
   USAGE_VIEW_DIR="$SELF_DIR" python3 -I <<'PY'
 import json, os, re, sys, time
 
@@ -139,7 +147,12 @@ if all_pct is not None:
 lines.append(f"- {shared} の効果: {shared_effect}")
 if SCOPE == "subagent-budget":
     # サブエージェント向け: 残量ブロックだけを本文テキストで出す（包む JSON は呼び出し側が作る）
-    print("\n".join(lines))
+    body = "\n".join(lines)
+    if os.environ["FORMAT"] == "text":
+        print(body)
+    else:
+        print(json.dumps({"hookSpecificOutput": {"hookEventName": "SessionStart",
+                                                 "additionalContext": body}}, ensure_ascii=False))
     raise SystemExit(0)
 lines.append("- サブエージェントのコンテキスト上限: W を SendMessage で再開する前に "
              "`${CLAUDE_PLUGIN_ROOT}/scripts/subagent-context.sh <name>` で測る"

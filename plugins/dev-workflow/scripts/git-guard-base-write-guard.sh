@@ -15,11 +15,14 @@
 # 置き場所の名前は共通ファイル（git-guard-scratchpad.py の BASE_NAME）を読まずにここにも書く（共通ファイルを読めないと
 # 止められなくなるため。食い違わないことは tests/git-guard-base-write-guard.bats で確かめる）。
 #
-# DEV_WORKFLOW_GIT_GUARD=off で全許可（git ガードと同じ逃げ道）。
+# マーカー付き役以外は DEV_WORKFLOW_GIT_GUARD=off で全許可（git ガードと同じ逃げ道）。
 # fail-open: python3 が無い・payload が読めない・3 つのツール以外・書き先が文字列でないときは何も出さず exit 0。
 set -uo pipefail
 
-[ "${DEV_WORKFLOW_GIT_GUARD:-on}" = "off" ] && exit 0
+# 独立した役は off でも対象。実在する子の off は Python の識別後に保つ。
+if [ "${DEV_WORKFLOW_GIT_GUARD:-on}" = "off" ] && [ -z "${DEVELOP_ROLE:-}" ]; then
+  exit 0
+fi
 command -v python3 >/dev/null 2>&1 || exit 0
 
 # 主の呼び出しと置き場所に無関係な書き込みの大多数で python3 を起動しない。payload 全体の文字列で必要条件だけを見る:
@@ -27,12 +30,14 @@ command -v python3 >/dev/null 2>&1 || exit 0
 # 経た書き先はパスに名前が出ないので、子の呼び出しは名前が無くても起動する）。誤りは余計に起動する向きにしか起きない。
 payload="$(cat)" || exit 0
 shopt -s nocasematch
+if [ -z "${DEVELOP_ROLE:-}" ]; then
 case "$payload" in
   *dev-workflow-git-guard*) ;;
   *'\u00'*) ;;
   *agent_id*) ;;
   *) exit 0 ;;
 esac
+fi
 shopt -u nocasematch
 
 # 本体は変数に読んで python3 -I -c で渡す（git-destructive-guard.sh と同じ形。/dev/fd/3 は #869 の理由で使わない）
@@ -50,7 +55,11 @@ except Exception:
 if not isinstance(payload, dict) or payload.get("tool_name") not in FIELDS:
     sys.exit(0)
 agent_id = payload.get("agent_id")
-if not isinstance(agent_id, str) or agent_id == "":
+is_child = isinstance(agent_id, str) and agent_id != ""
+is_role = not is_child and bool(os.environ.get("DEVELOP_ROLE"))
+if not is_role and os.environ.get("DEV_WORKFLOW_GIT_GUARD") == "off":
+    sys.exit(0)
+if not (is_child or is_role):
     sys.exit(0)  # 主の呼び出しは止めない
 inp = payload.get("tool_input")
 if not isinstance(inp, dict):
@@ -83,6 +92,11 @@ reason = ("[dev-workflow git-guard-base-write-guard] 子（サブエージェン
           "回数・許可を置くフォルダ）に Write / Edit / NotebookEdit で書けない。許可を書くのは親の役目。"
           "この書き込みは実行されない。打ち直さず、別の書き方（Bash など）も試さないこと。作業を止め、報告に、"
           "書きたかったファイルのパス・なぜ要るか・拒否されたコマンドがあればその全文と拒否の記録のパス、を書いて親に返す。")
+if is_role:
+    reason = ("[dev-workflow git-guard-base-write-guard] この役は許可の置き場所へ書けない。"
+              "この書き込みは実行されない。打ち直さず、別の書き方も試さないこと。"
+              "書きたかったファイルのパス・必要な理由・拒否されたコマンドの全文を本体に返す。"
+              "承認後は主が実行する。この役に許可を渡して再実行させない。")
 print(json.dumps({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
                                          "permissionDecisionReason": reason}}, ensure_ascii=False))
 PY
