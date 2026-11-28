@@ -7,6 +7,7 @@
 # spec: openspec/changes/add-pr-token-budget（dev-workflow-pr-token-budget）
 
 setup() {
+  unset DEVELOP_ROLE
   bats_require_minimum_version 1.5.0
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/pr-token-budget.sh"
@@ -351,7 +352,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 
 # ---- モデル別の上限（共通の解決処理 token_thresholds.py への接続。change wire-pr-token-cap-thresholds）----
 
-KEYS='["agent_count","agents","cap","claude_tokens","codex","codex_threads","codex_tokens","codex_unresolved","over_cap","records","skipped_lines","total_tokens","unresolved"]'
+KEYS='["agent_count","agents","cap","claude_sessions","claude_tokens","codex","codex_threads","codex_tokens","codex_unresolved","over_cap","records","session_errors","session_unresolved","skipped_lines","total_tokens","unresolved"]'
 
 # 配布先を模したコピー。元の表・共通処理・手順は編集しない。$1 があれば表を差し替える python の式（d が表）
 budget_plugin() {
@@ -499,4 +500,172 @@ PYFIX
   [ "$status" -eq 1 ]
   [[ "$(j 'd["error"]')" == invalid_table:* ]] || false
   [[ "$stderr" == *invalid_table* ]] || false
+}
+
+# G002: explicit sessions, including an active coordinator, are additional inputs.
+explicit_records() {
+  SESSIONS="$WORK/sessions.jsonl"
+  LOG="$WORK/role.jsonl"
+  arec explicit m u 1 10 100 5 > "$LOG"
+  printf '200\n' | make_rollout "$HOME1" active
+  ROLLOUT="$HOME1/sessions/2026/09/23/rollout-2026-09-23T10-00-00-active.jsonl"
+  python3 - "$REPO" "$SESSIONS" "$LOG" "$ROLLOUT" "$HOME1" <<'PY'
+import json,sys,os
+repo,out,log,rollout,home=sys.argv[1:]
+base=dict(schema_version=1,records=[288,400],repo_common_dir=os.path.realpath(repo+'/.git'),cwd=repo)
+rows=[dict(base,provider='claude',kind='role',session_id='role-session',log_path=log,role='implement',model='sonnet'),
+      dict(base,provider='codex',kind='coordinator',thread_id='active',log_path=rollout,codex_home=home)]
+with open(out,'w') as f:
+ for row in rows+rows: f.write(json.dumps(row)+'\n')
+PY
+}
+
+@test "explicit sessions: four Claude usage fields + active coordinator, dedup and live growth" {
+  explicit_records
+  printf 'active 50\n' > "$WORK/comments"
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 400 --projects "$PROJECTS" --session-records "$SESSIONS" --codex-records "$WORK/comments" --cap 1000
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["total_tokens"]')" = 316 ]
+  [ "$(j 'd["session_unresolved"]')" = 0 ]
+  [ "$(j 'd["agent_count"]')" = 0 ]
+  [ "$(j 'd["claude_sessions"][0]["session_id"]')" = role-session ]
+  [ "$(j 'd["claude_sessions"][0]["log_path"]')" = "$LOG" ]
+  [ "$(j 'd["claude_sessions"][0]["tokens"]')" = 116 ]
+  [ "$(j 'd["claude_sessions"][0]["requests"]')" = 1 ]
+  printf '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":350}}}}\n' >> "$ROLLOUT"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --session-records "$SESSIONS" --codex-records "$WORK/comments" --cap 1000
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["total_tokens"]')" = 466 ]
+}
+
+@test "explicit sessions: missing usage is unresolved, known over-cap takes precedence" {
+  explicit_records
+  : > "$ROLLOUT"
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  [ "$status" -eq 1 ]
+  [ "$(j 'd["session_unresolved"] > 0')" = True ]
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 100
+  [ "$status" -eq 2 ]
+  : > "$SESSIONS"
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS"
+  [ "$status" -eq 1 ]
+}
+
+@test "explicit sessions: existing meta transcript is counted only once" {
+  explicit_records
+  arec explicit m u 1 10 100 5 | make_agent same '{"description":"W #288"}' "$REPO"
+  python3 - "$SESSIONS" "$PROJECTS/proj/sess1/subagents/agent-same.jsonl" <<'PY'
+import json,sys
+p=sys.argv[1]; rows=[json.loads(s) for s in open(p)]
+for r in rows:
+ if r['provider']=='claude': r['log_path']=sys.argv[2]
+with open(p,'w') as f:
+ for r in rows: f.write(json.dumps(r)+'\n')
+PY
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["total_tokens"]')" = 316 ]
+  [ "$(j 'd["agent_count"]')" = 1 ]
+  [ "$(j 'len(d["claude_sessions"])')" = 1 ]
+}
+
+@test "explicit sessions: other repo and record excluded; missing coordinator diagnosed" {
+  explicit_records
+  python3 - "$SESSIONS" "$OTHER" <<'PY'
+import json,sys
+p=sys.argv[1]; rows=[json.loads(s) for s in open(p)]
+for r in rows:
+ if r['provider']=='codex': r['repo_common_dir']=sys.argv[2]+'/.git'; r['cwd']=sys.argv[2]
+with open(p,'w') as f:
+ for r in rows: f.write(json.dumps(r)+'\n')
+PY
+  cd "$REPO"
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  [ "$status" -eq 1 ]
+  [ "$(j 'd["total_tokens"]')" = 116 ]
+  run --separate-stderr "$SCRIPT" 999 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  [ "$status" -eq 1 ]
+  [ "$(j 'd["total_tokens"]')" = 0 ]
+}
+
+@test "explicit sessions: three paths share one cap through the real measure wrapper" {
+  explicit_records
+  arec legacy m u 100 0 0 0 | make_agent legacy '{"description":"W #288"}' "$REPO"
+  # The only stub is the network fetch: actual measure and budget code run.
+  mkdir -p "$WORK/integration/scripts" "$WORK/integration/references"
+  cp "$PLUGIN_DIR/scripts/"{pr-token-measure.sh,pr-token-budget.sh,token_thresholds.py} "$WORK/integration/scripts/"
+  cp "$PLUGIN_DIR/references/token-thresholds.json" "$WORK/integration/references/"
+  cat > "$WORK/integration/scripts/codex-records.sh" <<'SH'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --out ]; then printf 'active 50\n' > "$2"; exit 0; fi
+  shift
+done
+exit 1
+SH
+  chmod +x "$WORK/integration/scripts/codex-records.sh"
+  export CLAUDE_PROJECTS_DIR="$PROJECTS"
+  cd "$REPO"
+  run --separate-stderr "$WORK/integration/scripts/pr-token-measure.sh" --repo o/r --session-records "$SESSIONS" --cap 400 288
+  [ "$status" -eq 2 ]
+  [ "$(j 'd["claude_tokens"]')" = 216 ]
+  [ "$(j 'd["codex_tokens"]')" = 200 ]
+  [ "$(j 'd["total_tokens"]')" = 416 ]
+  [ "$(j 'd["agent_count"]')" = 1 ]
+  run --separate-stderr "$WORK/integration/scripts/pr-token-measure.sh" --repo o/r --session-records "$SESSIONS" --cap 500 288
+  [ "$status" -eq 0 ]
+  : > "$ROLLOUT"
+  run --separate-stderr "$WORK/integration/scripts/pr-token-measure.sh" --repo o/r --session-records "$SESSIONS" --cap 500 288
+  [ "$status" -eq 1 ]
+  [ "$(j 'd["session_unresolved"]')" = 1 ]
+}
+
+@test "explicit sessions: missing Claude history and invalid identity are diagnosed" {
+  explicit_records
+  cd "$REPO"
+  for content in missing empty no-usage wrong-session; do
+    case "$content" in
+      missing) rm -f "$LOG" ;;
+      empty) : > "$LOG" ;;
+      no-usage) printf '{"type":"user"}\n' > "$LOG" ;;
+      wrong-session) printf '{"sessionId":"different"}\n' > "$LOG" ;;
+    esac
+    run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --session-records "$SESSIONS" --cap 1000
+    [ "$status" -eq 1 ]
+    [ "$(j 'd["session_unresolved"]')" = 1 ]
+    [ "$(j 'd["session_errors"][0]["reason"]')" = claude_unresolved ]
+    [ -n "$stderr" ]
+  done
+  printf 'not-json\n' >> "$SESSIONS"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --session-records "$SESSIONS" --cap 100
+  [ "$status" -eq 2 ]
+  [ "$(j 'd["session_unresolved"]')" = 2 ]
+}
+
+@test "explicit sessions: removed worktree preserves Claude and coordinator totals and cap" {
+  explicit_records
+  python3 - "$SESSIONS" "$LOG" "$WT" <<'PYTHON'
+import json,sys
+records,log,cwd=sys.argv[1:]
+rows=[json.loads(s) for s in open(records)]
+for row in rows: row['cwd']=cwd
+with open(records,'w') as f:
+ for row in rows: f.write(json.dumps(row)+'\n')
+with open(log,'a') as f: f.write(json.dumps({'type':'user','cwd':cwd})+'\n')
+PYTHON
+  cd "$REPO"
+  for state in present removed; do
+    if [ "$state" = removed ]; then
+      git -C "$REPO" worktree remove "$WT"
+    fi
+    run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+    [ "$status" -eq 0 ]
+    [ "$(j '(d["claude_tokens"], d["codex_tokens"], d["total_tokens"], d["session_unresolved"])')" = "(116, 200, 316, 0)" ]
+    run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 300
+    [ "$status" -eq 2 ]
+    [ "$(j 'd["total_tokens"]')" = 316 ]
+  done
 }

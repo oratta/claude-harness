@@ -9,6 +9,7 @@
 bats_require_minimum_version 1.5.0
 
 setup() {
+  unset DEVELOP_ROLE
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   WORK="$(cd "$(mktemp -d)" && pwd -P)"
   SD="${WORK}/scripts"
@@ -158,4 +159,14 @@ SH
   CR_EXIT=1 run_measure --repo o/r 288
   [ -s "${WORK}/made-dir" ]
   [ ! -e "$(cat "${WORK}/made-dir")" ]
+}
+
+@test "--session-records passes the exact external path and requires a value" {
+  run_measure --repo o/r --session-records "${WORK}/sessions.jsonl" 288
+  [ "$status" -eq 0 ]
+  grep -qF -- "--session-records ${WORK}/sessions.jsonl" "$CALLS"
+  : > "$CALLS"
+  run_measure --repo o/r 288 --session-records
+  [ "$status" -eq 1 ]
+  [ ! -s "$CALLS" ]
 }

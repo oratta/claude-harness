@@ -3,7 +3,7 @@
 # 全リクエストの usage と、その記録先のために使った Codex の消費を合計し、上限と比べる。
 #
 #   pr-token-budget.sh <記録先番号>... [--cap <tokens>] [--projects <dir>]
-#                      [--codex-records <file>] [--codex-home <dir>]...
+#                      [--codex-records <file>] [--codex-home <dir>]... [--session-records <file>]
 #
 # 出力（stdout, 1 行 JSON）:
 #   {"records":[288],"claude_tokens":7110,"codex_tokens":1550,"total_tokens":8660,
@@ -35,8 +35,9 @@ records=()
 cap=""
 projects="${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
 codex_records=""
+session_records=""
 codex_homes=()
-usage='usage: pr-token-budget.sh <番号>... [--cap N] [--projects DIR] [--codex-records FILE] [--codex-home DIR]...'
+usage='usage: pr-token-budget.sh <番号>... [--cap N] [--projects DIR] [--codex-records FILE] [--codex-home DIR]... [--session-records FILE]'
 while [ $# -gt 0 ]; do
   case "$1" in
     --cap)
@@ -45,6 +46,9 @@ while [ $# -gt 0 ]; do
     --projects)
       if [ -z "${2-}" ]; then echo '{"error":"--projects needs a directory"}'; exit 1; fi
       projects="$2"; shift 2 ;;
+    --session-records)
+      if [ -z "${2-}" ] || [ ! -f "$2" ]; then echo '{"error":"--session-records needs an existing file"}'; exit 1; fi
+      session_records="$2"; shift 2 ;;
     --codex-records)
       if [ -z "${2-}" ] || [ ! -f "$2" ]; then echo '{"error":"--codex-records needs an existing file"}'; exit 1; fi
       codex_records="$2"; shift 2 ;;
@@ -64,7 +68,7 @@ repo_id="$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" |
 if [ -z "$repo_id" ]; then echo '{"error":"current directory is not a git repository"}'; exit 1; fi
 
 SCRIPT_PATH="${BASH_SOURCE[0]}" RECORDS="${records[*]}" CAP="$cap" PROJECTS="$projects" REPO_ID="$repo_id" \
-CODEX_RECORDS="$codex_records" CODEX_HOMES="$(printf '%s\n' "${codex_homes[@]}")" python3 <<'PY'
+SESSION_RECORDS="$session_records" CODEX_RECORDS="$codex_records" CODEX_HOMES="$(printf '%s\n' "${codex_homes[@]}")" python3 <<'PY'
 import glob, importlib.util, json, os, re, subprocess, sys
 from pathlib import Path
 sys.dont_write_bytecode = True
@@ -114,6 +118,7 @@ def n(u, k):
     return int(v) if isinstance(v, (int, float)) and not isinstance(v, bool) else 0
 
 agents = []
+measured_paths = set()
 models = set()  # 数えたリクエストの message.model（不明は None）。Codex は入れない
 unresolved = 0
 for meta_path in sorted(glob.glob(os.path.join(projects, "*", "*", "subagents", "agent-*.meta.json"))):
@@ -135,6 +140,7 @@ for meta_path in sorted(glob.glob(os.path.join(projects, "*", "*", "subagents", 
         continue
     if rid != repo_id:
         continue
+    measured_paths.add(os.path.realpath(transcript))
     seen = {}
     try:
         with open(transcript, encoding="utf-8") as f:
@@ -207,6 +213,137 @@ def rollout_total(tid):
                 continue
     return best
 
+# Explicit sessions are attribution inputs, never a replacement for live usage.
+session_errors = []
+claude_sessions = []
+explicit_claude_tokens = 0
+explicit_session_ids = set()
+explicit_claude = {}
+explicit_codex = {}
+coordinator_seen = False
+session_file = os.environ.get("SESSION_RECORDS")
+if session_file:
+    try:
+        with open(session_file, encoding="utf-8") as handle:
+            rows = handle.readlines()
+    except OSError as error:
+        rows = []
+        session_errors.append({"reason": "records_unreadable", "detail": str(error)})
+    for line in rows:
+        try:
+            row = json.loads(line)
+            if not isinstance(row, dict):
+                raise ValueError("record must be an object")
+            if not isinstance(row.get("records"), list):
+                raise ValueError("record numbers missing")
+            if not wanted.intersection(row["records"]):
+                continue
+            common = row.get("repo_common_dir")
+            if not isinstance(common, str) or not os.path.isabs(common):
+                raise ValueError("repo_common_dir missing")
+            if os.path.realpath(common) != repo_id:
+                continue
+            cwd_repo = repo_of(row.get("cwd"))
+            if row.get("schema_version") != 1 or (cwd_repo is not None and cwd_repo != repo_id):
+                raise ValueError("schema/cwd attribution unavailable")
+            path = row.get("log_path")
+            if not isinstance(path, str) or not os.path.isabs(path):
+                raise ValueError("absolute log_path required")
+            path = os.path.realpath(path)
+            if row.get("provider") == "claude" and row.get("kind") == "role":
+                sid = row.get("session_id")
+                if not isinstance(sid, str) or not sid or not row.get("role") or not row.get("model"):
+                    raise ValueError("Claude identity/role/model missing")
+                explicit_claude[(sid, path)] = row
+            elif row.get("provider") == "codex" and row.get("kind") == "coordinator":
+                tid = row.get("thread_id")
+                home = row.get("codex_home")
+                if not isinstance(tid, str) or not tid or not isinstance(home, str) or not os.path.isabs(home):
+                    raise ValueError("Codex identity/home missing")
+                coordinator_seen = True
+                explicit_codex[(tid, path)] = row
+            else:
+                raise ValueError("unknown provider/kind")
+        except (ValueError, TypeError, OSError) as error:
+            session_errors.append({"reason": "invalid_record", "detail": str(error)})
+    if not coordinator_seen:
+        session_errors.append({"reason": "coordinator_missing"})
+
+for (sid, path), row in explicit_claude.items():
+    seen = {}
+    try:
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                if d.get("sessionId") and d["sessionId"] != sid:
+                    raise ValueError("session ID mismatch")
+                cwd_repo = repo_of(d["cwd"]) if d.get("cwd") else None
+                if cwd_repo is not None and cwd_repo != repo_id:
+                    raise ValueError("transcript cwd mismatch")
+                msg = d.get("message")
+                u = msg.get("usage") if isinstance(msg, dict) else None
+                if d.get("type") != "assistant" or not isinstance(u, dict):
+                    continue
+                if not any(isinstance(u.get(k), (int, float)) and not isinstance(u.get(k), bool)
+                           for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")):
+                    continue
+                key = d.get("requestId") or msg.get("id") or d.get("uuid") or line
+                seen[key] = (sum(n(u, k) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")), msg.get("model"))
+        if not seen:
+            raise ValueError("usage unavailable")
+        if sid in explicit_session_ids:
+            continue
+        explicit_session_ids.add(sid)
+        counted = path not in measured_paths
+        claude_sessions.append({"session_id": sid, "log_path": path,
+                                "tokens": sum(v[0] for v in seen.values()), "requests": len(seen)})
+        if counted:
+            explicit_claude_tokens += sum(v[0] for v in seen.values())
+            models.update(v[1] if isinstance(v[1], str) else None for v in seen.values())
+            measured_paths.add(path)
+    except (OSError, ValueError, TypeError) as error:
+        session_errors.append({"session_id": sid, "reason": "claude_unresolved", "detail": str(error)})
+
+# Live explicit rollouts are read every time, even when an older numeric comment exists.
+for (tid, path), row in explicit_codex.items():
+    try:
+        home = Path(row["codex_home"]).resolve()
+        if home not in Path(path).parents:
+            raise ValueError("rollout outside registered home")
+        best = None
+        identity_seen = False
+        with open(path, encoding="utf-8") as handle:
+            for line in handle:
+                try:
+                    d = json.loads(line)
+                except ValueError:
+                    continue
+                if not isinstance(d, dict):
+                    continue
+                payload = d.get("payload")
+                if not isinstance(payload, dict):
+                    continue
+                if d.get("type") == "session_meta":
+                    if payload.get("id") != tid:
+                        raise ValueError("thread ID mismatch")
+                    identity_seen = True
+                if d.get("type") == "event_msg" and payload.get("type") == "token_count":
+                    info = payload.get("info")
+                    usage = info.get("total_token_usage") if isinstance(info, dict) else None
+                    value = usage.get("total_tokens") if isinstance(usage, dict) else None
+                    if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+                        best = value if best is None else max(best, value)
+        if not identity_seen or best is None:
+            raise ValueError("thread identity/usage unavailable")
+        threads[tid] = max(threads.get(tid) or 0, best)
+    except (OSError, ValueError, TypeError) as error:
+        session_errors.append({"thread_id": tid, "reason": "codex_unresolved", "detail": str(error)})
+
 codex = []
 codex_unresolved = 0
 for tid, tok in threads.items():
@@ -219,7 +356,9 @@ for tid, tok in threads.items():
     else:
         codex.append({"thread_id": tid, "tokens": v, "source": "rollout"})
 
-claude_tokens = sum(a["tokens"] for a in agents)
+# A session may also be present in legacy subagent discovery. Report it in
+# both attribution lists, but include its real log only once in the total.
+claude_tokens = sum(a["tokens"] for a in agents) + explicit_claude_tokens
 codex_tokens = sum(c["tokens"] for c in codex)
 total = claude_tokens + codex_tokens
 
@@ -282,11 +421,14 @@ except Exception as error:
 for line in lines:
     print(line, file=sys.stderr)
 
+for error in session_errors:
+    print("pr-token-budget: session_unresolved: " + json.dumps(error, ensure_ascii=False), file=sys.stderr)
 over = total > cap
 print(json.dumps({"records": records, "claude_tokens": claude_tokens, "codex_tokens": codex_tokens,
                   "total_tokens": total, "agent_count": len(agents), "codex_threads": len(codex),
                   "cap": cap, "over_cap": over, "unresolved": unresolved,
-                  "codex_unresolved": codex_unresolved, "skipped_lines": skipped,
-                  "agents": agents, "codex": codex}, ensure_ascii=False))
-sys.exit(2 if over else 0)
+                  "codex_unresolved": codex_unresolved, "session_unresolved": len(session_errors),
+                  "session_errors": session_errors, "skipped_lines": skipped,
+                  "agents": agents, "claude_sessions": claude_sessions, "codex": codex}, ensure_ascii=False))
+sys.exit(2 if over else 1 if session_errors else 0)
 PY
