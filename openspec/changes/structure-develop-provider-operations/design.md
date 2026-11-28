@@ -77,7 +77,7 @@ script の本文判定範囲: session-tripwires:113-114,144-153、agent-model-gu
 - `skills/develop/references/`: `epic-delegation.md`, `epic-granularity.md`, `epic-keepalive-watch.md`, `epic-keepalive.md`, `epic-multirepo.md`, `epic-stop.md`, `epic.md`, `idle-compaction-observation.md`, `parent-pass-criteria.md`, `return-declaration.md`, `roles/worker/finish.md`, `roles/worker/implement.md`, `roles/worker/spec.md`, `token-thresholds.md`
 - `skills/pr-review-gate/stages/`: `authenticity-conversation.md`, `authenticity-delegated.md`, `authenticity-relayed.md`, `authenticity.md`, `carryover.md`, `comment-parts.md`, `gate-triage-partitions.md`, `gate-triage.md`, `hold-categories.md`, `hold-resume.md`, `hold.md`, `issue-approved.md`, `pass-wording.md`, `prepare-light.md`, `prepare-partitions.md`, `reviewer-brief.md`, `triage-convergence.md`, `triage-epic.md`, `triage-nonblocking.md`, `triage-row3.md`
 ### 移行する本文の設計（X / Y）
-今回の再設計は試行3、対象コードは固定HEADのまま。X は局所条件の直後に操作ごとの契約をその場で展開する。Y は同じ契約を中立台帳へ一度だけ置き、本文に局所条件と操作参照を残す。X/Yとも本体別の具体的な道具・探索順は対応2ファイルへ移す。Z（元本文を残す読み替え）は本文禁止の受け入れ条件を変えるため不採用のまま。以下の before は固定HEADの範囲を指し、引用は抜粋、after は予定本文の例であって実装済みの主張ではない。
+今回の再設計は試行4、対象コードは固定HEADのまま。X は局所条件の直後に操作ごとの契約をその場で展開する。Y は同じ契約を中立台帳へ一度だけ置き、本文に局所条件と操作参照を残す。X/Yとも本体別の具体的な道具・探索順は対応2ファイルへ移す。Z（元本文を残す読み替え）は本文禁止の受け入れ条件を変えるため不採用のまま。以下の before は固定HEADの範囲を指し、引用は抜粋、after は予定本文の例であって実装済みの主張ではない。
 
 #### 役の起こし方と名前付きの再開
 before: `references/codex-develop.md:27-29`（空行込み3行）の新規起動は「返った model で Agent を起動する」、再開は「同じ phase と…格の入力…で request を呼び直し」「SendMessage で再開」と、監査値・種別対応・model変更時freshの説明を長い2段落で持つ。保持する局所条件は、canonical phase、初回のprofile/account指定、失敗段、独立レビュー/role変更のfresh境界と、工程完了または停止確認後に渡すこと。台帳へ集めるのは起動の入力/出力、監査値の区別、再開可否、失敗/停止時の扱い。本体別対応へ集めるのは種別、道具、CLI/通知の具体的方法。
@@ -95,7 +95,7 @@ Y の after（2論理行）:
 canonical phase・固定した実行先・失敗段を使い、独立レビュー/role変更はfresh、切替は工程完了または停止確認後に限る。
 [op:role-start](<台帳>#op-role-start) / [op:role-resume](<台帳>#op-role-resume) に名前と上の条件を渡す。
 ```
-Y はこの範囲を −3/+2、X は −3/+5と数える。さらに同ファイル33-47（15行、起動CLI・入出力説明・コード枠を含む）は、phase/固定tuple/輸送と品質を区別する局所1行＋起動契約で X −15/+3、Y −15/+2。CLIの実際の書式と結果フィールドは対応へ移す。単なるヒット行置換ではない。13行と31行の重複説明も別hunkで数え、すべての開始/終了行を migration-plan.json に残した。
+Y はこの範囲を −3/+2、X は −3/+5と数える。さらに同ファイル33-47（15行、起動CLI・入出力説明・コード枠を含む）は、phase/固定tuple/輸送と品質を区別する局所1行＋起動契約で X −15/+3、Y −15/+2。CLIの実際の書式と結果フィールドは対応へ移す。両hostのreference_draftsにrequestの必須phase/input/cwd/out、profile/旧形式/自動選択、account-homeの2方式と格入力、UTF-8指示→private request→foreground run→1行JSON回収を具体化した。Claude hostもexecutorで分岐し、Codex executorなら同じ3手順を使う。結果の全9フィールド、model_resolution.requested/resolvedと観測したeffective.model、未観測を補完しない記録、exit0/2とtransport/品質の区別を本文へ含める。Claude executorのagent-required/種別/model監査と再開前requestのtier/model比較も保持する。単なるヒット行置換ではない。13行と31行の重複説明も別hunkで数え、すべての開始/終了行を migration-plan.json に残した。
 
 #### 主への聞き方
 before: `skills/develop/references/channel.md:7` は「channel の本体は AskUserQuestion を呼ばない」に続けて、元のchat_id、返信ツール、ターン終了と次メッセージでの返事を説明する。局所には channel というモード、元依頼のchat_id、記録すべき問いへのURL、連絡先不明時の停止を残す。送信/返事回収/承認の扱いは owner-ask の契約と本体別対応へ集める（12/14行の呼び直し禁止と例外の条件も消さない）。
@@ -144,19 +144,19 @@ Y は各範囲を次の1行にする（−26/+2）:
 |P|13|13|39|26|102 =60+20+10+12|154|141|
 |G|23|23|73|46|102 =60+20+10+12|198|171|
 
-I は87 inventory＋110 checker＋80 tests＋20 spec＋10 record＋20 registry skeleton＋20 fragment loader/schema＝347。M はX:対応37×2＋60 tests＋20 spec＋10 record＝164、Y:台帳74＋対応37×2＋同じ90＝238（全文はmigration-plan.jsonの reference_drafts）。D は削除74＋入口X74/Y50＋wrapper12＋routing tests100＋spec50＋record10＋state12＝X332/Y308。他は既存の出力責務別の積上げにstate/fixture登録12行を加える。N1=154、N2=160、Q/V=各122、E=170、F=212。見積りを実装時に超えたら再計算し、値を合わせるため本文や検査を省かない。
+I は87 inventory＋110 checker＋80 tests＋20 spec＋10 record＋20 registry skeleton＋20 fragment loader/schema＝347。M はX:Claude対応61＋Codex対応59＋60 tests＋20 spec＋10 record＝210、Y:台帳74＋対応61＋59＋同じ90＝284（全文はmigration-plan.jsonの reference_drafts）。D は削除74＋入口X74/Y50＋wrapper12＋routing tests100＋spec50＋record10＋state12＝X332/Y308。他は既存の出力責務別の積上げにstate/fixture登録12行を加える。N1=154、N2=160、Q/V=各122、E=170、F=212。見積りを実装時に超えたら再計算し、値を合わせるため本文や検査を省かない。
 
-新設本文の予定読取は台帳1,834文字→1,193 tokens、Claude対応1,101文字→716、Codex対応853文字→555（Bash出力のceil(chars×0.65)）。Xは対応両方1,271、Yは台帳込み2,464をI以外の各itemに明示計上。両案とも前回の既存読取（全文/行範囲/regex±2行の全出力）を削らない。前回context_extra=20,000は元から新設/先行本文・render結果・spec等を保持する枠なので、そのうち上の読取をFへ振り替え、残りをX18,729/Y17,536とする。同じ出力をFとextraで二重計上しないためで、20,000の総保持量を減らしていない。Iは20,000のまま。従ってCは同じだが、F/Tと参照先の内訳は異なる。共有出力はgroup内だけ一度、別groupで再計上する。C=30,000 startup＋15,000 reserve＋F＋extra。現在のClaude transcript値やusage=0は使わない。
+新設本文の予定読取は台帳1,834文字→1,193 tokens、Claude対応4,414文字→2,870、Codex対応3,735文字→2,428（Bash出力のceil(chars×0.65)）。Xは対応両方5,298、Yは台帳込み6,491をI以外の各itemに明示計上。両案とも既存読取（全文/行範囲/regex±2行の全出力）を削らない。前回からの新設/先行本文・render結果・spec等の保持枠20,000の内訳だけを更新し、上の読取をFへ振り替え、残りをX14,702/Y13,509とする（Iは20,000のまま）。追加された4,027 tokensもこの枠の内訳に含め、Fとextraに二重計上しない。総保持枠と既存読取を減らしていないため、再計算後も単独groupのCは同じ。併合時は共有readを一度だけ数えるためCは前回と異なり、下で全組を再検算する。C=30,000 startup＋15,000 reserve＋F＋extra。現在のClaude transcript値やusage=0は使わない。Fの全group合計はX651,368/Y666,877（group間の再読を含む）、C合計は両案1,492,494。
 
-上限は両override未設定、subagent-context.sh:174-196 / pr-token-budget.sh:244-264 → token_thresholds.py:50-91の既定150,000/30,000,000。OWNER開始記録 issuecomment-7234027004 も30M。計画上限120,000/24,000,000と係数1799-v1-policy-0.8を維持する。実行ファイルは `mktemp -d /tmp/issue1856-spec.XXXXXX` で作ったrepo外のディレクトリへ置いた。
+上限は両override未設定、subagent-context.sh:174-196 / pr-token-budget.sh:244-264 → token_thresholds.py:50-91の既定150,000/30,000,000。OWNER開始記録 issuecomment-7234027004 も30M。計画上限120,000/24,000,000と係数1799-v1-policy-0.8を維持する。実行ファイルは `mktemp -d /tmp/issue1856-spec4.XXXXXX` で作ったrepo外のディレクトリへ置いた。
 
 |案|候補（出現/ヒット行/ファイル）|具体化した本文hunk（K/R/H/P/G）|全体L|group|合計S|unplaced|最大同時group|
 |---|---|---:|---:|---:|---:|---|---:|
-|X 局所展開・共有管理更新|193/151/42|124（−140/+392）|2,825|14|267,978,000|空|1|
-|Y 台帳参照・共有管理更新|193/151/42|124（−140/+248）|2,731|14|265,173,040|空|1|
-|Y-fixed 台帳先行確定＋担当別断片（推す）|193/151/42|124（−140/+248）|2,731|14|265,173,040|空|10|
+|X 局所展開・共有管理更新|193/151/42|124（−140/+392）|2,871|14|269,350,640|空|1|
+|Y 台帳参照・共有管理更新|193/151/42|124（−140/+248）|2,777|14|266,545,680|空|1|
+|Y-fixed 台帳先行確定＋担当別断片（推す）|193/151/42|124（−140/+248）|2,777|14|266,545,680|空|10|
 
-いずれもCLI exit0。候補数は同じでも、本文の操作説明144行と入口24行の追加がYで減り、台帳74行が増えるため、差引Lは94行減、Sは2,804,960減。見積りは実消費/品質の保証ではない。入力JSON全文と出力全文の保存URLは下の実行記録に記す。
+いずれもCLI exit0。今回補った具体手順は両案のMで46行増（Sは各1,372,640増）として計上した。124 hunkと局所本文の追加/削除は変わらない。候補数は同じでも、本文の操作説明144行と入口24行の追加がYで減り、台帳74行が増えるため、差引Lは94行減、Sは2,804,960減。見積りは実消費/品質の保証ではない。入力JSON全文と出力全文の保存URLは下の実行記録に記す。
 
 ### 推す案 Y と操作の組み立て
 Y-fixed を推す。初回の候補箇所数は減らないが、局所の判断と操作契約を分離できる。XとのL/S差だけでなく、操作変更時に台帳と対応2ファイルに修正を集中できること、共有管理更新による不要な直列化を除けることを理由とする。Yの共有manifest方式は内容が同じでも管理上の競合を残す。Zは安くても本文禁止条件を満たさず、新しい既知語の呼出し追加を表の語集合だけでは落とせないため採らない。受け入れ条件は変えない。
@@ -164,8 +164,8 @@ Y-fixed を推す。初回の候補箇所数は減らないが、局所の判断
 host（いまの本体）を入口で確定して対応を先に読む。role executor（resolver の返り値）とは別軸。単一 shell が host を推測して分岐する方式は採らない。対応は次の操作ごとの実行・結果・失敗のやり方だけを持ち、共通手順は host 別にコピーしない。
 |操作 ID|Claude 本体用対応|Codex 本体用対応・境界|
 |---|---|---|
-|role-start / role-resume|canonical role→Agent種別、名前、model を束縛。再開前に resolver の tier/model と context を確認し SendMessage か fresh を選ぶ|Codex role は既存 foreground request/run と fresh phase。Claude role の起動・thread 再開は #1857 の提供契約へ接続、未提供なら理由付き停止。独立レビューと model 変更時の fresh 境界を維持|
-|role-wait / role-stop|背景 task ID、前景回収、TaskStop と通知照合。名前付き役は同一ターンで待つ|利用できる foreground/thread の待機と取消を使う。元作業/実行/自己通知を区別し transport 完了を品質成功にしない。利用不能なら停止し偽の通知を作らない|
+|role-start / role-resume|requestのexecutorで一度分岐し、Claude roleだけcanonical role→Agent種別/名前/modelを束縛。Codex roleはUTF-8指示→request/runの3手順で結果JSON/モデル解決証拠を回収する。Claude再開前はresolverのtier/modelとcontextを確認しSendMessageかfreshを選び、Codexはfresh委譲|Codex role は既存 foreground request/run と fresh phase。Claude role の起動・thread 再開は #1857 の提供契約へ接続、未提供なら理由付き停止。独立レビューと model 変更時の fresh 境界を維持|
+|role-wait / role-stop|Claude executorは背景 task ID、前景回収、TaskStopと通知照合。名前付き役は同一ターンで待つ。Codex executorは起動したforegroundの停止と結果JSON回収|利用できる foreground/thread の待機と取消を使う。元作業/実行/自己通知を区別し transport 完了を品質成功にしない。利用不能なら停止し偽の通知を作らない|
 |owner-ask|interactive の AskUserQuestion、channel/unmanned は既存連絡正本に従う|host の質問手段で同じ問いを渡す。worker は return で本体へ返す。承認は実応答を必要とし、時間経過で代えない|
 |workspace-prepare / idle-config|wt-setup、isolation worktree と既存 hooks、idleCompaction=false|本体が既存 worktree CLI のセットアップ相当を明示実行してから役へ渡す。存在しない hook を実行済みとしない。Claude 子の idle 設定を明示し、Codex 本体へ Claude 設定を擬装しない|
 |context-refresh / plugin-root|SessionStart/UserPromptSubmit/compact の現行条件。CLAUDE_PLUGIN_ROOT 優先、既存探索順|入口・各 prompt/再開直前・compact 後に正本と残量を明示確認。インストールした skill の実体から root を解決し cwd や開発 clone を実行 root と取り違えない|
@@ -184,7 +184,7 @@ Codex 公開は canonical skill directory へのリンクとし、手順コピ�
 
 `max_parallel=16`は実際の `bash plugins/dev-workflow/scripts/epic-dispatch.sh max-parallel` のexit0出力（EPIC_DISPATCH_MAX_PARALLEL未設定、64GiB/4）。`occupied=0`はこの仕様工程が終わった後に本件の実装群だけを開始する計画上の仮定であり、現在の全世界の空き枠の実測ではない。他Wの占有を確認して実行直前に再計算する。今回のspawn禁止を値の根拠にしない。CLIのavailable=16で並列比較を有効にし、Y-fixedのDAGの幅は10（slot上限内）、X/Yは編集競合のため1となる。
 
-集約後の再併合もCLIに任せて比較した。Y-fixedでは非聖域/承認待ち無しの11 item間の55組について、共通read_idを一度だけ数えた上でもCは125,691〜165,327で、全組が120,000を超える。最小CのM+KはC125,691/S26,965,760で両方超過、最小SのQ+VもC152,887/S20,400,960で文脈超過。従って14groupが残る理由は管理競合ではなく容量。G/N1/N2の聖域・承認待ちsingletonは併合候補から外す。extraの二重枠を併合のために勝手に減らさず、必要な出力保持を維持する。CLIの代理makespanはcontrol Y 169,264,854、Y-fixed 60,220,120（時間ではなくTの代理、最短保証無し）。
+集約後の再併合もCLIのPlanner.estimateで再計算した。非聖域/承認待ち無しの11 item間の55組を各案で検算し、すべてC超過。Xは122,857〜162,493、Y/Y-fixedは121,664〜161,300で、共通read_idを一度だけ数えても120,000を超える。Y-fixedの最小CのM+KはC121,664/S28,338,400で両方超過、最小SのQ+VもC148,860/S20,400,960で文脈超過。従って14groupが残る理由は管理競合ではなく容量。G/N1/N2の聖域・承認待ちsingletonは併合候補から外す。extraの必要な保持枠を併合のために勝手に減らさない。CLIの代理makespanはcontrol Y 171,877,170、Y-fixed 61,023,909（時間ではなくTの代理、最短保証無し）。
 
 ### 選んだ案のgroupと分割候補（レビュー後に本体が判断）
 全groupは1 itemずつ。以下の「意味依存」が選択案のdepends_on。F以外の各行は直前行の完了を要求しない。CはX/Y共通、FはYの新設参照込み、L/SはXと選択Y-fixedを併記。非聖域のQ/Vは既存hookを読むだけ、fixture/断片のみ編集する。
@@ -192,24 +192,24 @@ Codex 公開は canonical skill directory へのリンクとし、手順コピ�
 |item / change候補|意味依存|聖域/承認待ち|F|X L / S|Y L / S|C（共通）|
 |---|---|---|---:|---:|---:|---:|
 |I-inventory-guard / `provider-i`|なし|なし|38,765|347 / 23,474,480|347 / 23,474,480|103,765|
-|M-operation-mappings / `provider-m`|I|なし|45,619|164 / 18,013,760|238 / 20,221,920|108,155|
-|K-core / `provider-k`|M|なし|36,469|272 / 21,236,480|226 / 19,863,840|99,005|
-|R-roles / `provider-r`|M|なし|47,949|222 / 19,744,480|189 / 18,759,760|110,485|
-|H-wait / `provider-h`|M|なし|43,993|196 / 18,968,640|171 / 18,222,640|106,529|
-|P-epic-wording / `provider-p`|M|なし|49,853|154 / 17,715,360|141 / 17,327,440|112,389|
-|G-gate / `provider-g`|M|あり / あり|54,592|198 / 19,028,320|171 / 18,222,640|117,128|
-|Q-other-hook-fixtures / `provider-q`|M|なし|40,070|122 / 16,760,480|122 / 16,760,480|102,606|
-|V-permission-hook-fixtures / `provider-v`|M|なし|51,479|122 / 16,760,480|122 / 16,760,480|114,015|
-|N1-startup-text / `provider-n1`|M|あり / あり|34,746|154 / 17,715,360|154 / 17,715,360|97,282|
-|N2-guard-text / `provider-n2`|M|あり / あり|32,990|160 / 17,894,400|160 / 17,894,400|95,526|
-|E-worker-prompt / `provider-e`|M|なし|44,022|170 / 18,192,800|170 / 18,192,800|106,558|
-|D-shared-entry / `provider-d`|M / K|なし|43,979|332 / 23,026,880|308 / 22,310,720|106,515|
-|F-discovery-evidence / `provider-f`|I / M / K / R / H / P / G / Q / V / N1 / N2 / E / D|なし|50,000|212 / 19,446,080|212 / 19,446,080|112,536|
+|M-operation-mappings / `provider-m`|I|なし|49,646|210 / 19,386,400|284 / 21,594,560|108,155|
+|K-core / `provider-k`|M|なし|40,496|272 / 21,236,480|226 / 19,863,840|99,005|
+|R-roles / `provider-r`|M|なし|51,976|222 / 19,744,480|189 / 18,759,760|110,485|
+|H-wait / `provider-h`|M|なし|48,020|196 / 18,968,640|171 / 18,222,640|106,529|
+|P-epic-wording / `provider-p`|M|なし|53,880|154 / 17,715,360|141 / 17,327,440|112,389|
+|G-gate / `provider-g`|M|あり / あり|58,619|198 / 19,028,320|171 / 18,222,640|117,128|
+|Q-other-hook-fixtures / `provider-q`|M|なし|44,097|122 / 16,760,480|122 / 16,760,480|102,606|
+|V-permission-hook-fixtures / `provider-v`|M|なし|55,506|122 / 16,760,480|122 / 16,760,480|114,015|
+|N1-startup-text / `provider-n1`|M|あり / あり|38,773|154 / 17,715,360|154 / 17,715,360|97,282|
+|N2-guard-text / `provider-n2`|M|あり / あり|37,017|160 / 17,894,400|160 / 17,894,400|95,526|
+|E-worker-prompt / `provider-e`|M|なし|48,049|170 / 18,192,800|170 / 18,192,800|106,558|
+|D-shared-entry / `provider-d`|M / K|なし|48,006|332 / 23,026,880|308 / 22,310,720|106,515|
+|F-discovery-evidence / `provider-f`|I / M / K / R / H / P / G / Q / V / N1 / N2 / E / D|なし|54,027|212 / 19,446,080|212 / 19,446,080|112,536|
 
 最小C余裕はGの2,872、最小S余裕はIの525,520。各担当が選ばれた後、最新先行HEADで同じ範囲を取り直して再計算する。見積りを超えたら停止して本体へ返す。子issue作成/着手の決定はこの仕様工程では行わない。
 
 ### 粒度CLI実行の記録
-[X 入力JSON/出力全文](https://github.com/oratta/claude-harness/issues/1856#issuecomment-7237015131)、[Y 入力JSON/出力全文](https://github.com/oratta/claude-harness/issues/1856#issuecomment-7237015423)、[Y-fixed 入力JSON/出力全文](https://github.com/oratta/claude-harness/issues/1856#issuecomment-7237015718)。各コメントは省略無しでCLI入力と標準出力、exit0を含む。保存本文を再取得してローカルJSONと照合する。
+[X 入力JSON/出力全文](https://github.com/oratta/claude-harness/issues/1856#issuecomment-7237180530)、[Y 入力JSON/出力全文](https://github.com/oratta/claude-harness/issues/1856#issuecomment-7237185338)、[Y-fixed 入力JSON/出力全文](https://github.com/oratta/claude-harness/issues/1856#issuecomment-7237185587)。各コメントは省略無しでCLI入力と標準出力JSON、exit0を含む（文字数上限に合わせJSONの空白だけ圧縮）。保存本文を再取得してローカルJSONと照合し、保存入力からCLIを再実行して出力一致を確認した。
 ## Migration Plan
 I で全対象を登録し未移行本文を固定 HEAD の hash で凍結、M で全操作と対応を揃える。以後の担当は担当ファイルを丸ごと移行済みにし、所有者別状態断片で凍結解除と本文禁止・操作整合検査を一緒に切り替える。削除・対象外扱い・未移行への逆戻りで検査を避けられないよう負例を置く。最終 F は未移行ゼロを要求する。hook は実出力全分岐、生成依頼は全 phase と取り込み正本/hash を検査する。
 各 group は担当回帰と `changes/<番号>.md` を持ち、文面 assertions を変えたテスト名・意味を記す。F は `scripts/test.sh` と `python3 -B plugins/dev-workflow/tests/test_codex_develop.py` の exit 0、本文へ Agent 呼出し追加/片側操作削除/対象外ファイル追加の非0、Claude の実機 1 件で Draft PR 作成とゲート通過の URL/HEAD/工程・exit/記録を #1856 へ集約する。実機で merge は要求しない。

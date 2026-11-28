@@ -2,7 +2,7 @@
 ## 1. 実装候補（R1後の分割判断を待つ）
 以下は design のY-fixed・14groupの候補であり、この仕様工程では着手しない。各担当は回帰テスト・focused spec delta・changes/<番号>.md を同じgroupで作り、文面assertionの移動先と変更理由を書く。行番号は固定HEADの案内。Q/Vは既存scriptを読むだけで編集しない。Iの検査器/manifestとMの操作台帳/対応は先に確定し、以後はread-only。各担当の状態断片と追加batsは別ファイルにする。意味上の依存はI→M→{K,R,H,P,G,Q,V,N1,N2,E}、K→D、全担当→F。共有管理ファイルを理由に直列化しない。見積根拠はmigration-plan.json。
 - [ ] 1.1 I: 87対象と所有者/初期hashを固定し断片の未知/重複/後退を拒否、担当別bats読込を用意してから、87対象を固定、未移行hash凍結・新規対象漏れ・本文禁止・未知/重複ID・片側欠落の検査と負例を作る。bats の正常0/各負例非0を確認する。触る範囲: plugins/dev-workflow/scripts/check-develop-operations.py（新規）、plugins/dev-workflow/references/develop-procedure-targets.json（新規）、plugins/dev-workflow/tests/develop-operations.bats（新規）、plugins/dev-workflow/changes/<番号>.md（新規）
-- [ ] 1.2 M（I後）: Y-fixedの台帳と両対応を全操作で完成させ以後は原則read-onlyとし、role/account/context/待機/記録の契約を保つ。ID集合一致と未提供経路の停止fixtureを確認する。触る範囲: plugins/dev-workflow/references/develop-operations.md（新規）、plugins/dev-workflow/references/develop-providers/claude.md（新規）、plugins/dev-workflow/references/develop-providers/codex.md（新規）、plugins/dev-workflow/tests/develop-operations-M.bats（新規）、plugins/dev-workflow/changes/<番号>.md（新規）
+- [ ] 1.2 M（I後）: Y-fixedの台帳と両対応を全操作で完成させ以後は原則read-onlyとし、role/account/context/待機/記録の契約を保つ。両hostのCodex executorについてUTF-8指示→request/run→結果JSONの具体手順、必須引数、要求/解決/effectiveモデルの記録をreference_draftsどおり保持し、Claude hostのexecutor分岐も確認する。ID集合一致、3手順/全結果フィールド/再開判定の保持、未提供経路の停止fixtureを確認する。触る範囲: plugins/dev-workflow/references/develop-operations.md（新規）、plugins/dev-workflow/references/develop-providers/claude.md（新規）、plugins/dev-workflow/references/develop-providers/codex.md（新規）、plugins/dev-workflow/tests/develop-operations-M.bats（新規）、plugins/dev-workflow/changes/<番号>.md（新規）
 - [ ] 1.3 K（M後）: 中核本文を操作参照へ移し、工程順・W専任・独立レビューを保つ。対象検査と段階移行の正常/負例を確認する。触る範囲: plugins/dev-workflow/skills/develop/SKILL.md:1-270、plugins/dev-workflow/templates/escalation-tripwires.md:1-104、plugins/dev-workflow/references/codex-develop.md:1-75、plugins/dev-workflow/references/develop-procedure-state/K.json（新規）、plugins/dev-workflow/tests/develop-operations-K.bats（新規）、plugins/dev-workflow/changes/<番号>.md（新規）
 - [ ] 1.4 R（M後）: 役・判断・修正の本文を移行する。担当batsと操作検査0、禁止行追加非0を確認する。触る範囲: plugins/dev-workflow/skills/develop/references/decision-criteria.md:1-92、plugins/dev-workflow/skills/develop/references/pre-classification.md:1-23、plugins/dev-workflow/skills/develop/references/spec-decision.md:1-89、plugins/dev-workflow/skills/develop/references/fix-check.md:1-84、plugins/dev-workflow/skills/develop/references/roles/gate-runner.md:1-107、plugins/dev-workflow/skills/develop/references/roles/screen-checker.md:1-9、plugins/dev-workflow/skills/develop/references/roles/spec-reviewer.md:1-116、plugins/dev-workflow/skills/develop/references/roles/worker/common.md:1-42、plugins/dev-workflow/skills/develop/references/roles/worker.md:1-11、plugins/dev-workflow/tests/spec-decision-and-review.bats:1-385（該当assertion）、plugins/dev-workflow/tests/model-escalation-policy.bats:1-354（該当assertion）、plugins/dev-workflow/tests/develop-worker-stages.bats:1-141（該当assertion）、plugins/dev-workflow/references/develop-procedure-state/R.json（新規）、plugins/dev-workflow/tests/develop-operations-R.bats（新規）、plugins/dev-workflow/changes/<番号>.md（新規）
 - [ ] 1.5 H（M後）: 待機・channel・手渡し・idleの本文を移行する。元作業ID/自己通知/前景回収と待ち上限のfixtureを確認する。触る範囲: plugins/dev-workflow/skills/develop/references/channel.md:1-46、plugins/dev-workflow/skills/develop/references/child-background-wait.md:1-84、plugins/dev-workflow/skills/develop/references/gate-result.md:1-96、plugins/dev-workflow/skills/develop/references/handover.md:1-92、plugins/dev-workflow/skills/develop/references/reply-after-idle.md:1-125、plugins/dev-workflow/skills/develop/references/worker-recovery.md:1-7、plugins/dev-workflow/tests/develop-channel-mode.bats:1-258（該当assertion）、plugins/dev-workflow/tests/handoff-single-source.bats:1-139（該当assertion）、plugins/dev-workflow/references/develop-procedure-state/H.json（新規）、plugins/dev-workflow/tests/develop-operations-H.bats（新規）、plugins/dev-workflow/changes/<番号>.md（新規）
@@ -18,11 +18,11 @@
 ## Workflow follow-up
 - 本体が独立R1を手配し、選択案で分割するか判断する。子issueの作成やmerge/auto-mergeはこの工程で行わない。
 
-## 粒度計算の更新（試行3）
+## 粒度計算の更新（試行4）
 |案|候補（出現/行/ファイル）|L|group|合計S|unplaced|最大並列|
 |---|---|---:|---:|---:|---|---:|
-|X|193/151/42|2825|14|267978000|空|1|
-|Y（共有管理更新）|193/151/42|2731|14|265173040|空|1|
-|Y-fixed（選択）|193/151/42|2731|14|265173040|空|10|
+|X|193/151/42|2871|14|269350640|空|1|
+|Y（共有管理更新）|193/151/42|2777|14|266545680|空|1|
+|Y-fixed（選択）|193/151/42|2777|14|266545680|空|10|
 
-全案CLI exit0。Y-fixedを推す。I→Mのあと独立10担当を容量/承認に従って進め、K後にD、最後にFとする。実行直前に共有枠を再確認する。55組の再併合はすべてC超過、G/N1/N2の聖域・承認待ちの境界は維持する。比較値・全groupのC/S・完全入出力のコメントURLはdesign.md。R1再レビュー後、採用案の分割実行を本体が判断する。この工程で新しい子issueを作らず、実装を開始しない。
+全案CLI exit0。両対応の具体情報46行増をMに反映し、MはX210/Y284行、SはX19,386,400/Y21,594,560。新設参照FはX5,298/Y6,491 tokens、残りの追加保持枠はX14,702/Y13,509（20,000の総保持は維持）。全group合計FはX651,368/Y666,877、Cは各1,492,494。Y-fixedを推す。I→Mのあと独立10担当を容量/承認に従って進め、K後にD、最後にFとする。実行直前に共有枠を再確認する。55組の再併合は各案ですべてC超過（X122,857〜162,493、Y/Y-fixed121,664〜161,300）、G/N1/N2の聖域・承認待ちの境界は維持する。比較値・全groupのC/S・完全入出力のコメントURLはdesign.md。R1再レビュー後、採用案の分割実行を本体が判断する。この工程で新しい子issueを作らず、実装を開始しない。
