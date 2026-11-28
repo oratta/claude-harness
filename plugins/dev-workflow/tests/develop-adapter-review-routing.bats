@@ -36,32 +36,31 @@ section() { awk -v h="## $2" 'index($0, h)==1 && $0 !~ /^### /{f=1; print; next}
 step4() { develop_procedures; }
 startup_step4() { awk '/^\(4\) G を/{f=1} f && /^```/{exit} f' "$DEVELOP"; }
 
-@test "review (#1649): temporary-directory routing covers bash and pytest as well as bats" {
+@test "review (#1649): temp-writing tests use the shared exception contract" {
   for file in "$CODEX_DEVELOP" "$REVIEWER_BRIEF"; do
-    paragraph="$(grep -F '#1401' "$file")"
-    echo "$paragraph" | grep -qF '再実行に書き込める一時ディレクトリが要るテスト'
-    echo "$paragraph" | grep -qF 'bats のほか、`mktemp` を使う bash テスト'
-    echo "$paragraph" | grep -qF '`BATS_TMPDIR` / `TMPDIR` に書くテスト'
-    echo "$paragraph" | grep -qF '`pytest` のように一時ファイルを書くテスト'
-    echo "$paragraph" | grep -qE '関係するテストに.*一時ディレクトリが要るテスト.*Claude のレビュアー'
+    grep -qF 'references/codex-develop-exceptions.md' "$file"
+    grep -qF '必ず' "$file"
+  done
+  contract="$PLUGIN_DIR/references/codex-develop-exceptions.md"
+  for token in 'bats' '`mktemp`' 'bash' 'TMPDIR' 'BATS_TMPDIR' 'pytest' '--request-kind temp-write-review'; do
+    grep -qF -- "$token" "$contract"
   done
 }
 
-@test "review (#1649): bats still routes to Claude with writable temp paths and read-only policy intact" {
-  for file in "$CODEX_DEVELOP" "$REVIEWER_BRIEF"; do
-    paragraph="$(grep -F '#1401' "$file")"
-    echo "$paragraph" | grep -qF 'bats のほか'
-    echo "$paragraph" | grep -qF '書けず'
-    echo "$paragraph" | grep -qF 'Claude のレビュアー'
-    echo "$paragraph" | grep -qF '`TMPDIR`'
-    echo "$paragraph" | grep -qF '`BATS_TMPDIR`'
-    echo "$paragraph" | grep -qF 'read-only role に `writableRoots` を与え'
+@test "review (#1649): launch permission controls Claude retry and owner evidence recovery" {
+  contract="$PLUGIN_DIR/references/codex-develop-exceptions.md"
+  allowed="$(grep -F '起動許可なら' "$contract")"
+  for token in 'Claude のレビュアー' '同じ固定 HEAD' '同一パス' 'TMPDIR' 'BATS_TMPDIR' '補足済み回数を増やさず' '`review-incomplete` で止めない'; do
+    grep -qF "$token" <<<"$allowed"
   done
-  paragraph="$(grep -F '#1401' "$REVIEWER_BRIEF")"
-  echo "$paragraph" | grep -qF 'export TMPDIR=<パス> BATS_TMPDIR=<パス>'
-  echo "$paragraph" | grep -qF '同じ固定 HEAD'
-  echo "$paragraph" | grep -qF '補足済み回数は増やさず'
-  echo "$paragraph" | grep -qF '`review-incomplete` で止めない'
+  blocked="$(grep -F '起動不可なら' "$contract")"
+  for token in 'Claude も代替の Codex 役も起こさず' '保留' 'CI/W の結果で代用せず' 'writableRoots を追加しない'; do
+    grep -qF "$token" <<<"$blocked"
+  done
+  for token in 'read-only 権限' '主の結果だけで合格にしない' '独立レビュー完了結果と証拠 URL' '必須記録が不足' '補足のみ' '修正サイクル' '同じ HEAD・同じ範囲' '再依頼しない'; do
+    grep -qF "$token" "$contract"
+  done
+  grep -qF 'export TMPDIR=<パス> BATS_TMPDIR=<パス>' "$REVIEWER_BRIEF"
 }
 
 @test "docs (#405): model example and explanation accept families and exact IDs" {
