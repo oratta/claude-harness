@@ -1,0 +1,30 @@
+{
+  "session_id": "redacted",
+  "turn_id": "redacted",
+  "transcript_path": "/redacted",
+  "cwd": "/redacted",
+  "hook_event_name": "PreToolUse",
+  "model": "gpt-6.1-terra",
+  "permission_mode": "bypassPermissions",
+  "tool_use_id": "redacted",
+  "tool_name": "request_user_input",
+  "tool_input": {
+    "questions": [
+      {
+        "header": "Probe",
+        "id": "probe",
+        "question": "probe question?",
+        "options": [
+          {
+            "label": "yes (Recommended)",
+            "description": "Yes."
+          },
+          {
+            "label": "no",
+            "description": "No."
+          }
+        ]
+      }
+    ]
+  }
+}

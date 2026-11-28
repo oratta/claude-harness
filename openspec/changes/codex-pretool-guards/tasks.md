@@ -4,8 +4,8 @@
 
 ## 1. 入力契約を確認し入口を作る
 
-- [ ] 1.1 対象 Codex 版の shell/unified exec、apply_patch、同期/非同期質問、公開名/名前空間と nested call の hook 入力を design のゲートに従って確認する。文書・合成・実測の別と未確認理由を fixture のメタ情報へ記し、実測できない質問経路は未完了で返す。確認: 各対応名・フィールド・根拠と取得方法をレビュー可能にし、未確認を実測と呼んでいない。触る範囲: plugins/dev-workflow/tests/fixtures/codex-pretool/（新規）、plugins/dev-workflow/docs/codex-hook-inventory.md:5-11（参照）
-- [ ] 1.2 `hooks/codex/hooks.json` と `pretool-guard.py` を追加し、stdin の event/tool 選別、依存パスの解決、非対象・apply_patch・壊れた入力の無出力、未検査の stderr を実装する。同じタスクで入力の正負テストを追加する。確認: `python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_pretool_guards.py` が入力型/別event/非対象/依存欠落の反例を含め exit 0。触る範囲: plugins/dev-workflow/hooks/codex/hooks.json（新規）、plugins/dev-workflow/hooks/codex/pretool-guard.py（新規）、plugins/dev-workflow/tests/test_codex_pretool_guards.py（新規）、plugins/dev-workflow/tests/fixtures/codex-pretool/（新規）
+- [x] 1.1 対象 Codex 版の shell/unified exec、apply_patch、同期/非同期質問、公開名/名前空間と nested call の hook 入力を design のゲートに従って確認する。文書・合成・実測の別と未確認理由を fixture のメタ情報へ記し、実測できない質問経路は未完了で返す。確認: 各対応名・フィールド・根拠と取得方法をレビュー可能にし、未確認を実測と呼んでいない。触る範囲: plugins/dev-workflow/tests/fixtures/codex-pretool/（新規）、plugins/dev-workflow/docs/codex-hook-inventory.md:5-11（参照）
+- [x] 1.2 `hooks/codex/hooks.json` と `pretool-guard.py` を追加し、stdin の event/tool 選別、依存パスの解決、非対象・apply_patch・壊れた入力の無出力、未検査の stderr を実装する。同じタスクで入力の正負テストを追加する。確認: `python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_pretool_guards.py` が入力型/別event/非対象/依存欠落の反例を含め exit 0。触る範囲: plugins/dev-workflow/hooks/codex/hooks.json（新規）、plugins/dev-workflow/hooks/codex/pretool-guard.py（新規）、plugins/dev-workflow/tests/test_codex_pretool_guards.py（新規）、plugins/dev-workflow/tests/fixtures/codex-pretool/（新規）
 
 ## 2. 判定の再利用と各受け入れ条件の検証
 
