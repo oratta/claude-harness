@@ -4,6 +4,7 @@ Codex の本体と各役で Claude のどの hook が働くかを確認できる
 ## What Changes
 - `plugins/dev-workflow/docs/codex-hook-inventory.md` に、両プラグインの登録ごとの方針・現状・理由・コード根拠・後続担当を記す。
 - 既存 `docs/codex-develop.md` から一覧へ参照を置き、#1856 の Codex 用ファイルからも同じ一覧を参照する接続契約を明記する。
+- `docs/codex-delegation-inventory.md` に新規一覧を「言及のみ」として登録し、既存の呼び出し語検索との整合を保つ。
 - 登録の追加・削除・変更と一覧の欠落・重複・古い行を検出するテストを作る。
 - 一時 git repo・ローカル bare remote・ダミーの秘密だけを使う将来の実機確認手順と、共用の `plugins/dev-workflow/changes/1858.md` を作る。
 

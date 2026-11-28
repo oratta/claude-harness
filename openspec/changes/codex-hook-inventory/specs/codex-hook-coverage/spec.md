@@ -28,11 +28,18 @@ Claude の dev-workflow と capability-registry に登録された hook が Code
 - **THEN** 一覧へ辿れ、将来の #1856 側の参照契約が分かり、未作成の参照元への壊れたリンクはない
 
 ### Requirement: 一覧の分類漏れを自動検出する
-テストは実際の両 hooks.json と一覧を突き合わせ、欠落・古い行・重複・識別情報の変更・未知の分類・空の理由や根拠で失敗しなければならない（MUST）。固定件数だけの一致で合格としてはならない（MUST NOT）。反例は repo 外の一時コピーで作り、実 hook を実行したり実環境を書き換えたりしてはならない（MUST NOT）。
+テストは欠落・古い行・重複・識別情報の変更・未知の分類・空の必須列で失敗しなければならない（MUST）。固定件数だけで合格させず、反例は repo 外の一時コピーで作り、実 hook の実行・実環境の変更をしてはならない（MUST NOT）。
+
+守備範囲: 入力元は `plugins/dev-workflow/hooks/hooks.json`、`plugins/capability-registry/hooks/hooks.json`、Markdown 一覧 `plugins/dev-workflow/docs/codex-hook-inventory.md`。登録キー `(plugin, event, matcher, command)` の対応・重複、分類の許容値、理由・根拠を含む必須列の充足を検査する。
+
+保証しない範囲: 構造が正しくても理由や根拠の意味の誤りは通り得る。分類の妥当性・根拠の意味・実機の有効性は保証せず、レビューと後続の証拠で確認する。これらの穴を機械検査で塞ぎ切ることを本 change の完了条件にしてはならない（MUST NOT）。
 
 #### Scenario: 現状が完全に対応する
 - **WHEN** 各登録に有効な分類・理由・根拠のある行が一つずつ存在する
 - **THEN** 検査は exit 0 となる
+#### Scenario: 構造上は正しいが理由の意味が誤っている
+- **WHEN** 一時コピーの一覧で登録キー・必須列・許容分類・空でない理由と根拠を保ち、理由だけを当該 hook に当てはまらない説明へ変更する
+- **THEN** 機械検査は exit 0 となり、意味の誤りはレビューの対象として残り、機械検査の合格を分類の妥当性の証明にはしない
 #### Scenario: 同じ command の別 event の行が欠ける
 - **WHEN** context-tripwire の一方の event の行だけを削除する
 - **THEN** スクリプト名が一覧に残っていても検査は非 0 となり、欠けた登録を示す
