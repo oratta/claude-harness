@@ -134,7 +134,7 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
            → 本体はここで `scripts/subagent-context.sh <W の名前>` をもう一度実行して測ってから (3b) を指示する
       (3b) 再開指示に `段: finish` を書く。openspec archive → PR を Draft のまま用意（無ければ Draft で作成。Ready 化は (4) の G が pr-review-gate 手順 5 で行う）→ 仕様宣言を PR コメントに書く
            → return「工程完了: archive＋PR＋仕様宣言」（PR #N と仕様宣言のコメント URL を載せる）
-      (3a) の `画面確認: 不要` なら V を起こさず (3b) へ進む。`画面確認: 要る — <開く URL か起動手順> / <見る点>` なら先に V を `subagent_type: general-purpose`・`model: sonnet`、名前 `V-<記録先番号>-<n>`、description `V: screen check for #N` で起こす。V に W の行と worktree パスを渡し、`isolation` は付けない。
+      (3a) の `画面確認: 不要` なら V を起こさず (3b) へ進む。`画面確認: 要る — <開く URL か起動手順> / <見る点>` なら先に開始時と同じ実行先指定・account-home・coordinator を付けて `request --phase implement --request-kind visual-check` を通す。起動不可なら V も代替の Codex 役も起こさず、dispatch に非起動の理由と request の selection（構成があれば execution_config と hash）を記録する。実行不能の理由を (3b) の W に渡し、画面証拠を書かず既存のゲートの保留経路へ進む。起動許可の場合だけ V を `subagent_type: general-purpose`・model は request の返した値、名前 `V-<記録先番号>-<n>`、description `V: screen check for #N` で起こす。V に W の行と worktree パスを渡し、`isolation` は付けない。
            V の合格は観測を (3b) の W に渡す。不合格なら (3a) に戻し、同じ画面確認の 2 回目の不合格は本体が失敗ループと数える。実行不能なら理由を (3b) の W に渡し、画面証拠は書かずゲートの保留経路へ進む。V は再開せず、再確認は新しい V を起こす。
       (3) をこれより細かく切らない（`tasks.md` の項目単位や「実装／verify／archive／PR／仕様宣言」の 5 段にしない）。
            手渡しが 1 回起きるたびに、後任は指示書と正本の節を読み直し、記録先を取り直し、`git status` / `git diff` でファイルの現状を確認する固定分を払う。
@@ -205,16 +205,16 @@ spawn・再開・Codex 委譲の前は毎回、必ず `references/pr-token-budge
 
 ## モデル
 
-モデルの起動・再開（失敗ループを含む）を扱う前に、必ず `../../references/codex-develop.md`（plugin の `references/codex-develop.md`）の「起動と role 解決」を Read して従う。役割の格は下表、対応は `references/model-tier-map.json`、残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`）はここに再掲しない。優先順位は `references/decision-criteria.md` が正本。V と引き継ぎの判定役と論点なしの確認役は表の明示値を使う。
+モデルの起動・再開（失敗ループを含む）を扱う前に、必ず `../../references/codex-develop.md`（plugin の `references/codex-develop.md`）の「起動と role 解決」を Read して従う。役割の格は下表、対応は `references/model-tier-map.json`、残量モード（`FABLE_BUDGET_MODE`）と共有枠モード（`SHARED_BUDGET_MODE`）はここに再掲しない。優先順位は `references/decision-criteria.md` が正本。V と引き継ぎの判定役と論点なしの確認役も共通 request を通し、起動許可時だけ表の格を request が適用した model を使う。
 
 | 役割 | 既定の格 | 上げる条件 |
 |---|---|---|
 | W（実行役。`dev-workflow:worker`） | 中位（`sonnet`） | 上位（`opus`）: 記録先が設計判断（データモデル・フロー・複数モジュールにまたがる変更）を含む、実行側が原因の失敗ループでの昇格、または事前分類の 4 分類（聖域パス・マージ権限・層間契約・課金/法務。正本は `references/pre-classification.md`、ここに再掲しない）に当たる。**W の上限は `opus` で、`model: fable` の W は `scripts/agent-model-guard.sh` に拒否される** |
 | R1（読んで判断する役） | 上位（`opus`） | 仕様の対象がマージ条件・層間契約・課金/法務に触れるときは `--pre-class` を渡し、返った `role: decider` で `subagent_type: dev-workflow:decider` として spawn する（`general-purpose` に `model: fable` を付けない。聖域パスだけでは上げない） |
 | G（`dev-workflow:gate-runner`） | 中位（`sonnet`） | 上げない。G の仕事は HEAD 固定・ラベル操作・宣言の書式照合・証拠の実在確認で、欠陥探索は Codex か `needs-reviewer` のレビュアーが担う |
-| V（画面確認役。`general-purpose`） | 中位（`sonnet`） | 上げない。`request` を通らない |
-| 引き継ぎの判定役（`needs-carryover-judge` を受けて本体が起こす） | 上位（`opus`） | 上げも下げもしない（種別は `dev-workflow:decider`。`request` を通らず、残量モードによらず `opus` を明示する）。`SHARED_BUDGET_MODE=depleted` のときは起こさない（「判断できない」の記録を投稿して主に聞く側に倒す。(4) の needs-carryover-judge） |
-| 論点なしの確認役（`needs-no-point-check` を受けて本体が起こす） | 上位（`opus`） | 引き継ぎの判定役と同じ（`dev-workflow:decider`・`request` を通らない・depleted のときは起こさない） |
+| V（画面確認役。`general-purpose`） | 中位（`sonnet`） | 上げない。`request --phase implement --request-kind visual-check` の起動許可が必要 |
+| 引き継ぎの判定役（`needs-carryover-judge` を受けて本体が起こす） | 上位（`opus`） | 上げも下げもしない（種別は `dev-workflow:decider`。`request --phase decider --request-kind carryover-judge` の起動許可が必要。許可時の格は上位で固定する）。`SHARED_BUDGET_MODE=depleted` のときは起こさない（「判断できない」の記録を投稿して主に聞く側に倒す。(4) の needs-carryover-judge） |
+| 論点なしの確認役（`needs-no-point-check` を受けて本体が起こす） | 上位（`opus`） | 引き継ぎの判定役と同じ（`dev-workflow:decider`・`request --phase decider --request-kind no-point-check` の起動許可が必要・depleted のときは起こさない） |
 | G が要求するレビュアー（読んで判断する役） | 上位（`opus`） | 既定の種別は `dev-workflow:reviewer`。レビュー対象がマージ条件・層間契約・課金/法務に触れるときは `--pre-class` を渡し、返った `role: decider` で `subagent_type: dev-workflow:decider` として起動する（従来経路では G の `needs-reviewer` の推奨モデルに従う。adapter 経路では `request` が返した `model` を使い、推奨モデルは参考値） |
 
 失敗の判断側・実行側の分類の定義は `templates/escalation-tripwires.md`。model は上の必読正本に従う。コンテキスト上限（`subagent-context.sh` が exit 2）は昇格の理由にはならず、モデルは変えない。手渡しは `references/decision-criteria.md` が正本。規模超過を W が return したら、本体が `references/epic-granularity.md` に従って再計算し、容量超過・配置不能・量が不明のときだけ組み直す（編集ファイル数や作業項目の増加回数だけでは分割しない）。

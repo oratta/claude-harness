@@ -12,6 +12,8 @@ develop 開始コメントには「実行モード」の節の `実行モード:
 
 `request` は無指定の自動選択のほか、明示 profile（`--profile NAME [--profile-file PATH]`）と旧形式（`--account NAME --model MODEL`）を取る。明示指定のときは検証規則と外部 profile の書式を `references/codex-develop-explicit.md` で読む。各 role は設定を解決した直後に `executor` で一度だけ分岐する。`claude` は要求 tuple を保持して `request` が返した `model` で Agent ツールを使い、`codex` は request を作って前景コマンドを使う。effort は両 provider で監査値として保持するが、Claude Agent の option には変換しない。`request` にはどの形式でも格の入力（以下「格の入力」と呼ぶ。当たる事前分類の `--pre-class sacred|merge|contract|billing`（繰り返し可。順に聖域パス・マージ権限・層間契約・課金/法務）、記録先が設計判断を含むときの `--design-judgment`、失敗のラダーの段を示す `--failure first|executor|judgment`、自動実行のときの `--unmanned`）を渡す。旧形式は受けて無視する。事前分類の正本は `skills/develop/references/pre-classification.md`。事前分類に当たる R1 または G が要求したレビュアーは、`--pre-class` を渡した `request` が `role: decider` と構成の `decider` entry の投げ先/account を返すので、`subagent_type: dev-workflow:decider` として起動する。
 
+Claude 本体は `--coordinator claude`（既定）で Agent ツールを使用できるため、PATH の claude の有無では実行不能としない。CLI が必要な本体はすべての request に `--coordinator cli` を渡す。この場合は PATH の実行可能な claude を検査し、不在なら通常の選択表より先に専用分岐を適用する。Codex の margin が 0 以上なら Codex 単独構成、負・欠測・未登録・オフなら理由を示して起動前に blocked・exit 2 で止まり、役も実行可能な依頼ファイルも作らない。明示 profile・旧形式の指定は上書きせず、解決した Claude の役が実行不能なら起動前に止める。Claude の役が実行可能な場合の通常の選択表は次のとおり維持する。
+
 無指定では各 canonical phase の開始時に Claude 起動 account と登録済み Codex accounts を再評価する。margin（週経過率 − 週次使用率）は headroom の行の値で、Codex は週次 snapshot、Claude はセッション記録と snapshot の実効値から取り、取得からの経過時間では捨てず、リセットを過ぎた窓は 0% で読む。Codex の margin が基準（`DEVELOP_ALL_CODEX_MIN_MARGIN_PCT`、既定 10、不正値は blocked）以上か、0 以上で Claude が負か欠測なら `codex-standard`、0 以上で Claude も 0 以上なら `claude-write-codex-review`、他は Claude 既定構成。開始済み role は途中で切り替えない。返された selection evidence（構成、reason、両 margin / fetched_at、代表 account）を最初の開始コメントと各 dispatch 記録に残し、欠測値は `missing` と書く。登録簿（`CLAUDE_ACCOUNTS_FILE`、未設定なら `${CLAUDE_CONFIG_DIR:-~/.claude}/accounts.json`）のトップレベルの `codex.enabled` が JSON の `false` のとき（Codex オフ）は使用量を読まずに `claude-default` を reason `codex-off` で選び、selection evidence の `codex` に `enabled: false` を載せる。
 
 account 名から CODEX_HOME への対応は `--account-home NAME=PATH` の繰り返しか、平らな JSON を `--account-home-file PATH` で与える。2方式の併用は拒否し（合成も優先もしない）、値は既存の絶対ディレクトリでなければならない。profile も旧形式も対応表も無い自動選択だけは、`CODEX_HOME`（未設定なら `~/.codex`）が既存の絶対ディレクトリなら `current` の対応として評価し、存在しなければ Codex を欠測のままにする。明示対応表に無い名前を既定値や別 account へ倒さない。対応に無い名前は依頼ファイルを作る前に拒否する。
@@ -65,7 +67,8 @@ Codex への委譲をセッションをまたいで引き継ぐ仕組みはな�
 - 停止は Agent または起動した前景 command を止める。結果 JSON を受け取れず終了した場合は、記録先と worktree から同じ工程を fresh phase としてやり直す。
 - request は private directory に置く。worker は静的検証後、thread/start 前に model/list で系統名を解決するか完全 ID を照合し、そのモデルに対して effort を検証する。結果 JSON は要求値と実効値・観測元を分け、未観測値を推測しない。
 - G が通常経路で `codex exec`、companion、または Claude reviewer を呼ぶ場面では、それを実行せず `needs-reviewer` を返す。本体は「起動と role 解決」で phase `review` を開始し、その結果を新しい G に渡す。review phase は `skills/develop/references/roles/gate-runner.md` と `skills/pr-review-gate/stages/reviewer-brief.md` を正本として request に含めるため、fresh reviewer も手順 2-1 の三表を含むレビュアー向け指示ブロックを参照する。G は返す前に、ゲート自身の着手確認と同一 PR/HEAD の重複防止を実施する。本体は G を段ごとに新しく起こし（Claude の G も再開しない）、起動指示に `レビュー経路: adapter` の 1 行を書く。この義務は `skills/develop/SKILL.md` の「Role profile の選択」節が、行による経路の判別は `skills/develop/references/roles/gate-runner.md`「レビュー経路の判別」が正本である（ここには再掲しない）。起動指示に行が無い G は従来経路として扱う（Claude の G は Codex を直接呼ぶ。Codex の G は prompt の禁止により呼ばない）。手渡しで起こされた後任 G は fresh G に含む（`skills/develop/references/roles/gate-runner.md`「レビュー経路の判別」）。
-- phase `review` の投げ先を選ぶとき、変えたファイルに関係するテストに、再実行に書き込める一時ディレクトリが要るテスト（bats のほか、`mktemp` を使う bash テスト、`BATS_TMPDIR` / `TMPDIR` に書くテスト、`pytest` のように一時ファイルを書くテスト）があり再実行が要るレビューは、profile が Codex を指していても読み取り専用の `impl-review` に投げず、Claude のレビュアー（`dev-workflow:reviewer`）に回す。読み取り専用 role は一時ディレクトリに書けず再実行が途中または開始前に失敗する（#1401）。Claude のレビュアーへは書き込める一時ディレクトリを `TMPDIR` / `BATS_TMPDIR` として渡す（`skills/pr-review-gate/stages/reviewer-brief.md` 2-1）。読み取り専用 role で再実行できなかったときは CI・作業者の実行で代用せず、同じ手順書どおり Claude のレビュアーで取り直す。read-only role に `writableRoots` を与えない規則（`openspec/specs/codex-worker/spec.md`）は変えない。
+- 一時書き込みが必要な関連テスト（bats、`mktemp`、`TMPDIR` / `BATS_TMPDIR`、pytest 等）の再実行レビューは、呼び出し側が分類し、開始時と同じ実行先指定・account-home・coordinator を付けて `request --phase review --request-kind temp-write-review` を通す。読み取り専用レビュアーが再実行できなかった場合も同じ request を通す。起動許可なら返った model で Claude のレビュアー（`dev-workflow:reviewer`）を同じ固定 HEAD で起こし、書き込める一時領域を TMPDIR / BATS_TMPDIR に渡して取り直す（補足済み回数を増やさず、`review-incomplete` で止めない）。起動不可なら Claude も代替の Codex 役も起こさず、レビュー未完了と理由を記録して一時書き込みレビュー待ちで保留する。主の再実行証拠による復帰は下の同名節に従う。CI/W の結果で代用せず、read-only role に writableRoots を追加しない。
+- 4 例外は通常の依頼（`--request-kind normal`）と区別し、V は `--phase implement --request-kind visual-check`、引き継ぎ判定と論点なし確認は `--phase decider --request-kind carryover-judge` / `--request-kind no-point-check` を使う。開始時の指定を保持して request を通し、`status: blocked` / `launchable: false`（exit 2）なら起動しない。codex-standard 等の Claude を使わない構成では 4 例外を非起動とし、通常の書き込み不要レビューは独立した Codex 読み取り役で継続する。dispatch 記録には phase・request_kind・role・非起動の理由（error）・selection を残し、構成があれば execution_config とその hash も残す。未実行を合格にしない。
 - `needs-reviewer` の補足要求と terminal `review-incomplete` は、処理前に `skills/develop/references/gate-result.md` の該当 Status を必ず Read して従う。
 - burn 接続、全 account の配分、使用量集計は別 issue の範囲とする。
 - Codex が選ばれたことを理由に仕様を必須化しない。正本どおり W が理由付きで「仕様化判断: しない」を返した場合、本体は実装工程へ進む。仕様が必要な場合は正本の R1 承認条件を適用する。
@@ -73,3 +76,13 @@ Codex への委譲をセッションをまたいで引き継ぐ仕組みはな�
 - G には操作結果の証拠を渡し、照合させる。
 
 同じ worktree に2本の job を同時に投げてはならない。これは本体の責任である。前景経路は同時実行の枠管理も作業ディレクトリの排他も行わない。
+
+
+## 主の再実行証拠による復帰
+
+この節は Claude を使わない構成での一時書き込みレビュー待ちだけに適用する。主の結果だけで合格にしない。一時書き込みテストの自己再実行のみを限定例外とし、Claude を使える場合の reviewer 自身の再実行・Claude 取り直しと、一時書き込み不要の関連テスト・lint の自己再実行義務は維持する。同一固定 HEAD・read-only 権限を保ち、writableRoots は追加しない。
+
+1. 本体は主に固定 HEAD・関連テストの正確なコマンド/範囲・環境/一時領域・期待結果を示して独立再実行を依頼する。CI/W の結果では代用しない。
+2. 証拠には対象 HEAD・正確なコマンド/範囲・環境/一時領域・実施日時・出力・終了コード・回答の出典が必要。本体は照合して PR に記録し、証拠 URL を残す。回答の出典は回答リンク、会話ならセッション ID・日時・原文、親経由なら既存の hold-resume の復帰手順の出典情報とする。必須記録が不足する間は保留を続け、既存結果への補足のみを求める。同じ実行の再依頼はしない。主の結果が失敗なら証拠を記録して既存の修正サイクルへ戻し、成功や独立レビュー完了とは扱わない。
+3. 同じ HEAD・同じ範囲の有効な証拠があれば再依頼しない。既存の証拠 URL を次の reviewer / G に渡す。HEAD または対象範囲が変わったときだけ新しい対象での再実行を求める。
+4. 成功結果と必須記録が揃ったら、W と別 thread の通常の read-only Codex reviewer に固定 HEAD と証拠 URL を渡す。この起動は `request --phase review --request-kind normal` を通し、残るコード/三表レビュー・可能な再実行・主の結果評価を完了させる。独立レビュー完了結果と証拠 URL が揃うまで保留し、主の結果だけで一般の動作確認代行の手順 5 に直行しない。本体は独立レビュー完了結果と証拠 URL を fresh G に渡し、G は既存の合格条件を再確認する。

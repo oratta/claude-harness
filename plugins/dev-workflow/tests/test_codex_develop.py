@@ -2071,6 +2071,59 @@ class DocumentationContracts(unittest.TestCase):
             self.assertNotIn('<=300', text)
         self.assertIn('references/codex-develop.md', self.skill)
 
+    def test_exception_callers_obey_request_and_record_nonlaunch(self):
+        gate = (self.root / 'skills/develop/references/gate-result.md').read_text()
+        for text, kinds in ((self.skill, ('visual-check',)),
+                            (gate, ('carryover-judge', 'no-point-check')),
+                            (self.adapter, ('temp-write-review',))):
+            for kind in kinds:
+                with self.subTest(kind=kind):
+                    self.assertIn('--request-kind ' + kind, text)
+            for value in ('request', '起動不可', '起こさず', 'dispatch', '理由'):
+                self.assertIn(value, text)
+        for stale in ('`request` を通らない', '`request` を通らず'):
+            self.assertNotIn(stale, self.skill)
+        self.assertIn('実行不能', self.skill)
+        for value in ('引き継ぎ判定: 判断できない', '論点なしの確認: 判断できない',
+                      'SHARED_BUDGET_MODE=depleted'):
+            self.assertIn(value, gate)
+
+    def test_cli_absence_is_separate_from_claude_coordinator_selection(self):
+        for value in ('--coordinator claude', '--coordinator cli', 'PATH',
+                      'margin が 0 以上', '負・欠測・未登録・オフ',
+                      '起動前に blocked・exit 2', '明示 profile',
+                      'claude-write-codex-review', 'codex-off',
+                      'DEVELOP_ALL_CODEX_MIN_MARGIN_PCT'):
+            self.assertIn(value, self.adapter)
+
+    def test_temp_review_recovery_contract_is_shared_and_gates_completion(self):
+        heading = '主の再実行証拠による復帰'
+        contract = self.adapter.split('## ' + heading, 1)[1]
+        for value in ('固定 HEAD', '正確なコマンド/範囲', '環境/一時領域', '期待結果',
+                      '実施日時', '出力', '終了コード', '回答の出典', 'セッション ID',
+                      '親経由', '証拠 URL', '必須記録が不足', '補足のみ',
+                      '失敗', '修正サイクル', '同じ HEAD・同じ範囲', '再依頼しない',
+                      'HEAD または対象範囲が変わったときだけ',
+                      'W と別 thread', '通常の read-only Codex reviewer',
+                      'コード/三表レビュー', '可能な再実行', '主の結果評価',
+                      '独立レビュー完了結果', 'fresh G', '手順 5 に直行しない',
+                      'CI/W の結果では代用しない', 'writableRoots', 'Claude を使える場合'):
+            with self.subTest(value=value):
+                self.assertIn(value, contract)
+        for path in ('skills/pr-review-gate/stages/reviewer-brief.md',
+                     'skills/pr-review-gate/stages/hold-resume.md'):
+            text = (self.root / path).read_text()
+            with self.subTest(path=path):
+                self.assertIn('references/codex-develop.md', text)
+                self.assertIn(heading, text)
+                for value in ('一時書き込みレビュー待ち', '主の結果だけで合格にしない',
+                              '独立レビュー完了結果', '証拠 URL', 'fresh G'):
+                    self.assertIn(value, text)
+        brief = (self.root / 'skills/pr-review-gate/stages/reviewer-brief.md').read_text()
+        self.assertIn('--request-kind temp-write-review', brief)
+        self.assertIn('Claude を使える場合', brief)
+        self.assertIn('同じ固定 HEAD', brief)
+
     def test_margin_formula_is_not_counted_here(self):
         # 週の秒数が残っていれば margin を自分で数えている（数えるのは headroom.py だけ）
         source = SCRIPT.read_text()
