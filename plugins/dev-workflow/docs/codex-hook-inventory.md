@@ -4,7 +4,7 @@
 
 ## 読み方と接続契約
 
-方針は「Codex で動く」「載せ替える」「Codex では持たない」。現状の「載せ替えた」は実装が完了した場合だけ使う。G002 / #1862 では下記3登録の拒否判定を載せ替えた（fixture 検証）。配布・信頼設定・対象別の実機確認は G003 / #1863 に残り、「Codex で動く」とはまだ判定していない。「持たない」も目的が不要という意味ではなく、代替のない不足を理由欄に残す。
+方針は「Codex で動く」「載せ替える」「Codex では持たない」。現状の「載せ替えた」はその行に示す検証範囲の実装が完了した場合だけ使う。G002 / #1862 では git/秘密の拒否判定と同期質問の拒否判定を fixture で検証済みだが、質問対応全体は未完了（入力確認ゲート未達）である。配布・信頼設定・対象別の実機確認は G003 / #1863 に残り、「Codex で動く」とはまだ判定していない。「持たない」も目的が不要という意味ではなく、代替のない不足を理由欄に残す。
 
 3 対象は Codex 本体・native subagent・`codex-worker.py` の役。各行の未確認は対象別の実機証跡が未取得という意味。worker の一時 CODEX_HOME は認証リンクと最小 config のみを作る（`plugins/dev-workflow/scripts/codex-worker.py:220-236`）。他の 2 対象への継承・配布・信頼も未検証であり、通常 profile の設定や Claude の役で hook が動いた証拠を代用しない。hook コマンドの exit 0 や worker の completed だけで有効としない。
 
@@ -24,7 +24,7 @@ event・matcher・command は hooks.json の値をそのまま保持する。mat
 | `dev-workflow` | `UserPromptSubmit` | `` | `"${CLAUDE_PLUGIN_ROOT}/scripts/epic-child-state.sh"` | 載せ替える | 未実装・未配布 | session_id・prompt / 終了発言・epic state → 状態更新 / block | 子の状態遷移は必要だが Claude の入力 / Stop 経路に依存。timeout=30 の登録 | plugins/dev-workflow/scripts/epic-child-state.sh:120-178; plugins/dev-workflow/scripts/epic-child-state.sh:249-301; timeout=30 | #1855（子の状態） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `PreToolUse` | `Agent` | `"${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh"` | 載せ替える | 未実装・未配布 | Agent tool_input.model / subagent_type・usage_view → deny | Claude Agent と Fable の格を直接移せない。Codex の選択と役の上限は入口側で接続する必要がある | plugins/dev-workflow/scripts/agent-model-guard.sh:1-28; plugins/dev-workflow/scripts/agent-model-guard.sh:45-68 | #1856（モデル選択） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `PreToolUse` | `Edit&#124;Write&#124;NotebookEdit&#124;Bash` | `"${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"` | Codex では持たない | 代替なし・未配布 | agent_id・session_id・Claude JSONL usage → deny（編集前） | Claude の input/cache token 和と subagents のパスに依存。Codex ログを同形と仮定できず、途中計測の歯止めは未提供 | plugins/dev-workflow/scripts/context-tripwire.sh:1-24; plugins/dev-workflow/scripts/context-tripwire.sh:130-175; plugins/dev-workflow/scripts/context-tripwire.sh:205-285 | #1858（Codex 計測は後続未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
-| `dev-workflow` | `PreToolUse` | `AskUserQuestion` | `"${CLAUDE_PLUGIN_ROOT}/scripts/unattended-ask-guard.sh"` | 載せ替える | 載せ替えた（判定fixture検証）・未配布 | DEV_WORKFLOW_UNATTENDED・AskUserQuestion → deny | 無人の質問停止防止は必要。確認済み同期 request_user_input のみ deny へ適合。非同期・nested call は未確認 | plugins/dev-workflow/scripts/unattended-ask-guard.sh:1-36 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
+| `dev-workflow` | `PreToolUse` | `AskUserQuestion` | `"${CLAUDE_PLUGIN_ROOT}/scripts/unattended-ask-guard.sh"` | 載せ替える | 質問対応全体は未完了（同期判定fixture検証済み）・未配布 | DEV_WORKFLOW_UNATTENDED・AskUserQuestion → deny | 無人の質問停止防止は必要。確認済み同期 request_user_input のみ deny へ適合。非同期・名前空間対応・nested call は未確認/未完了 | plugins/dev-workflow/scripts/unattended-ask-guard.sh:1-36 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `PreToolUse` | `Write&#124;Edit&#124;NotebookEdit` | `"${CLAUDE_PLUGIN_ROOT}/scripts/git-guard-base-write-guard.sh"` | Codex では持たない | 代替なし・未配布 | agent_id・file_path / notebook_path・cwd → deny | Claude 用 permit store への直接書込防止。Codex の子の識別と許可保存先への同等の保護は未提供 | plugins/dev-workflow/scripts/git-guard-base-write-guard.sh:1-18; plugins/dev-workflow/scripts/git-guard-base-write-guard.sh:50-87 | #1862（git 判定との境界確認。保護の移植は未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `PreToolUse` | `Bash` | `"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh"` | 載せ替える | 載せ替えた（判定fixture検証）・未配布 | Bash command・agent_id・session_id・cwd・permit → ask / deny / allow | 破壊的 git の拒否は必要。NO_ASK 固定と入力正規化で Claude の permission モード・親子許可を外し deny へ適合 | plugins/dev-workflow/scripts/git-destructive-guard.sh:1-34 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `PermissionRequest` | `Bash` | `"${CLAUDE_PLUGIN_ROOT}/scripts/rm-permission-guard.sh"` | Codex では持たない | 代替なし・未配布 | PermissionRequest・command・agent_id・permission_mode・permit → decision | Claude の確認画面と親の一回許可を消費する仕組み。Codex の同等の rm 許可応答は未提供で不足が残る | plugins/dev-workflow/scripts/rm-permission-guard.sh:1-24; plugins/dev-workflow/scripts/rm-permission-guard.sh:35-68 | #1858（rm 確認の代替は後続未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
@@ -40,7 +40,7 @@ event・matcher・command は hooks.json の値をそのまま保持する。mat
 
 対象は上記の git-destructive-guard / secret-guard / unattended-ask-guard の3登録。入口は `plugins/dev-workflow/hooks/codex/hooks.json` と `pretool-guard.py`。PreToolUse を事前に matcher で絞らず、adapter が Bash/command と確認済みの同期 `request_user_input` だけを選別する。apply_patch・Read・非対象・壊れた入力は無出力。拒否は deny のみで、ask/allow/continue/stopReason は出さない。Python は `-I` で起動し、pending command を実行せず stdin だけを既存判定へ渡す。git は agent_id/permission_mode/permit を引き継がず NO_ASK=1 固定、FORCE を除去する。
 
-配布側は `DEV_WORKFLOW_CODEX_GUARD_DIR` に adapter があるディレクトリの絶対パスを指定する（hooks.json の command が `python3 -I "${DEV_WORKFLOW_CODEX_GUARD_DIR}/pretool-guard.py"` を起動）。これは配置・信頼設定の完成を意味しない。依存は module 基準の repo 配置が既定で、cwd/PYTHONPATH は探索しない。配置が違う場合は次の絶対 script パスを指定する。
+配布側は `DEV_WORKFLOW_CODEX_GUARD_DIR` に adapter があるディレクトリの絶対パスを指定する（hooks.json の command が絶対パスと adapter ファイルの存在を確認してから `python3 -I "${DEV_WORKFLOW_CODEX_GUARD_DIR}/pretool-guard.py"` を起動）。未設定・空・非絶対パス・入口ファイル不存在なら stderr に未検査理由を示し、stdout 空・exit 0 で返す。これは配置・信頼設定の完成を意味しない。依存は module 基準の repo 配置が既定で、cwd/PYTHONPATH は探索しない。配置が違う場合は次の絶対 script パスを指定する。
 
 - `DEV_WORKFLOW_CODEX_GIT_GUARD`: `plugins/dev-workflow/scripts/git-destructive-guard.sh`
 - `DEV_WORKFLOW_CODEX_SECRET_GUARD`: `plugins/capability-registry/scripts/secret-guard.sh`（隣の `secret-guard.py` も必要）
@@ -52,7 +52,7 @@ event・matcher・command は hooks.json の値をそのまま保持する。mat
 
 検証は `python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_pretool_guards.py`。対象9種・wrapper/連結・dry-run/データ・秘密の表示/値を出さない利用・独立した off・同期質問の印・親子情報/FORCE/permit/繰返し拒否・入力型/依存失敗を確認する。これは fixture の判定検証であり、3対象の配布・信頼・実機証跡は表の未確認を維持する。
 
-未確認は非同期質問、名前空間付き公開名と hook 名の対応、code mode 内 nested call、native subagent/worker への継承。確認済みの質問名は `request_user_input` だけで、`request_user_input_async` や `functions.request_user_input` は対象に足していない。request_permissions は対象外。#1863 は入口と依存の配置・信頼・印の継承・各対象の実機拒否を確認する。
+質問対応全体は未完了（入力確認ゲート未達）として引き継ぐ。同期 `request_user_input` の印付き拒否は fixture 判定検証済みだが、非同期質問、名前空間付き公開名と hook 名の対応、code mode 内 nested call は未確認/未完了であり、経路の不存在を実証したものではない。名前を発見できないことも不存在の証拠にしない。これらの入力確認と印付き拒否を確認できるまで質問対応全体を完了扱いせず、ここで止めて未完了を返す。native subagent/worker への継承も未確認。確認済みの質問名は `request_user_input` だけで、`request_user_input_async` や `functions.request_user_input` は対象に足していない。request_permissions は対象外。#1863 は入口と依存の配置・信頼・印の継承・各対象の実機拒否を確認する。
 
 既存判定の限界も維持する。push 済み amend・rebase -i・ブランチ名なし push・スクリプト内部/動的 git の拒否は保証しない（rules/destructive-git-guard.md の事前承認が必要）。秘密の別言語/ssh/スクリプト経由の読み出しや、hook に届かない/印が未継承の質問も検査できない。未確認経路を対応成功とは数えない。
 

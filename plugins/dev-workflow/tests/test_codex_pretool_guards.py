@@ -70,6 +70,22 @@ class GuardTests(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             self.assertEqual(json.loads(result.stdout)['hookSpecificOutput']['permissionDecision'], 'deny')
 
+    def test_registered_command_with_unavailable_directory(self):
+        command = json.loads(HOOK.with_name('hooks.json').read_text())['hooks']['PreToolUse'][0]['hooks'][0]['command']
+        with tempfile.TemporaryDirectory() as directory:
+            for guard_dir in (None, '', str(Path(directory) / 'missing'), directory):
+                for data in (payload(tool='apply_patch'), payload('git reset --hard')):
+                    with self.subTest(directory=guard_dir, tool=data['tool_name']):
+                        env = {k: v for k, v in os.environ.items()
+                               if not k.startswith(('DEV_WORKFLOW_', 'CAPABILITY_REGISTRY_'))}
+                        if guard_dir is not None:
+                            env['DEV_WORKFLOW_CODEX_GUARD_DIR'] = guard_dir
+                        result = subprocess.run(['sh', '-c', command], input=json.dumps(data),
+                                                text=True, capture_output=True, env=env, timeout=30)
+                        self.assertEqual(result.returncode, 0, result.stderr)
+                        self.assertEqual(result.stdout, '')
+                        self.assertIn('未検査', result.stderr)
+
     def test_input_selection(self):
         for data in (None, [], 1, 'Bash', {}, payload(tool='Read'),
                      payload(tool='mcp__question'), payload(tool='request_permissions'),
