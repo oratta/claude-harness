@@ -127,7 +127,7 @@ PY
   export GH_FAIL=1
   check
   [ "$status" -eq 0 ]; [[ "$output" == *'origin-main-fetch-failed'* ]]
-  [[ "$output" == *'"recording": "failed"'* ]]; [[ "$output" == *'投稿失敗'* ]]
+  [[ "$output" == *'"recording": "failed"'* ]] || return 1; [[ "$output" == *'投稿失敗'* ]] || return 1
   python3 - "$GH_LOG" "$CACHE" "$REPO" <<'PY'
 import json,sys
 from pathlib import Path
