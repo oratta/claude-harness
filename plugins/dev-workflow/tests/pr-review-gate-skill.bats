@@ -119,6 +119,17 @@ setup() {
   grep -qF '.user.login' "${PASS_STAGE}"
 }
 
+@test "authenticity: author match alone is not proof; agent records are rejected (#242)" {
+  local st="${PLUGIN_DIR}/skills/pr-review-gate/stages" ref="${PLUGIN_DIR}/references/approval-provenance.md"
+  grep -qF 'author の一致は必要条件でしかない' "${st}/authenticity.md"
+  grep -qF "grep -c '^記録者: エージェント'" "${st}/authenticity.md"
+  grep -qF 'references/approval-provenance.md' "${st}/authenticity.md"
+  grep -qF 'references/approval-provenance.md' "${st}/pass.md"
+  grep -qF '記録者: エージェント（<エージェント名>）' "${st}/carryover.md"
+  grep -qF "grep -c '^記録者: エージェント'" "${ref}"
+  grep -qF 'approval-provenance.md' "${PLUGIN_DIR}/../../rules/destructive-git-guard.md"
+}
+
 @test "convergence: verification runs in parallel while awaiting risk acceptance" {
   grep -q '並行' "${HOLD}"
 }

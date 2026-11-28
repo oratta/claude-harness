@@ -57,6 +57,10 @@ subagent-model-selection.md	FABLE_BUDGET_MODE
 destructive-git-guard.md	例外なく事前承認
 destructive-git-guard.md	`git reset --hard`
 destructive-git-guard.md	`git push <remote> main|master`（remote 名を問わない）
+destructive-git-guard.md	承認の根拠にしない
+destructive-git-guard.md	`記録者: エージェント（<名前>）`
+destructive-git-guard.md	承認とみなさない
+destructive-git-guard.md	approval-provenance.md
 link-when-requesting-review.md	`）` まで URL に含まれて 404 になる
 dev-server.md	他プロジェクトのプロセスを kill してポートを確保するのは絶対禁止
 browser-infra-env-capture.md	表示された次のアクションで

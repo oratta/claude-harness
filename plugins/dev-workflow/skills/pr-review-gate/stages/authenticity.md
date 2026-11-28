@@ -9,7 +9,10 @@
 
 ```bash
 gh api repos/$R/issues/comments/<comment_id> --jq '.user.login'   # 主のアカウント名と一致すること
+gh api repos/$R/issues/comments/<comment_id> --jq '.body' | grep -c '^記録者: エージェント'   # 0 であること
 ```
+
+author の一致は必要条件でしかない。エージェントも主のアカウントで投稿するため、投稿者名だけでは主本人の発言と判別できない（正本は `plugins/dev-workflow/references/approval-provenance.md`）。リンク先が `記録者: エージェント` の行を持つ記録・主の判断を伝聞で伝える文面・ゲートの宣言コメントのどれかなら、主本人の発言ではないので①を満たさない。
 
 Discord 等の外部サービスのリンクは目視確認でよい（確認記録は同じ形式で残す）。
 リンク先が開けない・主本人の発言と確認できない場合は合格処理をしない（手順6に戻して主に再確認する）。
