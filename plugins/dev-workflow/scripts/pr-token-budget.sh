@@ -3,7 +3,7 @@
 # 全リクエストの usage と、その記録先のために使った Codex の消費を合計し、上限と比べる。
 #
 #   pr-token-budget.sh <記録先番号>... [--cap <tokens>] [--projects <dir>]
-#                      [--codex-records <file>] [--codex-home <dir>]...
+#                      [--codex-records <file>] [--codex-home <dir>]... [--session-records <file>]
 #
 # 出力（stdout, 1 行 JSON）:
 #   {"records":[288],"claude_tokens":7110,"codex_tokens":1550,"total_tokens":8660,
@@ -37,7 +37,7 @@ projects="${CLAUDE_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}"
 codex_records=""
 session_records=""
 codex_homes=()
-usage='usage: pr-token-budget.sh <番号>... [--cap N] [--projects DIR] [--codex-records FILE] [--codex-home DIR]...'
+usage='usage: pr-token-budget.sh <番号>... [--cap N] [--projects DIR] [--codex-records FILE] [--codex-home DIR]... [--session-records FILE]'
 while [ $# -gt 0 ]; do
   case "$1" in
     --cap)

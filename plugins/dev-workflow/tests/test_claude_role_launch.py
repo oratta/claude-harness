@@ -45,7 +45,7 @@ if mode.startswith('probe'):
   'model':'claude-opus-4-6' if mode=='probe-model' else 'claude-sonnet-4-6',
   'content':[{'type':'tool_use','name':'Agent' if mode=='probe-agent' else 'Read'}]}})+'\\n')
 if mode=='reject': print('unknown option --max-turns',file=sys.stderr); sys.exit(2)
-if mode=='child':
+if mode=='child' or os.environ.get('WITH_CHILD'):
  child=subprocess.Popen(['sleep','100'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  Path(os.environ['CHILD_PID']).write_text(str(child.pid))
 if mode=='hang': time.sleep(100)
@@ -88,6 +88,8 @@ sys.exit(int(os.environ.get('FAKE_EXIT','0')))
         code, d = self.invoke()
         self.assertEqual(code, 0, d)
         self.assertTrue(d['cleanup']['ok'])
+        self.assertEqual(d['requested_model'], 'sonnet')
+        self.assertEqual(d['applied_models'], ['claude-sonnet-4-6'])
         self.assertEqual(d['phase_declaration'], '工程完了: 実装＋verify')
         sid = d['session_id']
         self.assertEqual(self.calls()[0], {'role':'implement','argv':[
@@ -138,28 +140,39 @@ sys.exit(int(os.environ.get('FAKE_EXIT','0')))
         self.assertEqual(len(self.calls()), before)
         self.assertEqual(refused['termination_reason'], 'context_unavailable')
 
-    def test_background_child_cleanup_and_outside_control(self):
+    def test_background_children_across_exit_paths(self):
         control = subprocess.Popen(['sleep','100'])
-        self.addCleanup(lambda: control.poll() is None and control.kill())
-        code, d = self.invoke(FAKE_MODE='child')
-        self.assertEqual(code, 0, d)
-        self.assertIsNone(control.poll())
+        def stop_control():
+            control.kill()
+            control.wait()
+        self.addCleanup(stop_control)
+        for mode in ('child','limit','killed','hang'):
+            with self.subTest(mode=mode):
+                code, d = self.invoke(FAKE_MODE=mode, WITH_CHILD='1')
+                self.assertEqual(code, 0 if mode=='child' else 2, d)
+                self.assertTrue(d['cleanup']['ok'], d)
+                self.assertIsNone(control.poll())
+                self.assert_dead_child()
+
+    def assert_dead_child(self):
         pid = int((self.root/'child').read_text())
-        # Zombies are dead and cannot execute; ps differentiates them on Linux CI.
         p = subprocess.run(['ps','-o','stat=','-p',str(pid)], capture_output=True, text=True)
         self.assertTrue(p.returncode != 0 or p.stdout.strip().startswith('Z'), p.stdout)
 
     def test_signal_cleanup(self):
-        p = subprocess.Popen(self.args, env=dict(self.env, FAKE_MODE='hang'), stdout=subprocess.PIPE,
-                             stderr=subprocess.PIPE, text=True)
-        self.addCleanup(lambda: p.poll() is None and p.kill())
-        deadline = time.monotonic()+5
-        while not self.calls() and time.monotonic()<deadline:
-            time.sleep(.02)
-        p.send_signal(signal.SIGTERM)
-        out, err = p.communicate(timeout=8)
-        self.assertEqual(p.returncode, 2, err)
-        self.assertTrue(json.loads(out)['cleanup']['ok'])
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            with self.subTest(sig=sig):
+                before = len(self.calls())
+                p = subprocess.Popen(self.args, env=dict(self.env, FAKE_MODE='hang', WITH_CHILD='1'),
+                                     stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+                deadline = time.monotonic()+5
+                while len(self.calls()) == before and time.monotonic()<deadline:
+                    time.sleep(.02)
+                p.send_signal(sig)
+                out, err = p.communicate(timeout=8)
+                self.assertEqual(p.returncode, 2, err)
+                self.assertTrue(json.loads(out)['cleanup']['ok'])
+                self.assert_dead_child()
 
     def attest(self, assignment, role, model='sonnet', mode='agent'):
         proof = dict(identity=self.module.identity(str(self.fake), PLUGIN), approved=True,
@@ -231,6 +244,23 @@ sys.exit(int(os.environ.get('FAKE_EXIT','0')))
         code, d = self.invoke(['--session-records',str(self.repo/'forbidden')])
         self.assertEqual(code, 1, d)
         self.assertEqual(len(self.calls()), before)
+
+    def test_live_check_opt_in_and_fixture_only_execution(self):
+        script = PLUGIN/'scripts/claude-role-live-check.py'
+        p = subprocess.run([sys.executable,str(script)],env=self.env,capture_output=True,text=True)
+        self.assertEqual(p.returncode, 2)
+        self.assertEqual(self.calls(), [])
+        p = subprocess.run([sys.executable,str(script),'--execute','--case','capability'],
+                           env=dict(self.env,FAKE_MODE='probe',TMPDIR=str(self.root)),capture_output=True,text=True)
+        self.assertEqual(p.returncode, 0, p.stderr+p.stdout)
+        summary=json.loads(p.stdout)
+        self.assertTrue(summary['unchanged'])
+        self.assertEqual(summary['plugin_dir'], str(PLUGIN))
+        p = subprocess.run([sys.executable,str(script),'--execute','--case','normal',
+                            '--verification',summary['verification']],env=dict(self.env,TMPDIR=str(self.root)),
+                           capture_output=True,text=True)
+        self.assertEqual(p.returncode, 0, p.stderr+p.stdout)
+        self.assertTrue(json.loads(p.stdout)['unchanged'])
 
 
 if __name__ == '__main__':

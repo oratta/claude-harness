@@ -7,6 +7,7 @@
 # spec: openspec/changes/add-pr-token-budget（dev-workflow-pr-token-budget）
 
 setup() {
+  unset DEVELOP_ROLE
   bats_require_minimum_version 1.5.0
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/pr-token-budget.sh"
@@ -588,4 +589,58 @@ PY
   run --separate-stderr "$SCRIPT" 999 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
   [ "$status" -eq 1 ]
   [ "$(j 'd["total_tokens"]')" = 0 ]
+}
+
+@test "explicit sessions: three paths share one cap through the real measure wrapper" {
+  explicit_records
+  arec legacy m u 100 0 0 0 | make_agent legacy '{"description":"W #288"}' "$REPO"
+  # The only stub is the network fetch: actual measure and budget code run.
+  mkdir -p "$WORK/integration/scripts" "$WORK/integration/references"
+  cp "$PLUGIN_DIR/scripts/"{pr-token-measure.sh,pr-token-budget.sh,token_thresholds.py} "$WORK/integration/scripts/"
+  cp "$PLUGIN_DIR/references/token-thresholds.json" "$WORK/integration/references/"
+  cat > "$WORK/integration/scripts/codex-records.sh" <<'SH'
+#!/usr/bin/env bash
+while [ "$#" -gt 0 ]; do
+  if [ "$1" = --out ]; then printf 'active 50\n' > "$2"; exit 0; fi
+  shift
+done
+exit 1
+SH
+  chmod +x "$WORK/integration/scripts/codex-records.sh"
+  export CLAUDE_PROJECTS_DIR="$PROJECTS"
+  cd "$REPO"
+  run --separate-stderr "$WORK/integration/scripts/pr-token-measure.sh" --repo o/r --session-records "$SESSIONS" --cap 400 288
+  [ "$status" -eq 2 ]
+  [ "$(j 'd["claude_tokens"]')" = 216 ]
+  [ "$(j 'd["codex_tokens"]')" = 200 ]
+  [ "$(j 'd["total_tokens"]')" = 416 ]
+  [ "$(j 'd["agent_count"]')" = 1 ]
+  run --separate-stderr "$WORK/integration/scripts/pr-token-measure.sh" --repo o/r --session-records "$SESSIONS" --cap 500 288
+  [ "$status" -eq 0 ]
+  : > "$ROLLOUT"
+  run --separate-stderr "$WORK/integration/scripts/pr-token-measure.sh" --repo o/r --session-records "$SESSIONS" --cap 500 288
+  [ "$status" -eq 1 ]
+  [ "$(j 'd["session_unresolved"]')" = 1 ]
+}
+
+@test "explicit sessions: missing Claude history and invalid identity are diagnosed" {
+  explicit_records
+  cd "$REPO"
+  for content in missing empty no-usage wrong-session; do
+    case "$content" in
+      missing) rm -f "$LOG" ;;
+      empty) : > "$LOG" ;;
+      no-usage) printf '{"type":"user"}\n' > "$LOG" ;;
+      wrong-session) printf '{"sessionId":"different"}\n' > "$LOG" ;;
+    esac
+    run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --session-records "$SESSIONS" --cap 1000
+    [ "$status" -eq 1 ]
+    [ "$(j 'd["session_unresolved"]')" = 1 ]
+    [ "$(j 'd["session_errors"][0]["reason"]')" = claude_unresolved ]
+    [ -n "$stderr" ]
+  done
+  printf 'not-json\n' >> "$SESSIONS"
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --session-records "$SESSIONS" --cap 100
+  [ "$status" -eq 2 ]
+  [ "$(j 'd["session_unresolved"]')" = 2 ]
 }

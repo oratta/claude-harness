@@ -16,7 +16,7 @@ import time
 import uuid
 
 sys.dont_write_bytecode = True
-from tier_caps import CAPPED_ROLES, TABLE_PATH, TIERS, exceeds, model_tier, read_table
+from tier_caps import CAPPED_ROLES, TABLE_PATH, TIERS, exceeds, model_tier, read_table, refusal
 
 PLUGIN = Path(__file__).resolve().parents[1]
 ROLES = {
@@ -169,12 +169,14 @@ def run():
     if table is None:
         raise Refusal('model table unavailable')
     tier = model_tier(table['executors']['claude'], a.model)
-    if tier is None or (tier == TIERS[-1] and a.assignment != 'decider'):
-        raise Refusal('unknown or forbidden model')
+    if tier is None:
+        raise Refusal(f'unknown model: role={a.role}, requested_model={a.model}')
     if a.role in CAPPED_ROLES:
         cap = table['role_caps'].get(a.role)
         if cap not in TIERS or exceeds(tier, cap):
-            raise Refusal('model exceeds role cap')
+            raise Refusal(refusal(a.role, tier, cap, a.model))
+    if tier == TIERS[-1] and a.assignment != 'decider':
+        raise Refusal(f'forbidden model: role={a.role}, requested_model={a.model}, allowed=decider only')
     cwd = a.cwd.resolve(strict=True)
     plugin = a.plugin_dir.resolve(strict=True)
     records = outside(a.session_records, cwd)
@@ -201,6 +203,7 @@ def run():
     if a.transcript and a.transcript.resolve() != transcript:
         raise Refusal('transcript does not belong to requested session/cwd/config')
     result = dict(session_id=sid, transcript_path=str(transcript), role=a.role, model=a.model,
+                  requested_model=a.model, applied_models=[],
                   cli_exit_code=None, role_return='', cleanup={'ok': True}, phase_declaration=None)
     if a.resume:
         context = subprocess.run([str(PLUGIN/'scripts/subagent-context.sh'), '--file', str(transcript)],
@@ -265,6 +268,18 @@ def run():
                               'cli_error' if response.get('is_error') or process.returncode else 'normal')
             except (ValueError, TypeError):
                 response = {}
+            if transcript.is_file():
+                observed = set()
+                for line in transcript.read_text().splitlines():
+                    try:
+                        entry = json.loads(line)
+                        message = entry.get('message', {}) if isinstance(entry, dict) else {}
+                        model = message.get('model') if isinstance(message, dict) else None
+                        if entry.get('type') == 'assistant' and isinstance(model, str):
+                            observed.add(model)
+                    except (ValueError, AttributeError):
+                        continue
+                result['applied_models'] = sorted(observed)
             if a.verify:
                 approved = (reason == 'max_turns' and result['cleanup']['ok'] and transcript.is_file()
                             and probe_evidence(transcript, a.model, tools))

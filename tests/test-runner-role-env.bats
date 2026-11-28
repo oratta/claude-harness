@@ -8,7 +8,7 @@ setup() {
   # Exercise the actual function body with a fake Bats executable. The guarded
   # branch uses real perl/ps; two fallbacks force missing libexec and failed ps.
   run --separate-stderr python3 - "$ROOT/scripts/test.sh" "$BATS_TEST_TMPDIR" <<'PY'
-import os, pathlib, subprocess, sys
+import json, os, pathlib, subprocess, sys
 source=pathlib.Path(sys.argv[1]).read_text()
 root=pathlib.Path(sys.argv[2]); binary=root/'bin'; binary.mkdir()
 bats=binary/'bats'
@@ -28,6 +28,12 @@ for branch in ('missing-libexec','failed-ps','guarded'):
    env=dict(os.environ, PATH=str(binary)+os.pathsep+os.environ['PATH'], DEVELOP_ROLE='implement'),
    capture_output=True,text=True,timeout=15)
  assert result.returncode==0, (branch,result.stdout,result.stderr)
+ # The outer role still reaches the actual G001 deny after Bats returns.
+ hook=pathlib.Path(sys.argv[1]).resolve().parent.parent/'plugins/dev-workflow/scripts/git-destructive-guard.sh'
+ denial=subprocess.run([str(hook)], input=json.dumps({'tool_name':'Bash','hook_event_name':'PreToolUse',
+   'tool_input':{'command':'git reset --hard HEAD'}}), env=dict(os.environ,DEVELOP_ROLE='implement'),
+   capture_output=True,text=True,check=True)
+ assert json.loads(denial.stdout)['hookSpecificOutput']['permissionDecision']=='deny', denial.stdout
 PY
   [ "$status" -eq 0 ]
 }

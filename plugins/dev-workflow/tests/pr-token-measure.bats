@@ -9,6 +9,7 @@
 bats_require_minimum_version 1.5.0
 
 setup() {
+  unset DEVELOP_ROLE
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   WORK="$(cd "$(mktemp -d)" && pwd -P)"
   SD="${WORK}/scripts"

@@ -2,7 +2,7 @@
 # PR トークンの計測を 1 コマンドで呼ぶ薄いラッパー。codex-records.sh で記録先の `Codex 消費:` コメントを集め、
 # 全番号の取得に成功したときだけ pr-token-budget.sh を --codex-records 付きで呼ぶ。
 #
-#   pr-token-measure.sh --repo <owner>/<repo> [--cap <tokens>] [--codex-home <dir>]... <記録先番号>...
+#   pr-token-measure.sh --repo <owner>/<repo> [--cap <tokens>] [--codex-home <dir>]... [--session-records <file>] <記録先番号>...
 #
 # --codex-home は渡されたものに加えて ${CODEX_HOME:-$HOME/.codex} を渡す。--cap は渡されたときだけ渡す。
 # stdout と exit code は pr-token-budget.sh のものをそのまま返す（0 = 上限以内 / 2 = 上限超過 / 1 = 計測できない）。
@@ -18,7 +18,7 @@ homes=()
 session_records=""
 nums=()
 bad=""
-usage='usage: pr-token-measure.sh --repo <owner>/<repo> [--cap <tokens>] [--codex-home <dir>]... <番号>...'
+usage='usage: pr-token-measure.sh --repo <owner>/<repo> [--cap <tokens>] [--codex-home <dir>]... [--session-records <file>] <番号>...'
 while [ $# -gt 0 ]; do
   case "$1" in
     --repo)
