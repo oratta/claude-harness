@@ -1,5 +1,7 @@
 # 手動Codex開発を試す
 
+Codex 自身に適用される hook の方針・現状・未対応は [Codex 向け hook 一覧](codex-hook-inventory.md) を参照する。
+
 #706 workerと#707入口を含むworktree版を使う。インストール済みプラグインは上書きしない。
 
 ```sh
