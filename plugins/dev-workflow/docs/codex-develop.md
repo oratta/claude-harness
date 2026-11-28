@@ -1,6 +1,6 @@
 # 手動Codex開発を試す
 
-Codex 自身に適用される hook の方針・現状・未対応は [Codex 向け hook 一覧](codex-hook-inventory.md) を参照する。
+Codex 自身に適用される hook の方針・現状・未対応は [Codex 向け hook 一覧](codex-hook-inventory.md) を参照する。worker は確認した配布元から一時 runtime に hook を追加し、起動ごとの trust bypass を渡す。元 profile の hooks/config/requirements は書き換えない。本体への導入は [主向けの設定差分・信頼・戻し方](../scripts/CODEX-WORKER.md#hook-runtime-と本体向け導入手順) をレビューしてから主が適用する。app-server の実機拒否は本体が接続後に取る（未取得）。
 
 #706 workerと#707入口を含むworktree版を使う。インストール済みプラグインは上書きしない。
 

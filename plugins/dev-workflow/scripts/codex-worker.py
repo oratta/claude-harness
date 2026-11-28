@@ -4,6 +4,7 @@ import argparse
 import base64
 import datetime
 import hashlib
+import importlib.util
 import json
 import math
 import os
@@ -215,12 +216,31 @@ def reject_project_config(cwd, common):
     # The normal user config is intentionally replaced by runtime config, not a project layer.
     roots.discard(Path.home())
     require(not any((root/'.codex/config.toml').exists() for root in roots), 'unsupported_project_config')
+    require(not any((root/'.codex/hooks.json').exists() for root in roots), 'unsupported_project_hooks')
+
+
+def hook_runtime_module():
+    spec = importlib.util.spec_from_file_location(
+        'codex_hook_runtime', Path(__file__).resolve().with_name('codex-hook-runtime.py'))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def prepare_hooks(runtime):
+    try:
+        return hook_runtime_module().prepare(runtime)
+    except ValueError as error:
+        raise Rejected(str(error)) from None
+    except OSError:
+        raise Rejected('hook_runtime_source_unavailable') from None
 
 
 def install_runtime(runtime, source):
     (runtime/'auth.json').symlink_to(Path(source)/'auth.json')
     (runtime/'config.toml').write_text('cli_auth_credentials_store = "file"\n[features]\napps = false\n')
     os.chmod(runtime/'config.toml', 0o600)
+    prepare_hooks(runtime)
     return runtime
 
 
@@ -233,7 +253,12 @@ def foreground_runtime(job, source, cwd, common):
     os.chmod(base, 0o700)
     runtime = base/job
     runtime.mkdir(mode=0o700)
-    return install_runtime(runtime, source)
+    try:
+        return install_runtime(runtime, source)
+    except Exception:
+        # The caller cannot own cleanup until this function returns the runtime.
+        shutil.rmtree(base, ignore_errors=True)
+        raise
 
 
 def discard_runtime(runtime):
@@ -359,8 +384,10 @@ CLOSE_WAIT = 3
 class Rpc:
     def __init__(self, home, cwd):
         env = child_env()
+        hooks = hook_runtime_module()
+        env.update(hooks.guard_environment())
         env['CODEX_HOME'] = home
-        self.proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'], cwd=cwd, env=env,
+        self.proc = subprocess.Popen(['codex', *hooks.TRUST_ARGS, 'app-server', '-c', 'model_provider="openai"'], cwd=cwd, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         self.events = queue.Queue()
         self.buffer = []

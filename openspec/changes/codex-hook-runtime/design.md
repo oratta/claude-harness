@@ -22,14 +22,15 @@ repo 内の定義を配布し、adapter/依存は helper の実体から求め�
 
 `DEV_WORKFLOW_UNATTENDED` と既存 off 設定の意味は継承する。無効化された検査を有効と報告しない。auth/account 照合、role sandbox、TMPDIR/TMPPREFIX、元 profile の MCP 等を持ち込まない契約を保つ。runtime 内の hook 設定も既存の finally cleanup で除去する。
 
-### 信頼方式は実機比較ゲートを最初の実装タスクにする
+### task 1.2 の採用方式: 一時 runtime の hooks.json と invocation bypass
 
-採用前に、実行版・help・公式文書で対応する読込方法を確認し、別々の一時 CODEX_HOME と repo で次を比較する。spec 段ではセッションを起動せず、どちらも成功済みとはしない。
+[本体の隔離実機比較（codex-cli 0.163.0）](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236567986) により、一時 CODEX_HOME に配布元を確かめた `hooks.json` だけを置き、起動ごとに `--dangerously-bypass-hook-trust` を渡す方式を採用する。信頼なしの対照は reset が実行され snapshot が変化した。bypass ありでは本体の git 5種・ダミー秘密表示、native subagent の reset が実 hook に拒否され snapshot 不変だった。
 
-1. 管理 hook: 実ホーム・システム領域に書かずに管理設定を読み込ませられるか、管理済み source の表示と実際の deny で確かめる。`CODEX_HOME/requirements.toml` を置くだけで読まれるとは仮定しない。隔離配置ができない場合は試せなかった理由を記録する。
-2. invocation 限定の `--dangerously-bypass-hook-trust`: CLI 本体と worker が使う app-server の双方で引数が受理され、既知の hook の deny が実際に効くかを確かめる。引数受理だけでは合格にしない。
+管理 hook 候補は不採用。一時 `CODEX_HOME/requirements.toml` は読まれず reset が実行された。管理読込元の `/etc/codex/requirements.toml`・MDM・cloud はこの隔離環境に持ち込めず、システム領域は変更しない。
 
-両方通れば信頼の範囲を絞れる管理方式を選ぶ。管理方式が隔離環境で使えず bypass が通れば、配布元・有効な hook source を事前確認した一時 runtime のみに bypass を使う。未確認の追加 source が混じる場合は使わず止める。実ホーム向け手順にはその bypass を自動付与せず、主の hook レビュー・信頼操作を明示する。両方使えない場合は接続を完成扱いせず、出力・理由と主の手順を返す。採用/不採用理由と再現コマンドを本 design と #1863 に追記してから起動接続を仕上げる。
+source は helper の実体から解決した定義・adapter・依存と実行系を検査する。target は明示した一時ディレクトリに限定し、既存 hooks/requirements/その他設定を拒否する。worker の最小 auth/config だけ保持し、親の guard パス4変数も配布元へ固定する。元 profile の hook 設定をコピーしない。定義は既存 PreToolUse 一登録だけを認め、その command を既知 adapter の絶対パスと検証済み実行系へ解決する。移動・更新時は新しい target へ再配布する。未確認の追加 source があれば bypass を使わず止める。
+
+再現は一覧の隔離準備後、別の一時 CODEX_HOME ごとに auth link・最小 config と既存 hook を置き、`codex exec [--dangerously-bypass-hook-trust] --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$probe_dir/feature" --json "<単一の検査コマンドを実行>"` を比較する（実行は本体のみ）。app-server は help の引数受理だけ取得済み。今回の worker 接続は同じフラグを渡すが、実 tool 拒否と無害な対照は接続後に本体が取得する。task 1.2 は採用決定として完了し、app-server の未取得を task 3.1 に残す。CLI の実機証拠を app-server の成功へ流用しない。
 
 ### 実ホームへの導入はレビューできる手順として渡す
 
@@ -63,3 +64,7 @@ R1 承認後に隔離 probe、方式の確定、helper/worker 接続、回帰検
 - task 1.2 の「両候補未成立なら止める」に従い、2.1–2.3 の helper/worker 接続は未着手。3.1 の git 3対象・秘密2対象、印付き同期質問も未取得。後続担当は下記と一覧の手順で信頼ゲートから再開する。
 
 再現: 一覧の preparation block を `/bin/sh -eu` で実行し、出力された一時領域内の環境を維持する。`codex --version` と `codex --help`、`codex app-server --help`、`codex --dangerously-bypass-hook-trust app-server --help` を一時 CODEX_HOME で比較する。実機実行権限を持つ担当が、同じ account/profile 指定のまま、実ホームへの認証更新を発生させずに隔離認証を用意できることを先に確かめる。管理候補は実行版で隔離管理設定を読ませる方法を確認してから配置し、bypass 候補は有効 source をレビューしてから別の一時 CODEX_HOME へ既存 hook と絶対依存パスを配置する。未導入 helper の存在や未検証の管理読込オプションは仮定しない。候補ごとに `codex --no-daemon --cd "$probe_dir/feature"`（bypass 候補だけ `--dangerously-bypass-hook-trust` を追加）と app-server の turn で `git reset --hard HEAD` / `git status --porcelain` を要求し、hook source・実 deny と snapshot 不変・対照を照合する。未成立なら接続を進めない。native 子の確認は起動許可のある coordinator が別途担当する。
+
+## implement 試行2
+
+本体の追試により上記方式を採用して接続実装を再開した。試行1の停止記録は当時の経緯であり、現在の採用判断は task 1.2 の節を正本とする。worker/app-server の実機記録と質問経路の未確認は残る。
