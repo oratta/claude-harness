@@ -217,9 +217,26 @@ def reject_project_config(cwd, common):
     require(not any((root/'.codex/config.toml').exists() for root in roots), 'unsupported_project_config')
 
 
-def install_runtime(runtime, source):
+def shared_instructions(source):
+    # Trust the selected account's distributed generation, not its temporary outer text.
+    # Keep this parser self-contained: plugin cache installs do not include repo scripts/.
+    begin = b'<!-- BEGIN claude-harness shared instructions -->\n'
+    end = b'<!-- END claude-harness shared instructions -->\n'
+    try:
+        data = (Path(source)/'AGENTS.md').read_bytes()
+    except OSError:
+        raise Rejected('shared_instructions_sync_required') from None
+    require(data.count(begin.rstrip()) == 1 and data.count(end.rstrip()) == 1
+            and begin in data and end in data, 'shared_instructions_sync_required')
+    start, stop = data.index(begin), data.index(end)
+    require(start < stop, 'shared_instructions_sync_required')
+    return data[start:stop+len(end)]
+
+
+def install_runtime(runtime, source, instructions):
     (runtime/'auth.json').symlink_to(Path(source)/'auth.json')
-    (runtime/'config.toml').write_text('cli_auth_credentials_store = "file"\n[features]\napps = false\n')
+    (runtime/'AGENTS.md').write_bytes(instructions)
+    (runtime/'config.toml').write_text('project_doc_max_bytes = 131072\ncli_auth_credentials_store = "file"\n[features]\napps = false\n')
     os.chmod(runtime/'config.toml', 0o600)
     return runtime
 
@@ -229,11 +246,12 @@ def foreground_runtime(job, source, cwd, common):
     # caller's temporary area (TMPDIR when set, the platform default otherwise). What the
     # App Server and its children receive as TMPDIR/TMPPREFIX is untouched.
     reject_project_config(cwd, common)
+    instructions = shared_instructions(source)
     base = Path(tempfile.mkdtemp(prefix='codex-run-'))
     os.chmod(base, 0o700)
     runtime = base/job
     runtime.mkdir(mode=0o700)
-    return install_runtime(runtime, source)
+    return install_runtime(runtime, source, instructions)
 
 
 def discard_runtime(runtime):

@@ -1,0 +1,40 @@
+{
+  "description": "Size-only private fixtures, never instruction content. CLAUDE files model conservative fixed capacity, not actual Codex discovery.",
+  "inputs": [
+    {
+      "source": "personal-rules",
+      "path": "rules/harness-dev.md",
+      "bytes": 1844,
+      "sha256": "69e80c926f679be77b87583d656d55c2407906746afdf9adfa34c9445223ab0b",
+      "measurement": "2026-11-28 local read-only UTF-8 byte measurement; issue #1853 decision 7234163109"
+    },
+    {
+      "source": "personal-rules",
+      "path": "rules/machines.md",
+      "bytes": 2066,
+      "sha256": "cf7137e9e2c8376248688ecb8dcd1f4ef1c89135f1f4426df5cfb72d46483799",
+      "measurement": "2026-11-28 local read-only UTF-8 byte measurement; issue #1853 decision 7234163109"
+    },
+    {
+      "source": "home",
+      "path": "AGENTS.md",
+      "bytes": 1054,
+      "sha256": "234602a97e945ca6cfc6df9e2311c1c808a8ffb27ad98940235ec7f250cb8ebb",
+      "measurement": "2026-11-28 local read-only UTF-8 byte measurement; issue #1853 decision 7234163109"
+    },
+    {
+      "source": "flatmate",
+      "path": "CLAUDE.md",
+      "bytes": 19471,
+      "sha256": "b85d578871e8740a43f7239dead136e2f6633f97b2824cdc4a76d643cdab4e57",
+      "measurement": "2026-11-28 local read-only UTF-8 byte measurement; issue #1853 decision 7234163109"
+    },
+    {
+      "source": "flatmate",
+      "path": "workspace/ponta/CLAUDE.md",
+      "bytes": 26107,
+      "sha256": "062132442b3dce06ce185d9a26d67387f0d6c17d33c160e702218469382070bc",
+      "measurement": "2026-11-28 local read-only UTF-8 byte measurement; issue #1853 decision 7234163109"
+    }
+  ]
+}

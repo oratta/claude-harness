@@ -4,28 +4,28 @@
 
 ## 1. 正本からの生成
 
-- [ ] 1.1 `tests/codex-shared-instructions.bats` に公開全文・README除外・安定順序・harness全文と適用範囲・readable要点の生成検査を追加し、正本を一行変え未再生成なら失敗すること、再生成後に一致することを使い捨てコピーで確かめる。触る範囲: tests/codex-shared-instructions.bats（新規）、tests/rules-sync.bats:9-30（fixture参考）
-- [ ] 1.2 共通生成処理を作り、公開生成物を追跡する。個人版を加える生成はローカル限定とし、1.1のテストを通す。生成対象の正本は変更せず、見出し・区切りを含む生成物の一致で検証する。触る範囲: scripts/codex-shared-instructions.py（新規）、generated/codex/AGENTS.md（新規）、rules/communication-style.md:1-15（参照）、AGENTS.md:1-43（参照）
+- [x] 1.1 `tests/codex-shared-instructions.bats` に公開全文・README除外・安定順序・harness全文と適用範囲・readable要点の生成検査を追加し、正本を一行変え未再生成なら失敗すること、再生成後に一致することを使い捨てコピーで確かめる。触る範囲: tests/codex-shared-instructions.bats（新規）、tests/rules-sync.bats:9-30（fixture参考）
+- [x] 1.2 共通生成処理を作り、公開生成物を追跡する。個人版を加える生成はローカル限定とし、1.1のテストを通す。生成対象の正本は変更せず、見出し・区切りを含む生成物の一致で検証する。触る範囲: scripts/codex-shared-instructions.py（新規）、generated/codex/AGENTS.md（新規）、rules/communication-style.md:1-15（参照）、AGENTS.md:1-43（参照）
 - [ ] 1.3 生成・再生成・一致検査の実際の CLI と公開/個人の境界を docs に書き、記載した生成・一致検査コマンドが一時領域で動くことを確かめる。触る範囲: docs/codex-shared-instructions.md（新規）
 
 ## 2. 明示配布と既存ホームの保持
 
-- [ ] 2.1 配布の回帰テストを追加する。従来引数でCodexホーム不変、--codex/--no-pull併用、対象和集合・実体重複除去、両登録形式と不正入力、冪等性、既存7行のバイト保持、許可外/取消済みoverlay除外、非空override・破損/重複区画・管理外リンクの拒否を使い捨てホームで確認する。触る範囲: tests/codex-shared-instructions.bats（1で新規）、tests/rules-sync.bats:1-30、tests/rules-sync.bats:484-557（既存許可取消テスト参照）
-- [ ] 2.2 sync のオプション解析とCodex配布を実装する。登録表は既存契約を使い、管理区画だけを作成/置換し、2.1と既存 rules-sync テストを通す。別台帳・ホーム探索は追加しない。触る範囲: scripts/sync.sh:1-261、scripts/codex-shared-instructions.py（1で新規）、plugins/dev-workflow/scripts/codex-develop.py:403-409（参照）、plugins/dev-workflow/scripts/codex-develop.py:521-548（参照）
-- [ ] 2.3 容量キーの最低値131072、既存の大きい値の維持、profile等の小さい有効値への対応、認証/MCP/他設定の保持を実装し、各ケースをTOMLとして検査するテストを通す。触る範囲: scripts/codex-shared-instructions.py（1で新規）、tests/codex-shared-instructions.bats（1で新規）
+- [x] 2.1 配布の回帰テストを追加する。従来引数でCodexホーム不変、--codex/--no-pull併用、対象和集合・実体重複除去、両登録形式と不正入力、冪等性、既存7行のバイト保持、許可外/取消済みoverlay除外、非空override・破損/重複区画・管理外リンクの拒否を使い捨てホームで確認する。触る範囲: tests/codex-shared-instructions.bats（1で新規）、tests/rules-sync.bats:1-30、tests/rules-sync.bats:484-557（既存許可取消テスト参照）
+- [x] 2.2 sync のオプション解析とCodex配布を実装する。登録表は既存契約を使い、管理区画だけを作成/置換し、2.1と既存 rules-sync テストを通す。別台帳・ホーム探索は追加しない。触る範囲: scripts/sync.sh:1-261、scripts/codex-shared-instructions.py（1で新規）、plugins/dev-workflow/scripts/codex-develop.py:403-409（参照）、plugins/dev-workflow/scripts/codex-develop.py:521-548（参照）
+- [x] 2.3 容量キーの最低値131072、既存の大きい値の維持、profile等の小さい有効値への対応、認証/MCP/他設定の保持を実装し、各ケースをTOMLとして検査するテストを通す。触る範囲: scripts/codex-shared-instructions.py（1で新規）、tests/codex-shared-instructions.bats（1で新規）
 - [ ] 2.4 対象ホーム・登録形式・明示実行・拒否条件・管理区画の復旧・容量更新を docs に書き、一時ホームで同期と復旧の手順を確認する。触る範囲: docs/codex-shared-instructions.md（1で新規）
 
 ## 3. worker の共通区画継承
 
-- [ ] 3.1 fake app-server に runtime AGENTS/config の観測を追加し、選択したaccountの区画だけがコピーされ、区画外指示と親MCPが入らず、容量131072が毎回生成されるテストを書く。未配布・破損区画でturn/start前に非0となり同期を案内することも検査する。触る範囲: plugins/dev-workflow/tests/test_codex_worker.py:15-47、plugins/dev-workflow/tests/test_codex_worker.py:105-128、plugins/dev-workflow/tests/test_codex_worker.py:329-348、plugins/dev-workflow/tests/test_codex_worker.py:437-440
+- [x] 3.1 fake app-server に runtime AGENTS/config の観測を追加し、選択したaccountの区画だけがコピーされ、区画外指示と親MCPが入らず、容量131072が毎回生成されるテストを書く。未配布・破損区画でturn/start前に非0となり同期を案内することも検査する。触る範囲: plugins/dev-workflow/tests/test_codex_worker.py:15-47、plugins/dev-workflow/tests/test_codex_worker.py:105-128、plugins/dev-workflow/tests/test_codex_worker.py:329-348、plugins/dev-workflow/tests/test_codex_worker.py:437-440
 - [ ] 3.2 runtime構築を更新し、認証リンク・既存隔離設定・0700・TMPDIR/TMPPREFIX継承を維持したまま管理区画と容量設定を追加する。共通区画の未配布/破損を起動前に拒否し、`python3 -B plugins/dev-workflow/tests/test_codex_worker.py` を通す。触る範囲: plugins/dev-workflow/scripts/codex-worker.py:211-241、plugins/dev-workflow/scripts/codex-worker.py:722-745、scripts/codex-shared-instructions.py（1で新規）
 - [ ] 3.3 既存workerテストのaccount fixtureを配布済みに揃え、他の既存テストに影響するfixtureも確認する。未配布を試すケース以外が偶然起動拒否されないようにし、対象テストが実際に本来の挙動まで到達して成功することを確かめる。workerの同期前エラーと継承境界をdocsに記載する。触る範囲: plugins/dev-workflow/tests/test_codex_worker.py:105-128、docs/codex-shared-instructions.md（1で新規）、plugins/dev-workflow/tests/test_codex_develop.py:745-795（関連fixtureの確認）
 
 ## 4. UTF-8 容量と ponta 固定入力
 
-- [ ] 4.1 裁定の測定元に基づき非公開入力の相対ファイル名・実測bytes・SHA-256・測定元をmanifestへ記録する。個人rulesと人格本文は転載せず、同サイズの決定的UTF-8ダミー本文と末尾マーカーを生成し、サイズと再現性をテストする。触る範囲: tests/fixtures/codex-shared-instructions/manifest.json（新規）、tests/codex-shared-instructions.bats（1で新規）、scripts/codex-shared-instructions.py（1で新規）
-- [ ] 4.2 共通区画・harness全文・生成見出し/区切り・区画外ホーム指示・flatmateルート/pontaの全体容量を検査する。公開入力は実生成物を測り、日本語・131072以内・上限ちょうど・1バイト超過をテストして、文字数でなくbytesで判定されることを確かめる。触る範囲: scripts/codex-shared-instructions.py（1で新規）、tests/codex-shared-instructions.bats（1で新規）、tests/fixtures/codex-shared-instructions/manifest.json（4で新規）
-- [ ] 4.3 ローカル実物の探索結果を検査する経路と利用手順を追加する。AGENTS/CLAUDE同居の選択をfixtureで検査し、同階層の二重計上が無いこと、不在時に実物成功と報告しないことを確認する。flatmate側の生成・配置は変更しない。触る範囲: scripts/codex-shared-instructions.py（1で新規）、tests/codex-shared-instructions.bats（1で新規）、docs/codex-shared-instructions.md（1で新規）
+- [x] 4.1 裁定の測定元に基づき非公開入力の相対ファイル名・実測bytes・SHA-256・測定元をmanifestへ記録する。個人rulesと人格本文は転載せず、同サイズの決定的UTF-8ダミー本文と末尾マーカーを生成し、サイズと再現性をテストする。触る範囲: tests/fixtures/codex-shared-instructions/manifest.json（新規）、tests/codex-shared-instructions.bats（1で新規）、scripts/codex-shared-instructions.py（1で新規）
+- [x] 4.2 共通区画・harness全文・生成見出し/区切り・区画外ホーム指示・flatmateルート/pontaの全体容量を検査する。公開入力は実生成物を測り、日本語・131072以内・上限ちょうど・1バイト超過をテストして、文字数でなくbytesで判定されることを確かめる。触る範囲: scripts/codex-shared-instructions.py（1で新規）、tests/codex-shared-instructions.bats（1で新規）、tests/fixtures/codex-shared-instructions/manifest.json（4で新規）
+- [x] 4.3 ローカル実物の探索結果を検査する経路と利用手順を追加する。AGENTS/CLAUDE同居の選択をfixtureで検査し、同階層の二重計上が無いこと、不在時に実物成功と報告しないことを確認する。flatmate側の生成・配置は変更しない。触る範囲: scripts/codex-shared-instructions.py（1で新規）、tests/codex-shared-instructions.bats（1で新規）、docs/codex-shared-instructions.md（1で新規）
 
 ## 5. docs と変更記録
 

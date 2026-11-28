@@ -43,6 +43,8 @@ for line in sys.stdin:
  m=json.loads(line); method=m.get('method'); rid=m.get('id')
  m['fixtureTmp']=info
  m['runtimeConfig']=(runtime/'config.toml').read_text()
+ m['runtimeAgents']=(runtime/'AGENTS.md').read_text()
+ m['runtimeMode']=runtime.stat().st_mode & 0o777
  for name in ('calls.jsonl','calls-'+job+'.jsonl'):
   with (home/name).open('a') as f:f.write(json.dumps(m)+'\n')
  if rid is None:continue
@@ -125,6 +127,11 @@ class ForegroundTest(unittest.TestCase):
         home = self.root/name;home.mkdir()
         (home/'auth.json').write_text(self.auth_text(email, 'fixture-'+name))
         (home/'fixture.json').write_text('{}')
+        (home/'AGENTS.md').write_text(
+            '<!-- BEGIN claude-harness shared instructions -->\n'
+            '共通の指示 '+name+'\n'
+            '<!-- END claude-harness shared instructions -->\n'
+            '区画外の一時指示\n')
         return home
 
     def auth_text(self, email, account_id, access='initial'):
@@ -438,6 +445,33 @@ class ForegroundTest(unittest.TestCase):
         (self.home/'config.toml').write_text('[mcp_servers.external]\ncommand="danger"\n')
         self.assertEqual(self.run_cli()['status'], 'completed')
         self.assertNotIn('external', self.calls()[0]['runtimeConfig'])
+
+    def test_runtime_copies_selected_shared_block_only(self):
+        (self.other/'config.toml').write_text('[mcp_servers.external]\ncommand="danger"\n')
+        self.config(home=self.other, email='other@example.invalid')
+        self.assertEqual(self.run_cli(codex_home=str(self.other))['status'], 'completed')
+        call = self.calls(home=self.other)[0]
+        self.assertEqual(call['runtimeAgents'],
+                         (self.other/'AGENTS.md').read_text().split('区画外')[0])
+        self.assertIn('project_doc_max_bytes = 131072', call['runtimeConfig'])
+        self.assertNotIn('external', call['runtimeConfig'])
+        self.assertEqual(call['runtimeMode'], 0o700)
+
+    def test_missing_or_broken_shared_instructions_stop_before_server(self):
+        begin = '<!-- BEGIN claude-harness shared instructions -->\n'
+        end = '<!-- END claude-harness shared instructions -->\n'
+        for i, text in enumerate((None, 'unmanaged', begin, end, end+begin,
+                                  begin+begin+end, begin+end+end)):
+            with self.subTest(text=text):
+                agents = self.home/'AGENTS.md'
+                if text is None:
+                    agents.unlink(missing_ok=True)
+                else:
+                    agents.write_text(text)
+                job = 'missing'+str(i)
+                result = self.run_cli(job, code=2)
+                self.assertEqual(result['error_kind'], 'shared_instructions_sync_required')
+                self.assertEqual(self.calls(job), [])
 
     def test_changed_auth_never_starts_server(self):
         self.config(change_auth_at='account/read',

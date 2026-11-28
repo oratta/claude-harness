@@ -51,6 +51,27 @@ MP_DIR="$CLAUDE_DIR/plugins/marketplaces"
 PUB_DST="$CLAUDE_DIR/rules/claude-harness"
 rc=0
 
+# Parse in a function to retain the original argv for the Codex helper.
+NO_PULL=0
+CODEX=0
+parse_options() {
+  while [ "$#" -gt 0 ]; do
+    case "$1" in
+      --no-pull) NO_PULL=1 ;;
+      --codex) CODEX=1 ;;
+      --account-home|--account-home-file)
+        [ "$#" -ge 2 ] || { echo "[harness-sync] $1 requires a value" >&2; return 1; }
+        shift ;;
+      *) echo "[harness-sync] unknown option: $1" >&2; return 1 ;;
+    esac
+    shift
+  done
+}
+parse_options "$@" || exit 1
+if [ "$CODEX" = 1 ]; then
+  python3 -B "$HARNESS_DIR/scripts/codex-shared-instructions.py" validate-sync "$@" || exit 1
+fi
+
 # dirty 判定は「追跡ファイルの変更のみ」（--untracked-files=no。repo-sync.sh と同じ理由:
 # marketplace dir には untracked の実行時ファイルが常駐しうるため、untracked を dirty 扱いすると
 # pull が恒久スキップされる）。untracked が pull で上書きされる心配は不要 — merge/checkout は
@@ -70,7 +91,7 @@ pull_repo() {
   fi
 }
 
-if [ "${1:-}" != "--no-pull" ]; then
+if [ "$NO_PULL" != 1 ]; then
   pull_repo "$HARNESS_DIR"
 fi
 
@@ -227,7 +248,7 @@ if [ -f "$ALLOW_FILE" ]; then
       rc=1
       continue
     fi
-    if [ "${1:-}" != "--no-pull" ]; then
+    if [ "$NO_PULL" != 1 ]; then
       pull_repo "$d"
     fi
     KEEP="$KEEP$line "
@@ -258,4 +279,7 @@ for sub in "$PUB_DST"/*/; do
 done
 prune_revoked "$CLAUDE_DIR/output-styles"
 
+if [ "$CODEX" = 1 ]; then
+  python3 -B "$HARNESS_DIR/scripts/codex-shared-instructions.py" sync "$@" || rc=1
+fi
 exit "$rc"
