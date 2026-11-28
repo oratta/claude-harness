@@ -120,6 +120,8 @@ profile dispatch は pending_execution の role/executor/account/model/effort �
 ### Requirement: 明示指定が無い工程では provider の週次余裕から構成を選ぶ
 develop role resolver は、profile と旧 account/model のどちらも明示されない各 canonical phase の開始時に、Claude 起動 account と登録 Codex accounts の週次余裕を評価しなければならない（MUST）。Claude 起動 account は `usage-account-registry` capability の「active スロットの判定規則」で起動環境から解決しなければならない（MUST）。余裕（margin）は `dev-workflow-headroom` capability の行の `margin`（週の経過率 − 週次の使用率の未丸め値）を使わなければならない（MUST）: Claude は `headroom.claude_rows(now, snapshot_path)` の起動 account の行、Codex は `read_codex_usages` が認証の主体を照合した各 account の cache を `headroom.codex_row(account, cache, now)` に渡した行で、行の `status` が `ok` のときだけその `margin` を使い、それ以外は欠測とする。起動 account がオフ（`enabled: false`）のスロットなら行は `off` で、Claude の margin は欠測になる。resolver は経過率と使用率から margin を数え直してはならない（MUST NOT）。工程途中の role を切り替えてはならず、次工程で再評価しなければならない（MUST）。
 
+Claude の実行可否は要件「claude が無い環境では Codex のみを選ぶか起動前に止まる」で先に判定しなければならない（MUST）。以下の選択表とシナリオは Claude の役を実行できる環境に適用する。Claude 本体で Agent を使える従来の呼び出しは、PATH に claude が無くても実行可能として既存の選択結果を維持しなければならない（MUST）。
+
 構成は、最良 Codex margin（代表 Codex account の margin）と Claude margin から次の表で選ばなければならない（MUST）。表は上の行から順に当て、最初に当たった行を使う。「基準」は環境変数 `DEVELOP_ALL_CODEX_MIN_MARGIN_PCT` の値（未設定・空白だけなら既定 10）で、比較はどれも「以上」（基準ちょうど・0 ちょうどは以上の側）とする。欠測は 0 未満と同じ側に置く。
 
 | Codex margin | Claude margin | 構成 | 理由コード |
@@ -306,3 +308,24 @@ profile・旧 account/model・account-home 対応表がいずれも未指定の�
 #### Scenario: 解決後の ID を記録先に残す
 - **WHEN** model=sol の Codex role を委譲し、worker の結果 JSON の `execution.model_resolution` が requested=sol、resolved=gpt-6-sol を返す
 - **THEN** develop 本体の記録先コメントには要求値 `sol` と解決後の ID `gpt-6-sol` の両方が書かれ、どの ID で走ったかが後から追える
+
+### Requirement: claude が無い環境では Codex のみを選ぶか起動前に止まる
+Claude の役の実行に CLI が必要な本体では、resolver は PATH に実行可能な claude が無い状態を、Claude margin の欠測とは区別しなければならない（MUST）。自動選択ではこの専用分岐を既存の選択表より先に適用し、Codex が有効かつ最良 margin が 0 以上なら codex-standard と代表 account を返し、それ以外は status: blocked と理由を出して exit 2 で止まらなければならない（MUST）。停止時は役を起こせる依頼を作ってはならない（MUST NOT）。
+
+**守備範囲（Claude の実行可否）**: ①入力元は、呼び出し元が示す本体の実行経路（Claude 本体の Agent／CLI が必要な本体）、起動プロセスの PATH、検証済み profile・旧指定、登録簿の Codex 有効状態と headroom が返す代表 margin である。margin の有効性は既存の headroom・snapshot の守備範囲に従う。②拾いたい誤りは、CLI 不在を余裕の欠測に置き換えて Claude 既定構成に倒れること、または実行不能な Claude の依頼を作ることである。③通してよい入力は、PATH に claude が無くても Agent を使える Claude 本体、CLI 不在で有効な Codex margin がちょうど 0 の入力、および PATH に実行可能な claude がある入力である。実行可能ファイルの存在はログイン・ネットワーク・実起動の成功を保証せず、それらの失敗はこの判定では防がない。④実行時の障害や本体種別の誤申告まで塞ぎ切ることを完了条件にしない。
+
+#### Scenario: claude 不在で Codex に余裕がある
+- **WHEN** Codex 本体で claude が PATH に無く、Codex が有効で代表 margin が 0、基準未満の正数、または基準以上である
+- **THEN** Claude の記録上の margin によらず codex-standard と代表 Codex account を返し、選択の理由に claude が無いことを記録する。混在構成や Claude の役を選ばない
+
+#### Scenario: claude 不在で Codex にも余裕が無い
+- **WHEN** CLI が必要な本体で claude が PATH に無く、Codex が負の margin、欠測、登録 account 無し、または codex.enabled=false である
+- **THEN** claude 不在と Codex を選べない理由を含む blocked を返し、exit 2 で停止する。Claude/Codex の役も実行可能な依頼も作らず、Claude 既定構成へ倒さない
+
+#### Scenario: 明示指定を自動で変更しない
+- **WHEN** CLI が必要な本体で claude が PATH に無く、Claude の役を必要とする明示 profile の依頼を受ける
+- **THEN** 自動選択で構成を書き換えず、Claude の起動前に実行不能の理由で止まる。codex-standard の明示指定には余裕による自動選択を追加せず、4 例外の非起動規則を適用する
+
+#### Scenario: Claude 本体の選択結果を維持する
+- **WHEN** Claude 本体で Agent を使える従来の呼び出しから、従来と同じ余裕・Codex オフ設定・明示指定の fixture を実行する
+- **THEN** PATH の claude の有無によらず既存の構成・理由コードを返し、test_codex_develop.py が exit 0 になる
