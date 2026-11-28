@@ -47,7 +47,13 @@ SCAN_STATS = {"unreadable_lines": 0}
 # 計測（archive 済みの change cost-ledger-aggregation の design に記録）と一致させるが、
 # 走査する場所は実行された Bash の command だけに限る（計測はツール入力全体を見ており、
 # 実行していない文字列にも反応する）。
-ISSUE_RE = re.compile(r"gh issue (?:view|comment|edit|close|develop)\s+(\d+)")
+ISSUE_RE = re.compile(
+    r"(?:gh issue (?:view|comment|edit|close|reopen|develop)\s+"
+    r"|(?:(?<!\\\n)^|(?<!\\)[;&|(])\s*(?:\w+=\S*\s+)*"
+    r"gh api[^\S\r\n]+(?:(?:-X|--method)[^\S\r\n]+\S+[^\S\r\n]+)?"
+    r"repos/[^/\s]+/[^/\s]+/issues/(?=\d+(?!\w)))(\d+)",
+    re.M,
+)
 
 # 区間の境界になる投稿。設計の根拠になった計測（archive 済みの change cost-ledger-aggregation
 # の design に記録）が境界にしている集合と一致させる。
