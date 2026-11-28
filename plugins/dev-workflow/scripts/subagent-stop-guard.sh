@@ -29,11 +29,13 @@ command -v python3 >/dev/null 2>&1 || exit 0
 # メインセッション（agent_id 無し）は python3 を起動せずに切る。必要条件の根拠は
 # context-tripwire.sh と同じ（生表記でない agent_id キーは必ず \u00 を含む）。
 payload="$(cat)" || exit 0
+if [ -z "${DEVELOP_ROLE:-}" ]; then
 case "$payload" in
   *'"agent_id"'*) ;;
   *'\u00'*) ;;
   *) exit 0 ;;
 esac
+fi
 
 # 理由文に載せる正本の絶対パス（install 先でも開けるように）
 CANON_PATH="${0%/*}/../references/subagent-waiting.md"
@@ -140,13 +142,15 @@ if not isinstance(payload, dict):
     sys.exit(0)
 
 agent_id = payload.get("agent_id")
-if not isinstance(agent_id, str) or not agent_id:
+is_child = isinstance(agent_id, str) and bool(agent_id)
+is_role = not is_child and bool(os.environ.get("DEVELOP_ROLE"))
+if not (is_child or is_role):
     sys.exit(0)                     # メインセッションは対象外（stderr にも出さない）
 
 session_id = payload.get("session_id")
 transcript_path = payload.get("transcript_path")
 bad = lambda v: not isinstance(v, str) or not v or os.sep in v or v in (".", "..")
-if bad(agent_id) or bad(session_id):
+if (is_child and bad(agent_id)) or bad(session_id):
     skip("agent_id / session_id が読めないので判定を見送る")
 
 tasks = payload.get("background_tasks")
@@ -156,11 +160,16 @@ if not isinstance(tasks, list):
 # 拒否回数（後詰め）の置き場。running / pending の判定より前に決めておき、
 # 停止を通すどの分岐でも同じ変数で削除できるようにする（issue #561）。
 counter_dir = os.path.join(os.environ.get("TMPDIR") or "/tmp", "dev-workflow-stop-guard")
-counter = os.path.join(counter_dir, "%s-%s.count" % (session_id, agent_id))
+if is_role:
+    counter_dir = os.path.join(counter_dir, "role-sessions")
+    counter = os.path.join(counter_dir, "%s.count" % session_id)
+else:
+    counter = os.path.join(counter_dir, "%s-%s.count" % (session_id, agent_id))
 
 running = {t.get("id") for t in tasks
            if isinstance(t, dict) and t.get("status") == "running" and isinstance(t.get("id"), str)}
-running.discard(agent_id)           # 停止する本人（type:"subagent"）
+if is_child:
+    running.discard(agent_id)           # 停止する本人（type:"subagent"）
 if not running:
     try:
         os.remove(counter)          # 停止を通す時点でカウンタを消す。無ければ何もしない
@@ -169,15 +178,18 @@ if not running:
     sys.exit(0)
 
 # 対象トランスクリプト: agent_transcript_path → 導出 → 上限つきの探索（後の 2 つは context-tripwire.sh と同じ）
-target = payload.get("agent_transcript_path")
-if not (isinstance(target, str) and os.path.isfile(target)):
-    target = None
-    if isinstance(transcript_path, str) and transcript_path:
-        root = os.path.join(os.path.dirname(transcript_path), session_id, "subagents")
-        fname = "agent-%s.jsonl" % agent_id
-        target = os.path.join(root, fname)
-        if not os.path.isfile(target):
-            target = find_transcript(root, fname)
+if is_role:
+    target = transcript_path if isinstance(transcript_path, str) and os.path.isfile(transcript_path) else None
+else:
+    target = payload.get("agent_transcript_path")
+    if not (isinstance(target, str) and os.path.isfile(target)):
+        target = None
+        if isinstance(transcript_path, str) and transcript_path:
+            root = os.path.join(os.path.dirname(transcript_path), session_id, "subagents")
+            fname = "agent-%s.jsonl" % agent_id
+            target = os.path.join(root, fname)
+            if not os.path.isfile(target):
+                target = find_transcript(root, fname)
 if not target:
     skip("サブエージェントのトランスクリプトが見つからないので判定を見送る")
 

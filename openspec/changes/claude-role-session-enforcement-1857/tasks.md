@@ -15,8 +15,8 @@
 
 ## 3. Stop の背景タスク拒否
 
-- [ ] 3.1 `subagent-stop-guard.sh` にマーカー付き役の自身ログ・role-sessions の session 別カウンタを加え、Stop に登録する。既存 SubagentStop と Stop の epic-child-state を保つ。`bats plugins/dev-workflow/tests/subagent-stop-guard.bats` で自身の起動 ID と running ID の積集合に対する block JSON・理由・配線を確認する。触る範囲: plugins/dev-workflow/scripts/subagent-stop-guard.sh:29-36、plugins/dev-workflow/scripts/subagent-stop-guard.sh:142-228、plugins/dev-workflow/hooks/hooks.json:138-168、plugins/dev-workflow/tests/subagent-stop-guard.bats:18-113、plugins/dev-workflow/tests/subagent-stop-guard.bats:451-483
-- [ ] 3.2 同スイートへ role Stop の完了 / 他者タスク / ログ欠落 / 台帳欠落 / off / stop_hook_active / 拒否上限 / カウンタ削除・分離 / 別ログを使わない fixture を追加する。印なしの主と印を継承した既存 subagent の対照を通す。主を表す agent_id なしの同一 payload に実際の環境印を誤継承させ、所有する running タスクがあれば役として上限まで拒否する fixture を追加する。拒否回数の定数・既存の探索上限・性能テストも維持する。同コマンドを通し、変更記録へ追記する。触る範囲: plugins/dev-workflow/tests/subagent-stop-guard.bats:18-113、plugins/dev-workflow/tests/subagent-stop-guard.bats:119-483、plugins/dev-workflow/changes/1857.md（新規）
+- [x] 3.1 `subagent-stop-guard.sh` にマーカー付き役の自身ログ・role-sessions の session 別カウンタを加え、Stop に登録する。既存 SubagentStop と Stop の epic-child-state を保つ。`bats plugins/dev-workflow/tests/subagent-stop-guard.bats` で自身の起動 ID と running ID の積集合に対する block JSON・理由・配線を確認する。触る範囲: plugins/dev-workflow/scripts/subagent-stop-guard.sh:29-36、plugins/dev-workflow/scripts/subagent-stop-guard.sh:142-228、plugins/dev-workflow/hooks/hooks.json:138-168、plugins/dev-workflow/tests/subagent-stop-guard.bats:18-113、plugins/dev-workflow/tests/subagent-stop-guard.bats:451-483
+- [x] 3.2 同スイートへ role Stop の完了 / 他者タスク / ログ欠落 / 台帳欠落 / off / stop_hook_active / 拒否上限 / カウンタ削除・分離 / 別ログを使わない fixture を追加する。印なしの主と印を継承した既存 subagent の対照を通す。主を表す agent_id なしの同一 payload に実際の環境印を誤継承させ、所有する running タスクがあれば役として上限まで拒否する fixture を追加する。拒否回数の定数・既存の探索上限・性能テストも維持する。同コマンドを通し、変更記録へ追記する。触る範囲: plugins/dev-workflow/tests/subagent-stop-guard.bats:18-113、plugins/dev-workflow/tests/subagent-stop-guard.bats:119-483、plugins/dev-workflow/changes/1857.md（新規）
 
 ## 4. 役の破壊的 git を実行前に拒否
 
