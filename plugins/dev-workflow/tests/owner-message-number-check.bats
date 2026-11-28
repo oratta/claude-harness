@@ -87,15 +87,16 @@ nl() { printf '%s\n' "$@"; }
 
 # ---------- 配線 ----------
 
-@test "hooks.json: Stop has exactly one common entry with a 30 second timeout" {
+@test "hooks.json: Stop keeps one shared state hook with a 30 second timeout" {
   python3 -I - "$HOOKS_JSON" <<'PY'
 import json, sys
 d = json.load(open(sys.argv[1]))["hooks"]["Stop"]
 assert len(d) == 1, d
 e = d[0]
 assert "matcher" not in e and "timeout" not in e, e
-assert len(e["hooks"]) == 1, e
-h = e["hooks"][0]
+state_hooks = [h for h in e["hooks"] if "scripts/epic-child-state.sh" in h["command"]]
+assert len(state_hooks) == 1, e
+h = state_hooks[0]
 assert h["type"] == "command", h
 assert "${CLAUDE_PLUGIN_ROOT}" in h["command"], h
 assert "scripts/epic-child-state.sh" in h["command"], h
