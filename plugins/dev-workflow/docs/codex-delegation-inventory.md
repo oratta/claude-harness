@@ -22,6 +22,7 @@ Codex を呼ぶ、または呼び方を書いている手順書・スクリプ�
 |---|---|---|
 | `plugins/dev-workflow/references/codex-develop.md` | 手動 develop provider adapter の正本。委譲 3 手順と、委譲箇所と phase と role の表 | 移行済み |
 | `plugins/dev-workflow/docs/codex-develop.md` | 手動で Codex 経路を試す人向けの使い方 | 移行済み |
+| `plugins/dev-workflow/docs/codex-hook-inventory.md` | Claude hook の Codex 向け分類と対象別の未確認状態。起動は行わない | 言及のみ |
 | `plugins/dev-workflow/scripts/CODEX-WORKER.md` | 前景コマンド `codex-worker.py run` の使い方 | 移行済み |
 | `plugins/dev-workflow/skills/develop/references/pr-token-budget.md` | Codex 委譲前のトークン計測と消費記録の規約 | 言及のみ |
 | `plugins/dev-workflow/skills/develop/SKILL.md` | 本体が role ごとに `request` を呼び、投げ先を選ぶ。従来経路の G の説明も含む | 移行済み |
