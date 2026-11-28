@@ -369,8 +369,8 @@ PY
     run env CLAUDE_PLUGIN_ROOT="$root" FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=throttled TRIPWIRES_SCOPE=subagent-budget "$SCRIPT"
     [ "$status" -eq 0 ]
     expected="$output"
-    [[ "$expected" == *'FABLE_BUDGET_MODE: abundant（明示 env）'* ]]
-    [[ "$expected" == *'SHARED_BUDGET_MODE: throttled（明示 env）'* ]]
+    [[ "$expected" == *'FABLE_BUDGET_MODE: abundant（明示 env）'* ]] || return 1
+    [[ "$expected" == *'SHARED_BUDGET_MODE: throttled（明示 env）'* ]] || return 1
     for role in worker reviewer decider unknown; do
       for scope in absent unknown; do
         if [ "$scope" = absent ]; then
