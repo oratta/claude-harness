@@ -2,8 +2,10 @@
 
 一時書き込みレビュー・V・引き継ぎ判定・論点なし確認を処理するときに読む。
 
-- 一時書き込みが必要な関連テスト（bats、`mktemp`、`TMPDIR` / `BATS_TMPDIR`、pytest 等）の再実行レビューは、呼び出し側が分類し、開始時と同じ実行先指定・account-home・coordinator を付けて `request --phase review --request-kind temp-write-review` を通す。読み取り専用レビュアーが再実行できなかった場合も同じ request を通す。起動許可なら返った model で Claude のレビュアー（`dev-workflow:reviewer`）を同じ固定 HEAD で起こし、書き込める同一パスを `TMPDIR` / `BATS_TMPDIR` に渡して取り直す（補足済み回数を増やさず、`review-incomplete` で止めない）。起動不可なら Claude も代替の Codex 役も起こさず、レビュー未完了と理由を記録して一時書き込みレビュー待ちで保留する。主の再実行証拠による復帰は下の同名節に従う。CI/W の結果で代用せず、read-only role に writableRoots を追加しない。
+- 一時書き込みが必要な関連テスト（bats、`mktemp` を使う bash、`TMPDIR` / `BATS_TMPDIR`、pytest 等）の再実行レビューは、呼び出し側が分類し、開始時と同じ実行先指定・account-home・coordinator を付けて `request --phase review --request-kind temp-write-review` を通す。読み取り専用レビュアーが再実行できなかった場合も同じ request を通す。起動許可なら返った model で Claude のレビュアー（`dev-workflow:reviewer`）を同じ固定 HEAD で起こし、書き込める同一パスを `TMPDIR` / `BATS_TMPDIR` に渡して取り直す（補足済み回数を増やさず、`review-incomplete` で止めない）。起動不可なら Claude も代替の Codex 役も起こさず、レビュー未完了と理由を記録して一時書き込みレビュー待ちで保留する。主の再実行証拠による復帰は下の同名節に従う。CI/W の結果で代用せず、read-only role に writableRoots を追加しない。
 - 4 例外は通常の依頼（`--request-kind normal`）と区別し、V は `--phase implement --request-kind visual-check`、引き継ぎ判定と論点なし確認は `--phase decider --request-kind carryover-judge` / `--request-kind no-point-check` を使う。開始時の指定を保持して request を通し、`status: blocked` / `launchable: false`（exit 2）なら起動しない。codex-standard 等の Claude を使わない構成では 4 例外を非起動とし、通常の書き込み不要レビューは独立した Codex 読み取り役で継続する。dispatch 記録には phase・request_kind・role・非起動の理由（error）・selection を残し、構成があれば execution_config とその hash も残す。未実行を合格にしない。
+
+引き継ぎ判定の入力は G の return の前 HEAD・新しい HEAD・前の宣言・EVIDENCE_PR_CHANGED= のファイルだけから作り、作業の文脈は渡さない。
 
 ## 主の再実行証拠による復帰
 

@@ -295,10 +295,15 @@ model_section() {
   echo "$sec" | grep -F '| G が要求するレビュアー' | grep -qF 'dev-workflow:decider'
 }
 
-@test "model section: V and the carryover judge do not go through request" {
+@test "model section: exception roles require request permission and preserve their tiers" {
   sec="$(model_section)"
-  echo "$sec" | grep -F '| V（画面確認役。' | grep -F '中位（`sonnet`）' | grep -qF '`request` を通らない'
-  echo "$sec" | grep -F '| 引き継ぎの判定役' | grep -F '上位（`opus`）' | grep -qF '`request` を通らず'
+  grep -qF '例外役も共通 request の許可時だけ、表の格の model を使う' <<<"$sec"
+  echo "$sec" | grep -F '| V（画面確認役。' | grep -F '中位（`sonnet`）' | grep -qF '上げない'
+  row="$(echo "$sec" | grep -F '| 引き継ぎの判定役')"
+  for token in '上位（`opus`）' '上位固定' 'dev-workflow:decider' 'SHARED_BUDGET_MODE=depleted' '起こさない'; do
+    grep -qF -- "$token" <<<"$row"
+  done
+  ! grep -E '`request` を通らない|`request` を通らず' <<<"$sec" || return 1
 }
 
 @test "model section: new spawns use the model request returned and are not recalculated" {
@@ -312,7 +317,7 @@ model_section() {
   grep -qF 'FABLE_BUDGET_MODE' <<<"$sec"
   grep -qF 'SHARED_BUDGET_MODE' <<<"$sec"
   grep -qF 'references/decision-criteria.md' <<<"$sec"
-  # 引き継ぎの判定役の行だけが例外: request を通らない役なので、depleted のときは起こさないことをその行に書く
+  # 引き継ぎの判定役の行だけは depleted のときの非起動条件を明記する
   ! echo "$sec" | grep -vF '| 引き継ぎの判定役' | grep -qE 'abundant|reserve|exhausted|throttled|depleted' || return 1
   echo "$sec" | grep -F '| 引き継ぎの判定役' | grep -qF 'SHARED_BUDGET_MODE=depleted'
 }

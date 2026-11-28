@@ -69,19 +69,19 @@ needs-fix-check → 2 周目以降の周の終わりに残った指摘の直し�
 ## needs-carryover-judge
 
 needs-carryover-judge → 許容済みの PR で HEAD が動き、risk-carryover-check.sh が終了コード 4 を返した（条件は `stages/carryover-judge.md` 3-c）。
-     本体は `references/codex-develop-exceptions.md` を必ず Read。開始時の指定で `request --phase decider --request-kind carryover-judge` を通す。起動不可は理由を dispatch に記録し、depleted と同じ非起動経路へ。許可時は、PR トークン上限を測ってから、`stages/carryover-judge.md` 手順 3-c の依頼の書き方で subagent_type: dev-workflow:decider・model: `opus` の判定役を起こし
-     （入力は G の return の前 HEAD・新しい HEAD・前の宣言・EVIDENCE_PR_CHANGED= のファイルから作る。作業の文脈は渡さない）、判定を 3-c の書式で PR に代理投稿し、
-     判定と判定の記録の URL を渡して合格処理の G を新しく起こす。SHARED_BUDGET_MODE=depleted なら判定役を起こさず、3-c の書式で
-     `引き継ぎ判定: 判断できない` の記録を投稿して同じく合格処理の G を新しく起こす（G が手順 6 で主に聞く）。
-     本体は宣言・ラベル操作・主への確認をせず、合格処理の G に委ねる。
-     ただし、判定を受けて起こした合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び needs-carryover-judge を返したときは、
-     判定役を起こし直さず、投稿した記録の URL を添えて主に聞く
+     本体は `references/codex-develop-exceptions.md` を必ず Read。開始時の指定で `request --phase decider --request-kind carryover-judge` を通す。起動不可は理由を dispatch に記録し depleted 時の経路へ。許可時は PR トークン上限を測り、`stages/carryover-judge.md` 手順 3-c の依頼の書き方で subagent_type: dev-workflow:decider・model: `opus` の判定役を起こし
+     判定の記録を PR に 3-c の書式で代理投稿し、
+     合格処理の G を新しく起こす（判定と記録の URL を渡す）。SHARED_BUDGET_MODE=depleted なら起こさず、3-c の書式で
+     `引き継ぎ判定: 判断できない` を投稿し、記録の URL を fresh G に渡す（G が手順 6 で主に聞く）。
+     宣言を投稿せず、ラベルを付けず、主に聞かない。
+     ただし、合格処理の G が同じ前 HEAD・新しい HEAD・根拠ファイルの組で再び needs-carryover-judge を返したときは、
+     判定役を起こし直さず、記録の URL を添えて主に聞く
 
 ## needs-no-point-check
 
-needs-no-point-check → 論点なしの宣言を決める役の確認に回す（`stages/no-point-check.md` 6-0 が正本）。本体は `references/codex-develop-exceptions.md` を必ず Read。開始時の指定で `request --phase decider --request-kind no-point-check` を通す。起動不可は理由を dispatch に記録し、depleted と同じ非起動経路へ。許可時は、PR トークン上限を測り、subagent_type: dev-workflow:decider・model: `opus` の確認役に
-     宣言の本文と PR の差分だけを渡し、確認の記録を PR に投稿する。SHARED_BUDGET_MODE=depleted なら起こさず `論点なしの確認: 判断できない` を投稿する。どちらも記録の URL を渡して合格処理の G を新しく起こす。
-     本体はラベルを付けず、主に聞かない。同じ宣言・同じ HEAD で再び返ったら確認役を起こし直さず、記録の URL を添えて主に聞く
+needs-no-point-check → 論点なしの宣言を決める役が確認する（`stages/no-point-check.md` 6-0 が正本）。本体は `references/codex-develop-exceptions.md` を必ず Read。開始時の指定で `request --phase decider --request-kind no-point-check` を通す。起動不可は理由を dispatch に記録し depleted 時の経路へ。許可時は PR トークン上限を測り、subagent_type: dev-workflow:decider・model: `opus` の確認役に
+     宣言の本文と PR の差分だけを渡し、確認の記録を PR に投稿する。SHARED_BUDGET_MODE=depleted なら起こさず `論点なしの確認: 判断できない` を投稿する。どちらも合格処理の G を新しく起こす（記録の URL を渡す）。
+     ラベルを付けず、主に聞かない。同じ宣言・同じ HEAD で再び返ったら起こし直さず、記録の URL を添えて主に聞く
 
 ## needs-decider
 
