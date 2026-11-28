@@ -268,13 +268,13 @@ write_row3_table() {
   [[ "$output" == *'not-removed: r/m.txt:1'* ]] || return 1
 }
 
-@test "review hit set (#377): a rewritten-rows entry pointing at a fixed row is a contract violation" {
+@test "review hit set (#377): a rewritten-rows entry pointing at a fixed row absent from HEAD exits zero" {
   setup_head_repo
   commit_head 'done fix\nneedle keep typo\n' 'done same\nneedle same\n'
   write_row3_table '該当しない: example' '| r/x.txt | 1 | `needle fix2` |'
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
-  [ "$status" -eq 1 ]
-  [[ "$output" == *'contract:'* ]] || return 1
+  [ "$status" -eq 0 ]
+  [[ "$output" != *'unmatched:'* ]] || return 1
 }
 
 @test "review hit set (#377): duplicate rewritten-rows entries are a contract violation" {
@@ -318,11 +318,11 @@ write_row3_table() {
   setup_head_repo
   commit_head 'done fix\nneedle keep typo\n' 'done same\nneedle same\n'
   write_row3_table '該当しない: example' \
-    '| r/x.txt | 1 | `needle fix2` |' \
+    '| r/x.txt | 99 | `needle fix2` |' \
     '| r/m.txt | 2 | `needle same` |'
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
   [ "$status" -eq 1 ]
-  [[ "$output" == *'contract: rewritten row must point at one not-applicable row: r/x.txt:1'* ]] || return 1
+  [[ "$output" == *'contract: rewritten row must point at one fixed or not-applicable row: r/x.txt:99'* ]] || return 1
   [[ "$output" == *'contract: rewritten row body is unchanged: r/m.txt:2'* ]] || return 1
 }
 
@@ -453,6 +453,65 @@ EOF
   [[ "$output" == *'hit rows require path, numeric line, and body'* ]] || return 1
 }
 
+# ===== 「直した」行の修正後本文（issue #549） =====
+
+@test "review hit set (#549): a listed rewritten fixed row matching HEAD is allowed" {
+  setup_head_repo
+  commit_head 'needle fixed\nneedle keep typo\n' 'done same\nneedle same\n'
+  write_row3_table '該当しない: example' '| r/x.txt | 1 | `needle fixed` |'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *'unmatched:'* ]] || return 1
+}
+
+@test "review hit set (#549): an unlisted fixed row with its old body at HEAD remains unmatched" {
+  setup_head_repo
+  commit_head 'needle fix\nneedle keep typo\n' 'done same\nneedle same\n'
+  write_row3_table
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == 'unmatched: r/x.txt:1' ]] || return 1
+}
+
+@test "review hit set (#549): an unlisted rewritten fixed row remains unmatched" {
+  setup_head_repo
+  commit_head 'needle fixed\nneedle keep typo\n' 'done same\nneedle same\n'
+  write_row3_table
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == 'unmatched: r/x.txt:1' ]] || return 1
+}
+
+@test "review hit set (#549): a listed fixed row with a different HEAD body is unmatched" {
+  setup_head_repo
+  commit_head 'needle different\nneedle keep typo\n' 'done same\nneedle same\n'
+  write_row3_table '該当しない: example' '| r/x.txt | 1 | `needle fixed` |'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == 'unmatched: r/x.txt:1' ]] || return 1
+}
+
+@test "review hit set (#549): one listed rewritten fixed row allows only one matching HEAD hit" {
+  setup_head_repo
+  commit_head 'needle fixed\nneedle fixed\nneedle keep typo\n' 'done same\nneedle same\n'
+  write_row3_table '該当しない: example' '| r/x.txt | 1 | `needle fixed` |'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 1 ]
+  [[ "$output" == 'unmatched: r/x.txt:2' ]] || return 1
+}
+
+@test "review hit set (#549): both rewritten sides of a mixed group are allowed without double counting removals" {
+  setup_head_repo
+  commit_head 'done fix\nneedle keep typo\n' 'needle same fixed\nneedle same rewritten\n'
+  write_row3_table '該当しない: example' \
+    '| r/m.txt | 1 | `needle same fixed` |' \
+    '| r/m.txt | 2 | `needle same rewritten` |'
+  run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/row3.md"
+  [ "$status" -eq 0 ]
+  [[ "$output" != *'unmatched:'* ]] || return 1
+  [[ "$output" != *'not-removed:'* ]] || return 1
+}
+
 @test "review hit set (#466): duplicated main-table rows give the same verdict and messages in either row order" {
   setup_head_repo
   commit_head 'done fix\nneedle keep fixed\n' 'done same\nneedle same\n'
@@ -480,7 +539,7 @@ PY
   run python3 "$CHECKER" --repo "$REPO" --head "$HEAD_SHA" "$REPO/order-b.md"
   [ "$status" -eq 1 ]
   [ "$output" = "$out_a" ] || { printf 'A:\n%s\nB:\n%s\n' "$out_a" "$output"; return 1; }
-  [[ "$output" == *'rewritten row must point at one not-applicable row: r/x.txt:2'* ]] || return 1
+  [[ "$output" == *'rewritten row must point at one fixed or not-applicable row: r/x.txt:2'* ]] || return 1
 }
 
 # ===== 件数の多い語の全ヒット要約（issue #1457） =====

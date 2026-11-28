@@ -689,7 +689,7 @@ $(cat "$rd")"
 @test "worker (#354): W posts the row-3 table with the search command before pushing, and records row-4 fixes" {
   [ "$(grep -c '検索コマンド' "$W_IMPL")" -ge 1 ]
   grep -qF '投稿してから push' "$W_IMPL"
-  grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3' "$W_IMPL"
+  grep -qF '`stages/triage-row3.md` の順 3' "$W_IMPL"
   ret="$(awk '/^\*\*\(3a\) の return に書くこと\*\*/{f=1} f&&/^## /{exit} f' "$W_IMPL")"
   grep -qF '受け入れ条件の外・その場で直した・直し方 N 行' <<<"$ret"
 }
@@ -835,7 +835,7 @@ $(cat "$rd")"
   para="$(grep -F '**G から一覧を求められた指摘' "$W_IMPL")"
   grep -qF '修正前 SHA' <<<"$para"
   grep -qF '修正に着手する直前の HEAD' <<<"$para"
-  grep -qF 'SKILL.md 手順 2-1 の仕分け表の順 3' <<<"$para"
+  grep -qF '`stages/triage-row3.md` の順 3' <<<"$para"
   run sh -c "cat \"$WORKER\" \"$W_COMMON\" \"$W_SPEC\" \"$W_IMPL\" \"$W_FINISH\" \"$PRE\" | grep -F '| ファイル | 行（修正前 SHA） |'"
   [ "$status" -ne 0 ]
 }

@@ -2,7 +2,7 @@
 """Compare a review Markdown hit table with repository-wide git-grep results.
 
 With --head, also run the row-3 second stage of pr-review-gate (residual HEAD hits
-vs not-applicable rows, the rewritten not-applicable rows table, mixed groups).
+vs not-applicable rows, explicitly rewritten fixed rows, and mixed groups).
 
 A table with a 全ヒット要約: line stands for every hit of a word with more than
 SUMMARY_MIN_HITS hits: it is compared by count and digest instead of row by row.
@@ -152,7 +152,7 @@ def parse_table(lines):
 
 
 def parse_rewritten(lines, rows):
-    """Parse the rewritten not-applicable rows table into ({(path, line): new body}, violations).
+    """Parse the rewritten fixed/not-applicable rows table into ({(path, line): new body}, violations).
 
     Structural errors (missing header, non-numeric path/line, bad body fence or escape) still
     raise immediately and discard any violations accumulated so far. The three per-row content
@@ -184,9 +184,10 @@ def parse_rewritten(lines, rows):
             violations.append(f"rewritten row is duplicated: {key[0]}:{key[1]}")
             continue
         seen.add(key)
-        if len(targets.get(key, [])) != 1 or not NOT_APPLICABLE_RE.fullmatch(targets[key][0][1]):
+        if len(targets.get(key, [])) != 1 or (targets[key][0][1] != FIXED
+                                            and not NOT_APPLICABLE_RE.fullmatch(targets[key][0][1])):
             violations.append(
-                f"rewritten row must point at one not-applicable row: {key[0]}:{key[1]}")
+                f"rewritten row must point at one fixed or not-applicable row: {key[0]}:{key[1]}")
             continue
         if new_body == targets[key][0][0]:
             violations.append(f"rewritten row body is unchanged: {key[0]}:{key[1]}")
@@ -216,12 +217,14 @@ def deleted_lines(repo, before, after, path):
 
 
 def second_stage(repo, rows, rewritten, head_hits, sha, head):
-    """Row-3 second stage: HEAD residual hits vs not-applicable rows, and mixed groups."""
+    """Row-3 second stage: HEAD residual hits vs allowed bodies, and mixed groups."""
     report = []
     allowed = Counter()
     for path, number, body, handling in rows:
         if NOT_APPLICABLE_RE.fullmatch(handling):
             allowed[(path, rewritten.get((path, number), body))] += 1
+        elif handling == FIXED and (path, number) in rewritten:
+            allowed[(path, rewritten[(path, number)])] += 1
 
     residual = {}
     for path, number, body in sorted(head_hits):
