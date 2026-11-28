@@ -306,14 +306,14 @@ run_bats_guarded() {
   if ! command -v perl >/dev/null 2>&1 || [ ! -d "$RESIDUAL_BATS_LIBEXEC" ]; then
     echo "⚠ perl が無いか bats の libexec（bin/bats の ../libexec/bats-core）が見つからないので残留プロセス検査なしで bats を実行します" >&2
     # shellcheck disable=SC2086
-    ( cd "$ROOT" && bats $SUITES )
+    ( cd "$ROOT" && unset DEVELOP_ROLE && bats $SUITES )
     return $?
   fi
 
   if ! process_listing_works; then
     echo "⚠ プロセス一覧を取得できない環境（ps / pgrep が自分自身も引けない）なので残留プロセス検査なしで bats を実行します" >&2
     # shellcheck disable=SC2086
-    ( cd "$ROOT" && bats $SUITES )
+    ( cd "$ROOT" && unset DEVELOP_ROLE && bats $SUITES )
     return $?
   fi
 
@@ -323,7 +323,7 @@ run_bats_guarded() {
 
   # perl が自分を新グループの先頭にしてから bats に exec する。pgid = perl の pid。
   # shellcheck disable=SC2086
-  ( cd "$ROOT" && TEST_SH_PGID_FILE="$pgid_file" \
+  ( cd "$ROOT" && unset DEVELOP_ROLE && TEST_SH_PGID_FILE="$pgid_file" \
       perl -e 'setpgrp(0, 0); open(my $f, ">", $ENV{TEST_SH_PGID_FILE}) or die; print $f $$; close $f; exec @ARGV or die "exec: $!"' \
       -- bats $SUITES
     echo "$?" >"$status_file" ) &

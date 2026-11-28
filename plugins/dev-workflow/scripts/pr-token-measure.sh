@@ -15,6 +15,7 @@ here="${BASH_SOURCE[0]%/*}"
 repo=""
 cap=""
 homes=()
+session_records=""
 nums=()
 bad=""
 usage='usage: pr-token-measure.sh --repo <owner>/<repo> [--cap <tokens>] [--codex-home <dir>]... <番号>...'
@@ -24,6 +25,8 @@ while [ $# -gt 0 ]; do
       if [ -z "${2-}" ]; then bad="--repo needs <owner>/<repo>"; shift; else repo="$2"; shift 2; fi ;;
     --cap)
       if [ -z "${2-}" ]; then bad="--cap needs a number"; shift; else cap="$2"; shift 2; fi ;;
+    --session-records)
+      if [ -z "${2-}" ]; then bad="--session-records needs a file"; shift; else session_records="$2"; shift 2; fi ;;
     --codex-home)
       if [ -z "${2-}" ]; then bad="--codex-home needs a directory"; shift; else homes+=("$2"); shift 2; fi ;;
     -h|--help) sed -n '2,10p' "$0"; exit 0 ;;
@@ -50,6 +53,7 @@ tmp="$(mktemp -d)" || fail "cannot create a temporary directory"
 args=("${nums[@]}" --codex-records "${tmp}/codex-records.txt")
 for h in ${homes[@]+"${homes[@]}"}; do args+=(--codex-home "$h"); done
 args+=(--codex-home "${CODEX_HOME:-$HOME/.codex}")
+[ -z "$session_records" ] || args+=(--session-records "$session_records")
 [ -z "$cap" ] || args+=(--cap "$cap")
 "${here}/pr-token-budget.sh" "${args[@]}"
 exit $?

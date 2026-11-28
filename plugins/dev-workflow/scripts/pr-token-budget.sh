@@ -215,6 +215,9 @@ def rollout_total(tid):
 
 # Explicit sessions are attribution inputs, never a replacement for live usage.
 session_errors = []
+claude_sessions = []
+explicit_claude_tokens = 0
+explicit_session_ids = set()
 explicit_claude = {}
 explicit_codex = {}
 coordinator_seen = False
@@ -291,8 +294,14 @@ for (sid, path), row in explicit_claude.items():
                 seen[key] = (sum(n(u, k) for k in ("input_tokens", "cache_creation_input_tokens", "cache_read_input_tokens", "output_tokens")), msg.get("model"))
         if not seen:
             raise ValueError("usage unavailable")
-        if path not in measured_paths:
-            agents.append({"session_id": sid, "tokens": sum(v[0] for v in seen.values()), "requests": len(seen)})
+        if sid in explicit_session_ids:
+            continue
+        explicit_session_ids.add(sid)
+        counted = path not in measured_paths
+        claude_sessions.append({"session_id": sid, "log_path": path,
+                                "tokens": sum(v[0] for v in seen.values()), "requests": len(seen)})
+        if counted:
+            explicit_claude_tokens += sum(v[0] for v in seen.values())
             models.update(v[1] if isinstance(v[1], str) else None for v in seen.values())
             measured_paths.add(path)
     except (OSError, ValueError, TypeError) as error:
@@ -345,7 +354,9 @@ for tid, tok in threads.items():
     else:
         codex.append({"thread_id": tid, "tokens": v, "source": "rollout"})
 
-claude_tokens = sum(a["tokens"] for a in agents)
+# A session may also be present in legacy subagent discovery. Report it in
+# both attribution lists, but include its real log only once in the total.
+claude_tokens = sum(a["tokens"] for a in agents) + explicit_claude_tokens
 codex_tokens = sum(c["tokens"] for c in codex)
 total = claude_tokens + codex_tokens
 
@@ -408,12 +419,14 @@ except Exception as error:
 for line in lines:
     print(line, file=sys.stderr)
 
+for error in session_errors:
+    print("pr-token-budget: session_unresolved: " + json.dumps(error, ensure_ascii=False), file=sys.stderr)
 over = total > cap
 print(json.dumps({"records": records, "claude_tokens": claude_tokens, "codex_tokens": codex_tokens,
                   "total_tokens": total, "agent_count": len(agents), "codex_threads": len(codex),
                   "cap": cap, "over_cap": over, "unresolved": unresolved,
                   "codex_unresolved": codex_unresolved, "session_unresolved": len(session_errors),
                   "session_errors": session_errors, "skipped_lines": skipped,
-                  "agents": agents, "codex": codex}, ensure_ascii=False))
+                  "agents": agents, "claude_sessions": claude_sessions, "codex": codex}, ensure_ascii=False))
 sys.exit(2 if over else 1 if session_errors else 0)
 PY

@@ -351,7 +351,7 @@ j() { python3 -c 'import json,sys; d=json.loads(sys.argv[1]); print(eval(sys.arg
 
 # ---- モデル別の上限（共通の解決処理 token_thresholds.py への接続。change wire-pr-token-cap-thresholds）----
 
-KEYS='["agent_count","agents","cap","claude_tokens","codex","codex_threads","codex_tokens","codex_unresolved","over_cap","records","skipped_lines","total_tokens","unresolved"]'
+KEYS='["agent_count","agents","cap","claude_sessions","claude_tokens","codex","codex_threads","codex_tokens","codex_unresolved","over_cap","records","session_errors","session_unresolved","skipped_lines","total_tokens","unresolved"]'
 
 # 配布先を模したコピー。元の表・共通処理・手順は編集しない。$1 があれば表を差し替える python の式（d が表）
 budget_plugin() {
@@ -523,12 +523,17 @@ PY
   explicit_records
   printf 'active 50\n' > "$WORK/comments"
   cd "$REPO"
-  run "$SCRIPT" 288 400 --projects "$PROJECTS" --session-records "$SESSIONS" --codex-records "$WORK/comments" --cap 1000
+  run --separate-stderr "$SCRIPT" 288 400 --projects "$PROJECTS" --session-records "$SESSIONS" --codex-records "$WORK/comments" --cap 1000
   [ "$status" -eq 0 ]
   [ "$(j 'd["total_tokens"]')" = 316 ]
   [ "$(j 'd["session_unresolved"]')" = 0 ]
+  [ "$(j 'd["agent_count"]')" = 0 ]
+  [ "$(j 'd["claude_sessions"][0]["session_id"]')" = role-session ]
+  [ "$(j 'd["claude_sessions"][0]["log_path"]')" = "$LOG" ]
+  [ "$(j 'd["claude_sessions"][0]["tokens"]')" = 116 ]
+  [ "$(j 'd["claude_sessions"][0]["requests"]')" = 1 ]
   printf '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":350}}}}\n' >> "$ROLLOUT"
-  run "$SCRIPT" 288 --projects "$PROJECTS" --session-records "$SESSIONS" --codex-records "$WORK/comments" --cap 1000
+  run --separate-stderr "$SCRIPT" 288 --projects "$PROJECTS" --session-records "$SESSIONS" --codex-records "$WORK/comments" --cap 1000
   [ "$status" -eq 0 ]
   [ "$(j 'd["total_tokens"]')" = 466 ]
 }
@@ -537,13 +542,13 @@ PY
   explicit_records
   : > "$ROLLOUT"
   cd "$REPO"
-  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
   [ "$status" -eq 1 ]
   [ "$(j 'd["session_unresolved"] > 0')" = True ]
-  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 100
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 100
   [ "$status" -eq 2 ]
   : > "$SESSIONS"
-  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS"
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS"
   [ "$status" -eq 1 ]
 }
 
@@ -559,9 +564,11 @@ with open(p,'w') as f:
  for r in rows: f.write(json.dumps(r)+'\n')
 PY
   cd "$REPO"
-  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
   [ "$status" -eq 0 ]
   [ "$(j 'd["total_tokens"]')" = 316 ]
+  [ "$(j 'd["agent_count"]')" = 1 ]
+  [ "$(j 'len(d["claude_sessions"])')" = 1 ]
 }
 
 @test "explicit sessions: other repo and record excluded; missing coordinator diagnosed" {
@@ -575,10 +582,10 @@ with open(p,'w') as f:
  for r in rows: f.write(json.dumps(r)+'\n')
 PY
   cd "$REPO"
-  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
   [ "$status" -eq 1 ]
   [ "$(j 'd["total_tokens"]')" = 116 ]
-  run "$SCRIPT" 999 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  run --separate-stderr "$SCRIPT" 999 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
   [ "$status" -eq 1 ]
   [ "$(j 'd["total_tokens"]')" = 0 ]
 }

@@ -9,6 +9,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 PLUGIN = Path(__file__).resolve().parents[1]
 LAUNCH = PLUGIN / 'scripts/claude-role-launch.py'
@@ -39,13 +40,18 @@ p=Path(os.environ['CLAUDE_CONFIG_DIR'])/'projects'/(''.join(c if c.isalnum() els
 p.parent.mkdir(parents=True,exist_ok=True)
 p.write_text(json.dumps({'sessionId':sid,'cwd':os.getcwd(),'type':'assistant','message':{'model':'claude-sonnet-4-6','usage':{'input_tokens':1,'output_tokens':1}}})+'\\n')
 mode=os.environ.get('FAKE_MODE','ok')
+if mode.startswith('probe'):
+ p.write_text(json.dumps({'sessionId':sid,'type':'assistant','message':{
+  'model':'claude-opus-4-6' if mode=='probe-model' else 'claude-sonnet-4-6',
+  'content':[{'type':'tool_use','name':'Agent' if mode=='probe-agent' else 'Read'}]}})+'\\n')
+if mode=='reject': print('unknown option --max-turns',file=sys.stderr); sys.exit(2)
 if mode=='child':
  child=subprocess.Popen(['sleep','100'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
  Path(os.environ['CHILD_PID']).write_text(str(child.pid))
 if mode=='hang': time.sleep(100)
 if mode=='killed': os.kill(os.getpid(),9)
 ret={'type':'result','subtype':'success','session_id':sid,'is_error':False,'result':os.environ.get('RETURN','工程完了: 実装＋verify\\nfixture')}
-if mode=='limit': ret.update(subtype='error_max_turns',is_error=True)
+if mode in ('limit','probe','probe-model','probe-agent'): ret.update(subtype='error_max_turns',is_error=True)
 print(json.dumps(ret))
 sys.exit(int(os.environ.get('FAKE_EXIT','0')))
 ''')
@@ -154,6 +160,77 @@ sys.exit(int(os.environ.get('FAKE_EXIT','0')))
         out, err = p.communicate(timeout=8)
         self.assertEqual(p.returncode, 2, err)
         self.assertTrue(json.loads(out)['cleanup']['ok'])
+
+    def attest(self, assignment, role, model='sonnet', mode='agent'):
+        proof = dict(identity=self.module.identity(str(self.fake), PLUGIN), approved=True,
+                     assignment=assignment, role=role, model=model, mode=mode)
+        (self.root/'verified').write_text(json.dumps(proof))
+
+    def test_models_roles_and_explicit_tools(self):
+        for assignment, role, model, mode in (
+                ('W','implement','opus','agent'), ('G','implement','sonnet','agent'),
+                ('reviewer','review','sonnet','explicit'), ('R1','spec-review','sonnet','explicit'),
+                ('decider','decider','fable','explicit')):
+            with self.subTest(assignment=assignment):
+                self.attest(assignment, role, model, mode)
+                code, d = self.invoke(['--assignment',assignment,'--role',role,'--model',model,'--mode',mode])
+                self.assertEqual(code, 0, d)
+                argv = self.calls()[-1]['argv']
+                self.assertEqual(argv[argv.index('--model')+1], model)
+                self.assertEqual(argv[argv.index('--disallowedTools')+1], 'Agent')
+                if mode == 'explicit':
+                    self.assertNotIn('--agent', argv)
+                    if assignment == 'decider':
+                        self.assertEqual(argv[argv.index('--tools')+1], 'Read,Grep,Glob')
+                if assignment not in ('W','G'):
+                    self.assertIsNone(d['phase_declaration'])
+
+    def test_verify_requires_limit_and_matching_model_and_tools(self):
+        for mode, approved in (('ok',False), ('reject',False), ('hang',False),
+                               ('probe-model',False), ('probe-agent',False), ('probe',True)):
+            with self.subTest(mode=mode):
+                code, d = self.invoke(['--verify'], FAKE_MODE=mode)
+                self.assertEqual(code, 0 if approved else 2, d)
+                self.assertEqual(d['verification_approved'], approved)
+                self.assertEqual(json.loads((self.root/'verified').read_text())['approved'], approved)
+                self.assertTrue(d['cleanup']['ok'])
+
+    def test_resume_cap_and_wrong_session(self):
+        code, d = self.invoke()
+        transcript = Path(d['transcript_path'])
+        transcript.write_text(json.dumps({'type':'assistant','message':{'model':'claude-sonnet-4-6',
+            'usage':{'input_tokens':999999,'output_tokens':1}}})+'\n')
+        before = len(self.calls())
+        code, refused = self.invoke(['--resume',d['session_id'],'--transcript',str(transcript)])
+        self.assertEqual(code, 2, refused)
+        self.assertEqual(refused['context']['exit_code'], 2)
+        self.assertEqual(len(self.calls()), before)
+        code, refused = self.invoke(['--resume',d['session_id'],'--transcript',str(self.root/'other')])
+        self.assertEqual(code, 1, refused)
+        self.assertEqual(len(self.calls()), before)
+
+    def test_table_missing_and_cleanup_failure(self):
+        with patch.object(sys, 'argv', self.args[1:]), patch.dict(os.environ, self.env), \
+                patch.object(self.module, 'read_table', return_value=None):
+            with self.assertRaises(self.module.Refusal):
+                self.module.run()
+        self.assertEqual(self.calls(), [])
+        with patch.object(sys, 'argv', self.args[1:]), patch.dict(os.environ, self.env), \
+                patch.object(self.module, 'cleanup', return_value={'ok':False,'reason':'fixture'}):
+            code, d = self.module.run()
+        self.assertEqual(code, 2)
+        self.assertEqual(d['termination_reason'], 'cleanup_failed')
+
+    def test_parent_env_and_external_paths(self):
+        original = os.environ.get('DEVELOP_ROLE')
+        code, d = self.invoke(DEVELOP_ROLE='parent')
+        self.assertEqual(code, 0, d)
+        self.assertEqual(os.environ.get('DEVELOP_ROLE'), original)
+        self.assertEqual(self.calls()[-1]['role'], 'implement')
+        before = len(self.calls())
+        code, d = self.invoke(['--session-records',str(self.repo/'forbidden')])
+        self.assertEqual(code, 1, d)
+        self.assertEqual(len(self.calls()), before)
 
 
 if __name__ == '__main__':
