@@ -1404,7 +1404,7 @@ child_reply_item() { grep -F -- '- **親から届いた返事**' "$EPIC_CHILD_ST
   p="$(deleg_para | grep -F -- '- **委任で送る**')"
   grep -qF '**確認の直後に送る**: `委任の確認の場所:` の行を投稿した同じターンで' <<<"$p"
   grep -qF '`scripts/epic-dispatch.sh pending-owner <子>...` が `pending <N>` を返す子' <<<"$p"
-  grep -qF '作成時刻が `child-log --last <N>` の `.last_input_at` より後の最新のもの' <<<"$p"
+  grep -qF '作成時刻が `child-log --last <N>` の `.last_input_at` 以降の最新のもの' <<<"$p"
   grep -qF 'それがリスク許容の止まりで委任が効けば同じ返事を送り、`委任で送った:` の行を残す' <<<"$p"
   grep -qF '今回の停止の記録が無い子と、`pending <N>` が返らない子（主が子のタブで話し始めた子など）には送らない' <<<"$p"
 }
