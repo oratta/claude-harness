@@ -20,4 +20,4 @@
 
 ## 4. 統合検証
 
-- [ ] 4.1 一時環境で `bats plugins/dev-workflow/tests/develop-procedure-freshness.bats` と `bats plugins/dev-workflow/tests/develop-skill.bats tests/develop-startup-budget.bats` を実行し exit `0` を確認する。`openspec validate guard-develop-procedure-freshness --type change --strict` も exit `0` とし、予算値や範囲外ファイルを変更して通さない。触る範囲: `plugins/dev-workflow/tests/develop-procedure-freshness.bats`（新規）、`plugins/dev-workflow/tests/develop-skill.bats`:1-85（既存 suite、原則読取）、`tests/develop-startup-budget.bats`:1-212（既存 suite、読取）、`openspec/changes/guard-develop-procedure-freshness/`（本 change）
+- [x] 4.1 一時環境で `bats plugins/dev-workflow/tests/develop-procedure-freshness.bats` と `bats plugins/dev-workflow/tests/develop-skill.bats tests/develop-startup-budget.bats` を実行し exit `0` を確認する。`openspec validate guard-develop-procedure-freshness --type change --strict` も exit `0` とし、予算値や範囲外ファイルを変更して通さない。触る範囲: `plugins/dev-workflow/tests/develop-procedure-freshness.bats`（新規）、`plugins/dev-workflow/tests/develop-skill.bats`:1-85（既存 suite、原則読取）、`tests/develop-startup-budget.bats`:1-212（既存 suite、読取）、`openspec/changes/guard-develop-procedure-freshness/`（本 change）

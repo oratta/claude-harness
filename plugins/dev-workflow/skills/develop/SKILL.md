@@ -90,7 +90,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 - **無ければ issue を切らない。** 本体が worktree を用意し、W が worktree 直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする（GitHub の "open a draft PR early" の慣行）。この Draft PR は**仕様化判断を記録する前**に存在していなければならない — 記録先が無い状態で判定を先に進めない（手順は `references/roles/worker/spec.md`「記録先の用意」）
 - **入口 0 の例外**: 軽い通し方だけ本体が Draft PR を作る。整理 → 判定 → Draft PR → 判断の記録（`references/light-path.md`）
 - Draft PR を記録先にするときの PR 本文の決まり（受け入れ条件は PR 本文に書く・PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を書かない。エピックの子は `Closes #子` を書く）は、`references/roles/worker/spec.md`「記録先の用意」が正本
-- **記録先確定直後・仕様化判断と編集前の必須検査**: issue がある経路と軽い通し方は本体、W が Draft PR を作る経路は W が作成直後に `python3 <plugin-root>/scripts/develop-procedure-freshness.py check --loaded-plugin-root <plugin-root> --record <issue/PR完全URL>` を実行する。読込元 `<plugin-root>` は実際に読んだ SKILL.md の場所から解決し、W にもその値を引き継ぐ。exit 1 は古い版として停止、2 は入力を直す。取得不能・投稿失敗の扱いと印は `references/procedure-freshness.md` を Read する
+- 記録先確定直後・仕様化判断と編集の前に `python3 <plugin-root>/scripts/develop-procedure-freshness.py check --loaded-plugin-root <plugin-root> --record <記録先URL>` を実行し、exit 1 で停止。`references/procedure-freshness.md` を Read
 - 仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）
 - **仕様宣言は記録先ではなく常に PR コメントに置く**（記録先が issue でも issue には書かない）。pr-review-gate 手順 5 が PR のコメントでリスク宣言・仕様宣言・動作確認の 3 見出しを照合し、`対象 HEAD:` 規約が PR の HEAD に紐づくため。書式の正本は pr-review-gate スキル手順 3-b
 
