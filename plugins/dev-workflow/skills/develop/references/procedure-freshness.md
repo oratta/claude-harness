@@ -52,7 +52,7 @@ python3 <plugin-root>/scripts/develop-procedure-freshness.py mark-preview \
 
 取得後の判定不能は先頭行を `手順書の版を確かめられなかった。読込元と origin/main の新旧を証明できないため、develop を続けます。` にし、残りは同じ形式で上記の履歴の理由コードを使う。shell 展開しない。
 
-投稿失敗でも exit 0。stdout JSON の `body` に本文、`recording: "failed"` を保持し、stderr に投稿失敗を出す。本体はこの本文を次の記録機会に代理投稿し、成功するまでは記録済みと報告しない。永続 spool・自動再試行ループは作らない。
+投稿失敗でも exit 0。stdout JSON の `body` に本文、`recording: "failed"` を保持し、stderr に投稿失敗を出す。本体はこの本文を次の記録機会に代理投稿し、成功するまでは記録済みと報告しない。W が実行して `recording: "failed"` なら `body` 全文を既存 return に載せ、記録未完了と報告する（本体が代理投稿する）。永続 spool・自動再試行ループは作らない。
 
 ## 保証限界
 

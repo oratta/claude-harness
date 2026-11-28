@@ -109,7 +109,8 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 ```
 (0) 記録先を確定する（入口 0）。直後に読込元の版を必須検査し、worktree を用意する
      軽い通し方なら W を起こさず本体が直して G の工程へ（`references/light-path.md`）
-(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: `request` が返した `model`。入力は「Role profile の選択」節、既定と上限は「モデル」節の表の W の行）:
+(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示は `段: spec`。model: `request` が返した `model`。入力は「Role profile の選択」節、既定と上限は「モデル」節の表の W の行）:
+      Draft PR の起動指示に `読込元plugin-root: <読んだ SKILL.md から解決したroot>` を 1 行で渡す
       記録先の用意（Draft PR 経路）→ 読込元の版の必須検査 → 仕様化判断の記録 → 分割判定 → openspec new change → return「仕様できた」
       仕様化しない判定なら → (3) へ直行（TDD → PR）
       文言合わせの通し方なら W は仕様の差分 1 ファイルだけを書いて return（正本: `references/spec-decision.md` Step B・`references/roles/worker/spec.md`）。

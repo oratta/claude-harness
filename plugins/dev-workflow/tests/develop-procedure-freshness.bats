@@ -25,6 +25,8 @@ PY
   git -C "$REPO" config user.name Test
   git -C "$REPO" config user.email test@example.com
   git -C "$REPO" remote add origin "$BATS_TEST_TMPDIR/origin.git"
+  git -C "$REPO" commit -q --allow-empty -m before-skill
+  BEFORE_SKILL=$(git -C "$REPO" rev-parse HEAD)
   PLUGIN="$REPO/plugins/dev-workflow"
   mkdir -p "$PLUGIN/skills/develop/references" "$PLUGIN/references"
   printf 'skill\r\n' > "$PLUGIN/skills/develop/SKILL.md"
@@ -151,6 +153,30 @@ PY
   [ "$status" -eq 0 ]; [[ "$output" == *'history-incomplete'* ]]
 }
 
+@test "history skips a missing SKILL and still finds an older first-parent match" {
+  rm "$PLUGIN/skills/develop/SKILL.md"
+  commit delete-skill
+  printf 'readded\n' > "$PLUGIN/skills/develop/SKILL.md"
+  commit readd-skill
+  check
+  [ "$status" -eq 1 ]; [[ "$output" == *"$OLD"* ]]
+}
+
+@test "preview rejects a shared clone git dir and a linked worktree with missing HEAD SKILL" {
+  PREVIEW="$REPO"
+  CACHE="$PLUGIN"
+  mark
+  [ "$status" -eq 2 ]
+  [ ! -e "$REPO/.git/develop-procedure-preview.json" ]
+  git -C "$REPO" worktree add -q --detach "$BATS_TEST_TMPDIR/no-skill" "$BEFORE_SKILL"
+  PREVIEW="$BATS_TEST_TMPDIR/no-skill"
+  mkdir -p "$PREVIEW/plugins"
+  cp -R "$PLUGIN" "$PREVIEW/plugins/dev-workflow"
+  mark
+  [ "$status" -eq 2 ]
+  [ ! -e "$(git -C "$PREVIEW" rev-parse --absolute-git-dir)/develop-procedure-preview.json" ]
+}
+
 @test "CLI and unreadable or missing SKILL are input errors" {
   run python3 "$SCRIPT" check; [ "$status" -eq 2 ]
   check --record '42'; [ "$status" -eq 2 ]
@@ -239,5 +265,30 @@ for name in ['references/procedure-freshness.md', '../../changes/1864.md']:
     for term in ['導入前キャッシュ', '強制', '古い', '印', '取得']:
         assert term in body, (name,term)
 PY
+  [ "$status" -eq 0 ]
+}
+
+@test "Draft PR worker returns failed recording body for proxy posting" {
+  run python3 - "$ROOT" <<'PYCODE'
+from pathlib import Path
+import sys
+base=Path(sys.argv[1])/'plugins/dev-workflow/skills/develop/references'
+worker=(base/'roles/worker/spec.md').read_text().split('## CI fix')[0]
+reference=(base/'procedure-freshness.md').read_text()
+for body in [worker, reference]:
+    for term in ['recording', 'failed', 'body', '全文', 'return', '記録未完了', '代理投稿']:
+        assert term in body, term
+PYCODE
+  [ "$status" -eq 0 ]
+}
+
+@test "Draft PR worker launch passes actual loaded plugin root in one line" {
+  run python3 - "$ROOT" <<'PYCODE'
+from pathlib import Path
+import sys
+skill=(Path(sys.argv[1])/'plugins/dev-workflow/skills/develop/SKILL.md').read_text()
+loop=skill.split('## 1 ループ')[1].split('(2)')[0]
+assert any(all(term in line for term in ['Draft PR', '起動指示', '読込元plugin-root:', 'SKILL.md', '1 行']) for line in loop.splitlines())
+PYCODE
   [ "$status" -eq 0 ]
 }

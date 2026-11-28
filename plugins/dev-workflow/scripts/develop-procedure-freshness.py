@@ -60,7 +60,8 @@ def tree_fingerprint(repo, oid):
         if name.startswith(PREFIX) and target(name[len(PREFIX):]):
             files.append((name[len(PREFIX):], git(repo, 'show', f'{oid}:{name}')))
     if not any(name == SKILL for name, _ in files):
-        raise ValueError(f'SKILL 欠落: {oid}')
+        # A valid loaded tree always has SKILL; this historical tree cannot match.
+        return None
     return digest(files)
 
 
@@ -81,7 +82,10 @@ def preview_tuple(args, loaded):
     head = git(worktree, 'rev-parse', 'HEAD').decode().strip()
     if loaded != fingerprint(worktree / PREFIX) or loaded != tree_fingerprint(worktree, head):
         raise ValueError('3者の指紋不一致: 対象内容を先に commit してください')
-    directory = Path(git(worktree, 'rev-parse', '--absolute-git-dir').decode().strip())
+    directory = Path(git(worktree, 'rev-parse', '--absolute-git-dir').decode().strip()).resolve()
+    common = Path(git(worktree, 'rev-parse', '--git-common-dir').decode().strip())
+    if directory == (worktree / common).resolve():
+        raise ValueError('共有 git-common-dir には印を発行できません: linked worktree を指定してください')
     return directory / MARK, dict(schema_version=1, loaded_plugin_root=str(args.loaded_plugin_root),
                                  worktree_root=str(worktree), worktree_head=head,
                                  procedure_fingerprint=loaded, record_url=args.record)
