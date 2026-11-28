@@ -76,7 +76,10 @@ assert m.fingerprint(q) == expected
 for name in files:
     f=q/name; original=f.read_bytes()
     f.write_bytes(original+b' '); assert m.fingerprint(q) != expected
-    f.write_bytes(original); f.rename(f.with_suffix('.renamed.md')); assert m.fingerprint(q) != expected
+    f.write_bytes(original)
+for name in ['skills/develop/references/a.md', 'references/b.md']:
+    f=q/name; original=f.read_bytes()
+    f.rename(f.with_suffix('.renamed.md')); assert m.fingerprint(q) != expected
     f.with_suffix('.renamed.md').unlink(); assert m.fingerprint(q) != expected
     f.write_bytes(original)
 for folder in ['references', 'skills/develop/references']:
@@ -103,8 +106,9 @@ PY
   done
   python3 - "$GH_LOG" "$CACHE" "$REPO" <<'PY'
 import json, sys
+from pathlib import Path
 rows=json.load(open(sys.argv[1])); assert len(rows)==2
-body='手順書の版を確かめられなかった。読込元と origin/main の新旧を証明できないため、develop を続けます。\n読込元: '+sys.argv[2]+'\n比較元: '+sys.argv[3]+'\n理由: fingerprint-not-in-main-history'
+body='手順書の版を確かめられなかった。読込元と origin/main の新旧を証明できないため、develop を続けます。\n読込元: '+str(Path(sys.argv[2]).resolve())+'\n比較元: '+str(Path(sys.argv[3]).resolve())+'\n理由: fingerprint-not-in-main-history'
 for row, kind in zip(rows, ['issue','pr']):
     assert row['argv']==[kind,'comment','https://github.com/example/harness/'+('issues' if kind=='issue' else 'pull')+'/42','--body-file','-']
     assert row['body']==body
@@ -124,10 +128,11 @@ PY
   [[ "$output" == *'"recording": "failed"'* ]]; [[ "$output" == *'投稿失敗'* ]]
   python3 - "$GH_LOG" "$CACHE" "$REPO" <<'PY'
 import json,sys
+from pathlib import Path
 rows=json.load(open(sys.argv[1])); assert len(rows)==2
-assert rows[0]['body']=='手順書の版を確かめられなかった。origin/main を取得できなかったため、develop を続けます。\n読込元: '+sys.argv[2]+'\n比較元: 未設定\n理由: comparison-repo-unavailable'
+assert rows[0]['body']=='手順書の版を確かめられなかった。origin/main を取得できなかったため、develop を続けます。\n読込元: '+str(Path(sys.argv[2]).resolve())+'\n比較元: 未設定\n理由: comparison-repo-unavailable'
 assert rows[1]['body'].endswith('理由: origin-main-fetch-failed')
-assert rows[1]['body'].splitlines()[2]=='比較元: '+sys.argv[3]
+assert rows[1]['body'].splitlines()[2]=='比較元: '+str(Path(sys.argv[3]).resolve())
 PY
 }
 
@@ -149,6 +154,9 @@ PY
 @test "CLI and unreadable or missing SKILL are input errors" {
   run python3 "$SCRIPT" check; [ "$status" -eq 2 ]
   check --record '42'; [ "$status" -eq 2 ]
+  mv "$CACHE/skills/develop/SKILL.md" "$CACHE/skills/develop/SKILL.renamed.md"
+  check; [ "$status" -eq 2 ]
+  mv "$CACHE/skills/develop/SKILL.renamed.md" "$CACHE/skills/develop/SKILL.md"
   chmod 000 "$CACHE/skills/develop/SKILL.md"
   check; [ "$status" -eq 2 ]
   rm "$CACHE/skills/develop/SKILL.md"
@@ -159,9 +167,10 @@ PY
   preview; mark; [ "$status" -eq 0 ]; [ -f "$MARK" ]
   python3 - "$MARK" "$CACHE" "$PREVIEW" "$OLD" "$RECORD" <<'PY'
 import json, sys
+from pathlib import Path
 m=json.load(open(sys.argv[1]))
 assert set(m)=={'schema_version','loaded_plugin_root','worktree_root','worktree_head','procedure_fingerprint','record_url'}
-assert m['schema_version']==1 and m['loaded_plugin_root']==sys.argv[2] and m['worktree_root']==sys.argv[3]
+assert m['schema_version']==1 and m['loaded_plugin_root']==str(Path(sys.argv[2]).resolve()) and m['worktree_root']==str(Path(sys.argv[3]).resolve())
 assert m['worktree_head']==sys.argv[4] and m['record_url']==sys.argv[5]
 assert m['procedure_fingerprint'].startswith('sha256:')
 PY
@@ -225,7 +234,7 @@ for body in [entry, worker.split('## CI fix')[0]]:
     assert '--loaded-plugin-root' in body and '--record' in body
     assert '仕様化判断' in body and '直後' in body
 assert '検査' in loop and '読込元' in loop
-for name in ['references/procedure-freshness.md', '../../../changes/1864.md']:
+for name in ['references/procedure-freshness.md', '../../changes/1864.md']:
     body=(base/name).read_text()
     for term in ['導入前キャッシュ', '強制', '古い', '印', '取得']:
         assert term in body, (name,term)
