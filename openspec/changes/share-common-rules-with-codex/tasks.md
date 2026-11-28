@@ -6,14 +6,14 @@
 
 - [x] 1.1 `tests/codex-shared-instructions.bats` に公開全文・README除外・安定順序・harness全文と適用範囲・readable要点の生成検査を追加し、正本を一行変え未再生成なら失敗すること、再生成後に一致することを使い捨てコピーで確かめる。触る範囲: tests/codex-shared-instructions.bats（新規）、tests/rules-sync.bats:9-30（fixture参考）
 - [x] 1.2 共通生成処理を作り、公開生成物を追跡する。個人版を加える生成はローカル限定とし、1.1のテストを通す。生成対象の正本は変更せず、見出し・区切りを含む生成物の一致で検証する。触る範囲: scripts/codex-shared-instructions.py（新規）、generated/codex/AGENTS.md（新規）、rules/communication-style.md:1-15（参照）、AGENTS.md:1-43（参照）
-- [ ] 1.3 生成・再生成・一致検査の実際の CLI と公開/個人の境界を docs に書き、記載した生成・一致検査コマンドが一時領域で動くことを確かめる。触る範囲: docs/codex-shared-instructions.md（新規）
+- [x] 1.3 生成・再生成・一致検査の実際の CLI と公開/個人の境界を docs に書き、記載した生成・一致検査コマンドが一時領域で動くことを確かめる。触る範囲: docs/codex-shared-instructions.md（新規）
 
 ## 2. 明示配布と既存ホームの保持
 
 - [x] 2.1 配布の回帰テストを追加する。従来引数でCodexホーム不変、--codex/--no-pull併用、対象和集合・実体重複除去、両登録形式と不正入力、冪等性、既存7行のバイト保持、許可外/取消済みoverlay除外、非空override・破損/重複区画・管理外リンクの拒否を使い捨てホームで確認する。触る範囲: tests/codex-shared-instructions.bats（1で新規）、tests/rules-sync.bats:1-30、tests/rules-sync.bats:484-557（既存許可取消テスト参照）
 - [x] 2.2 sync のオプション解析とCodex配布を実装する。登録表は既存契約を使い、管理区画だけを作成/置換し、2.1と既存 rules-sync テストを通す。別台帳・ホーム探索は追加しない。触る範囲: scripts/sync.sh:1-261、scripts/codex-shared-instructions.py（1で新規）、plugins/dev-workflow/scripts/codex-develop.py:403-409（参照）、plugins/dev-workflow/scripts/codex-develop.py:521-548（参照）
 - [x] 2.3 容量キーの最低値131072、既存の大きい値の維持、profile等の小さい有効値への対応、認証/MCP/他設定の保持を実装し、各ケースをTOMLとして検査するテストを通す。触る範囲: scripts/codex-shared-instructions.py（1で新規）、tests/codex-shared-instructions.bats（1で新規）
-- [ ] 2.4 対象ホーム・登録形式・明示実行・拒否条件・管理区画の復旧・容量更新を docs に書き、一時ホームで同期と復旧の手順を確認する。触る範囲: docs/codex-shared-instructions.md（1で新規）
+- [x] 2.4 対象ホーム・登録形式・明示実行・拒否条件・管理区画の復旧・容量更新を docs に書き、一時ホームで同期と復旧の手順を確認する。触る範囲: docs/codex-shared-instructions.md（1で新規）
 
 ## 3. worker の共通区画継承
 
@@ -29,8 +29,8 @@
 
 ## 5. docs と変更記録
 
-- [ ] 5.1 READMEから配布・容量検査・workerの手順へ案内し、自動メモリを探索/コピー/リンクしないこと、記憶混入を防ぐ理由、明示的な知識提供は可能であることをdocsに明記する。生成/配布テストに自動メモリが取り込まれない確認を加え、記載した手順を一時ホームで確認する。触る範囲: README.md:28-52、docs/codex-shared-instructions.md（1で新規）、tests/codex-shared-instructions.bats（1で新規）
-- [ ] 5.2 配布方式・容量の測定根拠・代案・自動メモリ非取込・互換性と復旧・#1850/#2160との境界を変更記録に書く。`tests/injection-budget.txt` を変更していないことと、非公開本文や個人の固定パスを含まないことをdiffで確認する。触る範囲: docs/changes/1853.md（新規）、docs/codex-shared-instructions.md（1で新規）
+- [x] 5.1 READMEから配布・容量検査・workerの手順へ案内し、自動メモリを探索/コピー/リンクしないこと、記憶混入を防ぐ理由、明示的な知識提供は可能であることをdocsに明記する。生成/配布テストに自動メモリが取り込まれない確認を加え、記載した手順を一時ホームで確認する。触る範囲: README.md:28-52、docs/codex-shared-instructions.md（1で新規）、tests/codex-shared-instructions.bats（1で新規）
+- [x] 5.2 配布方式・容量の測定根拠・代案・自動メモリ非取込・互換性と復旧・#1850/#2160との境界を変更記録に書く。`tests/injection-budget.txt` を変更していないことと、非公開本文や個人の固定パスを含まないことをdiffで確認する。触る範囲: docs/changes/1853.md（新規）、docs/codex-shared-instructions.md（1で新規）
 
 ## 6. 実機証拠（本体の適用権限確認後）
 

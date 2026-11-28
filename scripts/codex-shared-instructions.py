@@ -79,7 +79,7 @@ def unique_object(pairs):
 
 
 def account_homes(pairs, filename):
-    # Same table contract as codex-develop.py: no registry and no auth requirement.
+    # Same account-home table contract as develop: no registry and no auth requirement.
     if pairs and filename:
         raise ValueError('account-home cannot be combined with account-home-file')
     mapping = json.loads(Path(filename).read_text(), object_pairs_hook=unique_object) if filename else {}
