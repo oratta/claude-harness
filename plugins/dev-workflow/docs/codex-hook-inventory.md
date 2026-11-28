@@ -4,7 +4,7 @@
 
 ## 読み方と接続契約
 
-方針は「Codex で動く」「載せ替える」「Codex では持たない」。現状の「載せ替えた」はその行に示す検証範囲の実装が完了した場合だけ使う。G002 / #1862 では git/秘密の拒否判定と同期質問の拒否判定を fixture で検証済みだが、質問対応全体は未完了（入力確認ゲート未達）である。配布・信頼設定・対象別の実機確認は G003 / #1863 に残り、「Codex で動く」とはまだ判定していない。「持たない」も目的が不要という意味ではなく、代替のない不足を理由欄に残す。
+方針は「Codex で動く」「載せ替える」「Codex では持たない」。現状の「載せ替えた」はその行に示す検証範囲の実装が完了した場合だけ使う。G002 / #1862 では git/秘密の拒否判定と同期質問の拒否判定を fixture で検証済みだが、質問対応全体は未完了（入力確認ゲート未達）である。G003 / #1863 の配布接続実装と取得済み実機範囲は下表に記録する。worker/app-server の実機適用と残りの対象操作は未取得で、全対象について「Codex で動く」とはまだ判定していない。「持たない」も目的が不要という意味ではなく、代替のない不足を理由欄に残す。
 
 3 対象は Codex 本体・native subagent・`codex-worker.py` の役。各行の未確認は対象別の実機証跡が未取得という意味。worker の一時 CODEX_HOME は認証リンク・最小 config と検証済み hook を作り、起動ごとに trust bypass を渡す。本体と native の取得済み範囲は下表の証跡に限定し、通常 profile の設定や Claude の役で hook が動いた証拠を代用しない。hook コマンドの exit 0 や worker の completed だけで有効としない。
 
@@ -50,7 +50,7 @@ event・matcher・command は hooks.json の値をそのまま保持する。mat
 
 入力根拠は `plugins/dev-workflow/tests/fixtures/codex-pretool/metadata.json`。[本体の実測（codex-cli 0.163.0）](https://github.com/oratta/claude-harness/issues/1862#issuecomment-7235173851) の Bash/command、apply_patch/command、同期 request_user_input/questions をダミー fixture に保存した（識別情報は伏せた）。同期質問は hook 到達後に exec client が非対応として拒否しており、対話UIやインストール済み guard の実機成功を意味しない。shell/unified exec の正規化は公式文書由来、shell の正規化形を本体が実測。他の command 正負例は合成で、実測を増やしたとは数えない。
 
-検証は `python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_pretool_guards.py`。対象9種・wrapper/連結・dry-run/データ・秘密の表示/値を出さない利用・独立した off・同期質問の印・親子情報/FORCE/permit/繰返し拒否・入力型/依存失敗を確認する。これは fixture の判定検証であり、3対象の配布・信頼・実機証跡は表の未確認を維持する。
+検証は `python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_pretool_guards.py`。対象9種・wrapper/連結・dry-run/データ・秘密の表示/値を出さない利用・独立した off・同期質問の印・親子情報/FORCE/permit/繰返し拒否・入力型/依存失敗を確認する。これは fixture の判定検証であり、3対象の配布・信頼・実機証跡は表の対象別記録と区別する。
 
 質問対応全体は未完了（入力確認ゲート未達）として引き継ぐ。同期 `request_user_input` の印付き拒否は fixture 判定検証済みだが、非同期質問、名前空間付き公開名と hook 名の対応、code mode 内 nested call は未確認/未完了であり、経路の不存在を実証したものではない。名前を発見できないことも不存在の証拠にしない。これらの入力確認と印付き拒否を確認できるまで質問対応全体を完了扱いせず、ここで止めて未完了を返す。native subagent/worker への継承も未確認。確認済みの質問名は `request_user_input` だけで、`request_user_input_async` や `functions.request_user_input` は対象に足していない。request_permissions は対象外。#1863 は入口と依存の配置・信頼・印の継承・各対象の実機拒否を確認する。
 
