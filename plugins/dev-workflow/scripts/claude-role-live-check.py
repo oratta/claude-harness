@@ -31,7 +31,8 @@ def main():
     if a.case != 'capability' and a.verification is None:
         parser.error('run capability first, then supply its --verification path')
     root = Path(tempfile.mkdtemp(prefix='claude-role-live-')).resolve()
-    if PLUGIN in root.parents or root == PLUGIN:
+    checkout = PLUGIN.parents[1]
+    if checkout in root.parents or root == checkout:
         raise RuntimeError('TMPDIR must be outside the plugin checkout')
     print('evidence_dir: '+str(root), file=sys.stderr)
     repo = root/'repo'

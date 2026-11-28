@@ -6,5 +6,8 @@ setup() {
 }
 @test "claude-role-launch: fake CLI launch, validation and lifecycle contracts" {
   run python3 "$PLUGIN_DIR/tests/test_claude_role_launch.py"
-  [ "$status" -eq 0 ]
+  if [ "$status" -ne 0 ]; then
+    printf '%s\n' "$output"
+    return 1
+  fi
 }
