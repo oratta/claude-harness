@@ -12,4 +12,4 @@
 
 ## 3. 記録と統合確認
 
-- [ ] 3.1 変更の記録を作り、python3 plugins/dev-workflow/tests/test_codex_develop.py と openspec validate avoid-claude-in-codex-only-develop --type change --strict の exit 0 を記録する。対象変更に必要な既存検査を収集して実行し、未導入・失敗も報告する。変更量が増えたら #1859 の粒度入力を更新してから進む。触る範囲: plugins/dev-workflow/changes/1859.md（新規）、plugins/dev-workflow/tests/test_codex_develop.py:1-2070、openspec/changes/avoid-claude-in-codex-only-develop/（本 change の検証）
+- [x] 3.1 変更の記録を作り、python3 plugins/dev-workflow/tests/test_codex_develop.py と openspec validate avoid-claude-in-codex-only-develop --type change --strict の exit 0 を記録する。対象変更に必要な既存検査を収集して実行し、未導入・失敗も報告する。変更量が増えたら #1859 の粒度入力を更新してから進む。触る範囲: plugins/dev-workflow/changes/1859.md（新規）、plugins/dev-workflow/tests/test_codex_develop.py:1-2070、openspec/changes/avoid-claude-in-codex-only-develop/（本 change の検証）
