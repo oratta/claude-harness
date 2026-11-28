@@ -415,7 +415,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 target = self.root/('legacy-' + model + '.json')
                 args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
                         '--cwd', str(self.cwd), '--account', 'mapped', '--model', model,
-                        '--account-home', 'mapped=' + str(self.home), '--out', str(target), *extra]
+                        '--account-home', 'mapped=' + str(self.home), '--out', str(target)]
                 with patch.object(sys, 'argv', args):
                     result = m.main()
                 self.assertEqual((result['status'], result['model']), ('request-written', model))
@@ -454,7 +454,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
 
     def test_cli_missing_selects_only_codex_at_zero_and_above(self):
         for claude in (20, -5, None):
-            for codex in (0, 5, 65.3):
+            for codex in (0, 5, 10, 20):
                 with self.subTest(claude=claude, codex=codex), \
                         patch.object(m, '_run_usage_probe'), \
                         patch.object(m, 'claude_usage_evidence', return_value={
@@ -475,6 +475,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
     def test_cli_missing_and_unusable_codex_stops_before_writing_or_launching(self):
         for case in ('negative', 'missing', 'unregistered', 'off'):
             self.write_registry({'enabled': case != 'off'})
+            self.table.write_text('{}')
             usages = {'a': self.snapshot(-1, minutes=10080)} if case == 'negative' else {}
             with self.subTest(case=case), patch.object(m, '_run_usage_probe'), \
                     patch.object(m, 'claude_usage_evidence', return_value={
@@ -486,7 +487,8 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, 'claude.*' + {
                         'negative': 'negative', 'missing': 'missing',
                         'unregistered': 'registered', 'off': 'off'}[case]):
-                    self.call_automatic('--coordinator', 'cli', accounts=(
+                    extra = ('--account-home-file', str(self.table)) if case == 'unregistered' else ()
+                    self.call_automatic('--coordinator', 'cli', *extra, accounts=(
                         () if case == 'unregistered' else ('a',)))
                 if case in ('unregistered', 'off'):
                     read.assert_not_called()
@@ -854,7 +856,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
     def test_automatic_request_without_table_uses_codex_home_as_current_candidate(self):
         target = self.root / 'automatic-env-home.json'
         args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
-                '--cwd', str(self.cwd), '--out', str(target), *extra]
+                '--cwd', str(self.cwd), '--out', str(target)]
         selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
                      'reason': 'only-claude-has-headroom',
                      'claude': {'account': 'active', 'margin': 10, 'fetched_at': 2_000_000},
@@ -870,7 +872,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
         absent_home.mkdir()
         target = self.root / 'automatic-missing-home.json'
         args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
-                '--cwd', str(self.cwd), '--out', str(target), *extra]
+                '--cwd', str(self.cwd), '--out', str(target)]
         selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
                      'reason': 'no-provider-has-headroom',
                      'claude': {'account': None, 'margin': None, 'fetched_at': None},
