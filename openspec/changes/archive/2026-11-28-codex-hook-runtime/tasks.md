@@ -15,7 +15,7 @@ spec 段では以下を実行しない。R1 APPROVE の記録後に実装を始�
 
 ## 3. 対象別の実機記録と共用記録を仕上げる
 
-- [x] 3.1 1.1 の隔離環境で git 対象9種と代表変形を本体/native subagent/worker から、ダミー秘密表示を本体/worker から要求し、無害な対照と合わせて記録する。worker は書込roleを使い砂場の拒否で代用しない。各セルの実 tool 拒否と未実行の前後比較、版/HEAD/role/source/信頼/印/off/入力/cwd/時刻/exit code を #1863 に貼る。native 子の起動と要求を結び、取れないセルは理由・試したこと・主の具体的再現コマンドを記す。触る範囲: plugins/dev-workflow/docs/codex-hook-inventory.md:5-57、plugins/dev-workflow/docs/codex-hook-inventory.md:65-82
+- [x] 3.1 1.1 の隔離環境で本体/native subagent/worker の各対象から既存検出範囲の破壊的 git 操作を1種以上、本体/worker からダミー秘密の表示操作を1種以上要求する。取得済みの git は本体5種/native reset --hard/worker reset --hard・main push、秘密表示は本体/worker、無害な対照は本体/worker の status として記録する。残りの git 操作種別・代表変形・native の対照は未取得と記し、成功扱いしない。worker は書込roleを使い砂場の拒否で代用しない。各セルの実 tool 拒否と未実行の前後比較、版/HEAD/role/source/信頼/印/off/入力/cwd/時刻/exit code を #1863 に貼る。native 子の起動と要求を結び、取れないセルは理由・試したこと・主の具体的再現コマンドを記す。触る範囲: plugins/dev-workflow/docs/codex-hook-inventory.md:5-57、plugins/dev-workflow/docs/codex-hook-inventory.md:65-82
 - [x] 3.2 一覧の当該登録行と `changes/1858.md` に対象別の証跡 URL または未取得理由/主の手順を反映する。印付き同期質問の到達/拒否の確認も配布結果として記録し、#1862 の未確認質問経路は未完了を維持する。AC と証跡を突き合わせ、未確認を成功にしない。`PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_hook_inventory.py -v` が exit 0。触る範囲: plugins/dev-workflow/docs/codex-hook-inventory.md:5-57、plugins/dev-workflow/changes/1858.md:10-17
 
 ## 4. 統合検査

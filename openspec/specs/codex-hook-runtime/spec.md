@@ -53,8 +53,8 @@ Codex 用の既存拒否判定を本体と worker の実際の起動へ届け、
 git の拒否は本体・native subagent・worker、秘密表示の拒否は本体・worker の各対象で実測しなければならない（MUST）。試験は一時 repo/linked worktree・ローカル bare remote・ダミー秘密のみで行い、無害な対照を含めなければならない（MUST）。版・HEAD・対象・信頼状態・入力・時刻・exit code・拒否と未実行の証拠を残し、completed や hook exit 0 を成功の代用にしてはならない（MUST NOT）。
 
 #### Scenario: 対象操作が拒否される
-- **WHEN** 既存 git 検出対象9種と代表変形、ダミー秘密表示を各必須対象から要求する
-- **THEN** 実 tool の拒否と前後の HEAD/status/対象ファイル hash/remote refs の不変を照合でき、秘密試験はダミー値も出力されず、対照操作が通った証拠がある
+- **WHEN** 本体・native subagent・worker の各対象から既存検出範囲の破壊的 git 操作を1種以上、本体・worker からダミー秘密の表示操作を1種以上要求する
+- **THEN** 各必須セルの実 tool の拒否と前後の HEAD/status/対象ファイル hash/remote refs の不変を照合でき、秘密試験はダミー値も出力されず、残りの git 操作種別・代表変形・無害な対照は対象別に取得できた証拠だけを記録し、未取得は未取得と記して成功扱いしない
 
 #### Scenario: 子で拒否されたことを確認する
 - **WHEN** native subagent が隔離 repo で対象 git 操作を要求する
