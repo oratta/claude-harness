@@ -5,6 +5,7 @@
 # spec: dev-workflow-escalation-tripwires（SessionStart hook 要件）
 
 setup() {
+  unset DEVELOP_ROLE
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
   SCRIPT="${PLUGIN_DIR}/scripts/session-tripwires.sh"
@@ -359,4 +360,54 @@ cmd = e["hooks"][0]["command"]
 assert e["hooks"][0]["type"] == "command"
 assert "${CLAUDE_PLUGIN_ROOT}" in cmd and "agent-model-guard.sh" in cmd, cmd
 PY
+}
+
+@test "role: SessionStart JSON contains exactly the explicit budget text for every role" {
+  local root role expected
+  for root in "$PLUGIN_DIR" "$TMPDIR_EMPTY"; do
+    run env CLAUDE_PLUGIN_ROOT="$root" TRIPWIRES_SCOPE=subagent-budget "$SCRIPT"
+    [ "$status" -eq 0 ]
+    expected="$output"
+    for role in worker reviewer decider unknown; do
+      run env CLAUDE_PLUGIN_ROOT="$root" DEVELOP_ROLE="$role" TRIPWIRES_SCOPE=unknown "$SCRIPT" <<<'{"session_id":"main","text":"DEVELOP_ROLE=worker"}'
+      [ "$status" -eq 0 ]
+      python3 - "$output" "$expected" <<'CHECK'
+import json,sys
+obj=json.loads(sys.argv[1])
+assert list(obj)==["hookSpecificOutput"]
+h=obj["hookSpecificOutput"]
+assert h=={"hookEventName":"SessionStart", "additionalContext":sys.argv[2]}, h
+for bad in ("昇格トリップワイヤー", "subagent-context.sh", "メモリ索引"):
+    assert bad not in h["additionalContext"]
+CHECK
+      run env CLAUDE_PLUGIN_ROOT="$root" DEVELOP_ROLE="$role" TRIPWIRES_SCOPE=subagent-budget "$SCRIPT"
+      [ "$status" -eq 0 ]
+      [ "$output" = "$expected" ]
+    done
+  done
+}
+@test "role: inherited main marker skips probe and memory but absent empty and body-only markers do not" {
+  local root="$TMPDIR_EMPTY/root" mark
+  mkdir -p "$root/scripts" "$root/templates"
+  cp "$TEMPLATE" "$root/templates/escalation-tripwires.md"
+  printf '#!/bin/sh\ntouch "%s/probe"\n' "$TMPDIR_EMPTY" > "$root/scripts/usage-probe.sh"
+  printf '#!/bin/sh\ntouch "%s/memory"\necho memory-notice\n' "$TMPDIR_EMPTY" > "$root/scripts/memory-tripwire.sh"
+  chmod +x "$root/scripts/"*.sh
+  run env CLAUDE_PLUGIN_ROOT="$root" DEVELOP_ROLE=worker "$SCRIPT" <<<'{"session_id":"main"}'
+  [ "$status" -eq 0 ]
+  [[ "$output" != *memory-notice* ]]
+  [ ! -e "$TMPDIR_EMPTY/probe" ]
+  [ ! -e "$TMPDIR_EMPTY/memory" ]
+  for mark in absent empty; do
+    if [ "$mark" = absent ]; then unset DEVELOP_ROLE; else export DEVELOP_ROLE=; fi
+    run env CLAUDE_PLUGIN_ROOT="$root" "$SCRIPT" <<<'{"text":"DEVELOP_ROLE=worker"}'
+    [ "$status" -eq 0 ]
+    [[ "$output" == *memory-notice* ]]
+    [[ "$output" == *昇格トリップワイヤー* ]]
+    [ -e "$TMPDIR_EMPTY/probe" ]
+    [ -e "$TMPDIR_EMPTY/memory" ]
+    run env CLAUDE_PLUGIN_ROOT="$TMPDIR_EMPTY" "$SCRIPT"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
 }

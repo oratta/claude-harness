@@ -10,8 +10,8 @@
 
 ## 2. 役向けの開始注入
 
-- [ ] 2.1 `session-tripwires.sh` で本文 scope と配送形式を分け、マーカー付きの通常 SessionStart は subagent-budget と同一の本文を SessionStart JSON で返す。明示 scope の本文テキストを優先し、既存 SubagentStart 呼び出しを保つ。`bats plugins/dev-workflow/tests/tripwire-hook.bats plugins/dev-workflow/tests/subagent-start-context.bats` で本文一致・単一 JSON・二重包装なし・役名に依存しない選択を確認する。触る範囲: plugins/dev-workflow/scripts/session-tripwires.sh:7-48、plugins/dev-workflow/scripts/session-tripwires.sh:140-163、plugins/dev-workflow/tests/tripwire-hook.bats:1-80、plugins/dev-workflow/tests/subagent-start-context.bats:1-268
-- [ ] 2.2 印ありでは probe / memory を呼ばず、テンプレート欠損でも役向け本文が届き、印なし / 空では親向け処理が維持される fixture を `tripwire-hook.bats` に追加して同コマンドを通す。主を表す同一 payload でも実際の環境へ印が誤継承されれば役向け JSON に切り替わる fixture を追加する。通常セッション・マーカー付き役・明示 scope をテンプレートあり / なしで比較し、通常だけ欠損時に無出力、役は JSON、明示 scope は本文テキストとなることを固定する。残量式を複製しないことと、既存の SubagentStart 配線が変わらないことを確認し、変更記録へ追記する。触る範囲: plugins/dev-workflow/tests/tripwire-hook.bats:1-80、plugins/dev-workflow/tests/tripwire-hook.bats:160-362、plugins/dev-workflow/changes/1857.md（新規）
+- [x] 2.1 `session-tripwires.sh` で本文 scope と配送形式を分け、マーカー付きの通常 SessionStart は subagent-budget と同一の本文を SessionStart JSON で返す。明示 scope の本文テキストを優先し、既存 SubagentStart 呼び出しを保つ。`bats plugins/dev-workflow/tests/tripwire-hook.bats plugins/dev-workflow/tests/subagent-start-context.bats` で本文一致・単一 JSON・二重包装なし・役名に依存しない選択を確認する。触る範囲: plugins/dev-workflow/scripts/session-tripwires.sh:7-48、plugins/dev-workflow/scripts/session-tripwires.sh:140-163、plugins/dev-workflow/tests/tripwire-hook.bats:1-80、plugins/dev-workflow/tests/subagent-start-context.bats:1-268
+- [x] 2.2 印ありでは probe / memory を呼ばず、テンプレート欠損でも役向け本文が届き、印なし / 空では親向け処理が維持される fixture を `tripwire-hook.bats` に追加して同コマンドを通す。主を表す同一 payload でも実際の環境へ印が誤継承されれば役向け JSON に切り替わる fixture を追加する。通常セッション・マーカー付き役・明示 scope をテンプレートあり / なしで比較し、通常だけ欠損時に無出力、役は JSON、明示 scope は本文テキストとなることを固定する。残量式を複製しないことと、既存の SubagentStart 配線が変わらないことを確認し、変更記録へ追記する。触る範囲: plugins/dev-workflow/tests/tripwire-hook.bats:1-80、plugins/dev-workflow/tests/tripwire-hook.bats:160-362、plugins/dev-workflow/changes/1857.md（新規）
 
 ## 3. Stop の背景タスク拒否
 

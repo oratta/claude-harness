@@ -8,6 +8,7 @@
 # テスト名は ASCII のみ（bats はマルチバイトのテスト名を扱えない）。
 
 setup() {
+  unset DEVELOP_ROLE
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   HOOKS_JSON="${PLUGIN_DIR}/hooks/hooks.json"
   SCRIPT="${PLUGIN_DIR}/scripts/subagent-start-context.sh"
