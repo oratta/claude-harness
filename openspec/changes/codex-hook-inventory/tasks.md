@@ -9,7 +9,7 @@
 - [x] 2.4 新規一覧を既存の委譲一覧に「言及のみ」として登録し、対象名・ソース根拠に含む `codex-worker.py` が呼び出し語検索に現れても分類漏れにならないようにする。`bats plugins/dev-workflow/tests/codex-delegation-inventory.bats` が exit 0 となることを確認する。触る範囲: plugins/dev-workflow/docs/codex-delegation-inventory.md:21-50（表）
 
 ## 3. 統合確認
-- [ ] 3.1 新規 unittest、既存 `bats plugins/dev-workflow/tests/codex-delegation-inventory.bats`、`openspec validate codex-hook-inventory --type change --strict`、`git diff --check` の exit 0 を確認する。差分が docs・テスト・changes・本 change のみで、hook・CLAUDE.md・権限設定・他の子の実装に及ばないことを確認する。触る範囲: plugins/dev-workflow/docs/codex-hook-inventory.md（新規）、plugins/dev-workflow/docs/codex-develop.md:1-26、plugins/dev-workflow/docs/codex-delegation-inventory.md:21-50（表）、plugins/dev-workflow/tests/test_codex_hook_inventory.py（新規）、plugins/dev-workflow/changes/1858.md（新規）、openspec/changes/codex-hook-inventory/tasks.md（新規）
+- [x] 3.1 新規 unittest、既存 `bats plugins/dev-workflow/tests/codex-delegation-inventory.bats`、`openspec validate codex-hook-inventory --type change --strict`、`git diff --check` の exit 0 を確認する。差分が docs・テスト・changes・本 change のみで、hook・CLAUDE.md・権限設定・他の子の実装に及ばないことを確認する。触る範囲: plugins/dev-workflow/docs/codex-hook-inventory.md（新規）、plugins/dev-workflow/docs/codex-develop.md:1-26、plugins/dev-workflow/docs/codex-delegation-inventory.md:21-50（表）、plugins/dev-workflow/tests/test_codex_hook_inventory.py（新規）、plugins/dev-workflow/changes/1858.md（新規）、openspec/changes/codex-hook-inventory/tasks.md（新規）
 
 ## Workflow follow-up
 - 実装の開始条件は記録先 #1861 の R1 APPROVE。archive・PR・レビューは coordinator の正本手順で行う。この spec 段では実装・実機実行・Draft PR 作成を行わない。
