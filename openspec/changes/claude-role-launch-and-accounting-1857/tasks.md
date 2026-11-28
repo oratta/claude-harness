@@ -1,0 +1,36 @@
+# Tasks
+
+行番号は固定 HEAD `59d50d326ccb258b3722a05f5c7ccfc87d38ff4e` の案内。実装前に読み直す。全項目は未実装。G001 の完了済み hook と閾値は変更しない。一時ファイル・検証 repo・会話ログ・証跡はリポジトリ外に置く。
+
+## 1. 起動契約と役制限（AC1）
+
+- [ ] 1.1 前景 launcher を追加し、解決済み model を `tier_caps.py` と同じ配布物の表で検査して `claude -p --model` に渡す。担当と profile role の照合、未知入力・表欠損・格超過・decider 以外の Fable の起動前拒否を実装する。専用 Bats の fake CLI で呼出し 0 件と argv の完全一致を検証し、`bats plugins/dev-workflow/tests/claude-role-launch.bats` を通す。専用 reference に入力・終了コード・account 固定を記す。触る範囲: plugins/dev-workflow/scripts/claude-role-launch.py（新規）、plugins/dev-workflow/tests/claude-role-launch.bats（新規）、plugins/dev-workflow/references/claude-role-launch.md（新規）、plugins/dev-workflow/scripts/tier_caps.py:1-55（参照）、plugins/dev-workflow/agents/worker.md:1-9（参照）、plugins/dev-workflow/agents/gate-runner.md:1-9（参照）、plugins/dev-workflow/agents/reviewer.md:1-9（参照）、plugins/dev-workflow/agents/decider.md:1-42（参照）
+- [ ] 1.2 定義読込経路と本文・ツール明示の代替経路、Agent 禁止、decider の Read / Grep / Glob のみを実装する。CLI / plugin に紐付く検証モードと通常起動の検証済み判定を設け、fake CLI で未確認・option 拒否・model 上書き・孫試行を検証し、1.1 の Bats を通す。reference に実機の `--agent` 検証と代替時の同じツール制限を記す。触る範囲: plugins/dev-workflow/scripts/claude-role-launch.py（新規）、plugins/dev-workflow/tests/claude-role-launch.bats（新規）、plugins/dev-workflow/references/claude-role-launch.md（新規）、plugins/dev-workflow/scripts/agent-model-guard.sh:88-135（参照）
+
+## 2. session・再開計測・終了と回収（AC1・AC4）
+
+- [ ] 2.1 子専用の `DEVELOP_ROLE`、session ID と自身のログの確定・外部登録・最終 JSON 出力を実装する。同一 session の再開前に `subagent-context.sh --file` を呼び、exit 2 と欠測 exit 1 では CLI を呼ばない。別 session を選ばない fixture と cap 超過 fixture、親 env を変えない検査を追加して専用 Bats を通す。reference に結果と再開契約を記す。触る範囲: plugins/dev-workflow/scripts/claude-role-launch.py（新規）、plugins/dev-workflow/tests/claude-role-launch.bats（新規）、plugins/dev-workflow/references/claude-role-launch.md（新規）、plugins/dev-workflow/scripts/subagent-context.sh:39-61（参照）、plugins/dev-workflow/scripts/subagent-context.sh:78-164（参照）、plugins/dev-workflow/tests/subagent-context.bats:1-691（既存の --file 回帰確認）
+- [ ] 2.2 正整数 max-turns を全起動・再開へ渡し、上限到達・hook 強制停止・異常終了・シグナル・役の中断を工程中断へ変換する。CLI の成功、役の宣言、回収結果を分離し、無宣言を成功にしない。fake CLI の正常終了・上限到達（CLI exit 0 の場合も含む）・option 拒否・不作動と監視時間切れを専用 Bats で検証する。reference に未確認版は起動不可、無制限再試行なしを記す。触る範囲: plugins/dev-workflow/scripts/claude-role-launch.py（新規）、plugins/dev-workflow/tests/claude-role-launch.bats（新規）、plugins/dev-workflow/references/claude-role-launch.md（新規）
+- [ ] 2.3 専用 process group と所有情報を保持し、正常終了・上限到達・子 CLI の強制終了・INT / TERM の各経路で TERM → 猶予 → KILL → 生存確認を行う。専用 Bats で背景子孫の消滅、グループ外の対照と親の生存、回収失敗時の中断を検証する。reference に所有範囲と launcher 自体の SIGKILL の限界を記す。触る範囲: plugins/dev-workflow/scripts/claude-role-launch.py（新規）、plugins/dev-workflow/tests/claude-role-launch.bats（新規）、plugins/dev-workflow/references/claude-role-launch.md（新規）
+
+## 3. PR の本体・役集計（AC5）
+
+- [ ] 3.1 `--session-records` の JSONL 入力を追加し、repo common dir と記録先で選択した独立 Claude session を既存 usage 四項と request ID の規則で集計する。同じ session の再開・複数番号・同じ実体ログの既存探索との重複を排除する。固定 fixture の期待合計・別 repo / 別番号除外を `bats plugins/dev-workflow/tests/pr-token-budget.bats` で検証し、PR トークン手順書へ登録 schema と外部配置を記す。触る範囲: plugins/dev-workflow/scripts/pr-token-budget.sh:32-167、plugins/dev-workflow/scripts/pr-token-budget.sh:222-291、plugins/dev-workflow/tests/pr-token-budget.bats:1-502、plugins/dev-workflow/skills/develop/references/pr-token-budget.md:14-50、plugins/dev-workflow/scripts/claude-role-launch.py（新規）
+- [ ] 3.2 Codex 本体の明示 thread は進行中 rollout を毎回読み、コメント・複数 home / 登録の同じ thread を最大累計へ統合する。本体の登録忘れ、ID / 帰属 / ログ / usage の欠測を診断し、既知超過は exit 2、それ以外の欠測は exit 1 にする。空履歴を 0 の根拠にしないテスト、追記で増えるテスト、legacy の空ファイル / 未起動 / 未解決の回帰を 3.1 の Bats で通す。手順書の本体自身を対象外とする文を適用範囲付きで更新する。触る範囲: plugins/dev-workflow/scripts/pr-token-budget.sh:169-224、plugins/dev-workflow/scripts/pr-token-budget.sh:285-291、plugins/dev-workflow/tests/pr-token-budget.bats:1-502、plugins/dev-workflow/skills/develop/references/pr-token-budget.md:16-50
+- [ ] 3.3 `pr-token-measure.sh` へ同じ登録ファイルの引渡しを追加し、launcher 専用 reference に Codex 本体が最初の計測前に自分の thread / rollout / home を登録し毎回計測する呼出し例を書く。`bats plugins/dev-workflow/tests/pr-token-measure.bats plugins/dev-workflow/tests/pr-token-budget.bats` で argv・三経路の手計算合計・exit 0 / 1 / 2 の透過・コメント取得失敗時は集計しないことを検証する。共通本体の手順分離は行わない。触る範囲: plugins/dev-workflow/scripts/pr-token-measure.sh:20-55、plugins/dev-workflow/tests/pr-token-measure.bats:1-161、plugins/dev-workflow/skills/develop/references/pr-token-budget.md:18-50、plugins/dev-workflow/references/claude-role-launch.md（新規）
+
+## 4. 印付き役からのテスト境界（G001 レビュー P4-F3 / P5-F1）
+
+- [ ] 4.1 `scripts/test.sh` の通常・残留検査なしの fallback・専用 group の全 Bats 起動で、Bats の子 env だけ印を解除する。追加スイートの setup は直接起動にも備え、役 fixture は印を明示設定する。新しい runner 境界テストを `bats tests/test-runner-role-env.bats` で実行し、通常 fixture と役 fixture の両立、外側の役の印と G001 の git deny が残ること、既存の shard / 残留検査を維持することを検証する。専用 reference に役でテストする方法を記す。触る範囲: scripts/test.sh:305-330、tests/test-runner-role-env.bats（新規）、plugins/dev-workflow/tests/claude-role-launch.bats（新規）、plugins/dev-workflow/references/claude-role-launch.md（新規）
+
+## 5. 実機証跡と統合確認（AC1・AC4・AC5・AC6・変更記録）
+
+- [ ] 5.1 実機で専用 reference の CLI 検証モードを、外部一時 repo と開発用 plugin で実行する。役定義の実読込・実効 model・孫の不実行、定義が使えないときの代替の同じ制限、decider の読取専用を確認する。小さい max-turns より多い逐次ツール操作を要求し、実停止と中断への変換を確認する。実 CLI の通常終了・turn 上限・子 CLI 強制終了・INT / TERM の各経路で、同一 group の背景子孫の消滅とグループ外の対照・本体の生存を観測する。不作動なら通常起動へ進まず blocked / 中断を返す。コマンド・版・期待値・観測値・終了コードと外部証跡の所在を issue #1857 へ記録する。触る範囲: plugins/dev-workflow/references/claude-role-launch.md（新規）、plugins/dev-workflow/changes/1857.md:1-15（証跡リンク追記）
+- [ ] 5.2 実機 launcher の許可済み model と拒否 model、再開前の実際の `--file` 呼出しを確認する。超過入力には外部の固定ログを使い exit 2 / 再開なしを確認する。Codex 本体の実 rollout と実 Claude 役ログを登録して PR 集計を独立した手計算と照合し、追記・重複登録の再計測でも一回分になることを示す。#1850 の Orca 検証へ広げず、issue に期待値・観測値・終了コード・証跡の所在を記録する。触る範囲: plugins/dev-workflow/references/claude-role-launch.md（新規）、plugins/dev-workflow/changes/1857.md:1-15（証跡リンク追記）
+- [ ] 5.3 外部一時 repo に変更を作り、実 launcher で起動した Claude 役へ `git reset --hard HEAD` を要求する。G001 hook の実行前 deny と前後の HEAD / status / 対象内容不変を確認し、コマンド全文・対象・作成方法・CLI / plugin 版・session・外部ログの所在を issue #1857 へ記録する。agent_id の捏造・permit の付与・役への再実行はしない。`changes/1857.md` に G002 の起動 / 集計 / テスト境界と実機結果のリンクを追記し、未確認を完了と書かない。触る範囲: plugins/dev-workflow/changes/1857.md:1-15、plugins/dev-workflow/references/claude-role-launch.md（新規）
+- [ ] 5.4 新規 Bats を直接実行後、`DEVELOP_ROLE=implement scripts/test.sh context-tripwire tripwire-hook subagent-start-context subagent-stop-guard git-destructive-guard git-guard-base-write-guard agent-model-guard subagent-context pr-token-budget pr-token-measure test-runner test-sh-residual-guard ci-bats-shards injection-budget` を通す。新規未追跡スイートは runner が発見しないため直接の `bats plugins/dev-workflow/tests/claude-role-launch.bats tests/test-runner-role-env.bats` も必ず実行する。`openspec validate claude-role-launch-and-accounting-1857 --type change --strict` と `git diff --check` を通し、G001 の hook・聖域・他の子 issue に変更がないことと AC ごとの証跡を照合する。触る範囲: plugins/dev-workflow/tests/claude-role-launch.bats（新規）、tests/test-runner-role-env.bats（新規）、plugins/dev-workflow/tests/pr-token-budget.bats:1-502、plugins/dev-workflow/tests/pr-token-measure.bats:1-161、plugins/dev-workflow/changes/1857.md:1-15、openspec/changes/claude-role-launch-and-accounting-1857/（本 artifact 一式）
+
+## Workflow follow-up
+
+- artifact 一式を本体に返し、独立 R1 の APPROVE 後に実装へ進む。仕様工程では実装・実機起動・commit・push・PR 作成をしない。
+- 実装後の archive・PR と仕様宣言は本体の finish 指示に従う。G002 の PR は `Closes #1857` とする。worker は merge / auto-merge をしない。
