@@ -9,6 +9,7 @@
 #       同「worktree 隔離のサブエージェントでも途中計測が効く」
 
 setup() {
+  unset DEVELOP_ROLE
   bats_require_minimum_version 1.5.0
   PLUGIN_DIR="$(cd "$(dirname "$BATS_TEST_FILENAME")/.." && pwd)"
   SCRIPT="${PLUGIN_DIR}/scripts/context-tripwire.sh"
@@ -1029,4 +1030,107 @@ broken_resolver() {
   broken_resolver raises
   run --separate-stderr threshold_hook PostToolUse
   [[ "$stderr" == *boom-cause* ]] || return 1
+}
+
+# Independent role sessions use precisely their own log, with the shared measurement and thresholds.
+role_context() {
+  make_transcript "$PARENT_DIR" "${SESS}.jsonl" "$@" >/dev/null
+}
+role_hook() {
+  local body
+  body="$(payload "$1" "" "$2" "${3-}")"
+  run --separate-stderr env DEVELOP_ROLE=worker "$SCRIPT" <<<"$body"
+  [ "$status" -eq 0 ]
+}
+@test "role: inherited main marker selects own latest usage, never a sibling" {
+  role_context "999999,0,0" "500,100000,100000"
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "1,0,0" >/dev/null
+  role_hook PostToolUse Read
+  echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); h=d["hookSpecificOutput"]; assert h["hookEventName"]=="PostToolUse"; assert "200500 tokens" in h["additionalContext"]; assert "工程中断:" in h["additionalContext"]; assert "agent_id" not in d'
+}
+@test "role: cap and hard equality and strict overflow reuse both stages" {
+  role_context "150000,0,0"
+  role_hook PostToolUse Read
+  [ -z "$output" ]
+  role_context "150001,0,0"
+  role_hook PostToolUse Read
+  [[ "$output" == *途中計測* ]]
+  role_context "220000,0,0"
+  role_hook PreToolUse Edit
+  [ -z "$output" ]
+  role_context "220001,0,0"
+  for tool in Edit Write NotebookEdit Bash; do
+    role_hook PreToolUse "$tool" 'echo harmless'
+    echo "$output" | python3 -c 'import json,sys; h=json.load(sys.stdin)["hookSpecificOutput"]; assert h["permissionDecision"]=="deny"; r=h["permissionDecisionReason"]; assert "/tmp/x" in r and "commit は本体" in r and "工程中断:" in r'
+  done
+  for cmd in 'git status' 'true' 'git add .'; do
+    role_hook PreToolUse Bash "$cmd"
+    [[ "$output" == *強制停止* ]]
+  done
+  for tool in Read Grep Glob; do
+    role_hook PreToolUse "$tool"
+    [ -z "$output" ]
+  done
+}
+@test "role: missing own usage never falls back to subagent log" {
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "999999,0,0" >/dev/null
+  role_hook PostToolUse Read
+  [ -z "$output" ]
+  rm -f "$TRANSCRIPT_PATH"
+  role_hook PostToolUse Read
+  [ -z "$output" ]
+}
+@test "role: off and invalid thresholds retain fail-open behavior" {
+  role_context "999999,0,0"
+  for mode in off invalid equal; do
+    case "$mode" in
+      off) export DEV_WORKFLOW_CONTEXT_TRIPWIRE=off ;;
+      invalid) unset DEV_WORKFLOW_CONTEXT_TRIPWIRE; export DEV_WORKFLOW_CONTEXT_CAP=bad ;;
+      equal) export DEV_WORKFLOW_CONTEXT_CAP=220000 ;;
+    esac
+    role_hook PreToolUse Bash true
+    [ -z "$output" ]
+  done
+  run --separate-stderr env DEVELOP_ROLE=worker "$SCRIPT" <<<'broken'
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+@test "role: absent empty and payload-only markers leave main untouched" {
+  role_context "999999,0,0"
+  local body
+  body="$(payload PreToolUse '' Bash 'DEVELOP_ROLE=worker true')"
+  for mark in absent empty; do
+    if [ "$mark" = absent ]; then unset DEVELOP_ROLE; else export DEVELOP_ROLE=; fi
+    run --separate-stderr "$SCRIPT" <<<"$body"
+    [ "$status" -eq 0 ]
+    [ -z "$output" ]
+  done
+}
+@test "role: valid and Unicode-key subagents keep their log and identical output" {
+  role_context "999999,0,0"
+  make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "200000,0,0" >/dev/null
+  payload PostToolUse "$AGENT_ID" Read > "$WORK/payload.json"
+  local body expected
+  body="$(escape_agent_id_key "$WORK/payload.json")"
+  run --separate-stderr "$SCRIPT" <<<"$body"
+  expected="$output"
+  run --separate-stderr env DEVELOP_ROLE=anything "$SCRIPT" <<<"$body"
+  [ "$status" -eq 0 ]
+  [ "$output" = "$expected" ]
+  [[ "$output" == *'200000 tokens'* ]]
+}
+
+@test "role: own model chooses shared thresholds and unknown model diagnostics" {
+  threshold_plugin
+  unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
+  threshold_record "$TRANSCRIPT_PATH" '"claude-opus-5-5"' 201
+  role_hook PreToolUse Edit
+  [[ "$output" == *'"deny"'* ]]
+  threshold_record "$TRANSCRIPT_PATH" '"claude-sonnet-5-5"' 201
+  role_hook PostToolUse Read
+  [ -z "$output" ]
+  threshold_record "$TRANSCRIPT_PATH" '"new-model"' 601
+  role_hook PreToolUse Edit
+  assert_hook_json PreToolUse deny
+  assert_context_diagnostics
 }
