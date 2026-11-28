@@ -1,6 +1,6 @@
 #!/bin/sh
 # ─────────────────────────────────────────────────────────────
-# sync.sh — harness の正本（rules/ と output-styles/）をこの PC の ~/.claude に配線する
+# sync.sh — harness の配線と、登録済み Codex Git marketplace/cache の更新
 #
 # なぜ存在するか（flatmate#362）:
 #   rules/ と output-styles/ はプラグインではないため、plugin install/update の
@@ -12,8 +12,8 @@
 #   利用者の環境が担い（cron など）、鮮度のPC横断可視化も利用者の環境の見張りに任せる。
 #
 # 使い方:
-#   scripts/sync.sh            # git pull（ff-only）→ symlink 張り直し
-#   scripts/sync.sh --no-pull  # symlink のみ（pull を呼び出し側 repo-sync が済ませている場合）
+#   scripts/sync.sh            # git pull（ff-only）→ Codex 更新 → symlink 張り直し
+#   scripts/sync.sh --no-pull  # clone の pull を省略。Codex 更新は行う（ネットワークを使いうる）
 #
 # 挙動:
 #   - pull は ff-only。tracked ファイルが dirty ならスキップする（作業を壊さない。
@@ -39,9 +39,12 @@
 #     何も出さず終了コードにも影響しない
 #   - Output Style の有効化（settings の outputStyle）は書き換えない。ファイルを届けるまでが
 #     本スクリプトの仕事で、どのスタイルを使うかは PC ごとの主の設定に残す
-#   - テスト用に CLAUDE_CONFIG_DIR で ~/.claude を差し替え可能
+#   - Codex CLI があれば、実行元 manifest と同名の登録済み Git marketplace だけを upgrade する。
+#     snapshot・導入済み cache・移行 command skill の再生成は CLI に任せ、登録元/ref/有効無効は保持する。
+#     CLI 不在・対象なし/local 登録のみは省略。jq 不在・JSON 不正・更新失敗は警告し配線を続ける
+#   - テスト用に HOME / CODEX_HOME / CLAUDE_CONFIG_DIR で実ホームから隔離可能
 #
-# 終了コード: 0=配線完了 / 非0=pull 失敗 or 実ファイル衝突あり（配線自体は可能な範囲で完了）
+# 終了コード: 0=同期完了 / 非0=pull・Codex 更新失敗 or 実ファイル衝突（配線は可能な範囲で完了）
 # ─────────────────────────────────────────────────────────────
 set -u
 
@@ -73,6 +76,50 @@ pull_repo() {
 if [ "${1:-}" != "--no-pull" ]; then
   pull_repo "$HARNESS_DIR"
 fi
+
+# Codex の別 snapshot は呼出元の pull 状態に依らず更新する。
+# CLI の選択と変換規則を使い、手動コピーや plugin add による設定変更は行わない。
+sync_codex() {
+  command -v codex >/dev/null 2>&1 || return 0
+  if ! command -v jq >/dev/null 2>&1; then
+    echo "[harness-sync] Codex 更新には jq が必要です（配線は続行）" >&2
+    return 1
+  fi
+  if ! codex_name="$(jq -er '.name | select(type == "string" and length > 0)' \
+    "$HARNESS_DIR/.claude-plugin/marketplace.json" 2>/dev/null)"; then
+    echo "[harness-sync] Codex marketplace 名を manifest から取得できません（配線は続行）" >&2
+    return 1
+  fi
+  if ! codex_list="$(codex plugin marketplace list --json)"; then
+    echo "[harness-sync] Codex marketplace list に失敗しました（配線は続行）" >&2
+    return 1
+  fi
+  if ! printf '%s\n' "$codex_list" | jq -e '
+    type == "object" and (.marketplaces | type == "array") and
+    all(.marketplaces[];
+      (.name | type == "string" and length > 0) and
+      (.marketplaceSource.sourceType | type == "string" and length > 0))
+    ' >/dev/null 2>&1; then
+    echo "[harness-sync] Codex marketplace list の JSON 形式が不正です（配線は続行）" >&2
+    return 1
+  fi
+  if ! printf '%s\n' "$codex_list" | jq -e --arg name "$codex_name" '
+    any(.marketplaces[]; .name == $name and .marketplaceSource.sourceType == "git")
+    ' >/dev/null; then
+    return 0
+  fi
+  if ! codex_upgrade="$(codex plugin marketplace upgrade "$codex_name" --json)"; then
+    echo "[harness-sync] Codex marketplace upgrade に失敗しました: $codex_name（配線は続行）" >&2
+    return 1
+  fi
+  if ! printf '%s\n' "$codex_upgrade" | jq -e '
+    type == "object" and (.errors | type == "array" and length == 0)
+    ' >/dev/null 2>&1; then
+    echo "[harness-sync] Codex marketplace upgrade の JSON が不正か errors が非空です: $codex_name（配線は続行）" >&2
+    return 1
+  fi
+}
+sync_codex || rc=1
 
 # 行き先がこの harness か marketplace の下の壊れた symlink を消す。$1=ディレクトリ
 # 消したら PRUNED=1。overlay を外すと印のファイルも消えるので、所有元は行き先の文字列で決める
