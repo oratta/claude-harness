@@ -1,6 +1,6 @@
 # Tasks
 
-行番号は dispatch HEAD 時点。既存 Claude 本体は参照のみ。[本体の再計画](https://github.com/oratta/claude-harness/issues/1862#issuecomment-7235062756) は完了し、exit 0 / 1 group / unplaced なし、C=98505<=120000 で容量による停止は解消済み。現在は R1 指摘反映後の再レビュー待ち。次工程は `openspec/specs/destructive-git-hook/spec.md` の要件見出しを grep し、本文は必要な行範囲だけを読む。入力確認ゲートに失敗したら実装・対応完了を宣言せず design の要求を本体へ返す。実装開始には記録先の R1 APPROVE が必要。
+行番号は dispatch HEAD 時点。既存 Claude 本体は参照のみ。[本体の再計画](https://github.com/oratta/claude-harness/issues/1862#issuecomment-7235062756) は完了し、exit 0 / 1 group / unplaced なし、C=98505<=120000 で容量による停止は解消済み。R1 APPROVE と本体の入力実測を確認して実装済み（#1862 コメント 7235132714 / 7235173851）。次工程は `openspec/specs/destructive-git-hook/spec.md` の要件見出しを grep し、本文は必要な行範囲だけを読む。入力確認ゲートに失敗したら実装・対応完了を宣言せず design の要求を本体へ返す。実装開始には記録先の R1 APPROVE が必要。
 
 ## 1. 入力契約を確認し入口を作る
 
@@ -16,8 +16,10 @@
 
 ## 3. 統合確認と後続への契約
 
-- [ ] 3.1 Codex unittest と一覧テストを再実行し、`bats plugins/dev-workflow/tests/git-destructive-guard.bats plugins/dev-workflow/tests/unattended-ask-guard.bats plugins/capability-registry/tests/secret-guard.bats` で既存Claude経路の回帰を確認する。確認: 全て exit 0、実装差分が既存hooks.json・CLAUDE.md・権限設定・注入予算を変更していない。触る範囲: plugins/dev-workflow/tests/test_codex_pretool_guards.py（新規・実行）、plugins/dev-workflow/tests/test_codex_hook_inventory.py:1-118（実行）、plugins/dev-workflow/tests/git-destructive-guard.bats:1-160（実行入口）、plugins/dev-workflow/tests/unattended-ask-guard.bats:1-110（実行入口）、plugins/capability-registry/tests/secret-guard.bats:1-150（実行入口）
-- [ ] 3.2 `openspec validate codex-pretool-guards --type change --strict` を通し、#1863へ hook入口・依存scriptの所在指定・確認済み質問名・未確認経路・既知の限界を記録先で引き継ぐ。確認: exit 0 と handoff の根拠を記録し、fixture成功と実機有効を区別する。触る範囲: openspec/changes/codex-pretool-guards/（本change・検証）、plugins/dev-workflow/changes/1858.md:11-15（引継ぎ追記）
+- [x] 3.1 Codex unittest と一覧テストを再実行し、`bats plugins/dev-workflow/tests/git-destructive-guard.bats plugins/dev-workflow/tests/unattended-ask-guard.bats plugins/capability-registry/tests/secret-guard.bats` で既存Claude経路の回帰を確認する。確認: 全て exit 0、実装差分が既存hooks.json・CLAUDE.md・権限設定・注入予算を変更していない。触る範囲: plugins/dev-workflow/tests/test_codex_pretool_guards.py（新規・実行）、plugins/dev-workflow/tests/test_codex_hook_inventory.py:1-118（実行）、plugins/dev-workflow/tests/git-destructive-guard.bats:1-160（実行入口）、plugins/dev-workflow/tests/unattended-ask-guard.bats:1-110（実行入口）、plugins/capability-registry/tests/secret-guard.bats:1-150（実行入口）
+- [x] 3.2 `openspec validate codex-pretool-guards --type change --strict` を通し、#1863へ hook入口・依存scriptの所在指定・確認済み質問名・未確認経路・既知の限界を記録先で引き継ぐ。確認: exit 0 と handoff の根拠を記録し、fixture成功と実機有効を区別する。触る範囲: openspec/changes/codex-pretool-guards/（本change・検証）、plugins/dev-workflow/changes/1858.md:11-15（引継ぎ追記）
+
+引継ぎ記録: https://github.com/oratta/claude-harness/issues/1862#issuecomment-7235267564
 
 ## Workflow follow-up
 
