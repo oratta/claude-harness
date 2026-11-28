@@ -47,6 +47,6 @@ PR トークン上限: <権限>
 
 **exit 1（計測できない。引数エラー・python3 が無い・リポジトリ外・Codex 消費コメントを取得できなかった）**: 止まらずに進み、計測できなかったことと理由を記録先にコメントする。コメントは同じ記録先・同じ理由について 1 サイクルに 1 回までにする（interactive では本体の 1 セッション、unmanned では loop-dev-agent の 1 サイクル）。
 
-独立 Claude 役と Codex 本体は[専用手順](../../../references/claude-role-launch.md)で外部登録し、毎回同じ `--session-records` を渡す。schema・重複排除・欠測の診断も同手順に従う。
+独立 Claude 役と Codex 本体は[専用手順](../../../references/claude-role-launch.md)で外部登録・計測し、毎回同じ `--session-records` を渡す。
 
 計測に入らないもの: 明示登録を使わない従来経路での本体自身の消費、Workflow 経由のサブエージェント。出力の `unresolved`（作業ディレクトリが消えたサブエージェント）と `codex_unresolved`（rollout が見つからない thread）は合計に入らないので、0 でなければ問いに件数を添える。
