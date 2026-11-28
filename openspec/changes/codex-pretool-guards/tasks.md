@@ -1,6 +1,6 @@
 # Tasks
 
-行番号は dispatch HEAD 時点。既存 Claude 本体は参照のみ。**現成果は文脈容量超過により再計画待ち。以下を開始してはならない。** 更新計画の確定後も、入力確認ゲートに失敗したら実装・対応完了を宣言せず design の要求を本体へ返す。実装開始には記録先の R1 APPROVE が必要。
+行番号は dispatch HEAD 時点。既存 Claude 本体は参照のみ。[本体の再計画](https://github.com/oratta/claude-harness/issues/1862#issuecomment-7235062756) は完了し、exit 0 / 1 group / unplaced なし、C=98505<=120000 で容量による停止は解消済み。現在は R1 指摘反映後の再レビュー待ち。次工程は `openspec/specs/destructive-git-hook/spec.md` の要件見出しを grep し、本文は必要な行範囲だけを読む。入力確認ゲートに失敗したら実装・対応完了を宣言せず design の要求を本体へ返す。実装開始には記録先の R1 APPROVE が必要。
 
 ## 1. 入力契約を確認し入口を作る
 

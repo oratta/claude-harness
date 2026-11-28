@@ -26,4 +26,4 @@ Codex に Claude 用 hook をそのまま渡すと、入力経路や未対応の
 - 追加する hook 定義・adapter は聖域。既存 Claude hook 本体は参照だけとし、`CLAUDE.md`、権限設定、注入予算、版は変更しない。
 - 前提 #1861 は dispatch HEAD `0f5c744334f2b3bf7ad1673368e44c2fdfa69591` に含まれる。#1863 の配布・信頼・一時 CODEX_HOME・3対象の実機証拠は本 change に含めない。
 - 当初の [単一group計算](https://github.com/oratta/claude-harness/issues/1862#issuecomment-7234989209) は、追加読取を反映した [更新入力・出力と停止記録](https://github.com/oratta/claude-harness/issues/1862#issuecomment-7235037971) で無効になった。更新値は C=121635>120000、S=34008000<=48000000、exit 2 / unplaced。親の既存の子PR権限60Mを使い、設定・上限は変更していない。
-- この成果は再計画待ちの仕様案であり、工程完了・実装可能とは宣言しない。判断役が必要情報を保持した読取範囲・作業・依存を再設計するまで進めない。実装前には R1 の承認と design の入力確認ゲートも必要。
+- その後、本体の [再計画完了記録](https://github.com/oratta/claude-harness/issues/1862#issuecomment-7235062756) で読取範囲を再設計し、exit 0 / 1 group / unplaced なし、C=98505<=120000、S=34008000<=48000000 に収まった。上限は変更していない。容量による停止は解消済みで、現在は R1 指摘を反映した仕様案の再レビュー待ち。実装開始には R1 の承認が必要であり、実装工程の最初に design の入力確認ゲートを満たす。
