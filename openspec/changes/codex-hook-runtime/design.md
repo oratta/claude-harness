@@ -22,15 +22,15 @@ repo 内の定義を配布し、adapter/依存は helper の実体から求め�
 
 `DEV_WORKFLOW_UNATTENDED` と既存 off 設定の意味は継承する。無効化された検査を有効と報告しない。auth/account 照合、role sandbox、TMPDIR/TMPPREFIX、元 profile の MCP 等を持ち込まない契約を保つ。runtime 内の hook 設定も既存の finally cleanup で除去する。
 
-### task 1.2 の採用方式: 一時 runtime の hooks.json と invocation bypass
+### task 1.2 の採用方式: 一時 runtime の hooks.json と起動経路別の信頼設定
 
-[本体の隔離実機比較（codex-cli 0.163.0）](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236567986) により、一時 CODEX_HOME に配布元を確かめた `hooks.json` だけを置き、起動ごとに `--dangerously-bypass-hook-trust` を渡す方式を採用する。信頼なしの対照は reset が実行され snapshot が変化した。bypass ありでは本体の git 5種・ダミー秘密表示、native subagent の reset が実 hook に拒否され snapshot 不変だった。
+[本体の隔離実機比較（codex-cli 0.163.0）](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236567986) により、一時 CODEX_HOME に配布元を確かめた `hooks.json` だけを置き、CLI 本体 / codex exec では起動ごとに `--dangerously-bypass-hook-trust` を渡す方式を採用する。信頼なしの対照は reset が実行され snapshot が変化した。bypass ありでは本体の git 5種・ダミー秘密表示、native subagent の reset が実 hook に拒否され snapshot 不変だった。
 
 管理 hook 候補は不採用。一時 `CODEX_HOME/requirements.toml` は読まれず reset が実行された。管理読込元の `/etc/codex/requirements.toml`・MDM・cloud はこの隔離環境に持ち込めず、システム領域は変更しない。
 
 source は helper の実体から解決した定義・adapter・依存と実行系を検査する。target は明示した一時ディレクトリに限定し、既存 hooks/requirements/その他設定を拒否する。worker の最小 auth/config だけ保持し、親の guard パス4変数も配布元へ固定する。元 profile の hook 設定をコピーしない。定義は既存 PreToolUse 一登録だけを認め、その command を既知 adapter の絶対パスと検証済み実行系へ解決する。移動・更新時は新しい target へ再配布する。未確認の追加 source があれば bypass を使わず止める。
 
-再現は一覧の隔離準備後、別の一時 CODEX_HOME ごとに auth link・最小 config と既存 hook を置き、`codex exec [--dangerously-bypass-hook-trust] --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$probe_dir/feature" --json "<単一の検査コマンドを実行>"` を比較する（実行は本体のみ）。app-server は help の引数受理だけ取得済み。今回の worker 接続は同じフラグを渡すが、実 tool 拒否と無害な対照は接続後に本体が取得する。task 1.2 は採用決定として完了し、app-server の未取得を task 3.1 に残す。CLI の実機証拠を app-server の成功へ流用しない。
+再現は一覧の隔離準備後、別の一時 CODEX_HOME ごとに auth link・最小 config と既存 hook を置き、`codex exec [--dangerously-bypass-hook-trust] --dangerously-bypass-approvals-and-sandbox --skip-git-repo-check -C "$probe_dir/feature" --json "<単一の検査コマンドを実行>"` を比較する（実行は本体のみ）。[app-server 追試（codex-cli 0.163.0）](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236723402) では、最上位の `--dangerously-bypass-hook-trust` と `-c bypass_hook_trust=true` のいずれでも reset が実行され snapshot が変化した。同じ配布済み一時 CODEX_HOME を使う `codex exec --dangerously-bypass-hook-trust` は拒否し、app-server は `thread/start` の params に `"config": {"bypass_hook_trust": true}` を渡した場合だけ拒否・snapshot 不変となった。 worker は無効な起動フラグを外し、hook を配布した一時 runtime の thread にこの config 上書きを渡す。task 1.2 は採用決定として完了し、修正後の worker の各操作・無害な対照は本体が取り直すまで task 3.1 の未取得とする。CLI や追試の成功を修正後 worker の成功へ流用しない。
 
 ### 実ホームへの導入はレビューできる手順として渡す
 

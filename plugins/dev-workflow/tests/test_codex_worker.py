@@ -294,7 +294,11 @@ class ForegroundTest(unittest.TestCase):
                 with self.subTest(inherited=inherited, role=role):
                     self.run_cli(job, role=role)
                     call = self.calls(job)[0]
-                    self.assertIn('--dangerously-bypass-hook-trust', call['serverArgs'])
+                    self.assertNotIn('--dangerously-bypass-hook-trust', call['serverArgs'])
+                    self.assertNotIn('bypass_hook_trust=true', call['serverArgs'])
+                    thread = next(m['params'] for m in self.calls(job)
+                                  if m.get('method') == 'thread/start')
+                    self.assertEqual(thread['config'], {'bypass_hook_trust': True})
                     self.assertIsNotNone(call['runtimeHooks'])
                     for key, value in expected.items():
                         self.assertEqual(call['guardEnv'][key], value)

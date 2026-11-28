@@ -6,7 +6,7 @@
 
 方針は「Codex で動く」「載せ替える」「Codex では持たない」。現状の「載せ替えた」はその行に示す検証範囲の実装が完了した場合だけ使う。G002 / #1862 では git/秘密の拒否判定と同期質問の拒否判定を fixture で検証済みだが、質問対応全体は未完了（入力確認ゲート未達）である。G003 / #1863 の配布接続実装と取得済み実機範囲は下表に記録する。worker/app-server の実機適用と残りの対象操作は未取得で、全対象について「Codex で動く」とはまだ判定していない。「持たない」も目的が不要という意味ではなく、代替のない不足を理由欄に残す。
 
-3 対象は Codex 本体・native subagent・`codex-worker.py` の役。各行の未確認は対象別の実機証跡が未取得という意味。worker の一時 CODEX_HOME は認証リンク・最小 config と検証済み hook を作り、起動ごとに trust bypass を渡す。本体と native の取得済み範囲は下表の証跡に限定し、通常 profile の設定や Claude の役で hook が動いた証拠を代用しない。hook コマンドの exit 0 や worker の completed だけで有効としない。
+3 対象は Codex 本体・native subagent・`codex-worker.py` の役。各行の未確認は対象別の実機証跡が未取得という意味。worker の一時 CODEX_HOME は認証リンク・最小 config と検証済み hook を作り、配布済み一時 runtime の `thread/start` params に `"config": {"bypass_hook_trust": true}` を渡す。本体と native の取得済み範囲は下表の証跡に限定し、通常 profile の設定や Claude の役で hook が動いた証拠を代用しない。hook コマンドの exit 0 や worker の completed だけで有効としない。
 
 #1856 A1 の Codex 用ファイルは、その作成時にこの一覧を参照し、複製しない。現時点の入口は [Codex 開発案内](codex-develop.md)。将来の参照元パスや #1856 の構成・操作対応表をこの子では新設しない。G002（#1862）は拒否判定、G003（#1863）は配布・信頼・実機証跡を担当し、同じ行の現状・移植先・対象別証跡を更新する。
 
@@ -116,7 +116,7 @@ PROBE
 4. 対象ごと・操作ごとに、版、harness HEAD、対象、隔離 config / 配布・信頼の状態、入力、cwd、開始終了時刻、exit code、拒否理由・ログを repo 外に残す。前後の `git status --porcelain`、HEAD、対象ファイルの内容ハッシュ、bare remote の refs を比較し、拒否に加えて操作が未実行だったことを確認する。秘密試験はダミー値がツール結果へ出なかったこと、質問は待ち画面に入らず戻ったことも確認する。exit 0 / completed だけで合格にしない。
 5. 証跡の URL または保存先を各行の対象欄へ別々に付ける。起動不能・未配布・信頼未成立・対象の操作なし・未試行なら、その対象だけ「未確認 — 未取得理由: …」と記録する。#1862 が判定を実装しても #1863 の配布・信頼・3 対象の証拠を一括で確認済みにしない。Claude 経路の成功は別の記録とする。
 
-G003 の[隔離準備記録](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) と[本体の信頼比較・本体/native実機記録](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236567986)。採用方式は配布元を確認した一時 runtime の `hooks.json` ＋起動ごとの `--dangerously-bypass-hook-trust`。信頼なしでは hook が動かず、CODEX_HOME の `requirements.toml` も読まれなかった。管理元 `/etc/codex` は隔離できないため不採用。app-server の実機適用は本体が接続後に取る（未取得）。同期質問は配布コマンドのfixtureで印付きdeny/印なし無出力を取得したが、実toolの到達・拒否は未取得。#1862 の非同期・名前空間・nested経路と質問対応全体は引き続き未完了。
+G003 の[隔離準備記録](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) と[本体の信頼比較・本体/native実機記録](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236567986)。採用方式は配布元を確認した一時 runtime の `hooks.json` と起動経路別の信頼設定（CLI 本体 / codex exec は `--dangerously-bypass-hook-trust`、app-server は `thread/start.params.config.bypass_hook_trust: true`）。信頼なしでは hook が動かず、CODEX_HOME の `requirements.toml` も読まれなかった。管理元 `/etc/codex` は隔離できないため不採用。[app-server 追試（codex-cli 0.163.0）](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236723402) では、最上位の `--dangerously-bypass-hook-trust` と `-c bypass_hook_trust=true` のいずれでも reset が実行され snapshot が変化した。同じ配布済み一時 CODEX_HOME を使う `codex exec --dangerously-bypass-hook-trust` は拒否し、app-server は `thread/start` の params に `"config": {"bypass_hook_trust": true}` を渡した場合だけ拒否・snapshot 不変となった。 修正後 worker の git・秘密・対照セルは本体が取り直す（未取得）。同期質問は配布コマンドのfixtureで印付きdeny/印なし無出力を取得したが、実toolの到達・拒否は未取得。#1862 の非同期・名前空間・nested経路と質問対応全体は引き続き未完了。
 
 本体の git 記録は reset/main push/force push/branch -D/clean の5種、native は子 thread の reset のみ。checkout/restore/no-verify/no-gpg-sign と代表変形、nativeの他操作・無害な対照は未取得。全9種の確認済みとはしない。本体の対照は status、準備時の feature push は直接gitによる対照である。
 

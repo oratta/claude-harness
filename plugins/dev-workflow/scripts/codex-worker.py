@@ -387,7 +387,7 @@ class Rpc:
         hooks = hook_runtime_module()
         env.update(hooks.guard_environment())
         env['CODEX_HOME'] = home
-        self.proc = subprocess.Popen(['codex', *hooks.TRUST_ARGS, 'app-server', '-c', 'model_provider="openai"'], cwd=cwd, env=env,
+        self.proc = subprocess.Popen(['codex', 'app-server', '-c', 'model_provider="openai"'], cwd=cwd, env=env,
             stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True)
         self.events = queue.Queue()
         self.buffer = []
@@ -530,7 +530,9 @@ def run_turn(rpc, recorder, payload, account, runtime, cwd, state):
     inflight = recorder.inflight(account)
     quota_available(limits, account['quota_margin_pct'], inflight)
     thread_result = rpc.request('thread/start', {'cwd': cwd, 'model': model,
-        'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai'})['thread']
+        'sandbox': sandbox, 'approvalPolicy': 'never', 'modelProvider': 'openai',
+        # Only the prepared temporary runtime is used for this thread.
+        'config': dict(hook_runtime_module().THREAD_CONFIG)})['thread']
     thread = thread_result['id']
     state.thread_id = thread
     recorder.record_thread(thread)

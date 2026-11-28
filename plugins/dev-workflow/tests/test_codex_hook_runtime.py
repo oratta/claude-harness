@@ -5,6 +5,7 @@ import os
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import patch
@@ -28,6 +29,14 @@ class RuntimeTests(unittest.TestCase):
         self.target = self.root/'runtime'
         self.target.mkdir()
         self.module = load(SCRIPT)
+
+    def test_cli_reports_transport_specific_trust_settings(self):
+        result = subprocess.run([sys.executable, str(SCRIPT), '--target', str(self.target)],
+                                text=True, capture_output=True, check=True)
+        settings = json.loads(result.stdout)
+        self.assertEqual(settings['trust_args'], ['--dangerously-bypass-hook-trust'])
+        self.assertEqual(settings['thread_config'], {'bypass_hook_trust': True})
+        self.assertEqual(settings['environment'], self.module.guard_environment())
 
     def test_preserves_minimal_auth_config_and_pins_parent_paths(self):
         auth = self.root/'auth.json'; auth.write_text('{}')

@@ -48,7 +48,9 @@ ID token の email と `account/read` を照合する。ターン開始前は元
 
 ## hook runtime と本体向け導入手順
 
-worker は全 role の runtime に `codex-hook-runtime.py` で既存 PreToolUse 定義を配布し、`codex --dangerously-bypass-hook-trust app-server` で起動する。helper は実体のある checkout から adapter/git/secret/ask と secret の Python sibling・git 共通判定を解決し、bash/python3 の存在も検査する。hook 内の実行系は一時 `.hook-bin` の絶対リンクへ固定する。親の guard パス4変数も子環境で配布元へ固定する。`DEV_WORKFLOW_UNATTENDED` と git/secret の off、TMPDIR/TMPPREFIX、その他の継承契約は保つ。依存欠落なら server/turn を起こさず失敗 JSON と exit 2、準備中の失敗を含め runtime は削除する。既存 guard の動的失敗・timeout の fail-open は変わらない。
+worker は全 role の runtime に `codex-hook-runtime.py` で既存 PreToolUse 定義を配布し、`codex app-server` で起動し、配布済み一時 runtime の `thread/start` params に `"config": {"bypass_hook_trust": true}` を渡す。helper は実体のある checkout から adapter/git/secret/ask と secret の Python sibling・git 共通判定を解決し、bash/python3 の存在も検査する。hook 内の実行系は一時 `.hook-bin` の絶対リンクへ固定する。親の guard パス4変数も子環境で配布元へ固定する。`DEV_WORKFLOW_UNATTENDED` と git/secret の off、TMPDIR/TMPPREFIX、その他の継承契約は保つ。依存欠落なら server/turn を起こさず失敗 JSON と exit 2、準備中の失敗を含め runtime は削除する。既存 guard の動的失敗・timeout の fail-open は変わらない。
+
+[app-server 追試（codex-cli 0.163.0）](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236723402) では、最上位の `--dangerously-bypass-hook-trust` と `-c bypass_hook_trust=true` のいずれでも reset が実行され snapshot が変化した。同じ配布済み一時 CODEX_HOME を使う `codex exec --dangerously-bypass-hook-trust` は拒否し、app-server は `thread/start` の params に `"config": {"bypass_hook_trust": true}` を渡した場合だけ拒否・snapshot 不変となった。 CLI 本体 / codex exec ではフラグを使い、app-server では thread ごとの config 上書きを使う。helper の JSON の `trust_args` は CLI 用、`thread_config` は app-server の `thread/start.params.config` 用であり、通常 profile に自動適用しない。修正後 worker の実機セルは本体の再取得待ち。
 
 以下は主が内容をレビューするための手順であり、この change は実ホームに適用しない。通常 profile への bypass の自動追加もしない。まず配布元 checkout の HEAD と差分、`hooks/codex/hooks.json`、adapter、依存4ファイルと bash/python3 の実体を確認する（絶対パスは helper の JSON と `.hook-bin` のリンク先で確認できる）。配布元が移動・更新されたら新しい一時 target でやり直す。
 

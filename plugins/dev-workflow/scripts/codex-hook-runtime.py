@@ -9,7 +9,9 @@ import shutil
 import tempfile
 
 MINIMAL_CONFIG = 'cli_auth_credentials_store = "file"\n[features]\napps = false\n'
-TRUST_ARGS = ['--dangerously-bypass-hook-trust']
+# CLI/exec accept the flag; app-server needs the per-thread boolean override.
+CLI_TRUST_ARGS = ['--dangerously-bypass-hook-trust']
+THREAD_CONFIG = {'bypass_hook_trust': True}
 
 
 def guard_environment():
@@ -90,7 +92,8 @@ def main():
         env = prepare(args.target)
     except (OSError, ValueError):
         parser.exit(2, 'hook_runtime_preparation_failed: target/source/dependencies must be checked\n')
-    print(json.dumps({'environment': env, 'trust_args': TRUST_ARGS}))
+    print(json.dumps({'environment': env, 'trust_args': CLI_TRUST_ARGS,
+                      'thread_config': THREAD_CONFIG}))
 
 
 if __name__ == '__main__':
