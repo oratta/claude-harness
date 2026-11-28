@@ -86,21 +86,21 @@ class RequestFixture:
         with patch.object(sys, 'argv', args):
             return m.main()
 
-    def call_profile(self, profile, *, phase='implement', profile_file=None, out=None):
+    def call_profile(self, profile, *extra, phase='implement', profile_file=None, out=None):
         target = out or self.out
         args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
                 '--cwd', str(self.cwd), '--profile', profile,
                 '--account-home', 'current=' + str(self.home),
-                '--account-home', 'mapped=' + str(self.home), '--out', str(target)]
+                '--account-home', 'mapped=' + str(self.home), '--out', str(target), *extra]
         if profile_file:
             args.extend(['--profile-file', str(profile_file)])
         with patch.object(sys, 'argv', args):
             return m.main()
 
-    def call_automatic(self, *, phase='implement', accounts=('a', 'b'), out=None):
+    def call_automatic(self, *extra, phase='implement', accounts=('a', 'b'), out=None):
         target = out or self.out
         args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
-                '--cwd', str(self.cwd), '--out', str(target)]
+                '--cwd', str(self.cwd), '--out', str(target), *extra]
         for account in accounts:
             home = self.root / ('codex-' + account)
             home.mkdir(exist_ok=True)
@@ -163,6 +163,70 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 self.assertEqual(result['head'], subprocess.check_output(
                     ['git', '-C', str(self.cwd), 'rev-parse', 'HEAD'], text=True).strip())
                 self.assertFalse(self.out.exists())
+
+    # The caller classifies temporary writes; the resolver never inspects test bodies.
+    EXCEPTIONS = {'temp-write-review': 'review', 'visual-check': 'implement',
+                  'carryover-judge': 'decider', 'no-point-check': 'decider'}
+
+    def test_all_codex_exceptions_block_without_a_request_or_launch(self):
+        for profile in ('codex-standard', 'codex-economy', 'custom'):
+            for kind, phase in self.EXCEPTIONS.items():
+                with self.subTest(profile=profile, kind=kind), \
+                        patch.object(m, 'write') as write, \
+                        patch.object(m, 'prompt') as prompt, \
+                        patch.object(m.subprocess, 'Popen', wraps=subprocess.Popen) as launch:
+                    result = self.call_profile(profile, '--request-kind', kind,
+                                               phase=phase, profile_file=(
+                                                   self.profile_file if profile == 'custom' else None))
+                    self.assertEqual(result['status'], 'blocked')
+                    self.assertFalse(result['launchable'])
+                    self.assertEqual(result['request_kind'], kind)
+                    self.assertIn(kind, result['error'])
+                    self.assertIn('owner', result['error'])
+                    self.assertEqual(result['execution_config']['profile'], profile)
+                    self.assertEqual(result['selection']['reason'], 'explicit-profile')
+                    write.assert_not_called()
+                    prompt.assert_not_called()
+                    self.assertFalse(self.out.exists())
+                    self.assertFalse(any(Path(call.args[0][0]).name in ('claude', 'codex')
+                                         for call in launch.call_args_list))
+
+    def test_exceptions_keep_the_claude_route_when_the_configuration_allows_it(self):
+        for profile in ('hybrid-standard', 'claude-write-codex-review', 'claude-default'):
+            for kind, phase in self.EXCEPTIONS.items():
+                with self.subTest(profile=profile, kind=kind):
+                    result = self.call_profile(profile, '--request-kind', kind, phase=phase)
+                    self.assertEqual((result['status'], result['executor'], result['account']),
+                                     ('agent-required', 'claude', 'current'))
+                    self.assertEqual(result['request_kind'], kind)
+                    self.assertFalse(self.out.exists())
+
+    def test_normal_read_only_review_continues_on_codex(self):
+        result = self.call_profile('codex-standard', phase='review')
+        self.assertEqual(result['status'], 'request-written')
+        request = json.loads(self.out.read_text())
+        self.assertEqual(request['role'], 'impl-review')
+        self.assertEqual(request['codex_home'], str(self.home))
+
+    def test_cli_missing_does_not_rewrite_explicit_profiles_or_probe_usage(self):
+        with patch.object(m, 'automatic_selection', side_effect=AssertionError('auto selection')), \
+                patch.dict(os.environ, {'PATH': '/usr/bin:/bin'}):
+            # Stub PATH deterministically even if the host has installed claude in /usr/bin.
+            with patch('shutil.which', return_value=None):
+                result = self.call_profile('hybrid-standard', '--coordinator', 'cli', phase='review')
+                self.assertEqual(result['status'], 'blocked')
+                self.assertIn('claude', result['error'])
+                self.assertEqual(result['execution_config']['profile'], 'hybrid-standard')
+                self.assertFalse(self.out.exists())
+                result = self.call_profile('codex-standard', '--coordinator', 'cli', phase='review')
+                self.assertEqual(result['status'], 'request-written')
+                self.assertEqual(result['selection']['reason'], 'explicit-profile')
+                self.out.unlink()
+                for kind, phase in self.EXCEPTIONS.items():
+                    result = self.call_profile('codex-standard', '--coordinator', 'cli',
+                                               '--request-kind', kind, phase=phase)
+                    self.assertEqual(result['status'], 'blocked')
+                    self.assertFalse(self.out.exists())
 
     def test_every_phase_role_is_one_the_worker_accepts(self):
         self.assertLessEqual({role for role, _ in m.PHASES.values()}, set(worker_module.ROLES))
@@ -351,7 +415,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 target = self.root/('legacy-' + model + '.json')
                 args = [str(SCRIPT), 'request', '--phase', phase, '--input', str(self.input),
                         '--cwd', str(self.cwd), '--account', 'mapped', '--model', model,
-                        '--account-home', 'mapped=' + str(self.home), '--out', str(target)]
+                        '--account-home', 'mapped=' + str(self.home), '--out', str(target), *extra]
                 with patch.object(sys, 'argv', args):
                     result = m.main()
                 self.assertEqual((result['status'], result['model']), ('request-written', model))
@@ -387,6 +451,89 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
             value = {'fetched_at': now - age, 'windows': [
                 {'minutes': minutes, 'used_percent': used, 'reset_at': reset}]}
         return value
+
+    def test_cli_missing_selects_only_codex_at_zero_and_above(self):
+        for claude in (20, -5, None):
+            for codex in (0, 5, 65.3):
+                with self.subTest(claude=claude, codex=codex), \
+                        patch.object(m, '_run_usage_probe'), \
+                        patch.object(m, 'claude_usage_evidence', return_value={
+                            'account': 'default', 'margin': claude, 'fetched_at': 2_000_000}), \
+                        patch.object(m.time, 'time', return_value=2_000_000), \
+                        patch.object(m, 'read_codex_usages', return_value={
+                            'a': self.snapshot(-10, minutes=10080),
+                            'b': self.snapshot(codex, minutes=10080)}), \
+                        patch('shutil.which', return_value=None):
+                    result = self.call_automatic('--coordinator', 'cli')
+                    self.assertEqual(result['selection']['configuration'], 'codex-standard')
+                    self.assertEqual(result['selection']['reason'], 'claude-cli-unavailable')
+                    self.assertEqual(result['account'], 'b')
+                    self.assertTrue(all(entry['executor'] == 'codex' and entry['account'] == 'b'
+                                        for entry in result['execution_config']['roles'].values()))
+                    self.out.unlink()
+
+    def test_cli_missing_and_unusable_codex_stops_before_writing_or_launching(self):
+        for case in ('negative', 'missing', 'unregistered', 'off'):
+            self.write_registry({'enabled': case != 'off'})
+            usages = {'a': self.snapshot(-1, minutes=10080)} if case == 'negative' else {}
+            with self.subTest(case=case), patch.object(m, '_run_usage_probe'), \
+                    patch.object(m, 'claude_usage_evidence', return_value={
+                        'account': 'default', 'margin': 20, 'fetched_at': 2_000_000}), \
+                    patch.object(m.time, 'time', return_value=2_000_000), \
+                    patch.object(m, 'read_codex_usages', return_value=usages) as read, \
+                    patch('shutil.which', return_value=None), \
+                    patch.object(m, 'write') as write, patch.object(m, 'prompt') as prompt:
+                with self.assertRaisesRegex(RuntimeError, 'claude.*' + {
+                        'negative': 'negative', 'missing': 'missing',
+                        'unregistered': 'registered', 'off': 'off'}[case]):
+                    self.call_automatic('--coordinator', 'cli', accounts=(
+                        () if case == 'unregistered' else ('a',)))
+                if case in ('unregistered', 'off'):
+                    read.assert_not_called()
+                write.assert_not_called()
+                prompt.assert_not_called()
+                self.assertFalse(self.out.exists())
+
+    def test_claude_agent_and_available_cli_keep_the_original_selection_table(self):
+        for coordinator, executable in (('claude', None), ('cli', '/fixture/claude')):
+            for claude, codex in ((20, 5), (20, -5), (-5, 5), (-5, -5), (None, None)):
+                with self.subTest(coordinator=coordinator, claude=claude, codex=codex), \
+                        patch.object(m, '_run_usage_probe'), \
+                        patch.object(m, 'claude_usage_evidence', return_value={
+                            'account': 'default', 'margin': claude, 'fetched_at': 2_000_000}), \
+                        patch.object(m.time, 'time', return_value=2_000_000), \
+                        patch.object(m, 'read_codex_usages', return_value=(
+                            {} if codex is None else {'a': self.snapshot(codex, minutes=10080)})), \
+                        patch('shutil.which', return_value=executable):
+                    result = self.call_automatic('--coordinator', coordinator, accounts=('a',))
+                    self.assertEqual((result['selection']['configuration'], result['selection']['reason']),
+                                     m.select_configuration(claude, codex))
+                    self.out.unlink(missing_ok=True)
+
+    def test_cli_unavailable_and_exception_blocks_have_json_and_exit_2(self):
+        # Real subprocesses exercise PATH/executable detection and the public exit contract.
+        bin_dir = self.root / 'bin'
+        bin_dir.mkdir()
+        (bin_dir / 'git').symlink_to(subprocess.check_output(
+            ['/usr/bin/which', 'git'], text=True).strip())
+        fake = bin_dir / 'claude'
+        fake.write_text('#!/bin/sh\nexit 99\n')  # deliberately not executable
+        self.write_registry({'enabled': False})
+        with patch.dict(os.environ, {'PATH': str(bin_dir)}):
+            result = self.run_script('--coordinator', 'cli',
+                                     '--account-home', 'current=' + str(self.home))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        document = json.loads(result.stdout)
+        self.assertEqual(document['status'], 'blocked')
+        self.assertIn('claude', document['error'])
+        self.assertIn('off', document['error'])
+        self.assertFalse(self.out.exists())
+        self.write_registry({'enabled': True})
+        result = self.run_script('--profile', 'codex-standard', '--request-kind', 'visual-check',
+                                 '--account-home', 'current=' + str(self.home))
+        self.assertEqual(result.returncode, 2, result.stderr)
+        self.assertEqual(json.loads(result.stdout)['status'], 'blocked')
+        self.assertFalse(self.out.exists())
 
     def test_selection_table_and_zero_boundary(self):
         cases = [
@@ -707,7 +854,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
     def test_automatic_request_without_table_uses_codex_home_as_current_candidate(self):
         target = self.root / 'automatic-env-home.json'
         args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
-                '--cwd', str(self.cwd), '--out', str(target)]
+                '--cwd', str(self.cwd), '--out', str(target), *extra]
         selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
                      'reason': 'only-claude-has-headroom',
                      'claude': {'account': 'active', 'margin': 10, 'fetched_at': 2_000_000},
@@ -723,7 +870,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
         absent_home.mkdir()
         target = self.root / 'automatic-missing-home.json'
         args = [str(SCRIPT), 'request', '--phase', 'implement', '--input', str(self.input),
-                '--cwd', str(self.cwd), '--out', str(target)]
+                '--cwd', str(self.cwd), '--out', str(target), *extra]
         selection = {'selection_mode': 'automatic', 'configuration': 'claude-default',
                      'reason': 'no-provider-has-headroom',
                      'claude': {'account': None, 'margin': None, 'fetched_at': None},

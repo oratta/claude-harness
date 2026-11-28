@@ -11,6 +11,7 @@ import os
 import re
 from pathlib import Path
 import select
+import shutil
 import subprocess
 import sys
 import time
@@ -36,6 +37,9 @@ PHASES = {
     'explore': ('explore', 'worker/common.md'),
     'summarize': ('summarize', 'worker/common.md'),
 }
+# Exceptions retain the canonical phase/role settings, but need Claude's existing
+# verification route. Callers classify them before requesting a role.
+EXCEPTION_KINDS = ('temp-write-review', 'visual-check', 'carryover-judge', 'no-point-check')
 # The writers run with no OS sandbox and inherit the parent environment, exactly like the
 # Claude subagent each one mirrors, so they finish their own GitHub work. Every other role
 # is readOnly and cannot write anywhere, so the coordinator posts its verdict for it.
@@ -142,7 +146,17 @@ def all_codex_threshold():
 
 
 def select_configuration(claude_margin, codex_margin, codex_enabled=True,
-                         threshold=ALL_CODEX_THRESHOLD_DEFAULT):
+                         threshold=ALL_CODEX_THRESHOLD_DEFAULT, claude_available=True):
+    if not claude_available:
+        if not codex_enabled:
+            reason = 'Codex is off'
+        elif codex_margin is None:
+            reason = 'Codex margin is missing (or no registered account)'
+        elif codex_margin < 0:
+            reason = 'Codex margin is negative'
+        else:
+            return 'codex-standard', 'claude-cli-unavailable'
+        raise RuntimeError('claude CLI is unavailable on PATH: ' + reason)
     # Codex off (accounts.json "codex"."enabled": false) is the user's setting, not a
     # headroom result, so it has its own reason whatever the margins are.
     if not codex_enabled:
@@ -359,7 +373,7 @@ def _run_usage_probe(snapshot_path):
         pass
 
 
-def automatic_selection(mapping, now=None):
+def automatic_selection(mapping, now=None, *, claude_available=True):
     config_dir, snapshot_path = usage_paths()
     threshold = all_codex_threshold()
     _run_usage_probe(snapshot_path)
@@ -379,7 +393,7 @@ def automatic_selection(mapping, now=None):
     if not codex_enabled:
         codex['enabled'] = False
     selected, reason = select_configuration(claude['margin'], codex['margin'], codex_enabled,
-                                           threshold)
+                                           threshold, claude_available)
     return selected, {'selection_mode': 'automatic', 'configuration': selected,
         'reason': reason,
         'claude': {'account': claude['account'], 'margin': claude['margin'],
@@ -763,6 +777,7 @@ def build_request(args):
     check = subprocess.run(['git', '-C', str(cwd), 'rev-parse', '--show-toplevel'], capture_output=True, text=True, env=clean_env())
     if check.returncode or Path(check.stdout.strip()).resolve() != cwd:
         raise RuntimeError('cwd must be the repository/worktree root')
+    claude_available = args.coordinator == 'claude' or shutil.which('claude') is not None
     selection = None
     if args.profile:
         config = load_profile(args.profile, args.profile_file, set(mapping))
@@ -779,7 +794,7 @@ def build_request(args):
         selection = {'selection_mode': 'explicit', 'configuration': 'legacy',
                      'reason': 'explicit-account-model'}
     else:
-        selected, selection = automatic_selection(mapping)
+        selected, selection = automatic_selection(mapping, claude_available=claude_available)
         config = load_profile(selected, None, None)
         config = bind_codex_account(config, selection['codex']['account'], set(mapping))
         state = {'cwd': str(cwd), 'execution_config': config,
@@ -789,6 +804,29 @@ def build_request(args):
     # the worker chooses the sandbox from that role, and the phase instructions use gh.
     switched = not legacy and switches_to_decider(args.phase, args.pre_class)
     execution = resolve_execution(state, 'decider' if switched else role)
+    # Decide before constructing a prompt or writing an executable request. An all-Codex
+    # configuration (including the legacy pair) cannot silently launch a Claude exception.
+    exception = args.request_kind in EXCEPTION_KINDS
+    config = state.get('execution_config')
+    uses_claude = config is not None and any(
+        entry['executor'] == 'claude' for entry in config['roles'].values())
+    error = None
+    if exception and not uses_claude:
+        error = args.request_kind + ': Claude-free configuration; owner confirmation required'
+    elif (exception or execution['executor'] == 'claude') and not claude_available:
+        error = args.request_kind + ': claude CLI is unavailable on PATH'
+    if error:
+        result = {'status': 'blocked', 'launchable': False, 'phase': args.phase,
+                  'request_kind': args.request_kind, 'role': execution['role'],
+                  'error': error, 'selection': selection}
+        if config is not None:
+            result.update(execution_config=config,
+                          execution_config_hash=state['execution_config_hash'])
+        return result
+    if exception:
+        # The four existing exception routes use Claude even when the phase's ordinary
+        # reviewer/decider is Codex. Keep the selected configuration intact for later roles.
+        execution = dict(execution, executor='claude', account='current')
     # The legacy pair is the one way to pin a version, so no rule, mode or table touches it.
     tiers = (dict.fromkeys(('requested_tier', 'tier', 'tier_reason', 'tier_cap', 'executed_tier',
                             'budget_modes'))
@@ -800,7 +838,8 @@ def build_request(args):
     if execution['executor'] == 'claude':
         result = {'status': 'agent-required', 'phase': args.phase, 'role': execution['role'],
                 'executor': execution['executor'], 'account': execution['account'],
-                'effort': execution.get('effort'), 'head': head, 'selection': selection} | tiers
+                'effort': execution.get('effort'), 'head': head, 'selection': selection,
+                'request_kind': args.request_kind} | tiers
         if 'execution_config' in state:
             result.update(execution_config=state['execution_config'],
                           execution_config_hash=state['execution_config_hash'])
@@ -836,6 +875,10 @@ def main():
     request.add_argument('--cwd', required=True)
     request.add_argument('--account')
     request.add_argument('--model')
+    request.add_argument('--request-kind', choices=('normal',) + EXCEPTION_KINDS,
+                         default='normal', help='caller classification of the requested check')
+    request.add_argument('--coordinator', choices=('claude', 'cli'), default='claude',
+                         help='Claude Agent coordinator (default), or a coordinator requiring CLI')
     request.add_argument('--profile')
     request.add_argument('--profile-file')
     request.add_argument('--account-home', action='append', default=[], metavar='NAME=PATH',
@@ -863,7 +906,10 @@ def main():
 
 if __name__ == '__main__':
     try:
-        print(json.dumps(main(), ensure_ascii=False))
+        result = main()
+        print(json.dumps(result, ensure_ascii=False))
+        if result.get('status') == 'blocked':
+            sys.exit(2)
     except (OSError, ValueError, RuntimeError, KeyError) as exc:
         print(json.dumps({'status': 'blocked', 'error': str(exc)}, ensure_ascii=False))
         sys.exit(2)
