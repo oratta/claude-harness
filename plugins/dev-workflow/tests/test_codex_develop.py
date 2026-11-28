@@ -2075,7 +2075,7 @@ class DocumentationContracts(unittest.TestCase):
         gate = (self.root / 'skills/develop/references/gate-result.md').read_text()
         for text, kinds in ((self.skill, ('visual-check',)),
                             (gate, ('carryover-judge', 'no-point-check')),
-                            (self.adapter, ('temp-write-review',))):
+                            ((self.root / 'references/codex-develop-exceptions.md').read_text(), ('temp-write-review',))):
             for kind in kinds:
                 with self.subTest(kind=kind):
                     self.assertIn('--request-kind ' + kind, text)
@@ -2088,6 +2088,19 @@ class DocumentationContracts(unittest.TestCase):
                       'SHARED_BUDGET_MODE=depleted'):
             self.assertIn(value, gate)
 
+    def test_exception_reference_is_required_at_each_call_site(self):
+        reference = 'references/codex-develop-exceptions.md'
+        for text in (self.adapter, self.skill):
+            self.assertRegex(text, r'[^\n]*' + re.escape(reference) + r'[^\n]*必ず Read')
+        gate = (self.root / 'skills/develop/references/gate-result.md').read_text()
+        for status in ('needs-carryover-judge', 'needs-no-point-check'):
+            section = gate.split('## ' + status + '\n', 1)[1].split('\n## ', 1)[0]
+            self.assertIn(reference, section)
+            self.assertIn('必ず Read', section)
+            self.assertIn('起動不可', section)
+            self.assertIn('理由', section)
+            self.assertIn('URL', section)
+
     def test_cli_absence_is_separate_from_claude_coordinator_selection(self):
         for value in ('--coordinator claude', '--coordinator cli', 'PATH',
                       'margin が 0 以上', '負・欠測・未登録・オフ',
@@ -2098,7 +2111,7 @@ class DocumentationContracts(unittest.TestCase):
 
     def test_temp_review_recovery_contract_is_shared_and_gates_completion(self):
         heading = '主の再実行証拠による復帰'
-        contract = self.adapter.split('## ' + heading, 1)[1]
+        contract = (self.root / 'references/codex-develop-exceptions.md').read_text().split('## ' + heading, 1)[1]
         for value in ('固定 HEAD', '正確なコマンド/範囲', '環境/一時領域', '期待結果',
                       '実施日時', '出力', '終了コード', '回答の出典', 'セッション ID',
                       '親経由', '証拠 URL', '必須記録が不足', '補足のみ',
@@ -2114,7 +2127,8 @@ class DocumentationContracts(unittest.TestCase):
                      'skills/pr-review-gate/stages/hold-resume.md'):
             text = (self.root / path).read_text()
             with self.subTest(path=path):
-                self.assertIn('references/codex-develop.md', text)
+                self.assertIn('references/codex-develop-exceptions.md', text)
+                self.assertIn('必ず', text)
                 self.assertIn(heading, text)
                 for value in ('一時書き込みレビュー待ち', '主の結果だけで合格にしない',
                               '独立レビュー完了結果', '証拠 URL', 'fresh G'):
