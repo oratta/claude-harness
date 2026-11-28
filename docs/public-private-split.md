@@ -66,6 +66,7 @@
 | `output-styles/readable.md` | 公開版 | 住人の書き方に効く Output Style（下書きの「配る」） |
 | `scripts/lint.sh` | 公開版 | このリポジトリの lint で、公開版の CI が使う |
 | `scripts/sync.sh` | 公開版 | marketplace の clone を最新にして rules の symlink を張る道具で、誰の環境でも意味がある |
+| `scripts/codex-shared-instructions.py` | 公開版 | 公開 rules の生成と明示された Codex ホームへの配布・容量検査を担う。個人本文は配布時だけローカルへ生成する |
 | `scripts/test.sh` | 公開版 | このリポジトリのテストの入口で、公開版の CI が使う |
 | `scripts/test-auto-merge-workflow.sh` | 公開版 | auto-merge の workflow の攻撃再現テストで、公開版の CI が使う |
 | `scripts/poc/` | 公開版 | Codex の app-server の試作で、オーナーの環境に依存しない |
