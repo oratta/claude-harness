@@ -294,12 +294,95 @@ EOF
   done
 }
 
+# 公式仕様の再現。引用・展開・複合 shell 等は対象外（実マッチャー未実測）。
+# https://code.claude.com/docs/en/permissions#wildcard-patterns
+@test "deny: official-spec model covers option positions and refspec boundaries before/after" {
+  python3 - "$DENY" <<'PYTHON'
+import json, pathlib, re, sys
+current = json.loads(pathlib.Path(sys.argv[1]).read_text())['permissions']['deny']
+# 旧7件を固定し、追加前の穴も対照にする。実マッチャーの実測ではない。
+old = [
+    'Bash(git push origin main:*)', 'Bash(git push origin master:*)',
+    'Bash(git push -f:*)', 'Bash(git push --force:*)',
+    'Bash(git push --force-with-lease:*)', 'Bash(git push --no-verify:*)',
+    'Bash(gh pr merge:*)',
+]
+
+def matches(rule, command):
+    assert rule.startswith('Bash(') and rule.endswith(')')
+    pattern = rule[5:-1]
+    if pattern.endswith(':*'):
+        pattern = pattern[:-2] + ' *'
+    if pattern.endswith(' *') and pattern.count('*') == 1 and command == pattern[:-2]:
+        return True
+    return re.fullmatch('.*'.join(re.escape(p) for p in pattern.split('*')), command) is not None
+
+# モデルの対照。ここで失敗したら候補の可否を論じる前にモデルを直す。
+controls = [
+    ('Bash(ls *)', 'ls', True), ('Bash(ls *)', 'ls -la', True),
+    ('Bash(ls *)', 'lsof', False), ('Bash(ls*)', 'lsof', True),
+    ('Bash(ls:*)', 'ls', True), ('Bash(ls:*)', 'lsof', False),
+    ('Bash(git * main)', 'git push origin main', True),
+    ('Bash(* --help *)', 'npm --help', False),
+    ('Bash(* --help *)', 'npm --help x', True),
+    ('Bash(git:* push)', 'git push', False),
+]
+for rule, command, expected in controls:
+    assert matches(rule, command) == expected, (rule, command)
+
+# (コマンド, 既存7件の期待, 追加後の期待) を境界ごとに固定。
+cases = []
+for option in ('--force', '-f', '--force-with-lease', '--no-verify'):
+    cases.extend([
+        (f'git push {option} origin feature', True, True),
+        (f'git push origin feature {option}', False, True),
+        (f'git push origin {option} feature', False, True),
+        (f'git push origin feature {option} --porcelain', False, True),
+    ])
+for destination in ('main', 'master', 'refs/heads/main', 'refs/heads/master'):
+    for suffix in ('', ' --porcelain', ' other:feature/bar'):
+        cases.append((f'git push origin HEAD:{destination}{suffix}', False, True))
+    cases.append((f'git push origin HEAD:{destination}-fix', False, False))
+cases.extend([
+    ('git push --force-with-lease=refs/heads/feature:abc123 origin feature', False, True),
+    ('git push origin feature --force-with-lease=refs/heads/feature:abc123', False, True),
+    ('git push origin feature:main other:feature/bar', False, True),
+    ('git push -u origin HEAD:master', False, True),
+    ('git push origin feature/foo', False, False),
+    ('git push -u origin feature/foo', False, False),
+    ('git push origin HEAD:feature/foo', False, False),
+    ('git push origin feature:main-fix', False, False),
+    ('git push origin main-fix', False, False),
+    ('git push origin master-fix', False, False),
+    ('git push origin feature --force-if-includes', False, False),
+    ('git push origin -feature', False, False),
+    ('git push origin feature --force-with-lease-extra', False, False),
+    ('git push origin feature --no-verify-extra', False, False),
+    ('git push origin main', True, True),
+    ('git push origin master', True, True),
+    ('git push origin main --porcelain', True, True),
+    ('gh pr merge 123', True, True),
+])
+for command, before, after in cases:
+    assert any(matches(r, command) for r in old) == before, ('before', command)
+    assert any(matches(r, command) for r in current) == after, ('after', command)
+assert len(current) == len(set(current)) == 25
+assert set(old) <= set(current)
+print(f'PASS: {len(controls)} model controls, {len(cases)} commands before/after; 7 + 18 = 25 rules')
+PYTHON
+}
+
 @test "deny: README and docs describe merging into an existing settings.json without dropping deny entries" {
   grep -qF '.claude/settings.json' "$README"
-  grep -q 'deny' "$README"
+  grep -qF 'deny リスト 25 件' "$README"
   grep -q '既存の deny を消さずに' "$README"
   grep -q 'deny' "$DOC"
   grep -qF 'Bash(gh pr merge:*)' "$DOC"
+  grep -qF 'Bash(git push *:main)' "$DOC"
+  grep -qF 'Bash(git push * --force)' "$DOC"
+  grep -qF 'git push origin feature/foo' "$DOC"
+  grep -qF 'git push -u origin feature/foo' "$DOC"
+  grep -qF '実マッチャー未実測' "$DOC"
 }
 
 @test "deny: README merge command preserves existing deny entries and other keys" {
@@ -316,6 +399,8 @@ EOF
   jq -e '.permissions.deny | index("Bash(git push --force:*)") != null' "$cur.merged" >/dev/null
   jq -e '.permissions.allow == ["Bash(ls:*)"]' "$cur.merged" >/dev/null
   jq -e '.env.FOO == "bar"' "$cur.merged" >/dev/null
+  # テンプレートの全25件と既存 deny の和集合を保持する。
+  jq -e --slurpfile tpl "$DENY" '.permissions.deny == ((["Bash(rm -rf:*)", "Bash(gh pr merge:*)"] + $tpl[0].permissions.deny) | unique)' "$cur.merged" >/dev/null
   # 重複しない（既存にあった gh pr merge は 1 件のまま）
   [ "$(jq '[.permissions.deny[] | select(. == "Bash(gh pr merge:*)")] | length' "$cur.merged")" -eq 1 ]
 }
