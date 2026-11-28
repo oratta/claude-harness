@@ -1,0 +1,25 @@
+{
+  "version": "codex-cli 0.163.0",
+  "source": "https://github.com/oratta/claude-harness/issues/1862#issuecomment-7235173851",
+  "provenance": {
+    "bash": "実測（本体、source URL）; identifiers redacted",
+    "apply_patch": "実測（本体、source URL）; identifiers redacted",
+    "request_user_input": "実測（本体、source URL）; identifiers redacted"
+  },
+  "method": "本体: temporary CODEX_HOME, stdin capture PreToolUse hook; codex exec --dangerously-bypass-hook-trust --skip-git-repo-check. Worker did not rerun Codex. request_user_input reached hook before exec client rejected the tool.",
+  "documented": {
+    "source": "https://learn.chatgpt.com/docs/hooks",
+    "shell/unified exec": "Bash / tool_input.command; only normalized shell input above measured",
+    "apply_patch": "command is patch text"
+  },
+  "unconfirmed": {
+    "request_user_input_async": "No measured hook path/name; not supported by adapter",
+    "namespaced public tools": "functions.request_user_input to hook name mapping not measured; not supported as hook names",
+    "code mode nested calls": "code_mode under development false; not measured; no coverage claim",
+    "native subagent/worker/trusted home": "#1863; not measured"
+  },
+  "excluded": {
+    "request_permissions": "permission request, outside scope"
+  },
+  "other_tests": "All modified payloads and command cases in unittest are synthetic, not additional real hook observations."
+}
