@@ -498,7 +498,12 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
 
     def test_claude_agent_and_available_cli_keep_the_original_selection_table(self):
         for coordinator, executable in (('claude', None), ('cli', '/fixture/claude')):
-            for claude, codex in ((20, 5), (20, -5), (-5, 5), (-5, -5), (None, None)):
+            for claude, codex, configuration, reason in (
+                    (20, 5, 'claude-write-codex-review', 'both-providers-have-headroom'),
+                    (20, -5, 'claude-default', 'only-claude-has-headroom'),
+                    (-5, 5, 'codex-standard', 'only-codex-has-headroom'),
+                    (-5, -5, 'claude-default', 'no-provider-has-headroom'),
+                    (None, None, 'claude-default', 'no-provider-has-headroom')):
                 with self.subTest(coordinator=coordinator, claude=claude, codex=codex), \
                         patch.object(m, '_run_usage_probe'), \
                         patch.object(m, 'claude_usage_evidence', return_value={
@@ -509,7 +514,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                         patch('shutil.which', return_value=executable):
                     result = self.call_automatic('--coordinator', coordinator, accounts=('a',))
                     self.assertEqual((result['selection']['configuration'], result['selection']['reason']),
-                                     m.select_configuration(claude, codex))
+                                     (configuration, reason))
                     self.out.unlink(missing_ok=True)
 
     def test_cli_unavailable_and_exception_blocks_have_json_and_exit_2(self):
@@ -865,7 +870,8 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 patch.object(m, 'automatic_selection', return_value=('claude-default', selection)) as automatic, \
                 patch.object(sys, 'argv', args):
             m.main()
-        automatic.assert_called_once_with({'current': str(self.home)})
+        automatic.assert_called_once_with(
+            {'current': str(self.home)}, claude_available=True)
 
     def test_automatic_request_without_table_leaves_codex_missing_when_default_home_absent(self):
         absent_home = self.root / 'home-without-codex'
@@ -882,7 +888,7 @@ class ForegroundRequest(RequestFixture, unittest.TestCase):
                 patch.object(m, 'automatic_selection', return_value=('claude-default', selection)) as automatic, \
                 patch.object(sys, 'argv', args):
             result = m.main()
-        automatic.assert_called_once_with({})
+        automatic.assert_called_once_with({}, claude_available=True)
         self.assertIsNone(result['selection']['codex']['margin'])
 
     def test_explicit_profile_without_table_does_not_use_default_codex_home(self):
