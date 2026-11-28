@@ -109,13 +109,13 @@ sync_codex() {
     return 0
   fi
   if ! codex_upgrade="$(codex plugin marketplace upgrade "$codex_name" --json)"; then
-    echo "[harness-sync] Codex marketplace upgrade に失敗しました: $codex_name（配線は続行）" >&2
+    echo "[harness-sync] Codex marketplace upgrade に失敗しました: ${codex_name}（配線は続行）" >&2
     return 1
   fi
   if ! printf '%s\n' "$codex_upgrade" | jq -e '
     type == "object" and (.errors | type == "array" and length == 0)
     ' >/dev/null 2>&1; then
-    echo "[harness-sync] Codex marketplace upgrade の JSON が不正か errors が非空です: $codex_name（配線は続行）" >&2
+    echo "[harness-sync] Codex marketplace upgrade の JSON が不正か errors が非空です: ${codex_name}（配線は続行）" >&2
     return 1
   fi
 }
