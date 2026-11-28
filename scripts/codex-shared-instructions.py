@@ -202,7 +202,9 @@ def capacity(args):
     if args.fixture:
         manifest = json.loads((ROOT/'tests/fixtures/codex-shared-instructions/manifest.json').read_text())
         # Match the real generator's source headings/separators for private rules.
-        data = generate(ROOT)
+        data = (ROOT/ARTIFACT).read_bytes()
+        if data != generate(ROOT):
+            raise ValueError('stale public artifact; run generate')
         personal = b''
         for entry in manifest['inputs']:
             if entry['source'] == 'personal-rules':

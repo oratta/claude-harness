@@ -2,6 +2,8 @@
 
 Claude Code用スキル・プラグインのマーケットプレイス
 
+Codex への共通ルールの明示配布・容量検査・worker 継承・自動メモリ非取込は [専用手順](docs/codex-shared-instructions.md) を参照。
+
 ## クイックスタート
 
 ```bash

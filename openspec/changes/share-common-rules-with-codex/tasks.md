@@ -18,8 +18,8 @@
 ## 3. worker の共通区画継承
 
 - [x] 3.1 fake app-server に runtime AGENTS/config の観測を追加し、選択したaccountの区画だけがコピーされ、区画外指示と親MCPが入らず、容量131072が毎回生成されるテストを書く。未配布・破損区画でturn/start前に非0となり同期を案内することも検査する。触る範囲: plugins/dev-workflow/tests/test_codex_worker.py:15-47、plugins/dev-workflow/tests/test_codex_worker.py:105-128、plugins/dev-workflow/tests/test_codex_worker.py:329-348、plugins/dev-workflow/tests/test_codex_worker.py:437-440
-- [ ] 3.2 runtime構築を更新し、認証リンク・既存隔離設定・0700・TMPDIR/TMPPREFIX継承を維持したまま管理区画と容量設定を追加する。共通区画の未配布/破損を起動前に拒否し、`python3 -B plugins/dev-workflow/tests/test_codex_worker.py` を通す。触る範囲: plugins/dev-workflow/scripts/codex-worker.py:211-241、plugins/dev-workflow/scripts/codex-worker.py:722-745、scripts/codex-shared-instructions.py（1で新規）
-- [ ] 3.3 既存workerテストのaccount fixtureを配布済みに揃え、他の既存テストに影響するfixtureも確認する。未配布を試すケース以外が偶然起動拒否されないようにし、対象テストが実際に本来の挙動まで到達して成功することを確かめる。workerの同期前エラーと継承境界をdocsに記載する。触る範囲: plugins/dev-workflow/tests/test_codex_worker.py:105-128、docs/codex-shared-instructions.md（1で新規）、plugins/dev-workflow/tests/test_codex_develop.py:745-795（関連fixtureの確認）
+- [x] 3.2 runtime構築を更新し、認証リンク・既存隔離設定・0700・TMPDIR/TMPPREFIX継承を維持したまま管理区画と容量設定を追加する。共通区画の未配布/破損を起動前に拒否し、`python3 -B plugins/dev-workflow/tests/test_codex_worker.py` を通す。触る範囲: plugins/dev-workflow/scripts/codex-worker.py:211-241、plugins/dev-workflow/scripts/codex-worker.py:722-745、scripts/codex-shared-instructions.py（1で新規）
+- [x] 3.3 既存workerテストのaccount fixtureを配布済みに揃え、他の既存テストに影響するfixtureも確認する。未配布を試すケース以外が偶然起動拒否されないようにし、対象テストが実際に本来の挙動まで到達して成功することを確かめる。workerの同期前エラーと継承境界をdocsに記載する。触る範囲: plugins/dev-workflow/tests/test_codex_worker.py:105-128、docs/codex-shared-instructions.md（1で新規）、plugins/dev-workflow/tests/test_codex_develop.py:745-795（関連fixtureの確認）
 
 ## 4. UTF-8 容量と ponta 固定入力
 
