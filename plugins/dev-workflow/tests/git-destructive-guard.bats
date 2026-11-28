@@ -2466,8 +2466,8 @@ assert_role_deny() {
   ! has_continue || return 1
   local r
   r="$(reason)"
-  [[ "$r" == *本体* && "$r" == *承認* && "$r" == *主が実行* ]]
-  [[ "$r" != *'許可を受けられる打ち方'* && "$r" != *確認画面* && "$r" != *'2 回目'* ]]
+  [[ "$r" == *本体* && "$r" == *承認* && "$r" == *主が実行* ]] || return 1
+  [[ "$r" != *'許可を受けられる打ち方'* && "$r" != *確認画面* && "$r" != *'2 回目'* ]] || return 1
 }
 @test "role: nine kinds deny for every mode FORCE and bypass marks including off" {
   export DEVELOP_ROLE=worker

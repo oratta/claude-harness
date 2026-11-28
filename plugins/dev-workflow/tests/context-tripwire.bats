@@ -1045,7 +1045,10 @@ role_hook() {
 @test "role: inherited main marker selects own latest usage, never a sibling" {
   role_context "999999,0,0" "500,100000,100000"
   make_transcript "$SUBAGENTS" "agent-${AGENT_ID}.jsonl" "1,0,0" >/dev/null
-  role_hook PostToolUse Read
+  local body
+  body="$(payload PostToolUse '' Read | python3 -c 'import json,sys; d=json.load(sys.stdin); d["agent_transcript_path"]=sys.argv[1]; print(json.dumps(d))' "$SUBAGENTS/agent-${AGENT_ID}.jsonl")"
+  run --separate-stderr env DEVELOP_ROLE=worker "$SCRIPT" <<<"$body"
+  [ "$status" -eq 0 ]
   echo "$output" | python3 -c 'import json,sys; d=json.load(sys.stdin); h=d["hookSpecificOutput"]; assert h["hookEventName"]=="PostToolUse"; assert "200500 tokens" in h["additionalContext"]; assert "工程中断:" in h["additionalContext"]; assert "agent_id" not in d'
 }
 @test "role: cap and hard equality and strict overflow reuse both stages" {
@@ -1054,7 +1057,7 @@ role_hook() {
   [ -z "$output" ]
   role_context "150001,0,0"
   role_hook PostToolUse Read
-  [[ "$output" == *途中計測* ]]
+  [[ "$output" == *途中計測* ]] || return 1
   role_context "220000,0,0"
   role_hook PreToolUse Edit
   [ -z "$output" ]
@@ -1065,7 +1068,7 @@ role_hook() {
   done
   for cmd in 'git status' 'true' 'git add .'; do
     role_hook PreToolUse Bash "$cmd"
-    [[ "$output" == *強制停止* ]]
+    [[ "$output" == *強制停止* ]] || return 1
   done
   for tool in Read Grep Glob; do
     role_hook PreToolUse "$tool"
@@ -1082,11 +1085,12 @@ role_hook() {
 }
 @test "role: off and invalid thresholds retain fail-open behavior" {
   role_context "999999,0,0"
-  for mode in off invalid equal; do
+  for mode in off invalid equal reversed; do
     case "$mode" in
       off) export DEV_WORKFLOW_CONTEXT_TRIPWIRE=off ;;
       invalid) unset DEV_WORKFLOW_CONTEXT_TRIPWIRE; export DEV_WORKFLOW_CONTEXT_CAP=bad ;;
       equal) export DEV_WORKFLOW_CONTEXT_CAP=220000 ;;
+      reversed) export DEV_WORKFLOW_CONTEXT_CAP=220001 ;;
     esac
     role_hook PreToolUse Bash true
     [ -z "$output" ]
@@ -1117,7 +1121,7 @@ role_hook() {
   run --separate-stderr env DEVELOP_ROLE=anything "$SCRIPT" <<<"$body"
   [ "$status" -eq 0 ]
   [ "$output" = "$expected" ]
-  [[ "$output" == *'200000 tokens'* ]]
+  [[ "$output" == *'200000 tokens'* ]] || return 1
 }
 
 @test "role: own model chooses shared thresholds and unknown model diagnostics" {
@@ -1125,7 +1129,7 @@ role_hook() {
   unset DEV_WORKFLOW_CONTEXT_CAP DEV_WORKFLOW_CONTEXT_HARD_CAP
   threshold_record "$TRANSCRIPT_PATH" '"claude-opus-5-5"' 201
   role_hook PreToolUse Edit
-  [[ "$output" == *'"deny"'* ]]
+  [[ "$output" == *'"deny"'* ]] || return 1
   threshold_record "$TRANSCRIPT_PATH" '"claude-sonnet-5-5"' 201
   role_hook PostToolUse Read
   [ -z "$output" ]

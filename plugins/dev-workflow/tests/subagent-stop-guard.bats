@@ -588,11 +588,11 @@ role_stop() {
   for n in 1 2 3; do
     role_stop "$bt"
     assert_block
-    [[ "$(reason)" == *"$n/3"* ]]
-    [[ "$(reason)" == *own* ]]
-    [[ "$(reason)" != *sibling* ]]
-    [[ "$(reason)" == *TaskStop* ]]
-    [[ "$(reason)" == *subagent-waiting.md* ]]
+    [[ "$(reason)" == *"$n/3"* ]] || return 1
+    [[ "$(reason)" == *own* ]] || return 1
+    [[ "$(reason)" != *sibling* ]] || return 1
+    [[ "$(reason)" == *TaskStop* ]] || return 1
+    [[ "$(reason)" == *subagent-waiting.md* ]] || return 1
     [ "$(cat "$counter")" = "$n" ]
   done
   local old="$SESS"
@@ -602,7 +602,7 @@ role_stop() {
   SESS="$old"
   role_stop "$bt"
   assert_silent
-  [[ "$stderr" == *上限* ]]
+  [[ "$stderr" == *上限* ]] || return 1
   [ ! -e "$counter" ]
   [ "$(cat "$COUNTER_DIR/$SESS-$AGENT_ID.count")" = 2 ]
 }
@@ -625,7 +625,7 @@ role_stop() {
   assert_silent
   [ ! -e "$counter" ]
   role_stop "$bt"; assert_block
-  [[ "$(reason)" == *1/3* ]]
+  [[ "$(reason)" == *1/3* ]] || return 1
   role_stop '[]'; assert_silent
   [ ! -e "$counter" ]
 }
@@ -672,12 +672,12 @@ CHECK
   echo invalid > "$counter"
   role_stop '[{"id":"own","status":"running"}]'
   assert_silent
-  [[ "$stderr" == *見送る* ]]
+  [[ "$stderr" == *見送る* ]] || return 1
   [ "$(cat "$counter")" = invalid ]
   rm -f "$counter"
   rmdir "$COUNTER_DIR/role-sessions"
   echo blocked > "$COUNTER_DIR/role-sessions"
   role_stop '[{"id":"own","status":"running"}]'
   assert_silent
-  [[ "$stderr" == *見送る* ]]
+  [[ "$stderr" == *見送る* ]] || return 1
 }

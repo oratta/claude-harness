@@ -395,15 +395,15 @@ CHECK
   chmod +x "$root/scripts/"*.sh
   run env CLAUDE_PLUGIN_ROOT="$root" DEVELOP_ROLE=worker "$SCRIPT" <<<'{"session_id":"main"}'
   [ "$status" -eq 0 ]
-  [[ "$output" != *memory-notice* ]]
+  [[ "$output" != *memory-notice* ]] || return 1
   [ ! -e "$TMPDIR_EMPTY/probe" ]
   [ ! -e "$TMPDIR_EMPTY/memory" ]
   for mark in absent empty; do
     if [ "$mark" = absent ]; then unset DEVELOP_ROLE; else export DEVELOP_ROLE=; fi
     run env CLAUDE_PLUGIN_ROOT="$root" "$SCRIPT" <<<'{"text":"DEVELOP_ROLE=worker"}'
     [ "$status" -eq 0 ]
-    [[ "$output" == *memory-notice* ]]
-    [[ "$output" == *昇格トリップワイヤー* ]]
+    [[ "$output" == *memory-notice* ]] || return 1
+    [[ "$output" == *昇格トリップワイヤー* ]] || return 1
     [ -e "$TMPDIR_EMPTY/probe" ]
     [ -e "$TMPDIR_EMPTY/memory" ]
     run env CLAUDE_PLUGIN_ROOT="$TMPDIR_EMPTY" "$SCRIPT"

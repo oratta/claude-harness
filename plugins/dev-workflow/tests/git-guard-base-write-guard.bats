@@ -187,7 +187,7 @@ PY
         call_write "$tool" "$path" - "$T"
         expect_deny
         ! has_continue || return 1
-        [[ "$(reason)" == *本体* && "$(reason)" == *主が実行* ]]
+        [[ "$(reason)" == *本体* && "$(reason)" == *主が実行* ]] || return 1
       done
     done
     call_write Write "$T/normal.txt" - "$T"
