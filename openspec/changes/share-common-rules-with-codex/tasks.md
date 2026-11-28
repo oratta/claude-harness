@@ -41,4 +41,6 @@
 
 ## 7. 統合確認
 
-- [ ] 7.1 `bats tests/codex-shared-instructions.bats tests/rules-sync.bats tests/agents-md-sync.bats tests/injection-budget.bats`、`python3 -B plugins/dev-workflow/tests/test_codex_worker.py`、`openspec validate share-common-rules-with-codex --type change --strict`、`git diff --check` を実行しexit 0を記録する。新設Batsを追跡後に `scripts/test.sh` の全件検査も実行し、対象HEAD・成功/総件数・exit codeを残す。触る範囲: tests/codex-shared-instructions.bats（1で新規）、tests/rules-sync.bats:1-557、tests/agents-md-sync.bats:1-73、tests/injection-budget.bats:1-1405（既存、予算値は変更しない）、plugins/dev-workflow/tests/test_codex_worker.py:1-1114（既存）、scripts/test.sh:1-60（全件発見方式参照）、issue #1853（結果記録）
+- [x] 7.1 `bats tests/codex-shared-instructions.bats tests/rules-sync.bats tests/agents-md-sync.bats tests/injection-budget.bats`、`python3 -B plugins/dev-workflow/tests/test_codex_worker.py`、`openspec validate share-common-rules-with-codex --type change --strict`、`git diff --check` を実行しexit 0を記録する。新設Batsを追跡後に `scripts/test.sh` の全件検査も実行し、対象HEAD・成功/総件数・exit codeを残す。触る範囲: tests/codex-shared-instructions.bats（1で新規）、tests/rules-sync.bats:1-557、tests/agents-md-sync.bats:1-73、tests/injection-budget.bats:1-1405（既存、予算値は変更しない）、plugins/dev-workflow/tests/test_codex_worker.py:1-1114（既存）、scripts/test.sh:1-60（全件発見方式参照）、issue #1853（結果記録）
+
+実装工程の検証記録: 全件は書込可能な一時 TMPDIR を使い、CI と同じ `TEST_SHARD=1/4`〜`4/4 scripts/test.sh` の和集合で実行した。1組1422・2組1415・3組1412・4組1413、合計5662/5662成功、skip 0、各exit 0。全件で検出したコメントの一覧照合と新規公開部品の登録漏れは修正し、該当スイート7件・50件と3組全体の再実行も成功した。6.1〜6.4の実ホーム適用・実機読込の証拠は依頼に従い未実施。
