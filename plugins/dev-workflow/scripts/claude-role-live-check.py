@@ -4,6 +4,7 @@ import argparse
 import json
 import os
 from pathlib import Path
+import re
 import signal
 import subprocess
 import sys
@@ -12,6 +13,56 @@ import time
 
 PLUGIN = Path(__file__).resolve().parents[1]
 LAUNCH = PLUGIN / 'scripts/claude-role-launch.py'
+BACKGROUND_COMMAND = ("python3 -c 'import time; time.sleep(300)' >/dev/null 2>&1 & "
+                      "echo BACKGROUND_PID=$!")
+
+
+def lifecycle_prompt(route):
+    prompt = ('段: implement\nUse Bash to execute exactly `' + BACKGROUND_COMMAND +
+              '` once. Include the returned BACKGROUND_PID in your response. ')
+    if route == 'normal':
+        return prompt + 'Then return first line 工程完了: 実装＋verify.\n'
+    commands = ', '.join('`echo lifecycle-turn-' + str(n) + '`' for n in range(1, 11))
+    return (prompt + 'Then execute these short commands sequentially, one Bash tool call at a time, '
+            'waiting for each result before the next: ' + commands + '. '
+            'Do not combine commands, use loops, run parallel calls, or finish early.\n')
+
+
+def background_started(result):
+    """Require an actual Bash attempt and its successful PID result, not prompt text."""
+    try:
+        lines = Path(result['transcript_path']).read_text().splitlines()
+    except (KeyError, OSError):
+        return False
+    calls = set()
+    for line in lines:
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        content = row.get('message', {}).get('content', [])
+        if not isinstance(content, list):
+            continue
+        for block in content:
+            if (row.get('type') == 'assistant' and block.get('type') == 'tool_use' and
+                    block.get('name') == 'Bash' and
+                    block.get('input', {}).get('command') == BACKGROUND_COMMAND):
+                calls.add(block.get('id'))
+            if (row.get('type') == 'user' and block.get('type') == 'tool_result' and
+                    block.get('tool_use_id') in calls and not block.get('is_error')):
+                output = block.get('content', '')
+                if isinstance(output, list):
+                    output = '\n'.join(b.get('text', '') for b in output)
+                if re.search(r'(?m)^BACKGROUND_PID=[1-9][0-9]*\s*$', output):
+                    return True
+    return False
+
+
+def lifecycle_passed(results):
+    return all(r['exit_code'] == (0 if r['route'] == 'normal' else 2) and
+               r['result'].get('cleanup', {}).get('ok') and r['outside_control_alive'] and
+               r['background_started'] and (r['route'] != 'max-turns' or
+               r['result'].get('termination_reason') == 'max_turns') for r in results)
 
 
 def main():
@@ -68,11 +119,7 @@ def main():
         for route in (('normal','max-turns','cli-kill','INT','TERM') if a.case=='lifecycle' else (a.case,)):
             invocation = list(argv)
             if a.case == 'lifecycle':
-                prompt.write_text('段: implement\nUse Bash to start `sleep 300 >/dev/null 2>&1 &` once. '
-                                  'Then return first line 工程完了: 実装＋verify.\n')
-            if route in ('max-turns','cli-kill','INT','TERM'):
-                prompt.write_text('段: implement\nUse Bash to start `sleep 300 >/dev/null 2>&1 &` once. '
-                                  'Then repeatedly Read f.txt one call per turn, 100 times. Never finish early.\n')
+                prompt.write_text(lifecycle_prompt(route))
             if route == 'max-turns':
                 invocation[invocation.index('--max-turns')+1]='2'
             out_path, err_path = root/(route+'.json'), root/(route+'.stderr')
@@ -102,6 +149,9 @@ def main():
             item={'route':route,'command':invocation,'exit_code':child.returncode,'result':data}
             if control:
                 item['outside_control_alive']=control.poll() is None
+                item['background_started']=background_started(data)
+                if not item['background_started']:
+                    item['lifecycle_failure']='background Bash launch with successful PID result absent from transcript'
             results.append(item)
             if a.case=='resume-cap' and child.returncode==0:
                 log=Path(data['transcript_path']); original=log.read_bytes()
@@ -129,8 +179,7 @@ def main():
     # Probe failure and unexpected transport outcomes stay nonzero. No quality verdict is produced.
     expected = {'capability':0,'normal':0,'git-deny':2,'resume-cap':2}
     if a.case=='lifecycle':
-        return 0 if all(r['exit_code']==(0 if r['route']=='normal' else 2) and
-                        r['result'].get('cleanup',{}).get('ok') and r['outside_control_alive'] for r in results) else 1
+        return 0 if lifecycle_passed(results) else 1
     return 0 if results[-1]['exit_code']==expected[a.case] and before==after else 1
 
 

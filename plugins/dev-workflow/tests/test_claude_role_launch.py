@@ -263,5 +263,55 @@ sys.exit(int(os.environ.get('FAKE_EXIT','0')))
         self.assertTrue(json.loads(p.stdout)['unchanged'])
 
 
+class LiveLifecycleTests(unittest.TestCase):
+    def setUp(self):
+        spec = importlib.util.spec_from_file_location('live_check', PLUGIN/'scripts/claude-role-live-check.py')
+        self.live = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(self.live)
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.log = Path(self.temp.name)/'transcript.jsonl'
+
+    def evidence(self, command=None, result='BACKGROUND_PID=12345', error=False):
+        self.log.write_text('\n'.join(json.dumps(row) for row in [
+            {'type':'assistant','message':{'content':[{'type':'tool_use','id':'bg',
+                'name':'Bash','input':{'command':command or self.live.BACKGROUND_COMMAND}}]}},
+            {'type':'user','message':{'content':[{'type':'tool_result','tool_use_id':'bg',
+                'content':result,'is_error':error}]}}
+        ])+'\n')
+        return self.live.background_started({'transcript_path':str(self.log)})
+
+    def test_background_requires_successful_bash_and_pid(self):
+        self.assertTrue(self.evidence())
+        self.assertFalse(self.evidence(error=True))
+        self.assertFalse(self.evidence(result='Blocked: standalone sleep'))
+        self.assertFalse(self.evidence(command='echo BACKGROUND_PID=12345'))
+        self.log.write_text('not json\n')
+        self.assertFalse(self.live.background_started({'transcript_path':str(self.log)}))
+        self.assertFalse(self.live.background_started({}))
+
+    def test_prompts_request_short_sequential_bash_calls(self):
+        prompt = self.live.lifecycle_prompt('max-turns')
+        self.assertIn(self.live.BACKGROUND_COMMAND, prompt)
+        self.assertIn('one Bash tool call at a time', prompt)
+        self.assertIn('echo lifecycle-turn-1', prompt)
+        self.assertIn('echo lifecycle-turn-10', prompt)
+        self.assertNotIn('Read f.txt', prompt)
+        self.assertNotIn('find /', prompt)
+
+    def test_lifecycle_rejects_missing_child_or_wrong_limit_reason(self):
+        rows = [{'route':route,'exit_code':0 if route=='normal' else 2,
+                 'background_started':True,'outside_control_alive':True,
+                 'result':{'cleanup':{'ok':True},'termination_reason':
+                           'max_turns' if route=='max-turns' else 'normal'}}
+                for route in ('normal','max-turns','cli-kill','INT','TERM')]
+        self.assertTrue(self.live.lifecycle_passed(rows))
+        rows[0]['background_started'] = False
+        self.assertFalse(self.live.lifecycle_passed(rows))
+        rows[0]['background_started'] = True
+        rows[1]['result']['termination_reason'] = 'timeout'
+        self.assertFalse(self.live.lifecycle_passed(rows))
+
+
 if __name__ == '__main__':
     unittest.main()
