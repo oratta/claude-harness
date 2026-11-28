@@ -16,5 +16,7 @@
 - `codex-role-profiles`: Claude を実行できない環境の自動選択と停止を規定する。
 - `dev-workflow-develop`: 既存の起動義務と Codex オフ時の選択に、今回の例外条件だけを反映する。
 
+- `dev-workflow-pr-review-gate`: 関連テストの自己再実行義務に、Claude を使わず一時ディレクトリが必要な場合だけ主の固定 HEAD の証拠を独立した読み取り専用 Codex レビュアーが評価する限定例外を反映する。
+
 ## Impact
 `codex-develop.py`、同テスト、develop の入口・adapter・Gate Result・pr-review-gate の reviewer-brief の手順、`plugins/dev-workflow/changes/1859.md`。`codex-worker` の read-only policy と既存 profile 形式は維持する。他のエピック子の CLI 起動部・hook・共通ルール・選択閾値の変更は扱わない。
