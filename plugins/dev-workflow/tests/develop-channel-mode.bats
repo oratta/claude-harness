@@ -118,6 +118,18 @@ refute() {
   [ "$n" -ge 8 ]
 }
 
+@test "reading rule: the stated file count equals the number of listed files and every listed file mentions AskUserQuestion (#1543)" {
+  local s n listed f
+  s="$(section 'channel の聞き方' "$CHANNEL")"
+  n="$(printf '%s\n' "$s" | grep -oE '次の [0-9]+ 個' | grep -oE '[0-9]+' | head -1)"
+  [ -n "$n" ]
+  listed="$(printf '%s\n' "$s" | grep -oE '^- `[^`]+`$' | sed -E 's/^- `(.*)`$/\1/')"
+  [ "$(printf '%s\n' "$listed" | grep -c .)" -eq "$n" ]
+  while IFS= read -r f; do
+    grep -qF 'AskUserQuestion' "$PLUGIN_DIR/$f" || { echo "AskUserQuestion に触れない: $f" >&2; return 1; }
+  done <<< "$listed"
+}
+
 @test "AskUserQuestion lines in SKILL.md are interactive-only or in the Orca child section" {
   local line
   # 読み替えの規則があること（#1221 で references/channel.md へ移した）

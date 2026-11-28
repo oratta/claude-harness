@@ -171,12 +171,12 @@
 
 ### Requirement: 親の見張りは記録だけで子の状態を判定する
 
-`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`・`dismiss` は、子の状態（完了の印・止まった印・受けた印）を記録の `status` と `stop` から読まなければならず、Orca のワークツリーの `workspaceStatus` と `comment` を判定に使ってはならない（MUST NOT）。例外として、`wait --watch-stopped` の止まりの検知と `wait`・`pending-owner` の再開の確かめは、記録の `worktree` の会話ログも読む（要件「wait は子の会話ログから止まった子を検知する」ほか。capability `dev-workflow-develop`）。子の記録は、要件「子を owner/repo#番号 で識別し、同じリポジトリの子は番号だけで書く」の親の見張りの照合で探す（MUST）。2 件以上なら、今の「同じ linkedIssue のワークツリーが 2 つ以上」と同じ扱い（`reap` は `kept <N> ambiguous`、`reply` / `notify-closed` / `dismiss` は `failed <N> ambiguous-worktree`、`wait` はその子の印を見ない）にする（MUST）。子 issue の state・`state_reason`・コメントを読む先も、同じ要件の `gh` の呼び出しの形に従う（MUST）。
+`wait`・`pending-owner`・`reap`・`notify-closed`・`reply`・`dismiss` は、子の状態（完了の印・止まった印・受けた印）を記録の `status` と `stop` から読まなければならず、Orca のワークツリーの `workspaceStatus` と `comment` を判定に使ってはならない（MUST NOT）。例外として、`wait --watch-stopped` の止まりの検知と `owner-away` の判定（要件「主が打った返事待ちは時間がたったら親が主に知らせる」）と `wait`・`pending-owner` の再開の確かめは、記録の `worktree` の会話ログも読む（要件「wait は子の会話ログから止まった子を検知する」ほか。capability `dev-workflow-develop`）。子の記録は、要件「子を owner/repo#番号 で識別し、同じリポジトリの子は番号だけで書く」の親の見張りの照合で探す（MUST）。2 件以上なら、今の「同じ linkedIssue のワークツリーが 2 つ以上」と同じ扱い（`reap` は `kept <N> ambiguous`、`reply` / `notify-closed` / `dismiss` は `failed <N> ambiguous-worktree`、`wait` はその子の印を見ない）にする（MUST）。子 issue の state・`state_reason`・コメントを読む先も、同じ要件の `gh` の呼び出しの形に従う（MUST）。
 
 - `wait --watch-done <N>`: 記録の `status` が `done` なら印が付いた子とする
 - `wait --watch-stopped`: 閉じていない位置引数の子の記録の `stop` が `stopped`（会話ログを読めるときは要件「wait は印の付いた子をターンの終わりまで待って返す」の条件も満たす）か、会話ログの検知の条件を満たすなら、排他を取って `stopped-seen` に書き換え（`stop_uuid`・`stop_at` も同じ書き込みで書く）、書けたら止まった子とする。書けなければそのポーリングを失敗したポーリングに数える
 - `pending-owner`: 記録の `stop` が `stopped-seen` の子を `pending <N>` で出す（`stop_uuid` があれば `pending <N> <uuid>`。会話ログが進んだ子は出さない）
-- `notify-closed`: 記録が無ければ `skipped <N> no-worktree`、`status` が `done` なら `skipped <N> already-done`、`stop` が `stopped` / `stopped-seen` でなければ `skipped <N> not-stopped`
+- `notify-closed`: 記録が無ければ `skipped <N> no-worktree`、`status` が `done` なら `skipped <N> already-done`。`stop` の値（空・`stopped`・`stopped-seen`・`resumed`）と `status` が `running` か `waiting` かでは送るかを分けない（`skipped <N> not-stopped` は出さない。capability `dev-workflow-develop` の要件「Orca 経路の親は、止まった印のまま completed で閉じた子に完了を促す返事を送る」）
 - `dismiss`: 記録の `stop` が `stopped-seen` で `stop_uuid` が空でない子を、排他を取って `resumed` に書き換える（`stop_uuid`・`stop_at` は変えない）。それ以外は `skipped <N> not-stopped`（要件「親は問いでない止まりを dismiss で再開に戻す」。capability `dev-workflow-develop`）
 - `reap`: 記録が無い子と、記録の `worktree` のディレクトリが無い（`[ -d <worktree> ]` が偽）子は `gone <N>`（後者は記録を消す）。`status` が `done` でなければ `kept <N> not-done`。それ以外の安全確認の中身は今と同じにする。`gh pr list`・`git ls-remote`・`git fetch` などの呼び出しの形は、記録の `repo` が記録の `epic` のリポジトリと同じ子は今と同じにし（MUST）、違う子は次のとおりにする（MUST）。PR の照会に `-R <記録の repo>` を付ける。base の名前は記録の `base` を使う（同じリポジトリの子は今のまま `${EPIC_DISPATCH_BASE:-main}`）。base の照会（`git ls-remote origin refs/heads/<base>`・`git fetch origin <base>`）を子のワークツリーの origin（`git -C <記録の worktree> ...`）に向け、base の先端はリポジトリと base の組ごとに 1 回読む（同じリポジトリの子の照会は今のまま 1 回で、別のリポジトリの子の先端を使い回さない。混ぜて渡した `reap` で同じリポジトリの子が `kept <N> base-lookup-failed` に落ちない）。`git cat-file -e` は `git -C <記録の worktree>` で行う。ブランチの片付け（`git rev-parse refs/heads/<branch>`・`git worktree list --porcelain`・`git update-ref -d`）は子の clone に向け、`orca worktree rm` の前に `git -C <記録の worktree> rev-parse --path-format=absolute --git-common-dir` で clone を控えておき、rm のあとはそれを `git -C` に使う（rm のあとはワークツリーのディレクトリが無い）。`kept <N> not-child` は出さない
 - 出力の行・exit code・失敗したポーリングの数え方・`--resolve` の判断と送り方は、上の読み替えのほかは今の要件のまま
@@ -402,24 +402,28 @@ Orca の部品は、見つけた clone のパスに当たるリポジトリを `
 
 `launch` は、記録の `repo` が記録の `epic` のリポジトリと違う子について、次の形にしなければならない（MUST）。エピックと同じリポジトリの子は今のまま変えない（MUST）。
 
-- 子の最初の入力: `/develop #<N> （エピック #<E> の子。エピックのリポジトリ <エピックの owner>/<repo>。親ワークツリー <親> から Orca で起動）`。`<N>` は子のリポジトリの番号で、先頭の `#<N> （エピック #<E> の子。` は同じリポジトリの子と同じ形のままにする（MUST。`owner-reply-check.sh` の `DISPATCH_ARGS` が、親の打ち込みを主の発言から外す判定にこの先頭の形を使うため。リポジトリは後ろに置く）
+- 子の最初の入力: `/develop <子の owner>/<repo>#<N> （エピック #<E> の子。エピックのリポジトリ <エピックの owner>/<repo>。親ワークツリー <親> から Orca で起動）`（例 `/develop genetta-inc/flatmate#892 （エピック #1810 の子。エピックのリポジトリ oratta/claude-harness。…`）。`<N>` は子のリポジトリの番号。子の番号にはリポジトリを付け、子が番号だけを見てエピックの側のリポジトリの issue を読みに行かないようにする（MUST。2026-11-26 に genetta-inc/flatmate#892 の子が oratta/claude-harness#892 を読みに行った）。エピックの番号は `#<E>` のまま書き、エピックのリポジトリは `エピックのリポジトリ <owner>/<repo>。` の句で名指しする（MUST。子のターン状態のフックの起動形の判定が、エピックの側は `（エピック #<E> の子。` とこの句だけを受けるため）。`owner-reply-check.sh` の `DISPATCH_ARGS` は、子の番号の前に `<owner>/<repo>` を付けたこの形も起動の指示として受け付ける（`dev-workflow-owner-reply-check` の要件「主の発言として数える行と数えない行」の条件 9）
 - 子の起動コマンドの前置き: `EPIC_DISPATCH_PARENT_EPIC=<エピックの owner>/<repo>#<E>`（同じリポジトリの子は `<E>` だけ）。この前置きは `launch` だけでなく、子の端末を作るすべての経路（`reply`・`notify-closed`・`wait --resolve` の起動し直し）に付ける（MUST）。値は子の記録の `epic` と `repo` から決める（記録の `repo` がエピックのリポジトリと違えば `<owner>/<repo>#<E>`、同じなら `<E>`）。付けないと起動し直した子の `route` が `parent epic: #<E>` を出し、子が無関係の issue にコメントしてしまう
-- 起動し直しの指示（`reply` の `--relaunch` と端末が 0 個のときの起動し直し、`notify-closed --relaunch`、`wait --resolve` の起動し直し）: 最初の入力と同じく先頭を `/develop #<N> （エピック #<E> の子。` にし、別のリポジトリの子では `エピックのリポジトリ <owner>/<repo>。` を続ける。`<N>` は子の番号だけで書く（`child_label` の `<o>/<r>#<N>` は使わない。`DISPATCH_ARGS` の `#\d+` に当たらないため）
+- 起動し直しの指示（`reply` の `--relaunch` と端末が 0 個のときの起動し直し、`notify-closed --relaunch`、`wait --resolve` の起動し直し）: 最初の入力と同じく、別のリポジトリの子では先頭を `/develop <子の owner>/<repo>#<N> （エピック #<E> の子。エピックのリポジトリ <エピックの owner>/<repo>。返事を受けて起動し直し）` にし、そのうしろに頭を付けた返事を続ける（MUST）。子のリポジトリと番号は記録の `repo` と `number`、エピックのリポジトリと番号は記録の `epic` から取る
 - `--note` の注意書き: 子 issue（子のリポジトリ）に `gh issue comment <N> -R <子のリポジトリ> --body '親エピックからの注意書き: <エピックの owner>/<repo>#<E>\n\n<注意書き>'` で残す。失敗時の投稿し直しのコマンドも `-R` を含む。先頭の `親エピックからの注意書き:` は同じ
 
 `reply`（`--as parent` / `--as owner`）と `notify-closed` と `wait --resolve` が子に送る返事の頭は、別のリポジトリの子では `親エピック #<E>（<エピックの owner>/<repo>）の判断（主の承認ではない）: ` と `主の返事（親エピック #<E>（<エピックの owner>/<repo>）経由）: ` にする（MUST。先頭の `親エピック #` / `主の返事（親エピック #` は変えない）。エピックへのコメント（`親の判断: 子 <o>/<r>#N 通した — ...` など）の子の呼び方は、要件「子を owner/repo#番号 で識別し、同じリポジトリの子は番号だけで書く」のとおり。
 
 #### Scenario: 別のリポジトリの子の起動コマンドと指示
 - **WHEN** origin が `oratta/claude-harness` の親のワークツリーで `epic-dispatch.sh launch 1122 genetta-inc/flatmate#1615` が成功する
-- **THEN** 子の端末のコマンドは `EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 ` で始まり、最初の入力は `/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。` で始まる
+- **THEN** 子の端末のコマンドは `EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 ` で始まり、最初の入力は `/develop genetta-inc/flatmate#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。親ワークツリー ` で始まる
 
 #### Scenario: 起動し直した別のリポジトリの子にもエピックのリポジトリを渡す
 - **WHEN** 子 `genetta-inc/flatmate#1615` の記録（`epic` が `oratta/claude-harness#1122`、`repo` が `genetta-inc/flatmate`）がある状態で `epic-dispatch.sh reply --relaunch --as parent 1122 genetta-inc/flatmate#1615 続けてよい` を実行する
-- **THEN** `orca terminal create --command` は `EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 ` で始まり、送る指示は `/develop #1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。` で始まる
+- **THEN** `orca terminal create --command` は `EPIC_DISPATCH_PARENT_EPIC=oratta/claude-harness#1122 ` で始まり、送る指示は `/develop genetta-inc/flatmate#1615 （エピック #1122 の子。エピックのリポジトリ oratta/claude-harness。返事を受けて起動し直し） 親エピック #1122（oratta/claude-harness）の判断（主の承認ではない）: 続けてよい` である
 
 #### Scenario: 別のリポジトリの子の起動の指示は主の発言として数えられない
 - **WHEN** 別のリポジトリの子の `launch` の指示と起動し直しの指示が `<command-args>` に入ったセッションの記録を `owner-reply-check.sh` に渡す
 - **THEN** どちらも主の発言として数えられない（`owner-reply-check.bats` で確かめる）
+
+#### Scenario: 別のリポジトリの子の新しい起動の指示は子のターン状態のフックで startup になる
+- **WHEN** 記録の `repo` が `genetta-inc/flatmate`、`number` が 892、`epic` が `oratta/claude-harness#1810` の子の新しいセッションの初回入力が `/develop genetta-inc/flatmate#892 （エピック #1810 の子。エピックのリポジトリ oratta/claude-harness。返事を受けて起動し直し） 主の返事（親エピック #1810（oratta/claude-harness）経由）: ok`
+- **THEN** `sender` は `startup` である（`epic-child-state.sh` は変えず、今の起動形の判定で通ることを `epic-child-state.bats` で確かめる）
 
 #### Scenario: 別のリポジトリの子の注意書きは子のリポジトリに投稿する
 - **WHEN** `--note 範囲を守る` を付けて同じ `launch` が成功する
@@ -431,7 +435,11 @@ Orca の部品は、見つけた clone のパスに当たるリポジトリを `
 
 #### Scenario: 同じリポジトリの子の書式は変わらない
 - **WHEN** `epic-dispatch.sh launch --note 範囲を守る 1122 11`（子 11 がエピックと同じリポジトリ）を実行する
-- **THEN** 起動コマンドは `EPIC_DISPATCH_PARENT_EPIC=1122 ` で始まり、最初の入力は `/develop #11 （エピック #1122 の子。` で始まり、注意書きは `gh issue comment 11 --body` で `親エピックからの注意書き: #1122` で始まる
+- **THEN** 起動コマンドは `EPIC_DISPATCH_PARENT_EPIC=1122 ` で始まり、最初の入力は `/develop #11 （エピック #1122 の子。親ワークツリー ` で始まり（この変更の前と同じ文字列）、注意書きは `gh issue comment 11 --body` で `親エピックからの注意書き: #1122` で始まる
+
+#### Scenario: 同じリポジトリの子の起動し直しの指示は変わらない
+- **WHEN** 子 11（エピックと同じリポジトリ）の記録がある状態で `epic-dispatch.sh reply --relaunch --as parent 1122 11 続けてよい` を実行する
+- **THEN** 送る指示は `/develop #11 （エピック #1122 の子。返事を受けて起動し直し） 親エピック #1122 の判断（主の承認ではない）: 続けてよい` である（この変更の前と同じ文字列）
 
 ### Requirement: 起動部品は epic-launch-<名前>.sh の 1 本ずつで、同じサブコマンドと出力の契約を持つ
 
@@ -449,8 +457,8 @@ Orca の部品は、見つけた clone のパスに当たるリポジトリを `
 | `unregistered` | `<clone>` | stdout に、clone が部品に登録されていないときの理由の語を 1 行出し、stderr に登録の仕方を出して exit 0。登録の仕組みを持たない部品（tmux）は `ok` を出して stderr に何も出さない。`epic-dispatch.sh` は `repos` に clone が無かったとき（`repo_id` が空のとき）だけ呼び、`ok` を「登録は要らない」と読んで `repo_id` を空のまま `create` に渡し、それ以外の語は今と同じく `failed <child> <語>` にする |
 | `create` | `<clone> <repo_id> <子の番号> <起点> <親のワークツリー>` | 子を作るリポジトリは `clone` で決める: 空ならエピックと同じリポジトリ（親のワークツリーのリポジトリ）、空でなければ `clone` のリポジトリ。`repo_id` は Orca の部品だけが読む値で、空でなければ `--repo id:<repo_id>`、空なら `--repo` を付けず親と同じリポジトリに作る（tmux の部品は `repo_id` を読まず、`clone` と親のワークツリーだけで決める。別リポジトリの子は `clone` が空でなく `repo_id` が空で渡る）。子のワークツリーを作れたら `{"path","branch"}` の 1 行を出して exit 0。作れなかったら exit 1。作ったがパスを読めなければ exit 2 |
 | `start` | `<ワークツリー> <起動コマンド> <最初の指示> <子の呼び方>` | 指示が届いたら `started <session>` を出して exit 0。届かなかったら `failed <段> <session>`（段は `terminal`・`ready`・`send`、`session` は分からなければ空）を出して exit 1 |
-| `deliver` | `<ワークツリー> <relaunch 0か1> <送る文> <起動コマンド> <起動し直しの指示>` | セッション（端末）の一覧を 1 回だけ読む。`relaunch` が 0 で、一覧に端末があり、そのうち子のセッションがちょうど 1 つに決まればそこへ文を送って `sent` を出し exit 0。`relaunch` が 0 で、端末はあるが子のセッションに決められない（シェルの端末だけ、または候補が 2 つ以上）ときは、送りも起動し直しもせず `failed ambiguous-terminal` を出す。一覧が空か `relaunch` が 1 なら、ある端末をすべて閉じてから（空なら閉じずに）起動し直して指示を送り `relaunched <session>` を出し exit 0。失敗は `failed <理由>`（理由は `terminal-list`・`ambiguous-terminal`・`send`・`close`・`create`・`ready`）を出して exit 1 |
-| `keepalive` | `<ワークツリー> <送る文>` | 既存・一意・入力待ち・空欄の子に送り到達確認できたら `sent`（exit 0）。対象外/状態不明は `skipped <理由>`（exit 0。理由は `no-terminal`・`ambiguous-terminal`・`busy`・`dialog`・`input-not-empty`・`unknown-state`）。一覧や観測コマンドが失敗/出力を読めないときは `failed terminal-list` または `failed observe`、送信コマンド失敗や到達確認不能は `failed send`（exit 1）。stdout はこの一行だけ。起動・終了・再起動・入力消去は行わない |
+| `deliver` | `<ワークツリー> <relaunch 0か1> <送る文> <起動コマンド> <起動し直しの指示>` | セッション（端末）の一覧を 1 回だけ読む。`relaunch` が 0 で、一覧に端末があり、そのうち子のセッションがちょうど 1 つに決まればそこへ文を送って `sent` を出し exit 0。子のセッションの決め方は、一覧の `agentIdentity` と題名で決め、それで決まらず端末がちょうど 1 つのときだけその端末の画面を 1 回読み、下端に Claude Code の入力枠があればその端末に決める（dev-workflow-develop の要件「epic-dispatch.sh reply は子の端末に送り手を付けた返事を届ける」）。`relaunch` が 0 で、端末はあるが子のセッションに決められない（シェルの端末だけ、候補が 2 つ以上、識別できない端末が 2 つ以上、または識別できない 1 端末の画面を読めない・下端に入力枠が無い）ときは、送りも起動し直しもせず `failed ambiguous-terminal` を出す。一覧が空か `relaunch` が 1 なら、ある端末をすべて閉じてから（空なら閉じずに）起動し直して指示を送り `relaunched <session>` を出し exit 0。失敗は `failed <理由>`（理由は `terminal-list`・`ambiguous-terminal`・`send`・`close`・`create`・`ready`）を出して exit 1 |
+| `keepalive` | `<ワークツリー> <送る文>` | 既存・一意（一意の決め方は `deliver` と同じで、識別できない 1 端末の画面の入力枠で決める段を含む。この段で入力枠が無ければ `skipped ambiguous-terminal`、画面の読み取りが失敗した・出力を読めないときは `failed observe`）・入力待ち・空欄の子に送り到達確認できたら `sent`（exit 0）。対象外/状態不明は `skipped <理由>`（exit 0。理由は `no-terminal`・`ambiguous-terminal`・`busy`・`dialog`・`input-not-empty`・`unknown-state`）。一覧や観測コマンドが失敗/出力を読めないときは `failed terminal-list` または `failed observe`、送信コマンド失敗や到達確認不能は `failed send`（exit 1）。stdout はこの一行だけ。起動・終了・再起動・入力消去は行わない |
 | `close` | `<ワークツリー> <子の呼び方>` | 何も出さない。セッションを閉じたら exit 0、閉じ直しても閉じられなければ exit 1（主の操作の案内は `epic-dispatch.sh` が出す）。`子の呼び方`（例: `11`・`o/r#5`）は閉じ直すときの stderr の文 `terminal close was incomplete for #<子の呼び方>; …` にだけ使う |
 | `remove` | `<ワークツリー>` | 消せたら何も出さず exit 0。消せなければ理由の語を 1 行出して exit 1。未コミットの変更があるワークツリーを消してはならない（MUST NOT）。`orca worktree rm` の通常の stdout は部品の stdout に混ぜず、環境変数 `EPIC_LAUNCH_STDOUT_FD` で渡された FD（`epic-dispatch.sh` の reap は自分の stdout を保持した FD 3 を渡す）へ中継する。FD が渡されない・開いていないときは stderr へ回す |
 | `mirror` | `<current か ワークツリー> <done・waiting・stopped・resumed・stopped-seen のどれか> <記録のパス>` | 何も出さず、常に exit 0。部品の画面へ状態を写し、写せなければ stderr に記録のパスと一緒に出す。画面を持たない部品と、部品が使えないときは何もしない |
@@ -480,9 +488,9 @@ Orca の入力枠は上罫線・`❯` から下罫線までの一意な領域と
 
 この要件の検査（知らないサブコマンドと引数の数、`list`・`repos`・端末の一覧の読み取り、子のセッションの端末の選び方、`keepalive` の対象状態と出力）の守備範囲は次のとおりである。入力の出どころは `epic-dispatch.sh`（同じプラグインの中の呼び出し元）と、`orca` が返す JSON・端末画面の CLI 出力である（tmux の観測は要件「tmux の部品は…」に従う）。拾いたい誤りは、`epic-dispatch.sh` と部品のサブコマンドの名前か引数の並びが食い違うこと、`orca` の JSON の形が変わって読めないこと（読めないときは 0 件として扱わず失敗にする）、子のセッションの端末を 1 つに決められないのに送ること、`keepalive` で実行中・入力済み・選択画面・観測不能な端末に送ること、送れないときに作成・終了・入力消去をすることである。`epic-dispatch.sh` が検査済みの値（待ち時間・起動コマンド・指示と返事の文・子の呼び方・ワークツリーのパス）は、部品の中で検査し直さずにそのまま通してよい（MAY）。`keepalive` で空欄を確認できない出力は送らない。CLI 観測と送信の間の主の並行入力を原子的に排除することや、引数の中身の妥当性、`orca` の JSON・画面のあらゆる崩れ方を塞ぎ切ることは、この要件の完了条件としない。
 
-Orca の部品は、各サブコマンドで次の `orca` のコマンドだけを呼び、Orca の機能を自前で作り直してはならない（MUST NOT）: `available` は `orca` が PATH にあるか（無ければ stderr に `orca is not on PATH`）、`here` は `orca worktree current --json`、`prepare` は `orca worktree set --worktree path:<親> --issue <E>`、`list` は `orca worktree list --json`（`isArchived` が true のものを除き、`workspaceStatus` の `completed` → `done`・`in-review` → `waiting`・それ以外 → `running`、`comment` の `epic-stopped` → `stopped`・`epic-stopped-seen` → `stopped-seen`・`epic-resumed` → `resumed`・それ以外 → 空に読み替える）、`repos` は `orca repo list --json`、`unregistered` は stdout に `not-in-orca`、`create` は `orca worktree create`（`repo_id` が空でなければ `--repo id:<repo_id>`、続けて `--name issue-<N> --issue <N> --base-branch origin/<起点> --parent-worktree path:<親> --json`）、`start`・`deliver` は `orca terminal list`・`send`・`create`・`wait --for tui-idle`・`close --all`、`keepalive` は `orca terminal list --worktree path:<wt> --json`・`orca terminal read --terminal <handle> --screen --json` による既存端末/画面/任意の draft の観測と、`orca terminal send --terminal <handle> --text <text> --enter --wait-submit <EPIC_DISPATCH_SUBMIT_WAIT> --json` だけ（送信が exit 0 で、send 応答の stages 配列の `turn_started` を確認したとき、または以下の送信後再観測で到達確認したときだけ `sent`。入力受付だけでは成功としない。実行中の子が idle になるのを待つ `terminal wait`、create/close、入力消去、再試行の送信は許さない）、`close` は `orca terminal close --worktree path:<wt> --all`（失敗したら端末の一覧を stderr に出し、`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT` 秒待って 1 回だけ閉じ直す）、`remove` は `orca worktree rm --worktree path:<wt>`（`--force` を付けない。stderr に `terminal sweep failed` があれば `rm-failed-terminal-sweep`、それ以外の失敗は `rm-failed`）、`mirror` は `orca worktree set --worktree <current か path:<wt>>` に `done` → `--workspace-status completed`、`waiting` → `--workspace-status in-review`、`stopped` → `--comment epic-stopped`、`resumed` → `--comment epic-resumed`、`stopped-seen` → `--comment epic-stopped-seen` を付けたもの。
+Orca の部品は、各サブコマンドで次の `orca` のコマンドだけを呼び、Orca の機能を自前で作り直してはならない（MUST NOT）: `available` は `orca` が PATH にあるか（無ければ stderr に `orca is not on PATH`）、`here` は `orca worktree current --json`、`prepare` は `orca worktree set --worktree path:<親> --issue <E>`、`list` は `orca worktree list --json`（`isArchived` が true のものを除き、`workspaceStatus` の `completed` → `done`・`in-review` → `waiting`・それ以外 → `running`、`comment` の `epic-stopped` → `stopped`・`epic-stopped-seen` → `stopped-seen`・`epic-resumed` → `resumed`・それ以外 → 空に読み替える）、`repos` は `orca repo list --json`、`unregistered` は stdout に `not-in-orca`、`create` は `orca worktree create`（`repo_id` が空でなければ `--repo id:<repo_id>`、続けて `--name issue-<N> --issue <N> --base-branch origin/<起点> --parent-worktree path:<親> --json`）、`start` は `orca terminal list`・`send`・`create`・`wait --for tui-idle`・`close --all`、`deliver` は同じコマンドに加え、一覧で子のセッションの端末を決められず端末がちょうど 1 つのときだけの `orca terminal read --terminal <handle> --screen --json` 1 回（端末が 2 つ以上のときや一覧で決まったときは呼ばない）、`keepalive` は `orca terminal list --worktree path:<wt> --json`・`orca terminal read --terminal <handle> --screen --json` による既存端末/画面/任意の draft の観測と、`orca terminal send --terminal <handle> --text <text> --enter --wait-submit <EPIC_DISPATCH_SUBMIT_WAIT> --json` だけ（識別できない 1 端末の画面で子のセッションを決める段の read を含む。送信が exit 0 で、send 応答の stages 配列の `turn_started` を確認したとき、または以下の送信後再観測で到達確認したときだけ `sent`。入力受付だけでは成功としない。実行中の子が idle になるのを待つ `terminal wait`、create/close、入力消去、再試行の送信は許さない）、`close` は `orca terminal close --worktree path:<wt> --all`（失敗したら端末の一覧を stderr に出し、`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT` 秒待って 1 回だけ閉じ直す）、`remove` は `orca worktree rm --worktree path:<wt>`（`--force` を付けない。stderr に `terminal sweep failed` があれば `rm-failed-terminal-sweep`、それ以外の失敗は `rm-failed`）、`mirror` は `orca worktree set --worktree <current か path:<wt>>` に `done` → `--workspace-status completed`、`waiting` → `--workspace-status in-review`、`stopped` → `--comment epic-stopped`、`resumed` → `--comment epic-resumed`、`stopped-seen` → `--comment epic-stopped-seen` を付けたもの。
 
-既存操作で Orca の部品を使うとき、`epic-dispatch.sh` の stdout・exit code・stderr の文言・記録の中身と、`orca`・`git`・`gh` の呼び出しの順と回数は、起動部品へ切り出す前と同じでなければならない（MUST）。新たな声かけの観測・送信と、子の起動引数への `--prompt-suggestions false` の追加をこの同一性の対象外とし、wait の既存の出力・終了理由を変えてはならない（MUST NOT）。`epic-dispatch.sh` は待ち時間の環境変数（`EPIC_DISPATCH_READY_TIMEOUT_MS`・`EPIC_DISPATCH_SUBMIT_WAIT`・`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT`）を今と同じ位置で検査して既定を当て、その値を同じ名前の環境変数で起動部品に渡す（MUST）。`repos` は 1 回の `launch` で多くても 1 回だけ呼ぶ（MUST）。`launch` と `adopt` は、要件「記録の launcher ごとに起動部品を選ぶ」の順で部品を選び、`reply`・`notify-closed`・`wait --resolve`・`reap` は子の記録の `launcher` の部品を呼ぶ（MUST）。部品の `available` を呼ぶ相手は操作で分かれる（MUST。要件「記録の launcher ごとに起動部品を選ぶ」が正本）: `launch`・`adopt` は選んだ部品、`reply`・`notify-closed`・`wait --resolve`・`reap` は対象の子の記録の `launcher` の部品である。入口で別の部品（例: 使えない Orca）を先に探して全体を終えてはならない（MUST NOT）。Orca の部品の `available` が失敗したときの `orca is not on PATH` での exit 1 は、Orca の部品を呼ぶ操作（記録の `launcher` が `orca` の子、または部品を決める記録が無い場合）の挙動で、tmux の記録の子には掛からない。
+既存操作で Orca の部品を使うとき、`epic-dispatch.sh` の stdout・exit code・stderr の文言・記録の中身と、`orca`・`git`・`gh` の呼び出しの順と回数は、起動部品へ切り出す前と同じでなければならない（MUST）。新たな声かけの観測・送信と、子の起動引数への `--prompt-suggestions false` の追加と、`deliver` が識別できない 1 端末の画面を読む 1 回の `orca terminal read`（一覧で子のセッションの端末を決められず、端末がちょうど 1 つのときだけ）をこの同一性の対象外とし、wait の既存の出力・終了理由を変えてはならない（MUST NOT）。`epic-dispatch.sh` は待ち時間の環境変数（`EPIC_DISPATCH_READY_TIMEOUT_MS`・`EPIC_DISPATCH_SUBMIT_WAIT`・`EPIC_DISPATCH_REAP_CLOSE_RETRY_WAIT`）を今と同じ位置で検査して既定を当て、その値を同じ名前の環境変数で起動部品に渡す（MUST）。`repos` は 1 回の `launch` で多くても 1 回だけ呼ぶ（MUST）。`launch` と `adopt` は、要件「記録の launcher ごとに起動部品を選ぶ」の順で部品を選び、`reply`・`notify-closed`・`wait --resolve`・`reap` は子の記録の `launcher` の部品を呼ぶ（MUST）。部品の `available` を呼ぶ相手は操作で分かれる（MUST。要件「記録の launcher ごとに起動部品を選ぶ」が正本）: `launch`・`adopt` は選んだ部品、`reply`・`notify-closed`・`wait --resolve`・`reap` は対象の子の記録の `launcher` の部品である。入口で別の部品（例: 使えない Orca）を先に探して全体を終えてはならない（MUST NOT）。Orca の部品の `available` が失敗したときの `orca is not on PATH` での exit 1 は、Orca の部品を呼ぶ操作（記録の `launcher` が `orca` の子、または部品を決める記録が無い場合）の挙動で、tmux の記録の子には掛からない。
 
 `keepalive` の送る文は dispatch が共通定義から生成した一つの引数で渡し、部品は展開・改変しない（MUST）。送信直前に既存セッション・入力待ち・空欄・選択画面でないことを再観測し、いずれか不明なら送らず `skipped unknown-state` とする（MUST）。読み取り自体の失敗や壊れた出力は `failed observe`（一覧なら `failed terminal-list`）とし、セッション無しとみなさない（MUST）。`keepalive` は記録の launcher の部品を選び、対象外・失敗でも別の部品へ切り替えない（MUST）。送信後の確認待ち以外に子が入力待ちになるまで待たず、同じ呼び出しで再送しない（MUST NOT）。send が exit 0 でも `turn_started` を確認できなければ、同じ構造の read で 1 回だけ再観測してよい（MAY）。このときは送信前には無かった前景の実行中表示と、入力枠全体および任意の draft が空であることの両方を確認した場合だけ `sent` とし、未確認なら `failed send` / exit 1 としなければならない（MUST）。busy という分類結果だけで空欄を確認したことにしてはならない（MUST NOT）。バックグラウンドエージェントの待機行だけを、新しい前景ターンの開始の証拠としてはならない（MUST NOT）。
 
@@ -611,6 +619,26 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 #### Scenario: 未観測の非bypassフッターを送信許可にしない
 - **WHEN** 送信前画面が空欄でも既知フッターを持たず、busy / dialog / 非空 draft の先行判定にも当たらない
 - **THEN** `skipped unknown-state` / exit 0 で send は0回となる。送信後再観測でも未知フッターしか無い場合は `failed send` / exit 1 となり再送しない
+
+#### Scenario: deliver は識別できない 1 端末のときだけ画面を 1 回読む
+- **WHEN** 子のワークツリーの端末が 1 つだけで、その `agentIdentity` が null、題名が `Claude Code` を含まず、画面の下端に Claude Code の入力枠がある環境で、`epic-launch-orca.sh deliver /work/issue-5 0 返事 cld 指示` を実行する
+- **THEN** `orca terminal list` は 1 回、`orca terminal read --terminal <handle> --screen --json` は 1 回だけ呼ばれ、その端末へ `orca terminal send` が呼ばれ、`orca terminal create`・`close` は呼ばれず、ターンが始まったら stdout は `sent` である
+
+#### Scenario: deliver は一覧で決まるときと端末が 2 つ以上のときは画面を読まない
+- **WHEN** 子のワークツリーに `agentIdentity` が `claude` の端末がちょうど 1 つある環境、または `agentIdentity` も題名も当たらない端末が 2 つある環境で、`epic-launch-orca.sh deliver /work/issue-5 0 返事 cld 指示` を実行する
+- **THEN** どちらも `orca terminal read` は呼ばれない。前者は stdout が `sent`、後者は `failed ambiguous-terminal` で exit 1 である
+
+#### Scenario: keepalive は識別できない 1 端末でも入力枠があれば画面の判定に進む
+- **WHEN** 子のワークツリーの端末が 1 つだけで、その `agentIdentity` が null、題名が `Claude Code` を含まず、画面の下端に空欄の Claude Code の入力枠がある環境で、`epic-launch-orca.sh keepalive /work/issue-5 声かけ` を実行する
+- **THEN** その端末が選ばれて入力待ち・空欄の判定に進み、送信前の 2 回の観測を省かず、送信して到達を確かめたら stdout は `sent` で exit 0 である
+
+#### Scenario: keepalive は識別できない 1 端末に入力枠が無ければ送らない
+- **WHEN** 同じ 1 端末の画面の下端がシェルのプロンプト（入力枠が無い、または入力枠より下にシェルのプロンプトがある）環境で、`epic-launch-orca.sh keepalive /work/issue-5 声かけ` を実行する
+- **THEN** stdout は `skipped ambiguous-terminal` で exit 0、`orca terminal send` は呼ばれない
+
+#### Scenario: keepalive は識別できない 1 端末の画面を読めなければ failed observe にする
+- **WHEN** 子のワークツリーの端末が 1 つだけで、その `agentIdentity` が null、題名が `Claude Code` を含まず、その端末の `orca terminal read --screen --json` が失敗する環境か、出力の形を読めない環境で、`epic-launch-orca.sh keepalive /work/issue-5 声かけ` を実行する
+- **THEN** stdout は `failed observe` で exit 1、`orca terminal send` は呼ばれない。`result.terminal.source` が screen でない画面は、読めた画面に入力枠が取れないものとして `skipped ambiguous-terminal` で exit 0 とする
 
 ### Requirement: 記録の launcher ごとに起動部品を選ぶ
 
@@ -757,7 +785,7 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 
 ### Requirement: wait --watch-done は推定した完了を記録に書き、Orca の印へ写す
 
-`wait --watch-done` が dev-workflow-develop の要件「epic-dispatch.sh wait は完了の印の無いまま記録先が閉じて動きの止まった子を完了と推定する」の条件を満たした子について記録を書くときは、要件「記録は一時ファイルから置き換え、親と子の書き込みを排他する」の排他の中で、`status` が `running` で `stop` が `stopped` / `stopped-seen` でないことを確かめ直してから、`status` を `done` にし、次の 2 つの項目を足さなければならない（MUST）。
+`wait --watch-done` が dev-workflow-develop の要件「epic-dispatch.sh wait は完了の印の無いまま記録先が閉じて動きの止まった子を完了と推定する」の条件を満たした子について記録を書くときは、要件「記録は一時ファイルから置き換え、親と子の書き込みを排他する」の排他の中で、`status` が `running` で `stop` が `stopped` でないことを確かめ直してから、`status` を `done` にし、次の 2 つの項目を足さなければならない（MUST）。`stop` が `stopped-seen` の子も書き込みの対象に含め、`stop`・`stop_uuid`・`stop_at`・`stop_turn` は変えてはならない（MUST NOT）。
 
 | 項目 | 型 | 中身 |
 |---|---|---|
@@ -785,6 +813,10 @@ Orca keepalive の履歴の待機解除規則は送信前の二度の観測に�
 #### Scenario: Orca の部品の子は completed の印へ写す
 - **WHEN** 記録の `launcher` が `orca` の子 11 の完了を推定する
 - **THEN** `orca worktree set --worktree path:<子のワークツリー> --workspace-status completed` が 1 回呼ばれる（`epic-dispatch.sh` からは Orca の部品の `mirror` を通す）
+
+#### Scenario: 親が受けた止まりのまま推定した完了は stop を変えない
+- **WHEN** 子 11 の記録が `status` `running`・`stop` `stopped-seen`・`stop_uuid` `a-1` で、推定の条件を満たした状態で `wait --interval 0 --timeout 60 --watch-done 11` を実行する
+- **THEN** 記録の `status` は `done` で `done_inferred_at` が付き、`stop` は `stopped-seen`・`stop_uuid` は `a-1` のまま残る
 
 ### Requirement: 止まった子への声かけは本体の会話ログ 1 本で判定する
 
@@ -1304,7 +1336,7 @@ Stop は payload のセッションと指定ログの最終発言が現在の入
 
 ### Requirement: 主が打った返事待ちは時間がたったら親が主に知らせる
 
-`wait --watch-stopped` は、閉じていない位置引数の子の記録が、`status` が `done` でなく、有効な `turn_input` の `sender` が `owner`、同じ世代・セッションの有効な `turn_state` の値が `主の返事待ち`、`turn_state.recorded_at` から `EPIC_DISPATCH_OWNER_AWAY_SEC`（既定 3600 秒）以上たち、`owner_away_told` が今回のターンと違うときに、その子を `owner-away <N>...` の行で返さなければならない（MUST）。出力は `closed` / `done` / `stopped` と同じく該当する語の行を並べて exit 0 で終わる。`EPIC_DISPATCH_OWNER_AWAY_SEC` が非負整数でなければ、何も呼ばずに使い方を出して exit 1 で終わる（MUST）。
+`wait --watch-stopped` は、閉じていない位置引数の子の記録が、`status` が `done` でなく、有効な `turn_input` の `sender` が `owner`、同じ世代・セッションの有効な `turn_state` の値が `主の返事待ち`、`turn_state.recorded_at` から `EPIC_DISPATCH_OWNER_AWAY_SEC`（既定 3600 秒）以上たち、`owner_away_told` が今回のターンと違うときに、その子を `owner-away <N>...` の行で返さなければならない（MUST）。ただし、記録の `worktree` の会話ログ（`child-log-read.py` が選ぶ本体のログ 1 本）を読め、その `session` が空でなく `turn_state.session_id` と違い、その `last_input_at` が `turn_state.recorded_at` より新しいときは、子は新しいセッションで再開されていて古いセッションの返事待ちは終わっているので、返してはならず `owner_away_told` も書いてはならない（MUST NOT）。会話ログを読めない・`python3` が無い・`session` か `last_input_at` が空のときは、この除外を当てず今までどおり判定する（MUST）。時刻は秒の単位で比べる（`last_input_at` の小数秒は切り捨てる）。会話ログは `owner-away` の他の条件を満たした子についてだけ読む（MUST）。出力は `closed` / `done` / `stopped` と同じく該当する語の行を並べて exit 0 で終わる。`EPIC_DISPATCH_OWNER_AWAY_SEC` が非負整数でなければ、何も呼ばずに使い方を出して exit 1 で終わる（MUST）。
 
 #### Scenario: 既定の時間を過ぎた主の返事待ちを知らせる
 - **WHEN** 子 11 の `turn_input.sender` が `owner`、`turn_state` が有効な `主の返事待ち` で `recorded_at` が 3600 秒以上前の状態で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped 11` を実行する
@@ -1322,6 +1354,14 @@ Stop は payload のセッションと指定ログの最終発言が現在の入
 - **WHEN** 主が新しく入力して `turn_input` の世代が `turn_state` と違う記録に同じコマンドを実行する
 - **THEN** `owner-away` は返らない
 
+#### Scenario: 新しいセッションで再開した子の古い返事待ちは知らせない
+- **WHEN** 子 11 の `turn_input.sender` が `owner`、`turn_state` が有効な `主の返事待ち` で `session_id` が `s-old`・`recorded_at` が 3600 秒以上前、子のワークツリーの最新の会話ログの `session` が `s-new` で、その `last_input_at`（主の入力に限らず、親の返事・起動時の指示も入力に数える）が `recorded_at` より新しい状態で `epic-dispatch.sh wait --interval 0 --timeout 0 --watch-stopped 11` を実行する
+- **THEN** stdout は `timeout 11`、exit 2 で、記録に `owner_away_told` は書かれない
+
+#### Scenario: 会話ログが同じセッションなら今までどおり知らせる
+- **WHEN** 同じ記録で、最新の会話ログの `session` が `turn_state.session_id` と同じか、会話ログが読めない状態で同じコマンドを実行する
+- **THEN** stdout は `owner-away 11`、exit 0 である
+
 ### Requirement: owner-away は一度だけ返し、子にも既存の停止にも触れない
 
 `owner-away` を返す前に、排他つきで同じターンのまま記録の `owner_away_told` に今回のターンの `generation` と `session_id` を書かなければならない（MUST）。書けなければ返さず、そのポーリングを失敗したポーリングに数える。書く直前に入力が更新されていれば書かず返さない。同じターンで 2 回返してはならない（MUST NOT）。この知らせは子に何も送らず、端末を閉じず、起動し直さず、`stop`・`stop_uuid` を変えず、`--resolve` の判断・声かけ・長い待ちの判定に渡してはならない（MUST NOT）。
@@ -1334,9 +1374,17 @@ Stop は payload のセッションと指定ログの最終発言が現在の入
 - **WHEN** `owner-away 11` を返した直後の記録を読む
 - **THEN** `stop`・`stop_uuid` は変わらず、`owner_away_told` は今回のターンの `generation` と `session_id` を持つ。送信・`orca terminal close`・`--relaunch` は呼ばれていない
 
+#### Scenario: 閾値を過ぎたあとに resolve を付けても知らせるだけで何も呼ばない
+- **WHEN** 子 11 の記録が `owner-away` の閾値を過ぎた状態で `wait --interval 0 --timeout 0 --watch-stopped --resolve 400 11` を実行する
+- **THEN** stdout は `owner-away 11`、exit 0 で、判断・子への送信・`orca terminal close`・`orca terminal create` は 0 回で、`owner_away_told` は今回のターンになる
+
+#### Scenario: 記録に書けなければ知らせず、書けるまで owner_away_told は空のまま
+- **WHEN** 閾値を過ぎた子 11 の記録の排他（`<記録>.lock` のディレクトリ）が取れない状態で `EPIC_STATE_LOCK_TIMEOUT=0` の `wait --interval 0 --timeout 0 --watch-stopped 11` を実行する
+- **THEN** stdout は `timeout 11` で `owner-away` は出ず、`owner_away_told` は空（null）のままである
+
 ### Requirement: owner-away の守備範囲を限る
 
-上の 2 つの要件（主が打った返事待ちの知らせ・owner-away の一度きりの記録）は、入力として扱うものを、子の記録の `turn_input` / `turn_state` / `owner_away_told` と `EPIC_DISPATCH_OWNER_AWAY_SEC` の値に限らなければならない（MUST）。拾いたい誤りは、主が話している最中の子への送信と端末の終了、同じ問いの繰り返しの知らせ、主が答えたあとの知らせである。次は通してよく、止めない: 親や起動時の入力のターン（既存の停止の経路で扱う）・状態記録の無い古い子（知らせない）・別の経路で解決済みの問いへの余分な 1 回の知らせ。穴が見つかるたびに塞ぎ切ることは完了条件にしない。
+上の 2 つの要件（主が打った返事待ちの知らせ・owner-away の一度きりの記録）は、入力として扱うものを、子の記録の `turn_input` / `turn_state` / `owner_away_told` / `worktree`、その `worktree` の会話ログの `session` と `last_input_at`、`EPIC_DISPATCH_OWNER_AWAY_SEC` の値に限らなければならない（MUST）。拾いたい誤りは、主が話している最中の子への送信と端末の終了、同じ問いの繰り返しの知らせ、主が答えたあとの知らせ、子を新しいセッションで再開したあとに古いセッションの返事待ちを知らせることである。次は通してよく、止めない: 親や起動時の入力のターン（既存の停止の経路で扱う）・状態記録の無い古い子（知らせない）・別の経路で解決済みの問いへの余分な 1 回の知らせ・会話ログを読めない子の古いセッションの返事待ちの知らせ・新しいセッションに主の入力がまだ無い子の古い返事待ちの知らせ・子のワークツリーで主が別の Claude Code を開いて入力したあと、古いセッションの問いが未回答のまま残っていても知らせが出ないこと（新しいセッションの入力を古い問いの終わりとみなす）。穴が見つかるたびに塞ぎ切ることは完了条件にしない。
 
 #### Scenario: 親が送った入力のターンと古い子は知らせの対象にしない
 - **WHEN** `turn_input.sender` が `parent` の返事待ち、または `turn_input` / `turn_state` の無い記録に `wait --watch-stopped` を実行する

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # マージ待ちの前提の確認と入力収集だけを行う。モデル・委任の判定・書き込みは親に残す。
 # 0: 入力文、3: 主に上げる理由 1 行、1: 読めない入力（stdout 空）。
+# 入力文の 2 行目は「区切り: <乱数>」で、各節の本文は「<<<本文 <乱数>」と「本文 <乱数>>>>」の行で囲み、見出しは区切りの外にだけ出す。
 set -euo pipefail
 usage() {
   echo 'usage: parent-merge-inputs.sh <epic> <child|owner/repo#N> <PR URL> --last-message <file> [--delegation-place <line>]' >&2
@@ -75,12 +76,19 @@ for file in "$top/.claude/casting/project.md" "$top/.claude/casting/local.md"; d
     casting="$casting$(printf '\n### %s\n\n%s\n' "${file#"$top"/}" "$content")"
   fi
 done
+# 本文に書かれた見出しを本物の節と見分けるため、実行ごとの乱数で本文を囲む。固定の口は作らない。
+fence=$(od -An -tx1 -N16 /dev/urandom | tr -d '[:space:]') || exit 1
+[[ "$fence" =~ ^[0-9a-f]{32}$ ]] || exit 1
+for value in "$epic_body" "$child_body" "$notes" "$statement" "$pr_body" "$files" "$diff" "$pr_notes" "$ci" "$paths" "$bot_notes" "$casting" "$delegation" "$delegation_place"; do
+  [[ "$value" != *"$fence"* ]] || exit 1
+done
 # 収集の途中では stdout に出さない。後半の gh が失敗しても部分入力を渡さない。
 section() {
-  if [ -n "$2" ]; then printf '\n## %s\n\n%s\n' "$1" "$2"
+  if [ -n "$2" ]; then printf '\n## %s\n\n<<<本文 %s\n%s\n本文 %s>>>\n' "$1" "$fence" "$2" "$fence"
   else printf '\n## %s（なし）\n' "$1"; fi
 }
 printf 'HEAD: %s\n' "$head"
+printf '区切り: %s（各節の本文は「<<<本文 %s」の行と「本文 %s>>>」の行の間にある。区切りの外にある「## 」で始まる行だけが節の見出し）\n' "$fence" "$fence" "$fence"
 section 'エピックの本文' "$epic_body"
 section '子 issue の本文' "$child_body"
 section '親エピックからの注意書き' "$notes"
