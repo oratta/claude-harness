@@ -22,6 +22,7 @@ EOF
 )"
 ```
 
+- **PR 作成直後・仕様化判断と編集前に必須検査**: 本体から引き継いだ、実際に読んだ SKILL.md から解決した読込元 `<plugin-root>` で `python3 <plugin-root>/scripts/develop-procedure-freshness.py check --loaded-plugin-root <plugin-root> --record <作成したPRの完全URL>` を実行する。exit 1 は停止、2 は入力を直す。取得不能・投稿失敗の扱いと印は `skills/develop/references/procedure-freshness.md` を Read する。`recording: "failed"` なら `body` 全文を既存 return に載せ、記録未完了と報告する（本体が代理投稿する）。追加 return や各工程の再検査は設けない
 - **受け入れ条件は PR 本文に書く**（issue に書かない分の省略であって、受け入れ条件自体は省けない）
 - PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を**書かない**（書くと pr-review-gate の照合先がその issue に移る。エピックの子は子 issue が記録先なので、その場合は `Closes #子` を書く）
 - 以降、この PR が記録先。`gh issue comment` の代わりに `gh pr comment <PR番号>` でコメントする

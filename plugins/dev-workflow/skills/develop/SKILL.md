@@ -90,6 +90,7 @@ G の起動指示（段ごとに新しく起こす G と、手渡しで起こす
 - **無ければ issue を切らない。** 本体が worktree を用意し、W が worktree 直後に空 commit（`git commit --allow-empty`）を積んで push し、`gh pr create --draft` で Draft PR を開いてそれを記録先にする（GitHub の "open a draft PR early" の慣行）。この Draft PR は**仕様化判断を記録する前**に存在していなければならない — 記録先が無い状態で判定を先に進めない（手順は `references/roles/worker/spec.md`「記録先の用意」）
 - **入口 0 の例外**: 軽い通し方だけ本体が Draft PR を作る。整理 → 判定 → Draft PR → 判断の記録（`references/light-path.md`）
 - Draft PR を記録先にするときの PR 本文の決まり（受け入れ条件は PR 本文に書く・PR 本文に `Closes #N` / `Fixes #N` / `Refs #N` の issue 参照を書かない。エピックの子は `Closes #子` を書く）は、`references/roles/worker/spec.md`「記録先の用意」が正本
+- 記録先確定直後・仕様化判断と編集の前に `python3 <plugin-root>/scripts/develop-procedure-freshness.py check --loaded-plugin-root <plugin-root> --record <記録先URL>` を実行し、exit 1 で停止。`references/procedure-freshness.md` を Read
 - 仕様化判断（`仕様化判断: する|しない`）・仕様レビュー結果（`仕様レビュー: APPROVE|REQUEST_CHANGES`）は記録先のコメントに置く（書式の正本は `references/roles/spec-reviewer.md`「判断記録の契約」）
 - **仕様宣言は記録先ではなく常に PR コメントに置く**（記録先が issue でも issue には書かない）。pr-review-gate 手順 5 が PR のコメントでリスク宣言・仕様宣言・動作確認の 3 見出しを照合し、`対象 HEAD:` 規約が PR の HEAD に紐づくため。書式の正本は pr-review-gate スキル手順 3-b
 
@@ -106,10 +107,11 @@ worktree は**本体が用意する**。`.worktreeinclude` が無いときは本
 下の各工程の spawn・SendMessage による再開・Codex executor への委譲の直前には、毎回必ず `references/pr-token-budget.md` を Read して計測を行う（exit 2 なら起こさず止まる）。
 
 ```
-(0) 記録先を確定する（入口 0）。worktree を用意する
+(0) 記録先を確定する（入口 0）。直後に読込元の版を必須検査し、worktree を用意する
      軽い通し方なら W を起こさず本体が直して G の工程へ（`references/light-path.md`）
-(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示に `段: spec` の 1 行を書く。model: `request` が返した `model`。入力は「Role profile の選択」節、既定と上限は「モデル」節の表の W の行）:
-      記録先の用意（Draft PR 経路）→ 仕様化判断の記録 → 分割判定 → openspec new change → return「仕様できた」
+(1) W を `subagent_type: dev-workflow:worker` で名前付き spawn（起動指示は `段: spec`。model: `request` が返した `model`。入力は「Role profile の選択」節、既定と上限は「モデル」節の表の W の行）:
+      Draft PR の起動指示に `読込元plugin-root: <読んだ SKILL.md から解決したroot>` を 1 行で渡す
+      記録先の用意（Draft PR 経路）→ 読込元の版の必須検査 → 仕様化判断の記録 → 分割判定 → openspec new change → return「仕様できた」
       仕様化しない判定なら → (3) へ直行（TDD → PR）
       文言合わせの通し方なら W は仕様の差分 1 ファイルだけを書いて return（正本: `references/spec-decision.md` Step B・`references/roles/worker/spec.md`）。
            return の文面ではなく記録先の最新の判断に `通し方: 文言合わせ` があれば R1 の工程を飛ばして `段: implement` で再開。
