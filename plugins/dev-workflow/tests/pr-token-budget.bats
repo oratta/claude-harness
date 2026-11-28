@@ -500,3 +500,85 @@ PYFIX
   [[ "$(j 'd["error"]')" == invalid_table:* ]] || false
   [[ "$stderr" == *invalid_table* ]] || false
 }
+
+# G002: explicit sessions, including an active coordinator, are additional inputs.
+explicit_records() {
+  SESSIONS="$WORK/sessions.jsonl"
+  LOG="$WORK/role.jsonl"
+  arec explicit m u 1 10 100 5 > "$LOG"
+  printf '200\n' | make_rollout "$HOME1" active
+  ROLLOUT="$HOME1/sessions/2026/09/23/rollout-2026-09-23T10-00-00-active.jsonl"
+  python3 - "$REPO" "$SESSIONS" "$LOG" "$ROLLOUT" "$HOME1" <<'PY'
+import json,sys,os
+repo,out,log,rollout,home=sys.argv[1:]
+base=dict(schema_version=1,records=[288,400],repo_common_dir=os.path.realpath(repo+'/.git'),cwd=repo)
+rows=[dict(base,provider='claude',kind='role',session_id='role-session',log_path=log,role='implement',model='sonnet'),
+      dict(base,provider='codex',kind='coordinator',thread_id='active',log_path=rollout,codex_home=home)]
+with open(out,'w') as f:
+ for row in rows+rows: f.write(json.dumps(row)+'\n')
+PY
+}
+
+@test "explicit sessions: four Claude usage fields + active coordinator, dedup and live growth" {
+  explicit_records
+  printf 'active 50\n' > "$WORK/comments"
+  cd "$REPO"
+  run "$SCRIPT" 288 400 --projects "$PROJECTS" --session-records "$SESSIONS" --codex-records "$WORK/comments" --cap 1000
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["total_tokens"]')" = 316 ]
+  [ "$(j 'd["session_unresolved"]')" = 0 ]
+  printf '{"type":"event_msg","payload":{"type":"token_count","info":{"total_token_usage":{"total_tokens":350}}}}\n' >> "$ROLLOUT"
+  run "$SCRIPT" 288 --projects "$PROJECTS" --session-records "$SESSIONS" --codex-records "$WORK/comments" --cap 1000
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["total_tokens"]')" = 466 ]
+}
+
+@test "explicit sessions: missing usage is unresolved, known over-cap takes precedence" {
+  explicit_records
+  : > "$ROLLOUT"
+  cd "$REPO"
+  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  [ "$status" -eq 1 ]
+  [ "$(j 'd["session_unresolved"] > 0')" = True ]
+  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 100
+  [ "$status" -eq 2 ]
+  : > "$SESSIONS"
+  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS"
+  [ "$status" -eq 1 ]
+}
+
+@test "explicit sessions: existing meta transcript is counted only once" {
+  explicit_records
+  arec explicit m u 1 10 100 5 | make_agent same '{"description":"W #288"}' "$REPO"
+  python3 - "$SESSIONS" "$PROJECTS/proj/sess1/subagents/agent-same.jsonl" <<'PY'
+import json,sys
+p=sys.argv[1]; rows=[json.loads(s) for s in open(p)]
+for r in rows:
+ if r['provider']=='claude': r['log_path']=sys.argv[2]
+with open(p,'w') as f:
+ for r in rows: f.write(json.dumps(r)+'\n')
+PY
+  cd "$REPO"
+  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  [ "$status" -eq 0 ]
+  [ "$(j 'd["total_tokens"]')" = 316 ]
+}
+
+@test "explicit sessions: other repo and record excluded; missing coordinator diagnosed" {
+  explicit_records
+  python3 - "$SESSIONS" "$OTHER" <<'PY'
+import json,sys
+p=sys.argv[1]; rows=[json.loads(s) for s in open(p)]
+for r in rows:
+ if r['provider']=='codex': r['repo_common_dir']=sys.argv[2]+'/.git'; r['cwd']=sys.argv[2]
+with open(p,'w') as f:
+ for r in rows: f.write(json.dumps(r)+'\n')
+PY
+  cd "$REPO"
+  run "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  [ "$status" -eq 1 ]
+  [ "$(j 'd["total_tokens"]')" = 116 ]
+  run "$SCRIPT" 999 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+  [ "$status" -eq 1 ]
+  [ "$(j 'd["total_tokens"]')" = 0 ]
+}
