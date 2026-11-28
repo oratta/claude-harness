@@ -57,4 +57,3 @@ Claude role の Agent 呼び出しの `subagent_type` は、canonical role で�
 #### Scenario: 本体が Codex で役の executor が Claude
 - **WHEN** Codex 本体が role resolver の返した executor=claude の役を起こす
 - **THEN** 共通工程を変えず、Codex 本体用の操作対応から #1857 の起動・再開契約を使う。未提供なら理由付きで停止し、Codex 自身を Claude Agent として扱ったり、別 account/model へ黙って倒したりしない。上記の Agent/SendMessage は Claude 本体での具体的方法であり、Codex 本体へ存在を仮定しない
-
