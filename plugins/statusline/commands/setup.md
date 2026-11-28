@@ -12,7 +12,7 @@ allowed-tools: Read, Bash, AskUserQuestion
 ### 1. プラグインルートを特定する
 
 ```bash
-SL_NG=; if [ -n "${ZSH_VERSION:-}" ] && [[ ! -o nullglob ]]; then setopt nullglob; SL_NG=1; fi
+SL_NG=; if [ -n "${ZSH_VERSION:-}" ] && command -v setopt >/dev/null 2>&1 && [[ ! -o nullglob ]]; then setopt nullglob; SL_NG=1; fi
 for dir in \
   "${CLAUDE_PLUGIN_ROOT:-}" \
   ~/.claude/plugins/marketplaces/oratta-claude-harness/plugins/statusline \
