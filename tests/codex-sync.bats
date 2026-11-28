@@ -42,7 +42,7 @@ assert_links() {
 assert_failure() {
   run sh "$SYNC" --no-pull
   [ "$status" -eq 1 ]
-  [[ "$output" == *"[harness-sync] Codex"* ]]
+  [[ "$output" == *"[harness-sync] Codex"* ]] || return 1
   assert_links
 }
 # A restricted PATH exercises missing dependencies without using the host CLI.
@@ -81,7 +81,7 @@ restricted_path() {
   restricted_path
   run /bin/sh "$SYNC" --no-pull
   [ "$status" -eq 1 ]
-  [[ "$output" == *"jq"* ]]
+  [[ "$output" == *"jq"* ]] || return 1
   assert_links
 }
 
@@ -112,7 +112,7 @@ restricted_path() {
     echo "$payload" > "$LIST_JSON"
     assert_failure
   done
-  ! grep -q upgrade "$CALLS"
+  ! grep -q upgrade "$CALLS" || return 1
 }
 
 @test "malformed upgrade results and nonempty errors fail while wiring continues" {
@@ -180,7 +180,7 @@ assert_real_updated() {
   cmp "$P/skills/develop/SKILL.md" "$SNAPSHOT/plugins/dev-workflow/skills/develop/SKILL.md"
   cmp "$P/skills/develop/SKILL.md" "$CACHE/skills/develop/SKILL.md"
   grep -q new-command "$MIGRATED/source-command-keep/SKILL.md"
-  ! grep -q old-command "$MIGRATED/source-command-keep/SKILL.md"
+  ! grep -q old-command "$MIGRATED/source-command-keep/SKILL.md" || return 1
   [ ! -e "$MIGRATED/source-command-remove" ]
   cmp "$CODEX_HOME/config.toml" "$BATS_TEST_TMPDIR/config.before"
   [ ! -e "$CODEX_HOME/plugins/cache/fixture/disabled" ]
