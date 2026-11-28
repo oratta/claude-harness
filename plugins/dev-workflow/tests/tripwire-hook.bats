@@ -363,15 +363,24 @@ PY
 }
 
 @test "role: SessionStart JSON contains exactly the explicit budget text for every role" {
-  local root role expected
+  local root role scope expected
+  local -a scope_env
   for root in "$PLUGIN_DIR" "$TMPDIR_EMPTY"; do
-    run env CLAUDE_PLUGIN_ROOT="$root" TRIPWIRES_SCOPE=subagent-budget "$SCRIPT"
+    run env CLAUDE_PLUGIN_ROOT="$root" FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=throttled TRIPWIRES_SCOPE=subagent-budget "$SCRIPT"
     [ "$status" -eq 0 ]
     expected="$output"
+    [[ "$expected" == *'FABLE_BUDGET_MODE: abundant（明示 env）'* ]]
+    [[ "$expected" == *'SHARED_BUDGET_MODE: throttled（明示 env）'* ]]
     for role in worker reviewer decider unknown; do
-      run env CLAUDE_PLUGIN_ROOT="$root" DEVELOP_ROLE="$role" TRIPWIRES_SCOPE=unknown "$SCRIPT" <<<'{"session_id":"main","text":"DEVELOP_ROLE=worker"}'
-      [ "$status" -eq 0 ]
-      python3 - "$output" "$expected" <<'CHECK'
+      for scope in absent unknown; do
+        if [ "$scope" = absent ]; then
+          scope_env=(-u TRIPWIRES_SCOPE)
+        else
+          scope_env=(TRIPWIRES_SCOPE=unknown)
+        fi
+        run env "${scope_env[@]}" CLAUDE_PLUGIN_ROOT="$root" DEVELOP_ROLE="$role" FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=throttled "$SCRIPT" <<<'{"session_id":"main","text":"DEVELOP_ROLE=worker"}'
+        [ "$status" -eq 0 ]
+        python3 - "$output" "$expected" <<'CHECK'
 import json,sys
 obj=json.loads(sys.argv[1])
 assert list(obj)==["hookSpecificOutput"]
@@ -380,7 +389,8 @@ assert h=={"hookEventName":"SessionStart", "additionalContext":sys.argv[2]}, h
 for bad in ("昇格トリップワイヤー", "subagent-context.sh", "メモリ索引"):
     assert bad not in h["additionalContext"]
 CHECK
-      run env CLAUDE_PLUGIN_ROOT="$root" DEVELOP_ROLE="$role" TRIPWIRES_SCOPE=subagent-budget "$SCRIPT"
+      done
+      run env CLAUDE_PLUGIN_ROOT="$root" DEVELOP_ROLE="$role" FABLE_BUDGET_MODE=abundant SHARED_BUDGET_MODE=throttled TRIPWIRES_SCOPE=subagent-budget "$SCRIPT"
       [ "$status" -eq 0 ]
       [ "$output" = "$expected" ]
     done
@@ -399,6 +409,7 @@ CHECK
   [ ! -e "$TMPDIR_EMPTY/probe" ]
   [ ! -e "$TMPDIR_EMPTY/memory" ]
   for mark in absent empty; do
+    rm -f "$TMPDIR_EMPTY/probe" "$TMPDIR_EMPTY/memory"
     if [ "$mark" = absent ]; then unset DEVELOP_ROLE; else export DEVELOP_ROLE=; fi
     run env CLAUDE_PLUGIN_ROOT="$root" "$SCRIPT" <<<'{"text":"DEVELOP_ROLE=worker"}'
     [ "$status" -eq 0 ]
