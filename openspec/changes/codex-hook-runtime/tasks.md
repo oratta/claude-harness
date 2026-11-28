@@ -20,7 +20,7 @@ spec 段では以下を実行しない。R1 APPROVE の記録後に実装を始�
 
 ## 4. 統合検査
 
-- [ ] 4.1 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_pretool_guards.py -v`、`bats plugins/dev-workflow/tests/git-destructive-guard.bats plugins/dev-workflow/tests/unattended-ask-guard.bats plugins/capability-registry/tests/secret-guard.bats tests/injection-budget.bats`、`scripts/test.sh`（Python suites を含む全件）、`scripts/lint.sh`、`openspec validate codex-hook-runtime --type change --strict`、`git diff --check` を実行し、件数・exit code・対象 HEAD と省略項目を #1863 に記録する。起動禁止が続く Claude CLI の lint 部分等は未実施と明示し、勝手に起動しない。injection budget の値と版は変更しない。触る範囲: plugins/dev-workflow/changes/1858.md:10-17、plugins/dev-workflow/tests/test_codex_hook_runtime.py（新規）、plugins/dev-workflow/tests/test_codex_worker.py:21-170、plugins/dev-workflow/tests/test_codex_worker.py:411-440
+- [x] 4.1 `PYTHONDONTWRITEBYTECODE=1 python3 -m unittest discover -s plugins/dev-workflow/tests -p test_codex_pretool_guards.py -v`、`bats plugins/dev-workflow/tests/git-destructive-guard.bats plugins/dev-workflow/tests/unattended-ask-guard.bats plugins/capability-registry/tests/secret-guard.bats tests/injection-budget.bats`、`scripts/test.sh`（Python suites を含む全件）、`scripts/lint.sh`、`openspec validate codex-hook-runtime --type change --strict`、`git diff --check` を実行し、件数・exit code・対象 HEAD と省略項目を #1863 に記録する。起動禁止が続く Claude CLI の lint 部分等は未実施と明示し、勝手に起動しない。injection budget の値と版は変更しない。触る範囲: plugins/dev-workflow/changes/1858.md:10-17、plugins/dev-workflow/tests/test_codex_hook_runtime.py（新規）、plugins/dev-workflow/tests/test_codex_worker.py:21-170、plugins/dev-workflow/tests/test_codex_worker.py:411-440
 
 ## Workflow follow-up
 
@@ -42,3 +42,7 @@ spec 段では以下を実行しない。R1 APPROVE の記録後に実装を始�
 ## implement 試行4の進捗
 
 本体/native の[実機記録](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236567986) と修正後 worker の[実機記録](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236818972) により、AC の必須5セル（git: 本体/native/worker、秘密: 本体/worker）を確認済みとして3.1・3.2を完了した。3.1に列挙した全9種/代表変形のうち未試行の操作とnative対照は未取得でAC必須セルの外、native秘密はAC対象外。印付き同期質問の実tool到達・拒否は未取得、#1862の未確認経路/質問対応全体も未完了を維持する。未取得を成功にしない。4.1は前回と同じ検査一覧を実行し、全体テストのCI委譲・Claude CLI起動禁止による省略を明記する。全件結果は未取得のため4.1のチェックは保留する。
+
+## finish 試行2の統合検査記録
+
+[本体による task 4.1 の統合検査](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7237390881)（対象 HEAD `196eec377b73ed73e4f4658ccb56955b53d99acd`）を確認し、4.1を完了した。`scripts/lint.sh` は Claude plugin validate 9対象を含め exit 0。全件 `scripts/test.sh` は5656件中5655件ok、TMPDIRの「scratchpad」という語によるpython-suitesの1件だけ失敗。同suiteを中立のTMPDIRで再実行し9件ok・exit 0（Python 475件と40件もexit 0）。先行する関連検査のexit 0と合わせた記録であり、全件test.shの初回exit 0とは記さない。版とinjection budgetの値は不変。
