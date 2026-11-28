@@ -53,6 +53,8 @@ def inspect(kind, data):
         if not result.stdout.strip():
             return None
         out = json.loads(result.stdout)
+        if not isinstance(out, dict) or not isinstance(out.get('hookSpecificOutput'), dict):
+            raise ValueError('unexpected dependency output type')
         decision = out['hookSpecificOutput']
         if (decision.get('permissionDecision') != 'deny'
                 or not isinstance(decision.get('permissionDecisionReason'), str)
