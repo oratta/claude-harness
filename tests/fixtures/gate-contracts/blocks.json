@@ -109,7 +109,7 @@
     {
       "source": "skills/pr-review-gate/stages/pass.md",
       "line": 159,
-      "text": "   ```bash\n   bash <plugin>/scripts/owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時>\n   # 出力: 通れば MATCH: <timestamp> <本文の全文> と MATCHES=1 / 通らなければ REASON=<理由> と MATCHES=0\n   # 終了コード: 0 = 通る / 1 = 通らない / 2 = 確かめられない（引数の不備・この PC に親の会話ログが無い）\n   # REASON: not-found（その uuid の行が無い）/ not-owner（主の入力でない行）/ not-after（委任の記録より後でない発言）/ not-asked（委任の記録より後でその行より前に、委任の記録の URL を書いた親の発言が無い）/ not-before（停止の記録より前でない発言）。委任の記録の URL を書いた親の発言とその行のあいだに別の主の発言が挟まっても並び順では落とさない（issue #1653。挟まった別の話の発言を確認として拾わないよう、MATCH 行の全文から任せる意思を読む）\n   ```"
+      "text": "   ```bash\n   # 問いの形の記録\n   bash <plugin>/scripts/owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> -\n   # きっかけの形の記録（4 番目の引数は記録の 5 行目の `きっかけ: ` のあとから本文の終わりまで）\n   bash <plugin>/scripts/owner-reply-check.sh --delegated-trigger <セッション ID> <uuid> <委任の記録の作成日時> <記録の きっかけ: の値>\n   # 出力: 通れば MATCH: <timestamp> <本文の全文> と MATCHES=1 / 通らなければ REASON=<理由> と MATCHES=0\n   # 終了コード: 0 = 通る / 1 = 通らない / 2 = 確かめられない（引数の不備・この PC に親の会話ログが無い）\n   # REASON（--delegated）: not-found（その uuid の行が無い）/ not-owner（主の入力でない行）/ not-after（委任の記録より後でない発言）/ not-asked（委任の記録より後でその行より前に、委任の記録の URL を書いた親の発言が無い）。委任の記録の URL を書いた親の発言とその行のあいだに別の主の発言が挟まっても並び順では落とさない（issue #1653。挟まった別の話の発言を確認として拾わないよう、MATCH 行の全文から任せる意思を読む）\n   # REASON（--delegated-trigger）: not-found / not-owner（同上）/ not-before-record（委任の記録より前でない発言）/ not-same（記録の きっかけ: の全文と発言の全文が、空白をまとめて同じでない）/ not-adjacent（その発言から委任の記録までに別の主の発言がある）\n   ```"
     },
     {
       "source": "skills/pr-review-gate/stages/pass.md",

@@ -1,0 +1,15 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "case \"${DEV_WORKFLOW_CODEX_GUARD_DIR:-}\" in /*) if [ -f \"${DEV_WORKFLOW_CODEX_GUARD_DIR}/pretool-guard.py\" ]; then exec python3 -I \"${DEV_WORKFLOW_CODEX_GUARD_DIR}/pretool-guard.py\"; fi ;; esac; printf \"%s\\n\" \"[codex-pretool-guard] entry: 未検査 (DEV_WORKFLOW_CODEX_GUARD_DIR must contain an existing adapter at an absolute path)\" >&2; exit 0",
+            "timeout": 30
+          }
+        ]
+      }
+    ]
+  }
+}

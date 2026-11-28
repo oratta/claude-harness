@@ -1,18 +1,21 @@
 #!/usr/bin/env bash
 # owner-reply-check.sh — 主が会話で返した許容の発言が、そのセッションの会話ログに主の発言として実在するかを確かめる。
 #
-# 使い方（4 つ）:
+# 使い方（5 つ）:
 #   owner-reply-check.sh <セッション ID> <原文>                 既定の使い方（引数がちょうど 2 個でなければ exit 2）
 #   owner-reply-check.sh --locate <セッション ID> <原文>        主の発言の場所（uuid）を引く（エピックの親が使う。issue #1059）
 #   owner-reply-check.sh --relayed <セッション ID> <uuid> <停止の記録の作成日時> <停止の記録の URL>
 #                                                              親経由の返事を親の会話ログの場所で確かめる（エピックの子と G が使う）
-#   owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時>
+#   owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時か ->
 #                                                              主の委任の確認を親の会話ログの場所で確かめる（エピックの子と G が使う。issue #1293）
-#   --locate・--relayed・--delegated の引数の数は各自のもの（2 個 / 4 個 / 5 個）で、違えば exit 2。
+#   owner-reply-check.sh --delegated-trigger <セッション ID> <uuid> <委任の記録の作成日時> <きっかけの全文>
+#                                                              主が任せる旨を述べたきっかけの発言を委任の確認として確かめる
+#                                                              （きっかけの形の委任の記録。親・エピックの子・G が使う。issue #1609）
+#   --locate・--relayed・--delegated・--delegated-trigger の引数の数は各自のもの（2 個 / 4 個 / 5 個 / 4 個）で、違えば exit 2。
 #   読むのは ${OWNER_REPLY_PROJECTS_DIR:-${CLAUDE_CONFIG_DIR:-$HOME/.claude}/projects}/*/<セッション ID>.jsonl だけ
 #   （<セッション ID>/subagents/ の下は読まない）。OWNER_REPLY_PROJECTS_DIR はテスト用の差し替え口。
 # 比べ方: 原文と各発言の本文の連続する空白（改行を含む）を 1 個の空白にまとめ、前後の空白を落として部分一致。
-# 主の発言として数える行（すべて満たすもの。4 つの使い方で同じ）:
+# 主の発言として数える行（すべて満たすもの。5 つの使い方で同じ）:
 #   1. type が "user"            2. isSidechain が true でない
 #   3. isMeta が true でない（4 のチャンネルの行は除かない。実物は isMeta: true で残る）
 #   4. origin のキーがあるなら（null を含む）origin.kind が "human"、または "channel" で次のすべてを満たす（issue #1125）:
@@ -51,14 +54,25 @@
 #   --delegated: 出力は --relayed と同じ形。理由は次の順に確かめる: not-found → not-owner（--relayed と同じ）
 #              → not-after（その行の timestamp が委任の記録の作成日時より後でない）→ not-asked（委任の記録の作成日時より後で
 #              その行より前の親の発言の text の本文に委任の記録の URL が無い。URL の境界の判定は --relayed と同じ）
-#              → not-before（その行の timestamp が停止の記録の作成日時より前でない）
+#              → not-before（その行の timestamp が停止の記録の作成日時より前でない。停止の記録の引数が - なら確かめない。
+#              リスク許容の止まりは委任の確認より前の止まりにも効くため。issue #1609）
 #              not-direct は確かめない（URL を書いた親の発言とその行のあいだに別の主の発言が挟まっても並び順では落とさない。
 #              issue #1653。挟まった発言を確認として拾わないことは、呼び出し側が全文から任せる意思を読んで担う）
 #              GitHub は読まない。委任の意思（MATCH 行の全文）・委任の記録の書式・投稿者・最新か・編集の有無・エピックが開いているか・
-#              子の所属・停止の記録の推奨は呼び出し側（エピックの子と pr-review-gate 手順 5）が確かめる。
-# 終了コード: 0 = 一致（--relayed / --delegated は通った）/ 1 = 一致なし（--relayed / --delegated は REASON の付く落ち）/
-#   2 = 引数の不備・UUID でない ID・空の原文・日時を読めない・https で始まらない URL・会話ログなし・python3 なし・
-#       空白をまとめると空になる原文・会話ログを読めない・--relayed / --delegated で指した行の timestamp を読めない・
+#              子の所属・停止の記録の推奨と、止まりの種類に合わせて - を渡すかどうかは呼び出し側（エピックの子と
+#              pr-review-gate 手順 5）が確かめる。
+#   --delegated-trigger: 出力は --relayed と同じ形。理由は次の順に確かめる: not-found → not-owner（--relayed と同じ）
+#              → not-before-record（その行の timestamp が委任の記録の作成日時より前でない）→ not-same（その行の本文と
+#              きっかけの全文を、それぞれ空白をまとめて比べて同じでない。部分一致は同じに数えない）→ not-adjacent（その行より
+#              後で委任の記録の作成日時より前に、別の主の発言がある）。停止の記録は読まない（引数に取らない）。
+#              GitHub は読まない。委任の意思（MATCH 行の全文）・除く子や期限の有無・委任の記録の書式・投稿者・最新か・編集の有無・
+#              エピックが開いているか・子の所属・止まりの種類と停止の記録の推奨は呼び出し側（親・エピックの子・pr-review-gate
+#              手順 5）が確かめる。
+# 終了コード: 0 = 一致（--relayed / --delegated / --delegated-trigger は通った）/
+#   1 = 一致なし（--relayed / --delegated / --delegated-trigger は REASON の付く落ち）/
+#   2 = 引数の不備・UUID でない ID・空の原文・日時を読めない・--delegated の停止の記録の引数が - でも日時でもない・
+#       https で始まらない URL・会話ログなし・python3 なし・空白をまとめると空になる原文かきっかけの全文・会話ログを読めない・
+#       --relayed / --delegated / --delegated-trigger で指した行の timestamp を読めない・
 #       OWNER_REPLY_CHANNEL_SENDERS に <server>=<ID> の形でない項目がある（空の項目は数えない）
 #   （2 は「確かめられない」。呼び出し側は 1 と同じく通さない側に倒す）
 #
@@ -73,6 +87,7 @@ case "${1:-}" in
   --locate) mode="locate"; shift ;;
   --relayed) mode="relayed"; shift ;;
   --delegated) mode="delegated"; shift ;;
+  --delegated-trigger) mode="trigger"; shift ;;
 esac
 
 excerpt=""; target_uuid=""; stop_at=""; stop_url=""; deleg_at=""; deleg_url=""
@@ -98,6 +113,13 @@ case "$mode" in
     fi
     session_id="$1"; target_uuid="$2"; deleg_at="$3"; deleg_url="$4"; stop_at="$5"
     ;;
+  trigger)
+    if [ "$#" -ne 4 ]; then
+      echo "usage: $0 --delegated-trigger <session-id> <uuid> <delegation-record-created-at> <trigger-text>" >&2
+      exit 2
+    fi
+    session_id="$1"; target_uuid="$2"; deleg_at="$3"; excerpt="$4"
+    ;;
 esac
 
 if ! [[ "$session_id" =~ $UUID_RE ]]; then
@@ -105,12 +127,17 @@ if ! [[ "$session_id" =~ $UUID_RE ]]; then
   exit 2
 fi
 
-if [ "$mode" = "relayed" ] || [ "$mode" = "delegated" ]; then
+if [ "$mode" = "relayed" ] || [ "$mode" = "delegated" ] || [ "$mode" = "trigger" ]; then
   if ! [[ "$target_uuid" =~ $UUID_RE ]]; then
     echo "owner-reply-check: uuid is not a UUID: $target_uuid" >&2
     exit 2
   fi
-  if [ "$mode" = "relayed" ]; then
+  if [ "$mode" = "trigger" ]; then
+    if [ -z "${excerpt//[[:space:]]/}" ]; then
+      echo "owner-reply-check: trigger text is blank" >&2
+      exit 2
+    fi
+  elif [ "$mode" = "relayed" ]; then
     case "$stop_url" in
       https://?*) ;;
       *) echo "owner-reply-check: stop record URL does not start with https://: $stop_url" >&2; exit 2 ;;
@@ -386,16 +413,39 @@ def relayed(target_uuid, stop_at_text, stop_url, paths):
 
 def delegated(target_uuid, deleg_at_text, deleg_url, stop_at_text, paths):
     """主の委任の確認（issue #1293）。委任の記録を示した親の問いより後の主の発言で、停止の記録より前であることを確かめる。
-    問いと確認のあいだに挟まった主の発言では落とさない（issue #1653）。"""
+    問いと確認のあいだに挟まった主の発言では落とさない（issue #1653）。停止の記録の引数が - なら停止との前後を見ない
+    （リスク許容の止まりは委任の確認より前の止まりにも効く。issue #1609）。"""
     deleg_at = read_time_arg(deleg_at_text, "delegation record")
-    stop_at = read_time_arg(stop_at_text, "stop record")
+    stop_at = None if stop_at_text == "-" else read_time_arg(stop_at_text, "stop record")
     records = [rec for rec in read_records(paths) if isinstance(rec, dict)]
     target, text, said_at = pointed_owner_line(records, target_uuid)
     if not said_at > deleg_at:
         fail("not-after")
     check_asked_directly(records, deleg_url, deleg_at, said_at, direct=False)
-    if not said_at < stop_at:
+    if stop_at is not None and not said_at < stop_at:
         fail("not-before")
+    passed(target, text)
+
+
+def delegated_trigger(target_uuid, deleg_at_text, raw_trigger, paths):
+    """きっかけの形の委任の確認（issue #1609）。主が任せる旨を述べた発言が、委任の記録より前で、記録の きっかけ: の全文と
+    同じで、その発言から記録までに主の次の発言が無いことを確かめる。停止の記録は見ない。"""
+    deleg_at = read_time_arg(deleg_at_text, "delegation record")
+    trigger = norm(raw_trigger)
+    if not trigger:
+        sys.stderr.write("owner-reply-check: trigger text is blank after normalizing whitespace\n")
+        sys.exit(2)
+    records = [rec for rec in read_records(paths) if isinstance(rec, dict)]
+    target, text, said_at = pointed_owner_line(records, target_uuid)
+    if not said_at < deleg_at:
+        fail("not-before-record")
+    # 全文の一致（部分一致にすると、主の長い発言の一部の別の件の話をきっかけに切り出せるため）
+    if norm(text) != trigger:
+        fail("not-same")
+    for rec in records:
+        when = parse_time(rec.get("timestamp"))
+        if when is not None and said_at < when < deleg_at and owner_text(rec) is not None:
+            fail("not-adjacent")
     passed(target, text)
 
 
@@ -405,6 +455,8 @@ if mode == "relayed":
     relayed(target_uuid, stop_at_text, stop_url, paths)
 if mode == "delegated":
     delegated(target_uuid, deleg_at_text, deleg_url, stop_at_text, paths)
+if mode == "trigger":
+    delegated_trigger(target_uuid, deleg_at_text, raw_excerpt, paths)
 
 excerpt = norm(raw_excerpt)
 if not excerpt:

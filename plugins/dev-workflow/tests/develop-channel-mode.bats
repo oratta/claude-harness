@@ -109,6 +109,8 @@ refute() {
     # 手順として読まれない hook の登録と本体（#1153）。hooks/ ごとは除かない
     [ "$rel" = "hooks/hooks.json" ] && continue
     [ "$rel" = "scripts/unattended-ask-guard.sh" ] && continue
+    # Codex の拒否出力変換であり、channel の質問手順ではない（#1862）
+    [ "$rel" = "hooks/codex/pretool-guard.py" ] && continue
     n=$((n + 1))
     if ! printf '%s\n' "$s" | grep -qF "\`$rel\`"; then
       echo "読み替えの列挙に無い: $rel" >&2
