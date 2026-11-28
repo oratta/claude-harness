@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest.mock import patch
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts/codex-worker.py'
 DEVELOP = SCRIPT.parent / 'codex-develop.py'
@@ -43,6 +44,9 @@ for line in sys.stdin:
  m=json.loads(line); method=m.get('method'); rid=m.get('id')
  m['fixtureTmp']=info
  m['runtimeConfig']=(runtime/'config.toml').read_text()
+ m['runtimeHooks']=json.loads((runtime/'hooks.json').read_text()) if (runtime/'hooks.json').exists() else None
+ m['serverArgs']=sys.argv[1:]
+ m['guardEnv']={k:v for k,v in os.environ.items() if k.startswith(('DEV_WORKFLOW_', 'CAPABILITY_REGISTRY_'))}
  for name in ('calls.jsonl','calls-'+job+'.jsonl'):
   with (home/name).open('a') as f:f.write(json.dumps(m)+'\n')
  if rid is None:continue
@@ -267,6 +271,69 @@ class ForegroundTest(unittest.TestCase):
         self.assertEqual(rejected['error_kind'], 'unsupported_model_effort')
         self.assertFalse(any(m.get('method') in ('thread/start','turn/start')
                              for m in self.calls('unsupported')))
+
+    def test_runtime_hooks_pin_paths_and_preserve_mode_for_every_role(self):
+        plugin = SCRIPT.resolve().parents[1]
+        expected = {
+            'DEV_WORKFLOW_CODEX_GUARD_DIR': str(plugin/'hooks/codex'),
+            'DEV_WORKFLOW_CODEX_GIT_GUARD': str(plugin/'scripts/git-destructive-guard.sh'),
+            'DEV_WORKFLOW_CODEX_SECRET_GUARD': str(plugin.parent/'capability-registry/scripts/secret-guard.sh'),
+            'DEV_WORKFLOW_CODEX_ASK_GUARD': str(plugin/'scripts/unattended-ask-guard.sh')}
+        for name in ('config.toml', 'hooks.json', 'requirements.toml'):
+            (self.home/name).write_text('original-'+name)
+        for inherited in (False, True):
+            for key in expected:
+                if inherited:
+                    self.env[key] = '/other/distribution'
+                else:
+                    self.env.pop(key, None)
+            self.env.update(DEV_WORKFLOW_UNATTENDED='1', DEV_WORKFLOW_GIT_GUARD='off',
+                            CAPABILITY_REGISTRY_SECRET_GUARD='off')
+            for role in worker_module.ROLES:
+                job = 'hooks-'+role+str(inherited)
+                with self.subTest(inherited=inherited, role=role):
+                    self.run_cli(job, role=role)
+                    call = self.calls(job)[0]
+                    self.assertNotIn('--dangerously-bypass-hook-trust', call['serverArgs'])
+                    self.assertNotIn('bypass_hook_trust=true', call['serverArgs'])
+                    thread = next(m['params'] for m in self.calls(job)
+                                  if m.get('method') == 'thread/start')
+                    self.assertEqual(thread['config'], {'bypass_hook_trust': True})
+                    self.assertIsNotNone(call['runtimeHooks'])
+                    for key, value in expected.items():
+                        self.assertEqual(call['guardEnv'][key], value)
+                    self.assertEqual(call['guardEnv']['DEV_WORKFLOW_UNATTENDED'], '1')
+                    self.assertEqual(call['guardEnv']['DEV_WORKFLOW_GIT_GUARD'], 'off')
+                    self.assertEqual(call['guardEnv']['CAPABILITY_REGISTRY_SECRET_GUARD'], 'off')
+                    self.assertFalse(Path(call['fixtureTmp']['env']['CODEX_HOME']).exists())
+        for name in ('config.toml', 'hooks.json', 'requirements.toml'):
+            self.assertEqual((self.home/name).read_text(), 'original-'+name)
+
+    def test_project_hook_source_is_refused_before_server_start(self):
+        directory = self.cwd/'.codex'; directory.mkdir()
+        (directory/'hooks.json').write_text('{}')
+        result = self.run_cli(code=2)
+        self.assertEqual(result['error_kind'], 'unsupported_project_hooks')
+        self.assertEqual(self.calls(), [])
+
+    def test_hook_preparation_failure_has_no_server_and_cleans_runtime(self):
+        parent = self.root/'temporary'; parent.mkdir()
+        request = self.request()
+        with patch.dict(os.environ, TMPDIR=str(parent)), \
+                patch.object(worker_module, 'prepare_hooks', side_effect=worker_module.Rejected('hook_runtime_dependency_missing')), \
+                patch.object(worker_module, 'Rpc') as server, \
+                patch.object(worker_module.threading, 'Thread'), \
+                patch.object(worker_module.signal, 'signal'), \
+                contextlib.redirect_stdout(io.StringIO()) as output:
+            # tempfile caches its default, so explicitly choose the fixture's directory.
+            with patch.object(worker_module.tempfile, 'tempdir', str(parent)):
+                with self.assertRaises(SystemExit) as exit:
+                    worker_module.run(request)
+            self.assertEqual(exit.exception.code, 2)
+            server.assert_not_called()
+            self.assertEqual(json.loads(output.getvalue())['error_kind'], 'hook_runtime_dependency_missing')
+            self.assertEqual(list(parent.iterdir()), [])
+        self.assertEqual(self.calls(), [])
 
     def test_all_role_policies_remain_restricted(self):
         temporary = self.root/'t';temporary.mkdir()
