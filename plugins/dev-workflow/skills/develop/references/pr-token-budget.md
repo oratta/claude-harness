@@ -1,6 +1,6 @@
 # PR トークン上限（spawn・再開・Codex 委譲の前に毎回測る）
 
-1 つの記録先に使ったトークンの累計に上限を掛ける（#288）。周回数のキャップでは、1 周が重い場合や W の再開が繰り返される場合を止められないため。
+記録先ごとの累計に上限を掛ける（#288）。
 
 **消費の記録の印**（工程・試行・アカウントごとに消費を数えるため。読み取り側は flatmate の `scripts/burn_consumption.py` で、契約は同 repo の `burn-consumption-ledger`「工程・試行・アカウントを記録の印から読む」）: 消費の記録には 1 行の印 `[消費記録 工程=<工程> 試行=<n> アカウント=<provider>:<登録名> 引継ぎ=<k>]` を書く。キーの順は問わない。自由文で工程や試行を書いても読み取り側は読まない。
 - 工程は `spec`・`spec-review`・`implement`・`impl-review`・`finish`・`gate-prepare`・`gate-triage`・`gate-pass`・`gate-hold`・`decide`・`screen-check` のどれか（この一覧が正本。以下の 3 か所の規約はここを指す）
@@ -22,7 +22,7 @@ scripts/pr-token-measure.sh --repo <owner>/<repo> <記録先番号> [PR 番号] 
   --codex-home <account 対応表の各 CODEX_HOME>... [--session-records <外部 JSONL>] [--cap <新上限>]
 ```
 
-`pr-token-measure.sh` は、渡した各記録先番号の `Codex 消費:` コメントを全ページ取得して記録ファイルを作り、`pr-token-budget.sh` を `--codex-records` 付きで呼んで、その stdout（1 行 JSON）と exit code（0 / 2 / 1）をそのまま返す。取得に失敗したら（通信障害・認証エラー・`gh` か `jq` が無い等）`pr-token-budget.sh` を呼ばず、stderr に理由を出して exit 1 で終わる。
+ラッパーは各番号の `Codex 消費:` コメントを全ページ取得し、`pr-token-budget.sh` を `--codex-records` 付きで呼んで、その stdout（1 行 JSON）と exit code（0 / 2 / 1）をそのまま返す。取得に失敗したら（通信障害・認証エラー・`gh` か `jq` が無い等）`pr-token-budget.sh` を呼ばず、stderr に理由を出して exit 1 で終わる。
 
 `--codex-home` には codex-develop の account と CODEX_HOME の対応表（`--account-home` / `--account-home-file`）の全パスを渡す（`${CODEX_HOME:-$HOME/.codex}` はラッパーが足す）。上限（Claude 分と Codex 分の合計）は `--cap`（記録先の最新の `PR トークン上限:` コメントの値）> 環境変数 `DEV_WORKFLOW_PR_TOKEN_CAP` > 既定の順で、既定は数えたリクエストのモデルで [token-thresholds.md](token-thresholds.md) の表から引く（今はどれも 30,000,000）。表・上書きの不正や共通処理を読めないときも exit 1（計測できない）。stderr の `pr-token-budget:` の `unknown_model` / `revalidation_required` の行では spawn・再開・委譲を止めず、自分で再検証せず、記録先の作業の最後の主への報告に再検証が要る旨とその行を書く。計測は adapter（`references/codex-develop.md`）と `scripts/codex-worker.py` に置かない。
 
@@ -47,10 +47,6 @@ PR トークン上限: <権限>
 
 **exit 1（計測できない。引数エラー・python3 が無い・リポジトリ外・Codex 消費コメントを取得できなかった）**: 止まらずに進み、計測できなかったことと理由を記録先にコメントする。コメントは同じ記録先・同じ理由について 1 サイクルに 1 回までにする（interactive では本体の 1 セッション、unmanned では loop-dev-agent の 1 サイクル）。
 
-**独立 Claude 役 / Codex 本体（G002）**: [専用起動手順](../../../references/claude-role-launch.md) に従い、初回計測前に Codex 本体を JSONL へ登録し、起動・再開前に毎回同じ `--session-records <file>` を渡す。launcher は Claude session を同じ外部ファイルへ起動前に原子的に登録する。
-
-登録は `schema_version=1`、`records`（番号の配列）、`repo_common_dir`（実体の絶対 git common dir）、`cwd` を共通に持つ。Claude は `provider=claude` / `kind=role` / `session_id` / `log_path` / `role` / `model`、Codex 本体は `provider=codex` / `kind=coordinator` / `thread_id` / `log_path` / `codex_home` を持つ。パスは絶対パスとし、ログと登録は repo 外に置く。番号と common dir が一致する登録を数え、同じ Claude session / 実体ログは一度、同じ Codex thread はコメントと毎回読んだ rollout の最大累計に統合する。登録なしの legacy の解釈は変えない。
-
-独立役の内訳は `claude_sessions`（session_id / log_path / tokens / requests）に出し、`agent_count` は従来の subagent 数を保つ。登録の破損、ID・帰属・ログ・usage の欠損と、本体登録忘れは `session_unresolved` / `session_errors` と stderr に診断する。既知合計が上限超過なら exit 2 を優先し、それ以外の明示欠測は exit 1 とする。0 消費の確定や品質成功の根拠にしない。exit 1 の記録と続行の既存方針は維持する。
+独立 Claude 役と Codex 本体は[専用手順](../../../references/claude-role-launch.md)で外部登録し、毎回同じ `--session-records` を渡す。schema・重複排除・欠測の診断も同手順に従う。
 
 計測に入らないもの: 明示登録を使わない従来経路での本体自身の消費、Workflow 経由のサブエージェント。出力の `unresolved`（作業ディレクトリが消えたサブエージェント）と `codex_unresolved`（rollout が見つからない thread）は合計に入らないので、0 でなければ問いに件数を添える。
