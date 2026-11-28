@@ -52,3 +52,14 @@ git は本体/native subagent/worker、秘密表示は本体/worker が必須。
 ## Migration Plan
 
 R1 承認後に隔離 probe、方式の確定、helper/worker 接続、回帰検査、対象別実機記録の順で進める。主向け手順は適用前設定の退避と今回追加した登録のみを戻す方法を含める。worker は終了時に一時 runtime を片付ける。未実機の対象が残る場合は未確認のまま #1863・一覧・1858.md に揃え、実装/品質承認と混同しない。
+
+## implement 試行1の実測と停止点（2026-11-28）
+
+- codex-cli 0.163.0。一時 HOME/CODEX_HOME、空の環境で `codex --version`、`codex --help`、`codex app-server --help`、`codex --dangerously-bypass-hook-trust app-server --help` は各 exit 0。最後は引数の解析と help だけであり、server/turn/実 hook は起動していない。
+- [公式 Hooks](https://learn.chatgpt.com/docs/hooks) の managed requirements と invocation bypass の説明を確認した。文書の存在はこの実行版での隔離読込・拒否の証拠ではない。
+- 管理方式: この assignment は agent/Codex exec の起動を禁止し、実ホーム・システムへの書込も禁止している。隔離管理設定の読込元表示と実 deny は未取得。`CODEX_HOME/requirements.toml` が読まれるとは推定しない。
+- bypass: help の引数受理だけを取得。CLI 本体と app-server の実 deny/無害な対照は未取得。native 子も起動禁止のため未取得。採用方式なし、有効 source も未検証。
+- task 1.1 の準備手順は一覧に掲載し、親の Git 設定を注入した反例を含む unittest で repo 外だけに準備されることと status 対照の前後一致を確認した。Codex tool を経由した対照とは区別する。
+- task 1.2 の「両候補未成立なら止める」に従い、2.1–2.3 の helper/worker 接続は未着手。3.1 の git 3対象・秘密2対象、印付き同期質問も未取得。後続担当は下記と一覧の手順で信頼ゲートから再開する。
+
+再現: 一覧の preparation block を `/bin/sh -eu` で実行し、出力された一時領域内の環境を維持する。`codex --version` と `codex --help`、`codex app-server --help`、`codex --dangerously-bypass-hook-trust app-server --help` を一時 CODEX_HOME で比較する。実機実行権限を持つ担当が、同じ account/profile 指定のまま、実ホームへの認証更新を発生させずに隔離認証を用意できることを先に確かめる。管理候補は実行版で隔離管理設定を読ませる方法を確認してから配置し、bypass 候補は有効 source をレビューしてから別の一時 CODEX_HOME へ既存 hook と絶対依存パスを配置する。未導入 helper の存在や未検証の管理読込オプションは仮定しない。候補ごとに `codex --no-daemon --cd "$probe_dir/feature"`（bypass 候補だけ `--dangerously-bypass-hook-trust` を追加）と app-server の turn で `git reset --hard HEAD` / `git status --porcelain` を要求し、hook source・実 deny と snapshot 不変・対照を照合する。未成立なら接続を進めない。native 子の確認は起動許可のある coordinator が別途担当する。

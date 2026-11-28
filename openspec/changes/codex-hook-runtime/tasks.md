@@ -4,7 +4,7 @@ spec 段では以下を実行しない。R1 APPROVE の記録後に実装を始�
 
 ## 1. 隔離環境で信頼方式を確定する
 
-- [ ] 1.1 repo 外の一時 CODEX_HOME・git repo/feature linked worktree・ローカル bare remote とダミー秘密だけを使う再現手順を具体化し、redirect/include/alias/git hook による外部作用を除去して fetch/push 先を照合する。既存一覧の安全手順に、準備コマンド・前後比較・期待値・中止条件を追記して照合結果を #1863 に残す。触る範囲: plugins/dev-workflow/docs/codex-hook-inventory.md:65-82、openspec/changes/codex-hook-runtime/design.md:38-44
+- [x] 1.1 repo 外の一時 CODEX_HOME・git repo/feature linked worktree・ローカル bare remote とダミー秘密だけを使う再現手順を具体化し、redirect/include/alias/git hook による外部作用を除去して fetch/push 先を照合する。既存一覧の安全手順に、準備コマンド・前後比較・期待値・中止条件を追記して照合結果を #1863 に残す。触る範囲: plugins/dev-workflow/docs/codex-hook-inventory.md:65-82、openspec/changes/codex-hook-runtime/design.md:38-44
 - [ ] 1.2 実行版/help/公式文書を確認し、design の管理 hook と invocation 限定 bypass を CLI 本体/app-server で比較する。拒否と無害な対照を実測し、使えない候補は理由を残す。採用理由・source の確認方法・再現コマンドを design と #1863 に記録し、両候補未成立なら止める。現在の worker 制約で起動できない対象は下記 follow-up の依頼文とともに返し、合格扱いしない。触る範囲: openspec/changes/codex-hook-runtime/design.md:25-32、plugins/dev-workflow/docs/codex-hook-inventory.md:65-82
 
 ## 2. 配布入口と worker 接続を実装する
@@ -26,3 +26,7 @@ spec 段では以下を実行しない。R1 APPROVE の記録後に実装を始�
 
 - 本体への実機依頼が必要な場合の文面: 「#1863、対象 HEAD と採用信頼方式を固定し、一覧の隔離手順を使って Codex 本体/native subagent/worker の各対象から git の対象9種、秘密表示は本体/worker、無害な対照を試し、対象別の tool 拒否と前後不変・版/HEAD/source/信頼/入力/時刻/exit code を記録してください。実ホーム変更、実 repo での破壊操作、本物の秘密表示は行わないでください」。W は subagent を起こさず coordinator に返す。
 - archive・Draft PR 作成・仕様宣言・独立レビューは coordinator の canonical workflow の後続段が扱う。PR は `Closes #1863` のみ。merge/auto-merge はしない。
+
+## implement 試行1の進捗
+
+1.1 のみ完了。[照合記録](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481)。1.2 は help/公式文書のみ確認し、実機 deny は未取得。agent/subagent・codex exec の起動禁止により信頼方式は未成立で、1.2 の停止条件を適用した。2.1–3.1 は未着手、3.2/4.1 は部分記録・部分検査のみでチェックしない。採用方式を実測で確定してから再開する。

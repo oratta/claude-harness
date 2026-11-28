@@ -24,9 +24,9 @@ event・matcher・command は hooks.json の値をそのまま保持する。mat
 | `dev-workflow` | `UserPromptSubmit` | `` | `"${CLAUDE_PLUGIN_ROOT}/scripts/epic-child-state.sh"` | 載せ替える | 未実装・未配布 | session_id・prompt / 終了発言・epic state → 状態更新 / block | 子の状態遷移は必要だが Claude の入力 / Stop 経路に依存。timeout=30 の登録 | plugins/dev-workflow/scripts/epic-child-state.sh:120-178; plugins/dev-workflow/scripts/epic-child-state.sh:249-301; timeout=30 | #1855（子の状態） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `PreToolUse` | `Agent` | `"${CLAUDE_PLUGIN_ROOT}/scripts/agent-model-guard.sh"` | 載せ替える | 未実装・未配布 | Agent tool_input.model / subagent_type・usage_view → deny | Claude Agent と Fable の格を直接移せない。Codex の選択と役の上限は入口側で接続する必要がある | plugins/dev-workflow/scripts/agent-model-guard.sh:1-28; plugins/dev-workflow/scripts/agent-model-guard.sh:45-68 | #1856（モデル選択） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `PreToolUse` | `Edit&#124;Write&#124;NotebookEdit&#124;Bash` | `"${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"` | Codex では持たない | 代替なし・未配布 | agent_id・session_id・Claude JSONL usage → deny（編集前） | Claude の input/cache token 和と subagents のパスに依存。Codex ログを同形と仮定できず、途中計測の歯止めは未提供 | plugins/dev-workflow/scripts/context-tripwire.sh:1-24; plugins/dev-workflow/scripts/context-tripwire.sh:130-175; plugins/dev-workflow/scripts/context-tripwire.sh:205-285 | #1858（Codex 計測は後続未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
-| `dev-workflow` | `PreToolUse` | `AskUserQuestion` | `"${CLAUDE_PLUGIN_ROOT}/scripts/unattended-ask-guard.sh"` | 載せ替える | 質問対応全体は未完了（同期判定fixture検証済み）・未配布 | DEV_WORKFLOW_UNATTENDED・AskUserQuestion → deny | 無人の質問停止防止は必要。確認済み同期 request_user_input のみ deny へ適合。非同期・名前空間対応・nested call は未確認/未完了 | plugins/dev-workflow/scripts/unattended-ask-guard.sh:1-36 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
+| `dev-workflow` | `PreToolUse` | `AskUserQuestion` | `"${CLAUDE_PLUGIN_ROOT}/scripts/unattended-ask-guard.sh"` | 載せ替える | 質問対応全体は未完了（同期判定fixture検証済み）・未配布 | DEV_WORKFLOW_UNATTENDED・AskUserQuestion → deny | 無人の質問停止防止は必要。確認済み同期 request_user_input のみ deny へ適合。非同期・名前空間対応・nested call は未確認/未完了 | plugins/dev-workflow/scripts/unattended-ask-guard.sh:1-36 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) |
 | `dev-workflow` | `PreToolUse` | `Write&#124;Edit&#124;NotebookEdit` | `"${CLAUDE_PLUGIN_ROOT}/scripts/git-guard-base-write-guard.sh"` | Codex では持たない | 代替なし・未配布 | agent_id・file_path / notebook_path・cwd → deny | Claude 用 permit store への直接書込防止。Codex の子の識別と許可保存先への同等の保護は未提供 | plugins/dev-workflow/scripts/git-guard-base-write-guard.sh:1-18; plugins/dev-workflow/scripts/git-guard-base-write-guard.sh:50-87 | #1862（git 判定との境界確認。保護の移植は未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
-| `dev-workflow` | `PreToolUse` | `Bash` | `"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh"` | 載せ替える | 載せ替えた（判定fixture検証）・未配布 | Bash command・agent_id・session_id・cwd・permit → ask / deny / allow | 破壊的 git の拒否は必要。NO_ASK 固定と入力正規化で Claude の permission モード・親子許可を外し deny へ適合 | plugins/dev-workflow/scripts/git-destructive-guard.sh:1-34 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
+| `dev-workflow` | `PreToolUse` | `Bash` | `"${CLAUDE_PLUGIN_ROOT}/scripts/git-destructive-guard.sh"` | 載せ替える | 載せ替えた（判定fixture検証）・未配布 | Bash command・agent_id・session_id・cwd・permit → ask / deny / allow | 破壊的 git の拒否は必要。NO_ASK 固定と入力正規化で Claude の permission モード・親子許可を外し deny へ適合 | plugins/dev-workflow/scripts/git-destructive-guard.sh:1-34 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) |
 | `dev-workflow` | `PermissionRequest` | `Bash` | `"${CLAUDE_PLUGIN_ROOT}/scripts/rm-permission-guard.sh"` | Codex では持たない | 代替なし・未配布 | PermissionRequest・command・agent_id・permission_mode・permit → decision | Claude の確認画面と親の一回許可を消費する仕組み。Codex の同等の rm 許可応答は未提供で不足が残る | plugins/dev-workflow/scripts/rm-permission-guard.sh:1-24; plugins/dev-workflow/scripts/rm-permission-guard.sh:35-68 | #1858（rm 確認の代替は後続未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `PostToolUse` | `` | `"${CLAUDE_PLUGIN_ROOT}/scripts/context-tripwire.sh"` | Codex では持たない | 代替なし・未配布 | agent_id・session_id・Claude JSONL usage → additionalContext（実行後通知） | Claude の input/cache token 和と subagents のパスに依存。Codex ログを同形と仮定できず、途中計測の歯止めは未提供 | plugins/dev-workflow/scripts/context-tripwire.sh:1-24; plugins/dev-workflow/scripts/context-tripwire.sh:130-175; plugins/dev-workflow/scripts/context-tripwire.sh:205-285 | #1858（Codex 計測は後続未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `SubagentStart` | `^dev-workflow:(worker&#124;reviewer&#124;gate-runner)$` | `"${CLAUDE_PLUGIN_ROOT}/scripts/subagent-start-context.sh"` | 載せ替える | 未実装・未配布 | agent_type・plugin root・閾値 env → SubagentStart additionalContext | Claude の役名と起動時注入に依存。Codex の各役へ規約を渡す接続が必要 | plugins/dev-workflow/scripts/subagent-start-context.sh:1-18; plugins/dev-workflow/scripts/subagent-start-context.sh:26-44; plugins/dev-workflow/scripts/subagent-start-context.sh:73-86 | #1856（役への注入） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
@@ -34,7 +34,7 @@ event・matcher・command は hooks.json の値をそのまま保持する。mat
 | `dev-workflow` | `PreModelSwitch` | `` | `"${CLAUDE_PLUGIN_ROOT}/scripts/model-switch-recache-notice.sh"` | Codex では持たない | 代替なし・未配布 | PreModelSwitch・context_tokens・cache 費用・prompt_cache_warm → systemMessage | Claude の切替前 cache 費用に固有。Codex の費用通知の代替はなく、必要性と取得元は未決定 | plugins/dev-workflow/scripts/model-switch-recache-notice.sh:1-14; plugins/dev-workflow/scripts/model-switch-recache-notice.sh:56-89 | #1858（費用通知は後続未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `dev-workflow` | `Stop` | `` | `"${CLAUDE_PLUGIN_ROOT}/scripts/epic-child-state.sh"` | 載せ替える | 未実装・未配布 | session_id・prompt / 終了発言・epic state → 状態更新 / block | 子の状態遷移は必要だが Claude の入力 / Stop 経路に依存。timeout=30 の登録 | plugins/dev-workflow/scripts/epic-child-state.sh:120-178; plugins/dev-workflow/scripts/epic-child-state.sh:249-301; timeout=30 | #1855（子の状態） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
 | `capability-registry` | `PreToolUse` | `mcp__claude-in-chrome__.*&#124;mcp__playwright__.*` | `"${CLAUDE_PLUGIN_ROOT}/scripts/browser-guard.sh"` | Codex では持たない | 代替なし・未配布 | browser MCP matcher・session_id・初回 marker → allow + additionalContext | Claude MCP 名による CLI 優先の注意喚起で拒否はしない。Codex のブラウザ前の同等の通知は未提供 | plugins/capability-registry/scripts/browser-guard.sh:1-40 | #1856（注入の境界。browser 通知は未割当） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
-| `capability-registry` | `PreToolUse` | `Bash&#124;Read` | `"${CLAUDE_PLUGIN_ROOT}/scripts/secret-guard.sh"` | 載せ替える | 載せ替えた（判定fixture検証）・未配布 | Bash command / Read file_path → deny JSON | 秘密値を表示する操作の拒否は必要。Bash/command のみ既存判定へ渡し deny へ適合。Read は対象外。timeout=10 | plugins/capability-registry/scripts/secret-guard.sh:1-17; plugins/capability-registry/scripts/secret-guard.py:60-65; plugins/capability-registry/scripts/secret-guard.py:190-204; timeout=10 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） | 未確認（実機証跡未取得） |
+| `capability-registry` | `PreToolUse` | `Bash&#124;Read` | `"${CLAUDE_PLUGIN_ROOT}/scripts/secret-guard.sh"` | 載せ替える | 載せ替えた（判定fixture検証）・未配布 | Bash command / Read file_path → deny JSON | 秘密値を表示する操作の拒否は必要。Bash/command のみ既存判定へ渡し deny へ適合。Read は対象外。timeout=10 | plugins/capability-registry/scripts/secret-guard.sh:1-17; plugins/capability-registry/scripts/secret-guard.py:60-65; plugins/capability-registry/scripts/secret-guard.py:190-204; timeout=10 | hooks/codex/pretool-guard.py（G002 判定検証は下記） / #1863（配布・信頼・実機） | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) | [未確認: 信頼未成立・起動制約](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481) |
 
 ## G002 / #1862 の判定検証と G003 への入口
 
@@ -62,21 +62,58 @@ event・matcher・command は hooks.json の値をそのまま保持する。mat
 
 保証しない範囲: 非空の理由を「今日は晴れです」に変えても通る。ソースの行範囲の形式は検査するが、その意味が分類を裏付けるか、現状の主張が正しいか、実機で働くかはレビューと後続の証拠で確認する。これらの穴を機械検査で塞ぎ切ることは G001 の完了条件にしない。
 
-## G003 が実行する安全な実機確認手順（本 change では未実行）
+## G003 の隔離準備と実機確認手順
 
-1. 通常 repo・通常 profile を試験に使わず、repo 外の `mktemp -d` 領域を作る。以下はセットアップ例であり、この一覧・テスト自体は実行しない。
+1. 次のブロックは準備・無害な対照だけを実行する。`env -i` で Git の親環境（`GIT_DIR`、`GIT_WORK_TREE`、`GIT_CONFIG_*` 等）を落とす。HOME/XDG/CODEX_HOME は一時領域に限定し、認証は作らない。system/global config と template/hook を無効にし、fresh repo の local config だけを使う。実 git/秘密操作はこのブロックには含めない。
 
-   ```sh
-   probe_dir=$(mktemp -d)
-   git init --bare "$probe_dir/remote.git"
-   git init -b main "$probe_dir/repo"
-   git -C "$probe_dir/repo" remote add origin "$probe_dir/remote.git"
-   test "$(git -C "$probe_dir/repo" remote get-url origin)" = "$probe_dir/remote.git"
-   test "$(git -C "$probe_dir/repo" remote get-url --push origin)" = "$probe_dir/remote.git"
-   git -C "$probe_dir/remote.git" rev-parse --is-bare-repository
-   ```
+<!-- codex-hook-probe-preparation -->
+```sh
+env -i PATH=/usr/bin:/bin TMPDIR="${TMPDIR:-/tmp}" /bin/sh -eu <<'PROBE'
+probe_dir=$(mktemp -d "${TMPDIR:-/tmp}/codex-hook-probe.XXXXXX")
+umask 077
+mkdir "$probe_dir/home" "$probe_dir/xdg" "$probe_dir/codex-home" "$probe_dir/no-hooks" "$probe_dir/template"
+export HOME="$probe_dir/home" XDG_CONFIG_HOME="$probe_dir/xdg" CODEX_HOME="$probe_dir/codex-home"
+export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_SYSTEM=/dev/null GIT_CONFIG_GLOBAL=/dev/null
+export GIT_CONFIG_COUNT=0 GIT_TERMINAL_PROMPT=0 GIT_ALLOW_PROTOCOL=file
+export GIT_TEMPLATE_DIR="$probe_dir/template"
+export GIT_AUTHOR_NAME=HookProbe GIT_COMMITTER_NAME=HookProbe
+export GIT_AUTHOR_EMAIL=probe@example.invalid GIT_COMMITTER_EMAIL=probe@example.invalid
+export HARNESS_PROBE_SECRET=dummy-only-not-a-real-secret
+# Set before the first commit; no inherited templates, aliases, includes or hooks.
+git init --bare "$probe_dir/remote.git"
+git init -b main "$probe_dir/repo"
+git -C "$probe_dir/repo" config core.hooksPath "$probe_dir/no-hooks"
+git -C "$probe_dir/remote.git" config core.hooksPath "$probe_dir/no-hooks"
+git -C "$probe_dir/repo" remote add origin "$probe_dir/remote.git"
+test "$(git -C "$probe_dir/repo" config --get-all remote.origin.url)" = "$probe_dir/remote.git"
+test "$(git -C "$probe_dir/repo" remote get-url --all origin)" = "$probe_dir/remote.git"
+test "$(git -C "$probe_dir/repo" remote get-url --push --all origin)" = "$probe_dir/remote.git"
+test "$(git -C "$probe_dir/remote.git" rev-parse --is-bare-repository)" = true
+printf '%s\n' baseline > "$probe_dir/repo/tracked.txt"
+git -C "$probe_dir/repo" add tracked.txt
+git -C "$probe_dir/repo" commit -m baseline
+git -C "$probe_dir/repo" push origin main
+git -C "$probe_dir/repo" worktree add -b probe-feature "$probe_dir/feature"
+printf '%s\n' 'HARNESS_PROBE_SECRET=dummy-only-not-a-real-secret' > "$probe_dir/feature/.env"
+# Control push is confined to the local bare remote and happens before the baseline.
+git -C "$probe_dir/feature" push origin probe-feature
+snapshot() {
+  git -C "$probe_dir/feature" rev-parse HEAD
+  git -C "$probe_dir/feature" status --porcelain
+  shasum -a 256 "$probe_dir/feature/tracked.txt" "$probe_dir/feature/.env"
+  git -C "$probe_dir/remote.git" for-each-ref --format='%(refname) %(objectname)'
+}
+snapshot > "$probe_dir/before.txt"
+git -C "$probe_dir/feature" status --porcelain > "$probe_dir/status.txt"
+snapshot > "$probe_dir/after.txt"
+cmp "$probe_dir/before.txt" "$probe_dir/after.txt"
+printf 'prepared=%s\n' "$probe_dir"
+PROBE
+```
 
-2. pushurl・url の複数値や `url.*.insteadOf` / `pushInsteadOf`、include、hook 設定で外部へ向かない隔離 git config を使い、実際の fetch / push 先が上のローカル bare remote だけであると照合する。照合できなければ実行を止め「未取得理由」とする。捨ててよいファイルとローカル author だけで commit を作り、比較用の commit を bare remote に置く。秘密試験はこの領域の `.env` に `HARNESS_PROBE_SECRET=dummy-only-not-a-real-secret` だけを置く。対象プロセスにもこのダミー変数だけを追加し、本物の秘密を表示しない。環境全体の printenv・通常 profile / auth の表示・本物の .env の Read は行わない。
+2. 期待値は全コマンド exit 0、fetch/push の全 URL が同じ local bare remote、linked worktree の `.git` がファイル、`before.txt` と `after.txt` が一致すること。照合失敗・複数 URL・想定外 source/config・認証更新の必要があれば中止する。出力された `prepared=` の絶対パスを以降の試験対象として使う。後続の Codex 起動にもこのブロック内の隔離環境を維持し、実ホームの設定を借りない。認証内容をログや fixture にコピーしない。Git 設定を追加変更した場合は外部作用の点検をやり直す。snapshot は各拒否要求の直前/直後に取り直す（無害な feature push は比較の前に終える）。ハッシュに秘密値そのものは含めず、表示試験はこの `.env` とダミー変数だけを対象にする。
 3. G002 の対象操作ごとに git reset --hard・main push・force push 等の拒否入力、ダミー変数 / ダミー .env の表示入力、無人印付きの質問操作を用意する。操作はすべて隔離 repo を cwd とし、G003 が対応版の起動方法・入力契約を確認して Codex 本体・native subagent・worker の各対象から実際に要求する。G001 では未実装のインストール方法や拒否 payload を発明しない。無害な操作の対照例も実行し、単に全操作が実行不能な状態と区別する。
 4. 対象ごと・操作ごとに、版、harness HEAD、対象、隔離 config / 配布・信頼の状態、入力、cwd、開始終了時刻、exit code、拒否理由・ログを repo 外に残す。前後の `git status --porcelain`、HEAD、対象ファイルの内容ハッシュ、bare remote の refs を比較し、拒否に加えて操作が未実行だったことを確認する。秘密試験はダミー値がツール結果へ出なかったこと、質問は待ち画面に入らず戻ったことも確認する。exit 0 / completed だけで合格にしない。
 5. 証跡の URL または保存先を各行の対象欄へ別々に付ける。起動不能・未配布・信頼未成立・対象の操作なし・未試行なら、その対象だけ「未確認 — 未取得理由: …」と記録する。#1862 が判定を実装しても #1863 の配布・信頼・3 対象の証拠を一括で確認済みにしない。Claude 経路の成功は別の記録とする。
+
+G003 implement 試行1の[準備照合・未取得理由・再開依頼](https://github.com/oratta/claude-harness/issues/1863#issuecomment-7236485481)。task 1.1 の準備と直接の無害な対照だけを実行済み。信頼候補は両方未成立のため task 1.2 で停止し、helper/worker 接続は未着手。git 3対象・秘密2対象・印付き同期質問の実機証跡は未取得。#1862 の質問対応全体は引き続き未完了。

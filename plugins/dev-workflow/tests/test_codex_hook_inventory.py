@@ -75,6 +75,30 @@ class InventoryTests(unittest.TestCase):
         self.assertIn('この一覧を参照し、複製しない', doc)
         self.assertTrue((ROOT / CHANGE).is_file())
 
+    def test_isolated_probe_preparation(self):
+        # Execute the published preparation only; no Codex/auth or denied commands.
+        doc = (ROOT / DOC).read_text()
+        self.assertIn('<!-- codex-hook-probe-preparation -->', doc)
+        block = doc.split('<!-- codex-hook-probe-preparation -->', 1)[1]
+        script = block.split('```sh\n', 1)[1].split('```', 1)[0]
+        with tempfile.TemporaryDirectory() as directory:
+            result = subprocess.run(['/bin/sh', '-eu'], input=script, text=True,
+                                    capture_output=True,
+                                    env={'PATH': '/usr/bin:/bin', 'TMPDIR': directory,
+                                         'GIT_CONFIG_COUNT': '1',
+                                         'GIT_CONFIG_KEY_0': 'url.invalid.insteadOf',
+                                         'GIT_CONFIG_VALUE_0': '/'})
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            probes = list(Path(directory).glob('codex-hook-probe.*'))
+            self.assertEqual(len(probes), 1)
+            probe = probes[0]
+            self.assertTrue((probe / 'codex-home').is_dir())
+            self.assertFalse((probe / 'codex-home/auth.json').exists())
+            self.assertTrue((probe / 'feature/.git').is_file())
+            self.assertEqual((probe / 'before.txt').read_bytes(),
+                             (probe / 'after.txt').read_bytes())
+            self.assertIn('refs/heads/probe-feature', (probe / 'before.txt').read_text())
+
     def test_counterexamples_and_semantic_limit(self):
         # Each input is a fresh repository-external copy, without auth or execution.
         cases = ('row_removed', 'registration_added', 'registration_removed', 'event',
