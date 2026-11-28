@@ -243,7 +243,8 @@ if session_file:
                 raise ValueError("repo_common_dir missing")
             if os.path.realpath(common) != repo_id:
                 continue
-            if row.get("schema_version") != 1 or repo_of(row.get("cwd")) != repo_id:
+            cwd_repo = repo_of(row.get("cwd"))
+            if row.get("schema_version") != 1 or (cwd_repo is not None and cwd_repo != repo_id):
                 raise ValueError("schema/cwd attribution unavailable")
             path = row.get("log_path")
             if not isinstance(path, str) or not os.path.isabs(path):
@@ -281,7 +282,8 @@ for (sid, path), row in explicit_claude.items():
                     continue
                 if d.get("sessionId") and d["sessionId"] != sid:
                     raise ValueError("session ID mismatch")
-                if d.get("cwd") and repo_of(d["cwd"]) != repo_id:
+                cwd_repo = repo_of(d["cwd"]) if d.get("cwd") else None
+                if cwd_repo is not None and cwd_repo != repo_id:
                     raise ValueError("transcript cwd mismatch")
                 msg = d.get("message")
                 u = msg.get("usage") if isinstance(msg, dict) else None

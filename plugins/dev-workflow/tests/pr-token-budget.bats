@@ -644,3 +644,28 @@ SH
   [ "$status" -eq 2 ]
   [ "$(j 'd["session_unresolved"]')" = 2 ]
 }
+
+@test "explicit sessions: removed worktree preserves Claude and coordinator totals and cap" {
+  explicit_records
+  python3 - "$SESSIONS" "$LOG" "$WT" <<'PYTHON'
+import json,sys
+records,log,cwd=sys.argv[1:]
+rows=[json.loads(s) for s in open(records)]
+for row in rows: row['cwd']=cwd
+with open(records,'w') as f:
+ for row in rows: f.write(json.dumps(row)+'\n')
+with open(log,'a') as f: f.write(json.dumps({'type':'user','cwd':cwd})+'\n')
+PYTHON
+  cd "$REPO"
+  for state in present removed; do
+    if [ "$state" = removed ]; then
+      git -C "$REPO" worktree remove "$WT"
+    fi
+    run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 1000
+    [ "$status" -eq 0 ]
+    [ "$(j '(d["claude_tokens"], d["codex_tokens"], d["total_tokens"], d["session_unresolved"])')" = "(116, 200, 316, 0)" ]
+    run --separate-stderr "$SCRIPT" 288 --session-records "$SESSIONS" --projects "$PROJECTS" --cap 300
+    [ "$status" -eq 2 ]
+    [ "$(j 'd["total_tokens"]')" = 316 ]
+  done
+}

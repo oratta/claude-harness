@@ -103,8 +103,20 @@ sys.exit(int(os.environ.get('FAKE_EXIT','0')))
         self.assertEqual(rec['repo_common_dir'], str(self.repo / '.git'))
 
     def test_reject_before_cli(self):
-        for extra in (['--model','unknown'], ['--model','fable'], ['--role','review'],
-                      ['--max-turns','0'], ['--extra','--model=opus']):
+        for assignment, role, model, mode, extra, reason in (
+                ('W', 'implement', 'unknown', 'agent', [], 'unknown model'),
+                ('W', 'implement', 'fable', 'agent', [], 'この役の上限は'),
+                ('W', 'implement', 'fable', 'agent', ['--verify'], 'この役の上限は'),
+                ('reviewer', 'review', 'fable', 'explicit', [], 'forbidden model')):
+            with self.subTest(assignment=assignment, model=model, extra=extra):
+                self.attest(assignment, role, model, mode)
+                code, d = self.invoke(['--assignment', assignment, '--role', role,
+                                       '--model', model, '--mode', mode] + extra)
+                self.assertEqual(code, 1, d)
+                self.assertIn(reason, d['termination_reason'])
+                self.assertEqual(self.calls(), [])
+        self.attest('W', 'implement')
+        for extra in (['--role','review'], ['--max-turns','0'], ['--extra','--model=opus']):
             with self.subTest(extra=extra):
                 p = subprocess.run(self.args+extra, env=self.env, capture_output=True)
                 self.assertEqual(p.returncode, 1)
@@ -244,6 +256,26 @@ sys.exit(int(os.environ.get('FAKE_EXIT','0')))
         code, d = self.invoke(['--session-records',str(self.repo/'forbidden')])
         self.assertEqual(code, 1, d)
         self.assertEqual(len(self.calls()), before)
+
+    def test_linked_worktree_requires_external_paths(self):
+        subprocess.run(['git', '-C', str(self.repo), '-c', 'user.email=t@t',
+                        '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], check=True)
+        worktree = self.root / 'linked'
+        subprocess.run(['git', '-C', str(self.repo), 'worktree', 'add', '-q',
+                        '-b', 'linked', str(worktree)], check=True)
+        for option in ('--session-records', '--verification', 'CLAUDE_CONFIG_DIR'):
+            for base in (self.repo, self.repo / '.git', worktree):
+                with self.subTest(option=option, base=base):
+                    if option == 'CLAUDE_CONFIG_DIR':
+                        code, d = self.invoke(['--cwd', str(worktree)],
+                                              CLAUDE_CONFIG_DIR=str(base / 'config'))
+                    else:
+                        code, d = self.invoke(['--cwd', str(worktree), option, str(base / 'forbidden')])
+                    self.assertEqual(code, 1, d)
+                    self.assertEqual(self.calls(), [])
+        code, d = self.invoke(['--cwd', str(worktree)])
+        self.assertEqual(code, 0, d)
+        self.assertEqual(len(self.calls()), 1)
 
     def test_live_check_opt_in_and_fixture_only_execution(self):
         script = PLUGIN/'scripts/claude-role-live-check.py'

@@ -56,8 +56,12 @@ def outside(path, cwd):
         raise Refusal('logs, records and verification must be outside cwd')
     # A worktree's common repository is also not a log destination.
     top = Path(subprocess.check_output(['git', '-C', str(cwd), 'rev-parse', '--show-toplevel'], text=True).strip()).resolve()
-    if path == top or top in path.parents:
-        raise Refusal('external path required')
+    common = Path(subprocess.check_output(
+        ['git', '-C', str(cwd), 'rev-parse', '--path-format=absolute', '--git-common-dir'],
+        text=True).strip()).resolve()
+    for root in (top, common, common.parent):
+        if path == root or root in path.parents:
+            raise Refusal('external path required')
     return path
 
 
