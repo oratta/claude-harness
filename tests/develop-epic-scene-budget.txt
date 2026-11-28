@@ -1,11 +1,11 @@
 nested-entry 8663
-nested-stop 61965
+nested-stop 63326
 parent-start 62297
-parent-stopped 171410
-nested-delegated 68421
-parent-delegated 177866
-parent-merge-wait 183032
-parent-merge-delegated 189488
+parent-stopped 177798
+nested-delegated 72352
+parent-delegated 186824
+parent-merge-wait 189417
+parent-merge-delegated 198443
 parent-multirepo 68665
 parent-subagent 66127
 nested-workers 10757

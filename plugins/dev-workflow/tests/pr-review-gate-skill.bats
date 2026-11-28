@@ -2132,8 +2132,8 @@ filing_approval_block() { issue_approved_section | awk '/^- \*\*起票の承認\
 # 4 条件・6 条件・推奨の判定の文字列は develop-skill.bats の DELEG_STOP4・DELEG_VALID6・DELEG_RECOMMEND と同じ文字列にする
 # （epic-delegation.md を親・子・G が読むため）。
 
-PRG_DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1 行目が `主の委任: リスク許容` なら 1〜4 行目が、`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
-PRG_DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時と委任の確認の timestamp の両方より後 ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
+PRG_DELEG_VALID6='委任の記録が、①エピック #<E> の issue のコメントで、1 行目が `主の委任: リスク許容` なら 1〜4 行目が問いの形かきっかけの形のどちらかの定型の文ちょうど（きっかけの形なら 5 行目が `きっかけ: ` で始まり、そのあとの値が空白をまとめて空でなく `なし` でない）、`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど、2 行目の番号が <E> ②投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` のどれか ③エピックの、投稿者が同じ 3 種の `主の委任:` で始まるコメントのうち最新 ④`lastEditedAt` が null ⑤エピックが開いている ⑥子 issue がエピックの子（sub-issue か本文の子の表にある）'
+PRG_DELEG_STOP4='①子 issue の番号を、本文で最初に現れる `Closes #N`・`Fixes #N`・`Refs #N` の `N` に持つ開いた PR に `needs-approval` が付いている ②その PR の、投稿者が `OWNER`・`MEMBER`・`COLLABORATOR` で `## リスク宣言` で始まる最新のコメントが `主のリスク許容が必要。` の行を持ち、`対象 HEAD:` が PR の今の HEAD と同じで、`主の回答:` で始まる行をまだ持たない（G では、今確かめている委任の形の記録の行だけは除く） ③停止の記録の作成日時が、そのコメントの作成日時より後（委任の確認の timestamp との前後は見ない。委任の確認より前に止まった子にも効く） ④停止の記録の `推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 PRG_DELEG_RECOMMEND='`推奨:` の値（先頭の空白を除く）が `許容する` で始まる'
 
 deleg_check_body() { step5_body | awk '/主の委任で親経由に受けた許容（親経由で受領（委任））の真正性確認/{f=1} /^\*\*issue で承認済みの確かめ直し/{f=0} f'; }
@@ -2195,10 +2195,12 @@ deleg_reads_canonical() {
   body="$(deleg_check_body)"
   echo "$body" | grep -qF '子の停止: 主の返事待ち'
   echo "$body" | grep -qF 'last | .html_url'
-  echo "$body" | grep -qF 'owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> <停止の記録の作成日時>'
-  for r in not-found not-owner not-after not-asked not-before; do
-    echo "$body" | grep -qF "$r" || { echo "missing $r"; return 1; }
+  echo "$body" | grep -qF 'owner-reply-check.sh --delegated <セッション ID> <uuid> <委任の記録の作成日時> <委任の記録の URL> -'
+  ! echo "$body" | grep -qF '<委任の記録の URL> <停止の記録の作成日時>' || return 1
+  for r in not-found not-owner not-after not-asked; do
+    echo "$body" | grep -F 'REASON（--delegated）' | grep -qF "$r" || { echo "missing $r"; return 1; }
   done
+  ! echo "$body" | grep -qF 'not-before（' || return 1
   echo "$body" | grep -F '任せる意思' | grep -qF 'MATCH:'
 }
 
@@ -2211,6 +2213,8 @@ deleg_reads_canonical() {
 @test "delegated reply (#1293): step 5 records the --delegated exit 0 and never uses --relayed for the delegated form" {
   body="$(deleg_check_body)"
   echo "$body" | grep -qF '真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh --delegated 終了コード 0）'
+  echo "$body" | grep -qF '真正性確認: 済 — 確認者 <エージェント名> / <日時>（owner-reply-check.sh --delegated-trigger 終了コード 0）'
+  echo "$body" | grep -F '使った照合に合わせて' | grep -qF -- '--delegated-trigger 終了コード 0'
   echo "$body" | grep -F -- '--relayed' | grep -F 'で確かめない' | grep -qF 'not-after'
   ! echo "$body" | grep -qF -- 'owner-reply-check.sh --relayed <' || return 1
 }
@@ -2231,13 +2235,18 @@ deleg_reads_canonical() {
   row="$(awk '/^### 6\. /{f=1} f' "${HOLD}" | grep -F '| **リスク許容待ち**' | head -1)"
   echo "$row" | grep -qF '主の回答: 許容 — 親経由で受領（委任）（親セッション <セッション ID> / 委任の確認 <uuid> / <日時>）委任の記録: <URL> 停止の記録: <URL> 原文: <原文>'
   echo "$row" | grep -F '親経由で受領（委任）' | grep -qF '追記してから手順5'
+  echo "$row" | grep -F '委任の記録の形に合った照合' | grep -F 'owner-reply-check.sh --delegated`' | grep -qF 'owner-reply-check.sh --delegated-trigger'
 }
 
 @test "delegated reply (#1293): 3-c condition 3 rechecks the delegated form with --delegated, not --relayed" {
   cond3="$(step3c_body | grep '^3\. ')"
   echo "$cond3" | grep -qF '親経由で受領（委任）'
   echo "$cond3" | grep -qF 'owner-reply-check.sh --delegated'
-  echo "$cond3" | grep -qF -- '`--relayed` で確かめ直さない'
+  echo "$cond3" | grep -qF -- '`--relayed` で確かめ直さず'
+  echo "$cond3" | grep -qF '元の委任の記録の 4 行目で形を見分け'
+  echo "$cond3" | grep -qF '問いの形は停止の記録の引数 `-` の `owner-reply-check.sh --delegated`、きっかけの形は `owner-reply-check.sh --delegated-trigger`'
+  echo "$cond3" | grep -qF -- 'きっかけの形の記録を `--delegated` で確かめ直さない'
+  echo "$cond3" | grep -qF 'この子・この止まりを除く条件も定型と違う期限や条件も付けていないこと'
   echo "$cond3" | grep -qF '取り消し'
   echo "$cond3" | grep -qF '`親経由で受領（委任）（親セッション ` で始まる行は委任の形、`親経由で受領（親セッション ` で始まる行は従来の形'
 }
@@ -2247,6 +2256,53 @@ deleg_reads_canonical() {
   echo "$body" | grep -F '1 行目' | grep -qF '親経由で受領（委任）（親セッション'
   echo "$body" | grep -qF '主の回答: 許容（引き継ぎ） — 親経由で受領（委任）（親セッション … / 委任の確認 … / …）委任の記録: … 停止の記録: … 原文: …'
   echo "$body" | grep -qF '4 つ'
+}
+
+@test "delegation trigger (#1609): step 5 picks the check by the record's 4th line and runs --delegated-trigger with the trigger value" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF -- "--jq '.created_at, .body'"
+  echo "$body" | grep -F '4 行目の `期間:` の文で形を見分け' | grep -qF '次のどちらかを回し'
+  echo "$body" | grep -qF '# 問いの形の記録'
+  echo "$body" | grep -qF 'owner-reply-check.sh --delegated-trigger <セッション ID> <uuid> <委任の記録の作成日時> <記録の きっかけ: の値>'
+  echo "$body" | grep -F '# きっかけの形の記録' | grep -qF '`きっかけ: ` のあとから本文の終わりまで'
+  for r in not-found not-owner not-before-record not-same not-adjacent; do
+    echo "$body" | grep -F 'REASON（--delegated-trigger）' | grep -qF "$r" || { echo "missing $r"; return 1; }
+  done
+}
+
+@test "delegation trigger (#1609): step 5 does not pass a trigger-form record whose MATCH text excludes this child, sets another period or names nothing" {
+  body="$(deleg_check_body)"
+  line="$(echo "$body" | grep '^4\. ')"
+  echo "$line" | grep -qF '`MATCH:` の全文だけから子の止まりを親に任せる意思が読め'
+  echo "$line" | grep -qF 'この子・この止まりを除く条件も定型と違う期限や条件も付けていない'
+  echo "$line" | grep -qF '「#2058 以外は任せる」でこの PR の子が #2058'
+  echo "$line" | grep -qF '「今日の分だけ任せる」'
+  echo "$line" | grep -qF '「任せる」だけ'
+  fail="$(echo "$body" | grep '^通したら、')"
+  echo "$fail" | grep -qF 'きっかけの形で `MATCH:` の全文がこの子を除くか定型と違う期限を付けているか子の止まりを任せる旨が読めない'
+  echo "$fail" | grep -F '合格させず' | grep -qF '子のタブ'
+  for r in not-before-record not-same not-adjacent; do
+    echo "$fail" | grep -qF "\`$r\`" || { echo "missing $r"; return 1; }
+  done
+  echo "$fail" | grep -qF 'きっかけの形で `きっかけ:` が なし'
+  echo "$fail" | grep -qF '宣言が今の HEAD でない'
+  ! echo "$fail" | grep -qF '確認より前の止まり' || return 1
+}
+
+@test "delegation trigger (#1609): step 5 does not fail on the order between the stop and the trigger, and the scope lets earlier stops through" {
+  body="$(deleg_check_body)"
+  echo "$body" | grep -qF '停止の記録がきっかけの発言や委任の確認より前に作られていても、停止との前後では落とさない'
+  echo "$body" | grep -qF 'リスク許容の止まりは委任の確認より前の止まりにも効くので、問いの形では停止の記録の引数に `-` を渡す'
+  echo "$body" | grep -F '委任の記録がきっかけの形のときも同じ行を追記し' | grep -qF '`委任の確認` の uuid はきっかけの発言の uuid、`原文` はきっかけの発言の全文'
+  scope="$(echo "$body" | grep '^守備範囲（委任の形）: ')"
+  echo "$scope" | grep -qF '記録に写した全文と違う発言・記録より後の発言・記録の前に主が次の発言をしていたきっかけ'
+  echo "$scope" | grep -qF 'きっかけの発言そのものを確認にしたもの、委任の確認より前に止まったリスク許容の止まりは通してよい'
+}
+
+@test "delegation trigger (#1609): removing the trigger-form check from step 5 fails the test" {
+  sed 's/--delegated-trigger <セッション ID>/--delegated <セッション ID>/' "$PLUGIN_DIR/skills/pr-review-gate/stages/authenticity-delegated.md" > "$BATS_TEST_TMPDIR/d.md"
+  run grep -qF 'owner-reply-check.sh --delegated-trigger <セッション ID> <uuid> <委任の記録の作成日時> <記録の きっかけ: の値>' "$BATS_TEST_TMPDIR/d.md"
+  [ "$status" -ne 0 ]
 }
 
 @test "nonblocking triage (#1498): stage C checks whether the child is in progress before adding, and splits off a new child if so" {

@@ -135,6 +135,8 @@ item() { grep -F -- "- **$1**" "$2"; }
   grep -E '^  根拠: 主の決定' "$EPIC" | grep -qF 'https://github.com/genetta-inc/flatmate/issues/1796#issuecomment-6551902839'
   item '委任の受け方' "$EPIC" | grep -F '`主の委任: 論点なしの止まり` は 1〜5 行目' >/dev/null
   item '委任の受け方' "$EPIC" | grep -F '読めないときは' | grep -qF '狭い側の `主の委任: リスク許容`'
+  # #1609: リスク許容にはきっかけの形があり、論点なしの止まりは問いの形だけ
+  item '委任の受け方' "$EPIC" | grep -qF '`主の委任: リスク許容` は問いの形もきっかけの形も 1〜4 行目が'
   item '委任が有効か' "$EPIC" | grep -qF '`主の委任: 論点なしの止まり` なら 1〜5 行目が定型の文ちょうど'
 }
 
